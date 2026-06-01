@@ -37,7 +37,17 @@ function consume(session, data) {
         }
     }
 
-    session.dataSendToMeAndOthers(ServerResponse.speak(session.actor, data), session.actor);
+    if (data.kind === 1) { // Shout
+        const packet = ServerResponse.speak(session.actor, data);
+        const World = invoke('GameServer/World/World');
+        World.user.sessions.forEach((user) => {
+            if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
+                user.dataSendToMe(packet);
+            }
+        });
+    } else {
+        session.dataSendToMeAndOthers(ServerResponse.speak(session.actor, data), session.actor);
+    }
 
     try {
         const BotManager = invoke('GameServer/Bot/BotManager');

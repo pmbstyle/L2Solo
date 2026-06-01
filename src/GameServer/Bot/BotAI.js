@@ -54,6 +54,16 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        // Tiny chance to shout globally (e.g. 0.0005 chance per tick - roughly once every 2000 ticks or ~100 minutes per bot)
+        if (Math.random() < 0.0005) {
+            try {
+                const BotManager = invoke('GameServer/Bot/BotManager');
+                BotManager.handleBotGlobalShout(session);
+            } catch (err) {
+                console.error("Bot global shout error:", err);
+            }
+        }
+
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
         if (session.plan === 'following' && session.followPlayerSession) {
             const playerSession = session.followPlayerSession;
@@ -114,6 +124,19 @@ const BotAI = {
         }
 
         if (session.plan === 'resting') {
+            if (session.townGossip) {
+                // 3% chance per tick to attempt conversation when resting near other bots
+                if (Math.random() < 0.03) {
+                    try {
+                        const BotManager = invoke('GameServer/Bot/BotManager');
+                        BotManager.checkAndStartConversation(session);
+                    } catch (err) {
+                        console.error("Conversation check error:", err);
+                    }
+                }
+                return; // Stay seated and do nothing else
+            }
+
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             if (hpRatio >= 0.95 && mpRatio >= 0.95) {
@@ -121,6 +144,16 @@ const BotAI = {
                 session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
                 session.plan = 'hunting';
                 this.say(session, "Fully rested! Ready to hunt again.");
+            } else {
+                // 3% chance per tick to attempt conversation when resting near other bots
+                if (Math.random() < 0.03) {
+                    try {
+                        const BotManager = invoke('GameServer/Bot/BotManager');
+                        BotManager.checkAndStartConversation(session);
+                    } catch (err) {
+                        console.error("Conversation check error:", err);
+                    }
+                }
             }
             return; // Stay seated and do nothing else
         }

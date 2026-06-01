@@ -33,6 +33,25 @@ function levelUp(session, actor, nextLevel) {
 
     // Update database with new hp, mp
     Database.updateCharacterVitals(id, hp, maxHp, mp, maxMp);
+
+    // Bot celebration reaction
+    if (session.accountId && session.accountId.startsWith('bot_')) {
+        try {
+            const BotManager = invoke('GameServer/Bot/BotManager');
+            const levelUpPhrases = [
+                `Awesome! I just leveled up to level ${nextLevel}!`,
+                `Lvl ${nextLevel}! I'm getting so strong!`,
+                `Yes! Level ${nextLevel}! Kelters stand no chance!`,
+                `Level up! ${nextLevel}! Time to farm harder!`
+            ];
+            const phrase = levelUpPhrases[Math.floor(Math.random() * levelUpPhrases.length)];
+            setTimeout(() => {
+                BotManager.botSay(session, phrase);
+            }, 1000);
+        } catch (err) {
+            console.error("Bot level-up shout error:", err);
+        }
+    }
 }
 
 module.exports = levelUp;

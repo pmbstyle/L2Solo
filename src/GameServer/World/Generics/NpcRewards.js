@@ -37,6 +37,34 @@ function npcRewards(session, npc) {
                                     });
                                 });
                             });
+
+                            // Hook 15% loot brag chance
+                            if (Math.random() < 0.15) {
+                                try {
+                                    const BotManager = invoke('GameServer/Bot/BotManager');
+                                    DataCache.fetchItemFromSelfId(item.selfId, (itemDetails) => {
+                                        const itemName = itemDetails.template.name;
+                                        const adenaLoot = (item.selfId === 57);
+                                        const lootPhrases = adenaLoot ? [
+                                            `Aha! Got some sweet adena (${amount} gold)!`,
+                                            `Money money! +${amount} adena.`,
+                                            `Sweet, ${amount} adena from that monster!`,
+                                            `This farming is really paying off! Got ${amount} adena.`
+                                        ] : [
+                                            `Whoa! Just got ${itemName}! Nice drop.`,
+                                            `Aha! Got a sweet ${itemName}!`,
+                                            `Nice! This creature dropped ${itemName}.`,
+                                            `Looted ${itemName}! Today is my lucky day!`
+                                        ];
+                                        const phrase = lootPhrases[Math.floor(Math.random() * lootPhrases.length)];
+                                        setTimeout(() => {
+                                            BotManager.botSay(session, phrase);
+                                        }, 500 + Math.random() * 500);
+                                    });
+                                } catch (err) {
+                                    console.error("Bot loot brag error:", err);
+                                }
+                            }
                         } else {
                             let point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
                             this.spawnItem(session, item.selfId, amount, {

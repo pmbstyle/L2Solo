@@ -11,7 +11,7 @@ const BOTS_TO_SPAWN = [
     { name: "Bot_Gandalf", race: 0, sex: 0, classId: 10, face: 0, hair: 2, hairColor: 0 }  // Human Mage
 ];
 
-const EXTRA_BOTS_COUNT = 0; // Configurable: Set to 20, 50, or more to scale up the bot count!
+const EXTRA_BOTS_COUNT = 10; // Configurable: Set to 20, 50, or more to scale up the bot count!
 
 const FANTASY_NAMES = [
     "Aragorn", "Boromir", "Galadriel", "Arwen", "Elrond", "Eowyn", "Faramir", "Theoden", 
@@ -125,11 +125,20 @@ const BotManager = {
                 World.insertUser(session);
                 session.actor.enterWorld();
                 
+                // Designate some extra bots as permanent town gossips
+                if (character.name !== "Bot_Gimli" && character.name !== "Bot_Legolas" && character.name !== "Bot_Gandalf" && Math.random() < 0.40) {
+                    session.plan = 'resting';
+                    session.townGossip = true;
+                    session.actor.state.setSeated(true);
+                } else {
+                    session.plan = 'hunting';
+                }
+
                 // Start AI loop
                 BotAI.init(session);
                 
                 this.sessions.push(session);
-                utils.infoSuccess("BotManager", "%s (Level %d) is active in World", character.name, character.level);
+                utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, session.townGossip ? "[Gossip Mode]" : "[Hunting Mode]");
             });
         });
     },
@@ -262,7 +271,131 @@ const BotManager = {
                 user.socket.write(Buffer.concat([header, data]));
             }
         });
+    },
+
+    botShout(session, text) {
+        if (!session.actor) return;
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const World = invoke('GameServer/World/World');
+        
+        const packet = ServerResponse.speak(session.actor, { kind: 1, text: text });
+        
+        World.user.sessions.forEach((user) => {
+            if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
+                user.dataSendToMe(packet);
+            }
+        });
+    },
+
+    checkAndStartConversation(botSession) {
+        if (botSession.inConversation) return;
+        const bot = botSession.actor;
+        if (!bot) return;
+
+        const SpeckMath = invoke('GameServer/SpeckMath');
+        const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+
+        // Find a nearby bot session
+        const targetSession = this.sessions.find((session) => {
+            if (session === botSession || session.inConversation) return false;
+            const target = session.actor;
+            if (!target) return false;
+
+            // Target must also be resting in town
+            if (session.plan !== 'resting') return false;
+
+            const dist = new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()).distance(botPt);
+            return dist < 800; // nearby range
+        });
+
+        if (targetSession) {
+            this.triggerConversation(botSession, targetSession);
+        }
+    },
+
+    triggerConversation(botSession, targetSession) {
+        botSession.inConversation = true;
+        targetSession.inConversation = true;
+
+        const topic = CONVERSATION_TOPICS[Math.floor(Math.random() * CONVERSATION_TOPICS.length)];
+        const reply = topic.replies[Math.floor(Math.random() * topic.replies.length)];
+
+        // Stage 1: First bot speaks
+        this.botSay(botSession, topic.prompt);
+
+        // Stage 2: Second bot reactively replies after 2.5s
+        setTimeout(() => {
+            if (targetSession.actor) {
+                this.botSay(targetSession, reply);
+            }
+            // Clear conversation state after another 2 seconds
+            setTimeout(() => {
+                botSession.inConversation = false;
+                targetSession.inConversation = false;
+            }, 2000);
+        }, 2500);
+    },
+
+    handleBotGlobalShout(botSession) {
+        const text = GLOBAL_SHOUTS[Math.floor(Math.random() * GLOBAL_SHOUTS.length)];
+        this.botShout(botSession, text);
     }
 };
+
+const CONVERSATION_TOPICS = [
+    {
+        prompt: "Man, these Keltirs near the village are getting annoying.",
+        replies: [
+            "Tell me about it! I've killed like a hundred today.",
+            "At least they drop some adena. Slow and steady!",
+            "I'm moving to Orcs soon. Goblins are much better exp."
+        ]
+    },
+    {
+        prompt: "Anyone want to form a party later for Goblins?",
+        replies: [
+            "Sure! I'm a Knight, can tank them easily.",
+            "I'm in if Gandalf joins. We need a healer!",
+            "Count me in, I need to level my Scavenger skills."
+        ]
+    },
+    {
+        prompt: "Did you see that player running around? Crazy gear!",
+        replies: [
+            "Yeah, must have spent hours farming those Goblins.",
+            "I heard they got a weapon drop from an Orc!",
+            "Nice, one day we will get C-grade gear too!"
+        ]
+    },
+    {
+        prompt: "I'm so tired. Talking Island Town is cozy though.",
+        replies: [
+            "True. Sitting by the square feels great after a long hunt.",
+            "Agreed. Let's rest up and get back out there.",
+            "Yeah, recovery is fast when you just sit back."
+        ]
+    },
+    {
+        prompt: "Do you think the server admin is watching us right now?",
+        replies: [
+            "Shh! Don't say that, they might spawn a giant boss on us!",
+            "Haha, probably coding some cool new feature for us bots.",
+            "As long as my pathfinding works, I'm happy!"
+        ]
+    }
+];
+
+const GLOBAL_SHOUTS = [
+    "WTB Keltir Claws 20a each! PM me!",
+    "LFG for Orc farming, level 6 Elf here!",
+    "Anyone got a spare wooden shield? WTB cheap!",
+    "Gimli here, selling dwarven scrap metal near the town square!",
+    "Wow, this server is so smooth! Loving the solo gameplay.",
+    "LFP / Party invite me! Aragorn level 5 ready to hunt!",
+    "Legolas is looking for Gandalf, where you at?",
+    "Selling Keltir meat, fresh and delicious! PM me!",
+    "Who is up for some Orc Archer hunting? Level 8 Knight WTT help.",
+    "This Talking Island is so cozy, perfect classic vibes!"
+];
 
 module.exports = BotManager;
