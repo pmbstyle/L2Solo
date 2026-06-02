@@ -30,9 +30,17 @@ const Formulas = {
             return ((Math.pow(level, 2) *  a) + (level * b) +  c) / d;
         }
 
-        table[0] = [ // 1st class transfer
+        table[0] = [ // Base class
             (level) => { return mp(level, 3, 537, 2460, 100); }, // F
             (level) => { return mp(level, 1, 179,  820,  25); }, // M
+        ];
+        table[1] = [ // 1st class transfer
+            (level) => { return mp(level, 3, 537, 2460, 100) * 1.20; }, // F
+            (level) => { return mp(level, 1, 179,  820,  25) * 1.50; }, // M
+        ];
+        table[2] = [ // 2nd class transfer
+            (level) => { return mp(level, 3, 537, 2460, 100) * 1.40; }, // F
+            (level) => { return mp(level, 1, 179,  820,  25) * 2.00; }, // M
         ];
 
         return table;
@@ -54,8 +62,22 @@ const Formulas = {
         };
     })(),
 
+    getParentClassId(classId) {
+        if (classId >= 0 && classId <= 9) return 0;
+        if (classId >= 10 && classId <= 17) return 10;
+        if (classId >= 18 && classId <= 24) return 18;
+        if (classId >= 25 && classId <= 30) return 25;
+        if (classId >= 31 && classId <= 37) return 31;
+        if (classId >= 38 && classId <= 43) return 38;
+        if (classId >= 44 && classId <= 48) return 44;
+        if (classId >= 49 && classId <= 52) return 49;
+        if (classId >= 53 && classId <= 57) return 53;
+        return 0;
+    },
+
     calcHp(level, classId, con) {
-        return this.calcBaseHp[classId](level) * this.calcBaseMod.CON(con);
+        const parentId = this.getParentClassId(classId);
+        return this.calcBaseHp[parentId](level) * this.calcBaseMod.CON(con);
     },
 
     calcMp(level, kind, classTransfer, men) {

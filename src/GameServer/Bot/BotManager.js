@@ -494,12 +494,72 @@ const BotManager = {
                     const targetLevel = Math.max(1, playerLevel + levelVariance);
                     bot.setLevel(targetLevel);
 
-                    // Recalculate stats & replenish HP/MP
-                    const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
-                    if (typeof CalculateStats === 'function') {
-                        CalculateStats(botSession, bot);
-                    }
-                    bot.fillupVitals();
+                    const getBaseClassId = (race, isSpellcaster) => {
+                        if (race === 0) return isSpellcaster ? 10 : 0;
+                        if (race === 1) return isSpellcaster ? 25 : 18;
+                        if (race === 2) return isSpellcaster ? 38 : 31;
+                        if (race === 3) return isSpellcaster ? 49 : 44;
+                        if (race === 4) return 53;
+                        return 0;
+                    };
+
+                    const getRandomClassForLevel = (baseClassId, level) => {
+                        if (level < 20) return baseClassId;
+                        
+                        const firstProfMap = {
+                            0: [1, 4, 7],
+                            10: [11, 15],
+                            18: [19, 22],
+                            25: [26, 29],
+                            31: [32, 35],
+                            38: [39, 42],
+                            44: [45, 47],
+                            49: [50],
+                            53: [54, 56]
+                        };
+
+                        const secondProfMap = {
+                            1: [2, 3],
+                            4: [5, 6],
+                            7: [8, 9],
+                            11: [12, 13, 14],
+                            15: [16, 17],
+                            19: [20, 21],
+                            22: [23, 24],
+                            26: [27, 28],
+                            29: [30],
+                            32: [33, 34],
+                            35: [36, 37],
+                            39: [40, 41],
+                            42: [43],
+                            45: [46],
+                            47: [48],
+                            50: [51, 52],
+                            54: [55],
+                            56: [57]
+                        };
+
+                        const firstProfs = firstProfMap[baseClassId] || [baseClassId];
+                        const randomFirst = firstProfs[Math.floor(Math.random() * firstProfs.length)];
+
+                        if (level < 40) return randomFirst;
+
+                        const secondProfs = secondProfMap[randomFirst] || [randomFirst];
+                        return secondProfs[Math.floor(Math.random() * secondProfs.length)];
+                    };
+
+                    const baseClass = getBaseClassId(bot.fetchRace(), bot.isSpellcaster());
+                    const targetClassId = getRandomClassForLevel(baseClass, targetLevel);
+                    bot.setClassId(targetClassId);
+
+                    bot.skillset.awardSkills(bot.fetchId(), targetClassId, targetLevel).then(() => {
+                        // Recalculate stats & replenish HP/MP
+                        const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+                        if (typeof CalculateStats === 'function') {
+                            CalculateStats(botSession, bot);
+                        }
+                        bot.fillupVitals();
+                    });
 
                     // Update bot session plans & centers
                     botSession.initialSpawnCoord = { locX: tx, locY: ty, locZ: tz };

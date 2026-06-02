@@ -241,6 +241,14 @@ const Database = {
                 karma: karma
             }, 'id = ? LIMIT 1', id)
         );
+    },
+
+    updateCharacterClassId(id, classId) {
+        return Database.execute(
+            builder.update('characters', {
+                classId: classId
+            }, 'id = ? LIMIT 1', id)
+        );
     }
 };
 

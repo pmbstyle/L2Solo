@@ -1,73 +1,2264 @@
-[{
-    "classId": 0,
-    "template": { "class": "Human Fighter", "race": 0, "crafter": false },
-    "base": { "str": 40, "dex": 30, "con": 43, "int": 21, "wit": 11, "men": 25 },
-    "stats": { "pAtk": 4, "mAtk": 6, "pDef": 80, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 80, "maxMp": 30, "maxLoad": 81900 },
-    "speed": { "walk": 80, "run": 115, "swim": 50 },
-    "collision": { "radius": 9, "size": 23 }
-},{
-    "classId": 10,
-    "template": { "class": "Human Mystic", "race": 0, "crafter": false },
-    "base": { "str": 22, "dex": 21, "con": 27, "int": 41, "wit": 20, "men": 39 },
-    "stats": { "pAtk": 3, "mAtk": 6, "pDef": 54, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 101, "maxMp": 40, "maxLoad": 62500 },
-    "speed": { "walk": 78, "run": 120, "swim": 50 },
-    "collision": { "radius": 7.5, "size": 22.8 }
-},{
-    "classId": 18,
-    "template": { "class": "Elven Fighter", "race": 1, "crafter": false },
-    "base": { "str": 36, "dex": 35, "con": 36, "int": 23, "wit": 14, "men": 26 },
-    "stats": { "pAtk": 4, "mAtk": 6, "pDef": 80, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 89, "maxMp": 30, "maxLoad": 73840 },
-    "speed": { "walk": 90, "run": 125, "swim": 50 },
-    "collision": { "radius": 7.5, "size": 24 }
-},{
-    "classId": 25,
-    "template": { "class": "Elven Mystic", "race": 1, "crafter": false },
-    "base": { "str": 21, "dex": 24, "con": 25, "int": 37, "wit": 23, "men": 40 },
-    "stats": { "pAtk": 3, "mAtk": 6, "pDef": 54, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 104, "maxMp": 40, "maxLoad": 62400 },
-    "speed": { "walk": 85, "run": 122, "swim": 50 },
-    "collision": { "radius": 7.5, "size": 24 }
-},{
-    "classId": 31,
-    "template": { "class": "Dark Elven Fighter", "race": 2, "crafter": false },
-    "base": { "str": 41, "dex": 34, "con": 32, "int": 25, "wit": 12, "men": 26 },
-    "stats": { "pAtk": 4, "mAtk": 6, "pDef": 80, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 94, "maxMp": 30, "maxLoad": 69000 },
-    "speed": { "walk": 85, "run": 122, "swim": 50 },
-    "collision": { "radius": 7.5, "size": 24 }
-},{
-    "classId": 38,
-    "template": { "class": "Dark Elven Mystic", "race": 2, "crafter": false },
-    "base": { "str": 23, "dex": 23, "con": 24, "int": 44, "wit": 19, "men": 37 },
-    "stats": { "pAtk": 3, "mAtk": 6, "pDef": 54, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 106, "maxMp": 40, "maxLoad": 61000 },
-    "speed": { "walk": 85, "run": 122, "swim": 50 },
-    "collision": { "radius": 7.5, "size": 24 }
-},{
-    "classId": 44,
-    "template": { "class": "Orc Fighter", "race": 3, "crafter": false },
-    "base": { "str": 40, "dex": 26, "con": 47, "int": 18, "wit": 12, "men": 27 },
-    "stats": { "pAtk": 4, "mAtk": 6, "pDef": 80, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 80, "maxMp": 30, "maxLoad": 87000 },
-    "speed": { "walk": 70, "run": 117, "swim": 50 },
-    "collision": { "radius": 11, "size": 28 }
-},{
-    "classId": 49,
-    "template": { "class": "Orc Mystic", "race": 3, "crafter": false },
-    "base": { "str": 27, "dex": 24, "con": 31, "int": 31, "wit": 15, "men": 42 },
-    "stats": { "pAtk": 3, "mAtk": 6, "pDef": 54, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 95, "maxMp": 40, "maxLoad": 68000 },
-    "speed": { "walk": 70, "run": 121, "swim": 50 },
-    "collision": { "radius": 7, "size": 27.5 }
-},{
-    "classId": 53,
-    "template": { "class": "Dwarven Fighter", "race": 4, "crafter": true },
-    "base": { "str": 39, "dex": 29, "con": 45, "int": 20, "wit": 10, "men": 27 },
-    "stats": { "pAtk": 4, "mAtk": 6, "pDef": 80, "mDef": 41, "crit": 40, "atkSpd": 300, "castSpd": 333 },
-    "vitals": { "maxHp": 80, "maxMp": 30, "maxLoad": 83000 },
-    "speed": { "walk": 80, "run": 115, "swim": 50 },
-    "collision": { "radius": 9, "size": 18 }
-}]
+[
+    {
+        "classId": 0,
+        "template": {
+            "class": "Human Fighter",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 1,
+        "template": {
+            "class": "Warrior",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 2,
+        "template": {
+            "class": "Gladiator",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 3,
+        "template": {
+            "class": "Warlord",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 4,
+        "template": {
+            "class": "Human Knight",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 5,
+        "template": {
+            "class": "Paladin",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 6,
+        "template": {
+            "class": "Dark Avenger",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 7,
+        "template": {
+            "class": "Rogue",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 8,
+        "template": {
+            "class": "Treasure Hunter",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 9,
+        "template": {
+            "class": "Hawkeye",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 11,
+            "men": 25
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 81900
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 23
+        }
+    },
+    {
+        "classId": 10,
+        "template": {
+            "class": "Human Mystic",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 11,
+        "template": {
+            "class": "Human Wizard",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 12,
+        "template": {
+            "class": "Sorcerer",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 13,
+        "template": {
+            "class": "Necromancer",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 14,
+        "template": {
+            "class": "Warlock",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 15,
+        "template": {
+            "class": "Cleric",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 16,
+        "template": {
+            "class": "Bishop",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 17,
+        "template": {
+            "class": "Prophet",
+            "race": 0,
+            "crafter": false
+        },
+        "base": {
+            "str": 22,
+            "dex": 21,
+            "con": 27,
+            "int": 41,
+            "wit": 20,
+            "men": 39
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 101,
+            "maxMp": 40,
+            "maxLoad": 62500
+        },
+        "speed": {
+            "walk": 78,
+            "run": 120,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 22.8
+        }
+    },
+    {
+        "classId": 18,
+        "template": {
+            "class": "Elven Fighter",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 19,
+        "template": {
+            "class": "Elven Knight",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 20,
+        "template": {
+            "class": "Temple Knight",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 21,
+        "template": {
+            "class": "Swordsinger",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 22,
+        "template": {
+            "class": "Elven Scout",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 23,
+        "template": {
+            "class": "Plains Walker",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 24,
+        "template": {
+            "class": "Silver Ranger",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 36,
+            "dex": 35,
+            "con": 36,
+            "int": 23,
+            "wit": 14,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 89,
+            "maxMp": 30,
+            "maxLoad": 73840
+        },
+        "speed": {
+            "walk": 90,
+            "run": 125,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 25,
+        "template": {
+            "class": "Elven Mystic",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 26,
+        "template": {
+            "class": "Elven Wizard",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 27,
+        "template": {
+            "class": "Spellsinger",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 28,
+        "template": {
+            "class": "Elemental Summoner",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 29,
+        "template": {
+            "class": "Elven Oracle",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 30,
+        "template": {
+            "class": "Elven Elder",
+            "race": 1,
+            "crafter": false
+        },
+        "base": {
+            "str": 21,
+            "dex": 24,
+            "con": 25,
+            "int": 37,
+            "wit": 23,
+            "men": 40
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 104,
+            "maxMp": 40,
+            "maxLoad": 62400
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 31,
+        "template": {
+            "class": "Dark Elven Fighter",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 32,
+        "template": {
+            "class": "Palus Knight",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 33,
+        "template": {
+            "class": "Shillien Knight",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 34,
+        "template": {
+            "class": "Bladedancer",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 35,
+        "template": {
+            "class": "Assassin",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 36,
+        "template": {
+            "class": "Abyss Walker",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 37,
+        "template": {
+            "class": "Phantom Ranger",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 41,
+            "dex": 34,
+            "con": 32,
+            "int": 25,
+            "wit": 12,
+            "men": 26
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 94,
+            "maxMp": 30,
+            "maxLoad": 69000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 38,
+        "template": {
+            "class": "Dark Elven Mystic",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 39,
+        "template": {
+            "class": "Dark Wizard",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 40,
+        "template": {
+            "class": "Spellhowler",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 41,
+        "template": {
+            "class": "Phantom Summoner",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 42,
+        "template": {
+            "class": "Shillien Oracle",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 43,
+        "template": {
+            "class": "Shillien Elder",
+            "race": 2,
+            "crafter": false
+        },
+        "base": {
+            "str": 23,
+            "dex": 23,
+            "con": 24,
+            "int": 44,
+            "wit": 19,
+            "men": 37
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 106,
+            "maxMp": 40,
+            "maxLoad": 61000
+        },
+        "speed": {
+            "walk": 85,
+            "run": 122,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7.5,
+            "size": 24
+        }
+    },
+    {
+        "classId": 44,
+        "template": {
+            "class": "Orc Fighter",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 26,
+            "con": 47,
+            "int": 18,
+            "wit": 12,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 87000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 117,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 11,
+            "size": 28
+        }
+    },
+    {
+        "classId": 45,
+        "template": {
+            "class": "Orc Raider",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 26,
+            "con": 47,
+            "int": 18,
+            "wit": 12,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 87000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 117,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 11,
+            "size": 28
+        }
+    },
+    {
+        "classId": 46,
+        "template": {
+            "class": "Destroyer",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 26,
+            "con": 47,
+            "int": 18,
+            "wit": 12,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 87000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 117,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 11,
+            "size": 28
+        }
+    },
+    {
+        "classId": 47,
+        "template": {
+            "class": "Orc Monk",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 26,
+            "con": 47,
+            "int": 18,
+            "wit": 12,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 87000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 117,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 11,
+            "size": 28
+        }
+    },
+    {
+        "classId": 48,
+        "template": {
+            "class": "Tyrant",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 26,
+            "con": 47,
+            "int": 18,
+            "wit": 12,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 87000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 117,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 11,
+            "size": 28
+        }
+    },
+    {
+        "classId": 49,
+        "template": {
+            "class": "Orc Mystic",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 27,
+            "dex": 24,
+            "con": 31,
+            "int": 31,
+            "wit": 15,
+            "men": 42
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 95,
+            "maxMp": 40,
+            "maxLoad": 68000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 121,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7,
+            "size": 27.5
+        }
+    },
+    {
+        "classId": 50,
+        "template": {
+            "class": "Orc Shaman",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 27,
+            "dex": 24,
+            "con": 31,
+            "int": 31,
+            "wit": 15,
+            "men": 42
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 95,
+            "maxMp": 40,
+            "maxLoad": 68000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 121,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7,
+            "size": 27.5
+        }
+    },
+    {
+        "classId": 51,
+        "template": {
+            "class": "Overlord",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 27,
+            "dex": 24,
+            "con": 31,
+            "int": 31,
+            "wit": 15,
+            "men": 42
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 95,
+            "maxMp": 40,
+            "maxLoad": 68000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 121,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7,
+            "size": 27.5
+        }
+    },
+    {
+        "classId": 52,
+        "template": {
+            "class": "Warcryer",
+            "race": 3,
+            "crafter": false
+        },
+        "base": {
+            "str": 27,
+            "dex": 24,
+            "con": 31,
+            "int": 31,
+            "wit": 15,
+            "men": 42
+        },
+        "stats": {
+            "pAtk": 3,
+            "mAtk": 6,
+            "pDef": 54,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 95,
+            "maxMp": 40,
+            "maxLoad": 68000
+        },
+        "speed": {
+            "walk": 70,
+            "run": 121,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 7,
+            "size": 27.5
+        }
+    },
+    {
+        "classId": 53,
+        "template": {
+            "class": "Dwarven Fighter",
+            "race": 4,
+            "crafter": true
+        },
+        "base": {
+            "str": 39,
+            "dex": 29,
+            "con": 45,
+            "int": 20,
+            "wit": 10,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 83000
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 18
+        }
+    },
+    {
+        "classId": 54,
+        "template": {
+            "class": "Scavenger",
+            "race": 4,
+            "crafter": true
+        },
+        "base": {
+            "str": 39,
+            "dex": 29,
+            "con": 45,
+            "int": 20,
+            "wit": 10,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 83000
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 18
+        }
+    },
+    {
+        "classId": 55,
+        "template": {
+            "class": "Bounty Hunter",
+            "race": 4,
+            "crafter": true
+        },
+        "base": {
+            "str": 39,
+            "dex": 29,
+            "con": 45,
+            "int": 20,
+            "wit": 10,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 83000
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 18
+        }
+    },
+    {
+        "classId": 56,
+        "template": {
+            "class": "Artisan",
+            "race": 4,
+            "crafter": true
+        },
+        "base": {
+            "str": 39,
+            "dex": 29,
+            "con": 45,
+            "int": 20,
+            "wit": 10,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 83000
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 18
+        }
+    },
+    {
+        "classId": 57,
+        "template": {
+            "class": "Warsmith",
+            "race": 4,
+            "crafter": true
+        },
+        "base": {
+            "str": 39,
+            "dex": 29,
+            "con": 45,
+            "int": 20,
+            "wit": 10,
+            "men": 27
+        },
+        "stats": {
+            "pAtk": 4,
+            "mAtk": 6,
+            "pDef": 80,
+            "mDef": 41,
+            "crit": 40,
+            "atkSpd": 300,
+            "castSpd": 333
+        },
+        "vitals": {
+            "maxHp": 80,
+            "maxMp": 30,
+            "maxLoad": 83000
+        },
+        "speed": {
+            "walk": 80,
+            "run": 115,
+            "swim": 50
+        },
+        "collision": {
+            "radius": 9,
+            "size": 18
+        }
+    }
+]
