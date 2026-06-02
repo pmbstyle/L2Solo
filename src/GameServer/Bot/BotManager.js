@@ -54,6 +54,7 @@ const BotManager = {
             bots.forEach((botData, idx) => {
                 this.provisionAndSpawn(botData, idx);
             });
+            this.startDynamicScalingMonitor();
         }, 5000);
     },
 
@@ -402,6 +403,131 @@ const BotManager = {
             coords.locZ = Math.floor(bestSector.sumZ / bestSector.count);
         }
         return coords;
+    },
+
+    startDynamicScalingMonitor() {
+        setInterval(() => {
+            try {
+                this.monitorAndScaleBots();
+            } catch (err) {
+                console.error("Dynamic Scaling Monitor Error:", err);
+            }
+        }, 5000); // Check and scale bots every 5 seconds
+    },
+
+    monitorAndScaleBots() {
+        const World = invoke('GameServer/World/World');
+        
+        // 1. Get all online real players
+        const onlinePlayers = World.user.sessions.filter(s => 
+            s.actor && 
+            s.actor.fetchIsOnline() && 
+            s.accountId && 
+            !s.accountId.startsWith('bot_')
+        );
+
+        if (onlinePlayers.length === 0) return;
+
+        // Target bots we want to maintain around each player
+        const TARGET_BOTS_COUNT = 8;
+
+        onlinePlayers.forEach(playerSession => {
+            const player = playerSession.actor;
+            const px = player.fetchLocX();
+            const py = player.fetchLocY();
+            const pz = player.fetchLocZ();
+            const playerLevel = player.fetchLevel();
+
+            // 2. Filter bots that are already close to this player (within 2500 radius)
+            const nearbyBots = this.sessions.filter(botSession => {
+                const bot = botSession.actor;
+                if (!bot || !bot.fetchIsOnline()) return false;
+
+                const dx = bot.fetchLocX() - px;
+                const dy = bot.fetchLocY() - py;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                return dist <= 2500;
+            });
+
+            // 3. If nearby bots count is less than target, teleport far/idle bots to this player
+            if (nearbyBots.length < TARGET_BOTS_COUNT) {
+                const countToTeleport = TARGET_BOTS_COUNT - nearbyBots.length;
+
+                // Find bots that are currently far (> 3000) from this player, and not close to any other player
+                const farBots = this.sessions.filter(botSession => {
+                    const bot = botSession.actor;
+                    if (!bot || !bot.fetchIsOnline()) return false;
+
+                    const dx = bot.fetchLocX() - px;
+                    const dy = bot.fetchLocY() - py;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist <= 3000) return false; // Too close to current player to be considered "far"
+
+                    // Make sure it's not near any other online player either
+                    const isNearOtherPlayer = onlinePlayers.some(otherPlayerSession => {
+                        if (otherPlayerSession === playerSession) return false;
+                        const op = otherPlayerSession.actor;
+                        const odx = bot.fetchLocX() - op.fetchLocX();
+                        const ody = bot.fetchLocY() - op.fetchLocY();
+                        const odist = Math.sqrt(odx * odx + ody * ody);
+                        return odist <= 2500;
+                    });
+
+                    return !isNearOtherPlayer;
+                });
+
+                // Teleport the bots and scale their levels
+                for (let i = 0; i < Math.min(countToTeleport, farBots.length); i++) {
+                    const botSession = farBots[i];
+                    const bot = botSession.actor;
+
+                    // Randomized position around player (between 800 and 2200 units)
+                    const angle = Math.random() * 2 * Math.PI;
+                    const rad = 800 + Math.random() * 1400;
+                    const tx = Math.floor(px + Math.cos(angle) * rad);
+                    const ty = Math.floor(py + Math.sin(angle) * rad);
+                    const tz = pz;
+
+                    // Dynamic Level Scaling (playerLevel ± 1)
+                    const levelVariance = Math.floor(Math.random() * 3) - 1; // -1, 0, or 1
+                    const targetLevel = Math.max(1, playerLevel + levelVariance);
+                    bot.setLevel(targetLevel);
+
+                    // Recalculate stats & replenish HP/MP
+                    const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+                    if (typeof CalculateStats === 'function') {
+                        CalculateStats(botSession, bot);
+                    }
+                    bot.fillupVitals();
+
+                    // Update bot session plans & centers
+                    botSession.initialSpawnCoord = { locX: tx, locY: ty, locZ: tz };
+                    if (bot.fetchKarma() > 0 || bot.fetchName() === "Aragorn") {
+                        botSession.plan = 'pk_hunting';
+                        bot.setPk(5);
+                        bot.setKarma(9999);
+                    } else {
+                        // Reset gossip/hunt plans dynamically
+                        botSession.plan = (botSession.townGossip) ? 'resting' : 'hunting';
+                        if (botSession.plan === 'resting') {
+                            bot.state.setSeated(true);
+                        } else {
+                            bot.state.setSeated(false);
+                        }
+                    }
+
+                    // Perform smooth teleportation and sync
+                    const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+                    if (TeleportTo && typeof TeleportTo === 'function') {
+                        TeleportTo(botSession, bot, { locX: tx, locY: ty, locZ: tz });
+                    }
+
+                    console.info("BotManager :: Dynamically scaled & teleported bot %s (Level %d) to player %s (Level %d) at %d, %d", 
+                        bot.fetchName(), bot.fetchLevel(), player.fetchName(), player.fetchLevel(), tx, ty);
+                }
+            }
+        });
     }
 };
 
