@@ -84,7 +84,29 @@ class Backpack extends BackpackModel {
                 else
                 if (item.fetchSelfId() === 736) {
                     const details = utils.crushOb(DataCache.skills.find((ob) => ob.selfId === 2013) ?? {});
-                    session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), new SkillModel(details)), session.actor);
+                    const skill = new SkillModel(details);
+                    const castTime = skill.fetchHitTime() || 20000;
+
+                    if (session.actor.state.fetchCasts()) {
+                        return;
+                    }
+
+                    session.actor.state.setCasts(true);
+                    session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
+                    session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+
+                    setTimeout(() => {
+                        session.actor.state.setCasts(false);
+                        if (session.actor.isDead()) {
+                            return;
+                        }
+
+                        const coords = { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
+                        this.deleteItem(session, id, 1, () => {
+                            const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+                            TeleportTo(session, session.actor, coords);
+                        });
+                    }, castTime);
                     return;
                 }
 
