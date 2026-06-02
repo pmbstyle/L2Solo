@@ -17,14 +17,14 @@ function receivedHit(session, actor, hit) {
             const Database = invoke('Database');
             const ServerResponse = invoke('GameServer/Network/Response');
 
-            if (victim.fetchPvpFlag() === 1) {
-                // Legitimate PvP kill
+            if (victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0) {
+                // Legitimate PvP or PK-hunting kill
                 attacker.setPvp(attacker.fetchPvp() + 1);
                 session.dataSendToMe(ServerResponse.userInfo(attacker));
                 session.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
                 Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma());
             } else {
-                // PK kill
+                // PK kill (murdering an innocent white player/bot)
                 attacker.setPk(attacker.fetchPk() + 1);
                 attacker.setKarma(attacker.fetchKarma() + 360);
                 session.dataSendToMe(ServerResponse.userInfo(attacker));
