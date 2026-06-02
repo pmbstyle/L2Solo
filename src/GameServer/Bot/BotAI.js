@@ -543,13 +543,18 @@ const BotAI = {
                 }
                 this.executeCombat(session, bot, closestMonster, Generics);
             } else {
-                // Wandering around spawn coords
-                if (Math.random() < 0.30) {
-                    const randomX = bot.fetchLocX() + utils.oneFromSpan(-150, 150);
-                    const randomY = bot.fetchLocY() + utils.oneFromSpan(-150, 150);
+                // Wandering to search for monsters in starting zones if none nearby
+                if (Math.random() < 0.50) {
+                    const spawns = newbieSpawnCoords(bot.fetchClassId());
+                    const baseCoord = spawns[Math.floor(Math.random() * spawns.length)];
+                    
+                    // Wander up to 2500 units away from their newbie spawn base coordinate to hunt!
+                    const wanderX = baseCoord.locX + utils.oneFromSpan(-2500, 2500);
+                    const wanderY = baseCoord.locY + utils.oneFromSpan(-2500, 2500);
+                    
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: randomX, locY: randomY, locZ: bot.fetchLocZ() }
+                        to: { locX: wanderX, locY: wanderY, locZ: bot.fetchLocZ() }
                     });
                 }
             }
@@ -618,15 +623,6 @@ const BotAI = {
             ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
             session.actor
         );
-        // Also broadcast to standard users' sockets explicitly
-        World.user.sessions.forEach((user) => {
-            if (user.socket && typeof user.socket.write === 'function') {
-                const header = Buffer.alloc(2);
-                const data = ServerResponse.speak(session.actor, { kind: 0x00, text: text });
-                header.writeInt16LE(utils.size(data) + 2);
-                user.socket.write(Buffer.concat([header, data]));
-            }
-        });
     }
 };
 

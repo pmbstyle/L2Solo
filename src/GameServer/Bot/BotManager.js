@@ -285,15 +285,6 @@ const BotManager = {
             ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
             session.actor
         );
-        
-        World.user.sessions.forEach((user) => {
-            if (user.socket && typeof user.socket.write === 'function') {
-                const header = Buffer.alloc(2);
-                const data = ServerResponse.speak(session.actor, { kind: 0x00, text: text });
-                header.writeInt16LE(utils.size(data) + 2);
-                user.socket.write(Buffer.concat([header, data]));
-            }
-        });
     },
 
     botShout(session, text) {
