@@ -46,5 +46,6 @@ module.exports = {
              walkAndRun: require('./WalkAndRun'),
     partySmallWindowAll: require('./PartySmallWindowAll'),
  partySmallWindowDelete: require('./PartySmallWindowDelete'),
-   abnormalStatusUpdate: require('./AbnormalStatusUpdate')
+   abnormalStatusUpdate: require('./AbnormalStatusUpdate'),
+              joinParty: require('./JoinParty')
 };

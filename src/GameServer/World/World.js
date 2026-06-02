@@ -68,6 +68,9 @@ const World = {
                     });
                 }
 
+                // Send JoinParty (0x3a) to client to initialize party UI structure and prevent crash
+                session.dataSendToMe(ServerResponse.joinParty(1));
+
                 // 2. Add companion to party HUD sidebar
                 session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [user]));
 

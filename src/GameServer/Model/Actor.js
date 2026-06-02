@@ -56,6 +56,10 @@ class ActorModel extends CreatureModel {
         this.model.pvpFlag = data;
     }
 
+    setClassId(data) {
+        this.model.classId = data;
+    }
+
     // Get
 
     fetchPvpFlag() {
