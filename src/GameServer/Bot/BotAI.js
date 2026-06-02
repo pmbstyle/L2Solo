@@ -115,6 +115,53 @@ const BotAI = {
             return; // Skip normal ticks while fleeing
         }
 
+        // Handle getting_buffed plan for town guides
+        if (session.plan === 'getting_buffed') {
+            const guidePt = new SpeckMath.Point3D(-84081, 243227, -3723);
+            const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+            const dist = botPt.distance(guidePt);
+
+            if (dist > 250) {
+                if (Math.random() < 0.20 || !bot.state.inMotion()) {
+                    bot.moveTo({
+                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                        to: { locX: -84081, locY: 243227, locZ: -3723 }
+                    });
+                }
+            } else {
+                if (!bot.activeBuffs) {
+                    bot.activeBuffs = {};
+                }
+                const duration = Date.now() + 20 * 60 * 1000;
+                bot.activeBuffs.windWalk = duration;
+                bot.activeBuffs.shield = duration;
+                bot.activeBuffs.haste = duration;
+
+                bot.setHp(bot.fetchMaxHp());
+                bot.setMp(bot.fetchMaxMp());
+                bot.statusUpdateVitals(bot);
+                
+                invoke(path.actor).calculateStats(session, bot);
+                session.dataSendToMe(ServerResponse.userInfo(bot));
+                
+                this.say(session, "Thank you, Newbie Guide! Fully blessed and ready to hunt!");
+                session.plan = 'hunting';
+            }
+            return;
+        }
+
+        // Expire buffs check for hunting bots
+        if (session.plan === 'hunting' && bot.fetchLevel() <= 25 && bot.fetchKarma() === 0 && !session.followPlayerSession) {
+            const buffsExpired = !bot.activeBuffs || !bot.activeBuffs.windWalk || Date.now() > bot.activeBuffs.windWalk;
+            if (buffsExpired) {
+                session.plan = 'getting_buffed';
+                session.currentTargetId = undefined;
+                bot.automation.abortAll(bot);
+                this.say(session, "My newbie blessings have expired! Heading to the Newbie Guide to get buffed.");
+                return;
+            }
+        }
+
         // ================= PK Spotting & Hunting AI Checks =================
         const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 

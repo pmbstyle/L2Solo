@@ -34,7 +34,7 @@ function setCollectiveTotalMAtk(actor) {
 function setCollectiveTotalPDef(actor) {
     const pDef = actor.backpack.fetchTotalArmorPDef(actor.isSpellcaster()) ?? actor.fetchPDef();
     let base = Formulas.calcPDef(actor.fetchLevel(), pDef);
-    if (actor.activeBuffs && actor.activeBuffs.shield) {
+    if (actor.activeBuffs && actor.activeBuffs.shield && Date.now() < actor.activeBuffs.shield) {
         base = Math.round(base * 1.15); // +15% P.Def
     }
     actor.setCollectivePDef(base);
@@ -67,7 +67,7 @@ function setCollectiveTotalCritical(actor) {
 function setCollectiveTotalAtkSpd(actor) {
     const atkSpd = actor.backpack.fetchTotalWeaponAtkSpd() ?? actor.fetchAtkSpd();
     let base   = Formulas.calcAtkSpd(actor.fetchDex(), atkSpd);
-    if (actor.activeBuffs && actor.activeBuffs.haste) {
+    if (actor.activeBuffs && actor.activeBuffs.haste && Date.now() < actor.activeBuffs.haste) {
         base = Math.round(base * 1.15); // +15% Atk.Spd
     }
     actor.setCollectiveAtkSpd(base);
@@ -85,7 +85,7 @@ function setCollectiveTotalWalkSpd(actor) {
 
 function setCollectiveTotalRunSpd(actor) {
     let base = Formulas.calcSpeed(actor.fetchDex());
-    if (actor.activeBuffs && actor.activeBuffs.windWalk) {
+    if (actor.activeBuffs && actor.activeBuffs.windWalk && Date.now() < actor.activeBuffs.windWalk) {
         base += 33; // +33 Run Speed
     }
     actor.setCollectiveRunSpd(base);

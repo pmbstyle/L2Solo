@@ -300,19 +300,19 @@ function npcTalkResponse(session, data) {
                 const buffType = parts[1];
 
                 if (buffType === 'windwalk') {
-                    actor.activeBuffs.windWalk = true;
+                    actor.activeBuffs.windWalk = Date.now() + 20 * 60 * 1000;
                     invoke(path.actor).calculateStats(session, actor);
                     session.dataSendToMe(ServerResponse.userInfo(actor));
                     session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Wind Walk! May the wind guide your steps." }));
                 }
                 else if (buffType === 'shield') {
-                    actor.activeBuffs.shield = true;
+                    actor.activeBuffs.shield = Date.now() + 20 * 60 * 1000;
                     invoke(path.actor).calculateStats(session, actor);
                     session.dataSendToMe(ServerResponse.userInfo(actor));
                     session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Shield! May your defenses be unbreakable." }));
                 }
                 else if (buffType === 'haste') {
-                    actor.activeBuffs.haste = true;
+                    actor.activeBuffs.haste = Date.now() + 20 * 60 * 1000;
                     invoke(path.actor).calculateStats(session, actor);
                     session.dataSendToMe(ServerResponse.userInfo(actor));
                     session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Haste! Strike with the speed of lightning." }));
