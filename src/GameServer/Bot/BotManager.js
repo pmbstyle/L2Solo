@@ -11,6 +11,14 @@ const BOTS_TO_SPAWN = [
     { name: "Bot_Gandalf", race: 0, sex: 0, classId: 10, face: 0, hair: 2, hairColor: 0 }  // Human Mage
 ];
 
+const MERCHANT_BOTS = [
+    { name: "Merchant_TI",     race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: -84168, locY: 244729, locZ: -3730 },
+    { name: "Merchant_Gludio", race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: -12522, locY: 122926, locZ: -3118 },
+    { name: "Merchant_Dion",   race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: 15814,  locY: 143129, locZ: -2707 },
+    { name: "Merchant_Giran",  race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: 83550,  locY: 148093, locZ: -3406 },
+    { name: "Merchant_Oren",   race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: 83110,  locY: 53327,  locZ: -1497 }
+];
+
 const EXTRA_BOTS_COUNT = 10; // Configurable: Set to 20, 50, or more to scale up the bot count!
 
 const FANTASY_NAMES = [
@@ -32,7 +40,7 @@ const BotManager = {
     init() {
         console.info("BotManager :: Initializing automated SimPlayers...");
         
-        const bots = [...BOTS_TO_SPAWN];
+        const bots = [...BOTS_TO_SPAWN, ...MERCHANT_BOTS];
 
         // Dynamically generate extra bots
         for (let i = 0; i < EXTRA_BOTS_COUNT; i++) {
@@ -59,7 +67,7 @@ const BotManager = {
     },
 
     provisionAndSpawn(botData, idx) {
-        const username = "bot_" + botData.name.toLowerCase();
+        const username = ("bot_" + botData.name.toLowerCase()).slice(0, 16);
         
         // 1. Ensure Bot Account exists
         Database.fetchUserPassword(username).then((rows) => {
@@ -80,9 +88,9 @@ const BotManager = {
                 Shared.fetchClassInformation(botData.classId).then((classInfo) => {
                     // Spawn near Town Center of Talking Island with slight offsets
                     const coords = {
-                        locX: -84318 + (idx * 60),
-                        locY: 244579 + (idx * 60),
-                        locZ: -3730
+                        locX: botData.locX ?? (-84318 + (idx * 60)),
+                        locY: botData.locY ?? (244579 + (idx * 60)),
+                        locZ: botData.locZ ?? -3730
                     };
 
                     const charData = {
@@ -90,9 +98,9 @@ const BotManager = {
                         race: botData.race,
                         sex: botData.sex,
                         classId: botData.classId,
-                        hair: botData.hair,
-                        hairColor: botData.hairColor,
-                        face: botData.face,
+                        hair: botData.hair ?? 0,
+                        hairColor: botData.hairColor ?? 0,
+                        face: botData.face ?? 0,
                         ...classInfo.vitals,
                         ...coords
                     };
@@ -118,8 +126,18 @@ const BotManager = {
             if (!character) return;
 
             Shared.fetchClassInformation(character.classId).then((classInfo) => {
+                // Reset merchant bots back to their exact designated coordinates on load
+                if (character.name.startsWith("Merchant_")) {
+                    const config = MERCHANT_BOTS.find(b => b.name === character.name);
+                    if (config) {
+                        character.locX = config.locX;
+                        character.locY = config.locY;
+                        character.locZ = config.locZ;
+                    }
+                }
+
                 // Randomize initial location slightly to scatter them across the starting area
-                if (character.name !== "Bot_Gimli" && character.name !== "Bot_Legolas" && character.name !== "Bot_Gandalf" && character.name !== "Aragorn") {
+                if (character.name !== "Bot_Gimli" && character.name !== "Bot_Legolas" && character.name !== "Bot_Gandalf" && character.name !== "Aragorn" && !character.name.startsWith("Merchant_")) {
                     character.locX += (Math.random() - 0.5) * 1600;
                     character.locY += (Math.random() - 0.5) * 1600;
                 }
@@ -134,10 +152,6 @@ const BotManager = {
                     locZ: character.locZ
                 };
 
-                // Spawn the bot actor in the World
-                World.insertUser(session);
-                session.actor.enterWorld();
-                
                 // Designate some extra bots as permanent town gossips, and Aragorn as PK!
                 if (character.name !== "Bot_Gimli" && character.name !== "Bot_Legolas" && character.name !== "Bot_Gandalf") {
                     if (character.name === "Aragorn") {
@@ -156,6 +170,9 @@ const BotManager = {
                             }
                             utils.infoSuccess("BotManager", "PK Bot %s (Level %d) is hunting at %d, %d", character.name, character.level, densityCoord.locX, densityCoord.locY);
                         }, 8000);
+                    } else if (character.name.startsWith("Merchant_")) {
+                        session.plan = 'merchant';
+                        session.actor.setTitle("Local Drops");
                     } else if (Math.random() < 0.40) {
                         session.plan = 'resting';
                         session.townGossip = true;
@@ -167,6 +184,14 @@ const BotManager = {
                     session.plan = 'hunting';
                 }
 
+                // Spawn the bot actor in the World
+                World.insertUser(session);
+                session.actor.enterWorld();
+
+                // Explicitly send the bot's CharInfo to other players in the world
+                const ServerResponse = invoke('GameServer/Network/Response');
+                session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
+
                 // Start AI loop
                 BotAI.init(session);
                 
@@ -174,6 +199,7 @@ const BotManager = {
                 let modeText = "[Hunting Mode]";
                 if (session.townGossip) modeText = "[Gossip Mode]";
                 if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
+                if (session.plan === 'merchant') modeText = "[Merchant Mode]";
                 utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
             });
         });
@@ -442,6 +468,7 @@ const BotManager = {
             const nearbyBots = this.sessions.filter(botSession => {
                 const bot = botSession.actor;
                 if (!bot || !bot.fetchIsOnline()) return false;
+                if (botSession.plan === 'merchant') return false;
 
                 const dx = bot.fetchLocX() - px;
                 const dy = bot.fetchLocY() - py;
@@ -456,6 +483,7 @@ const BotManager = {
                 // Find bots that are currently far (> 2500) from this player, and not close to any other player
                 const farBots = this.sessions.filter(botSession => {
                     if (botSession.followPlayerSession) return false; // Do not dynamically scale/teleport active companion bots!
+                    if (botSession.plan === 'merchant') return false;
                     const bot = botSession.actor;
                     if (!bot || !bot.fetchIsOnline()) return false;
 

@@ -12,6 +12,8 @@ function partySmallWindowAll(partyLeaderId, distribution, members) {
         packet
             .writeD(member.fetchId())
             .writeS(member.fetchName())
+            .writeD(0) // curCP
+            .writeD(0) // maxCP
             .writeD(member.fetchHp())
             .writeD(member.fetchMaxHp())
             .writeD(member.fetchMp())

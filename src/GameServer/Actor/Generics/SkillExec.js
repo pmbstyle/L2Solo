@@ -14,6 +14,11 @@ function skillExec(session, actor, data) {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, skill.fetchDistance(), () => {
                 if (data.ctrl) {
+                    if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
+                        const ServerResponse = invoke('GameServer/Network/Response');
+                        session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Вы не можете атаковать игроков в мирной зоне." }));
+                        return;
+                    }
                     actor.attack.remoteHit(session, user, skill);
                 }
             });

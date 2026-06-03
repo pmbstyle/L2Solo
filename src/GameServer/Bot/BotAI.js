@@ -48,7 +48,8 @@ const States = {
     shopping: invoke('GameServer/Bot/AI/States/ShoppingState'),
     following: invoke('GameServer/Bot/AI/States/FollowingState'),
     hunting: invoke('GameServer/Bot/AI/States/HuntingState'),
-    pk_hunting: invoke('GameServer/Bot/AI/States/PkHuntingState')
+    pk_hunting: invoke('GameServer/Bot/AI/States/PkHuntingState'),
+    merchant: { tick() {} }
 };
 
 const BotAI = {
@@ -118,18 +119,27 @@ const BotAI = {
                     spawnTarget.locX += (Math.random() - 0.5) * 800;
                     spawnTarget.locY += (Math.random() - 0.5) * 800;
                 } else {
-                    session.plan = 'hunting'; // Reset plan
-                    
-                    // Teleport back to spawn coordinate to prevent getting stuck in deep water
-                    if (!session.initialSpawnCoord) {
-                        session.initialSpawnCoord = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                    if (bot.fetchName().startsWith("Merchant_")) {
+                        session.plan = 'merchant';
+                        spawnTarget = {
+                            locX: session.initialSpawnCoord.locX,
+                            locY: session.initialSpawnCoord.locY,
+                            locZ: session.initialSpawnCoord.locZ
+                        };
+                    } else {
+                        session.plan = 'hunting'; // Reset plan
+                        
+                        // Teleport back to spawn coordinate to prevent getting stuck in deep water
+                        if (!session.initialSpawnCoord) {
+                            session.initialSpawnCoord = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                        }
+                        
+                        spawnTarget = {
+                            locX: session.initialSpawnCoord.locX + (Math.random() - 0.5) * 1000,
+                            locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
+                            locZ: session.initialSpawnCoord.locZ
+                        };
                     }
-                    
-                    spawnTarget = {
-                        locX: session.initialSpawnCoord.locX + (Math.random() - 0.5) * 1000,
-                        locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
-                        locZ: session.initialSpawnCoord.locZ
-                    };
                 }
                 
                 Generics.teleportTo(session, bot, spawnTarget);

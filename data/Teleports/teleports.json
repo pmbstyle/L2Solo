@@ -129,9 +129,9 @@
 },{
     "id": 1008,
     "template": { "description": "Dion Town", "price": 1000 },
-    "spawns": [{ "locX": 83396, "locY": 147904, "locZ": -3404 }]
+    "spawns": [{ "locX": 15631, "locY": 142885, "locZ": -2704 }]
 },{
     "id": 1009,
     "template": { "description": "Giran Town", "price": 1500 },
-    "spawns": [{ "locX": 15631, "locY": 142885, "locZ": -2704 }]
+    "spawns": [{ "locX": 83396, "locY": 147904, "locZ": -3404 }]
 }]

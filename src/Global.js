@@ -81,6 +81,21 @@ global.utils = {
         return require('objcrush')(ob);
     },
 
+    isInPeaceZone(locX, locY) {
+        const PEACE_ZONES = [
+            { x: -84318, y: 244579, r: 8000 }, // TI
+            { x: -12672, y: 122776, r: 6000 }, // Gludio
+            { x: 15664,  y: 142979, r: 6000 }, // Dion
+            { x: 83400,  y: 147943, r: 8000 }, // Giran
+            { x: 82960,  y: 53177,  r: 6000 }  // Oren
+        ];
+        return PEACE_ZONES.some(zone => {
+            const dx = zone.x - locX;
+            const dy = zone.y - locY;
+            return (dx * dx + dy * dy) <= (zone.r * zone.r);
+        });
+    },
+
     totalMemUsed() {
         console.info('NodeL2     :: Total Mem Used -> %f MB', Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100);
     },

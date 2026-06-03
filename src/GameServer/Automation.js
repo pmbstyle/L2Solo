@@ -156,6 +156,12 @@ class Automation extends SelectedModel {
         creature.state.setTowards(false);
         Timer.clear(this.timer.action);
         Timer.clear(this.timer.pickup);
+
+        const session = creature.session;
+        if (session && session.moveTimer) {
+            clearInterval(session.moveTimer);
+            session.moveTimer = null;
+        }
     }
 }
 

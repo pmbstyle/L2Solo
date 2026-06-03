@@ -13,6 +13,7 @@ function updateEnvironment(session, actor) {
 
         World.fetchVisibleUsers(session, actor).forEach((user) => {
             session.dataSendToMe(ServerResponse.charInfo(user.actor));
+            user.dataSendToMe(ServerResponse.charInfo(actor));
         });
 
         actor.previousXY = actorArea.toCoords();
