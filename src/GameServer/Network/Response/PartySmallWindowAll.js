@@ -4,24 +4,30 @@ function partySmallWindowAll(partyLeaderId, distribution, members) {
     const packet = new SendPacket(0x4e);
 
     packet
+        .writeD(members.length) // Количество участников ПЕРВЫМ полем
         .writeD(partyLeaderId)
-        .writeD(distribution)
-        .writeD(members.length);
+        .writeD(distribution);
 
     members.forEach((member) => {
+        const id = member.fetchId();
+        const name = member.fetchName();
+        const hp = Math.round(member.fetchHp());
+        const maxHp = Math.round(member.fetchMaxHp());
+        const mp = Math.round(member.fetchMp());
+        const maxMp = Math.round(member.fetchMaxMp());
+        const lvl = member.fetchLevel();
+        const classId = member.fetchClassId();
+
         packet
-            .writeD(member.fetchId())
-            .writeS(member.fetchName())
-            .writeD(0) // curCP
-            .writeD(0) // maxCP
-            .writeD(member.fetchHp())
-            .writeD(member.fetchMaxHp())
-            .writeD(member.fetchMp())
-            .writeD(member.fetchMaxMp())
-            .writeD(member.fetchLevel())
-            .writeD(member.fetchClassId())
-            .writeD(0)
-            .writeD(member.fetchRace());
+            .writeD(id)
+            .writeS(name)
+            .writeD(hp)
+            .writeD(maxHp)
+            .writeD(mp)
+            .writeD(maxMp)
+            .writeD(lvl)
+            .writeD(classId)
+            .writeD(member.fetchRace()); // 9-е поле (race)
     });
 
     return packet.fetchBuffer();

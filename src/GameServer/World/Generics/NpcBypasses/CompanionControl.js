@@ -86,17 +86,12 @@ function renderCompanionPanel(session) {
         return;
     }
 
-    let html = `<html><body><font color="LEVEL">Companion Control Panel</font><br><br>`;
+    let html = `<html><body><font color="LEVEL">Companion Commands</font><br><br>`;
     html += `<img src="L2UI.SquareWhite" width=270 height=1><br>`;
 
     myCompanions.forEach((companionSession) => {
         const bot = companionSession.actor;
         const classId = bot.fetchClassId();
-        const hpPercent = Math.round((bot.fetchHp() / bot.fetchMaxHp()) * 100);
-        const mpPercent = Math.round((bot.fetchMp() / bot.fetchMaxMp()) * 100);
-
-        html += `<font color="00FF00">${bot.fetchName()}</font> (Lvl ${bot.fetchLevel()})<br>`;
-        html += `HP: ${bot.fetchHp()}/${bot.fetchMaxHp()} (${hpPercent}%) | MP: ${bot.fetchMp()}/${bot.fetchMaxMp()} (${mpPercent}%)<br>`;
 
         const TANK_CLASSES = [4, 5, 6, 19, 20, 32, 33];
         const isTank = TANK_CLASSES.includes(classId);
@@ -104,11 +99,13 @@ function renderCompanionPanel(session) {
         const stayActive = companionSession.botStay === true;
         const tauntActive = companionSession.autoTaunt !== false; // default true for tanks
 
+        html += `<font color="00FF00">${bot.fetchName()}</font>: `;
+
         // Follow / Stay buttons
         if (stayActive) {
-            html += `<a action="bypass -h companion-control follow ${bot.fetchName()}"><font color="FF0000">[STAYING]</font> Click to Follow</a>`;
+            html += `<a action="bypass -h companion-control follow ${bot.fetchName()}"><font color="FF0000">[STAYING]</font></a>`;
         } else {
-            html += `<a action="bypass -h companion-control stay ${bot.fetchName()}"><font color="00FF00">[FOLLOWING]</font> Click to Stay</a>`;
+            html += `<a action="bypass -h companion-control stay ${bot.fetchName()}"><font color="00FF00">[FOLLOWING]</font></a>`;
         }
 
         // Taunt button for tanks
@@ -121,14 +118,13 @@ function renderCompanionPanel(session) {
             }
         }
 
-        html += `<br><a action="bypass -h companion-control summon ${bot.fetchName()}">Summon</a> | <a action="bypass -h companion-control dismiss ${bot.fetchName()}"><font color="FF5555">Dismiss</font></a><br>`;
-        html += `<img src="L2UI.SquareBlank" width=270 height=8><br>`;
+        html += ` | <a action="bypass -h companion-control summon ${bot.fetchName()}">Summon</a> | <a action="bypass -h companion-control dismiss ${bot.fetchName()}"><font color="FF5555">Dismiss</font></a><br>`;
+        html += `<img src="L2UI.SquareBlank" width=270 height=4><br>`;
     });
 
     html += `<img src="L2UI.SquareWhite" width=270 height=1><br>`;
     html += `<table width=270><tr>`;
-    html += `<td width=135><a action="bypass -h companion-control refresh">Refresh Status</a></td>`;
-    html += `<td width=135 align=right><a action="bypass -h html 7000">Close</a></td>`;
+    html += `<td width=270 align=center><a action="bypass -h html 7000">Close Panel</a></td>`;
     html += `</tr></table>`;
     html += `</body></html>`;
 

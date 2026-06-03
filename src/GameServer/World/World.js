@@ -71,6 +71,13 @@ const World = {
                 // Send JoinParty (0x3a) to client to initialize party UI structure and prevent crash
                 session.dataSendToMe(ServerResponse.joinParty(1));
 
+                // Clear any existing party window elements to prevent client crash
+                session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
+
+                // Set companion state immediately so renderCompanionPanel works on the first invite
+                targetSession.plan = 'following';
+                targetSession.followPlayerSession = session;
+
                 // 2. Add companion to party HUD sidebar
                 session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [user]));
 
@@ -80,8 +87,6 @@ const World = {
 
                 setTimeout(() => {
                     BotManager.botSay(targetSession, `Party system is a bit complex for my brain, but I've joined you as a companion! (Follow mode active)`);
-                    targetSession.plan = 'following';
-                    targetSession.followPlayerSession = session;
                 }, 1000);
             } else {
                 user.session.dataSendToMe(ServerResponse.askForTeamUp(actor.fetchId(), data.distribution));
