@@ -4,7 +4,7 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 function teleportTo(session, actor, coords) {
     const Generics = invoke(path.actor);
 
-    if (actor.isDead() || actor.isBlocked()) {
+    if (actor.isDead()) {
         return;
     }
 
