@@ -593,12 +593,14 @@ const BotManager = {
                     bot.setClassId(targetClassId);
 
                     bot.skillset.awardSkills(bot.fetchId(), targetClassId, targetLevel).then(() => {
-                        // Recalculate stats & replenish HP/MP
-                        const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
-                        if (typeof CalculateStats === 'function') {
-                            CalculateStats(botSession, bot);
-                        }
-                        bot.fillupVitals();
+                        this.equipScaledBot(botSession, bot, targetLevel, targetClassId).then(() => {
+                            // Recalculate stats & replenish HP/MP
+                            const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+                            if (typeof CalculateStats === 'function') {
+                                CalculateStats(botSession, bot);
+                            }
+                            bot.fillupVitals();
+                        });
                     });
 
                     // Update bot session plans & centers
@@ -627,6 +629,236 @@ const BotManager = {
                         bot.fetchName(), bot.fetchLevel(), player.fetchName(), player.fetchLevel(), tx, ty);
                 }
             }
+        });
+    },
+
+    getClassArchetype(classId) {
+        const mages = [10, 11, 12, 13, 14, 15, 16, 17, 25, 26, 27, 28, 29, 30, 38, 39, 40, 41, 42, 43, 49, 50, 51, 52];
+        const archers = [9, 24, 37];
+        const daggers = [7, 8, 23, 35, 36, 47, 48];
+        if (mages.includes(classId)) return 'MAGE';
+        if (archers.includes(classId)) return 'ARCHER';
+        if (daggers.includes(classId)) return 'DAGGER';
+        return 'HEAVY';
+    },
+
+    mapLevelToRank(level) {
+        if (level < 20) return "none";
+        if (level < 40) return "d";
+        if (level < 52) return "c";
+        if (level < 61) return "b";
+        if (level < 76) return "a";
+        return "s";
+    },
+
+    selectItemForBot(archetype, slot, rank) {
+        let candidates = DataCache.items.filter(item => {
+            if (slot === 10) {
+                return item.etc?.slot === 10 || item.etc?.slot === 15;
+            }
+            return item.etc?.slot === slot;
+        });
+
+        let rankCandidates = candidates.filter(item => item.etc?.rank === rank);
+        
+        if (rankCandidates.length === 0) {
+            const ranks = ["none", "d", "c", "b", "a", "s"];
+            let idx = ranks.indexOf(rank);
+            while (idx > 0 && rankCandidates.length === 0) {
+                idx--;
+                rankCandidates = candidates.filter(item => item.etc?.rank === ranks[idx]);
+            }
+        }
+        if (rankCandidates.length === 0) {
+            rankCandidates = candidates;
+        }
+
+        let finalCandidates = [];
+        if (slot === 10 || slot === 11) {
+            const isRobe = archetype === 'MAGE';
+            const isLight = archetype === 'LIGHT' || archetype === 'ARCHER' || archetype === 'DAGGER';
+            
+            if (isRobe) {
+                finalCandidates = rankCandidates.filter(item => item.template?.kind === 'Armor.Fabric');
+            } else if (isLight) {
+                finalCandidates = rankCandidates.filter(item => item.template?.kind === 'Armor.Leather');
+            } else {
+                finalCandidates = rankCandidates.filter(item => item.template?.kind === 'Armor.Chain');
+            }
+        } else if (slot === 7 || slot === 14) {
+            if (archetype === 'MAGE') {
+                finalCandidates = rankCandidates.filter(item => 
+                    item.template?.kind === 'Weapon.Blunt' || 
+                    item.template?.kind === 'Weapon.Sword'
+                );
+            } else if (archetype === 'ARCHER') {
+                finalCandidates = rankCandidates.filter(item => item.template?.kind === 'Weapon.Bow');
+            } else if (archetype === 'DAGGER') {
+                finalCandidates = rankCandidates.filter(item => item.template?.kind === 'Weapon.Knife');
+            } else {
+                finalCandidates = rankCandidates.filter(item => 
+                    item.template?.kind === 'Weapon.Sword' || 
+                    item.template?.kind === 'Weapon.Blunt' || 
+                    item.template?.kind === 'Weapon.Pole'
+                );
+            }
+        } else {
+            finalCandidates = rankCandidates;
+        }
+
+        if (finalCandidates.length === 0) {
+            finalCandidates = rankCandidates;
+        }
+
+        if (finalCandidates.length === 0) {
+            return null;
+        }
+
+        if (slot === 7 || slot === 14) {
+            if (archetype === 'MAGE') {
+                finalCandidates.sort((a, b) => (b.stats?.mAtk ?? 0) - (a.stats?.mAtk ?? 0));
+            } else {
+                finalCandidates.sort((a, b) => (b.stats?.pAtk ?? 0) - (a.stats?.pAtk ?? 0));
+            }
+        } else if (slot === 10 || slot === 11 || slot === 6 || slot === 9 || slot === 12 || slot === 8) {
+            finalCandidates.sort((a, b) => (b.stats?.pDef ?? 0) - (a.stats?.pDef ?? 0));
+        } else if (slot === 1 || slot === 3 || slot === 4) {
+            finalCandidates.sort((a, b) => (b.stats?.mDef ?? 0) - (a.stats?.mDef ?? 0));
+        }
+
+        return finalCandidates[0];
+    },
+
+    selectGearForBot(classId, level) {
+        const archetype = this.getClassArchetype(classId);
+        const rank = this.mapLevelToRank(level);
+        const gearList = [];
+
+        const weaponSlot = (archetype === 'ARCHER' || archetype === 'MAGE') ? 14 : 7;
+        let weapon = this.selectItemForBot(archetype, weaponSlot, rank);
+        
+        if (!weapon) {
+            const alternateSlot = weaponSlot === 7 ? 14 : 7;
+            weapon = this.selectItemForBot(archetype, alternateSlot, rank);
+        }
+
+        if (weapon) {
+            gearList.push({ selfId: weapon.selfId, slot: weapon.etc?.slot ?? weaponSlot });
+        }
+
+        const isOneHanded = weapon && (weapon.etc?.slot === 7);
+        const needsShield = isOneHanded && (archetype === 'HEAVY' || (archetype === 'MAGE' && [15, 16, 17, 29, 30, 42, 43].includes(classId)));
+        if (needsShield) {
+            const shield = this.selectItemForBot(archetype, 8, rank);
+            if (shield) {
+                gearList.push({ selfId: shield.selfId, slot: 8 });
+            }
+        }
+
+        const chest = this.selectItemForBot(archetype, 10, rank);
+        let isFullBody = false;
+        if (chest) {
+            const slot = chest.etc?.slot ?? 10;
+            isFullBody = (slot === 15);
+            gearList.push({ selfId: chest.selfId, slot: slot });
+        }
+
+        if (!isFullBody) {
+            const pants = this.selectItemForBot(archetype, 11, rank);
+            if (pants) {
+                gearList.push({ selfId: pants.selfId, slot: 11 });
+            }
+        }
+
+        const helmet = this.selectItemForBot(archetype, 6, rank);
+        if (helmet) {
+            gearList.push({ selfId: helmet.selfId, slot: 6 });
+        }
+
+        const gloves = this.selectItemForBot(archetype, 9, rank);
+        if (gloves) {
+            gearList.push({ selfId: gloves.selfId, slot: 9 });
+        }
+
+        const boots = this.selectItemForBot(archetype, 12, rank);
+        if (boots) {
+            gearList.push({ selfId: boots.selfId, slot: 12 });
+        }
+
+        const neck = this.selectItemForBot(archetype, 3, rank);
+        if (neck) {
+            gearList.push({ selfId: neck.selfId, slot: 3 });
+        }
+
+        const earring = this.selectItemForBot(archetype, 1, rank);
+        if (earring) {
+            gearList.push({ selfId: earring.selfId, slot: 1 });
+            gearList.push({ selfId: earring.selfId, slot: 2 });
+        }
+
+        const ring = this.selectItemForBot(archetype, 4, rank);
+        if (ring) {
+            gearList.push({ selfId: ring.selfId, slot: 4 });
+            gearList.push({ selfId: ring.selfId, slot: 5 });
+        }
+
+        return gearList;
+    },
+
+    equipScaledBot(botSession, bot, targetLevel, targetClassId) {
+        const charId = bot.fetchId();
+        const gearList = this.selectGearForBot(targetClassId, targetLevel);
+
+        return Database.deleteGearItems(charId).then(() => {
+            const promises = gearList.map(gear => {
+                const itemDetails = DataCache.items.find(ob => ob.selfId === gear.selfId);
+                const item = {
+                    selfId: gear.selfId,
+                    name: itemDetails?.template?.name ?? '',
+                    amount: 1,
+                    equipped: true,
+                    slot: gear.slot
+                };
+                return Database.setItem(charId, item);
+            });
+
+            return Promise.all(promises).then(() => {
+                return this.rebuildBotInventory(bot);
+            });
+        });
+    },
+
+    rebuildBotInventory(bot) {
+        return new Promise((resolve) => {
+            Database.fetchItems(bot.fetchId()).then((dbItems) => {
+                bot.backpack.items = [];
+                bot.backpack.paperdoll = utils.tupleAlloc(15 + 1, {});
+
+                const promises = dbItems.map((dbItem) => {
+                    return new Promise((done) => {
+                        bot.backpack.insertItem(dbItem.id, dbItem.selfId, dbItem);
+
+                        if (dbItem.equipped === 1 || dbItem.equipped === true) {
+                            const slot = dbItem.slot;
+                            if (slot === 15) {
+                                bot.backpack.paperdoll[10] = { id: dbItem.id, selfId: dbItem.selfId };
+                                bot.backpack.paperdoll[11] = { id: dbItem.id, selfId: dbItem.selfId };
+                            }
+                            bot.backpack.paperdoll[slot] = { id: dbItem.id, selfId: dbItem.selfId };
+                        }
+                        done();
+                    });
+                });
+
+                Promise.all(promises).then(() => {
+                    const ServerResponse = invoke('GameServer/Network/Response');
+                    if (bot.session && typeof bot.session.dataSendToOthers === 'function') {
+                        bot.session.dataSendToOthers(ServerResponse.charInfo(bot), bot);
+                        bot.session.dataSendToOthers(ServerResponse.relationChanged(bot), bot);
+                    }
+                    resolve();
+                });
+            });
         });
     }
 };

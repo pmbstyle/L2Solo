@@ -38,11 +38,6 @@ function moveTo(session, actor, coords) {
         const endY = coords.to.locY;
         const endZ = coords.to.locZ;
 
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const dz = endZ - startZ;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
         // Helper to fetch distance to closest real player
         const getDistanceToClosestPlayer = () => {
             const World = invoke('GameServer/World/World');
@@ -79,31 +74,63 @@ function moveTo(session, actor, coords) {
             return;
         }
 
-        // Send moveToLocation ONCE to the client at the start so client animates smoothly to target destination
-        session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
-
         const isClose = isCompanion || distanceToPlayer <= 500;
 
-        if (distance > 0) {
+        // Compute path using geodata
+        let path = GeodataEngine.findPath(startX, startY, startZ, endX, endY, endZ);
+        console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${endX}, ${endY}, ${endZ}) -> Waypoints: ${path ? path.length : 0}`);
+        if (!path || path.length <= 1) {
+            path = [{ locX: endX, locY: endY, locZ: endZ }];
+        }
+
+        const moveAlongPath = (index) => {
+            if (index >= path.length) {
+                session.moveTimer = null;
+                actor.state.setTowards(false);
+                return;
+            }
+
+            const currentLoc = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+            const nextLoc = path[index];
+
+            const dx = nextLoc.locX - currentLoc.locX;
+            const dy = nextLoc.locY - currentLoc.locY;
+            const dz = nextLoc.locZ - currentLoc.locZ;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance === 0) {
+                actor.setLocXYZ(nextLoc);
+                moveAlongPath(index + 1);
+                return;
+            }
+
+            const segmentCoords = {
+                from: currentLoc,
+                to: nextLoc
+            };
+            session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), segmentCoords), actor);
+
             const speed = actor.fetchCollectiveRunSpd() || 120;
             const duration = (distance / speed) * 1000;
-            const tickRate = isClose ? 100 : 250; // High LOD updates server coordinates more frequently (100ms)
+            const tickRate = isClose ? 100 : 250;
             const steps = Math.ceil(duration / tickRate);
             let step = 0;
 
             session.moveTimer = setInterval(() => {
+                if (!session.moveTimer) {
+                    return;
+                }
+
                 step++;
                 if (step >= steps) {
-                    const snappedTo = { ...coords.to };
-                    snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
-                    actor.setLocXYZ(snappedTo);
                     clearInterval(session.moveTimer);
-                    session.moveTimer = null;
+                    actor.setLocXYZ(nextLoc);
+                    moveAlongPath(index + 1);
                 } else {
                     const ratio = step / steps;
-                    const nextX = Math.round(startX + dx * ratio);
-                    const nextY = Math.round(startY + dy * ratio);
-                    const nextZ = Math.round(startZ + dz * ratio);
+                    const nextX = Math.round(currentLoc.locX + dx * ratio);
+                    const nextY = Math.round(currentLoc.locY + dy * ratio);
+                    const nextZ = Math.round(currentLoc.locZ + dz * ratio);
                     const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
                     actor.setLocXYZ({
                         locX: nextX,
@@ -112,11 +139,10 @@ function moveTo(session, actor, coords) {
                     });
                 }
             }, tickRate);
-        } else {
-            const snappedTo = { ...coords.to };
-            snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
-            actor.setLocXYZ(snappedTo);
-        }
+        };
+
+        actor.state.setTowards('move');
+        moveAlongPath(0);
     }
 }
 

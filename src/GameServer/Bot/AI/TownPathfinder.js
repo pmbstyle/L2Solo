@@ -1,32 +1,43 @@
+const GATES = {
+    NORTH: {
+        gate: { locX: -84081, locY: 243227, locZ: -3723 },
+        approach: { locX: -84081, locY: 242827, locZ: -3723 }
+    },
+    WEST: {
+        gate: { locX: -85400, locY: 244579, locZ: -3730 },
+        approach: { locX: -85800, locY: 244579, locZ: -3730 }
+    },
+    EAST: {
+        gate: { locX: -83150, locY: 244579, locZ: -3730 },
+        approach: { locX: -82750, locY: 244579, locZ: -3730 }
+    },
+    SOUTH: {
+        gate: { locX: -84318, locY: 245800, locZ: -3730 },
+        approach: { locX: -84318, locY: 246200, locZ: -3730 }
+    }
+};
+
 const TownPathfinder = {
     isInsideTown(loc) {
-        const dx = loc.locX - (-84318);
-        const dy = loc.locY - 244579;
-        return Math.sqrt(dx*dx + dy*dy) < 2200; // Talking Island Village radius
+        return loc.locX >= -85400 && loc.locX <= -83150 &&
+               loc.locY >= 243227 && loc.locY <= 245800;
     },
 
-    getClosestExit(targetLoc) {
-        const exits = [
-            { locX: -84081, locY: 243227, locZ: -3723 }, // North Exit (Newbie Guide)
-            { locX: -85400, locY: 244579, locZ: -3730 }, // West Exit
-            { locX: -83150, locY: 244579, locZ: -3730 }, // East Exit
-            { locX: -84318, locY: 245800, locZ: -3730 }  // South Exit
-        ];
+    getGateByPosition(loc) {
+        const dx = loc.locX - (-84318);
+        const dy = loc.locY - 244579;
+        const angle = Math.atan2(dy, dx);
 
-        let closest = exits[0];
-        let minDist = 9999999;
-
-        exits.forEach((exit) => {
-            const dx = targetLoc.locX - exit.locX;
-            const dy = targetLoc.locY - exit.locY;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist < minDist) {
-                minDist = dist;
-                closest = exit;
-            }
-        });
-
-        return closest;
+        if (angle >= -3 * Math.PI / 4 && angle < -Math.PI / 4) {
+            return GATES.NORTH;
+        }
+        if (angle >= Math.PI / 4 && angle < 3 * Math.PI / 4) {
+            return GATES.SOUTH;
+        }
+        if (angle >= -Math.PI / 4 && angle < Math.PI / 4) {
+            return GATES.EAST;
+        }
+        return GATES.WEST;
     },
 
     lineCircleIntersect(p1, p2, circle) {
@@ -79,25 +90,34 @@ const TownPathfinder = {
 
         // Case 1: Running from inside town to outside town (going to hunt)
         if (fromInTown && !toInTown) {
-            const exit = this.getClosestExit(to);
-            const dx = from.locX - exit.locX;
-            const dy = from.locY - exit.locY;
+            const exitGate = this.getGateByPosition(to);
+            const dx = from.locX - exitGate.gate.locX;
+            const dy = from.locY - exitGate.gate.locY;
             if (Math.sqrt(dx*dx + dy*dy) < 400) {
                 routedTo = to; // Already at the exit gate, run directly to target
             } else {
-                routedTo = exit; // Head to the exit gate first
+                routedTo = exitGate.gate; // Head to the exit gate first
             }
         }
 
         // Case 2: Running from outside town to inside town (returning to town)
         else if (!fromInTown && toInTown) {
-            const exit = this.getClosestExit(from);
-            const dx = from.locX - exit.locX;
-            const dy = from.locY - exit.locY;
-            if (Math.sqrt(dx*dx + dy*dy) < 400) {
-                routedTo = to; // Already at the exit gate, run directly to town destination
+            const exitGate = this.getGateByPosition(from);
+            
+            const dxApproach = from.locX - exitGate.approach.locX;
+            const dyApproach = from.locY - exitGate.approach.locY;
+            const distApproach = Math.sqrt(dxApproach * dxApproach + dyApproach * dyApproach);
+
+            const dxGate = from.locX - exitGate.gate.locX;
+            const dyGate = from.locY - exitGate.gate.locY;
+            const distGate = Math.sqrt(dxGate * dxGate + dyGate * dyGate);
+
+            if (distGate < 250) {
+                routedTo = to; // Already at the gate, run directly inside
+            } else if (distApproach < 250) {
+                routedTo = exitGate.gate; // Lined up with approach, run to gate
             } else {
-                routedTo = exit; // Head to the exit gate first
+                routedTo = exitGate.approach; // Run to approach point first to align outside wall
             }
         }
 

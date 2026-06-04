@@ -171,6 +171,12 @@ const Database = {
         );
     },
 
+    deleteGearItems(characterId) {
+        return Database.execute(
+            builder.delete('items', 'characterId = ? AND selfId != 57', characterId)
+        );
+    },
+
     setShortcut(characterId, shortcut) {
         return Database.execute(
             builder.insert('shortcuts', {
