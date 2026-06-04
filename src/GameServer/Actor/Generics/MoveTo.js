@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 
 function moveTo(session, actor, coords) {
     if (actor.isDead()) {
@@ -72,7 +73,9 @@ function moveTo(session, actor, coords) {
 
         if (distanceToPlayer > 1500 && !isCompanion) {
             // Low LOD: instant warp (we do not calculate movements at all)
-            actor.setLocXYZ(coords.to);
+            const snappedTo = { ...coords.to };
+            snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
+            actor.setLocXYZ(snappedTo);
             return;
         }
 
@@ -91,20 +94,28 @@ function moveTo(session, actor, coords) {
             session.moveTimer = setInterval(() => {
                 step++;
                 if (step >= steps) {
-                    actor.setLocXYZ(coords.to);
+                    const snappedTo = { ...coords.to };
+                    snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
+                    actor.setLocXYZ(snappedTo);
                     clearInterval(session.moveTimer);
                     session.moveTimer = null;
                 } else {
                     const ratio = step / steps;
+                    const nextX = Math.round(startX + dx * ratio);
+                    const nextY = Math.round(startY + dy * ratio);
+                    const nextZ = Math.round(startZ + dz * ratio);
+                    const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
                     actor.setLocXYZ({
-                        locX: Math.round(startX + dx * ratio),
-                        locY: Math.round(startY + dy * ratio),
-                        locZ: Math.round(startZ + dz * ratio)
+                        locX: nextX,
+                        locY: nextY,
+                        locZ: snappedZ
                     });
                 }
             }, tickRate);
         } else {
-            actor.setLocXYZ(coords.to);
+            const snappedTo = { ...coords.to };
+            snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
+            actor.setLocXYZ(snappedTo);
         }
     }
 }

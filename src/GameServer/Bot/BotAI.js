@@ -1,6 +1,7 @@
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
+const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -288,6 +289,7 @@ const BotAI = {
                     spawnTarget = BotManager.findHighDensityCoord();
                     spawnTarget.locX += (Math.random() - 0.5) * 800;
                     spawnTarget.locY += (Math.random() - 0.5) * 800;
+                    spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                 } else {
                     if (bot.fetchName().startsWith("Merchant_")) {
                         session.plan = 'merchant';
@@ -310,6 +312,7 @@ const BotAI = {
                             locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
                             locZ: session.initialSpawnCoord.locZ
                         };
+                        spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                     }
                 }
                 

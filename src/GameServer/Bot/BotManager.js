@@ -4,6 +4,7 @@ const DataCache   = invoke('GameServer/DataCache');
 const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 const BOTS_TO_SPAWN = [
     { name: "Bot_Gimli",   race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0 }, // Dwarf
@@ -141,6 +142,8 @@ const BotManager = {
                     character.locX += (Math.random() - 0.5) * 1600;
                     character.locY += (Math.random() - 0.5) * 1600;
                 }
+
+                character.locZ = GeodataEngine.getHeight(character.locX, character.locY, character.locZ);
 
                 session.setActor({
                     ...character, ...utils.crushOb(classInfo)
@@ -434,7 +437,7 @@ const BotManager = {
         if (bestSector) {
             coords.locX = Math.floor(bestSector.sumX / bestSector.count);
             coords.locY = Math.floor(bestSector.sumY / bestSector.count);
-            coords.locZ = Math.floor(bestSector.sumZ / bestSector.count);
+            coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, Math.floor(bestSector.sumZ / bestSector.count));
         }
         return coords;
     },
@@ -524,7 +527,7 @@ const BotManager = {
                     const rad = 1500 + Math.random() * 1000;
                     const tx = Math.floor(px + Math.cos(angle) * rad);
                     const ty = Math.floor(py + Math.sin(angle) * rad);
-                    const tz = pz;
+                    const tz = GeodataEngine.getHeight(tx, ty, pz);
 
                     // Dynamic Level Scaling (playerLevel ± 1)
                     const levelVariance = Math.floor(Math.random() * 3) - 1; // -1, 0, or 1

@@ -3,15 +3,29 @@ const path = require('path');
 
 const GeodataEngine = {
     regions: {}, // Loaded region buffers, keyed by "XX_YY"
+    missing: {}, // Keys of missing regions, to prevent console spam and repeat disk checks
 
     init() {
         console.info("GeodataEngine :: Initializing...");
-        // Auto-load Talking Island region 22_24
-        this.loadRegion(22, 24);
+        // Preload active regions on startup
+        const activeRegions = [
+            { x: 22, y: 24 }, // Talking Island
+            { x: 24, y: 20 }, // Gludio
+            { x: 25, y: 21 }, // Dion
+            { x: 25, y: 19 }, // Elven area
+            { x: 25, y: 17 }  // Dark Elven area
+        ];
+        activeRegions.forEach(reg => {
+            this.loadRegion(reg.x, reg.y);
+        });
     },
 
     loadRegion(regionX, regionY) {
         const key = `${regionX}_${regionY}`;
+        if (this.missing[key]) {
+            return false;
+        }
+        
         // Adjust path to find the Geodata directory under data/Geodata/
         const filePath = path.join(__dirname, `../../../data/Geodata/${key}.l2j`);
         
@@ -30,6 +44,7 @@ const GeodataEngine = {
                 console.error(`GeodataEngine :: Failed to load region ${key}:`, err);
             }
         } else {
+            this.missing[key] = true;
             utils.infoWarn("GeodataEngine", "Geodata file not found: %s", filePath);
         }
         return false;

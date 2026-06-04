@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 
 function teleportTo(session, actor, coords) {
     const Generics = invoke(path.actor);
@@ -6,6 +7,9 @@ function teleportTo(session, actor, coords) {
     if (actor.isDead() || actor.isBlocked()) {
         return;
     }
+
+    // Snap coordinates immediately to geodata height before sending to client
+    coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, coords.locZ);
 
     actor.clearDestId();
     actor.automation.abortAll(actor);
