@@ -4,11 +4,16 @@ const Automation     = invoke('GameServer/Automation');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const Formulas       = invoke('GameServer/Formulas');
+const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 
 class Npc extends NpcModel {
     constructor(id, data) {
         // Parent inheritance
         super(data);
+
+        // Snap spawn coordinates to geodata elevation
+        const geoHeight = GeodataEngine.getHeight(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ());
+        this.setLocZ(geoHeight);
 
         // Local
         this.automation = new Automation();

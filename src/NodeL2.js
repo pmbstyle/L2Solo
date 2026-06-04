@@ -8,6 +8,7 @@ const DataCache   = invoke('GameServer/DataCache');
 const Database    = invoke('Database');
 const Server      = invoke('Server');
 const BotManager  = invoke('GameServer/Bot/BotManager');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 console.info('\n\
     + ================================== \n\
@@ -22,7 +23,8 @@ console.info('\n\
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 Database.init(() => {
     DataCache.init();
-        World.init();
+    GeodataEngine.init();
+    World.init();
 
     new Server('AuthServer', options.default.AuthServer, (socket) => {
         return new AuthSession(socket);

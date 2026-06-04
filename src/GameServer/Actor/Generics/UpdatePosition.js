@@ -1,7 +1,12 @@
 const Database = invoke('Database');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 function updatePosition(session, actor, coords) {
     const Generics = invoke(path.actor);
+
+    // Snap coordinates to geodata elevation
+    const geoHeight = GeodataEngine.getHeight(coords.locX, coords.locY, coords.locZ);
+    coords.locZ = geoHeight;
 
     // TODO: Write less in DB about movement
     actor.setLocXYZH(coords);
