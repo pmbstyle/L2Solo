@@ -95,6 +95,45 @@ class Automation extends SelectedModel {
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), radius, src.fetchCollectiveRunSpd()
         );
 
+        // Dynamically update coordinates step-by-step for bots while running to prevent teleportation/snapping on reschedule
+        if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+            if (session.moveTimer) {
+                clearInterval(session.moveTimer);
+                session.moveTimer = null;
+            }
+
+            const startX = src.fetchLocX();
+            const startY = src.fetchLocY();
+            const startZ = src.fetchLocZ();
+            const endX = dst.fetchLocX();
+            const endY = dst.fetchLocY();
+            const endZ = dst.fetchLocZ();
+
+            const dx = endX - startX;
+            const dy = endY - startY;
+            const dz = endZ - startZ;
+
+            const tickRate = 250;
+            const steps = Math.ceil(ticks / tickRate);
+            let step = 0;
+
+            session.moveTimer = setInterval(() => {
+                step++;
+                if (step >= steps) {
+                    src.setLocXYZ({ locX: endX, locY: endY, locZ: endZ });
+                    clearInterval(session.moveTimer);
+                    session.moveTimer = null;
+                } else {
+                    const ratio = step / steps;
+                    src.setLocXYZ({
+                        locX: Math.round(startX + dx * ratio),
+                        locY: Math.round(startY + dy * ratio),
+                        locZ: Math.round(startZ + dz * ratio)
+                    });
+                }
+            }, tickRate);
+        }
+
         // Arrived
         Timer.start(this.timer.action, () => {
             src.state.setTowards(false);
@@ -105,6 +144,10 @@ class Automation extends SelectedModel {
                     locY: dst.fetchLocY(),
                     locZ: dst.fetchLocZ()
                 });
+                if (session.moveTimer) {
+                    clearInterval(session.moveTimer);
+                    session.moveTimer = null;
+                }
             }
             callback();
 
@@ -140,11 +183,47 @@ class Automation extends SelectedModel {
             from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ, 0, src.fetchCollectiveRunSpd()
         );
 
+        // Dynamically update coordinates step-by-step for bots while running to prevent teleportation/snapping on reschedule
+        if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+            if (session.moveTimer) {
+                clearInterval(session.moveTimer);
+                session.moveTimer = null;
+            }
+
+            const dx = to.locX - from.locX;
+            const dy = to.locY - from.locY;
+            const dz = to.locZ - from.locZ;
+
+            const tickRate = 250;
+            const steps = Math.ceil(ticks / tickRate);
+            let step = 0;
+
+            session.moveTimer = setInterval(() => {
+                step++;
+                if (step >= steps) {
+                    src.setLocXYZ(to);
+                    clearInterval(session.moveTimer);
+                    session.moveTimer = null;
+                } else {
+                    const ratio = step / steps;
+                    src.setLocXYZ({
+                        locX: Math.round(from.locX + dx * ratio),
+                        locY: Math.round(from.locY + dy * ratio),
+                        locZ: Math.round(from.locZ + dz * ratio)
+                    });
+                }
+            }, tickRate);
+        }
+
         // Arrived
         Timer.start(this.timer.pickup, () => {
             src.state.setTowards(false);
             if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
                 src.setLocXYZ(to);
+                if (session.moveTimer) {
+                    clearInterval(session.moveTimer);
+                    session.moveTimer = null;
+                }
             }
             callback();
 

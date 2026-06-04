@@ -23,9 +23,13 @@ function moveTo(session, actor, coords) {
         coords.to.locZ = routedTo.locZ;
     }
 
-    session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
+    const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
 
-    if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+    if (!isBot) {
+        // Normal player movement
+        session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
+    } else {
+        // Bot movement
         const startX = coords.from.locX;
         const startY = coords.from.locY;
         const startZ = coords.from.locZ;
@@ -38,10 +42,50 @@ function moveTo(session, actor, coords) {
         const dz = endZ - startZ;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
+        // Helper to fetch distance to closest real player
+        const getDistanceToClosestPlayer = () => {
+            const World = invoke('GameServer/World/World');
+            const onlinePlayers = World.user.sessions.filter(s => 
+                s.actor && 
+                s.actor.fetchIsOnline() && 
+                s.accountId && 
+                !s.accountId.startsWith('bot_')
+            );
+
+            if (onlinePlayers.length === 0) return Infinity;
+
+            let minDist = Infinity;
+            onlinePlayers.forEach(pSession => {
+                const player = pSession.actor;
+                const pdx = player.fetchLocX() - startX;
+                const pdy = player.fetchLocY() - startY;
+                const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+                if (pdist < minDist) {
+                    minDist = pdist;
+                }
+            });
+            return minDist;
+        };
+
+        const distanceToPlayer = getDistanceToClosestPlayer();
+        const isCompanion = !!session.followPlayerSession;
+
+        if (distanceToPlayer > 1500 && !isCompanion) {
+            // Low LOD: instant warp (we do not calculate movements at all)
+            actor.setLocXYZ(coords.to);
+            return;
+        }
+
+        // Send moveToLocation ONCE to the client at the start so client animates smoothly to target destination
+        session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
+
+        const isClose = isCompanion || distanceToPlayer <= 500;
+
         if (distance > 0) {
             const speed = actor.fetchCollectiveRunSpd() || 120;
             const duration = (distance / speed) * 1000;
-            const steps = Math.ceil(duration / 250);
+            const tickRate = isClose ? 100 : 250; // High LOD updates server coordinates more frequently (100ms)
+            const steps = Math.ceil(duration / tickRate);
             let step = 0;
 
             session.moveTimer = setInterval(() => {
@@ -58,7 +102,7 @@ function moveTo(session, actor, coords) {
                         locZ: Math.round(startZ + dz * ratio)
                     });
                 }
-            }, 250);
+            }, tickRate);
         } else {
             actor.setLocXYZ(coords.to);
         }

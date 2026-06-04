@@ -319,12 +319,18 @@ const BotManager = {
     botSay(session, text) {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
-        const World = invoke('GameServer/World/World');
         
-        session.dataSendToOthers(
-            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-            session.actor
-        );
+        if (session.plan === 'following' && session.followPlayerSession) {
+            const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
+            if (session.followPlayerSession.dataSendToMe) {
+                session.followPlayerSession.dataSendToMe(packet);
+            }
+        } else {
+            session.dataSendToOthers(
+                ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
+                session.actor
+            );
+        }
     },
 
     botShout(session, text) {
@@ -512,9 +518,9 @@ const BotManager = {
                     const botSession = farBots[i];
                     const bot = botSession.actor;
 
-                    // Randomized position around player (between 800 and 2200 units)
+                    // Randomized position around player (between 1500 and 2500 units)
                     const angle = Math.random() * 2 * Math.PI;
-                    const rad = 800 + Math.random() * 1400;
+                    const rad = 1500 + Math.random() * 1000;
                     const tx = Math.floor(px + Math.cos(angle) * rad);
                     const ty = Math.floor(py + Math.sin(angle) * rad);
                     const tz = pz;

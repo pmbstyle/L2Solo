@@ -81,12 +81,12 @@ function renderCompanionPanel(session) {
     const myCompanions = BotManager.sessions.filter(s => s.followPlayerSession === session && s.actor);
 
     if (myCompanions.length === 0) {
-        const html = `<html><body><font color="LEVEL">Companion Panel</font><br><br>You currently have no companions in your party.<br>Target a bot and type <font color="LEVEL">/invite</font> to recruit them!</body></html>`;
+        const html = `<html><body><title>Party Control</title><font color="LEVEL">Companion Panel</font><br><br>You currently have no companions in your party.<br>Target a bot and type <font color="LEVEL">/invite</font> to recruit them!</body></html>`;
         session.dataSendToMe(ServerResponse.npcHtml(actor.fetchId(), html));
         return;
     }
 
-    let html = `<html><body><font color="LEVEL">Companion Commands</font><br><br>`;
+    let html = `<html><body><title>Party Control</title><font color="LEVEL">Companion Commands</font><br><br>`;
     html += `<img src="L2UI.SquareWhite" width=270 height=1><br>`;
 
     myCompanions.forEach((companionSession) => {

@@ -54,22 +54,196 @@ const States = {
 
 const BotAI = {
     init(session) {
-        session.aiInterval = setInterval(() => {
+        const runAiTick = () => {
+            if (!session.actor || !session.aiActive) return;
+
             try {
                 this.tick(session);
             } catch (err) {
                 console.error("Bot AI Tick Error:", err);
             }
-        }, 3000); // Ticks every 3 seconds
+
+            const nextTickDelay = this.calculateNextTickDelay(session);
+            session.aiTimeout = setTimeout(runAiTick, nextTickDelay);
+        };
+
+        session.aiActive = true;
+        session.aiTimeout = setTimeout(runAiTick, 1000 + Math.random() * 2000);
     },
 
     stop(session) {
-        clearInterval(session.aiInterval);
+        session.aiActive = false;
+        if (session.aiTimeout) {
+            clearTimeout(session.aiTimeout);
+            session.aiTimeout = null;
+        }
+    },
+
+    wakeup(session) {
+        if (!session.actor || !session.aiActive) return;
+        if (session.aiTimeout) {
+            clearTimeout(session.aiTimeout);
+            session.aiTimeout = null;
+        }
+
+        const runAiTick = () => {
+            if (!session.actor || !session.aiActive) return;
+
+            try {
+                this.tick(session);
+            } catch (err) {
+                console.error("Bot AI Tick Error:", err);
+            }
+
+            const nextTickDelay = this.calculateNextTickDelay(session);
+            session.aiTimeout = setTimeout(runAiTick, nextTickDelay);
+        };
+
+        runAiTick();
+    },
+
+    calculateNextTickDelay(session) {
+        const bot = session.actor;
+        if (!bot) return 3000;
+
+        const isCompanion = !!session.followPlayerSession;
+        const World = invoke('GameServer/World/World');
+        const onlinePlayers = World.user.sessions.filter(s => 
+            s.actor && 
+            s.actor.fetchIsOnline() && 
+            s.accountId && 
+            !s.accountId.startsWith('bot_')
+        );
+
+        if (onlinePlayers.length === 0) {
+            return 30000;
+        }
+
+        const botX = bot.fetchLocX();
+        const botY = bot.fetchLocY();
+
+        let minDist = Infinity;
+        onlinePlayers.forEach(pSession => {
+            const player = pSession.actor;
+            const dx = player.fetchLocX() - botX;
+            const dy = player.fetchLocY() - botY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist) {
+                minDist = dist;
+            }
+        });
+
+        if (isCompanion || minDist <= 500) {
+            return 1000 + Math.random() * 200;
+        } else if (minDist <= 1500) {
+            return 3000;
+        } else {
+            return 30000;
+        }
+    },
+
+    getClosestTownName(locX, locY) {
+        const towns = [
+            { name: "Talking Island", x: -84318, y: 244579 },
+            { name: "Gludio", x: -12672, y: 122776 },
+            { name: "Dion", x: 15664, y: 142979 },
+            { name: "Giran", x: 83400, y: 147943 },
+            { name: "Oren", x: 82960, y: 53177 }
+        ];
+        let closest = towns[0];
+        let minDist = Infinity;
+        towns.forEach(town => {
+            const dx = town.x - locX;
+            const dy = town.y - locY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = town;
+            }
+        });
+        return closest.name;
+    },
+
+    triggerFarAwayChatEvent(session, bot) {
+        try {
+            const BotManager = invoke('GameServer/Bot/BotManager');
+            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY());
+
+            const aragornSession = BotManager.sessions.find(s => s.actor && s.actor.fetchName() === "Aragorn");
+            const aragornLoc = aragornSession?.actor ? this.getClosestTownName(aragornSession.actor.fetchLocX(), aragornSession.actor.fetchLocY()) : "Dion";
+
+            const pkPhrases = [
+                `Help! PK spotted near ${aragornLoc}!`,
+                `Watch out, Aragorn is PKing everyone near ${aragornLoc}!`,
+                `Someone kill the PK at ${aragornLoc}! He's red name!`,
+                `Aragorn is hunting newbies near ${aragornLoc}! Flee!`
+            ];
+
+            const normalPhrases = [
+                `WTB wood/leather near ${townName}! PM me!`,
+                `Farming is so peaceful near ${townName}.`,
+                `LFP for Goblins near ${townName}!`,
+                `Selling fresh drops near ${townName} center!`,
+                `Wow, the mobs near ${townName} are spawning fast today.`
+            ];
+
+            const aragornPhrases = [
+                `No one is safe near ${townName}! I'm coming for you!`,
+                `Dion and ${townName} are my hunting grounds! Prepare to die!`,
+                `Haha, another soul claimed near ${townName}!`,
+                `You can run, but you can't hide from me near ${townName}!`
+            ];
+
+            let text = "";
+            if (bot.fetchName() === "Aragorn") {
+                text = aragornPhrases[Math.floor(Math.random() * aragornPhrases.length)];
+            } else if (Math.random() < 0.25 && aragornSession && aragornSession.actor && !aragornSession.actor.state.fetchDead()) {
+                text = pkPhrases[Math.floor(Math.random() * pkPhrases.length)];
+            } else {
+                text = normalPhrases[Math.floor(Math.random() * normalPhrases.length)];
+            }
+
+            BotManager.botShout(session, text);
+        } catch (err) {
+            console.error("Far away chat event error:", err);
+        }
     },
 
     tick(session) {
         const bot = session.actor;
         if (!bot) return;
+
+        const isCompanion = !!session.followPlayerSession;
+        const World = invoke('GameServer/World/World');
+        const onlinePlayers = World.user.sessions.filter(s => 
+            s.actor && 
+            s.actor.fetchIsOnline() && 
+            s.accountId && 
+            !s.accountId.startsWith('bot_')
+        );
+
+        let minDist = Infinity;
+        if (onlinePlayers.length > 0) {
+            const botX = bot.fetchLocX();
+            const botY = bot.fetchLocY();
+            onlinePlayers.forEach(pSession => {
+                const player = pSession.actor;
+                const dx = player.fetchLocX() - botX;
+                const dy = player.fetchLocY() - botY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                }
+            });
+        }
+
+        if (minDist > 1500 && !isCompanion) {
+            // Far-away bot: light background event processing, skip everything else
+            if (Math.random() < 0.05) {
+                this.triggerFarAwayChatEvent(session, bot);
+            }
+            return;
+        }
 
         // Tiny chance to shout globally (e.g. 0.0005 chance per tick - roughly once every 2000 ticks or ~100 minutes per bot)
         if (Math.random() < 0.0005) {
@@ -253,10 +427,18 @@ const BotAI = {
 
     say(session, text) {
         if (!session.actor) return;
-        session.dataSendToOthers(
-            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-            session.actor
-        );
+        const ServerResponse = invoke('GameServer/Network/Response');
+        if (session.plan === 'following' && session.followPlayerSession) {
+            const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
+            if (session.followPlayerSession.dataSendToMe) {
+                session.followPlayerSession.dataSendToMe(packet);
+            }
+        } else {
+            session.dataSendToOthers(
+                ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
+                session.actor
+            );
+        }
     }
 };
 
