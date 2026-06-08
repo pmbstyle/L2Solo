@@ -73,5 +73,74 @@ module.exports = {
             { selfId: 1893, price: 24600, count: 300 },
             { selfId: 1894, price: 5700, count: 1000 },
         ]
+    },
+
+    // ----- Buy Bots (players sell to them) -----
+
+    "Merchant_TI_Buy": {
+        title: "Buyer - D Mats",
+        storeType: 2,
+        locX: -84120, locY: 244760, locZ: -3730,
+        items: [
+            { selfId: 1864, price: 50,  count: 999999 },
+            { selfId: 1865, price: 100, count: 999999 },
+            { selfId: 1867, price: 75,  count: 999999 },
+            { selfId: 1868, price: 50,  count: 999999 },
+            { selfId: 1869, price: 100, count: 999999 },
+            { selfId: 1871, price: 100, count: 999999 },
+            { selfId: 1872, price: 75,  count: 999999 },
+        ]
+    },
+    "Merchant_Gludio_Buy": {
+        title: "Buyer - D/C Mats",
+        storeType: 2,
+        locX: -12480, locY: 122950, locZ: -3118,
+        items: [
+            { selfId: 1867, price: 75,  count: 999999 },
+            { selfId: 1869, price: 100, count: 999999 },
+            { selfId: 1871, price: 100, count: 999999 },
+            { selfId: 1872, price: 75,  count: 999999 },
+            { selfId: 1873, price: 300, count: 999999 },
+            { selfId: 1880, price: 1200, count: 999999 },
+        ]
+    },
+    "Merchant_Dion_Buy": {
+        title: "Buyer - C Mats",
+        storeType: 2,
+        locX: 15860, locY: 143100, locZ: -2707,
+        items: [
+            { selfId: 1873, price: 300,  count: 999999 },
+            { selfId: 1879, price: 800,  count: 999999 },
+            { selfId: 1880, price: 1200, count: 999999 },
+            { selfId: 1881, price: 900,  count: 999999 },
+            { selfId: 1882, price: 500,  count: 999999 },
+            { selfId: 1884, price: 200,  count: 999999 },
+        ]
+    },
+    "Merchant_Giran_Buy": {
+        title: "Buyer - C/B Mats",
+        storeType: 2,
+        locX: 83510, locY: 148120, locZ: -3406,
+        items: [
+            { selfId: 1881, price: 900,  count: 999999 },
+            { selfId: 1882, price: 500,  count: 999999 },
+            { selfId: 1885, price: 1400, count: 999999 },
+            { selfId: 1887, price: 5000, count: 999999 },
+            { selfId: 1888, price: 4000, count: 999999 },
+            { selfId: 1889, price: 1800, count: 999999 },
+        ]
+    },
+    "Merchant_Oren_Buy": {
+        title: "Buyer - B/A Mats",
+        storeType: 2,
+        locX: 83150, locY: 53300, locZ: -1497,
+        items: [
+            { selfId: 1885, price: 1400, count: 999999 },
+            { selfId: 1887, price: 5000, count: 999999 },
+            { selfId: 1888, price: 4000, count: 999999 },
+            { selfId: 1889, price: 1800, count: 999999 },
+            { selfId: 1890, price: 8000, count: 999999 },
+            { selfId: 1894, price: 3500, count: 999999 },
+        ]
     }
 };

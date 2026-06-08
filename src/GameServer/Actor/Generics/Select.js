@@ -34,7 +34,13 @@ function select(session, actor, data) {
                     session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                 }
             } else if (user.fetchPrivateStoreType() === 2) {
-                session.dataSendToMe(ServerResponse.privateStoreListBuy(session.actor, user));
+                const isMerchantBot = botSession.plan === 'merchant';
+                if (isMerchantBot) {
+                    const SellToMerchantItem = invoke('GameServer/World/Generics/NpcBypasses/SellToMerchantItem');
+                    SellToMerchantItem(session, ["sell-to-merchant-item"]);
+                } else {
+                    session.dataSendToMe(ServerResponse.privateStoreListBuy(session.actor, user));
+                }
             }
             return;
         }
