@@ -8,8 +8,11 @@ function teleportTo(session, actor, coords) {
         return;
     }
 
-    // Snap coordinates immediately to geodata height before sending to client
-    coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, coords.locZ);
+    // NOTE: Do NOT override coords.locZ with GeodataEngine.getHeight() here.
+    // Teleport destinations (from teleports.json, spawn coords, etc.) already have
+    // correct Z values taken from authentic L2J server data. Overriding with geodata
+    // produces wrong Z (e.g. underground layer, water level) causing the actor to
+    // fall through terrain. Geodata Z-correction is only appropriate during movement.
 
     actor.clearDestId();
     actor.automation.abortAll(actor);

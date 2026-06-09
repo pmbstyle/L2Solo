@@ -11,9 +11,10 @@ class Npc extends NpcModel {
         // Parent inheritance
         super(data);
 
-        // Snap spawn coordinates to geodata elevation
-        const geoHeight = GeodataEngine.getHeight(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ());
-        this.setLocZ(geoHeight);
+        // NOTE: Do NOT snap spawn Z to geodata here.
+        // Coordinates in spawns.json are already correct (taken from authentic L2J data).
+        // Applying GeodataEngine.getHeight() overwrites them with inaccurate geodata values
+        // causing NPCs to spawn under terrain in Dion, Gludio, Dark Elf Village, etc.
 
         // Local
         this.automation = new Automation();

@@ -10,12 +10,44 @@ const GeodataEngine = {
         console.info("GeodataEngine :: Initializing...");
         VirtualObstacles.init();
         // Preload active regions on startup
+        // NOTE: Giran (27_21), Elven Village (26_18), Orc Village (27_17),
+        //       Dwarven Village (28_11) are beyond geodata coverage (max regionX=26).
+        //       These cities will use fallback Z-height from current actor position.
         const activeRegions = [
-            { x: 22, y: 24 }, // Talking Island
-            { x: 24, y: 20 }, // Gludio
-            { x: 25, y: 21 }, // Dion
-            { x: 25, y: 19 }, // Elven area
-            { x: 25, y: 17 }  // Dark Elven area
+            // Talking Island (x≈-84k, y≈244k)
+            { x: 22, y: 24 }, // Talking Island Village (core)
+            { x: 22, y: 23 }, // Talking Island (west)
+            { x: 22, y: 25 }, // Talking Island (east)
+
+            // Gludin (x≈-80k, y≈149k)
+            { x: 22, y: 21 }, // Gludin Town (core)
+            { x: 22, y: 20 }, // Gludin (south)
+            { x: 22, y: 22 }, // Gludin (north)
+
+            // Gludio (x≈-12k, y≈122k)
+            { x: 24, y: 20 }, // Gludio Town (core)
+            { x: 24, y: 19 }, // Gludio (south)
+            { x: 24, y: 21 }, // Gludio (north)
+
+            // Dion (x≈15k, y≈142k)
+            { x: 25, y: 21 }, // Dion Town (core)
+            { x: 25, y: 20 }, // Dion (south)
+
+            // Dark Elven Village (x≈9k, y≈15k)
+            { x: 25, y: 17 }, // Dark Elven Village (core)
+            { x: 24, y: 17 }, // Dark Elven (west)
+            { x: 25, y: 18 }, // Dark Elven (north)
+
+            // Orc Village area (x≈84k — outside geodata coverage, but nearby regions)
+            { x: 25, y: 16 }, // Orc Village adjacent area
+            { x: 24, y: 16 }, // Orc Village adjacent area
+
+            // Neutral Zone / Elven Forest (x≈-10k, y≈75k)
+            { x: 24, y: 19 }, // Neutral Zone area (already loaded for Gludio south)
+
+            // General world areas for pathfinding
+            { x: 25, y: 19 }, // Central area
+            { x: 24, y: 18 }, // Between cities
         ];
         activeRegions.forEach(reg => {
             this.loadRegion(reg.x, reg.y);

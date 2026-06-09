@@ -4,9 +4,11 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 function updatePosition(session, actor, coords) {
     const Generics = invoke(path.actor);
 
-    // Snap coordinates to geodata elevation
-    const geoHeight = GeodataEngine.getHeight(coords.locX, coords.locY, coords.locZ);
-    coords.locZ = geoHeight;
+    // NOTE: Do NOT snap Z to geodata here. UpdatePosition is called both after
+    // teleports (with correct Z from teleport data) and after movement. Geodata
+    // Z-correction is handled inside MoveTo.js during actual pathfinding steps.
+    // Overriding Z here causes actors to fall through terrain in cities where
+    // geodata is inaccurate (Dion, Gludio, Dark Elf Village, etc.).
 
     // TODO: Write less in DB about movement
     actor.setLocXYZH(coords);
