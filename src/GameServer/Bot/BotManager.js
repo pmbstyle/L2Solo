@@ -87,12 +87,22 @@ const BotManager = {
         Database.fetchCharacterName(botData.name).then((rows) => {
             if (!rows[0]) {
                 Shared.fetchClassInformation(botData.classId).then((classInfo) => {
-                    // Spawn near Town Center of Talking Island with slight offsets
-                    const coords = {
-                        locX: botData.locX ?? (-84318 + (idx * 60)),
-                        locY: botData.locY ?? (244579 + (idx * 60)),
-                        locZ: botData.locZ ?? -3730
-                    };
+                    let coords;
+                    if (botData.locX !== undefined) {
+                        coords = {
+                            locX: botData.locX,
+                            locY: botData.locY,
+                            locZ: botData.locZ
+                        };
+                    } else {
+                        const spawns = BotAI.newbieSpawnCoords(botData.classId);
+                        const spawn = spawns[Math.floor(Math.random() * spawns.length)];
+                        coords = {
+                            locX: spawn.locX + (idx % 5) * 20, // small offset to avoid direct overlapping
+                            locY: spawn.locY + (idx % 5) * 20,
+                            locZ: spawn.locZ
+                        };
+                    }
 
                     const charData = {
                         name: botData.name,
