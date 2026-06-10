@@ -136,6 +136,7 @@ const BotManager = {
                 this.provisionAndSpawn(botData, idx);
             });
             this.startDynamicScalingMonitor();
+            this.startStatusLogMonitor();
         }, 5000);
     },
 
@@ -570,6 +571,29 @@ const BotManager = {
                 console.error("Dynamic Scaling Monitor Error:", err);
             }
         }, 5000); // Check and scale bots every 5 seconds
+    },
+
+    startStatusLogMonitor() {
+        if (process.env.BOT_STATUS_LOGS === '0') return;
+
+        setInterval(() => {
+            try {
+                const summaries = this.sessions
+                    .filter((session) => session.actor && session.plan !== 'merchant')
+                    .slice(0, 10)
+                    .map((session) => {
+                        const summary = BotAI.summarizeStatus(session);
+                        if (!session.lastDecision) return summary;
+                        return `${summary} decision=${session.lastDecision.action}/${session.lastDecision.reason}`;
+                    });
+
+                if (summaries.length > 0) {
+                    console.info("BotStatus :: %s", summaries.join(" | "));
+                }
+            } catch (err) {
+                console.error("Bot Status Monitor Error:", err);
+            }
+        }, 30000);
     },
 
     monitorAndScaleBots() {

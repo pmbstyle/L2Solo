@@ -273,7 +273,7 @@ const BotAI = {
             });
         }
 
-        if (minDist > 1500 && !isCompanion) {
+        if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion) {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
