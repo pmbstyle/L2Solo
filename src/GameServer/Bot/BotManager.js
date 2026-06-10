@@ -43,6 +43,10 @@ const BotManager = {
         return this.sessions.find((session) => session.actor && session.actor.fetchName().toLowerCase() === lookup);
     },
 
+    findSessionById(id) {
+        return this.sessions.find((session) => session.actor && session.actor.fetchId() === id);
+    },
+
     getBotStatus(sessionOrName) {
         const session = typeof sessionOrName === 'string' ? this.findSessionByName(sessionOrName) : sessionOrName;
         if (!session) return null;
@@ -53,6 +57,57 @@ const BotManager = {
         return this.sessions
             .filter((session) => session.actor)
             .map((session) => BotAI.getStatus(session));
+    },
+
+    renderBotStatusPanel(playerSession, botSession = null) {
+        if (!playerSession.actor) return;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const pct = (value) => `${Math.round((value || 0) * 100)}%`;
+        const row = (label, value) => `<tr><td width=80><font color="LEVEL">${label}</font></td><td width=190>${value}</td></tr>`;
+
+        if (!botSession) {
+            const statuses = this.getAllBotStatuses().slice(0, 14);
+            let html = `<html><body><title>Bot Status</title><font color="LEVEL">Bot Runtime Status</font><br><br>`;
+            statuses.forEach((status) => {
+                const blockers = status.blockers.length > 0 ? ` / ${status.blockers.join(',')}` : '';
+                html += `<a action="bypass -h bot-status ${status.name}">${status.name}</a>: ${status.mode}, ${status.intent}, HP ${pct(status.vitals.hpPct)}, MP ${pct(status.vitals.mpPct)}${blockers}<br>`;
+            });
+            html += `</body></html>`;
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+            return;
+        }
+
+        const status = this.getBotStatus(botSession);
+        if (!status || !status.available) {
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), `<html><body><title>Bot Status</title>Bot status unavailable.</body></html>`));
+            return;
+        }
+
+        const spot = status.spot ? `${status.spot.name} / Lv ${status.spot.minLevel}-${status.spot.maxLevel} / density ${status.spot.density}` : 'none';
+        const target = status.target ? `${status.target.type}:${status.target.name || status.target.id}` : 'none';
+        const party = status.party ? `${status.party.role}, ${status.party.stance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
+        const blockers = status.blockers.length > 0 ? status.blockers.join(', ') : 'none';
+        const decision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : 'none';
+
+        let html = `<html><body><title>Bot Status</title><font color="LEVEL">${status.name}</font><br><br>`;
+        html += `<table width=270>`;
+        html += row('Mode', status.mode);
+        html += row('Intent', status.intent);
+        html += row('Role', status.role);
+        html += row('Vitals', `HP ${pct(status.vitals.hpPct)} / MP ${pct(status.vitals.mpPct)}`);
+        html += row('Target', target);
+        html += row('Party', party);
+        html += row('Spot', spot);
+        html += row('Nearby', `players ${status.nearby.realPlayers}, bots ${status.nearby.friendlyBots}, mobs ${status.nearby.attackableNpcs}`);
+        html += row('Move', status.movement.moving ? `moving (${status.movement.towards})` : 'idle');
+        html += row('Blockers', blockers);
+        html += row('Decision', decision);
+        html += `</table><br>`;
+        html += `<a action="bypass -h bot-status ${status.name}">Refresh</a>`;
+        html += `</body></html>`;
+
+        playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
     },
 
     init() {

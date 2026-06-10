@@ -40,6 +40,12 @@ function consume(session, data) {
             CompanionControl.render(session);
             return;
         }
+        if (data.text === '.botstatus' || data.text.startsWith('.botstatus ')) {
+            const BotStatus = invoke('GameServer/World/Generics/NpcBypasses/BotStatus');
+            const parts = data.text.split(/\s+/);
+            BotStatus(session, ['bot-status', parts[1]]);
+            return;
+        }
     }
 
     if (data.kind === 1) { // Shout
