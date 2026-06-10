@@ -1,6 +1,7 @@
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
+const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
@@ -86,10 +87,11 @@ module.exports = {
                     const length = Math.sqrt(dx*dx + dy*dy) || 1;
                     const fleeX = Math.round(bot.fetchLocX() + (dx / length) * 850);
                     const fleeY = Math.round(bot.fetchLocY() + (dy / length) * 850);
+                    const fleeZ = GeodataEngine.getHeight(fleeX, fleeY, bot.fetchLocZ());
                     
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: fleeX, locY: fleeY, locZ: bot.fetchLocZ() }
+                        to: { locX: fleeX, locY: fleeY, locZ: fleeZ }
                     });
 
                     setTimeout(() => {
