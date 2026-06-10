@@ -32,7 +32,7 @@ function select(session, actor, data) {
                     const BuyMerchantItem = invoke('GameServer/World/Generics/NpcBypasses/BuyMerchantItem');
                     BuyMerchantItem(session, ["buy-merchant-item"]);
                 } else {
-                    session.dataSendToMe(ServerResponse.privateStoreMsg(session.actor, user));
+                    session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
                     session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                 }
             } else if (user.fetchPrivateStoreType() === 3) {
@@ -75,7 +75,7 @@ function select(session, actor, data) {
                     if (user.fetchPrivateStoreType && user.fetchPrivateStoreType() !== 0) {
                         session.viewedPrivateStoreSeller = user;
                         if (user.fetchPrivateStoreType() === 1) {
-                            session.dataSendToMe(ServerResponse.privateStoreMsg(session.actor, user));
+                            session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
                             session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                         } else if (user.fetchPrivateStoreType() === 3) {
                             session.dataSendToMe(ServerResponse.privateStoreListBuy(session.actor, user));

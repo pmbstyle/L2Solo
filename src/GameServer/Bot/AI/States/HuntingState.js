@@ -122,7 +122,8 @@ module.exports = {
             session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
             session.plan = 'shopping';
             session.shopTimer = Date.now();
-            BotAI.say(session, `My bags are full of keltir skins! Walking back to ${closestTown.name} to sell and restock.`);
+            session.shoppingTarget = undefined;
+            BotAI.say(session, `My bags are full of loot. Walking back to ${closestTown.name} to sell and restock.`);
             bot.moveTo({
                 from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
                 to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }

@@ -1,5 +1,3 @@
-const SpeckMath = invoke('GameServer/SpeckMath');
-
 const ROLE_CLASSES = {
     healer: [15, 16, 17, 29, 30, 42, 43],
     tank: [4, 5, 6, 19, 20, 32, 33],
@@ -140,6 +138,20 @@ function nearbySnapshot(bot) {
     return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs };
 }
 
+function tradeSnapshot(session, bot) {
+    const store = bot.fetchPrivateStore && bot.fetchPrivateStore();
+    return {
+        store: store ? {
+            type: store.storeType === 3 ? 'buy' : 'sell',
+            title: store.title || '',
+            town: store.town || null,
+            items: store.items ? store.items.length : 0
+        } : null,
+        shoppingTarget: session.shoppingTarget || null,
+        last: session.lastTradeSummary || null
+    };
+}
+
 const BotStatus = {
     getStatus(session) {
         const bot = session.actor;
@@ -192,6 +204,7 @@ const BotStatus = {
                 shopStartedAt: session.shopTimer || null
             },
             nearby: nearbySnapshot(bot),
+            trade: tradeSnapshot(session, bot),
             blockers: []
         };
 

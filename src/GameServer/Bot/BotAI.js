@@ -1,6 +1,4 @@
-const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
-const SpeckMath      = invoke('GameServer/SpeckMath');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 
@@ -51,7 +49,7 @@ const States = {
     following: invoke('GameServer/Bot/AI/States/FollowingState'),
     hunting: invoke('GameServer/Bot/AI/States/HuntingState'),
     pk_hunting: invoke('GameServer/Bot/AI/States/PkHuntingState'),
-    merchant: { tick() {} }
+    merchant: invoke('GameServer/Bot/AI/States/MerchantState')
 };
 
 const BotAI = {
@@ -109,6 +107,10 @@ const BotAI = {
         if (!bot) return 3000;
 
         const isCompanion = !!session.followPlayerSession;
+        if (session.plan === 'shopping') {
+            return 1500;
+        }
+
         const World = invoke('GameServer/World/World');
         const onlinePlayers = World.user.sessions.filter(s => 
             s.actor && 
@@ -273,7 +275,7 @@ const BotAI = {
             });
         }
 
-        if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion) {
+        if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion && session.plan !== 'shopping') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -326,7 +328,8 @@ const BotAI = {
                     spawnTarget.locY += (Math.random() - 0.5) * 800;
                     spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                 } else {
-                    if (bot.fetchName().startsWith("Merchant_") || bot.fetchName().startsWith("MerBuy_")) {
+                    const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+                    if (MerchantConfigs[bot.fetchName()]) {
                         session.plan = 'merchant';
                         bot.state.setSeated(true);
                         spawnTarget = {
@@ -478,6 +481,19 @@ const BotAI = {
                 session.actor
             );
         }
+    },
+
+    trade(session, text) {
+        if (!session.actor) return;
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const World = invoke('GameServer/World/World');
+        const packet = ServerResponse.speak(session.actor, { kind: 8, text: text });
+
+        World.user.sessions.forEach((user) => {
+            if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
+                user.dataSendToMe(packet);
+            }
+        });
     },
 
     getStatus(session) {

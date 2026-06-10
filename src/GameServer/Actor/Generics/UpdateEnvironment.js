@@ -16,11 +16,13 @@ function updateEnvironment(session, actor) {
             session.dataSendToMe(ServerResponse.charInfo(user.actor));
             session.dataSendToMe(ServerResponse.relationChanged(user.actor));
 
-            // Send store nameplate: both Sell (type=1) and Buy (type=2) use opcode 0x8c in C2
+            // Merchant bots already expose their store state through CharInfo.
+            // Sending a custom 0x8c text for them is client-unstable on C2.
             const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
-            if (visibleStoreType === 1) {
+            const isMerchantBot = user.constructor.name === 'BotSession' && user.plan === 'merchant';
+            if (!isMerchantBot && visibleStoreType === 1) {
                 session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, user.actor.fetchTitle()));
-            } else if (visibleStoreType === 3) {
+            } else if (!isMerchantBot && visibleStoreType === 3) {
                 session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, user.actor.fetchTitle()));
             }
 

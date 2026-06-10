@@ -48,7 +48,7 @@ function consume(session, data) {
         }
     }
 
-    if (data.kind === 1) { // Shout
+    if (data.kind === 1 || data.kind === 8) { // Shout / Trade
         const packet = ServerResponse.speak(session.actor, data);
         const World = invoke('GameServer/World/World');
         World.user.sessions.forEach((user) => {

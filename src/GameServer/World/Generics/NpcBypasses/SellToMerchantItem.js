@@ -1,6 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
-const Database       = invoke('Database');
+const TradeService   = invoke('GameServer/Bot/TradeService');
 
 function fold(v) {
     return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -48,51 +48,6 @@ ${rows}
 </center></body></html>`;
 }
 
-function takeItem(session, selfId, amount) {
-    return new Promise((resolve, reject) => {
-        const actor = session.actor;
-        const backpack = actor.backpack;
-        const item = backpack.fetchItemFromSelfId(selfId);
-        if (!item || item.fetchAmount() < amount) {
-            return reject("Not enough items.");
-        }
-        const total = item.fetchAmount() - amount;
-        if (total > 0) {
-            Database.updateItemAmount(actor.fetchId(), item.fetchId(), total).then(() => {
-                item.setAmount(total);
-                resolve();
-            }).catch(reject);
-        } else {
-            Database.deleteItem(actor.fetchId(), item.fetchId()).then(() => {
-                backpack.items = backpack.items.filter(ob => ob.fetchId() !== item.fetchId());
-                resolve();
-            }).catch(reject);
-        }
-    });
-}
-
-function giveAdena(session, amount) {
-    const actor = session.actor;
-    const backpack = actor.backpack;
-    return new Promise((resolve, reject) => {
-        const adenaItem = backpack.fetchItemFromSelfId(57);
-        if (adenaItem) {
-            const total = adenaItem.fetchAmount() + amount;
-            Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), total).then(() => {
-                adenaItem.setAmount(total);
-                resolve();
-            }).catch(reject);
-        } else {
-            Database.setItem(actor.fetchId(), {
-                selfId: 57, name: 'Adena', amount: amount, equipped: false, slot: 0
-            }).then((packet) => {
-                backpack.insertItem(Number(packet.insertId), 57, { amount: amount });
-                resolve();
-            }).catch(reject);
-        }
-    });
-}
-
 module.exports = async function(session, parts) {
     const bot = session.viewedPrivateStoreSeller;
     if (!bot) {
@@ -129,11 +84,8 @@ module.exports = async function(session, parts) {
         return;
     }
 
-    const totalEarn = storeItem.price * sellQty;
-
     try {
-        await takeItem(session, selfId, sellQty);
-        await giveAdena(session, totalEarn);
+        await TradeService.sellToStore(session.actor, store, selfId, sellQty);
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));

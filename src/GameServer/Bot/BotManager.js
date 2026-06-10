@@ -6,6 +6,7 @@ const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+const TradeService = invoke('GameServer/Bot/TradeService');
 
 const BOTS_TO_SPAWN = [
     { name: "Bot_Gimli",   race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0 }, // Dwarf
@@ -18,7 +19,7 @@ const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     return { name: name, race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: cfg.locX, locY: cfg.locY, locZ: cfg.locZ };
 });
 
-const isMerchantName = name => name.startsWith("Merchant_") || name.startsWith("MerBuy_");
+const isMerchantName = name => !!MerchantConfigs[name];
 
 const EXTRA_BOTS_COUNT = 10; // Configurable: Set to 20, 50, or more to scale up the bot count!
 
@@ -89,6 +90,9 @@ const BotManager = {
         const party = status.party ? `${status.party.role}, ${status.party.stance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
         const blockers = status.blockers.length > 0 ? status.blockers.join(', ') : 'none';
         const decision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : 'none';
+        const trade = status.trade?.last ? status.trade.last :
+            status.trade?.shoppingTarget ? `going to ${status.trade.shoppingTarget.name}` :
+            status.trade?.store ? `${status.trade.store.type} / ${status.trade.store.title}` : 'none';
 
         let html = `<html><body><title>Bot Status</title><font color="LEVEL">${status.name}</font><br><br>`;
         html += `<table width=270>`;
@@ -103,6 +107,7 @@ const BotManager = {
         html += row('Move', status.movement.moving ? `moving (${status.movement.towards})` : 'idle');
         html += row('Blockers', blockers);
         html += row('Decision', decision);
+        html += row('Trade', trade);
         html += `</table><br>`;
         html += `<a action="bypass -h bot-status ${status.name}">Refresh</a>`;
         html += `</body></html>`;
@@ -265,17 +270,12 @@ const BotManager = {
                             session.actor.setTitle(storeCfg.title);
                             session.actor.setPrivateStoreType(storeCfg.storeType);
 
-                            let fakeObjectIdSeq = 600000000 + utils.randomNumber(100000000);
-                            const storeItems = storeCfg.items.map(item => ({
-                                objectId: ++fakeObjectIdSeq,
-                                selfId: item.selfId,
-                                price: item.price,
-                                count: item.count
-                            }));
+                            const storeItems = TradeService.normalizeStoreItems(storeCfg);
 
                             session.actor.setPrivateStore({
                                 storeType: storeCfg.storeType,
                                 title: storeCfg.title,
+                                town: storeCfg.town,
                                 items: storeItems
                             });
                         }
@@ -298,25 +298,6 @@ const BotManager = {
                 const ServerResponse = invoke('GameServer/Network/Response');
                 session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
                 session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
-
-                // Send store nameplate packet after a short delay so client processes CharInfo first.
-                // Both Sell and Buy stores use opcode 0x8c in C2.
-                if (session.plan === 'merchant') {
-                    const storeType = session.actor.fetchPrivateStoreType();
-                    setTimeout(() => {
-                        if (storeType === 3) {
-                            session.dataSendToOthers(
-                                ServerResponse.privateStoreBuyMsg(session.actor, session.actor.fetchTitle()),
-                                session.actor
-                            );
-                        } else {
-                            session.dataSendToOthers(
-                                ServerResponse.privateStoreMsg(session.actor, session.actor.fetchTitle()),
-                                session.actor
-                            );
-                        }
-                    }, 500);
-                }
 
                 // Start AI loop
                 BotAI.init(session);
@@ -1051,16 +1032,16 @@ const CONVERSATION_TOPICS = [
 ];
 
 const GLOBAL_SHOUTS = [
-    "WTB Keltir Claws 20a each! PM me!",
-    "LFG for Orc farming, level 6 Elf here!",
-    "Anyone got a spare wooden shield? WTB cheap!",
-    "Gimli here, selling dwarven scrap metal near the town square!",
+    "WTB starter mats near Talking Island. Check Nika or Tarin.",
+    "Mira has cheap mats and soulshots around Talking Island.",
+    "Need D-grade parts? Maren is buying near Gludio.",
+    "Rina has C-grade craft stock in Dion, cheaper than shop.",
     "Wow, this server is so smooth! Loving the solo gameplay.",
     "LFP / Party invite me! Aragorn level 5 ready to hunt!",
     "Legolas is looking for Gandalf, where you at?",
-    "Selling Keltir meat, fresh and delicious! PM me!",
-    "Who is up for some Orc Archer hunting? Level 8 Knight WTT help.",
-    "This Talking Island is so cozy, perfect classic vibes!"
+    "Pavel and Tessa are buying Giran drops.",
+    "Who is up for Orc Archer hunting? Level 8 Knight WTT help.",
+    "Iris has B/A mats near Oren, prices below regular shops."
 ];
 
 module.exports = BotManager;
