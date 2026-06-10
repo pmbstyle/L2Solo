@@ -145,13 +145,17 @@ const BotAI = {
         }
     },
 
-    getClosestTownName(locX, locY) {
+    getClosestTown(locX, locY) {
         const towns = [
-            { name: "Talking Island", x: -84318, y: 244579 },
-            { name: "Gludio", x: -12672, y: 122776 },
-            { name: "Dion", x: 15664, y: 142979 },
-            { name: "Giran", x: 83400, y: 147943 },
-            { name: "Oren", x: 82960, y: 53177 }
+            { name: "Talking Island", x: -84318, y: 244579, z: -3730 },
+            { name: "Elven Village", x: 45475, y: 48359, z: -3060 },
+            { name: "Dark Elven Village", x: 12111, y: 16686, z: -4582 },
+            { name: "Dwarven Village", x: 115632, y: -177996, z: -905 },
+            { name: "Orc Village", x: -45032, y: -113598, z: -192 },
+            { name: "Gludio", x: -12672, y: 122776, z: -3730 },
+            { name: "Dion", x: 15664, y: 142979, z: -3730 },
+            { name: "Giran", x: 83400, y: 147943, z: -3730 },
+            { name: "Oren", x: 82960, y: 53177, z: -3730 }
         ];
         let closest = towns[0];
         let minDist = Infinity;
@@ -164,7 +168,33 @@ const BotAI = {
                 closest = town;
             }
         });
-        return closest.name;
+        return closest;
+    },
+
+    getClosestTownName(locX, locY) {
+        return this.getClosestTown(locX, locY).name;
+    },
+
+    getClosestNewbieGuide(locX, locY) {
+        const guides = [
+            { name: "Talking Island", locX: -84081, locY: 243227, locZ: -3723 },
+            { name: "Elven Village", locX: 45475, locY: 48359, locZ: -3060 },
+            { name: "Dark Elven Village", locX: 12111, locY: 16686, locZ: -4582 },
+            { name: "Dwarven Village", locX: 115632, locY: -177996, locZ: -905 },
+            { name: "Orc Village", locX: -45032, locY: -113598, locZ: -192 }
+        ];
+        let closest = guides[0];
+        let minDist = Infinity;
+        guides.forEach(g => {
+            const dx = g.locX - locX;
+            const dy = g.locY - locY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = g;
+            }
+        });
+        return closest;
     },
 
     triggerFarAwayChatEvent(session, bot) {

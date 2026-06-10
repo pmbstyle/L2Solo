@@ -3,16 +3,22 @@ const ServerResponse = invoke('GameServer/Network/Response');
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
-        const guidePt = new SpeckMath.Point3D(-84081, 243227, -3723);
+        const closestGuide = BotAI.getClosestNewbieGuide(bot.fetchLocX(), bot.fetchLocY());
+        const guidePt = new SpeckMath.Point3D(closestGuide.locX, closestGuide.locY, closestGuide.locZ);
         const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
         const dist = botPt.distance(guidePt);
 
         if (dist > 250) {
-            if (Math.random() < 0.20 || !bot.state.inMotion()) {
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: { locX: -84081, locY: 243227, locZ: -3723 }
-                });
+            if (dist > 5000) {
+                // Teleport to the guide if too far (prevents getting stuck on geography/ocean)
+                Generics.teleportTo(session, bot, { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ });
+            } else {
+                if (Math.random() < 0.20 || !bot.state.inMotion()) {
+                    bot.moveTo({
+                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                        to: { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ }
+                    });
+                }
             }
         } else {
             if (!bot.activeBuffs) {
@@ -32,6 +38,14 @@ module.exports = {
             
             BotAI.say(session, "Thank you, Newbie Guide! Fully blessed and ready to hunt!");
             session.plan = 'hunting';
+
+            // Teleport back to original hunting spot
+            if (session.preBuffLocation) {
+                Generics.teleportTo(session, bot, session.preBuffLocation);
+                session.preBuffLocation = undefined;
+            } else if (session.initialSpawnCoord) {
+                Generics.teleportTo(session, bot, session.initialSpawnCoord);
+            }
         }
     }
 };

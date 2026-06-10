@@ -8,6 +8,7 @@ module.exports = {
         if (bot.fetchLevel() <= 25 && bot.fetchKarma() === 0 && !session.followPlayerSession) {
             const buffsExpired = !bot.activeBuffs || !bot.activeBuffs.windWalk || Date.now() > bot.activeBuffs.windWalk;
             if (buffsExpired) {
+                session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
                 session.plan = 'getting_buffed';
                 session.currentTargetId = undefined;
                 bot.automation.abortAll(bot);
