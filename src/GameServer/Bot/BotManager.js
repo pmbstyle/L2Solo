@@ -463,7 +463,7 @@ const BotManager = {
 
         World.user.sessions.forEach((session) => {
             const actor = session.actor;
-            if (actor && actor.fetchIsOnline() && actor.fetchKarma() === 0 && actor.fetchName() !== 'Bot_Gimli' && actor.fetchName() !== 'Bot_Legolas' && actor.fetchName() !== 'Bot_Gandalf') {
+            if (actor && actor.fetchIsOnline() && actor.fetchKarma() === 0 && actor.fetchName() !== 'Bot_Gimli' && actor.fetchName() !== 'Bot_Legolas' && actor.fetchName() !== 'Bot_Gandalf' && !utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
                 const sx = Math.floor(actor.fetchLocX() / 4000);
                 const sy = Math.floor(actor.fetchLocY() / 4000);
                 const key = `${sx},${sy}`;
