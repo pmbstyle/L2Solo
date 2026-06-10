@@ -98,6 +98,10 @@ function renderCompanionPanel(session) {
 
         const stayActive = companionSession.botStay === true;
         const tauntActive = companionSession.autoTaunt !== false; // default true for tanks
+        const status = BotManager.getBotStatus(companionSession);
+        const hpPct = status ? Math.round(status.vitals.hpPct * 100) : 0;
+        const mpPct = status ? Math.round(status.vitals.mpPct * 100) : 0;
+        const spotName = status?.spot?.name || 'no spot';
 
         html += `<font color="00FF00">${bot.fetchName()}</font>: `;
 
@@ -118,7 +122,10 @@ function renderCompanionPanel(session) {
             }
         }
 
-        html += ` | <a action="bypass -h companion-control summon ${bot.fetchName()}">Summon</a> | <a action="bypass -h companion-control dismiss ${bot.fetchName()}"><font color="FF5555">Dismiss</font></a><br>`;
+        html += ` | <a action="bypass -h companion-control summon ${bot.fetchName()}">Summon</a> | <a action="bypass -h bot-status ${bot.fetchName()}">Status</a> | <a action="bypass -h companion-control dismiss ${bot.fetchName()}"><font color="FF5555">Dismiss</font></a><br>`;
+        if (status) {
+            html += `<font color="777777">${status.intent} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}</font><br>`;
+        }
         html += `<img src="L2UI.SquareBlank" width=270 height=4><br>`;
     });
 

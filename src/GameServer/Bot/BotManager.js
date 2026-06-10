@@ -38,6 +38,78 @@ const BOT_COMBINATIONS = [
 const BotManager = {
     sessions: [],
 
+    findSessionByName(name) {
+        const lookup = String(name || '').toLowerCase();
+        return this.sessions.find((session) => session.actor && session.actor.fetchName().toLowerCase() === lookup);
+    },
+
+    findSessionById(id) {
+        return this.sessions.find((session) => session.actor && session.actor.fetchId() === id);
+    },
+
+    getBotStatus(sessionOrName) {
+        const session = typeof sessionOrName === 'string' ? this.findSessionByName(sessionOrName) : sessionOrName;
+        if (!session) return null;
+        return BotAI.getStatus(session);
+    },
+
+    getAllBotStatuses() {
+        return this.sessions
+            .filter((session) => session.actor)
+            .map((session) => BotAI.getStatus(session));
+    },
+
+    renderBotStatusPanel(playerSession, botSession = null) {
+        if (!playerSession.actor) return;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const pct = (value) => `${Math.round((value || 0) * 100)}%`;
+        const row = (label, value) => `<tr><td width=80><font color="LEVEL">${label}</font></td><td width=190>${value}</td></tr>`;
+
+        if (!botSession) {
+            const statuses = this.getAllBotStatuses().slice(0, 14);
+            let html = `<html><body><title>Bot Status</title><font color="LEVEL">Bot Runtime Status</font><br><br>`;
+            statuses.forEach((status) => {
+                const blockers = status.blockers.length > 0 ? ` / ${status.blockers.join(',')}` : '';
+                html += `<a action="bypass -h bot-status ${status.name}">${status.name}</a>: ${status.mode}, ${status.intent}, HP ${pct(status.vitals.hpPct)}, MP ${pct(status.vitals.mpPct)}${blockers}<br>`;
+            });
+            html += `</body></html>`;
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+            return;
+        }
+
+        const status = this.getBotStatus(botSession);
+        if (!status || !status.available) {
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), `<html><body><title>Bot Status</title>Bot status unavailable.</body></html>`));
+            return;
+        }
+
+        const spot = status.spot ? `${status.spot.name} / Lv ${status.spot.minLevel}-${status.spot.maxLevel} / density ${status.spot.density}` : 'none';
+        const target = status.target ? `${status.target.type}:${status.target.name || status.target.id}` : 'none';
+        const party = status.party ? `${status.party.role}, ${status.party.stance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
+        const blockers = status.blockers.length > 0 ? status.blockers.join(', ') : 'none';
+        const decision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : 'none';
+
+        let html = `<html><body><title>Bot Status</title><font color="LEVEL">${status.name}</font><br><br>`;
+        html += `<table width=270>`;
+        html += row('Mode', status.mode);
+        html += row('Intent', status.intent);
+        html += row('Role', status.role);
+        html += row('Vitals', `HP ${pct(status.vitals.hpPct)} / MP ${pct(status.vitals.mpPct)}`);
+        html += row('Target', target);
+        html += row('Party', party);
+        html += row('Spot', spot);
+        html += row('Nearby', `players ${status.nearby.realPlayers}, bots ${status.nearby.friendlyBots}, mobs ${status.nearby.attackableNpcs}`);
+        html += row('Move', status.movement.moving ? `moving (${status.movement.towards})` : 'idle');
+        html += row('Blockers', blockers);
+        html += row('Decision', decision);
+        html += `</table><br>`;
+        html += `<a action="bypass -h bot-status ${status.name}">Refresh</a>`;
+        html += `</body></html>`;
+
+        playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+    },
+
     init() {
         console.info("BotManager :: Initializing automated SimPlayers...");
         
@@ -64,6 +136,7 @@ const BotManager = {
                 this.provisionAndSpawn(botData, idx);
             });
             this.startDynamicScalingMonitor();
+            this.startStatusLogMonitor();
         }, 5000);
     },
 
@@ -498,6 +571,29 @@ const BotManager = {
                 console.error("Dynamic Scaling Monitor Error:", err);
             }
         }, 5000); // Check and scale bots every 5 seconds
+    },
+
+    startStatusLogMonitor() {
+        if (process.env.BOT_STATUS_LOGS === '0') return;
+
+        setInterval(() => {
+            try {
+                const summaries = this.sessions
+                    .filter((session) => session.actor && session.plan !== 'merchant')
+                    .slice(0, 10)
+                    .map((session) => {
+                        const summary = BotAI.summarizeStatus(session);
+                        if (!session.lastDecision) return summary;
+                        return `${summary} decision=${session.lastDecision.action}/${session.lastDecision.reason}`;
+                    });
+
+                if (summaries.length > 0) {
+                    console.info("BotStatus :: %s", summaries.join(" | "));
+                }
+            } catch (err) {
+                console.error("Bot Status Monitor Error:", err);
+            }
+        }, 30000);
     },
 
     monitorAndScaleBots() {

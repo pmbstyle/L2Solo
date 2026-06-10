@@ -2,6 +2,7 @@ const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
+const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -246,6 +247,8 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        session.botStatus = BotStatus.getStatus(session);
+
         const isCompanion = !!session.followPlayerSession;
         const World = invoke('GameServer/World/World');
         const onlinePlayers = World.user.sessions.filter(s => 
@@ -270,7 +273,7 @@ const BotAI = {
             });
         }
 
-        if (minDist > 1500 && !isCompanion) {
+        if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion) {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -365,6 +368,7 @@ const BotAI = {
         if (state) {
             try {
                 state.tick(session, bot, Generics, BotAI);
+                session.botStatus = BotStatus.getStatus(session);
             } catch (err) {
                 console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
             }
@@ -474,6 +478,16 @@ const BotAI = {
                 session.actor
             );
         }
+    },
+
+    getStatus(session) {
+        const status = BotStatus.getStatus(session);
+        session.botStatus = status;
+        return status;
+    },
+
+    summarizeStatus(session) {
+        return BotStatus.summarize(this.getStatus(session));
     }
 };
 

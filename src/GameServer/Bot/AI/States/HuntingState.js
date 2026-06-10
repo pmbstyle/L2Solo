@@ -2,6 +2,8 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
+const SpotService    = invoke('GameServer/Bot/AI/SpotService');
+const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
@@ -178,14 +180,62 @@ module.exports = {
             });
 
             if (closestMonster) {
+                session.noTargetTicks = 0;
                 session.currentTargetId = closestMonster.fetchId();
                 bot.select({ id: closestMonster.fetchId() });
+
+                if (!session.currentSpot) {
+                    const spot = SpotService.findCurrentSpot({
+                        locX: bot.fetchLocX(),
+                        locY: bot.fetchLocY(),
+                        locZ: bot.fetchLocZ()
+                    });
+                    SpotService.assignSpot(session, spot);
+                }
 
                 if (Math.random() < 0.15) {
                     BotAI.say(session, BotAI.getRandomPhrase('foundTarget', closestMonster.fetchName()));
                 }
                 BotAI.executeCombat(session, bot, closestMonster, Generics);
             } else {
+                session.noTargetTicks = (session.noTargetTicks || 0) + 1;
+
+                const currentSpot = SpotService.findCurrentSpot({
+                    locX: bot.fetchLocX(),
+                    locY: bot.fetchLocY(),
+                    locZ: bot.fetchLocZ()
+                });
+                if (!session.currentSpot && currentSpot) {
+                    SpotService.assignSpot(session, currentSpot);
+                }
+
+                const decision = DecisionService.suggest(BotAI.getStatus(session), session);
+                session.lastDecision = {
+                    action: decision.action,
+                    reason: decision.reason,
+                    spotId: decision.spot?.id || null,
+                    spotName: decision.spot?.name || null
+                };
+
+                if (decision.action === 'move_to_spot' && decision.spot) {
+                    const assignedSpot = SpotService.assignSpot(session, decision.spot);
+                    const targetLoc = SpotService.randomPointNear(decision.spot);
+
+                    session.initialSpawnCoord = { ...assignedSpot.center };
+                    session.lastSpotMoveAt = Date.now();
+                    session.noTargetTicks = 0;
+
+                    if (Math.random() < 0.65) {
+                        BotAI.say(session, `No good mobs here. Moving to ${SpotService.describe(decision.spot)}.`);
+                    }
+
+                    bot.moveTo({
+                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                        to: targetLoc
+                    });
+                    return;
+                }
+
                 // Wandering to search for monsters in starting zones if none nearby
                 if (Math.random() < 0.50) {
                     if (!session.initialSpawnCoord) {
