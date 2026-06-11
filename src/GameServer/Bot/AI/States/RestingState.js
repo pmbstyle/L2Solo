@@ -20,7 +20,7 @@ module.exports = {
         if (hpRatio >= 0.95 && mpRatio >= 0.95) {
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-            if (session.followPlayerSession) {
+            if (session.followPlayerSession && session.partyCompanion === true) {
                 session.plan = 'following';
                 BotAI.say(session, "Fully rested! Ready to follow you again.");
             } else {

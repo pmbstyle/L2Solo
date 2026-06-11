@@ -5,6 +5,12 @@ const ServerResponse = invoke('GameServer/Network/Response');
 module.exports = {
     tick(session, bot, Generics, BotAI) {
         const playerSession = session.followPlayerSession;
+        if (session.partyCompanion !== true) {
+            session.plan = 'hunting';
+            session.followPlayerSession = null;
+            return;
+        }
+
         if (!playerSession || !playerSession.actor || !playerSession.actor.fetchIsOnline()) {
             session.plan = 'hunting';
             BotAI.say(session, "My companion has disconnected. Heading back to hunt.");
@@ -270,7 +276,7 @@ module.exports = {
                 World.fetchUser(playerTargetId).then((user) => {
                     const targetIsTeammate = user.session && (
                         user.session === playerSession ||
-                        user.session.followPlayerSession === playerSession
+                        (user.session.followPlayerSession === playerSession && user.session.partyCompanion === true)
                     );
 
                     const isAttackablePvPTarget = user.fetchKarma() > 0 || user.fetchPvpFlag() > 0;

@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
+const BotBrain       = invoke('GameServer/Bot/AI/BotBrain');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -106,7 +107,7 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return 3000;
 
-        const isCompanion = !!session.followPlayerSession;
+        const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         if (session.plan === 'shopping') {
             return 1500;
         }
@@ -251,7 +252,7 @@ const BotAI = {
 
         session.botStatus = BotStatus.getStatus(session);
 
-        const isCompanion = !!session.followPlayerSession;
+        const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const World = invoke('GameServer/World/World');
         const onlinePlayers = World.user.sessions.filter(s => 
             s.actor && 
@@ -275,6 +276,8 @@ const BotAI = {
             });
         }
 
+        BotBrain.maybeThink(session, 'ambient', session.botStatus);
+
         if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion && session.plan !== 'shopping') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
@@ -294,7 +297,7 @@ const BotAI = {
         }
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
-        if (session.plan === 'following' && session.followPlayerSession) {
+        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
             if (playerSession && playerSession.actor && playerSession.actor.fetchIsOnline()) {
                 playerSession.dataSendToMe(
@@ -470,7 +473,7 @@ const BotAI = {
     say(session, text) {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
-        if (session.plan === 'following' && session.followPlayerSession) {
+        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
             const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
             if (session.followPlayerSession.dataSendToMe) {
                 session.followPlayerSession.dataSendToMe(packet);
@@ -481,6 +484,17 @@ const BotAI = {
                 session.actor
             );
         }
+    },
+
+    tell(session, targetSession, text) {
+        if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
+        const clean = String(text || '').trim().slice(0, 120);
+        if (!clean) return;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        targetSession.dataSendToMe(
+            ServerResponse.speak(session.actor, { kind: 2, text: clean })
+        );
     },
 
     trade(session, text) {

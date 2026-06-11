@@ -4,6 +4,7 @@ const DataCache   = invoke('GameServer/DataCache');
 const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
+const BotBrain    = invoke('GameServer/Bot/AI/BotBrain');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
@@ -338,12 +339,14 @@ const BotManager = {
     },
 
     handlePlayerSpeak(playerSession, data) {
-        const text = data.text.trim().toLowerCase();
+        const rawText = data.text.trim();
+        const text = rawText.toLowerCase();
         const player = playerSession.actor;
-        if (!player) return;
+        if (!player || rawText.length === 0) return;
 
         const SpeckMath = invoke('GameServer/SpeckMath');
         const playerPt = new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ());
+        let brainGroupResponderPicked = false;
 
         this.sessions.forEach((session) => {
             const bot = session.actor;
@@ -352,7 +355,10 @@ const BotManager = {
             const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()).distance(playerPt);
             if (distance > 1500) return; // Too far to hear
 
+            let handledByRule = false;
+
             if (text.includes("hi") || text.includes("hello") || text.includes("привет") || text.includes("ку")) {
+                handledByRule = true;
                 setTimeout(() => {
                     const currentPlan = session.plan || 'hunting';
                     const phrases = [
@@ -365,14 +371,27 @@ const BotManager = {
             }
 
             else if (text.includes("follow") || text.includes("за мной") || text.includes("помоги")) {
+                handledByRule = true;
                 setTimeout(() => {
-                    this.botSay(session, `Sure! I will follow you and assist in combat.`);
-                    session.plan = 'following';
-                    session.followPlayerSession = playerSession;
+                    if (session.partyCompanion === true && session.followPlayerSession === playerSession) {
+                        this.botSay(session, `Sure! I will follow you and assist in combat.`);
+                        session.plan = 'following';
+                    } else {
+                        this.botTell(session, playerSession, `I can come closer, but invite me if you want party follow.`);
+                        bot.moveTo({
+                            from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                            to: {
+                                locX: player.fetchLocX() + utils.oneFromSpan(-80, 80),
+                                locY: player.fetchLocY() + utils.oneFromSpan(-80, 80),
+                                locZ: player.fetchLocZ()
+                            }
+                        });
+                    }
                 }, 800 + Math.random() * 800);
             }
 
             else if (text.includes("stop") || text.includes("стой") || text.includes("wait")) {
+                handledByRule = true;
                 setTimeout(() => {
                     this.botSay(session, `Staying here! Let me know if you need help.`);
                     session.plan = 'resting';
@@ -384,14 +403,17 @@ const BotManager = {
             }
 
             else if (text.includes("hunt") || text.includes("иди качайся") || text.includes("кач")) {
+                handledByRule = true;
                 setTimeout(() => {
                     this.botSay(session, `Alright, returning to hunt keltirs!`);
                     session.plan = 'hunting';
                     session.followPlayerSession = null;
+                    session.partyCompanion = false;
                 }, 800 + Math.random() * 800);
             }
 
             else if (text.includes("heal") || text.includes("хил") || text.includes("buff") || text.includes("бафф")) {
+                handledByRule = true;
                 if (bot.fetchName() === 'Bot_Gandalf') {
                     setTimeout(() => {
                         this.botSay(session, `Casting divine healing on you, ${player.fetchName()}!`);
@@ -419,6 +441,22 @@ const BotManager = {
                     }, 1000 + Math.random() * 500);
                 }
             }
+
+            if (!handledByRule) {
+                const botName = bot.fetchName().toLowerCase();
+                const shortBotName = botName.replace(/^bot_/, '');
+                const addressedToBot = text.includes(botName) || text.includes(shortBotName);
+                const selectedBot = typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId();
+                const companionBot = session.followPlayerSession === playerSession && session.partyCompanion === true;
+                const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+
+                if (addressedToBot || selectedBot || companionBot || (groupAddress && !brainGroupResponderPicked)) {
+                    if (groupAddress && !addressedToBot && !selectedBot && !companionBot) {
+                        brainGroupResponderPicked = true;
+                    }
+                    BotBrain.maybeThink(session, 'player_chat', BotAI.getStatus(session), rawText);
+                }
+            }
         });
     },
 
@@ -426,7 +464,7 @@ const BotManager = {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
         
-        if (session.plan === 'following' && session.followPlayerSession) {
+        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
             const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
             if (session.followPlayerSession.dataSendToMe) {
                 session.followPlayerSession.dataSendToMe(packet);
@@ -437,6 +475,15 @@ const BotManager = {
                 session.actor
             );
         }
+    },
+
+    botTell(session, targetSession, text) {
+        if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
+        const clean = String(text || '').trim().slice(0, 120);
+        if (!clean) return;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        targetSession.dataSendToMe(ServerResponse.speak(session.actor, { kind: 2, text: clean }));
     },
 
     botShout(session, text) {
@@ -618,7 +665,7 @@ const BotManager = {
 
                 // Find bots that are currently far (> 2500) from this player, and not close to any other player
                 const farBots = this.sessions.filter(botSession => {
-                    if (botSession.followPlayerSession) return false; // Do not dynamically scale/teleport active companion bots!
+                    if (botSession.followPlayerSession && botSession.partyCompanion === true) return false; // Do not dynamically scale/teleport active companion bots!
                     if (botSession.plan === 'merchant') return false;
                     const bot = botSession.actor;
                     if (!bot || !bot.fetchIsOnline()) return false;

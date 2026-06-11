@@ -15,7 +15,7 @@ function companionControl(session, parts) {
         if (botName) {
             const targetSession = BotManager.sessions.find(s => s.actor && s.actor.fetchName().toLowerCase() === botName.toLowerCase());
             
-            if (targetSession && targetSession.followPlayerSession === session) {
+            if (targetSession && targetSession.followPlayerSession === session && targetSession.partyCompanion === true) {
                 const bot = targetSession.actor;
                 
                 if (subCommand === 'follow') {
@@ -61,6 +61,7 @@ function companionControl(session, parts) {
                         BotManager.botSay(targetSession, "Leaving the group. Goodbye!");
                         targetSession.plan = 'hunting';
                         targetSession.followPlayerSession = null;
+                        targetSession.partyCompanion = false;
                         targetSession.botStay = false;
                         targetSession.stayLocation = null;
                     }, 1000);
@@ -78,7 +79,7 @@ function renderCompanionPanel(session) {
     if (!actor) return;
 
     // Find all bot sessions following this player
-    const myCompanions = BotManager.sessions.filter(s => s.followPlayerSession === session && s.actor);
+    const myCompanions = BotManager.sessions.filter(s => s.followPlayerSession === session && s.partyCompanion === true && s.actor);
 
     if (myCompanions.length === 0) {
         const html = `<html><body><title>Party Control</title><font color="LEVEL">Companion Panel</font><br><br>You currently have no companions in your party.<br>Target a bot and type <font color="LEVEL">/invite</font> to recruit them!</body></html>`;

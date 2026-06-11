@@ -77,6 +77,7 @@ const World = {
                 // Set companion state immediately so renderCompanionPanel works on the first invite
                 targetSession.plan = 'following';
                 targetSession.followPlayerSession = session;
+                targetSession.partyCompanion = true;
 
                 // 2. Add companion to party HUD sidebar
                 session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [user]));
@@ -102,7 +103,7 @@ const World = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         let botFound = false;
         BotManager.sessions.forEach((targetSession) => {
-            if (targetSession.actor && targetSession.actor.fetchName().toLowerCase() === data.name.toLowerCase() && targetSession.followPlayerSession === session) {
+            if (targetSession.actor && targetSession.actor.fetchName().toLowerCase() === data.name.toLowerCase() && targetSession.followPlayerSession === session && targetSession.partyCompanion === true) {
                 botFound = true;
                 session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
                 
@@ -110,6 +111,7 @@ const World = {
                     BotManager.botSay(targetSession, `I have been kicked from the party. Returning to hunt on my own!`);
                     targetSession.plan = 'hunting';
                     targetSession.followPlayerSession = null;
+                    targetSession.partyCompanion = false;
                 }, 1000);
             }
         });
@@ -122,7 +124,7 @@ const World = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         let botsDisbanded = 0;
         BotManager.sessions.forEach((targetSession) => {
-            if (targetSession.followPlayerSession === session) {
+            if (targetSession.followPlayerSession === session && targetSession.partyCompanion === true) {
                 botsDisbanded++;
                 session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
 
@@ -130,6 +132,7 @@ const World = {
                     BotManager.botSay(targetSession, `Party dismissed! Returning to my farming fields.`);
                     targetSession.plan = 'hunting';
                     targetSession.followPlayerSession = null;
+                    targetSession.partyCompanion = false;
                 }, 1000);
             }
         });
