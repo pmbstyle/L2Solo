@@ -105,10 +105,36 @@ global.utils = {
     }
 };
 
+function mergeConfig(base, override) {
+    Object.keys(override || {}).forEach((key) => {
+        const baseValue = base[key];
+        const overrideValue = override[key];
+
+        if (
+            baseValue &&
+            overrideValue &&
+            typeof baseValue === 'object' &&
+            typeof overrideValue === 'object' &&
+            !Array.isArray(baseValue) &&
+            !Array.isArray(overrideValue)
+        ) {
+            mergeConfig(baseValue, overrideValue);
+        } else {
+            base[key] = overrideValue;
+        }
+    });
+
+    return base;
+}
+
+const ini = require('js-ini');
+const defaultConfig = ini.parse(utils.parseRawFile('./config/default.ini'));
+const localConfig = utils.fileExists('./config/local.ini')
+    ? ini.parse(utils.parseRawFile('./config/local.ini'))
+    : {};
+
 global.options = {
-    default: require('js-ini').parse(
-        utils.parseRawFile('./config/default.ini')
-    )
+    default: mergeConfig(defaultConfig, localConfig)
 };
 
 global.path = {

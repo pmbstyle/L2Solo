@@ -172,7 +172,7 @@ const BotStatus = {
         };
 
         const target = findTarget(session, bot);
-        const party = session.followPlayerSession ? {
+        const party = session.followPlayerSession && session.partyCompanion === true ? {
             leader: actorSummary(session.followPlayerSession.actor, bot),
             role: inferRole(bot),
             stance: session.botStay ? 'stay' : 'follow',

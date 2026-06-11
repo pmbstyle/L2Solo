@@ -57,6 +57,21 @@ npm run NodeL2
 ```
 *The spatial grid will index the spawns at boot, and bots will automatically load from database accounts and spawn beside Talk Village town center within 5 seconds!*
 
+### Optional: OpenRouter Bot Brain
+The committed `config/default.ini` contains safe defaults only. Put private overrides in ignored `config/local.ini`:
+```ini
+[OpenRouter]
+enabled = true
+apiKey = sk-or-v1-your-key-here
+model = google/gemini-2.5-flash-lite
+debug = true
+```
+You can also use environment variables instead of a local file:
+```bash
+OPENROUTER_API_KEY=sk-or-v1-your-key-here npm run NodeL2
+```
+With `debug = true`, BotBrain logs why it skips a request (`disabled`, `missing_api_key`, `no_visible_real_players`, `cooldown`) or when it sends a decision request. The brain only runs for bots visible to a real player.
+
 ---
 
 ## ✴️ In-Game Chat Commands

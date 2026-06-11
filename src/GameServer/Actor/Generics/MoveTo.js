@@ -64,7 +64,7 @@ function moveTo(session, actor, coords) {
         };
 
         const distanceToPlayer = getDistanceToClosestPlayer();
-        const isCompanion = !!session.followPlayerSession;
+        const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
 
         if (distanceToPlayer > 1500 && !isCompanion) {
             // Low LOD: instant warp (we do not calculate movements at all)
