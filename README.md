@@ -4,32 +4,50 @@ L2NodeSolo is a local-first Lineage II Chronicle 2 server emulator tuned for a s
 
 It is not trying to be a retail-complete private server. The current focus is bot behavior, party companions, town trade loops, and observability while keeping the server easy to run locally.
 
-## Current State
+## Game Checklist
 
-Works now:
+L2NodeSolo is judged by what the world feels like in the client, not by how many server subsystems exist under the hood.
 
-- Chronicle 2 protocol 485 login and game servers.
-- Local MariaDB-backed accounts, characters, skills, inventory, shortcuts, and positions.
-- Auto account creation when enabled in `config/default.ini`.
-- One-command local startup with `npm start`.
-- NPC spawn loading plus spatial-grid lookup for nearby NPC queries.
-- Player combat, movement, gear equip/unequip, basic item use, drops, pickup, shop buy/sell, and `.sell` junk cleanup.
-- Soulshot consume/load flow with the client activation effect and physical damage boost.
-- Admin panel with teleport, item shop, random teleport, and Adena tools.
-- SimPlayer bots that hunt, rest, flee, revive, shop, restock, chatter, and react to nearby player chat.
-- Dynamic bot scaling around online real players, including level/gear/class adjustment.
-- Companion bots through the normal `/invite` flow with party HUD packets and an in-game control panel.
-- Bot status surfaces through `.botstatus`, companion panel status links, and periodic `BotStatus :: ...` server logs.
-- Merchant bots in Talking Island, Gludio, Dion, Giran, and Oren with buy/sell stores and trade-chat ads.
-- PK bot behavior, including hunting, fleeing, and nearby bot reactions.
-- Optional OpenRouter-backed bot brain, gated to bots visible to real players.
+### Playable Now
 
-Known rough edges:
+- [x] Log in with a Chronicle 2 client and enter the world locally.
+- [x] Create and persist characters, inventory, skills, shortcuts, position, and basic progression.
+- [x] Move through the world, target NPCs, fight monsters, take damage, die, revive, and continue playing.
+- [x] Pick up drops, use basic items, equip and unequip gear, use soulshots, and sell junk with `.sell`.
+- [x] Buy and sell through NPC shops.
+- [x] Explore populated starter areas with persistent SimPlayer characters instead of bots teleporting around the player.
+- [x] See race-appropriate starter populations around each available race start, with a small number of visitor characters for MMO flavor.
+- [x] Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat.
+- [x] Invite SimPlayers as party companions through the normal `/invite` flow and manage them through the in-game companion panel.
+- [x] Inspect companion and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
+- [x] Encounter merchant SimPlayers in Talking Island, Gludio, Dion, Giran, and Oren with private buy/sell stores and occasional trade-chat ads.
+- [x] See early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions.
+- [x] Use local admin tools for teleporting, item grants, random teleport, and Adena while testing.
 
-- This is a development server, not a hardened public shard.
+### In Progress
+
+- [ ] More natural long-term SimPlayer memory: names, home region, level history, relationships, and personal routines should persist instead of feeling reset between sessions.
+- [ ] Better starter-zone ecology: race-specific bot ratios, class mix, routes, and town/field behavior need more tuning by location.
+- [ ] Bot progression that feels earned: levels, gear, and class growth should come from real activity, not from hidden scaling.
+- [ ] Richer party play: clearer roles, smarter assist behavior, healing/buff timing, looting rules, and travel together.
+- [ ] More believable economy loops: local buyers, sellers, stock pressure, restocking, and player-visible trade behavior.
+- [ ] More social chatter that sounds like players talking about the world, drops, prices, spots, danger, and plans.
+- [ ] Optional OpenRouter-backed bot brain for player-visible moments without spending tokens on background simulation.
+
+### Planned
+
+- [ ] Quest progression that matters for a solo MMO run.
+- [ ] Broader class/skill coverage and better retail-like combat edge cases.
+- [ ] More complete towns, hunting routes, respawn behavior, and regional difficulty curves.
+- [ ] Crafting, enchanting, warehouse, freight, and deeper item economy systems.
+- [ ] Clan/social systems and longer-term player identity.
+- [ ] Safer public-server hardening. Right now this is a local development shard, not a production private server.
+
+### Known Rough Edges
+
 - Some geodata regions may be missing locally; the server falls back and logs warnings.
-- C2 client packet compatibility is fragile. Store nameplate and party UI changes need live client testing.
-- The database bootstrap preserves existing data by default. Resetting the database is explicit.
+- C2 client packet compatibility is fragile. Store presentation, party UI, and unusual packet changes need live client testing.
+- The database bootstrap preserves existing data by default. Resets are explicit.
 
 ## Requirements
 
@@ -109,7 +127,7 @@ Useful startup variables:
 - `/invite` while targeting a bot - recruit that bot as a companion.
 - `/dismiss <name>` and `/leave` also work through the party request path.
 
-Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`. Healing/buff help is intentionally tied to Gandalf-style mage behavior.
+Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`. Healing and buff help depends on the bot's class and current plan.
 
 ## Bot Systems
 
@@ -126,6 +144,12 @@ Main bot modes:
 - `pk_hunting` / `pk_fleeing` - hostile player-killer loop and safety recovery.
 
 Bot status is meant to be inspectable. Use `.botstatus`, the companion panel `Status` links, or watch `BotStatus :: ...` lines in the server logs.
+
+To reset generated SimPlayer accounts and characters while keeping the rest of the database intact:
+
+```bash
+npm run wipe:bots
+```
 
 ## Merchant Bots
 

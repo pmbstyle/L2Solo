@@ -206,14 +206,15 @@ const BotAI = {
             const BotManager = invoke('GameServer/Bot/BotManager');
             const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY());
 
-            const aragornSession = BotManager.sessions.find(s => s.actor && s.actor.fetchName() === "Aragorn");
-            const aragornLoc = aragornSession?.actor ? this.getClosestTownName(aragornSession.actor.fetchLocX(), aragornSession.actor.fetchLocY()) : "Dion";
+            const pkSession = BotManager.sessions.find(s => s.actor && s.actor.fetchKarma() > 0);
+            const pkLoc = pkSession?.actor ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY()) : "Dion";
+            const pkName = pkSession?.actor ? pkSession.actor.fetchName() : "a red name";
 
             const pkPhrases = [
-                `Help! PK spotted near ${aragornLoc}!`,
-                `Watch out, Aragorn is PKing everyone near ${aragornLoc}!`,
-                `Someone kill the PK at ${aragornLoc}! He's red name!`,
-                `Aragorn is hunting newbies near ${aragornLoc}! Flee!`
+                `Help! PK spotted near ${pkLoc}!`,
+                `Watch out, ${pkName} is PKing near ${pkLoc}!`,
+                `Someone deal with the red name at ${pkLoc}!`,
+                `${pkName} is hunting people near ${pkLoc}! Flee!`
             ];
 
             const normalPhrases = [
@@ -224,7 +225,7 @@ const BotAI = {
                 `Wow, the mobs near ${townName} are spawning fast today.`
             ];
 
-            const aragornPhrases = [
+            const pkSelfPhrases = [
                 `No one is safe near ${townName}! I'm coming for you!`,
                 `Dion and ${townName} are my hunting grounds! Prepare to die!`,
                 `Haha, another soul claimed near ${townName}!`,
@@ -232,9 +233,9 @@ const BotAI = {
             ];
 
             let text = "";
-            if (bot.fetchName() === "Aragorn") {
-                text = aragornPhrases[Math.floor(Math.random() * aragornPhrases.length)];
-            } else if (Math.random() < 0.25 && aragornSession && aragornSession.actor && !aragornSession.actor.state.fetchDead()) {
+            if (bot.fetchKarma() > 0) {
+                text = pkSelfPhrases[Math.floor(Math.random() * pkSelfPhrases.length)];
+            } else if (Math.random() < 0.25 && pkSession && pkSession.actor && !pkSession.actor.state.fetchDead()) {
                 text = pkPhrases[Math.floor(Math.random() * pkPhrases.length)];
             } else {
                 text = normalPhrases[Math.floor(Math.random() * normalPhrases.length)];
@@ -323,7 +324,7 @@ const BotAI = {
                 session.currentTargetId = undefined;
                 
                 let spawnTarget;
-                if (bot.fetchKarma() > 0 || bot.fetchName() === "Aragorn") {
+                if (bot.fetchKarma() > 0) {
                     session.plan = 'pk_hunting';
                     const BotManager = invoke('GameServer/Bot/BotManager');
                     spawnTarget = BotManager.findHighDensityCoord();
@@ -331,8 +332,7 @@ const BotAI = {
                     spawnTarget.locY += (Math.random() - 0.5) * 800;
                     spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                 } else {
-                    const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
-                    if (MerchantConfigs[bot.fetchName()]) {
+                    if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                         session.plan = 'merchant';
                         bot.state.setSeated(true);
                         spawnTarget = {
@@ -388,7 +388,6 @@ const BotAI = {
     },
 
     executeCombat(session, bot, npc, Generics) {
-        const botName = bot.fetchName();
         const classId = bot.fetchClassId();
         const MAGE_ATTACK_RANGE = 600;
         const ARCHER_ATTACK_RANGE = 700;
@@ -396,7 +395,7 @@ const BotAI = {
         const MAGE_CLASSES = [10, 11, 12, 13, 14, 15, 16, 17, 25, 26, 27, 28, 29, 30, 38, 39, 40, 41, 42, 43];
         const ARCHER_CLASSES = [8, 9, 22, 23, 35, 36];
 
-        if (botName === 'Bot_Gandalf' || MAGE_CLASSES.includes(classId)) {
+        if (MAGE_CLASSES.includes(classId)) {
             const SkillModel = invoke('GameServer/Model/Skill');
             let skill = bot.skillset.fetchSkill(1177);
             if (!skill) {
@@ -419,7 +418,7 @@ const BotAI = {
                 return;
             }
         }
-        else if (botName === 'Bot_Legolas' || ARCHER_CLASSES.includes(classId)) {
+        else if (ARCHER_CLASSES.includes(classId)) {
             const SkillModel = invoke('GameServer/Model/Skill');
             let skill = bot.skillset.fetchSkill(56);
             if (!skill) {

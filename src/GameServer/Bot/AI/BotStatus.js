@@ -188,6 +188,10 @@ const BotStatus = {
             mode: session.plan || 'hunting',
             intent: undefined,
             role: inferRole(bot),
+            home: {
+                region: session.homeRegion || null,
+                visitor: !!session.visitor
+            },
             loc: actorLocation(bot),
             vitals,
             target,
@@ -220,9 +224,10 @@ const BotStatus = {
         const mp = Math.round(status.vitals.mpPct * 100);
         const target = status.target && status.target.name ? ` target=${status.target.name}` : '';
         const spot = status.spot && status.spot.name ? ` spot=${status.spot.name}` : '';
+        const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role} hp=${hp}% mp=${mp}%${target}${spot}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${blockers}`;
     }
 };
 
