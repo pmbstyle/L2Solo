@@ -25,10 +25,13 @@ function buildShopHtml(session, bot) {
         const playerCount = playerItem ? playerItem.fetchAmount() : 0;
         const maxSell = Math.min(item.count, playerCount);
 
-        let btns = `<a action="bypass -h sell-to-merchant-item ${item.selfId} 1"><font color="FFCC00">x1</font></a>&nbsp;&nbsp;`;
-        if (maxSell >= 10) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 10"><font color="FFCC00">x10</font></a>&nbsp;&nbsp;`;
-        if (maxSell >= 100) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 100"><font color="FFCC00">x100</font></a>&nbsp;&nbsp;`;
-        if (maxSell > 1) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} ${maxSell}"><font color="FFCC00">All</font></a>`;
+        let btns = '<font color="777777">None</font>';
+        if (maxSell > 0) {
+            btns = `<a action="bypass -h sell-to-merchant-item ${item.selfId} 1"><font color="FFCC00">x1</font></a>&nbsp;&nbsp;`;
+            if (maxSell >= 10) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 10"><font color="FFCC00">x10</font></a>&nbsp;&nbsp;`;
+            if (maxSell >= 100) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 100"><font color="FFCC00">x100</font></a>&nbsp;&nbsp;`;
+            if (maxSell > 1) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} ${maxSell}"><font color="FFCC00">All</font></a>`;
+        }
 
         rows += `<table width=270><tr><td><font color="${clr}">${iname}</font></td></tr></table>`;
         rows += `<table width=270><tr><td width=80>Have: <font color="99CCFF">${fold(playerCount)}</font></td>`;
@@ -39,7 +42,8 @@ function buildShopHtml(session, bot) {
 
     return `<html><body>
 <center>
-<font color="FFCC00">${title}</font><br1>
+<font color="FFCC00">Buying: ${title}</font><br1>
+<font color="777777">No matching items in your inventory.</font><br1>
 <font color="00FF00">Adena: ${fold(adena)}a</font><br>
 <img src="L2UI_CH3.hegaerectangle" width=270 height=1><br1>
 ${rows}

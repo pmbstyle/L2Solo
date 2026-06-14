@@ -19,20 +19,39 @@ function merchantPurchaseItems(store) {
     return items;
 }
 
-function merchantSellRows(actor, store) {
-    return actor.backpack.fetchItems()
-        .filter((item) => !item.fetchEquipped() && item.fetchSelfId() !== 57)
-        .map((item) => {
-            const wanted = store.items.find((storeItem) => storeItem.selfId === item.fetchSelfId() && storeItem.count > 0);
-            if (!wanted) return null;
+function merchantDemandRows(actor, store) {
+    const rows = [];
 
-            return {
-                item,
-                amount: Math.min(item.fetchAmount(), wanted.count),
-                price: wanted.price
-            };
-        })
-        .filter((row) => row && row.amount > 0);
+    store.items.forEach((storeItem) => {
+        const inventoryItem = actor.backpack.fetchItems().find((item) => (
+            item.fetchSelfId() === storeItem.selfId &&
+            !item.fetchEquipped() &&
+            item.fetchSelfId() !== 57
+        ));
+
+        if (inventoryItem) {
+            rows.push({
+                item: inventoryItem,
+                amount: Math.min(inventoryItem.fetchAmount(), storeItem.count),
+                price: storeItem.price
+            });
+            return;
+        }
+
+        DataCache.fetchItemFromSelfId(storeItem.selfId, (item) => {
+            rows.push({
+                item: new Item(storeItem.objectId, {
+                    ...utils.crushOb(item),
+                    amount: 0,
+                    price: storeItem.price
+                }),
+                amount: 0,
+                price: storeItem.price
+            });
+        });
+    });
+
+    return rows;
 }
 
 function openMerchantTradeWindow(session, merchant) {
@@ -54,13 +73,10 @@ function openMerchantTradeWindow(session, merchant) {
     }
 
     if (store.storeType === 3) {
-        const rows = merchantSellRows(session.actor, store);
-        if (!rows.length) {
-            session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant is not buying anything from your inventory." }));
-            return;
-        }
-
-        session.dataSendToMe(ServerResponse.sellList(rows, session.actor.backpack.fetchTotalAdena()));
+        session.dataSendToMe(ServerResponse.sellList(
+            merchantDemandRows(session.actor, store),
+            session.actor.backpack.fetchTotalAdena()
+        ));
     }
 }
 
@@ -96,7 +112,7 @@ function select(session, actor, data) {
                 session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
                 session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
             } else if (user.fetchPrivateStoreType() === 3) {
-                session.dataSendToMe(ServerResponse.privateStoreListBuy(session.actor, user));
+                openMerchantTradeWindow(session, user);
             }
             return;
         }
@@ -131,7 +147,7 @@ function select(session, actor, data) {
                             session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
                             session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                         } else if (user.fetchPrivateStoreType() === 3) {
-                            session.dataSendToMe(ServerResponse.privateStoreListBuy(session.actor, user));
+                            openMerchantTradeWindow(session, user);
                         }
                         return;
                     }

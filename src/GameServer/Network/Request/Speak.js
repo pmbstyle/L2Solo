@@ -40,6 +40,11 @@ function consume(session, data) {
             CompanionControl.render(session);
             return;
         }
+        if (data.text === '.botparty') {
+            const BotParty = invoke('GameServer/World/Generics/NpcBypasses/BotParty');
+            BotParty.render(session);
+            return;
+        }
         if (data.text === '.botstatus' || data.text.startsWith('.botstatus ')) {
             const BotStatus = invoke('GameServer/World/Generics/NpcBypasses/BotStatus');
             const parts = data.text.split(/\s+/);

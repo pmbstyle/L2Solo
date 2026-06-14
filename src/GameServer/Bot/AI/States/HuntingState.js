@@ -5,6 +5,52 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 
+function isSoloHunter(session) {
+    return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
+}
+
+function isClaimedByOtherSoloBot(session, npc) {
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const npcId = npc.fetchId();
+
+    return BotManager.sessions.some((otherSession) => {
+        if (otherSession === session || !otherSession.actor || !isSoloHunter(otherSession)) return false;
+        if (otherSession.currentTargetId !== npcId) return false;
+        return !otherSession.actor.state.fetchDead();
+    });
+}
+
+function findPreferredMonster(session, bot, radius, options = {}) {
+    let closestFreeMonster = null;
+    let closestFreeDistance = radius;
+    let closestClaimedMonster = null;
+    let closestClaimedDistance = radius;
+
+    const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), radius);
+    nearbyNpcs.forEach((npc) => {
+        if (!npc.fetchAttackable() || npc.isDead()) return;
+        if (options.excludeTargetId && npc.fetchId() === options.excludeTargetId) return;
+
+        const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
+            .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
+
+        if (isClaimedByOtherSoloBot(session, npc)) {
+            if (!options.freeOnly && distance < closestClaimedDistance) {
+                closestClaimedDistance = distance;
+                closestClaimedMonster = npc;
+            }
+            return;
+        }
+
+        if (distance < closestFreeDistance) {
+            closestFreeDistance = distance;
+            closestFreeMonster = npc;
+        }
+    });
+
+    return closestFreeMonster || closestClaimedMonster;
+}
+
 module.exports = {
     tick(session, bot, Generics, BotAI) {
         // 1. Expire buffs check for hunting bots
@@ -155,6 +201,20 @@ module.exports = {
                         if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
                             return;
                         }
+
+                        if (isClaimedByOtherSoloBot(session, npc)) {
+                            const alternateMonster = findPreferredMonster(session, bot, 2500, {
+                                excludeTargetId: npc.fetchId(),
+                                freeOnly: true
+                            });
+                            if (alternateMonster) {
+                                session.currentTargetId = alternateMonster.fetchId();
+                                bot.select({ id: alternateMonster.fetchId() });
+                                BotAI.executeCombat(session, bot, alternateMonster, Generics);
+                                return;
+                            }
+                        }
+
                         BotAI.executeCombat(session, bot, npc, Generics);
                     }
                 }).catch(() => {
@@ -163,22 +223,8 @@ module.exports = {
                 });
             });
         } else {
-            // Find closest monster within 2500 units
-            let closestMonster = null;
-            let closestDistance = 2500;
-
-            const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 2500);
-            nearbyNpcs.forEach((npc) => {
-                if (npc.fetchAttackable() && !npc.isDead()) {
-                    const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-                        .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
-                    
-                    if (distance < closestDistance) {
-                        closestDistance = distance;
-                        closestMonster = npc;
-                    }
-                }
-            });
+            // Prefer unclaimed mobs so solo SimPlayers do not form accidental trains.
+            const closestMonster = findPreferredMonster(session, bot, 2500);
 
             if (closestMonster) {
                 session.noTargetTicks = 0;
