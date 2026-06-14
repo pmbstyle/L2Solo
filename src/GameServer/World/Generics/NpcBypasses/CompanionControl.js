@@ -2,6 +2,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const Html = invoke('GameServer/World/Generics/HtmlKit');
 
 function companionControl(session, parts) {
     const actor = session.actor;
@@ -84,13 +85,18 @@ function renderCompanionPanel(session) {
     const myCompanions = BotManager.sessions.filter(s => s.followPlayerSession === session && s.partyCompanion === true && s.actor);
 
     if (myCompanions.length === 0) {
-        const html = `<html><body><title>Party Control</title><font color="LEVEL">Companion Panel</font><br><br>You currently have no companions in your party.<br>Target a bot and type <font color="LEVEL">/invite</font> to recruit them!</body></html>`;
+        const html = Html.page(
+            Html.emptyState(
+                'Companion Panel',
+                'You currently have no companions in your party. Target a bot and type /invite to recruit them.'
+            ),
+            { title: 'Party Control' }
+        );
         session.dataSendToMe(ServerResponse.npcHtml(actor.fetchId(), html));
         return;
     }
 
-    let html = `<html><body><title>Party Control</title><font color="LEVEL">Companion Commands</font><br><br>`;
-    html += `<img src="L2UI.SquareWhite" width=270 height=1><br>`;
+    let body = `${Html.font('Companion Commands', Html.COLOR.title)}<br>`;
 
     myCompanions.forEach((companionSession) => {
         const bot = companionSession.actor;
@@ -106,38 +112,36 @@ function renderCompanionPanel(session) {
         const mpPct = status ? Math.round(status.vitals.mpPct * 100) : 0;
         const spotName = status?.spot?.name || 'no spot';
 
-        html += `<font color="00FF00">${bot.fetchName()}</font>: `;
+        const movement = stayActive
+            ? Html.link('[STAYING]', `companion-control follow ${bot.fetchName()}`, { color: Html.COLOR.danger })
+            : Html.link('[FOLLOWING]', `companion-control stay ${bot.fetchName()}`, { color: Html.COLOR.ok });
+        let actions = movement;
 
-        // Follow / Stay buttons
-        if (stayActive) {
-            html += `<a action="bypass -h companion-control follow ${bot.fetchName()}"><font color="FF0000">[STAYING]</font></a>`;
-        } else {
-            html += `<a action="bypass -h companion-control stay ${bot.fetchName()}"><font color="00FF00">[FOLLOWING]</font></a>`;
-        }
-
-        // Taunt button for tanks
         if (isTank) {
-            html += ` | `;
-            if (tauntActive) {
-                html += `<a action="bypass -h companion-control taunt-off ${bot.fetchName()}"><font color="LEVEL">[PULL: ON]</font></a>`;
-            } else {
-                html += `<a action="bypass -h companion-control taunt-on ${bot.fetchName()}"><font color="777777">[PULL: OFF]</font></a>`;
-            }
+            const taunt = tauntActive
+                ? Html.link('[PULL: ON]', `companion-control taunt-off ${bot.fetchName()}`, { color: Html.COLOR.title })
+                : Html.link('[PULL: OFF]', `companion-control taunt-on ${bot.fetchName()}`, { color: Html.COLOR.muted });
+            actions += ` | ${taunt}`;
         }
 
-        html += ` | <a action="bypass -h companion-control summon ${bot.fetchName()}">Summon</a> | <a action="bypass -h bot-status ${bot.fetchName()}">Status</a> | <a action="bypass -h companion-control dismiss ${bot.fetchName()}"><font color="FF5555">Dismiss</font></a><br>`;
-        if (status) {
-            html += `<font color="777777">${status.intent} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}</font><br>`;
-        }
-        html += `<img src="L2UI.SquareBlank" width=270 height=4><br>`;
+        actions += ` | ${Html.link('Summon', `companion-control summon ${bot.fetchName()}`)}`;
+        actions += ` | ${Html.link('Status', `bot-status ${bot.fetchName()}`)}`;
+        actions += ` | ${Html.link('Dismiss', `companion-control dismiss ${bot.fetchName()}`, { color: Html.COLOR.danger })}`;
+
+        body += Html.botCard({
+            name: bot.fetchName(),
+            badge: status ? Html.font(status.role || 'bot', Html.COLOR.link) : '',
+            subtitle: status ? `${status.intent} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}` : 'status unavailable',
+            status: actions
+        });
+        body += Html.spacer(4);
     });
 
-    html += `<img src="L2UI.SquareWhite" width=270 height=1><br>`;
-    html += `<table width=270><tr>`;
-    html += `<td width=270 align=center><a action="bypass -h html 7000">Close Panel</a></td>`;
-    html += `</tr></table>`;
-    html += `</body></html>`;
+    body += Html.actionFooter([
+        { label: 'Close Panel', command: 'html 7000', color: Html.COLOR.muted }
+    ]);
 
+    const html = Html.page(body, { title: 'Party Control' });
     session.dataSendToMe(ServerResponse.npcHtml(actor.fetchId(), html));
 }
 

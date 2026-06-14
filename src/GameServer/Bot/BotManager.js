@@ -49,24 +49,34 @@ const BotManager = {
         if (!playerSession.actor) return;
 
         const ServerResponse = invoke('GameServer/Network/Response');
+        const Html = invoke('GameServer/World/Generics/HtmlKit');
         const pct = (value) => `${Math.round((value || 0) * 100)}%`;
-        const row = (label, value) => `<tr><td width=80><font color="LEVEL">${label}</font></td><td width=190>${value}</td></tr>`;
+        const safe = (value) => Html.esc(value);
 
         if (!botSession) {
             const statuses = this.getAllBotStatuses().slice(0, 14);
-            let html = `<html><body><title>Bot Status</title><font color="LEVEL">Bot Runtime Status</font><br><br>`;
+            let body = `${Html.font('Bot Runtime Status', Html.COLOR.title)}<br>`;
             statuses.forEach((status) => {
                 const blockers = status.blockers.length > 0 ? ` / ${status.blockers.join(',')}` : '';
-                html += `<a action="bypass -h bot-status ${status.name}">${status.name}</a>: ${status.mode}, ${status.intent}, HP ${pct(status.vitals.hpPct)}, MP ${pct(status.vitals.mpPct)}${blockers}<br>`;
+                body += Html.botCard({
+                    name: status.name,
+                    badge: Html.font(pct(status.vitals.hpPct), Html.COLOR.ok),
+                    subtitle: `${status.mode}, ${status.intent}, HP ${pct(status.vitals.hpPct)}, MP ${pct(status.vitals.mpPct)}${blockers}`,
+                    actions: [
+                        { label: 'Open', command: `bot-status ${status.name}` }
+                    ]
+                });
+                body += Html.spacer(3);
             });
-            html += `</body></html>`;
+            const html = Html.page(body, { title: 'Bot Status' });
             playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
             return;
         }
 
         const status = this.getBotStatus(botSession);
         if (!status || !status.available) {
-            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), `<html><body><title>Bot Status</title>Bot status unavailable.</body></html>`));
+            const html = Html.page(Html.emptyState('Bot Status', 'Bot status unavailable.'), { title: 'Bot Status' });
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
             return;
         }
 
@@ -83,26 +93,28 @@ const BotManager = {
         const social = availability.memory ? `${availability.relationship}, trust ${availability.memory.trust}, familiarity ${availability.memory.familiarity}` : 'none';
         const invite = availability.available ? 'available' : availability.reasonText;
 
-        let html = `<html><body><title>Bot Status</title><font color="LEVEL">${status.name}</font><br><br>`;
-        html += `<table width=270>`;
-        html += row('Mode', status.mode);
-        html += row('Intent', status.intent);
-        html += row('Role', status.role);
-        html += row('Home', home);
-        html += row('Vitals', `HP ${pct(status.vitals.hpPct)} / MP ${pct(status.vitals.mpPct)}`);
-        html += row('Target', target);
-        html += row('Party', party);
-        html += row('Spot', spot);
-        html += row('Nearby', `players ${status.nearby.realPlayers}, bots ${status.nearby.friendlyBots}, mobs ${status.nearby.attackableNpcs}`);
-        html += row('Move', status.movement.moving ? `moving (${status.movement.towards})` : 'idle');
-        html += row('Blockers', blockers);
-        html += row('Decision', decision);
-        html += row('Trade', trade);
-        html += row('Social', social);
-        html += row('Invite', invite);
-        html += `</table><br>`;
-        html += `<a action="bypass -h bot-status ${status.name}">Refresh</a>`;
-        html += `</body></html>`;
+        let body = `${Html.font(status.name, Html.COLOR.title)}<br>`;
+        body += Html.statusTable([
+            ['Mode', safe(status.mode)],
+            ['Intent', safe(status.intent)],
+            ['Role', safe(status.role)],
+            ['Home', safe(home)],
+            ['Vitals', safe(`HP ${pct(status.vitals.hpPct)} / MP ${pct(status.vitals.mpPct)}`)],
+            ['Target', safe(target)],
+            ['Party', safe(party)],
+            ['Spot', safe(spot)],
+            ['Nearby', safe(`players ${status.nearby.realPlayers}, bots ${status.nearby.friendlyBots}, mobs ${status.nearby.attackableNpcs}`)],
+            ['Move', safe(status.movement.moving ? `moving (${status.movement.towards})` : 'idle')],
+            ['Blockers', safe(blockers)],
+            ['Decision', safe(decision)],
+            ['Trade', safe(trade)],
+            ['Social', safe(social)],
+            ['Invite', safe(invite)]
+        ]);
+        body += '<br>' + Html.actionFooter([
+            { label: 'Refresh', command: `bot-status ${status.name}` }
+        ]);
+        const html = Html.page(body, { title: 'Bot Status' });
 
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
     },
