@@ -1,9 +1,10 @@
-<img alt="Lineage2 C2 Solo" src="https://github.com/user-attachments/assets/b89280b0-c259-48f8-a00f-b6bdc34c7b5c" />
-
+<img  alt="Lineage2 C2 Solo" src="https://github.com/user-attachments/assets/99b34112-87c3-40c9-97eb-e82cb3864c3d" />
 
 
 
 # Lineage2 Solo (Chronicle 2)
+
+Old-school Lineage 2 C2, but play solo, locally in a live world!
 
 L2Solo is a local-first Lineage II Chronicle 2 server emulator tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
 
