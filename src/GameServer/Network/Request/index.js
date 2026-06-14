@@ -1,6 +1,7 @@
 module.exports = {
                action: require('./Action'),
             actionUse: require('./ActionUse'),
+         addTradeItem: require('./AddTradeItem'),
           addShortcut: require('./AddShortcut'),
       answerForTeamUp: require('./AnswerForTeamUp'),
              appeared: require('./Appeared'),
@@ -31,6 +32,8 @@ module.exports = {
                 speak: require('./Speak'),
              stopMove: require('./StopMove'),
             trashItem: require('./TrashItem'),
+             tradeDone: require('./TradeDone'),
+          tradeRequest: require('./TradeRequest'),
           unequipItem: require('./UnequipItem'),
               useItem: require('./UseItem'),
           userCommand: require('./UserCommand'),

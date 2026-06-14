@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Html           = invoke('GameServer/World/Generics/HtmlKit');
 
 function fold(v) {
@@ -102,7 +103,8 @@ module.exports = async function(session, parts) {
     }
 
     try {
-        await TradeService.sellToStore(session.actor, store, selfId, sellQty);
+        const sold = await TradeService.sellToStore(session.actor, store, selfId, sellQty);
+        BotSocialMemory.recordTradeCompleted(session, bot, `sold ${sold.qty} ${sold.name}`);
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));

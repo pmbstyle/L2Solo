@@ -4,6 +4,7 @@ const TABLE = 'bot_social_memory';
 const cache = new Map();
 const loadedKeys = new Set();
 const pendingWrites = new Map();
+const combatHelpSeen = new Set();
 let initialized = false;
 let initStarted = false;
 
@@ -21,6 +22,18 @@ function actorName(session) {
 
 function key(playerId, botId) {
     return `${playerId}:${botId}`;
+}
+
+function isBotSession(session) {
+    return session && (session.constructor.name === 'BotSession' || (session.accountId && String(session.accountId).startsWith('bot_')));
+}
+
+function botSessionForActor(actor) {
+    if (!actor || !actor.fetchId) return null;
+    if (isBotSession(actor.session)) return actor.session;
+
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    return BotManager.findSessionById(actor.fetchId());
 }
 
 function defaultRecord(playerSession, botSession) {
@@ -291,6 +304,60 @@ const BotSocialMemory = {
         });
         pendingWrites.set(cacheKey, tracked);
         return next;
+    },
+
+    recordTradeCompleted(playerSession, merchantActor, detail = '') {
+        if (!playerSession || isBotSession(playerSession)) return Promise.resolve(null);
+
+        let botSession = null;
+        try {
+            botSession = botSessionForActor(merchantActor);
+        } catch (err) {
+            utils.infoWarn('BotSocial', 'trade social lookup failed: %s', err.message);
+            return Promise.resolve(null);
+        }
+
+        if (!botSession || botSession.plan !== 'merchant') return Promise.resolve(null);
+        return this.recordEvent(playerSession, botSession, 'trade_completed', detail);
+    },
+
+    recordCombatHelp(playerSession, npc, detail = '') {
+        if (!playerSession || isBotSession(playerSession) || !npc || !npc.fetchId) {
+            return [];
+        }
+
+        const playerId = actorId(playerSession);
+        const npcId = npc.fetchId();
+        if (!playerId || !npcId) return [];
+
+        let botSessions = [];
+        try {
+            const BotManager = invoke('GameServer/Bot/BotManager');
+            botSessions = BotManager.sessions;
+        } catch (err) {
+            utils.infoWarn('BotSocial', 'combat social lookup failed: %s', err.message);
+            return [];
+        }
+
+        if (combatHelpSeen.size > 5000) {
+            combatHelpSeen.clear();
+        }
+
+        return botSessions
+            .filter((botSession) => (
+                botSession.actor &&
+                botSession.followPlayerSession === playerSession &&
+                botSession.partyCompanion === true &&
+                botSession.currentTargetId === npcId
+            ))
+            .map((botSession) => {
+                const seenKey = `${playerId}:${actorId(botSession)}:${npcId}`;
+                if (combatHelpSeen.has(seenKey)) return null;
+
+                combatHelpSeen.add(seenKey);
+                return this.recordEvent(playerSession, botSession, 'helped_in_combat', detail || `shared target ${npcId}`);
+            })
+            .filter(Boolean);
     },
 
     relationship

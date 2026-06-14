@@ -1,6 +1,7 @@
 const ReceivePacket = invoke('Packet/Receive');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 function merchantSellRows(actor, store) {
     return actor.backpack.fetchItems()
@@ -52,11 +53,17 @@ async function consume(session, list) {
     }
 
     try {
+        const sold = [];
         for (const line of list) {
             const item = session.actor.backpack.fetchItems().find((ob) => ob.fetchId() === line.objectId);
             if (!item || item.fetchEquipped() || item.fetchSelfId() === 57) continue;
 
-            await TradeService.sellToStore(session.actor, store, item.fetchSelfId(), line.amount);
+            sold.push(await TradeService.sellToStore(session.actor, store, item.fetchSelfId(), line.amount));
+        }
+
+        if (sold.length > 0) {
+            const detail = sold.map((item) => `${item.qty} ${item.name}`).join(', ');
+            BotSocialMemory.recordTradeCompleted(session, trade.merchant, `sold ${detail}`);
         }
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));

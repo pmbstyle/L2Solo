@@ -4,6 +4,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const Item           = invoke('GameServer/Item/Item');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 function merchantPurchaseItems(store) {
     const items = [];
@@ -50,8 +51,14 @@ async function consume(session, data) {
 
     if (store && store.storeType === 1) {
         try {
+            const bought = [];
             for (const item of data.list) {
-                await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount);
+                bought.push(await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount));
+            }
+
+            if (bought.length > 0) {
+                const detail = bought.map((item) => `${item.qty} ${item.name}`).join(', ');
+                BotSocialMemory.recordTradeCompleted(session, trade.merchant, `bought ${detail}`);
             }
 
             session.dataSendToMe(ServerResponse.userInfo(session.actor));

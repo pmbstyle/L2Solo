@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const Database  = invoke('Database');
+const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
 
 function npcRewards(session, npc) {
     DataCache.fetchNpcRewardsFromSelfId(npc.fetchSelfId(), (result) => {
@@ -70,6 +71,7 @@ function npcRewards(session, npc) {
                             this.spawnItem(session, item.selfId, amount, {
                                 ...point.toCoords(), locZ: npc.fetchLocZ() - 10
                             });
+                            BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
                         }
                         break;
                     }

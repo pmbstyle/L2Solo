@@ -56,6 +56,23 @@ function consume(session, data) {
             BotStatus(session, ['bot-status', parts[1]]);
             return;
         }
+        if (data.text === '/trade' || data.text === '.trade') {
+            const BotManager = invoke('GameServer/Bot/BotManager');
+            const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+            const targetSession = BotManager.findSessionById(session.actor.fetchDestId());
+            const result = BotTradeService.startPlayerTrade(session, targetSession);
+
+            if (!result.ok) {
+                session.dataSendToMe(ServerResponse.actionFailed());
+                return;
+            }
+
+            session.dataSendToMe(ServerResponse.tradeStart(
+                targetSession.actor,
+                session.actor.backpack.fetchItems()
+            ));
+            return;
+        }
     }
 
     if (data.kind === 1 || data.kind === 8) { // Shout / Trade
