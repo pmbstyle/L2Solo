@@ -2,6 +2,7 @@ const ReceivePacket = invoke('Packet/Receive');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
 const BotManager = invoke('GameServer/Bot/BotManager');
 
 function describeMovedItems(items) {
@@ -29,8 +30,13 @@ async function tradeDone(session, buffer) {
         }
 
         const detail = describeMovedItems(result.moved);
+        const lootRequest = BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
         BotSocialMemory.recordEvent(session, result.partnerSession, 'gave_useful_loot', detail);
-        BotManager.botTell(result.partnerSession, session, `Thanks for the trade. I got ${detail}.`);
+        BotManager.botTell(
+            result.partnerSession,
+            session,
+            lootRequest ? `Thanks, that's exactly what I needed: ${detail}.` : `Thanks for the trade. I got ${detail}.`
+        );
 
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
         session.dataSendToMe(ServerResponse.tradeDone(true));

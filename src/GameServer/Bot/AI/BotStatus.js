@@ -140,6 +140,8 @@ function nearbySnapshot(bot) {
 
 function tradeSnapshot(session, bot) {
     const store = bot.fetchPrivateStore && bot.fetchPrivateStore();
+    const loot = session.lastLootRequest || null;
+
     return {
         store: store ? {
             type: store.storeType === 3 ? 'buy' : 'sell',
@@ -148,7 +150,13 @@ function tradeSnapshot(session, bot) {
             items: store.items ? store.items.length : 0
         } : null,
         shoppingTarget: session.shoppingTarget || null,
-        last: session.lastTradeSummary || null
+        last: session.lastTradeSummary || null,
+        lootRequest: loot ? {
+            playerName: loot.playerName,
+            itemName: loot.itemName,
+            amount: loot.amount,
+            expiresAt: loot.expiresAt
+        } : null
     };
 }
 
