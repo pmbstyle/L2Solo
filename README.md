@@ -18,15 +18,16 @@ L2NodeSolo is judged by what the world feels like in the client, not by how many
 - [x] Explore populated starter areas with persistent SimPlayer characters instead of bots teleporting around the player.
 - [x] See race-appropriate starter populations around each available race start, with a small number of visitor characters for MMO flavor.
 - [x] Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat.
-- [x] Invite SimPlayers as party companions through the normal `/invite` flow and manage them through the in-game companion panel.
-- [x] Inspect companion and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
+- [x] Find available SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel.
+- [x] Inspect companion, social memory, and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
 - [x] Encounter merchant SimPlayers in Talking Island, Gludio, Dion, Giran, and Oren with private buy/sell stores and occasional trade-chat ads.
 - [x] See early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions.
 - [x] Use local admin tools for teleporting, item grants, random teleport, and Adena while testing.
 
 ### In Progress
 
-- [ ] More natural long-term SimPlayer memory: names, home region, level history, relationships, and personal routines should persist instead of feeling reset between sessions.
+- [x] Early SimPlayer social memory: bots remember invite/group/dismiss interactions and expose relationship/trust in status surfaces.
+- [ ] More natural long-term SimPlayer memory: level history, loot etiquette, relationships, and personal routines should persist instead of feeling reset between sessions.
 - [ ] Better starter-zone ecology: race-specific bot ratios, class mix, routes, and town/field behavior need more tuning by location.
 - [ ] Bot progression that feels earned: levels, gear, and class growth should come from real activity, not from hidden scaling.
 - [ ] Richer party play: clearer roles, smarter assist behavior, healing/buff timing, looting rules, and travel together.
@@ -143,7 +144,7 @@ Main bot modes:
 - `merchant` - stand in town with private buy/sell store state.
 - `pk_hunting` / `pk_fleeing` - hostile player-killer loop and safety recovery.
 
-Bot status is meant to be inspectable. Use `.botstatus`, the companion panel `Status` links, or watch `BotStatus :: ...` lines in the server logs.
+Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state and social memory, companion panel `Status` links, or watch `BotStatus :: ...` and `BotSocial :: ...` lines in the server logs.
 
 To reset generated SimPlayer accounts and characters while keeping the rest of the database intact:
 

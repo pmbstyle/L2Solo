@@ -209,6 +209,8 @@ const BotStatus = {
             },
             nearby: nearbySnapshot(bot),
             trade: tradeSnapshot(session, bot),
+            social: session.socialSummary || null,
+            lastSocialEvent: session.lastSocialEvent || null,
             blockers: []
         };
 
@@ -225,9 +227,10 @@ const BotStatus = {
         const target = status.target && status.target.name ? ` target=${status.target.name}` : '';
         const spot = status.spot && status.spot.name ? ` spot=${status.spot.name}` : '';
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
+        const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${blockers}`;
     }
 };
 

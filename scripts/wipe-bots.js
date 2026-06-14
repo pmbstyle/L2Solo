@@ -89,6 +89,13 @@ async function main() {
 
         if (ids.length > 0) {
             const idList = placeholders(ids.length);
+            try {
+                await conn.query(`DELETE FROM bot_social_memory WHERE botId IN (${idList}) OR playerId IN (${idList})`, [...ids, ...ids]);
+            } catch (err) {
+                if (err.code !== 'ER_NO_SUCH_TABLE') {
+                    throw err;
+                }
+            }
             await conn.query(`DELETE FROM shortcuts WHERE characterId IN (${idList})`, ids);
             await conn.query(`DELETE FROM skills WHERE characterId IN (${idList})`, ids);
             await conn.query(`DELETE FROM items WHERE characterId IN (${idList})`, ids);

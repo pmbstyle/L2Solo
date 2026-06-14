@@ -9,6 +9,8 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
+const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 
@@ -77,6 +79,9 @@ const BotManager = {
         const trade = status.trade?.last ? status.trade.last :
             status.trade?.shoppingTarget ? `going to ${status.trade.shoppingTarget.name}` :
             status.trade?.store ? `${status.trade.store.type} / ${status.trade.store.title}` : 'none';
+        const availability = BotAvailability.evaluate(playerSession, botSession);
+        const social = availability.memory ? `${availability.relationship}, trust ${availability.memory.trust}, familiarity ${availability.memory.familiarity}` : 'none';
+        const invite = availability.available ? 'available' : availability.reasonText;
 
         let html = `<html><body><title>Bot Status</title><font color="LEVEL">${status.name}</font><br><br>`;
         html += `<table width=270>`;
@@ -93,6 +98,8 @@ const BotManager = {
         html += row('Blockers', blockers);
         html += row('Decision', decision);
         html += row('Trade', trade);
+        html += row('Social', social);
+        html += row('Invite', invite);
         html += `</table><br>`;
         html += `<a action="bypass -h bot-status ${status.name}">Refresh</a>`;
         html += `</body></html>`;
@@ -102,6 +109,7 @@ const BotManager = {
 
     init() {
         console.info("BotManager :: Initializing automated SimPlayers...");
+        BotSocialMemory.init();
         
         const bots = [...BOTS_TO_SPAWN, ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
@@ -364,6 +372,9 @@ const BotManager = {
                 handledByRule = true;
                 setTimeout(() => {
                     this.botSay(session, `Alright, returning to hunt keltirs!`);
+                    if (session.followPlayerSession === playerSession && session.partyCompanion === true) {
+                        BotSocialMemory.recordEvent(playerSession, session, 'party_dismissed', 'chat_hunt');
+                    }
                     session.plan = 'hunting';
                     session.followPlayerSession = null;
                     session.partyCompanion = false;

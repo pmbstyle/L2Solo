@@ -51,48 +51,55 @@ const World = {
             const targetIsBot = targetSession && (targetSession.constructor.name === 'BotSession' || (targetSession.accountId && targetSession.accountId.startsWith('bot_')));
 
             if (targetIsBot) {
-                const BotManager = invoke('GameServer/Bot/BotManager');
-
-                // 1. Distance check & automated teleportation if far away (> 500 units)
-                const pLoc = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
-                const bLoc = { locX: user.fetchLocX(), locY: user.fetchLocY(), locZ: user.fetchLocZ() };
-                const distance = new SpeckMath.Point3D(bLoc.locX, bLoc.locY, bLoc.locZ)
-                    .distance(new SpeckMath.Point3D(pLoc.locX, pLoc.locY, pLoc.locZ));
-
-                if (distance > 500) {
-                    const Generics = invoke('GameServer/Actor/Generics');
-                    Generics.teleportTo(targetSession, user, {
-                        locX: pLoc.locX + 60,
-                        locY: pLoc.locY + 60,
-                        locZ: pLoc.locZ
-                    });
-                }
-
-                // Send JoinParty (0x3a) to client to initialize party UI structure and prevent crash
-                session.dataSendToMe(ServerResponse.joinParty(1));
-
-                // Clear any existing party window elements to prevent client crash
-                session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
-
-                // Set companion state immediately so renderCompanionPanel works on the first invite
-                targetSession.plan = 'following';
-                targetSession.followPlayerSession = session;
-                targetSession.partyCompanion = true;
-
-                // 2. Add companion to party HUD sidebar
-                session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [user]));
-
-                // 3. Open the Companion Control Panel
-                const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
-                CompanionControl.render(session);
-
-                setTimeout(() => {
-                    BotManager.botSay(targetSession, `Party system is a bit complex for my brain, but I've joined you as a companion! (Follow mode active)`);
-                }, 1000);
+                this.inviteBotCompanion(session, actor, targetSession, data.distribution, 'invite');
             } else {
                 user.session.dataSendToMe(ServerResponse.askForTeamUp(actor.fetchId(), data.distribution));
             }
         });
+    },
+
+    inviteBotCompanion(session, actor, targetSession, distribution = 1, source = 'invite') {
+        const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+        const availability = BotAvailability.evaluate(session, targetSession);
+        const bot = targetSession.actor;
+
+        BotSocialMemory.recordEvent(session, targetSession, 'invite_attempt', source);
+
+        if (!availability.available) {
+            BotSocialMemory.recordEvent(session, targetSession, 'party_refused', availability.reason);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            BotManager.botTell(targetSession, session, `I can't join right now: ${availability.reasonText}.`);
+            console.info(
+                'BotParty :: %s refused %s: %s distance=%s',
+                bot?.fetchName() || 'unknown',
+                actor?.fetchName() || 'unknown',
+                availability.reason,
+                availability.distance === null ? '?' : Math.round(availability.distance)
+            );
+            return false;
+        }
+
+        session.dataSendToMe(ServerResponse.joinParty(distribution || 1));
+        session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
+
+        targetSession.plan = 'following';
+        targetSession.followPlayerSession = session;
+        targetSession.partyCompanion = true;
+        targetSession.botStay = false;
+        targetSession.stayLocation = null;
+
+        session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [bot]));
+
+        const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
+        CompanionControl.render(session);
+
+        BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
+        setTimeout(() => {
+            BotManager.botSay(targetSession, `I'm with you. Lead the way.`);
+        }, 1000);
+        return true;
     },
 
     answerForTeamUp(session, actor, data) {
@@ -108,6 +115,8 @@ const World = {
                 session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
                 
                 setTimeout(() => {
+                    const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+                    BotSocialMemory.recordEvent(session, targetSession, 'party_kicked', 'oust');
                     BotManager.botSay(targetSession, `I have been kicked from the party. Returning to hunt on my own!`);
                     targetSession.plan = 'hunting';
                     targetSession.followPlayerSession = null;
@@ -129,6 +138,8 @@ const World = {
                 session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
 
                 setTimeout(() => {
+                    const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+                    BotSocialMemory.recordEvent(session, targetSession, 'party_dismissed', 'dismiss');
                     BotManager.botSay(targetSession, `Party dismissed! Returning to my farming fields.`);
                     targetSession.plan = 'hunting';
                     targetSession.followPlayerSession = null;
