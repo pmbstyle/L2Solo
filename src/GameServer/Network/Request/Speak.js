@@ -45,6 +45,11 @@ function consume(session, data) {
             BotParty.render(session);
             return;
         }
+        if (data.text === '.uitest') {
+            const UiTest = invoke('GameServer/World/Generics/NpcBypasses/UiTest');
+            UiTest.render(session);
+            return;
+        }
         if (data.text === '.botstatus' || data.text.startsWith('.botstatus ')) {
             const BotStatus = invoke('GameServer/World/Generics/NpcBypasses/BotStatus');
             const parts = data.text.split(/\s+/);

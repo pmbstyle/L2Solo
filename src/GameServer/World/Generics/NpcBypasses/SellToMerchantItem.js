@@ -1,9 +1,28 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const Html           = invoke('GameServer/World/Generics/HtmlKit');
 
 function fold(v) {
     return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function itemColor(kind) {
+    if (kind.startsWith('Weapon')) return Html.COLOR.weapon;
+    if (kind.startsWith('Armor') || kind.startsWith('Shield')) return Html.COLOR.armor;
+    return Html.COLOR.title;
+}
+
+function quantityLinks(prefix, selfId, maxSell) {
+    if (maxSell <= 0) return Html.font('None', Html.COLOR.muted);
+
+    const links = [
+        Html.link('x1', `${prefix} ${selfId} 1`, { color: Html.COLOR.warn })
+    ];
+    if (maxSell >= 10) links.push(Html.link('x10', `${prefix} ${selfId} 10`, { color: Html.COLOR.warn }));
+    if (maxSell >= 100) links.push(Html.link('x100', `${prefix} ${selfId} 100`, { color: Html.COLOR.warn }));
+    if (maxSell > 1) links.push(Html.link('All', `${prefix} ${selfId} ${maxSell}`, { color: Html.COLOR.warn }));
+    return links.join('&nbsp;&nbsp;');
 }
 
 function buildShopHtml(session, bot) {
@@ -18,38 +37,32 @@ function buildShopHtml(session, bot) {
         const template = DataCache.items.find(ob => ob.selfId === item.selfId);
         const iname = template?.template?.name ?? 'Unknown';
         const icat = template?.template?.kind ?? '';
-        const clr = icat.startsWith('Weapon') ? 'FF9900' :
-                    icat.startsWith('Armor') || icat.startsWith('Shield') ? '99CCFF' : 'LEVEL';
-
         const playerItem = session.actor.backpack.fetchItemFromSelfId(item.selfId);
         const playerCount = playerItem ? playerItem.fetchAmount() : 0;
         const maxSell = Math.min(item.count, playerCount);
 
-        let btns = '<font color="777777">None</font>';
-        if (maxSell > 0) {
-            btns = `<a action="bypass -h sell-to-merchant-item ${item.selfId} 1"><font color="FFCC00">x1</font></a>&nbsp;&nbsp;`;
-            if (maxSell >= 10) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 10"><font color="FFCC00">x10</font></a>&nbsp;&nbsp;`;
-            if (maxSell >= 100) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} 100"><font color="FFCC00">x100</font></a>&nbsp;&nbsp;`;
-            if (maxSell > 1) btns += `<a action="bypass -h sell-to-merchant-item ${item.selfId} ${maxSell}"><font color="FFCC00">All</font></a>`;
-        }
-
-        rows += `<table width=270><tr><td><font color="${clr}">${iname}</font></td></tr></table>`;
-        rows += `<table width=270><tr><td width=80>Have: <font color="99CCFF">${fold(playerCount)}</font></td>`;
-        rows += `<td width=80 align=right>Price: <font color="00FF00">${fold(item.price)}a</font></td>`;
-        rows += `<td width=110 align=right>${btns}</td></tr></table>`;
-        if (i < items.length - 1) rows += `<br1><img src="L2UI_CH3.hegaerectangle" width=270 height=1><br1>`;
+        rows += Html.table([
+            Html.row([Html.cell(Html.font(iname, itemColor(icat)))])
+        ]);
+        rows += Html.table([
+            Html.row([
+                Html.cell(`Have: ${Html.font(fold(playerCount), Html.COLOR.link)}`, { width: 80 }),
+                Html.cell(`Price: ${Html.font(`${fold(item.price)}a`, Html.COLOR.ok)}`, { width: 80, align: 'right' }),
+                Html.cell(quantityLinks('sell-to-merchant-item', item.selfId, maxSell), { width: 110, align: 'right' })
+            ])
+        ]);
+        if (i < items.length - 1) rows += Html.line('L2UI_CH3.hegaerectangle');
     }
 
-    return `<html><body>
-<center>
-<font color="FFCC00">Buying: ${title}</font><br1>
-<font color="777777">No matching items in your inventory.</font><br1>
-<font color="00FF00">Adena: ${fold(adena)}a</font><br>
-<img src="L2UI_CH3.hegaerectangle" width=270 height=1><br1>
-${rows}
-<br>
-<a action="bypass -h npc_talk">Close</a>
-</center></body></html>`;
+    let body = `${Html.font(`Buying: ${title}`, Html.COLOR.warn)}<br1>`;
+    body += `${Html.font('No matching items in your inventory.', Html.COLOR.muted)}<br1>`;
+    body += `${Html.font(`Adena: ${fold(adena)}a`, Html.COLOR.ok)}<br>`;
+    body += Html.line('L2UI_CH3.hegaerectangle');
+    body += rows || Html.emptyState('No Orders', 'This merchant is not buying anything.');
+    body += '<br>' + Html.actionFooter([
+        { label: 'Close', command: 'npc_talk', color: Html.COLOR.muted }
+    ]);
+    return Html.page(body, { title: `Buying: ${title}` });
 }
 
 module.exports = async function(session, parts) {

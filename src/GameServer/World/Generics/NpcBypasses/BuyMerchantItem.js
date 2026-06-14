@@ -1,9 +1,26 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const Html           = invoke('GameServer/World/Generics/HtmlKit');
 
 function fold(v) {
     return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function itemColor(kind) {
+    if (kind.startsWith('Weapon')) return Html.COLOR.weapon;
+    if (kind.startsWith('Armor') || kind.startsWith('Shield')) return Html.COLOR.armor;
+    return Html.COLOR.title;
+}
+
+function quantityLinks(prefix, selfId, stock) {
+    const links = [
+        Html.link('x1', `${prefix} ${selfId} 1`, { color: Html.COLOR.warn })
+    ];
+    if (stock >= 10) links.push(Html.link('x10', `${prefix} ${selfId} 10`, { color: Html.COLOR.warn }));
+    if (stock >= 100) links.push(Html.link('x100', `${prefix} ${selfId} 100`, { color: Html.COLOR.warn }));
+    if (stock > 1) links.push(Html.link('All', `${prefix} ${selfId} ${stock}`, { color: Html.COLOR.warn }));
+    return links.join('&nbsp;&nbsp;');
 }
 
 function buildShopHtml(session, bot) {
@@ -18,31 +35,30 @@ function buildShopHtml(session, bot) {
         const template = DataCache.items.find(ob => ob.selfId === item.selfId);
         const iname = template?.template?.name ?? 'Unknown';
         const icat = template?.template?.kind ?? '';
-        const clr = icat.startsWith('Weapon') ? 'FF9900' :
-                    icat.startsWith('Armor') || icat.startsWith('Shield') ? '99CCFF' : 'LEVEL';
-
         const c = item.count;
-        let buys = `<a action="bypass -h buy-merchant-item ${item.selfId} 1"><font color="FFCC00">x1</font></a>&nbsp;&nbsp;`;
-        if (c >= 10) buys += `<a action="bypass -h buy-merchant-item ${item.selfId} 10"><font color="FFCC00">x10</font></a>&nbsp;&nbsp;`;
-        if (c >= 100) buys += `<a action="bypass -h buy-merchant-item ${item.selfId} 100"><font color="FFCC00">x100</font></a>&nbsp;&nbsp;`;
-        if (c > 1) buys += `<a action="bypass -h buy-merchant-item ${item.selfId} ${c}"><font color="FFCC00">All</font></a>`;
+        const buys = quantityLinks('buy-merchant-item', item.selfId, c);
 
-        rows += `<table width=270><tr><td><font color="${clr}">${iname}</font></td></tr></table>`;
-        rows += `<table width=270><tr><td width=80>Stock: <font color="99CCFF">${fold(c)}</font></td>`;
-        rows += `<td width=80 align=right>Price: <font color="00FF00">${fold(item.price)}a</font></td>`;
-        rows += `<td width=110 align=right>${buys}</td></tr></table>`;
-        if (i < items.length - 1) rows += `<br1><img src="L2UI_CH3.hegaerectangle" width=270 height=1><br1>`;
+        rows += Html.table([
+            Html.row([Html.cell(Html.font(iname, itemColor(icat)))])
+        ]);
+        rows += Html.table([
+            Html.row([
+                Html.cell(`Stock: ${Html.font(fold(c), Html.COLOR.link)}`, { width: 80 }),
+                Html.cell(`Price: ${Html.font(`${fold(item.price)}a`, Html.COLOR.ok)}`, { width: 80, align: 'right' }),
+                Html.cell(buys, { width: 110, align: 'right' })
+            ])
+        ]);
+        if (i < items.length - 1) rows += Html.line('L2UI_CH3.hegaerectangle');
     }
 
-    return `<html><body>
-<center>
-<font color="FFCC00">${title}</font><br1>
-<font color="00FF00">Adena: ${fold(adena)}a</font><br>
-<img src="L2UI_CH3.hegaerectangle" width=270 height=1><br1>
-${rows}
-<br>
-<a action="bypass -h npc_talk">Close</a>
-</center></body></html>`;
+    let body = `${Html.font(title, Html.COLOR.warn)}<br1>`;
+    body += `${Html.font(`Adena: ${fold(adena)}a`, Html.COLOR.ok)}<br>`;
+    body += Html.line('L2UI_CH3.hegaerectangle');
+    body += rows || Html.emptyState('No Stock', 'This merchant has nothing for sale.');
+    body += '<br>' + Html.actionFooter([
+        { label: 'Close', command: 'npc_talk', color: Html.COLOR.muted }
+    ]);
+    return Html.page(body, { title });
 }
 
 module.exports = async function(session, parts) {
