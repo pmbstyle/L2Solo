@@ -5,13 +5,13 @@
 
 # Lineage2 Solo (Chronicle 2)
 
-L2NodeSolo is a local-first Lineage II Chronicle 2 server emulator tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
+L2Solo is a local-first Lineage II Chronicle 2 server emulator tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
 
 It is not trying to be a retail-complete private server. The current focus is bot behavior, party companions, town trade loops, and observability while keeping the server easy to run locally.
 
 ## Game Checklist
 
-L2NodeSolo is judged by what the world feels like in the client, not by how many server subsystems exist under the hood.
+L2Solo is judged by what the world feels like in the client, not by how many server subsystems exist under the hood.
 
 ### Playable Now
 
@@ -211,4 +211,4 @@ Expected healthy boot signs:
 
 This project is a heavily modified solo-MMO fork of the original [NodeL2 Server Emulator](https://github.com/NodeL2/NodeL2).
 
-L2NodeSolo is licensed under the Apache 2.0 license.
+L2Solo is licensed under the Apache 2.0 license.
