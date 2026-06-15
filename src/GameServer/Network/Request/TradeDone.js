@@ -31,7 +31,12 @@ async function tradeDone(session, buffer) {
 
         const detail = describeMovedItems(result.moved);
         const lootRequest = BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
-        BotSocialMemory.recordEvent(session, result.partnerSession, 'gave_useful_loot', detail);
+        BotSocialMemory.recordEvent(
+            session,
+            result.partnerSession,
+            lootRequest ? 'gave_useful_loot' : 'trade_completed',
+            detail
+        );
         BotManager.botTell(
             result.partnerSession,
             session,
