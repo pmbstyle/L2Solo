@@ -155,6 +155,8 @@ function tradeSnapshot(session, bot) {
             playerName: loot.playerName,
             itemName: loot.itemName,
             amount: loot.amount,
+            reason: loot.reason || null,
+            demandScore: loot.demandScore || null,
             expiresAt: loot.expiresAt
         } : null
     };
