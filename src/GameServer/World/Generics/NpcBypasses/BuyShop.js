@@ -4,6 +4,7 @@ const DataCache      = invoke('GameServer/DataCache');
 
 module.exports = function(session, parts) {
     session.activeMerchantTrade = null;
+    session.activeAdminShop = null;
 
     let list = [];
     let itemIds = [];

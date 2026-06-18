@@ -28,6 +28,7 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 - [x] Inspect companion, social memory, and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
 - [x] Trade directly with targeted SimPlayers through the native C2 trade window, with `.trade` as a fallback while testing.
 - [x] See companion bots ask for useful non-junk drops, then satisfy the request by handing the item over through the real trade flow.
+- [x] Use basic dwarf Spoil/Sweeper mechanics: spoil a living monster, kill it, then sweep the marked corpse for spoil-table rewards.
 - [x] Run with role-aware companions: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range.
 - [x] Inspect role decisions, buff timers, and pending loot requests through bot status surfaces.
 - [x] Encounter merchant SimPlayers in Talking Island, Gludio, Dion, Giran, and Oren with private buy/sell stores and occasional trade-chat ads.
@@ -41,7 +42,7 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 - [ ] More natural long-term SimPlayer memory: level history, wipes, insults, deeper relationships, and personal routines should persist instead of feeling reset between sessions.
 - [ ] Better starter-zone ecology: race-specific bot ratios, class mix, routes, and town/field behavior need more tuning by location.
 - [ ] Bot progression that feels earned: levels, gear, and class growth should come from real activity, not from hidden scaling.
-- [ ] Richer party play: live tuning for role thresholds, travel together, loot timing, spoiler/sweeper behavior, and crafter/economy roles.
+- [ ] Richer party play: live tuning for role thresholds, travel together, loot timing, bot spoiler behavior, and crafter/economy roles.
 - [ ] More believable economy loops: local buyers, sellers, stock pressure, restocking, and player-visible trade behavior.
 - [ ] More social chatter that sounds like players talking about the world, drops, prices, spots, danger, and plans.
 - [ ] Optional OpenRouter-backed bot brain is available for player-visible moments, but still needs more personality tuning.
@@ -184,11 +185,14 @@ Player-to-bot trade uses the normal C2 trade flow. Target a SimPlayer and use th
 
 Grouped companion bots also watch notable drops. They ignore Adena and obvious junk, score item usefulness by role, throttle requests, and ask only when a nearby companion has a reason to want the item. If the player trades the requested item to that bot before the request expires, the handoff records `gave_useful_loot`; ignored requests are only remembered when the bot is still an active nearby companion.
 
+Dwarven Spoil/Sweeper uses the normal skill flow. Use `Spoil` on a living monster with spoil-table rewards, kill it, then use `Sweeper` on the sweepable corpse before it decays. Spoil rewards are rolled from `data/Npcs/Rewards/rewards.json` and are added to the player's inventory.
+
 Useful debug surfaces:
 
 - `.botstatus <name>` shows `trade.lootRequest`, demand reason, and score.
 - `BotTrade :: ...` logs native trade open/add/complete events.
 - `BotLoot :: ...` logs requested, fulfilled, and ignored loot requests.
+- `SpoilSweep :: ...` logs successful spoil and sweep events.
 - `BotSocial :: ...` logs trust and relationship deltas.
 
 ## OpenRouter Bot Brain

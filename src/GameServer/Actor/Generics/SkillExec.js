@@ -3,9 +3,20 @@ const World = invoke('GameServer/World/World');
 function skillExec(session, actor, data) {
     const skill = actor.skillset.fetchSkill(data.selfId);
     if (!skill) return;
+    const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 
     World.fetchNpc(data.id).then((npc) => {
         actor.automation.scheduleAction(session, actor, npc, skill.fetchDistance(), () => {
+            if (SpoilSweep.isSpoilSkill(data.selfId)) {
+                SpoilSweep.castSpoil(session, actor, npc, skill);
+                return;
+            }
+
+            if (SpoilSweep.isSweepSkill(data.selfId)) {
+                SpoilSweep.castSweep(session, actor, npc, skill);
+                return;
+            }
+
             if (npc.fetchAttackable() || data.ctrl) {
                 actor.attack.remoteHit(session, npc, skill);
             }

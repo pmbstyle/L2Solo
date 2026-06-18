@@ -48,6 +48,7 @@ function purchase(session, buffer) {
 async function consume(session, data) {
     const trade = session.activeMerchantTrade;
     const store = trade && trade.store;
+    const adminShop = session.activeAdminShop;
 
     if (store && store.storeType === 1) {
         try {
@@ -71,6 +72,18 @@ async function consume(session, data) {
             utils.infoWarn('Purchase', 'merchant purchase error: %s', err.message || err);
             session.dataSendToMe(ServerResponse.actionFailed());
         }
+        return;
+    }
+
+    if (adminShop) {
+        const allowed = data.list.every((item) => adminShop.itemIds.has(item.selfId));
+        if (!allowed) {
+            session.activeAdminShop = null;
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
+
+        World.purchaseItems(session, data.list, { free: true });
         return;
     }
 

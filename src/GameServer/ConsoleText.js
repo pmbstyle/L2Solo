@@ -23,6 +23,7 @@ const ConsoleText = {
         dropped           : 298,
         unequipped        : 417,
         loadLimitExceeded : 422,
+        spoilActivated    : 612,
     },
 
     kind: {
