@@ -26,6 +26,10 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 - [x] Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat.
 - [x] Find available SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel.
 - [x] Inspect companion, social memory, and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
+- [x] Trade directly with targeted SimPlayers through the native C2 trade window, with `.trade` as a fallback while testing.
+- [x] See companion bots ask for useful non-junk drops, then satisfy the request by handing the item over through the real trade flow.
+- [x] Run with role-aware companions: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range.
+- [x] Inspect role decisions, buff timers, and pending loot requests through bot status surfaces.
 - [x] Encounter merchant SimPlayers in Talking Island, Gludio, Dion, Giran, and Oren with private buy/sell stores and occasional trade-chat ads.
 - [x] See early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions.
 - [x] Use local admin tools for teleporting, item grants, random teleport, and Adena while testing.
@@ -33,13 +37,14 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 ### In Progress
 
 - [x] Early SimPlayer social memory: bots remember invite/group/dismiss interactions and expose relationship/trust in status surfaces.
-- [ ] More natural long-term SimPlayer memory: level history, loot etiquette, relationships, and personal routines should persist instead of feeling reset between sessions.
+- [x] First loot-etiquette loop: companions can request useful drops, fulfilled trades update social memory, and ignored active requests are remembered lightly.
+- [ ] More natural long-term SimPlayer memory: level history, wipes, insults, deeper relationships, and personal routines should persist instead of feeling reset between sessions.
 - [ ] Better starter-zone ecology: race-specific bot ratios, class mix, routes, and town/field behavior need more tuning by location.
 - [ ] Bot progression that feels earned: levels, gear, and class growth should come from real activity, not from hidden scaling.
-- [ ] Richer party play: clearer roles, smarter assist behavior, healing/buff timing, looting rules, and travel together.
+- [ ] Richer party play: live tuning for role thresholds, travel together, loot timing, spoiler/sweeper behavior, and crafter/economy roles.
 - [ ] More believable economy loops: local buyers, sellers, stock pressure, restocking, and player-visible trade behavior.
 - [ ] More social chatter that sounds like players talking about the world, drops, prices, spots, danger, and plans.
-- [ ] Optional OpenRouter-backed bot brain for player-visible moments without spending tokens on background simulation.
+- [ ] Optional OpenRouter-backed bot brain is available for player-visible moments, but still needs more personality tuning.
 
 ### Planned
 
@@ -129,6 +134,7 @@ Useful startup variables:
 - `.bot` or `.companion` - open the companion control panel.
 - `.botstatus` - show a bot overview panel.
 - `.botstatus <name>` - show detailed status for a specific bot.
+- `.trade` or `/trade` - open the bot trade window with the targeted SimPlayer, useful as a fallback to the native client trade action.
 - `.leave` - dismiss all companion bots.
 - `.kick <name>` - dismiss one companion bot.
 - `/invite` while targeting a bot - recruit that bot as a companion.
@@ -150,7 +156,9 @@ Main bot modes:
 - `merchant` - stand in town with private buy/sell store state.
 - `pk_hunting` / `pk_fleeing` - hostile player-killer loop and safety recovery.
 
-Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state and social memory, companion panel `Status` links, or watch `BotStatus :: ...` and `BotSocial :: ...` lines in the server logs.
+Companion behavior is role-aware. `BotRoles` infers healer, buffer, tank, dagger, archer, mage, or generic DPS from class id. In party mode, tanks can protect the leader and avoid unsafe pulls, healers heal while conserving MP, buffers apply `Might`, `Shield`, `Haste`, and `Wind Walk`, daggers close-assist, and ranged roles keep ranged assist intent.
+
+Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state, social memory, role decisions, buff timers, and loot requests, companion panel `Status` links, or watch `BotStatus :: ...`, `BotSocial :: ...`, `BotRole :: ...`, and `BotLoot :: ...` lines in the server logs.
 
 To reset generated SimPlayer accounts and characters while keeping the rest of the database intact:
 
@@ -169,6 +177,19 @@ Merchant bots currently cover:
 - Oren: B/A-grade materials, gear, and Oren-drop buyers.
 
 The source of truth for town merchant stock is `src/GameServer/Bot/MerchantStoreConfigs.js`.
+
+## Bot Trade and Loot Etiquette
+
+Player-to-bot trade uses the normal C2 trade flow. Target a SimPlayer and use the native trade action, or type `.trade` / `/trade` while testing. The server opens the trade window, accepts offered items, moves them into the bot inventory, and records the interaction in social memory.
+
+Grouped companion bots also watch notable drops. They ignore Adena and obvious junk, score item usefulness by role, throttle requests, and ask only when a nearby companion has a reason to want the item. If the player trades the requested item to that bot before the request expires, the handoff records `gave_useful_loot`; ignored requests are only remembered when the bot is still an active nearby companion.
+
+Useful debug surfaces:
+
+- `.botstatus <name>` shows `trade.lootRequest`, demand reason, and score.
+- `BotTrade :: ...` logs native trade open/add/complete events.
+- `BotLoot :: ...` logs requested, fulfilled, and ignored loot requests.
+- `BotSocial :: ...` logs trust and relationship deltas.
 
 ## OpenRouter Bot Brain
 
@@ -207,6 +228,7 @@ Expected healthy boot signs:
 - `AuthServer :: successful init for 0.0.0.0:2106`
 - `GameServer :: successful init for 0.0.0.0:7777`
 - `BotManager :: ... is active in World`
+- `BotStatus :: ...`, `BotRole :: ...`, `BotLoot :: ...`, or `BotSocial :: ...` when the corresponding bot paths are active
 
 ## Credits
 
