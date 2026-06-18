@@ -4,6 +4,8 @@ const DataCache      = invoke('GameServer/DataCache');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 
 module.exports = function(session, parts) {
+    session.activeAdminShop = null;
+
     const player = session.actor;
     if (!player) return;
 

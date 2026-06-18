@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const SpoilSweep     = invoke('GameServer/Npc/SpoilSweep');
 
 function removeNpc(session, npc) {
     const npcId = npc.fetchId();
@@ -8,7 +9,7 @@ function removeNpc(session, npc) {
     setTimeout(() => {
         session.dataSendToMeAndOthers(ServerResponse.deleteOb(npcId), npc);
         this.npc.spawns = this.npc.spawns.filter(ob => ob.fetchId() !== npcId);
-    }, npc.fetchCorpseTime()); // TODO: Depends if NPC is spoiled too
+    }, SpoilSweep.corpseTime(npc));
 }
 
 module.exports = removeNpc;

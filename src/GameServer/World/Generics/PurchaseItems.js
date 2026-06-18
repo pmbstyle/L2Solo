@@ -1,15 +1,17 @@
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 
-function purchaseItems(session, items) {
+function purchaseItems(session, items, purchaseOptions = {}) {
     // 1. Calculate total cost
     let totalCost = 0;
-    for (const item of items) {
-        let price = 0;
-        DataCache.fetchItemFromSelfId(item.selfId, (itemDetails) => {
-            price = itemDetails.template.price ?? 0;
-        });
-        totalCost += price * item.amount;
+    if (!purchaseOptions.free) {
+        for (const item of items) {
+            let price = 0;
+            DataCache.fetchItemFromSelfId(item.selfId, (itemDetails) => {
+                price = itemDetails.template.price ?? 0;
+            });
+            totalCost += price * item.amount;
+        }
     }
 
     const actor = session.actor;
