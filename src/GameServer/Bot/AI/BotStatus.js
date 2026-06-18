@@ -1,9 +1,4 @@
-const ROLE_CLASSES = {
-    healer: [15, 16, 17, 29, 30, 42, 43],
-    tank: [4, 5, 6, 19, 20, 32, 33],
-    archer: [8, 9, 22, 23, 35, 36, 37],
-    mage: [10, 11, 12, 13, 14, 15, 16, 17, 25, 26, 27, 28, 29, 30, 38, 39, 40, 41, 42, 43, 49, 50, 51, 52]
-};
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -62,15 +57,6 @@ function findTarget(session, bot) {
         type: 'unknown',
         id: session.currentTargetId
     };
-}
-
-function inferRole(bot) {
-    const classId = bot.fetchClassId();
-    if (ROLE_CLASSES.healer.includes(classId)) return 'healer';
-    if (ROLE_CLASSES.tank.includes(classId)) return 'tank';
-    if (ROLE_CLASSES.archer.includes(classId)) return 'archer';
-    if (ROLE_CLASSES.mage.includes(classId)) return 'mage';
-    return 'dps';
 }
 
 function inferIntent(session, bot, vitals, target) {
@@ -181,12 +167,15 @@ const BotStatus = {
             mpPct: ratio(bot.fetchMp(), bot.fetchMaxMp())
         };
 
+        const role = BotRoles.inferRole(bot);
         const target = findTarget(session, bot);
         const party = session.followPlayerSession && session.partyCompanion === true ? {
             leader: actorSummary(session.followPlayerSession.actor, bot),
-            role: inferRole(bot),
+            role,
             stance: session.botStay ? 'stay' : 'follow',
-            autoTaunt: session.autoTaunt !== false
+            roleStance: BotRoles.partyRoleStance(role),
+            autoTaunt: session.autoTaunt !== false,
+            decision: session.roleDecision || null
         } : null;
 
         const status = {
@@ -197,7 +186,8 @@ const BotStatus = {
             classId: bot.fetchClassId(),
             mode: session.plan || 'hunting',
             intent: undefined,
-            role: inferRole(bot),
+            role,
+            roleDecision: session.roleDecision || null,
             home: {
                 region: session.homeRegion || null,
                 visitor: !!session.visitor
@@ -238,12 +228,13 @@ const BotStatus = {
         const spot = status.spot && status.spot.name ? ` spot=${status.spot.name}` : '';
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
+        const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${blockers}`;
     }
 };
 
-BotStatus.ROLE_CLASSES = ROLE_CLASSES;
+BotStatus.ROLE_CLASSES = BotRoles.ROLE_CLASSES;
 
 module.exports = BotStatus;

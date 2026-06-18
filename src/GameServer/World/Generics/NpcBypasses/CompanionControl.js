@@ -2,6 +2,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
 
 function companionControl(session, parts) {
@@ -100,10 +101,7 @@ function renderCompanionPanel(session) {
 
     myCompanions.forEach((companionSession) => {
         const bot = companionSession.actor;
-        const classId = bot.fetchClassId();
-
-        const TANK_CLASSES = [4, 5, 6, 19, 20, 32, 33];
-        const isTank = TANK_CLASSES.includes(classId);
+        const isTank = BotRoles.isTank(bot);
 
         const stayActive = companionSession.botStay === true;
         const tauntActive = companionSession.autoTaunt !== false; // default true for tanks
@@ -111,6 +109,7 @@ function renderCompanionPanel(session) {
         const hpPct = status ? Math.round(status.vitals.hpPct * 100) : 0;
         const mpPct = status ? Math.round(status.vitals.mpPct * 100) : 0;
         const spotName = status?.spot?.name || 'no spot';
+        const roleDecision = status?.roleDecision ? `${status.roleDecision.action}/${status.roleDecision.reason}` : status?.intent;
 
         const movement = stayActive
             ? Html.link('[STAYING]', `companion-control follow ${bot.fetchName()}`, { color: Html.COLOR.danger })
@@ -131,7 +130,7 @@ function renderCompanionPanel(session) {
         body += Html.botCard({
             name: bot.fetchName(),
             badge: status ? Html.font(status.role || 'bot', Html.COLOR.link) : '',
-            subtitle: status ? `${status.intent} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}` : 'status unavailable',
+            subtitle: status ? `${roleDecision} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}` : 'status unavailable',
             status: actions
         });
         body += Html.spacer(4);

@@ -1,6 +1,119 @@
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
+const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+
+function ratio(value, max) {
+    if (!max) return 0;
+    return Math.max(0, Math.min(1, value / max));
+}
+
+function isBusy(bot) {
+    return !!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts());
+}
+
+function point(actor) {
+    return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+}
+
+function ensureSkill(bot, selfId, data) {
+    let skill = bot.skillset.fetchSkill(selfId);
+    if (skill) return skill;
+
+    const SkillModel = invoke('GameServer/Model/Skill');
+    skill = new SkillModel({
+        selfId,
+        hp: 0,
+        passive: false,
+        ...data
+    });
+    bot.skillset.skills.push(skill);
+    return skill;
+}
+
+function healSkill(bot) {
+    return ensureSkill(bot, 1011, {
+        name: "Heal",
+        level: 1,
+        mp: 15,
+        hitTime: 1500,
+        reuse: 1000,
+        power: 20,
+        distance: 600
+    });
+}
+
+function aggressionSkill(bot) {
+    return ensureSkill(bot, 28, {
+        name: "Aggression",
+        level: 1,
+        mp: 10,
+        hitTime: 1000,
+        reuse: 3000,
+        power: 0,
+        distance: 600
+    });
+}
+
+function recordRoleDecision(session, bot, action, reason, extra = {}) {
+    const role = BotRoles.inferRole(bot);
+    const previous = session.roleDecision;
+    const current = {
+        role,
+        action,
+        reason,
+        at: Date.now(),
+        ...extra
+    };
+
+    session.roleDecision = current;
+
+    const signature = `${role}:${action}:${reason}`;
+    const shouldLog = !previous ||
+        `${previous.role}:${previous.action}:${previous.reason}` !== signature ||
+        current.at - (session.lastRoleDecisionLogAt || 0) > 10000;
+
+    if (shouldLog) {
+        session.lastRoleDecisionLogAt = current.at;
+        console.info("BotRole :: %s %s/%s (%s)", bot.fetchName(), action, reason, role);
+    }
+}
+
+function castSkillOn(session, bot, Generics, target, skillId, ctrl) {
+    session.currentTargetId = target.fetchId();
+    bot.select({ id: target.fetchId() });
+    Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skillId, ctrl });
+}
+
+function leaderAggroCount(player) {
+    return World.fetchNpcsInRadius(player.fetchLocX(), player.fetchLocY(), 900)
+        .filter((npc) => npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === player.fetchId())
+        .length;
+}
+
+function pullBlockReason(session, botVitals, leaderVitals, activeMobs) {
+    if (session.autoTaunt === false) return 'manual_pull_off';
+    if (session.botStay) return 'stay_order';
+    if (session.currentTargetId) return 'already_assisting';
+    if (leaderVitals.hpRatio < 0.65) return 'leader_low_hp';
+    if (botVitals.hpRatio < 0.55) return 'tank_low_hp';
+    if (botVitals.mpRatio < 0.25) return 'save_mp';
+    if (activeMobs >= 2) return 'active_mobs';
+    return null;
+}
+
+function assistActionForRole(role) {
+    if (role === 'archer' || role === 'mage') return 'ranged_assist';
+    if (role === 'spoiler') return 'spoil_target';
+    if (role === 'crafter') return 'assist_leader';
+    return 'assist_leader';
+}
+
+function assistReasonForRole(role) {
+    if (role === 'spoiler') return 'leader_target';
+    if (role === 'crafter') return 'economic_role_combat';
+    return 'leader_target';
+}
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
@@ -8,26 +121,28 @@ module.exports = {
         if (session.partyCompanion !== true) {
             session.plan = 'hunting';
             session.followPlayerSession = null;
+            session.roleDecision = null;
             return;
         }
 
         if (!playerSession || !playerSession.actor || !playerSession.actor.fetchIsOnline()) {
             session.plan = 'hunting';
+            session.roleDecision = null;
             BotAI.say(session, "My companion has disconnected. Heading back to hunt.");
             return;
         }
 
         const player = playerSession.actor;
-        const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-            .distance(new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ()));
+        const role = BotRoles.inferRole(bot);
+        const distance = point(bot).distance(point(player));
 
         if (distance > 3500) {
             session.plan = 'hunting';
+            session.roleDecision = null;
             BotAI.say(session, "You ran too far away! I'm going back to hunt on my own.");
             return;
         }
 
-        // 1.2 Stuck Detection & Auto-Teleport (Summon) for Companion
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
             session.lastTickLoc = currentLoc;
@@ -44,9 +159,9 @@ module.exports = {
             session.stuckTicks = 0;
         }
 
-        // If stuck for 3 ticks (~3-4 seconds) OR if too far behind (> 1000 units)
         if (session.stuckTicks >= 3 || distance > 1000) {
             session.stuckTicks = 0;
+            recordRoleDecision(session, bot, 'follow_leader', distance > 1000 ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
             if (TeleportTo && typeof TeleportTo === 'function') {
                 const targetLoc = {
@@ -62,24 +177,26 @@ module.exports = {
             return;
         }
 
-        // 1. HP/MP resting check for companion bots
-        const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
-        const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-        if (hpRatio < 0.30 || mpRatio < 0.15) {
+        const botVitals = {
+            hpRatio: ratio(bot.fetchHp(), bot.fetchMaxHp()),
+            mpRatio: ratio(bot.fetchMp(), bot.fetchMaxMp())
+        };
+        const leaderVitals = {
+            hpRatio: ratio(player.fetchHp(), player.fetchMaxHp()),
+            mpRatio: ratio(player.fetchMp(), player.fetchMaxMp())
+        };
+
+        if (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15) {
             session.plan = 'resting';
             session.currentTargetId = undefined;
             bot.unselect();
             bot.state.setSeated(true);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'resting');
             BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
             return;
         }
 
-        const classId = bot.fetchClassId();
-        const HEALER_CLASSES = [15, 16, 17, 29, 30, 42, 43];
-        const TANK_CLASSES = [4, 5, 6, 19, 20, 32, 33];
-
-        // Periodic party chatter (e.g. 1.5% chance per tick)
         if (Math.random() < 0.015) {
             const chatterPhrases = [
                 "Nice combat, leader!",
@@ -101,175 +218,117 @@ module.exports = {
                     "I will take the aggro, stay behind me!",
                     "Aggression is ready! Pulling them off you.",
                     "I'm tanking this beast!"
+                ],
+                spoiler: [
+                    "I'll watch for spoil targets.",
+                    "Leave useful materials to me if they drop."
+                ],
+                crafter: [
+                    "I am better with recipes than reckless pulls.",
+                    "If materials drop, I can make use of them."
                 ]
             };
-            let pool = chatterPhrases;
-            if (HEALER_CLASSES.includes(classId)) {
-                pool = pool.concat(classPhrases.healer);
-            } else if (TANK_CLASSES.includes(classId)) {
-                pool = pool.concat(classPhrases.tank);
-            }
+            const pool = chatterPhrases.concat(classPhrases[role] || []);
             const text = pool[Math.floor(Math.random() * pool.length)];
             BotAI.say(session, text);
         }
 
         let acted = false;
+        let keepRoleDecision = false;
 
-        // 2. Execute Healer Role: Heal leader if HP < 70%, heal self if HP < 60%
-        if (HEALER_CLASSES.includes(classId)) {
-            const leaderHpRatio = player.fetchHp() / player.fetchMaxHp();
-            if (leaderHpRatio < 0.70) {
-                const SkillModel = invoke('GameServer/Model/Skill');
-                let skill = bot.skillset.fetchSkill(1011);
-                if (!skill) {
-                    skill = new SkillModel({
-                        selfId: 1011,
-                        name: "Heal",
-                        level: 1,
-                        hp: 0,
-                        mp: 15,
-                        hitTime: 1500,
-                        reuse: 1000,
-                        power: 20,
-                        distance: 600,
-                        passive: false
-                    });
-                    bot.skillset.skills.push(skill);
+        if (role === 'healer') {
+            const skill = healSkill(bot);
+            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot);
+
+            if (leaderVitals.hpRatio < 0.45 && canCast) {
+                acted = true;
+                recordRoleDecision(session, bot, 'heal_leader', 'emergency_heal', { targetId: player.fetchId() });
+                castSkillOn(session, bot, Generics, player, 1011, false);
+                if (Math.random() < 0.15) {
+                    BotAI.say(session, "Emergency heal on " + player.fetchName() + "!");
                 }
-                if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                    acted = true;
-                    if (!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts())) {
-                        session.currentTargetId = player.fetchId();
-                        bot.select({ id: player.fetchId() });
-                        Generics.skillExec(session, bot, { id: player.fetchId(), selfId: 1011, ctrl: false });
-                        if (Math.random() < 0.15) {
-                            BotAI.say(session, "Healing you, " + player.fetchName() + "!");
-                        }
-                    }
+            } else if (leaderVitals.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && canCast) {
+                acted = true;
+                recordRoleDecision(session, bot, 'heal_leader', 'top_off', { targetId: player.fetchId() });
+                castSkillOn(session, bot, Generics, player, 1011, false);
+                if (Math.random() < 0.15) {
+                    BotAI.say(session, "Healing you, " + player.fetchName() + "!");
                 }
-            } else if (hpRatio < 0.60) {
-                const SkillModel = invoke('GameServer/Model/Skill');
-                let skill = bot.skillset.fetchSkill(1011);
-                if (!skill) {
-                    skill = new SkillModel({
-                        selfId: 1011,
-                        name: "Heal",
-                        level: 1,
-                        hp: 0,
-                        mp: 15,
-                        hitTime: 1500,
-                        reuse: 1000,
-                        power: 20,
-                        distance: 600,
-                        passive: false
-                    });
-                    bot.skillset.skills.push(skill);
+            } else if (leaderVitals.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
+                recordRoleDecision(session, bot, 'save_mp', leaderVitals.hpRatio < 0.45 ? 'low_mp_emergency' : 'leader_not_critical');
+                keepRoleDecision = true;
+            } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && canCast) {
+                acted = true;
+                recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
+                castSkillOn(session, bot, Generics, bot, 1011, false);
+                if (Math.random() < 0.15) {
+                    BotAI.say(session, "Healing myself!");
                 }
-                if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                    acted = true;
-                    if (!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts())) {
-                        session.currentTargetId = bot.fetchId();
-                        bot.select({ id: bot.fetchId() });
-                        Generics.skillExec(session, bot, { id: bot.fetchId(), selfId: 1011, ctrl: false });
-                        if (Math.random() < 0.15) {
-                            BotAI.say(session, "Healing myself!");
-                        }
-                    }
-                }
+            } else if (botVitals.mpRatio < 0.25) {
+                recordRoleDecision(session, bot, 'save_mp', 'low_mp');
+                keepRoleDecision = true;
             }
         }
 
-        // 3. Execute Tank Role: Aggression on mobs attacking the leader
-        if (!acted && TANK_CLASSES.includes(classId)) {
+        if (!acted && role === 'tank') {
             const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 800);
-            let monsterToAggro = null;
-            for (const npc of nearbyNpcs) {
-                if (npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === player.fetchId()) {
-                    monsterToAggro = npc;
-                    break;
-                }
-            }
+            const monsterToAggro = nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === player.fetchId());
 
             if (monsterToAggro) {
-                const SkillModel = invoke('GameServer/Model/Skill');
-                let skill = bot.skillset.fetchSkill(28);
-                if (!skill) {
-                    skill = new SkillModel({
-                        selfId: 28,
-                        name: "Aggression",
-                        level: 1,
-                        hp: 0,
-                        mp: 10,
-                        hitTime: 1000,
-                        reuse: 3000,
-                        power: 0,
-                        distance: 600,
-                        passive: false
-                    });
-                    bot.skillset.skills.push(skill);
-                }
-                if (bot.fetchMp() >= skill.fetchConsumedMp()) {
+                const skill = aggressionSkill(bot);
+                if (bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
                     acted = true;
-                    if (!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts())) {
-                        session.currentTargetId = monsterToAggro.fetchId();
-                        bot.select({ id: monsterToAggro.fetchId() });
-                        Generics.skillExec(session, bot, { id: monsterToAggro.fetchId(), selfId: 28, ctrl: true });
-                        if (Math.random() < 0.20) {
-                            BotAI.say(session, "Hey, " + monsterToAggro.fetchName() + "! Attack me instead!");
+                    recordRoleDecision(session, bot, 'protect_leader', 'leader_targeted', { targetId: monsterToAggro.fetchId() });
+                    castSkillOn(session, bot, Generics, monsterToAggro, 28, true);
+                    if (Math.random() < 0.20) {
+                        BotAI.say(session, "Hey, " + monsterToAggro.fetchName() + "! Attack me instead!");
+                    }
+                } else if (botVitals.mpRatio < 0.25) {
+                    recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_taunt');
+                    keepRoleDecision = true;
+                }
+            }
+        }
+
+        if (!acted && role === 'tank') {
+            const activeMobs = leaderAggroCount(player);
+            const blockReason = pullBlockReason(session, botVitals, leaderVitals, activeMobs);
+
+            if (blockReason) {
+                recordRoleDecision(session, bot, 'avoid_overpull', blockReason, { activeMobs });
+                keepRoleDecision = true;
+            } else {
+                const nearbyNpcs = World.fetchNpcsInRadius(player.fetchLocX(), player.fetchLocY(), 900);
+                let targetMonster = null;
+                let closestDist = 900;
+
+                for (const npc of nearbyNpcs) {
+                    if (npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined) {
+                        const distToBot = point(bot).distance(point(npc));
+                        if (distToBot < closestDist) {
+                            closestDist = distToBot;
+                            targetMonster = npc;
+                        }
+                    }
+                }
+
+                if (targetMonster) {
+                    const skill = aggressionSkill(bot);
+                    if (bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                        acted = true;
+                        recordRoleDecision(session, bot, 'pull_target', 'safe_pull', {
+                            targetId: targetMonster.fetchId(),
+                            activeMobs
+                        });
+                        castSkillOn(session, bot, Generics, targetMonster, 28, true);
+                        if (Math.random() < 0.30) {
+                            BotAI.say(session, "Pulling " + targetMonster.fetchName() + " to the group!");
                         }
                     }
                 }
             }
         }
 
-        // 3.5 Execute Tank Pulling if out of combat, following, and autoTaunt is enabled
-        if (!acted && !session.currentTargetId && !session.botStay && TANK_CLASSES.includes(classId) && session.autoTaunt !== false) {
-            const nearbyNpcs = World.fetchNpcsInRadius(player.fetchLocX(), player.fetchLocY(), 1200);
-            let targetMonster = null;
-            let closestDist = 1200;
-
-            for (const npc of nearbyNpcs) {
-                if (npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined) {
-                    const distToBot = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-                        .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
-                    if (distToBot < closestDist) {
-                        closestDist = distToBot;
-                        targetMonster = npc;
-                    }
-                }
-            }
-
-            if (targetMonster) {
-                const SkillModel = invoke('GameServer/Model/Skill');
-                let skill = bot.skillset.fetchSkill(28);
-                if (!skill) {
-                    skill = new SkillModel({
-                        selfId: 28,
-                        name: "Aggression",
-                        level: 1,
-                        hp: 0,
-                        mp: 10,
-                        hitTime: 1000,
-                        reuse: 3000,
-                        power: 0,
-                        distance: 600,
-                        passive: false
-                    });
-                    bot.skillset.skills.push(skill);
-                }
-                if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                    acted = true;
-                    session.currentTargetId = targetMonster.fetchId();
-                    bot.select({ id: targetMonster.fetchId() });
-                    Generics.skillExec(session, bot, { id: targetMonster.fetchId(), selfId: 28, ctrl: true });
-                    if (Math.random() < 0.30) {
-                        BotAI.say(session, "Pulling " + targetMonster.fetchName() + " to the group!");
-                    }
-                }
-            }
-        }
-
-        // 4. Execute Combat Support (DPS / Assist)
         if (!acted) {
             const playerTargetId = player.fetchDestId();
             if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
@@ -282,23 +341,24 @@ module.exports = {
                     const isAttackablePvPTarget = user.fetchKarma() > 0 || user.fetchPvpFlag() > 0;
 
                     if (!user.state.fetchDead() && !targetIsTeammate && isAttackablePvPTarget) {
-                        // Stay post validation: restrict target engagement
                         if (session.botStay && session.stayLocation) {
                             const stayDist = new SpeckMath.Point3D(session.stayLocation.locX, session.stayLocation.locY, session.stayLocation.locZ)
                                 .distance(new SpeckMath.Point3D(user.fetchLocX(), user.fetchLocY(), user.fetchLocZ()));
                             if (stayDist > 900) {
-                                return; // Too far from post
+                                recordRoleDecision(session, bot, 'hold_position', 'stay_order');
+                                return;
                             }
                         }
 
                         if (session.currentTargetId !== playerTargetId) {
                             session.currentTargetId = playerTargetId;
                             bot.select({ id: playerTargetId });
+                            recordRoleDecision(session, bot, assistActionForRole(role), 'pvp_target', { targetId: playerTargetId });
                             if (Math.random() < 0.20) {
                                 BotAI.say(session, "Assisting you in PvP! Attacking " + user.fetchName() + "!");
                             }
                         }
-                        if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
+                        if (isBusy(bot)) {
                             return;
                         }
                         BotAI.executePvPCombat(session, bot, user, Generics);
@@ -309,23 +369,24 @@ module.exports = {
                 }).catch(() => {
                     World.fetchNpc(playerTargetId).then((npc) => {
                         if (npc.fetchAttackable() && !npc.isDead()) {
-                            // Stay post validation: restrict target engagement
                             if (session.botStay && session.stayLocation) {
                                 const stayDist = new SpeckMath.Point3D(session.stayLocation.locX, session.stayLocation.locY, session.stayLocation.locZ)
                                     .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
                                 if (stayDist > 900) {
-                                    return; // Too far from post
+                                    recordRoleDecision(session, bot, 'hold_position', 'stay_order');
+                                    return;
                                 }
                             }
 
                             if (session.currentTargetId !== playerTargetId) {
                                 session.currentTargetId = playerTargetId;
                                 bot.select({ id: playerTargetId });
+                                recordRoleDecision(session, bot, assistActionForRole(role), assistReasonForRole(role), { targetId: playerTargetId });
                                 if (Math.random() < 0.20) {
                                     BotAI.say(session, "Assisting you! Smashing that " + npc.fetchName() + "!");
                                 }
                             }
-                            if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
+                            if (isBusy(bot)) {
                                 return;
                             }
                             BotAI.executeCombat(session, bot, npc, Generics);
@@ -344,11 +405,16 @@ module.exports = {
             }
         }
 
-        // 5. Follow player or return to stay location post
         if (!session.currentTargetId && !acted) {
             if (session.botStay && session.stayLocation) {
-                const stayDist = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-                    .distance(new SpeckMath.Point3D(session.stayLocation.locX, session.stayLocation.locY, session.stayLocation.locZ));
+                const stayDist = point(bot).distance(new SpeckMath.Point3D(
+                    session.stayLocation.locX,
+                    session.stayLocation.locY,
+                    session.stayLocation.locZ
+                ));
+                if (!keepRoleDecision) {
+                    recordRoleDecision(session, bot, 'hold_position', 'stay_order');
+                }
                 if (stayDist > 100) {
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
@@ -356,10 +422,17 @@ module.exports = {
                     });
                 }
             } else if (distance > 250) {
+                if (!keepRoleDecision) {
+                    recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
+                }
                 bot.moveTo({
                     from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
                     to: { locX: player.fetchLocX() + utils.oneFromSpan(-60, 60), locY: player.fetchLocY() + utils.oneFromSpan(-60, 60), locZ: player.fetchLocZ() }
                 });
+            } else {
+                if (!keepRoleDecision) {
+                    recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'ready');
+                }
             }
         }
     }
