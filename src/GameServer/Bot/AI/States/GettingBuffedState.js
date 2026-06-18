@@ -1,5 +1,48 @@
 const SpeckMath      = invoke('GameServer/SpeckMath');
-const ServerResponse = invoke('GameServer/Network/Response');
+const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
+
+function returnLocation(session) {
+    const resume = session.resumeAfterBuff;
+    if (resume?.plan === 'following' && resume.followPlayerSession?.actor?.fetchIsOnline()) {
+        if (resume.botStay && resume.stayLocation) {
+            return resume.stayLocation;
+        }
+
+        const leader = resume.followPlayerSession.actor;
+        return {
+            locX: leader.fetchLocX() + utils.oneFromSpan(-60, 60),
+            locY: leader.fetchLocY() + utils.oneFromSpan(-60, 60),
+            locZ: leader.fetchLocZ()
+        };
+    }
+
+    return session.preBuffLocation || session.initialSpawnCoord || null;
+}
+
+function resumePreviousPlan(session, bot) {
+    const resume = session.resumeAfterBuff;
+    if (resume?.plan === 'following' && resume.followPlayerSession?.actor?.fetchIsOnline()) {
+        session.plan = 'following';
+        session.followPlayerSession = resume.followPlayerSession;
+        session.partyCompanion = true;
+        session.botStay = resume.botStay;
+        session.stayLocation = resume.stayLocation;
+        session.roleDecision = {
+            role: resume.role,
+            action: 'refresh_buffs',
+            reason: 'newbie_blessing_done',
+            at: Date.now()
+        };
+    } else {
+        session.plan = session.preBuffPlan || 'hunting';
+    }
+
+    session.resumeAfterBuff = undefined;
+    session.preBuffPlan = undefined;
+    session.preBuffLocation = undefined;
+    session.currentTargetId = undefined;
+    bot.unselect();
+}
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
@@ -21,30 +64,13 @@ module.exports = {
                 }
             }
         } else {
-            if (!bot.activeBuffs) {
-                bot.activeBuffs = {};
-            }
-            const duration = Date.now() + 20 * 60 * 1000;
-            bot.activeBuffs.windWalk = duration;
-            bot.activeBuffs.shield = duration;
-            bot.activeBuffs.haste = duration;
+            BotBuffs.applyFullNewbieBlessing(session, bot, Generics);
+            BotAI.say(session, session.resumeAfterBuff ? "Thank you, Newbie Guide! Fully blessed and returning to the party!" : "Thank you, Newbie Guide! Fully blessed and ready to hunt!");
 
-            bot.setHp(bot.fetchMaxHp());
-            bot.setMp(bot.fetchMaxMp());
-            bot.statusUpdateVitals(bot);
-            
-            Generics.calculateStats(session, bot);
-            session.dataSendToMe(ServerResponse.userInfo(bot));
-            
-            BotAI.say(session, "Thank you, Newbie Guide! Fully blessed and ready to hunt!");
-            session.plan = 'hunting';
-
-            // Teleport back to original hunting spot
-            if (session.preBuffLocation) {
-                Generics.teleportTo(session, bot, session.preBuffLocation);
-                session.preBuffLocation = undefined;
-            } else if (session.initialSpawnCoord) {
-                Generics.teleportTo(session, bot, session.initialSpawnCoord);
+            const target = returnLocation(session);
+            resumePreviousPlan(session, bot);
+            if (target) {
+                Generics.teleportTo(session, bot, target);
             }
         }
     }

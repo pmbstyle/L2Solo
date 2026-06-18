@@ -110,6 +110,7 @@ function renderCompanionPanel(session) {
         const mpPct = status ? Math.round(status.vitals.mpPct * 100) : 0;
         const spotName = status?.spot?.name || 'no spot';
         const roleDecision = status?.roleDecision ? `${status.roleDecision.action}/${status.roleDecision.reason}` : status?.intent;
+        const buffText = status?.buffs?.needsRefresh ? ' / buffs low' : '';
 
         const movement = stayActive
             ? Html.link('[STAYING]', `companion-control follow ${bot.fetchName()}`, { color: Html.COLOR.danger })
@@ -130,7 +131,7 @@ function renderCompanionPanel(session) {
         body += Html.botCard({
             name: bot.fetchName(),
             badge: status ? Html.font(status.role || 'bot', Html.COLOR.link) : '',
-            subtitle: status ? `${roleDecision} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}` : 'status unavailable',
+            subtitle: status ? `${roleDecision} / HP ${hpPct}% / MP ${mpPct}% / ${spotName}${buffText}` : 'status unavailable',
             status: actions
         });
         body += Html.spacer(4);

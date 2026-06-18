@@ -1,4 +1,5 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -202,6 +203,7 @@ const BotStatus = {
                 towards: bot.state.fetchTowards() || false,
                 stuckTicks: session.stuckTicks || 0
             },
+            buffs: BotBuffs.snapshot(bot),
             timers: {
                 deathStartedAt: session.deathTimerStart || null,
                 fleeStartedAt: session.fleeStart || null,
@@ -229,9 +231,10 @@ const BotStatus = {
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
         const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
+        const buffs = status.buffs?.needsRefresh ? ' buffs=refresh' : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${buffs}${blockers}`;
     }
 };
 

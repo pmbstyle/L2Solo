@@ -88,6 +88,9 @@ const BotManager = {
         const roleDecision = status.roleDecision ? `${status.roleDecision.action} / ${status.roleDecision.reason}` : null;
         const huntDecision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : null;
         const decision = roleDecision || huntDecision || 'none';
+        const buffs = status.buffs?.eligible
+            ? `WW ${status.buffs.windWalk}s / Shield ${status.buffs.shield}s / Haste ${status.buffs.haste}s${status.buffs.needsRefresh ? ' / refresh' : ''}`
+            : 'not eligible';
         const trade = status.trade?.last ? status.trade.last :
             status.trade?.shoppingTarget ? `going to ${status.trade.shoppingTarget.name}` :
             status.trade?.store ? `${status.trade.store.type} / ${status.trade.store.title}` : 'none';
@@ -109,6 +112,7 @@ const BotManager = {
             ['Move', safe(status.movement.moving ? `moving (${status.movement.towards})` : 'idle')],
             ['Blockers', safe(blockers)],
             ['Decision', safe(decision)],
+            ['Buffs', safe(buffs)],
             ['Trade', safe(trade)],
             ['Social', safe(social)],
             ['Invite', safe(invite)]

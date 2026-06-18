@@ -2,6 +2,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -197,6 +198,44 @@ module.exports = {
             return;
         }
 
+        let acted = false;
+        let keepRoleDecision = false;
+
+        const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
+        if (buffsNeedRefresh) {
+            const unsafeToRefresh = !!session.currentTargetId ||
+                !!player.fetchDestId() ||
+                leaderAggroCount(player) > 0 ||
+                isBusy(bot);
+
+            if (unsafeToRefresh) {
+                recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
+                    missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
+                });
+                keepRoleDecision = true;
+            } else {
+                session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                session.preBuffPlan = 'following';
+                session.resumeAfterBuff = {
+                    plan: 'following',
+                    followPlayerSession: playerSession,
+                    partyCompanion: true,
+                    botStay: session.botStay === true,
+                    stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
+                    role
+                };
+                session.plan = 'getting_buffed';
+                session.currentTargetId = undefined;
+                bot.unselect();
+                bot.automation.abortAll(bot);
+                recordRoleDecision(session, bot, 'refresh_buffs', 'newbie_blessing', {
+                    missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
+                });
+                BotAI.say(session, "My newbie buffs are fading. Refreshing quickly, then I'll return.");
+                return;
+            }
+        }
+
         if (Math.random() < 0.015) {
             const chatterPhrases = [
                 "Nice combat, leader!",
@@ -232,9 +271,6 @@ module.exports = {
             const text = pool[Math.floor(Math.random() * pool.length)];
             BotAI.say(session, text);
         }
-
-        let acted = false;
-        let keepRoleDecision = false;
 
         if (role === 'healer') {
             const skill = healSkill(bot);
