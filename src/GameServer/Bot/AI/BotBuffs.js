@@ -11,7 +11,7 @@ const ALL_BUFFS = {
 };
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
-const SUPPORT_BUFF_TYPES = ['might'];
+const SUPPORT_BUFF_TYPES = ['might', 'shield', 'haste', 'windwalk'];
 const NEWBIE_BUFFS = Object.fromEntries(NEWBIE_BUFF_TYPES.map((type) => [type, ALL_BUFFS[type]]));
 const SUPPORT_BUFFS = Object.fromEntries(SUPPORT_BUFF_TYPES.map((type) => [type, ALL_BUFFS[type]]));
 
@@ -64,6 +64,10 @@ function refreshActorPackets(session, actor, Generics) {
 function needsBuff(actor, buffType, thresholdMs = REFRESH_THRESHOLD_MS) {
     const buff = ALL_BUFFS[buffType];
     return !!buff && remainingMs(actor, buff.key) <= thresholdMs;
+}
+
+function nextSupportBuff(actor, thresholdMs = REFRESH_THRESHOLD_MS) {
+    return SUPPORT_BUFF_TYPES.find((type) => needsBuff(actor, type, thresholdMs)) || null;
 }
 
 function applyBuff(session, actor, buffType, Generics) {
@@ -138,6 +142,7 @@ module.exports = {
     missingNewbieBuffs,
     needsNewbieRefresh,
     needsBuff,
+    nextSupportBuff,
     remainingMs,
     snapshot
 };

@@ -107,28 +107,25 @@ function itemDemand(botSession, info) {
 
     if (info.weapon) {
         if (role === 'archer' && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
+        else if (role === 'dagger' && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
         else if ((role === 'mage' || role === 'healer' || role === 'buffer') && /staff|wand|rod|spellbook|voodoo|scroll/.test(name)) addDemand(result, 6, 'caster weapon');
         else if (role === 'tank' && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
-        else if (role === 'dps' && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
+        else if ((role === 'dps' || role === 'dagger') && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
 
     if (info.armor) {
         if (role === 'tank' && ['Shield', 'Chain'].includes(armorType)) addDemand(result, 6, 'tank gear');
         else if ((role === 'mage' || role === 'healer' || role === 'buffer') && ['Fabric', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'caster gear');
-        else if ((role === 'archer' || role === 'dps') && ['Leather', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'combat gear');
+        else if ((role === 'archer' || role === 'dagger' || role === 'dps') && ['Leather', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'combat gear');
     }
 
     if (info.shot) {
         if (name.includes('spiritshot') && (role === 'mage' || role === 'healer' || role === 'buffer')) addDemand(result, 5, 'caster shots');
-        else if (name.includes('soulshot') && ['archer', 'tank', 'dps', 'dwarf', 'spoiler', 'crafter'].includes(role)) addDemand(result, 4, 'weapon shots');
+        else if (name.includes('soulshot') && ['archer', 'dagger', 'tank', 'dps'].includes(role)) addDemand(result, 4, 'weapon shots');
     }
 
     if (info.potion && (role === 'healer' || role === 'buffer' || role === 'tank')) {
         addDemand(result, 3, 'survival supplies');
-    }
-
-    if ((info.material || info.recipe) && BotRoles.valuesMaterial(role)) {
-        addDemand(result, info.recipe ? 6 : 5, info.recipe ? 'craft recipe' : 'craft material');
     }
 
     if (info.scroll && name.includes('enchant')) {

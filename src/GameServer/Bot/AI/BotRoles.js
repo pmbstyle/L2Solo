@@ -2,11 +2,9 @@ const ROLE_CLASSES = {
     healer: [15, 16, 29, 30, 42, 43],
     buffer: [17, 49, 50, 51],
     tank: [4, 5, 6, 19, 20, 32, 33],
-    archer: [8, 9, 22, 23, 35, 36, 37],
-    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41, 52],
-    spoiler: [54, 55],
-    crafter: [56, 57],
-    dwarf: [53, 54, 55, 56, 57]
+    dagger: [7, 8, 23, 35, 36],
+    archer: [9, 22, 24, 37],
+    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41, 52]
 };
 
 function classIdOf(value) {
@@ -22,11 +20,9 @@ function inferRole(value) {
     if (ROLE_CLASSES.healer.includes(classId)) return 'healer';
     if (ROLE_CLASSES.buffer.includes(classId)) return 'buffer';
     if (ROLE_CLASSES.tank.includes(classId)) return 'tank';
+    if (ROLE_CLASSES.dagger.includes(classId)) return 'dagger';
     if (ROLE_CLASSES.archer.includes(classId)) return 'archer';
     if (ROLE_CLASSES.mage.includes(classId)) return 'mage';
-    if (ROLE_CLASSES.spoiler.includes(classId)) return 'spoiler';
-    if (ROLE_CLASSES.crafter.includes(classId)) return 'crafter';
-    if (ROLE_CLASSES.dwarf.includes(classId)) return 'dwarf';
     return 'dps';
 }
 
@@ -53,18 +49,12 @@ function isRanged(roleOrActor) {
     return role === 'archer' || role === 'mage';
 }
 
-function valuesMaterial(role) {
-    return role === 'dwarf' || role === 'spoiler' || role === 'crafter';
-}
-
 function partyRoleStance(role) {
     if (role === 'healer') return 'support';
     if (role === 'buffer') return 'buff_support';
     if (role === 'tank') return 'protector';
+    if (role === 'dagger') return 'flank_assist';
     if (role === 'archer' || role === 'mage') return 'ranged_assist';
-    if (role === 'spoiler') return 'spoil_assist';
-    if (role === 'crafter') return 'economic_support';
-    if (role === 'dwarf') return 'combat_support';
     return 'assist';
 }
 
@@ -76,6 +66,5 @@ module.exports = {
     isTank,
     canBuff,
     isRanged,
-    valuesMaterial,
     partyRoleStance
 };

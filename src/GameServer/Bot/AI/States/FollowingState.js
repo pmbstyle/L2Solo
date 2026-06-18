@@ -115,15 +115,21 @@ function pullBlockReason(session, botVitals, leaderVitals, activeMobs) {
 function assistActionForRole(role) {
     if (role === 'archer' || role === 'mage') return 'ranged_assist';
     if (role === 'buffer') return 'buff_support';
-    if (role === 'spoiler') return 'spoil_target';
-    if (role === 'crafter') return 'assist_leader';
+    if (role === 'dagger') return 'flank_target';
     return 'assist_leader';
 }
 
 function assistReasonForRole(role) {
-    if (role === 'spoiler') return 'leader_target';
-    if (role === 'crafter') return 'economic_role_combat';
+    if (role === 'dagger') return 'close_assist';
     return 'leader_target';
+}
+
+function supportBuffPhrase(buffType, playerName) {
+    if (buffType === 'might') return "Might on " + playerName + ". Hit harder!";
+    if (buffType === 'shield') return "Shield on " + playerName + ". Stay sturdy.";
+    if (buffType === 'haste') return "Haste on " + playerName + ". Keep the pressure up!";
+    if (buffType === 'windwalk') return "Wind Walk on " + playerName + ". Move fast.";
+    return "Buffing " + playerName + ".";
 }
 
 module.exports = {
@@ -243,33 +249,34 @@ module.exports = {
             }
         }
 
-        if (!acted && BotRoles.canBuff(bot) && BotBuffs.needsBuff(player, 'might')) {
+        const nextSupportBuff = BotBuffs.nextSupportBuff(player);
+        if (!acted && BotRoles.canBuff(bot) && nextSupportBuff) {
             const activeMobs = leaderAggroCount(player);
             if (unsafeSupportMoment(session, bot, player, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
-                    buff: 'might',
+                    buff: nextSupportBuff,
                     targetId: player.fetchId(),
                     activeMobs
                 });
                 keepRoleDecision = true;
             } else if (bot.fetchMp() < SUPPORT_BUFF_MP_COST || botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
-                    buff: 'might',
+                    buff: nextSupportBuff,
                     targetId: player.fetchId()
                 });
                 keepRoleDecision = true;
             } else {
-                const result = BotBuffs.applySupportBuff(playerSession, player, 'might', Generics);
+                const result = BotBuffs.applySupportBuff(playerSession, player, nextSupportBuff, Generics);
                 if (result) {
                     acted = true;
                     bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
                     bot.statusUpdateVitals(bot);
-                    recordRoleDecision(session, bot, 'buff_party', 'might', {
-                        buff: 'might',
+                    recordRoleDecision(session, bot, 'buff_party', nextSupportBuff, {
+                        buff: nextSupportBuff,
                         targetId: player.fetchId()
                     });
                     if (Math.random() < 0.30) {
-                        BotAI.say(session, "Might on " + player.fetchName() + ". Hit harder!");
+                        BotAI.say(session, supportBuffPhrase(nextSupportBuff, player.fetchName()));
                     }
                 }
             }
@@ -299,16 +306,13 @@ module.exports = {
                 ],
                 buffer: [
                     "I'll keep the party buffed.",
-                    "Might is ready when we have a safe moment.",
+                    "Buffs are ready when we have a safe moment.",
                     "Save a little mana before the next pull."
                 ],
-                spoiler: [
-                    "I'll watch for spoil targets.",
-                    "Leave useful materials to me if they drop."
-                ],
-                crafter: [
-                    "I am better with recipes than reckless pulls.",
-                    "If materials drop, I can make use of them."
+                dagger: [
+                    "I'll stay close and hit their weak side.",
+                    "Mark a target and I'll get in close.",
+                    "No bow tricks from me, just blades."
                 ]
             };
             const pool = chatterPhrases.concat(classPhrases[role] || []);
