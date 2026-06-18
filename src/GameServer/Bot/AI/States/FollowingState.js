@@ -4,6 +4,8 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 
+const SUPPORT_BUFF_MP_COST = 20;
+
 function ratio(value, max) {
     if (!max) return 0;
     return Math.max(0, Math.min(1, value / max));
@@ -92,6 +94,13 @@ function leaderAggroCount(player) {
         .length;
 }
 
+function unsafeSupportMoment(session, bot, player, activeMobs) {
+    return !!session.currentTargetId ||
+        !!player.fetchDestId() ||
+        activeMobs > 0 ||
+        isBusy(bot);
+}
+
 function pullBlockReason(session, botVitals, leaderVitals, activeMobs) {
     if (session.autoTaunt === false) return 'manual_pull_off';
     if (session.botStay) return 'stay_order';
@@ -105,6 +114,7 @@ function pullBlockReason(session, botVitals, leaderVitals, activeMobs) {
 
 function assistActionForRole(role) {
     if (role === 'archer' || role === 'mage') return 'ranged_assist';
+    if (role === 'buffer') return 'buff_support';
     if (role === 'spoiler') return 'spoil_target';
     if (role === 'crafter') return 'assist_leader';
     return 'assist_leader';
@@ -203,10 +213,7 @@ module.exports = {
 
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
-            const unsafeToRefresh = !!session.currentTargetId ||
-                !!player.fetchDestId() ||
-                leaderAggroCount(player) > 0 ||
-                isBusy(bot);
+            const unsafeToRefresh = unsafeSupportMoment(session, bot, player, leaderAggroCount(player));
 
             if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
@@ -236,6 +243,38 @@ module.exports = {
             }
         }
 
+        if (!acted && BotRoles.canBuff(bot) && BotBuffs.needsBuff(player, 'might')) {
+            const activeMobs = leaderAggroCount(player);
+            if (unsafeSupportMoment(session, bot, player, activeMobs)) {
+                recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
+                    buff: 'might',
+                    targetId: player.fetchId(),
+                    activeMobs
+                });
+                keepRoleDecision = true;
+            } else if (bot.fetchMp() < SUPPORT_BUFF_MP_COST || botVitals.mpRatio < 0.35) {
+                recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
+                    buff: 'might',
+                    targetId: player.fetchId()
+                });
+                keepRoleDecision = true;
+            } else {
+                const result = BotBuffs.applySupportBuff(playerSession, player, 'might', Generics);
+                if (result) {
+                    acted = true;
+                    bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
+                    bot.statusUpdateVitals(bot);
+                    recordRoleDecision(session, bot, 'buff_party', 'might', {
+                        buff: 'might',
+                        targetId: player.fetchId()
+                    });
+                    if (Math.random() < 0.30) {
+                        BotAI.say(session, "Might on " + player.fetchName() + ". Hit harder!");
+                    }
+                }
+            }
+        }
+
         if (Math.random() < 0.015) {
             const chatterPhrases = [
                 "Nice combat, leader!",
@@ -257,6 +296,11 @@ module.exports = {
                     "I will take the aggro, stay behind me!",
                     "Aggression is ready! Pulling them off you.",
                     "I'm tanking this beast!"
+                ],
+                buffer: [
+                    "I'll keep the party buffed.",
+                    "Might is ready when we have a safe moment.",
+                    "Save a little mana before the next pull."
                 ],
                 spoiler: [
                     "I'll watch for spoil targets.",

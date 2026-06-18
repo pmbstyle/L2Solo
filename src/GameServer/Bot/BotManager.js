@@ -89,8 +89,8 @@ const BotManager = {
         const huntDecision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : null;
         const decision = roleDecision || huntDecision || 'none';
         const buffs = status.buffs?.eligible
-            ? `WW ${status.buffs.windWalk}s / Shield ${status.buffs.shield}s / Haste ${status.buffs.haste}s${status.buffs.needsRefresh ? ' / refresh' : ''}`
-            : 'not eligible';
+            ? `WW ${status.buffs.windWalk}s / Shield ${status.buffs.shield}s / Haste ${status.buffs.haste}s / Might ${status.buffs.might}s${status.buffs.needsRefresh ? ' / refresh' : ''}`
+            : `Might ${status.buffs?.might ?? 0}s`;
         const trade = status.trade?.last ? status.trade.last :
             status.trade?.shoppingTarget ? `going to ${status.trade.shoppingTarget.name}` :
             status.trade?.store ? `${status.trade.store.type} / ${status.trade.store.title}` : 'none';
