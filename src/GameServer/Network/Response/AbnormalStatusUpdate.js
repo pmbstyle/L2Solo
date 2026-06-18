@@ -39,6 +39,13 @@ abnormalStatusUpdate.fromActor = function(actor) {
                 duration: Math.round((actor.activeBuffs.haste - now) / 1000)
             });
         }
+        if (actor.activeBuffs.might && now < actor.activeBuffs.might) {
+            buffs.push({
+                id: 1068, // Might
+                level: 2,
+                duration: Math.round((actor.activeBuffs.might - now) / 1000)
+            });
+        }
     }
     return abnormalStatusUpdate(buffs);
 };

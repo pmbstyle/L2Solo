@@ -4,6 +4,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
+const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -54,10 +55,10 @@ function findPreferredMonster(session, bot, radius, options = {}) {
 module.exports = {
     tick(session, bot, Generics, BotAI) {
         // 1. Expire buffs check for hunting bots
-        if (bot.fetchLevel() <= 25 && bot.fetchKarma() === 0 && !session.followPlayerSession) {
-            const buffsExpired = !bot.activeBuffs || !bot.activeBuffs.windWalk || Date.now() > bot.activeBuffs.windWalk;
-            if (buffsExpired) {
+        if (!session.followPlayerSession) {
+            if (BotBuffs.needsNewbieRefresh(bot, 0)) {
                 session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                session.preBuffPlan = 'hunting';
                 session.plan = 'getting_buffed';
                 session.currentTargetId = undefined;
                 bot.automation.abortAll(bot);

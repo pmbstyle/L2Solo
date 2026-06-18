@@ -82,10 +82,15 @@ const BotManager = {
 
         const spot = status.spot ? `${status.spot.name} / Lv ${status.spot.minLevel}-${status.spot.maxLevel} / density ${status.spot.density}` : 'none';
         const target = status.target ? `${status.target.type}:${status.target.name || status.target.id}` : 'none';
-        const party = status.party ? `${status.party.role}, ${status.party.stance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
+        const party = status.party ? `${status.party.role}, ${status.party.stance}/${status.party.roleStance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
         const home = status.home?.region ? `${status.home.region}${status.home.visitor ? ' visitor' : ''}` : 'unknown';
         const blockers = status.blockers.length > 0 ? status.blockers.join(', ') : 'none';
-        const decision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : 'none';
+        const roleDecision = status.roleDecision ? `${status.roleDecision.action} / ${status.roleDecision.reason}` : null;
+        const huntDecision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : null;
+        const decision = roleDecision || huntDecision || 'none';
+        const buffs = status.buffs?.eligible
+            ? `WW ${status.buffs.windWalk}s / Shield ${status.buffs.shield}s / Haste ${status.buffs.haste}s / Might ${status.buffs.might}s${status.buffs.needsRefresh ? ' / refresh' : ''}`
+            : `Might ${status.buffs?.might ?? 0}s`;
         const trade = status.trade?.last ? status.trade.last :
             status.trade?.shoppingTarget ? `going to ${status.trade.shoppingTarget.name}` :
             status.trade?.store ? `${status.trade.store.type} / ${status.trade.store.title}` : 'none';
@@ -107,6 +112,7 @@ const BotManager = {
             ['Move', safe(status.movement.moving ? `moving (${status.movement.towards})` : 'idle')],
             ['Blockers', safe(blockers)],
             ['Decision', safe(decision)],
+            ['Buffs', safe(buffs)],
             ['Trade', safe(trade)],
             ['Social', safe(social)],
             ['Invite', safe(invite)]
@@ -587,6 +593,7 @@ const BotManager = {
                     .slice(0, 10)
                     .map((session) => {
                         const summary = BotAI.summarizeStatus(session);
+                        if (session.roleDecision) return `${summary} roleDecision=${session.roleDecision.action}/${session.roleDecision.reason}`;
                         if (!session.lastDecision) return summary;
                         return `${summary} decision=${session.lastDecision.action}/${session.lastDecision.reason}`;
                     });

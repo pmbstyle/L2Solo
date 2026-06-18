@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 
 module.exports = function(session, parts) {
     const actor = session.actor;
@@ -9,34 +10,18 @@ module.exports = function(session, parts) {
         return;
     }
 
-    if (!actor.activeBuffs) {
-        actor.activeBuffs = {};
-    }
-
     const buffType = parts[1];
-    console.log("NewbieBuff.js executed. actor:", actor.fetchName(), "level:", actor.fetchLevel(), "buffType:", buffType);
 
     if (buffType === 'windwalk') {
-        actor.activeBuffs.windWalk = Date.now() + 20 * 60 * 1000;
-        console.log("Run speed before calculateStats:", actor.fetchCollectiveRunSpd());
-        invoke(path.actor).calculateStats(session, actor);
-        console.log("Run speed after calculateStats:", actor.fetchCollectiveRunSpd());
-        session.dataSendToMe(ServerResponse.userInfo(actor));
-        session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+        BotBuffs.applyNewbieBuff(session, actor, 'windwalk');
         session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Wind Walk! May the wind guide your steps." }));
     }
     else if (buffType === 'shield') {
-        actor.activeBuffs.shield = Date.now() + 20 * 60 * 1000;
-        invoke(path.actor).calculateStats(session, actor);
-        session.dataSendToMe(ServerResponse.userInfo(actor));
-        session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+        BotBuffs.applyNewbieBuff(session, actor, 'shield');
         session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Shield! May your defenses be unbreakable." }));
     }
     else if (buffType === 'haste') {
-        actor.activeBuffs.haste = Date.now() + 20 * 60 * 1000;
-        invoke(path.actor).calculateStats(session, actor);
-        session.dataSendToMe(ServerResponse.userInfo(actor));
-        session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+        BotBuffs.applyNewbieBuff(session, actor, 'haste');
         session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "Newbie Guide: Bestowed Haste! Strike with the speed of lightning." }));
     }
     else if (buffType === 'heal') {

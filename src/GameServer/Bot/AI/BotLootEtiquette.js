@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const ADENA_ID = 57;
 const REQUEST_RANGE = 1600;
@@ -10,14 +11,6 @@ const PLAYER_REQUEST_COOLDOWN_MS = 90000;
 const IGNORE_PENALTY_RANGE = REQUEST_RANGE * 1.5;
 const MAX_PENDING_REQUESTS = 1;
 const MIN_DEMAND_SCORE = 3;
-
-const ROLE_CLASSES = {
-    healer: [15, 16, 17, 29, 30, 42, 43],
-    tank: [4, 5, 6, 19, 20, 32, 33],
-    archer: [8, 9, 22, 23, 35, 36, 37],
-    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 29, 30, 38, 39, 40, 41, 42, 43, 49, 50, 51, 52],
-    dwarf: [53, 54, 55, 56, 57]
-};
 
 function now() {
     return Date.now();
@@ -97,15 +90,6 @@ function isNotable(info, amount) {
     return false;
 }
 
-function roleForClass(classId) {
-    if (ROLE_CLASSES.healer.includes(classId)) return 'healer';
-    if (ROLE_CLASSES.tank.includes(classId)) return 'tank';
-    if (ROLE_CLASSES.archer.includes(classId)) return 'archer';
-    if (ROLE_CLASSES.mage.includes(classId)) return 'mage';
-    if (ROLE_CLASSES.dwarf.includes(classId)) return 'dwarf';
-    return 'dps';
-}
-
 function addDemand(result, score, reason) {
     result.score += score;
     if (reason && !result.reasons.includes(reason)) {
@@ -116,35 +100,32 @@ function addDemand(result, score, reason) {
 function itemDemand(botSession, info) {
     const result = { score: 0, reasons: [] };
     const classId = botSession.actor.fetchClassId();
-    const role = roleForClass(classId);
+    const role = BotRoles.inferRole(classId);
     const name = info.name.toLowerCase();
     const weaponType = info.kind.replace('Weapon.', '');
     const armorType = info.kind.replace('Armor.', '');
 
     if (info.weapon) {
         if (role === 'archer' && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
-        else if ((role === 'mage' || role === 'healer') && /staff|wand|rod|spellbook|voodoo|scroll/.test(name)) addDemand(result, 6, 'caster weapon');
+        else if (role === 'dagger' && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
+        else if ((role === 'mage' || role === 'healer' || role === 'buffer') && /staff|wand|rod|spellbook|voodoo|scroll/.test(name)) addDemand(result, 6, 'caster weapon');
         else if (role === 'tank' && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
-        else if (role === 'dps' && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
+        else if ((role === 'dps' || role === 'dagger') && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
 
     if (info.armor) {
         if (role === 'tank' && ['Shield', 'Chain'].includes(armorType)) addDemand(result, 6, 'tank gear');
-        else if ((role === 'mage' || role === 'healer') && ['Fabric', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'caster gear');
-        else if ((role === 'archer' || role === 'dps') && ['Leather', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'combat gear');
+        else if ((role === 'mage' || role === 'healer' || role === 'buffer') && ['Fabric', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'caster gear');
+        else if ((role === 'archer' || role === 'dagger' || role === 'dps') && ['Leather', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'combat gear');
     }
 
     if (info.shot) {
-        if (name.includes('spiritshot') && (role === 'mage' || role === 'healer')) addDemand(result, 5, 'caster shots');
-        else if (name.includes('soulshot') && ['archer', 'tank', 'dps', 'dwarf'].includes(role)) addDemand(result, 4, 'weapon shots');
+        if (name.includes('spiritshot') && (role === 'mage' || role === 'healer' || role === 'buffer')) addDemand(result, 5, 'caster shots');
+        else if (name.includes('soulshot') && ['archer', 'dagger', 'tank', 'dps'].includes(role)) addDemand(result, 4, 'weapon shots');
     }
 
-    if (info.potion && (role === 'healer' || role === 'tank')) {
+    if (info.potion && (role === 'healer' || role === 'buffer' || role === 'tank')) {
         addDemand(result, 3, 'survival supplies');
-    }
-
-    if ((info.material || info.recipe) && role === 'dwarf') {
-        addDemand(result, info.recipe ? 6 : 5, info.recipe ? 'craft recipe' : 'craft material');
     }
 
     if (info.scroll && name.includes('enchant')) {

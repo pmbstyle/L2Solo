@@ -30,7 +30,10 @@ function setCollectiveTotalLoad(actor) {
 
 function setCollectiveTotalPAtk(actor) {
     const pAtk = actor.backpack.fetchTotalWeaponPAtk() ?? actor.fetchPAtk();
-    const base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
+    let base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
+    if (actor.activeBuffs && actor.activeBuffs.might && Date.now() < actor.activeBuffs.might) {
+        base = Math.round(base * 1.15); // +15% P.Atk
+    }
     actor.setCollectivePAtk(base);
 }
 
