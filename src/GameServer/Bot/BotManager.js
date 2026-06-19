@@ -11,6 +11,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 
@@ -128,6 +129,7 @@ const BotManager = {
     init() {
         console.info("BotManager :: Initializing automated SimPlayers...");
         BotSocialMemory.init();
+        PopulationService.init();
         
         const bots = [...BOTS_TO_SPAWN, ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
@@ -139,6 +141,7 @@ const BotManager = {
             });
             this.startDynamicScalingMonitor();
             this.startStatusLogMonitor();
+            PopulationService.start();
         }, 5000);
     },
 

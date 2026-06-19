@@ -3,6 +3,7 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrain       = invoke('GameServer/Bot/AI/BotBrain');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -252,6 +253,7 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        PopulationService.recordHotTick(session);
         session.botStatus = BotStatus.getStatus(session);
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
