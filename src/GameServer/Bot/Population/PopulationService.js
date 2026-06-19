@@ -2,6 +2,7 @@ const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 
 const PopulationService = {
     initialized: false,
@@ -15,6 +16,7 @@ const PopulationService = {
         Metrics.init();
         Metrics.startEventLoopMonitor();
         LifeState.init();
+        LifeEvents.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
     },
