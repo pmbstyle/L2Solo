@@ -3369,6 +3369,61 @@
     "stats": { "pDef": 41, "mDef": 41, "evasion": 0, "maxMp": 0 },
     "etc": { "slot": 10, "rank": "none", "cristals": 0 }
 },{
+    "selfId": 5170,
+    "template": { "kind": "Armor.Pet", "name": "Mithril Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 1600000 },
+    "stats": { "pDef": 41, "mDef": 41, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5171,
+    "template": { "kind": "Armor.Pet", "name": "Brigadine Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 2300000 },
+    "stats": { "pDef": 44, "mDef": 44, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5172,
+    "template": { "kind": "Armor.Pet", "name": "Draconic Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 3400000 },
+    "stats": { "pDef": 47, "mDef": 47, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5173,
+    "template": { "kind": "Armor.Pet", "name": "Blood Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 4900000 },
+    "stats": { "pDef": 49, "mDef": 49, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5174,
+    "template": { "kind": "Armor.Pet", "name": "Ophidian Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 7300000 },
+    "stats": { "pDef": 52, "mDef": 52, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5175,
+    "template": { "kind": "Armor.Pet", "name": "Inferno Panzer Coat", "class1": 1, "class2": 1, "mass": 160, "price": 10000000 },
+    "stats": { "pDef": 55, "mDef": 55, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5182,
+    "template": { "kind": "Armor.Pet", "name": "Hatchling's Gorgon Coat", "class1": 1, "class2": 1, "mass": 160, "price": 2300000 },
+    "stats": { "pDef": 44, "mDef": 44, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5183,
+    "template": { "kind": "Armor.Pet", "name": "Hatchling's Ophidian Plate", "class1": 1, "class2": 1, "mass": 160, "price": 3400000 },
+    "stats": { "pDef": 47, "mDef": 47, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5184,
+    "template": { "kind": "Armor.Pet", "name": "Hatchling's Crimson Plate", "class1": 1, "class2": 1, "mass": 160, "price": 4900000 },
+    "stats": { "pDef": 49, "mDef": 49, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5185,
+    "template": { "kind": "Armor.Pet", "name": "Hatchling's Draconic Plate", "class1": 1, "class2": 1, "mass": 160, "price": 7300000 },
+    "stats": { "pDef": 52, "mDef": 52, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5186,
+    "template": { "kind": "Armor.Pet", "name": "Hatchling's Inferno Plate", "class1": 1, "class2": 1, "mass": 160, "price": 10000000 },
+    "stats": { "pDef": 55, "mDef": 55, "evasion": 0, "maxMp": 0 },
+    "etc": { "slot": 10, "rank": "none", "cristals": 0 }
+},{
     "selfId": 4222,
     "template": { "kind": "Armor.Shield", "name": "Dream Shield", "class1": 1, "class2": 1, "mass": 1380, "price": 12900 },
     "stats": { "pDef": 90, "mDef": 0, "evasion": -8, "maxMp": 0 },

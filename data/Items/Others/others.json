@@ -13950,4 +13950,64 @@
     "selfId": 4676,
     "template": { "kind": "Other.Quest", "name": "Medal of Victory", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
     "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 4916,
+    "template": { "kind": "Other.Spellbook", "name": "Spellbook: Energy Bolt", "class1": 4, "class2": 5, "mass": 120, "price": 800 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 4906,
+    "template": { "kind": "Other.Spellbook", "name": "Spellbook: Solar Spark", "class1": 4, "class2": 5, "mass": 120, "price": 1250 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 4908,
+    "template": { "kind": "Other.Spellbook", "name": "Spellbook: Shadow Spark", "class1": 4, "class2": 5, "mass": 120, "price": 1250 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 4910,
+    "template": { "kind": "Other.Spellbook", "name": "Spellbook: Vampiric Rage", "class1": 4, "class2": 5, "mass": 120, "price": 1800 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5134,
+    "template": { "kind": "Other.Shot", "name": "Compressed Package of Soulshots: No Grade", "class1": 4, "class2": 0, "mass": 600, "price": 2300 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5140,
+    "template": { "kind": "Other.Shot", "name": "Compressed Package of Spiritshots: No Grade", "class1": 4, "class2": 0, "mass": 750, "price": 4950 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5146,
+    "template": { "kind": "Other.Shot", "name": "Compressed Package of Blessed Spiritshots: No Grade", "class1": 4, "class2": 0, "mass": 750, "price": 11550 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5168,
+    "template": { "kind": "Other.None", "name": "Food for strider", "class1": 4, "class2": 5, "mass": 40, "price": 200 },
+    "etc": { "stackable": true, "consumable": true }
+},{
+    "selfId": 5192,
+    "template": { "kind": "Other.None", "name": "Rope of Magic: D-Grade", "class1": 4, "class2": 0, "mass": 2, "price": 100 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5193,
+    "template": { "kind": "Other.None", "name": "Rope of Magic: C-Grade", "class1": 4, "class2": 0, "mass": 2, "price": 150 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5194,
+    "template": { "kind": "Other.None", "name": "Rope of Magic: B-Grade", "class1": 4, "class2": 0, "mass": 2, "price": 250 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5195,
+    "template": { "kind": "Other.None", "name": "Rope of Magic: A-Grade", "class1": 4, "class2": 0, "mass": 2, "price": 400 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5250,
+    "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Soulshots: No-grade", "class1": 4, "class2": 0, "mass": 600, "price": 7700 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5256,
+    "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 16500 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5262,
+    "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Blessed Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 38500 },
+    "etc": { "stackable": true, "consumable": false }
 }]

@@ -7,9 +7,13 @@ function purchaseItems(session, items, purchaseOptions = {}) {
     if (!purchaseOptions.free) {
         for (const item of items) {
             let price = 0;
-            DataCache.fetchItemFromSelfId(item.selfId, (itemDetails) => {
-                price = itemDetails.template.price ?? 0;
-            });
+            if (purchaseOptions.prices && purchaseOptions.prices.has(item.selfId)) {
+                price = purchaseOptions.prices.get(item.selfId);
+            } else {
+                DataCache.fetchItemFromSelfId(item.selfId, (itemDetails) => {
+                    price = itemDetails.template.price ?? 0;
+                });
+            }
             totalCost += price * item.amount;
         }
     }

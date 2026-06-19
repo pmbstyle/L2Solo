@@ -87,6 +87,18 @@ async function consume(session, data) {
         return;
     }
 
+    if (session.activeNpcShop) {
+        const allowed = data.list.every((item) => session.activeNpcShop.itemIds.has(item.selfId));
+        if (!allowed) {
+            session.activeNpcShop = null;
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
+
+        World.purchaseItems(session, data.list, { prices: session.activeNpcShop.prices });
+        return;
+    }
+
     World.purchaseItems(session, data.list);
 }
 
