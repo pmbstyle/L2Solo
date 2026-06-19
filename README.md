@@ -20,7 +20,7 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 - [x] Create and persist characters, inventory, skills, shortcuts, position, and basic progression.
 - [x] Move through the world, target NPCs, fight monsters, take damage, die, revive, and continue playing.
 - [x] Pick up drops, use basic items, equip and unequip gear, use soulshots, and sell junk with `.sell`.
-- [x] Buy and sell through NPC shops.
+- [x] Buy and sell through NPC shops with city and NPC-specific C2 assortments, prices, and Giran luxury exchanges.
 - [x] Explore populated starter areas with persistent SimPlayer characters instead of bots teleporting around the player.
 - [x] See race-appropriate starter populations around each available race start, with a small number of visitor characters for MMO flavor.
 - [x] Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat.
@@ -178,6 +178,8 @@ Merchant bots currently cover:
 - Oren: B/A-grade materials, gear, and Oren-drop buyers.
 
 The source of truth for town merchant stock is `src/GameServer/Bot/MerchantStoreConfigs.js`.
+
+NPC shop assortments are NPC-specific: each trader HTML opens the active NPC's own buy list instead of a generic weapon/armor/magic fallback. Regular NPC stock lives in `src/GameServer/World/Generics/NpcShopBuyLists.js`; Giran luxury exchanges live in `src/GameServer/World/Generics/NpcExchangeShopLists.js`.
 
 ## Bot Trade and Loot Etiquette
 
