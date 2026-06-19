@@ -544,6 +544,40 @@ const BotLifeState = {
             counts.total += 1;
         });
         return counts;
+    },
+
+    levelHistogram() {
+        if (!initialized) {
+            return Promise.resolve({ levels: [], phases: {}, total: 0 });
+        }
+
+        return Database.execute([
+            `SELECT phase, level, COUNT(*) AS count
+            FROM ${TABLE}
+            GROUP BY phase, level
+            ORDER BY level ASC`,
+            []
+        ]).then((rows) => {
+            const levels = [];
+            const phases = {};
+            let total = 0;
+
+            rows.forEach((row) => {
+                const phase = row.phase || 'cold';
+                const level = Number(row.level || 1);
+                const count = Number(row.count || 0);
+
+                levels.push({ phase, level, count });
+                if (!phases[phase]) phases[phase] = 0;
+                phases[phase] += count;
+                total += count;
+            });
+
+            return { levels, phases, total };
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to read level histogram: %s', err.message);
+            return { levels: [], phases: {}, total: 0 };
+        });
     }
 };
 

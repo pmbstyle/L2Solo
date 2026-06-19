@@ -1,5 +1,6 @@
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -32,7 +33,8 @@ const PopulationStatus = {
         return {
             ...counts,
             metrics,
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} persisted=${counts.persisted} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} skipped=${metrics.delta.skippedResolves} dbFlushes=${metrics.delta.dbFlushes} lag=${lag}ms maxLag=${maxLag}ms`
+            director: Director.snapshot(),
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} persisted=${counts.persisted} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} skipped=${metrics.delta.skippedResolves} dbFlushes=${metrics.delta.dbFlushes} lag=${lag}ms maxLag=${maxLag}ms ${Director.statusLine()}`
         };
     }
 };

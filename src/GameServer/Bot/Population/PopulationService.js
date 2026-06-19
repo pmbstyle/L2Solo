@@ -7,6 +7,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
+const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 
 const PopulationService = {
     initialized: false,
@@ -25,6 +26,7 @@ const PopulationService = {
         Metrics.startEventLoopMonitor();
         LifeState.init();
         LifeEvents.init();
+        Director.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
     },
@@ -70,6 +72,8 @@ const PopulationService = {
                 this.phasePolicyTimer.unref();
             }
         }
+
+        Director.start();
     },
 
     stop() {
@@ -89,6 +93,7 @@ const PopulationService = {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
         }
+        Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
     },
@@ -227,7 +232,7 @@ const PopulationService = {
         const result = BackgroundResolver.resolveSolo({
             state,
             spot,
-            pressure: {},
+            pressure: Director.pressureForState(state),
             elapsedMs
         });
 
