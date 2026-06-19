@@ -90,6 +90,20 @@ async function main() {
         if (ids.length > 0) {
             const idList = placeholders(ids.length);
             try {
+                await conn.query(`DELETE FROM bot_life_events WHERE characterId IN (${idList})`, ids);
+            } catch (err) {
+                if (err.code !== 'ER_NO_SUCH_TABLE') {
+                    throw err;
+                }
+            }
+            try {
+                await conn.query(`DELETE FROM bot_life_state WHERE characterId IN (${idList})`, ids);
+            } catch (err) {
+                if (err.code !== 'ER_NO_SUCH_TABLE') {
+                    throw err;
+                }
+            }
+            try {
                 await conn.query(`DELETE FROM bot_social_memory WHERE botId IN (${idList}) OR playerId IN (${idList})`, [...ids, ...ids]);
             } catch (err) {
                 if (err.code !== 'ER_NO_SUCH_TABLE') {

@@ -1,4 +1,5 @@
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -10,13 +11,15 @@ const PopulationStatus = {
         const sessions = BotManager.sessions || [];
         const hot = sessions.filter((session) => isBotSession(session) && session.actor).length;
         const merchants = sessions.filter((session) => isBotSession(session) && session.actor && session.plan === 'merchant').length;
+        const lifeCounts = LifeState.counts();
 
         return {
             hot,
-            warm: 0,
-            cold: 0,
+            warm: lifeCounts.warm || 0,
+            cold: lifeCounts.cold || 0,
             merchants,
-            total: hot
+            total: Math.max(hot, lifeCounts.total || 0),
+            persisted: lifeCounts.total || 0
         };
     },
 
@@ -29,7 +32,7 @@ const PopulationStatus = {
         return {
             ...counts,
             metrics,
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} skipped=${metrics.delta.skippedResolves} lag=${lag}ms maxLag=${maxLag}ms`
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} persisted=${counts.persisted} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} skipped=${metrics.delta.skippedResolves} dbFlushes=${metrics.delta.dbFlushes} lag=${lag}ms maxLag=${maxLag}ms`
         };
     }
 };

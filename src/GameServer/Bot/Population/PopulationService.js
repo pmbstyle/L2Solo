@@ -1,6 +1,7 @@
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 const PopulationService = {
     initialized: false,
@@ -13,6 +14,7 @@ const PopulationService = {
 
         Metrics.init();
         Metrics.startEventLoopMonitor();
+        LifeState.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
     },
@@ -57,6 +59,11 @@ const PopulationService = {
         if (Config.enabled === false) return;
         if (!session || !session.accountId || !String(session.accountId).startsWith('bot_')) return;
         Metrics.recordHotTick();
+    },
+
+    markHot(session, reason = 'hot') {
+        if (Config.enabled === false) return Promise.resolve(null);
+        return LifeState.markHot(session, reason);
     },
 
     summary() {
