@@ -1,4 +1,5 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const pendingActivations = new Set();
 
 const HotActivation = {
@@ -31,6 +32,7 @@ const HotActivation = {
             }, 10000);
 
             console.info('BotPopulation :: requested activation for %s reason=%s', state.name, reason);
+            Metrics.recordActivation();
             return { ok: true, state, reason };
         });
     }

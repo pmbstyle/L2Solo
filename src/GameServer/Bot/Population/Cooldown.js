@@ -1,5 +1,6 @@
 const World     = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const Metrics   = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 function isVisibleToRealPlayer(session) {
     if (!session || !session.actor) return false;
@@ -41,6 +42,7 @@ const Cooldown = {
             session.actor = null;
 
             console.info('BotPopulation :: cooled %s reason=%s', state.name, reason);
+            Metrics.recordCooldown();
             return { ok: true, state, reason };
         });
     }
