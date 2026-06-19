@@ -353,8 +353,65 @@ const BotLifeState = {
         return next;
     },
 
+    markCold(session, reason = 'cooldown') {
+        if (!session || !session.actor) return Promise.resolve(null);
+
+        const row = {
+            ...recordFromSession(session, 'cold', reason),
+            nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+        };
+        const characterId = row.characterId;
+        const previous = pendingWrites.get(characterId) || Promise.resolve();
+        const ready = initialized ? Promise.resolve(true) : this.init();
+        const next = previous.then(() => ready).then((isReady) => {
+            if (!isReady) {
+                throw new Error('state table unavailable');
+            }
+            return save(row);
+        }).then(() => Database.updateCharacterLocation(row.characterId, {
+            locX: row.locX,
+            locY: row.locY,
+            locZ: row.locZ
+        })).then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed to mark %s cold: %s', row.characterName, err.message);
+                return null;
+            });
+
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(characterId) === tracked) {
+                pendingWrites.delete(characterId);
+            }
+        });
+        pendingWrites.set(characterId, tracked);
+        return next;
+    },
+
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    findByName(name) {
+        const lookup = String(name || '').toLowerCase();
+        for (const state of cache.values()) {
+            if (String(state.name || '').toLowerCase() === lookup) return Promise.resolve(state);
+        }
+
+        if (!initialized || !lookup) return Promise.resolve(null);
+        return Database.execute([
+            `SELECT * FROM ${TABLE} WHERE LOWER(characterName) = ? LIMIT 1`,
+            [lookup]
+        ]).then((rows) => {
+            if (!rows[0]) return null;
+            const state = normalize(rows[0]);
+            cache.set(state.characterId, state);
+            return state;
+        }).catch(() => null);
     },
 
     dueCold(limit = 10, at = now()) {

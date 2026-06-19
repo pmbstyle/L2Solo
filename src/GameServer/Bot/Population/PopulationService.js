@@ -5,6 +5,8 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
+const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 
 const PopulationService = {
     initialized: false,
@@ -84,6 +86,16 @@ const PopulationService = {
     markHot(session, reason = 'hot') {
         if (Config.enabled === false) return Promise.resolve(null);
         return LifeState.markHot(session, reason);
+    },
+
+    cooldownSession(session, reason = 'manual') {
+        if (Config.enabled === false) return Promise.resolve({ ok: false, reason: 'disabled' });
+        return Cooldown.cooldown(session, reason);
+    },
+
+    requestActivation(stateOrName, reason = 'manual') {
+        if (Config.enabled === false) return Promise.resolve({ ok: false, reason: 'disabled' });
+        return HotActivation.activate(stateOrName, reason);
     },
 
     tickBudgeted() {
