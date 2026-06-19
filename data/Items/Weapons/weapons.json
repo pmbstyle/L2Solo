@@ -2319,6 +2319,61 @@
     "stats": { "pAtk": 17, "pAtkRnd": 10, "mAtk": 21, "atkSpd": 277, "crit": 80, "accur": 0 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
 },{
+    "selfId": 5176,
+    "template": { "kind": "Weapon.Pet", "name": "Serpentine Spike", "class1": 0, "class2": 0, "mass": 100, "price": 1600000 },
+    "stats": { "pAtk": 17, "pAtkRnd": 10, "mAtk": 21, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5177,
+    "template": { "kind": "Weapon.Pet", "name": "Drake Horn", "class1": 0, "class2": 0, "mass": 100, "price": 2300000 },
+    "stats": { "pAtk": 19, "pAtkRnd": 10, "mAtk": 24, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5178,
+    "template": { "kind": "Weapon.Pet", "name": "Assult Alicorn", "class1": 0, "class2": 0, "mass": 100, "price": 3400000 },
+    "stats": { "pAtk": 21, "pAtkRnd": 10, "mAtk": 27, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5179,
+    "template": { "kind": "Weapon.Pet", "name": "Draconic Slicer", "class1": 0, "class2": 0, "mass": 100, "price": 4900000 },
+    "stats": { "pAtk": 23, "pAtkRnd": 10, "mAtk": 30, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5180,
+    "template": { "kind": "Weapon.Pet", "name": "Ohpdian Lance", "class1": 0, "class2": 0, "mass": 100, "price": 7300000 },
+    "stats": { "pAtk": 25, "pAtkRnd": 10, "mAtk": 34, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5181,
+    "template": { "kind": "Weapon.Pet", "name": "Diamond Drill", "class1": 0, "class2": 0, "mass": 100, "price": 10000000 },
+    "stats": { "pAtk": 27, "pAtkRnd": 10, "mAtk": 37, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5187,
+    "template": { "kind": "Weapon.Pet", "name": "Serpentine Grinder", "class1": 0, "class2": 0, "mass": 100, "price": 2300000 },
+    "stats": { "pAtk": 19, "pAtkRnd": 10, "mAtk": 24, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5188,
+    "template": { "kind": "Weapon.Pet", "name": "Fang of Dahak", "class1": 0, "class2": 0, "mass": 100, "price": 3400000 },
+    "stats": { "pAtk": 21, "pAtkRnd": 10, "mAtk": 27, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5189,
+    "template": { "kind": "Weapon.Pet", "name": "Crimson Blood Fang", "class1": 0, "class2": 0, "mass": 100, "price": 4900000 },
+    "stats": { "pAtk": 23, "pAtkRnd": 10, "mAtk": 30, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5190,
+    "template": { "kind": "Weapon.Pet", "name": "Draconic Chopper", "class1": 0, "class2": 0, "mass": 100, "price": 7300000 },
+    "stats": { "pAtk": 25, "pAtkRnd": 10, "mAtk": 34, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
+    "selfId": 5191,
+    "template": { "kind": "Weapon.Pet", "name": "Diabolic Grinder", "class1": 0, "class2": 0, "mass": 100, "price": 10000000 },
+    "stats": { "pAtk": 27, "pAtkRnd": 10, "mAtk": 37, "atkSpd": 277, "crit": 80, "accur": 0 },
+    "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
+},{
     "selfId": 3937,
     "template": { "kind": "Weapon.Pole", "name": "Giant Bar", "class1": 0, "class2": 0, "mass": 300, "price": 409000 },
     "stats": { "pAtk": 50, "pAtkRnd": 10, "mAtk": 26, "atkSpd": 325, "crit": 80, "accur": -3.75 },
