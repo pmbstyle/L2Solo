@@ -3,12 +3,16 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 
 const PopulationService = {
     initialized: false,
     started: false,
     summaryTimer: null,
     initialSummaryTimer: null,
+    schedulerTimer: null,
+    resolving: false,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -42,6 +46,16 @@ const PopulationService = {
         if (typeof this.summaryTimer.unref === 'function') {
             this.summaryTimer.unref();
         }
+
+        if (Config.backgroundResolverEnabled !== false) {
+            this.schedulerTimer = setInterval(() => {
+                this.tickBudgeted();
+            }, Config.schedulerIntervalMs);
+
+            if (typeof this.schedulerTimer.unref === 'function') {
+                this.schedulerTimer.unref();
+            }
+        }
     },
 
     stop() {
@@ -52,6 +66,10 @@ const PopulationService = {
         if (this.summaryTimer) {
             clearInterval(this.summaryTimer);
             this.summaryTimer = null;
+        }
+        if (this.schedulerTimer) {
+            clearInterval(this.schedulerTimer);
+            this.schedulerTimer = null;
         }
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -66,6 +84,61 @@ const PopulationService = {
     markHot(session, reason = 'hot') {
         if (Config.enabled === false) return Promise.resolve(null);
         return LifeState.markHot(session, reason);
+    },
+
+    tickBudgeted() {
+        if (this.resolving || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            return Promise.resolve([]);
+        }
+
+        this.resolving = true;
+        return LifeState.dueCold(Config.maxResolvesPerTick)
+            .then((states) => {
+                if (states.length === 0) return [];
+                return states.reduce((chain, state) => (
+                    chain.then((results) => this.resolveColdState(state).then((result) => {
+                        results.push(result);
+                        return results;
+                    }))
+                ), Promise.resolve([]));
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'background scheduler failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.resolving = false;
+            });
+    },
+
+    resolveColdState(state) {
+        const spot = SpotProfiles.findForState(state);
+        if (!spot) {
+            Metrics.recordSkippedResolve();
+            return Promise.resolve({ ok: false, reason: 'missing_spot', state });
+        }
+
+        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, Date.now() - state.timing.lastResolvedAt) : 60000;
+        const result = BackgroundResolver.resolveSolo({
+            state,
+            spot,
+            pressure: {},
+            elapsedMs
+        });
+
+        return LifeState.applyResolve(state, result).then((updatedState) => {
+            if (!updatedState) {
+                Metrics.recordSkippedResolve();
+                return { ok: false, reason: 'apply_failed', state };
+            }
+
+            Metrics.recordBackgroundResolve();
+            return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
+                ok: true,
+                state: updatedState,
+                debug: result.debug
+            }));
+        });
     },
 
     summary() {

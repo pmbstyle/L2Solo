@@ -1,5 +1,6 @@
 const Database = invoke('Database');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
+const DataCache = invoke('GameServer/DataCache');
 
 const TABLE = 'bot_life_state';
 const cache = new Map();
@@ -47,6 +48,17 @@ function levelBand(level) {
     return `${Math.max(1, value - 2)}-${value + 2}`;
 }
 
+function levelForExp(exp, fallback = 1) {
+    const value = Number(exp || 0);
+    const table = DataCache.experience || [];
+    for (let i = 0; i < table.length - 1; i++) {
+        if (value >= table[i] && value < table[i + 1]) {
+            return i + 1;
+        }
+    }
+    return fallback;
+}
+
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
     const inventory = parseJson(row.inventorySummary, {});
@@ -55,6 +67,10 @@ function normalize(row) {
         characterId: Number(row.characterId),
         accountName: row.accountName || '',
         name: row.characterName || '',
+        level: Number(row.level || 1),
+        exp: Number(row.exp || 0),
+        sp: Number(row.sp || 0),
+        adena: Number(row.adena || 0),
         phase: row.phase || 'cold',
         activity: row.activity || 'hunting',
         homeRegion: row.homeRegion || null,
@@ -106,6 +122,10 @@ function recordFromSession(session, phase, reason = '') {
         characterId,
         accountName: session.accountId || '',
         characterName: actor.fetchName(),
+        level: actor.fetchLevel(),
+        exp: actor.fetchExp() || 0,
+        sp: actor.fetchSp() || 0,
+        adena: 0,
         homeRegion: session.homeRegion || null,
         currentRegion: session.homeRegion || null,
         spotId: currentSpot?.id || null,
@@ -131,17 +151,74 @@ function recordFromSession(session, phase, reason = '') {
     };
 }
 
+function rowFromState(state) {
+    return {
+        characterId: state.characterId,
+        accountName: state.accountName || '',
+        characterName: state.name || '',
+        level: Number(state.level || 1),
+        exp: Number(state.exp || 0),
+        sp: Number(state.sp || 0),
+        adena: Number(state.adena || 0),
+        homeRegion: state.homeRegion || null,
+        currentRegion: state.currentRegion || null,
+        spotId: state.spotId || null,
+        activity: state.activity || 'hunting',
+        phase: state.phase || 'cold',
+        activityStartedAt: state.timing?.activityStartedAt || null,
+        nextResolveAt: state.timing?.nextResolveAt || null,
+        lastResolvedAt: state.timing?.lastResolvedAt || null,
+        lastHotAt: state.timing?.lastHotAt || null,
+        locX: state.loc?.locX || 0,
+        locY: state.loc?.locY || 0,
+        locZ: state.loc?.locZ || 0,
+        hp: state.vitals?.hp || 0,
+        maxHp: state.vitals?.maxHp || 0,
+        mp: state.vitals?.mp || 0,
+        maxMp: state.vitals?.maxMp || 0,
+        targetLevelBand: state.levelBand || levelBand(state.level),
+        deathCount: state.stats?.deaths || 0,
+        partyId: state.party?.partyId || null,
+        inventorySummary: safeJson(state.inventory || {}),
+        statsJson: safeJson(state.stats || {}),
+        updatedAt: now()
+    };
+}
+
+function addColumn(name, definition) {
+    return Database.execute([
+        `ALTER TABLE ${TABLE} ADD COLUMN ${name} ${definition}`,
+        []
+    ]).catch((err) => {
+        if (err.code === 'ER_DUP_FIELDNAME' || err.errno === 1060) return null;
+        throw err;
+    });
+}
+
+function ensureColumns() {
+    return Promise.all([
+        addColumn('level', 'INT NOT NULL DEFAULT 1 AFTER characterName'),
+        addColumn('exp', 'BIGINT NOT NULL DEFAULT 0 AFTER level'),
+        addColumn('sp', 'BIGINT NOT NULL DEFAULT 0 AFTER exp'),
+        addColumn('adena', 'BIGINT NOT NULL DEFAULT 0 AFTER sp')
+    ]);
+}
+
 function save(row) {
     return Database.execute([
         `INSERT INTO ${TABLE} (
-            characterId, accountName, characterName, homeRegion, currentRegion,
+            characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
             spotId, activity, phase, activityStartedAt, nextResolveAt,
             lastResolvedAt, lastHotAt, locX, locY, locZ, hp, maxHp, mp, maxMp,
             targetLevelBand, deathCount, partyId, inventorySummary, statsJson, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             accountName = VALUES(accountName),
             characterName = VALUES(characterName),
+            level = VALUES(level),
+            exp = VALUES(exp),
+            sp = VALUES(sp),
+            adena = VALUES(adena),
             homeRegion = VALUES(homeRegion),
             currentRegion = VALUES(currentRegion),
             spotId = VALUES(spotId),
@@ -163,6 +240,10 @@ function save(row) {
             row.characterId,
             row.accountName,
             row.characterName,
+            row.level,
+            row.exp,
+            row.sp,
+            row.adena,
             row.homeRegion,
             row.currentRegion,
             row.spotId,
@@ -230,7 +311,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => {
+        ]).then(() => ensureColumns()).then(() => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready');
             return true;
@@ -274,6 +355,93 @@ const BotLifeState = {
 
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    dueCold(limit = 10, at = now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
+            ORDER BY COALESCE(nextResolveAt, 0) ASC
+            LIMIT ${safeLimit}`,
+            [at]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch due cold states: %s', err.message);
+            return [];
+        });
+    },
+
+    applyResolve(state, result) {
+        if (!state || !result) return Promise.resolve(null);
+
+        const timestamp = now();
+        const exp = Number(state.exp || 0) + Number(result.materialize?.exp || 0);
+        const sp = Number(state.sp || 0) + Number(result.materialize?.sp || 0);
+        const level = levelForExp(exp, Number(state.level || 1));
+        const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0);
+        const stats = {
+            ...(state.stats || {}),
+            fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
+            fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
+            deaths: Number(result.patch?.deathCount || state.stats?.deaths || 0),
+            expEarned: Number(state.stats?.expEarned || 0) + Number(result.materialize?.exp || 0),
+            spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
+            adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0),
+            lastResolveDebug: result.debug || null
+        };
+        const inventory = { ...(state.inventory || {}) };
+        (result.materialize?.items || []).forEach((item) => {
+            const key = String(item.selfId);
+            inventory[key] = {
+                selfId: item.selfId,
+                name: item.name || inventory[key]?.name || '',
+                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0)
+            };
+        });
+
+        const nextState = {
+            ...state,
+            level,
+            exp,
+            sp,
+            adena,
+            phase: 'cold',
+            activity: result.patch?.activity || state.activity,
+            spotId: result.patch?.spotId || state.spotId,
+            vitals: {
+                ...(state.vitals || {}),
+                ...(result.patch?.vitals || {})
+            },
+            timing: {
+                ...(state.timing || {}),
+                lastResolvedAt: timestamp,
+                nextResolveAt: result.nextResolveAt || timestamp + 60000
+            },
+            stats,
+            inventory,
+            updatedAt: timestamp
+        };
+        const row = rowFromState(nextState);
+
+        return save(row)
+            .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
+                return null;
+            });
     },
 
     counts() {
