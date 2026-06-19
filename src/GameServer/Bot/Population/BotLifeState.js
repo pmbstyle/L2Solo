@@ -414,6 +414,41 @@ const BotLifeState = {
         }).catch(() => null);
     },
 
+    coldNear(loc, radius, limit = 10) {
+        if (!initialized || !loc) return Promise.resolve([]);
+
+        const safeRadius = Math.max(1, Number(radius) || 6000);
+        const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+        const minX = Number(loc.locX) - safeRadius;
+        const maxX = Number(loc.locX) + safeRadius;
+        const minY = Number(loc.locY) - safeRadius;
+        const maxY = Number(loc.locY) + safeRadius;
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND locX BETWEEN ? AND ?
+            AND locY BETWEEN ? AND ?
+            LIMIT ${safeLimit * 3}`,
+            [minX, maxX, minY, maxY]
+        ]).then((rows) => rows.map((row) => normalize(row))
+            .map((state) => {
+                const dx = state.loc.locX - Number(loc.locX);
+                const dy = state.loc.locY - Number(loc.locY);
+                return { state, distance: Math.sqrt(dx * dx + dy * dy) };
+            })
+            .filter((item) => item.distance <= safeRadius)
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, safeLimit)
+            .map((item) => {
+                cache.set(item.state.characterId, item.state);
+                return item.state;
+            })).catch((err) => {
+                utils.infoWarn('BotLife', 'failed to fetch nearby cold states: %s', err.message);
+                return [];
+            });
+    },
+
     dueCold(limit = 10, at = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));

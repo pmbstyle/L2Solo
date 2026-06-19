@@ -1,4 +1,5 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const pendingActivations = new Set();
 
 const HotActivation = {
     activate(stateOrName, reason = 'activation') {
@@ -10,8 +11,12 @@ const HotActivation = {
             if (!state) return { ok: false, reason: 'missing_state' };
             if (state.phase === 'hot') return { ok: false, reason: 'already_hot', state };
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
+            if (pendingActivations.has(state.characterId)) {
+                return { ok: false, reason: 'activation_pending', state };
+            }
 
             const BotManager = invoke('GameServer/Bot/BotManager');
+            pendingActivations.add(state.characterId);
             BotManager.loadAndSpawnBot(state.accountName, {
                 name: state.name,
                 homeRegion: state.homeRegion,
@@ -20,6 +25,10 @@ const HotActivation = {
                 locY: state.loc?.locY,
                 locZ: state.loc?.locZ
             });
+
+            setTimeout(() => {
+                pendingActivations.delete(state.characterId);
+            }, 10000);
 
             console.info('BotPopulation :: requested activation for %s reason=%s', state.name, reason);
             return { ok: true, state, reason };

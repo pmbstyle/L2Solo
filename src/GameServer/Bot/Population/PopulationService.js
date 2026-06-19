@@ -14,7 +14,9 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
+    phasePolicyTimer: null,
     resolving: false,
+    phasePolicyRunning: false,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -58,6 +60,16 @@ const PopulationService = {
                 this.schedulerTimer.unref();
             }
         }
+
+        if (Config.phasePolicyEnabled !== false) {
+            this.phasePolicyTimer = setInterval(() => {
+                this.tickPhasePolicy();
+            }, Config.phasePolicyIntervalMs);
+
+            if (typeof this.phasePolicyTimer.unref === 'function') {
+                this.phasePolicyTimer.unref();
+            }
+        }
     },
 
     stop() {
@@ -72,6 +84,10 @@ const PopulationService = {
         if (this.schedulerTimer) {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
+        }
+        if (this.phasePolicyTimer) {
+            clearInterval(this.phasePolicyTimer);
+            this.phasePolicyTimer = null;
         }
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -96,6 +112,83 @@ const PopulationService = {
     requestActivation(stateOrName, reason = 'manual') {
         if (Config.enabled === false) return Promise.resolve({ ok: false, reason: 'disabled' });
         return HotActivation.activate(stateOrName, reason);
+    },
+
+    tickPhasePolicy() {
+        if (this.phasePolicyRunning || Config.enabled === false || Config.phasePolicyEnabled === false) {
+            return Promise.resolve({ cooled: [], activated: [] });
+        }
+
+        this.phasePolicyRunning = true;
+        return this.activateNearPlayers()
+            .then((activated) => this.cooldownEligibleHot().then((cooled) => ({ activated, cooled })))
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'phase policy failed: %s', err.message);
+                return { activated: [], cooled: [] };
+            })
+            .finally(() => {
+                this.phasePolicyRunning = false;
+            });
+    },
+
+    realPlayerSessions() {
+        const World = invoke('GameServer/World/World');
+        return World.user.sessions.filter((session) => (
+            session.actor &&
+            session.actor.fetchIsOnline() &&
+            session.accountId &&
+            !String(session.accountId).startsWith('bot_')
+        ));
+    },
+
+    activateNearPlayers() {
+        const players = this.realPlayerSessions();
+        if (players.length === 0) return Promise.resolve([]);
+
+        const activated = [];
+        let chain = Promise.resolve();
+
+        players.forEach((playerSession) => {
+            chain = chain.then(() => {
+                if (activated.length >= Config.maxActivationsPerScan) return [];
+                const actor = playerSession.actor;
+                const loc = {
+                    locX: actor.fetchLocX(),
+                    locY: actor.fetchLocY(),
+                    locZ: actor.fetchLocZ()
+                };
+                const remaining = Config.maxActivationsPerScan - activated.length;
+
+                return LifeState.coldNear(loc, Config.activationRadius, remaining)
+                    .then((states) => states.reduce((stateChain, state) => (
+                        stateChain.then(() => this.requestActivation(state, 'near_player').then((result) => {
+                            if (result.ok) activated.push(result);
+                        }))
+                    ), Promise.resolve()));
+            });
+        });
+
+        return chain.then(() => activated);
+    },
+
+    cooldownEligibleHot() {
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const now = Date.now();
+        const candidates = BotManager.sessions
+            .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
+            .filter((session) => {
+                if (session.plan === 'merchant') return false;
+                const lastHotAt = session.populationHotAt || 0;
+                return !lastHotAt || now - lastHotAt >= Config.cooldownGraceMs;
+            })
+            .slice(0, Config.cooldownBatchSize);
+
+        return candidates.reduce((chain, session) => (
+            chain.then((results) => this.cooldownSession(session, 'policy').then((result) => {
+                if (result.ok) results.push(result);
+                return results;
+            }))
+        ), Promise.resolve([]));
     },
 
     tickBudgeted() {

@@ -291,6 +291,7 @@ const BotManager = {
                 BotAI.init(session);
                 
                 this.sessions.push(session);
+                session.populationHotAt = Date.now();
                 PopulationService.markHot(session, 'spawn');
                 let modeText = "[Hunting Mode]";
                 if (session.townGossip) modeText = "[Gossip Mode]";
