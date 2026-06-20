@@ -65,6 +65,66 @@ function levelForExp(exp, fallback = 1) {
     return fallback;
 }
 
+function itemTemplate(selfId) {
+    return DataCache.items.find((item) => Number(item.selfId) === Number(selfId)) || null;
+}
+
+function itemName(selfId, fallback = '') {
+    return itemTemplate(selfId)?.template?.name || fallback || `Item ${selfId}`;
+}
+
+function inventorySummaryFromItems(items = []) {
+    return items.reduce((summary, item) => {
+        const selfId = Number(item.fetchSelfId ? item.fetchSelfId() : item.selfId);
+        const amount = Number(item.fetchAmount ? item.fetchAmount() : item.amount || 0);
+        if (!selfId || amount <= 0) return summary;
+
+        const key = String(selfId);
+        summary[key] = {
+            selfId,
+            name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
+            amount: Number(summary[key]?.amount || 0) + amount
+        };
+        return summary;
+    }, {});
+}
+
+function inventoryAdena(inventory) {
+    return Number(inventory?.[57]?.amount || inventory?.['57']?.amount || 0);
+}
+
+function syncInventoryItem(characterId, existingItems, item) {
+    const selfId = Number(item.selfId || 0);
+    const amount = Number(item.amount || 0);
+    if (!selfId || amount <= 0) return Promise.resolve(null);
+
+    const existing = existingItems.find((row) => Number(row.selfId) === selfId);
+    if (existing) {
+        if (Number(existing.amount || 0) === amount) return Promise.resolve(null);
+        return Database.updateItemAmount(characterId, existing.id, amount);
+    }
+
+    const template = itemTemplate(selfId);
+    return Database.setItem(characterId, {
+        selfId,
+        name: item.name || itemName(selfId),
+        amount,
+        equipped: false,
+        slot: template?.etc?.slot || 0
+    });
+}
+
+function syncInventorySummary(characterId, inventory) {
+    const entries = Object.values(inventory || {});
+    if (!entries.length) return Promise.resolve(null);
+
+    return Database.fetchItems(characterId).then((existingItems) => (
+        entries.reduce((chain, item) => (
+            chain.then(() => syncInventoryItem(characterId, existingItems, item))
+        ), Promise.resolve())
+    ));
+}
+
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
     const inventory = parseJson(row.inventorySummary, {});
@@ -118,6 +178,7 @@ function recordFromSession(session, phase, reason = '') {
     const currentSpot = session.currentSpot || null;
     const timestamp = now();
     const characterId = Number(actor.fetchId());
+    const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
@@ -132,7 +193,7 @@ function recordFromSession(session, phase, reason = '') {
         level: actor.fetchLevel(),
         exp: actor.fetchExp() || 0,
         sp: actor.fetchSp() || 0,
-        adena: 0,
+        adena: inventoryAdena(inventory),
         homeRegion: session.homeRegion || null,
         currentRegion: session.homeRegion || null,
         spotId: currentSpot?.id || null,
@@ -152,7 +213,7 @@ function recordFromSession(session, phase, reason = '') {
         targetLevelBand: targetLevelBandForSession(session, actor.fetchLevel()),
         deathCount: 0,
         partyId: null,
-        inventorySummary: safeJson({}),
+        inventorySummary: safeJson(inventory),
         statsJson: safeJson(stats),
         updatedAt: timestamp
     };
@@ -600,7 +661,11 @@ const BotLifeState = {
         const exp = Number(state.exp || 0) + Number(result.materialize?.exp || 0);
         const sp = Number(state.sp || 0) + Number(result.materialize?.sp || 0);
         const level = levelForExp(exp, Number(state.level || 1));
-        const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0);
+        const materializedItems = result.materialize?.items || [];
+        const materializedAdenaItems = materializedItems
+            .filter((item) => Number(item.selfId) === 57)
+            .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems;
         const stats = {
             ...(state.stats || {}),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
@@ -608,18 +673,25 @@ const BotLifeState = {
             deaths: Number(result.patch?.deathCount || state.stats?.deaths || 0),
             expEarned: Number(state.stats?.expEarned || 0) + Number(result.materialize?.exp || 0),
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
-            adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0),
+            adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             lastResolveDebug: result.debug || null
         };
         const inventory = { ...(state.inventory || {}) };
-        (result.materialize?.items || []).forEach((item) => {
+        materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
             inventory[key] = {
                 selfId: item.selfId,
-                name: item.name || inventory[key]?.name || '',
+                name: item.name || inventory[key]?.name || itemName(item.selfId),
                 amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0)
             };
         });
+        if (adena > 0) {
+            inventory['57'] = {
+                selfId: 57,
+                name: inventory['57']?.name || 'Adena',
+                amount: adena
+            };
+        }
 
         const nextState = {
             ...state,
@@ -648,6 +720,7 @@ const BotLifeState = {
         return save(row)
             .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);

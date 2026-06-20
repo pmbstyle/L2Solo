@@ -193,7 +193,7 @@ const World = {
                 return false;
             }
 
-            return PopulationService.activate(state, 'remote_invite', {
+            return PopulationService.requestActivation(state, 'remote_invite', {
                 playerLoc: actorLoc(actor),
                 forceNearPlayer: true
             }).then((result) => {
