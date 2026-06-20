@@ -280,6 +280,19 @@ function save(row) {
     });
 }
 
+function hydrateCache() {
+    return Database.execute([
+        `SELECT * FROM ${TABLE}`,
+        []
+    ]).then((rows) => {
+        rows.forEach((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+        });
+        return rows.length;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -318,9 +331,9 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => {
+        ]).then(() => ensureColumns()).then(() => hydrateCache()).then((count) => {
             initialized = true;
-            utils.infoSuccess('BotLife', 'state table ready');
+            utils.infoSuccess('BotLife', 'state table ready states=%d', count);
             return true;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'state table unavailable: %s', err.message);
