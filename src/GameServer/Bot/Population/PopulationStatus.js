@@ -32,12 +32,15 @@ const PopulationStatus = {
         const metrics = Metrics.snapshot();
         const lag = Math.round(metrics.eventLoop.lagMs);
         const maxLag = Math.round(metrics.eventLoop.maxLagMs);
+        const heapMb = metrics.memory?.heapUsed ? Math.round(metrics.memory.heapUsed / 1024 / 1024) : 0;
+        const resolve = metrics.resolve || {};
+        const scheduler = metrics.scheduler || {};
 
         return {
             ...counts,
             metrics,
             director: Director.snapshot(),
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} skipped=${metrics.delta.skippedResolves} activations=${metrics.delta.activations} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} dbFlushes=${metrics.delta.dbFlushes} lag=${lag}ms maxLag=${maxLag}ms ${Director.statusLine()}`
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} skipped=${metrics.delta.skippedResolves} activations=${metrics.delta.activations} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerP95=${scheduler.p95Ms || 0}ms schedulerSkips=${metrics.delta.schedulerSkips || 0} schedulerOverruns=${metrics.delta.schedulerOverruns || 0} slowResolves=${metrics.delta.slowResolves || 0} heap=${heapMb}MB lag=${lag}ms maxLag=${maxLag}ms ${Director.statusLine()}`
         };
     }
 };

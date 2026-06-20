@@ -356,9 +356,13 @@ const PopulationService = {
 
     tickBudgeted() {
         if (this.resolving || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            if (this.resolving) {
+                Metrics.recordSchedulerSkip();
+            }
             return Promise.resolve([]);
         }
 
+        const startedAt = Date.now();
         this.resolving = true;
         return this.resolveDueParties()
             .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
@@ -376,6 +380,16 @@ const PopulationService = {
                 return [];
             })
             .finally(() => {
+                const elapsedMs = Date.now() - startedAt;
+                Metrics.recordSchedulerRun(elapsedMs);
+                if (elapsedMs >= Config.schedulerIntervalMs) {
+                    utils.infoWarn(
+                        'BotPopulation',
+                        'background scheduler overran interval: %dms >= %dms',
+                        elapsedMs,
+                        Config.schedulerIntervalMs
+                    );
+                }
                 this.resolving = false;
             });
     },
@@ -396,6 +410,7 @@ const PopulationService = {
     },
 
     resolveBackgroundParty(party) {
+        const startedAt = Date.now();
         return LifeState.statesForParty(party.partyId).then((members) => {
             if (members.length < Config.partyMinSize) {
                 return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
@@ -449,13 +464,17 @@ const PopulationService = {
             utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
             Metrics.recordSkippedResolve();
             return { ok: false, reason: 'resolve_failed', party };
+        }).finally(() => {
+            Metrics.recordResolveDuration(Date.now() - startedAt);
         });
     },
 
     resolveColdState(state) {
+        const startedAt = Date.now();
         const spot = SpotProfiles.findForState(state);
         if (!spot) {
             Metrics.recordSkippedResolve();
+            Metrics.recordResolveDuration(Date.now() - startedAt);
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
 
@@ -482,6 +501,8 @@ const PopulationService = {
                     debug: result.debug
                 };
             });
+        }).finally(() => {
+            Metrics.recordResolveDuration(Date.now() - startedAt);
         });
     },
 

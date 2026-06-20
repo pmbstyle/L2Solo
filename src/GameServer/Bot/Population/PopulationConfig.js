@@ -36,6 +36,8 @@ const PopulationConfig = {
     globalChatChance: 0.015,
     globalChatImportantChance: 0.25,
     globalChatMinIntervalMs: 180000,
+    resolveSlowMs: 250,
+    resolveSampleLimit: 200,
     eventLoopSampleMs: 1000,
     slowEventLoopLagMs: 75,
     debug: false
