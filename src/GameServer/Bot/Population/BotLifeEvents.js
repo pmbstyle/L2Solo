@@ -97,6 +97,31 @@ const BotLifeEvents = {
         });
     },
 
+    recent(limit = 24) {
+        const safeLimit = Math.max(1, Math.min(80, Number(limit) || 24));
+        const ready = initialized ? Promise.resolve(true) : this.init();
+
+        return ready.then((isReady) => {
+            if (!isReady) return [];
+            return Database.execute([
+                `SELECT characterId, eventType, summary, weight, createdAt
+                FROM ${TABLE}
+                ORDER BY createdAt DESC, weight DESC
+                LIMIT ${safeLimit}`,
+                []
+            ]);
+        }).then((rows) => (rows || []).map((row) => ({
+            characterId: Number(row.characterId || 0),
+            type: row.eventType,
+            summary: row.summary,
+            weight: Number(row.weight || 1),
+            createdAt: Number(row.createdAt || 0)
+        }))).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to read recent observer events: %s', err.message);
+            return [];
+        });
+    },
+
     prune(characterId) {
         return Database.execute([
             `DELETE FROM ${TABLE}

@@ -10,6 +10,7 @@ const Server      = invoke('Server');
 const BotManager  = invoke('GameServer/Bot/BotManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const DevConsole = invoke('GameServer/DevConsole');
+const WorldObserver = invoke('WorldObserver/WorldObserverServer');
 
 console.info('\n\
     + ================================== \n\
@@ -36,5 +37,6 @@ Database.init(() => {
     });
 
     BotManager.init();
+    WorldObserver.init();
     DevConsole.init();
 });
