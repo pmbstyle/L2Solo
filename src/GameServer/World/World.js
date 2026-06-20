@@ -84,7 +84,8 @@ const World = {
         session.dataSendToMe(ServerResponse.joinParty(distribution || 1));
         session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
 
-        targetSession.plan = 'following';
+        const wasResting = targetSession.plan === 'resting';
+        targetSession.plan = wasResting ? 'resting' : 'following';
         targetSession.followPlayerSession = session;
         targetSession.partyCompanion = true;
         targetSession.botStay = false;
@@ -97,7 +98,11 @@ const World = {
 
         BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
         setTimeout(() => {
-            BotManager.botSay(targetSession, `I'm with you. Lead the way.`);
+            BotManager.botTell(
+                targetSession,
+                session,
+                wasResting ? `I'll join you, just need a moment to recover.` : `I'm with you. Lead the way.`
+            );
         }, 1000);
         return true;
     },

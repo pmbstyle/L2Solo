@@ -30,7 +30,6 @@ function reasonText(reason) {
         low_trust: 'low trust',
         recently_abandoned: 'recently abandoned',
         level_gap_too_large: 'level gap too large',
-        recovering: 'recovering',
         hunting_target: 'busy fighting'
     };
     return text[reason] || reason;
@@ -65,7 +64,6 @@ const BotAvailability = {
         else if (memory.trust <= -6) reason = 'low_trust';
         else if (memory.recentlyAbandonedAt && Date.now() - memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
-        else if (botSession.plan === 'resting') reason = 'recovering';
 
         result.available = reason === 'available';
         result.reason = reason;

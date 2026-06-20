@@ -192,8 +192,7 @@ function systemPrompt() {
         'You are the slow high-level brain for one Lineage 2 SimPlayer bot.',
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
         'Only choose small, high-level social or intent changes.',
-        'React only when a real visible player would notice it.',
-        'For ambient events, usually choose none unless a reply or plan change would make the world feel alive.',
+        'React only when a real visible player writes to this bot or nearby bots.',
         'For player_chat, react only if the message is addressed to this bot, nearby bots, or clearly asks for help.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'Never invent unavailable actions, players, items, or spells.'
@@ -482,6 +481,10 @@ const BotBrain = {
         const cfg = config();
         const bot = session.actor;
         if (!bot) return false;
+        if (event !== 'player_chat') {
+            debugSkip(session, cfg, `event_not_chat:${event}`);
+            return false;
+        }
         if (!cfg.enabled) {
             debugSkip(session, cfg, 'disabled');
             return false;
