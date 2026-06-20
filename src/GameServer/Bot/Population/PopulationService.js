@@ -38,6 +38,18 @@ function groupBySpot(states) {
         .sort((a, b) => b.length - a.length);
 }
 
+function activationCandidatesForPlayer(states, playerLevel) {
+    const level = Number(playerLevel || 1);
+    const range = Math.max(0, Number(Config.activationLevelRange || 0));
+    const matching = states.filter((state) => {
+        const stateLevel = Number(state.level || 1);
+        if (Math.abs(stateLevel - level) <= range) return true;
+        return !!state.stats?.newbieAnchor && level <= Config.newbieAnchorMaxLevel + 2;
+    });
+
+    return matching.length > 0 ? matching : states;
+}
+
 function chooseLeader(members) {
     return members.reduce((best, state) => {
         if (!best || Number(state.level || 1) > Number(best.level || 1)) return state;
@@ -264,8 +276,9 @@ const PopulationService = {
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
-                        const maxRestingPresented = Math.max(1, Math.floor(states.length * Config.maxRestingActivationRatio));
-                        return states.reduce((stateChain, state) => (
+                        const candidates = activationCandidatesForPlayer(states, actor.fetchLevel());
+                        const maxRestingPresented = Math.max(0, Math.floor(candidates.length * Config.maxRestingActivationRatio));
+                        return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 const restingLike = this.isRestingActivationState(state);
                                 const recoverOnActivation = restingLike && restingPresented >= maxRestingPresented;
@@ -295,6 +308,7 @@ const PopulationService = {
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
                 if (session.plan === 'merchant') return false;
+                if (session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
                 return !lastHotAt || now - lastHotAt >= Config.cooldownGraceMs;
             })

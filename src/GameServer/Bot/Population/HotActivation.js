@@ -74,13 +74,15 @@ function activationPlacement(state, options = {}) {
             : randomAround(baseLoc, Config.activationPlacementRadius);
 
         if (validPlayerPlacement(candidate, options.playerLoc)) {
-            return { loc: candidate, spot };
+            return { loc: candidate, spot: SpotService.findCurrentSpot(candidate) || spot };
         }
     }
 
+    const loc = pushAwayFromPlayer(baseLoc, options.playerLoc);
+
     return {
-        loc: pushAwayFromPlayer(baseLoc, options.playerLoc),
-        spot
+        loc,
+        spot: SpotService.findCurrentSpot(loc) || spot
     };
 }
 

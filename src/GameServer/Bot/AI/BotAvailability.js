@@ -1,7 +1,7 @@
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const SpeckMath = invoke('GameServer/SpeckMath');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
-const INVITE_RANGE = 1500;
 const MAX_LEVEL_GAP = 12;
 const RECENT_ABANDON_MS = 5 * 60 * 1000;
 
@@ -48,7 +48,7 @@ function emptyResult(playerSession, botSubject) {
 }
 
 const BotAvailability = {
-    inviteRange: INVITE_RANGE,
+    inviteRange: Config.partyInviteRange,
 
     evaluate(playerSession, botSession) {
         const player = playerSession?.actor;
@@ -64,7 +64,7 @@ const BotAvailability = {
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
         else if (botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
-        else if (result.distance !== null && result.distance > INVITE_RANGE) reason = 'too_far';
+        else if (result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (result.memory.trust <= -6) reason = 'low_trust';
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';

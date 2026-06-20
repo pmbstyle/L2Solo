@@ -1,5 +1,15 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ReceivePacket  = invoke('Packet/Receive');
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+
+function logPlayerChat(session, data) {
+    if (PopulationConfig.devLogPlayerChat === false) return;
+    if (!session?.actor || String(session.accountId || '').startsWith('bot_')) return;
+
+    const name = session.actor.fetchName ? session.actor.fetchName() : session.accountId || 'unknown';
+    const text = String(data.text || '').replace(/\s+/g, ' ').slice(0, 180);
+    console.info('PlayerChat :: %s kind=%s text="%s"', name, data.kind, text);
+}
 
 function speak(session, buffer) {
     let packet = new ReceivePacket(buffer);
@@ -15,6 +25,8 @@ function speak(session, buffer) {
 }
 
 function consume(session, data) {
+    logPlayerChat(session, data);
+
     if (data.kind === 0) { // TODO: Remove, temp solution
         if (data.text === '.admin') {
             invoke(path.actor).adminPanel(session, session.actor);

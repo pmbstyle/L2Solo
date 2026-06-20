@@ -153,13 +153,6 @@ module.exports = {
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
 
-        if (distance > 3500) {
-            session.plan = 'hunting';
-            session.roleDecision = null;
-            BotAI.say(session, "You ran too far away! I'm going back to hunt on my own.");
-            return;
-        }
-
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
             session.lastTickLoc = currentLoc;
@@ -221,7 +214,7 @@ module.exports = {
         if (buffsNeedRefresh) {
             const unsafeToRefresh = unsafeSupportMoment(session, bot, player, leaderAggroCount(player));
 
-            if (unsafeToRefresh) {
+            if (unsafeToRefresh || session.partyCompanion === true) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
