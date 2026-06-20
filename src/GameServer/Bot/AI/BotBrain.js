@@ -502,6 +502,10 @@ const BotBrain = {
             debugSkip(session, cfg, 'merchant_plan');
             return false;
         }
+        if (session.plan === 'getting_buffed') {
+            debugSkip(session, cfg, 'refreshing_buffs');
+            return false;
+        }
         if (!ALLOWED_PLANS.includes(session.plan || 'hunting')) {
             debugSkip(session, cfg, `plan_not_allowed:${session.plan}`);
             return false;
