@@ -32,6 +32,10 @@ const PopulationConfig = {
     newbieAnchorMaxLevel: 5,
     newbieAnchorExpMultiplier: 0.2,
     newbieAnchorFloorRatio: 0.12,
+    globalChatEnabled: true,
+    globalChatChance: 0.015,
+    globalChatImportantChance: 0.25,
+    globalChatMinIntervalMs: 180000,
     eventLoopSampleMs: 1000,
     slowEventLoopLagMs: 75,
     debug: false

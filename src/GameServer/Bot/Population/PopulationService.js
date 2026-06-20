@@ -10,6 +10,7 @@ const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartySt
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
+const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -439,7 +440,10 @@ const PopulationService = {
                     ok: true,
                     party: updatedParty,
                     debug: result.debug
-                }));
+                })).then((resolved) => {
+                    GlobalChat.maybeAnnounce(leader, result.events);
+                    return resolved;
+                });
             });
         }).catch((err) => {
             utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
@@ -470,11 +474,14 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
-            return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
-                ok: true,
-                state: updatedState,
-                debug: result.debug
-            }));
+            return LifeEvents.recordMany(state.characterId, result.events).then(() => {
+                GlobalChat.maybeAnnounce(updatedState, result.events);
+                return {
+                    ok: true,
+                    state: updatedState,
+                    debug: result.debug
+                };
+            });
         });
     },
 
