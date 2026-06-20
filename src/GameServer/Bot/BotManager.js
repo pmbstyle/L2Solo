@@ -248,6 +248,7 @@ const BotManager = {
 
                 session.homeRegion = botData.homeRegion || null;
                 session.visitor = !!botData.visitor;
+                session.newbieAnchor = !!botData.newbieAnchor;
                 
                 session.initialSpawnCoord = {
                     locX: character.locX,

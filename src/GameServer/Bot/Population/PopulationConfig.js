@@ -29,6 +29,9 @@ const PopulationConfig = {
     directorTargetBandRadius: 2,
     directorMaxCatchUpMultiplier: 1.35,
     directorSlowdownMultiplier: 0.85,
+    newbieAnchorMaxLevel: 5,
+    newbieAnchorExpMultiplier: 0.2,
+    newbieAnchorFloorRatio: 0.12,
     eventLoopSampleMs: 1000,
     slowEventLoopLagMs: 75,
     debug: false

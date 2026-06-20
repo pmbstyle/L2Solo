@@ -142,6 +142,15 @@ const PopulationDirector = {
     },
 
     pressureForState(state) {
+        if (state?.stats?.newbieAnchor) {
+            const level = Number(state.level || 1);
+            return {
+                expMultiplier: level >= Config.newbieAnchorMaxLevel ? 0 : Config.newbieAnchorExpMultiplier,
+                deathChanceMultiplier: 0.8,
+                directorReason: 'newbie_anchor'
+            };
+        }
+
         const snapshot = this.lastSnapshot || {};
         const targetLevel = Number(snapshot.targetLevel || 0);
         if (!targetLevel) {
@@ -194,7 +203,9 @@ const PopulationDirector = {
         }
 
         const inBand = Math.round((snapshot.bots?.inBandRatio || 0) * 100);
-        return `director=target:${snapshot.targetLevel} botsMedian:${snapshot.bots?.median || '-'} inBand:${inBand}%`;
+        const newbies = Math.round((snapshot.bots?.newbieRatio || 0) * 100);
+        const floor = Math.round(Config.newbieAnchorFloorRatio * 100);
+        return `director=target:${snapshot.targetLevel} botsMedian:${snapshot.bots?.median || '-'} inBand:${inBand}% newbie:${newbies}%/${floor}%`;
     }
 };
 

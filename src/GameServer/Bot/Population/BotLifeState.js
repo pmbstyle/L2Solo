@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 const TABLE = 'bot_life_state';
 const cache = new Map();
@@ -46,6 +47,11 @@ function actorVitals(actor) {
 function levelBand(level) {
     const value = Number(level || 1);
     return `${Math.max(1, value - 2)}-${value + 2}`;
+}
+
+function targetLevelBandForSession(session, level) {
+    if (session.newbieAnchor) return `1-${Config.newbieAnchorMaxLevel}`;
+    return levelBand(level);
 }
 
 function levelForExp(exp, fallback = 1) {
@@ -115,6 +121,7 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
+        newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
     };
 
@@ -142,7 +149,7 @@ function recordFromSession(session, phase, reason = '') {
         maxHp: vitals.maxHp,
         mp: vitals.mp,
         maxMp: vitals.maxMp,
-        targetLevelBand: levelBand(actor.fetchLevel()),
+        targetLevelBand: targetLevelBandForSession(session, actor.fetchLevel()),
         deathCount: 0,
         partyId: null,
         inventorySummary: safeJson({}),
