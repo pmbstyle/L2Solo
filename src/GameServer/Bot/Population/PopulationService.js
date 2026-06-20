@@ -123,26 +123,7 @@ const PopulationService = {
             }
         }
 
-        if (Config.generatedColdTarget > 0) {
-            this.seedTimer = setTimeout(() => {
-                this.seedTimer = null;
-                GeneratedColdSeeder.seedToTarget(Config.generatedColdTarget).then((result) => {
-                    if (result.seeded > 0) {
-                        console.info(
-                            'BotPopulation :: generated cold seed seeded=%d created=%d total=%d target=%d',
-                            result.seeded,
-                            result.created,
-                            result.total,
-                            result.desired
-                        );
-                    }
-                });
-            }, Config.generatedColdSeedDelayMs);
-
-            if (typeof this.seedTimer.unref === 'function') {
-                this.seedTimer.unref();
-            }
-        }
+        this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
 
         Director.start();
     },
@@ -175,6 +156,33 @@ const PopulationService = {
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
+    },
+
+    scheduleGeneratedColdSeed(delayMs = Config.generatedColdSeedDelayMs) {
+        if (Config.enabled === false || Config.generatedColdTarget <= 0 || this.seedTimer) return;
+
+        this.seedTimer = setTimeout(() => {
+            this.seedTimer = null;
+            GeneratedColdSeeder.seedToTarget(Config.generatedColdTarget).then((result) => {
+                if (result.seeded > 0) {
+                    console.info(
+                        'BotPopulation :: generated cold seed seeded=%d created=%d total=%d target=%d',
+                        result.seeded,
+                        result.created,
+                        result.total,
+                        result.desired
+                    );
+                }
+
+                if (this.started && result.desired > 0 && result.total < result.desired && !result.error) {
+                    this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
+                }
+            });
+        }, Math.max(1000, Number(delayMs || 0)));
+
+        if (typeof this.seedTimer.unref === 'function') {
+            this.seedTimer.unref();
+        }
     },
 
     recordHotTick(session) {
