@@ -1,6 +1,8 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'pk_hunting']);
 
@@ -11,6 +13,80 @@ function activationPlan(state, options = {}) {
     if (activity === 'dead' || activity === 'resting') return 'resting';
     if (HOT_PLANS.has(activity)) return activity;
     return 'hunting';
+}
+
+function distance2d(a, b) {
+    if (!a || !b) return Infinity;
+    const dx = Number(a.locX || 0) - Number(b.locX || 0);
+    const dy = Number(a.locY || 0) - Number(b.locY || 0);
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function randomAround(loc, radius) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * radius;
+    const locX = Math.round(Number(loc.locX || 0) + Math.cos(angle) * dist);
+    const locY = Math.round(Number(loc.locY || 0) + Math.sin(angle) * dist);
+    const baseZ = Number(loc.locZ || 0);
+
+    return {
+        locX,
+        locY,
+        locZ: GeodataEngine.getHeight(locX, locY, baseZ)
+    };
+}
+
+function pushAwayFromPlayer(loc, playerLoc) {
+    if (!playerLoc || distance2d(loc, playerLoc) >= Config.activationMinPlayerDistance) return loc;
+
+    const dx = Number(loc.locX || 0) - Number(playerLoc.locX || 0);
+    const dy = Number(loc.locY || 0) - Number(playerLoc.locY || 0);
+    const angle = Math.abs(dx) + Math.abs(dy) > 1 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+    const distance = Config.activationMinPlayerDistance + 120 + Math.random() * 220;
+    const locX = Math.round(Number(playerLoc.locX || 0) + Math.cos(angle) * distance);
+    const locY = Math.round(Number(playerLoc.locY || 0) + Math.sin(angle) * distance);
+    const baseZ = Number(playerLoc.locZ || loc.locZ || 0);
+
+    return {
+        locX,
+        locY,
+        locZ: GeodataEngine.getHeight(locX, locY, baseZ)
+    };
+}
+
+function activationPlacement(state, options = {}) {
+    const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
+    const baseLoc = spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 };
+    let candidate = null;
+
+    for (let i = 0; i < Config.activationPlacementAttempts; i++) {
+        candidate = spot
+            ? SpotService.randomPointNear(spot, Config.activationPlacementRadius)
+            : randomAround(baseLoc, Config.activationPlacementRadius);
+
+        if (distance2d(candidate, options.playerLoc) >= Config.activationMinPlayerDistance) {
+            return { loc: candidate, spot };
+        }
+    }
+
+    return {
+        loc: pushAwayFromPlayer(candidate || baseLoc, options.playerLoc),
+        spot
+    };
+}
+
+function spotSnapshot(spot) {
+    if (!spot) return null;
+    return {
+        id: spot.id,
+        name: spot.name,
+        center: { ...spot.center },
+        minLevel: spot.minLevel,
+        maxLevel: spot.maxLevel,
+        avgLevel: spot.avgLevel,
+        density: spot.density,
+        npcNames: [...(spot.npcNames || [])]
+    };
 }
 
 const HotActivation = {
@@ -28,19 +104,21 @@ const HotActivation = {
             }
 
             const BotManager = invoke('GameServer/Bot/BotManager');
+            const placement = activationPlacement(state, options);
             pendingActivations.add(state.characterId);
             BotManager.loadAndSpawnBot(state.accountName, {
                 name: state.name,
                 homeRegion: state.homeRegion,
                 plan: activationPlan(state, options),
                 backgroundActivity: state.activity || 'hunting',
+                currentSpot: spotSnapshot(placement.spot),
                 activationRecovery: options.recoverOnActivation ? {
                     hpPct: Config.activationRecoveryHpPct,
                     mpPct: Config.activationRecoveryMpPct
                 } : null,
-                locX: state.loc?.locX,
-                locY: state.loc?.locY,
-                locZ: state.loc?.locZ
+                locX: placement.loc?.locX,
+                locY: placement.loc?.locY,
+                locZ: placement.loc?.locZ
             });
 
             setTimeout(() => {

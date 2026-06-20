@@ -187,7 +187,8 @@ const PopulationService = {
                                 }
 
                                 return this.requestActivation(state, 'near_player', {
-                                    recoverOnActivation
+                                    recoverOnActivation,
+                                    playerLoc: loc
                                 });
                             }).then((result) => {
                                 if (result.ok) activated.push(result);

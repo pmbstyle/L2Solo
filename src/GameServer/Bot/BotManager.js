@@ -234,13 +234,10 @@ const BotManager = {
             Shared.fetchClassInformation(character.classId).then((classInfo) => {
                 const storeCfg = merchantConfigFor(botData, character.name);
 
-                // Reset merchant bots back to their exact designated coordinates on load
-                if (storeCfg) {
-                    if (botData.locX !== undefined) {
-                        character.locX = botData.locX;
-                        character.locY = botData.locY;
-                        character.locZ = botData.locZ;
-                    }
+                if (botData.locX !== undefined) {
+                    character.locX = botData.locX;
+                    character.locY = botData.locY;
+                    character.locZ = botData.locZ;
                 }
 
                 character.locZ = GeodataEngine.getHeight(character.locX, character.locY, character.locZ);
@@ -276,6 +273,7 @@ const BotManager = {
                 } else {
                     session.plan = botData.plan || 'hunting';
                     session.backgroundActivity = botData.backgroundActivity || session.plan;
+                    session.currentSpot = botData.currentSpot || null;
                     if (botData.activationRecovery) {
                         const hpPct = Number(botData.activationRecovery.hpPct || 0.85);
                         const mpPct = Number(botData.activationRecovery.mpPct || 0.85);
