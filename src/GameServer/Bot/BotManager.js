@@ -11,6 +11,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 
@@ -128,6 +129,7 @@ const BotManager = {
     init() {
         console.info("BotManager :: Initializing automated SimPlayers...");
         BotSocialMemory.init();
+        PopulationService.init();
         
         const bots = [...BOTS_TO_SPAWN, ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
@@ -139,6 +141,7 @@ const BotManager = {
             });
             this.startDynamicScalingMonitor();
             this.startStatusLogMonitor();
+            PopulationService.start();
         }, 5000);
     },
 
@@ -231,13 +234,10 @@ const BotManager = {
             Shared.fetchClassInformation(character.classId).then((classInfo) => {
                 const storeCfg = merchantConfigFor(botData, character.name);
 
-                // Reset merchant bots back to their exact designated coordinates on load
-                if (storeCfg) {
-                    if (botData.locX !== undefined) {
-                        character.locX = botData.locX;
-                        character.locY = botData.locY;
-                        character.locZ = botData.locZ;
-                    }
+                if (botData.locX !== undefined) {
+                    character.locX = botData.locX;
+                    character.locY = botData.locY;
+                    character.locZ = botData.locZ;
                 }
 
                 character.locZ = GeodataEngine.getHeight(character.locX, character.locY, character.locZ);
@@ -248,6 +248,7 @@ const BotManager = {
 
                 session.homeRegion = botData.homeRegion || null;
                 session.visitor = !!botData.visitor;
+                session.newbieAnchor = !!botData.newbieAnchor;
                 
                 session.initialSpawnCoord = {
                     locX: character.locX,
@@ -272,7 +273,16 @@ const BotManager = {
                     });
                 } else {
                     session.plan = botData.plan || 'hunting';
-                    session.actor.state.setSeated(false);
+                    session.backgroundActivity = botData.backgroundActivity || session.plan;
+                    session.currentSpot = botData.currentSpot || null;
+                    if (botData.activationRecovery) {
+                        const hpPct = Number(botData.activationRecovery.hpPct || 0.85);
+                        const mpPct = Number(botData.activationRecovery.mpPct || 0.85);
+                        session.actor.setHp(Math.max(session.actor.fetchHp(), Math.round(session.actor.fetchMaxHp() * hpPct)));
+                        session.actor.setMp(Math.max(session.actor.fetchMp(), Math.round(session.actor.fetchMaxMp() * mpPct)));
+                        session.actor.state.setDead(false);
+                    }
+                    session.actor.state.setSeated(session.plan === 'resting');
                 }
 
                 // Spawn the bot actor in the World
@@ -288,6 +298,8 @@ const BotManager = {
                 BotAI.init(session);
                 
                 this.sessions.push(session);
+                session.populationHotAt = Date.now();
+                PopulationService.markHot(session, 'spawn');
                 let modeText = "[Hunting Mode]";
                 if (session.townGossip) modeText = "[Gossip Mode]";
                 if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
@@ -451,18 +463,10 @@ const BotManager = {
     botSay(session, text) {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
-        
-        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
-            const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
-            if (session.followPlayerSession.dataSendToMe) {
-                session.followPlayerSession.dataSendToMe(packet);
-            }
-        } else {
-            session.dataSendToOthers(
-                ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-                session.actor
-            );
-        }
+        session.dataSendToOthers(
+            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
+            session.actor
+        );
     },
 
     botTell(session, targetSession, text) {

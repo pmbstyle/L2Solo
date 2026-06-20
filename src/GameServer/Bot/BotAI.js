@@ -1,8 +1,8 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
-const BotBrain       = invoke('GameServer/Bot/AI/BotBrain');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -252,6 +252,7 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        PopulationService.recordHotTick(session);
         session.botStatus = BotStatus.getStatus(session);
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
@@ -278,8 +279,6 @@ const BotAI = {
             });
         }
 
-        BotBrain.maybeThink(session, 'ambient', session.botStatus);
-
         if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion && session.plan !== 'shopping') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
@@ -299,7 +298,7 @@ const BotAI = {
         }
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
-        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
+        if (session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
             if (playerSession && playerSession.actor && playerSession.actor.fetchIsOnline()) {
                 playerSession.dataSendToMe(
@@ -474,17 +473,10 @@ const BotAI = {
     say(session, text) {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
-        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
-            const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
-            if (session.followPlayerSession.dataSendToMe) {
-                session.followPlayerSession.dataSendToMe(packet);
-            }
-        } else {
-            session.dataSendToOthers(
-                ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-                session.actor
-            );
-        }
+        session.dataSendToOthers(
+            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
+            session.actor
+        );
     },
 
     tell(session, targetSession, text) {

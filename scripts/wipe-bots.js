@@ -72,6 +72,16 @@ function placeholders(count) {
     return Array.from({ length: count }, () => '?').join(', ');
 }
 
+async function ignoreMissingTable(operation) {
+    try {
+        await operation();
+    } catch (err) {
+        if (err.code !== 'ER_NO_SUCH_TABLE') {
+            throw err;
+        }
+    }
+}
+
 async function main() {
     const config = readConfig().Database || {};
     const conn = await mariadb.createConnection({
@@ -89,19 +99,16 @@ async function main() {
 
         if (ids.length > 0) {
             const idList = placeholders(ids.length);
-            try {
-                await conn.query(`DELETE FROM bot_social_memory WHERE botId IN (${idList}) OR playerId IN (${idList})`, [...ids, ...ids]);
-            } catch (err) {
-                if (err.code !== 'ER_NO_SUCH_TABLE') {
-                    throw err;
-                }
-            }
+            await ignoreMissingTable(() => conn.query(`DELETE FROM bot_life_events WHERE characterId IN (${idList})`, ids));
+            await ignoreMissingTable(() => conn.query(`DELETE FROM bot_life_state WHERE characterId IN (${idList})`, ids));
+            await ignoreMissingTable(() => conn.query(`DELETE FROM bot_social_memory WHERE botId IN (${idList}) OR playerId IN (${idList})`, [...ids, ...ids]));
             await conn.query(`DELETE FROM shortcuts WHERE characterId IN (${idList})`, ids);
             await conn.query(`DELETE FROM skills WHERE characterId IN (${idList})`, ids);
             await conn.query(`DELETE FROM items WHERE characterId IN (${idList})`, ids);
             await conn.query(`DELETE FROM characters WHERE id IN (${idList})`, ids);
         }
 
+        await ignoreMissingTable(() => conn.query('DELETE FROM bot_background_parties'));
         await conn.query("DELETE FROM accounts WHERE username LIKE 'bot\\_%' ESCAPE '\\\\'");
 
         console.info(`Wiped ${characters.length} bot characters and ${accounts.length} bot accounts.`);

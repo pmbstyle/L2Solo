@@ -13,10 +13,13 @@ function now() {
 }
 
 function actorId(session) {
+    if (session?.characterId) return Number(session.characterId);
     return session?.actor?.fetchId ? Number(session.actor.fetchId()) : 0;
 }
 
 function actorName(session) {
+    if (session?.name) return session.name;
+    if (session?.characterName) return session.characterName;
     return session?.actor?.fetchName ? session.actor.fetchName() : '';
 }
 
@@ -107,6 +110,8 @@ function applyEvent(record, eventName) {
     } else if (eventName === 'party_kicked') {
         updated.trust -= 3;
         updated.recentlyAbandonedAt = now();
+    } else if (eventName === 'chat') {
+        updated.familiarity += 1;
     } else if (eventName === 'helped_in_combat') {
         updated.trust += 3;
         updated.familiarity += 1;

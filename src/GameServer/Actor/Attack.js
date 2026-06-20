@@ -4,10 +4,12 @@ const Formulas       = invoke('GameServer/Formulas');
 
 class Attack {
     constructor() {
+        this.timers = new Set();
         this.resetQueuedEvent();
     }
 
     destructor() {
+        this.clearTimers();
         this.resetQueuedEvent();
     }
 
@@ -37,6 +39,20 @@ class Attack {
 
     resetQueuedEvent() {
         this.queue = { name: undefined, data: undefined };
+    }
+
+    queueTimer(callback, delay) {
+        const timer = setTimeout(() => {
+            this.timers.delete(timer);
+            callback();
+        }, delay);
+        this.timers.add(timer);
+        return timer;
+    }
+
+    clearTimers() {
+        this.timers.forEach((timer) => clearTimeout(timer));
+        this.timers.clear();
     }
 
     meleeHit(session, creature) {
@@ -70,7 +86,7 @@ class Attack {
         session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), hitLanded ? 0x00 : 0x80), actor);
         actor.state.setHits(true);
 
-        setTimeout(() => {
+        this.queueTimer(() => {
             if (this.checkParticipants(actor, creature)) {
                 return;
             }
@@ -93,7 +109,7 @@ class Attack {
 
         }, speed * 0.644); // Until hit point
 
-        setTimeout(() => {
+        this.queueTimer(() => {
             if (this.checkParticipants(actor, creature)) {
                 return;
             }
@@ -125,7 +141,7 @@ class Attack {
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
 
-        setTimeout(() => {
+        this.queueTimer(() => {
             if (this.checkParticipants(actor, creature)) {
                 return;
             }
@@ -147,17 +163,24 @@ class Attack {
 
         }, skill.fetchCalculatedHitTime());
 
-        setTimeout(() => {
+        this.queueTimer(() => {
             // TODO: Prohibit same skill use before reuse time
         }, skill.fetchReuseTime());
     }
 
     checkParticipants(src, dst) {
+        if (!src || !dst || !src.state || !dst.state) {
+            this.resetQueuedEvent();
+            return true;
+        }
+
         if (src.state.fetchDead() || dst.state.fetchDead()) {
             this.resetQueuedEvent();
             src.state.setHits (false);
             src.state.setCasts(false);
-            invoke(path.actor).abortCombatState(src.session, src);
+            if (src.session) {
+                invoke(path.actor).abortCombatState(src.session, src);
+            }
             return true;
         }
         return false;
