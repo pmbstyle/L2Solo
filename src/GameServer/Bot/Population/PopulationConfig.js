@@ -10,6 +10,7 @@ const PopulationConfig = {
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,
     maxResolvesPerTick: 10,
+    maxPartyResolvesPerTick: 3,
     partyFormationBatchSize: 3,
     partyFormationCandidateLimit: 80,
     partyMinSize: 2,

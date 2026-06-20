@@ -5,6 +5,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
@@ -358,7 +359,8 @@ const PopulationService = {
         }
 
         this.resolving = true;
-        return LifeState.dueCold(Config.maxResolvesPerTick)
+        return this.resolveDueParties()
+            .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
             .then((states) => {
                 if (states.length === 0) return [];
                 return states.reduce((chain, state) => (
@@ -375,6 +377,75 @@ const PopulationService = {
             .finally(() => {
                 this.resolving = false;
             });
+    },
+
+    resolveDueParties() {
+        if (Config.backgroundPartyEnabled === false) return Promise.resolve([]);
+
+        return BackgroundPartyState.due(Config.maxPartyResolvesPerTick)
+            .then((parties) => {
+                if (parties.length === 0) return [];
+                return parties.reduce((chain, party) => (
+                    chain.then((results) => this.resolveBackgroundParty(party).then((result) => {
+                        results.push(result);
+                        return results;
+                    }))
+                ), Promise.resolve([]));
+            });
+    },
+
+    resolveBackgroundParty(party) {
+        return LifeState.statesForParty(party.partyId).then((members) => {
+            if (members.length < Config.partyMinSize) {
+                return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
+                    .then(() => LifeState.clearParty(party.partyId))
+                    .then(() => ({ ok: false, reason: 'too_few_members', party }));
+            }
+
+            const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
+            const spot = SpotProfiles.findById(party.spotId) || SpotProfiles.findForState(leader);
+            if (!spot) {
+                Metrics.recordSkippedResolve();
+                return { ok: false, reason: 'missing_spot', party };
+            }
+
+            const elapsedMs = party.stats?.lastResolveAt ? Math.max(1000, Date.now() - party.stats.lastResolveAt) : 60000;
+            const result = BackgroundPartyResolver.resolve({
+                party,
+                members,
+                spot,
+                pressure: Director.pressureForState(leader),
+                elapsedMs
+            });
+
+            return result.memberResults.reduce((chain, memberResult) => (
+                chain.then(() => LifeState.applyResolve(memberResult.state, memberResult.result))
+            ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({
+                ...party,
+                spotId: spot.id,
+                nextResolveAt: result.nextResolveAt,
+                cohesion: result.partyPatch.cohesion,
+                risk: result.partyPatch.risk,
+                roleCoverage: roleCoverage(members),
+                stats: {
+                    ...(party.stats || {}),
+                    ...(result.partyPatch.stats || {})
+                }
+            })).then((updatedParty) => {
+                Metrics.recordPartyResolve();
+                return Promise.all(result.events.map((event) => (
+                    LifeEvents.record(event.characterId || party.leaderId, event.type, event.summary, event.meta, event.weight)
+                ))).then(() => ({
+                    ok: true,
+                    party: updatedParty,
+                    debug: result.debug
+                }));
+            });
+        }).catch((err) => {
+            utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
+            Metrics.recordSkippedResolve();
+            return { ok: false, reason: 'resolve_failed', party };
+        });
     },
 
     resolveColdState(state) {

@@ -8,6 +8,7 @@ function emptyCounters() {
     return {
         hotTicks: 0,
         backgroundResolves: 0,
+        partyResolves: 0,
         skippedResolves: 0,
         activations: 0,
         cooldowns: 0,
@@ -69,6 +70,10 @@ const PopulationMetrics = {
 
     recordBackgroundResolve() {
         this.counters.backgroundResolves += 1;
+    },
+
+    recordPartyResolve() {
+        this.counters.partyResolves += 1;
     },
 
     recordSkippedResolve() {

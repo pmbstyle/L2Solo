@@ -456,6 +456,7 @@ const BotLifeState = {
         return Database.execute([
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
+            AND (partyId IS NULL OR partyId = '')
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             ORDER BY COALESCE(nextResolveAt, 0) ASC
             LIMIT ${safeLimit}`,
@@ -466,6 +467,25 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch due cold states: %s', err.message);
+            return [];
+        });
+    },
+
+    statesForParty(partyId) {
+        if (!initialized || !partyId) return Promise.resolve([]);
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND partyId = ?
+            ORDER BY level DESC, characterId ASC`,
+            [partyId]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch party %s states: %s', partyId, err.message);
             return [];
         });
     },
