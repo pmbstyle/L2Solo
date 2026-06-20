@@ -51,6 +51,19 @@ function consume(session, data) {
             World.inviteBotByName(session, session.actor, name, 1, 'chat_invite');
             return;
         }
+        if (/^(\/tell|\.tell|\/w|\.w)\s+/i.test(data.text)) {
+            const body = data.text.replace(/^(\/tell|\.tell|\/w|\.w)\s+/i, '').trim();
+            const match = body.match(/^(\S+)\s+(.+)$/);
+            const World = invoke('GameServer/World/World');
+            World.messageBotByName(
+                session,
+                session.actor,
+                match ? match[1] : '',
+                match ? match[2] : '',
+                'chat_tell'
+            );
+            return;
+        }
         if (data.text === '.uitest') {
             const UiTest = invoke('GameServer/World/Generics/NpcBypasses/UiTest');
             UiTest.render(session);

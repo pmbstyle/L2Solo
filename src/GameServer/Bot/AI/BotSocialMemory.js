@@ -110,6 +110,8 @@ function applyEvent(record, eventName) {
     } else if (eventName === 'party_kicked') {
         updated.trust -= 3;
         updated.recentlyAbandonedAt = now();
+    } else if (eventName === 'chat') {
+        updated.familiarity += 1;
     } else if (eventName === 'helped_in_combat') {
         updated.trust += 3;
         updated.familiarity += 1;

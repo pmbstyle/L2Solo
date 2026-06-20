@@ -71,6 +71,32 @@ const BotLifeEvents = {
         )));
     },
 
+    recentForBot(characterId, limit = 5) {
+        if (!characterId) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
+        const ready = initialized ? Promise.resolve(true) : this.init();
+
+        return ready.then((isReady) => {
+            if (!isReady) return [];
+            return Database.execute([
+                `SELECT eventType, summary, weight, createdAt, metaJson
+                FROM ${TABLE}
+                WHERE characterId = ?
+                ORDER BY createdAt DESC, weight DESC
+                LIMIT ${safeLimit}`,
+                [characterId]
+            ]);
+        }).then((rows) => (rows || []).map((row) => ({
+            type: row.eventType,
+            summary: row.summary,
+            weight: Number(row.weight || 1),
+            createdAt: Number(row.createdAt || 0)
+        }))).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to read recent events for %s: %s', characterId, err.message);
+            return [];
+        });
+    },
+
     prune(characterId) {
         return Database.execute([
             `DELETE FROM ${TABLE}

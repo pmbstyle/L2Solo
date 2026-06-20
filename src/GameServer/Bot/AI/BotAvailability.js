@@ -65,8 +65,8 @@ const BotAvailability = {
         else if (botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
         else if (result.distance !== null && result.distance > INVITE_RANGE) reason = 'too_far';
-        else if (memory.trust <= -6) reason = 'low_trust';
-        else if (memory.recentlyAbandonedAt && Date.now() - memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
+        else if (result.memory.trust <= -6) reason = 'low_trust';
+        else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
         result.available = reason === 'available';

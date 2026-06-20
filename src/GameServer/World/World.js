@@ -222,6 +222,60 @@ const World = {
         });
     },
 
+    messageBotByName(session, actor, name, text, source = 'remote_chat') {
+        const lookup = String(name || '').trim();
+        const message = String(text || '').trim();
+        if (!lookup || !message) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return Promise.resolve(false);
+        }
+
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const BotRemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
+
+        const hotSession = BotManager.findSessionByName(lookup);
+        if (hotSession) {
+            BotSocialMemory.recordEvent(session, hotSession, 'chat', source);
+            const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+            const BotAI = invoke('GameServer/Bot/BotAI');
+            const started = BotBrain.maybeThink(hotSession, 'player_chat', BotAI.getStatus(hotSession), message);
+            if (!started) {
+                const plan = hotSession.plan || 'hunting';
+                BotManager.botTell(hotSession, session, `I hear you. I'm ${plan} right now.`);
+            }
+            return Promise.resolve(true);
+        }
+
+        return LifeState.findByName(lookup).then((state) => {
+            if (!state) {
+                session.dataSendToMe(ServerResponse.actionFailed());
+                return false;
+            }
+
+            return BotRemoteChat.replyForState(session, state, message).then((result) => {
+                if (!result?.ok || !result.reply) {
+                    session.dataSendToMe(ServerResponse.actionFailed());
+                    return false;
+                }
+
+                coldBotTell(session, state, result.reply);
+                console.info(
+                    'BotRemoteChat :: %s replied to %s reason=%s',
+                    state.name || lookup,
+                    actor?.fetchName() || 'unknown',
+                    result.reason || 'unknown'
+                );
+                return true;
+            });
+        }).catch((err) => {
+            utils.infoWarn('BotRemoteChat', 'remote message failed for %s: %s', lookup, err.message);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        });
+    },
+
     answerForTeamUp(session, actor, data) {
         console.info(data);
     },
