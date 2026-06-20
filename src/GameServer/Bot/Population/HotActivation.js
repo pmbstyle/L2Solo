@@ -55,23 +55,31 @@ function pushAwayFromPlayer(loc, playerLoc) {
     };
 }
 
+function validPlayerPlacement(loc, playerLoc) {
+    if (!playerLoc) return true;
+    const dist = distance2d(loc, playerLoc);
+    return dist >= Config.activationMinPlayerDistance && dist <= Config.activationRadius;
+}
+
 function activationPlacement(state, options = {}) {
     const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
-    const baseLoc = spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 };
+    const baseLoc = options.playerLoc
+        ? (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 })
+        : (spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 });
     let candidate = null;
 
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {
-        candidate = spot
+        candidate = spot && !options.playerLoc
             ? SpotService.randomPointNear(spot, Config.activationPlacementRadius)
             : randomAround(baseLoc, Config.activationPlacementRadius);
 
-        if (distance2d(candidate, options.playerLoc) >= Config.activationMinPlayerDistance) {
+        if (validPlayerPlacement(candidate, options.playerLoc)) {
             return { loc: candidate, spot };
         }
     }
 
     return {
-        loc: pushAwayFromPlayer(candidate || baseLoc, options.playerLoc),
+        loc: pushAwayFromPlayer(baseLoc, options.playerLoc),
         spot
     };
 }
