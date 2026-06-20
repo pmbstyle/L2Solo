@@ -1,4 +1,5 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -109,6 +110,11 @@ const HotActivation = {
             }
 
             const BotManager = invoke('GameServer/Bot/BotManager');
+            if (state.party?.partyId) {
+                BackgroundPartyState.setStatus(state.party.partyId, 'dissolved');
+                LifeState.clearParty(state.party.partyId);
+            }
+
             const placement = activationPlacement(state, options);
             const plan = activationPlan(state, options);
             pendingActivations.add(state.characterId);

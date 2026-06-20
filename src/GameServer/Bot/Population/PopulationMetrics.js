@@ -11,6 +11,7 @@ function emptyCounters() {
         skippedResolves: 0,
         activations: 0,
         cooldowns: 0,
+        partyFormations: 0,
         dbFlushes: 0
     };
 }
@@ -80,6 +81,10 @@ const PopulationMetrics = {
 
     recordCooldown() {
         this.counters.cooldowns += 1;
+    },
+
+    recordPartyFormation() {
+        this.counters.partyFormations += 1;
     },
 
     recordDbFlush() {

@@ -470,6 +470,89 @@ const BotLifeState = {
         });
     },
 
+    coldPartyCandidates(limit = 80) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND (partyId IS NULL OR partyId = '')
+            AND spotId IS NOT NULL
+            AND activity IN ('hunting', 'resting')
+            ORDER BY spotId ASC, level ASC, updatedAt ASC
+            LIMIT ${safeLimit}`,
+            []
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch party candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    assignParty(state, partyId, role = 'dps', leaderId = 0) {
+        if (!state || !partyId) return Promise.resolve(null);
+
+        const nextState = {
+            ...state,
+            party: {
+                ...(state.party || {}),
+                partyId,
+                role,
+                leaderId
+            },
+            stats: {
+                ...(state.stats || {}),
+                role,
+                leaderId,
+                backgroundPartyId: partyId
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+
+        return save(row).then(() => {
+            const snapshot = normalize(row);
+            cache.set(snapshot.characterId, snapshot);
+            return snapshot;
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
+            return null;
+        });
+    },
+
+    clearParty(partyId) {
+        if (!initialized || !partyId) return Promise.resolve(0);
+
+        return Database.execute([
+            `UPDATE ${TABLE} SET partyId = NULL, updatedAt = ? WHERE partyId = ?`,
+            [now(), partyId]
+        ]).then((result) => {
+            let cleared = 0;
+            cache.forEach((state, characterId) => {
+                if (state.party?.partyId === partyId) {
+                    cache.set(characterId, {
+                        ...state,
+                        party: {
+                            ...(state.party || {}),
+                            partyId: null,
+                            leaderId: null
+                        },
+                        updatedAt: now()
+                    });
+                    cleared += 1;
+                }
+            });
+            return result?.affectedRows || cleared;
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to clear party %s: %s', partyId, err.message);
+            return 0;
+        });
+    },
+
     applyResolve(state, result) {
         if (!state || !result) return Promise.resolve(null);
 
