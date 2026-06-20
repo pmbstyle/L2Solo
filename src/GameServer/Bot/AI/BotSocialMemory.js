@@ -13,10 +13,13 @@ function now() {
 }
 
 function actorId(session) {
+    if (session?.characterId) return Number(session.characterId);
     return session?.actor?.fetchId ? Number(session.actor.fetchId()) : 0;
 }
 
 function actorName(session) {
+    if (session?.name) return session.name;
+    if (session?.characterName) return session.characterName;
     return session?.actor?.fetchName ? session.actor.fetchName() : '';
 }
 

@@ -45,6 +45,12 @@ function consume(session, data) {
             BotParty.render(session);
             return;
         }
+        if (data.text.startsWith('/invite ') || data.text.startsWith('.invite ')) {
+            const name = data.text.replace(/^\/invite\s+|^\.invite\s+/, '').trim();
+            const World = invoke('GameServer/World/World');
+            World.inviteBotByName(session, session.actor, name, 1, 'chat_invite');
+            return;
+        }
         if (data.text === '.uitest') {
             const UiTest = invoke('GameServer/World/Generics/NpcBypasses/UiTest');
             UiTest.render(session);

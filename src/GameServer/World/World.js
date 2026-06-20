@@ -2,6 +2,52 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 
+function actorLoc(actor) {
+    return {
+        locX: actor.fetchLocX(),
+        locY: actor.fetchLocY(),
+        locZ: actor.fetchLocZ()
+    };
+}
+
+function coldActor(state) {
+    return {
+        fetchId: () => Number(state.characterId || 0),
+        fetchName: () => state.name || 'Bot'
+    };
+}
+
+function coldBotTell(playerSession, state, text) {
+    const clean = String(text || '').trim().slice(0, 120);
+    if (!clean || !state || !playerSession?.dataSendToMe) return;
+
+    playerSession.dataSendToMe(
+        ServerResponse.speak(coldActor(state), { kind: 2, text: clean })
+    );
+}
+
+function waitForBotSession(BotManager, name, attempts = 40) {
+    const target = String(name || '').toLowerCase();
+    return new Promise((resolve) => {
+        const check = (left) => {
+            const session = BotManager.findSessionByName(target);
+            if (session) {
+                resolve(session);
+                return;
+            }
+
+            if (left <= 0) {
+                resolve(null);
+                return;
+            }
+
+            setTimeout(() => check(left - 1), 100);
+        };
+
+        check(attempts);
+    });
+}
+
 const World = {
     init() {
         this.user  = { sessions : [] };
@@ -105,6 +151,75 @@ const World = {
             );
         }, 1000);
         return true;
+    },
+
+    inviteBotByName(session, actor, name, distribution = 1, source = 'named_invite') {
+        const lookup = String(name || '').trim();
+        if (!lookup) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return Promise.resolve(false);
+        }
+
+        const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+
+        const hotSession = BotManager.findSessionByName(lookup);
+        if (hotSession) {
+            return Promise.resolve(this.inviteBotCompanion(session, actor, hotSession, distribution, source));
+        }
+
+        ConsoleText.transmit(session, ConsoleText.caption.waitForResponse);
+        return LifeState.findByName(lookup).then((state) => {
+            if (!state) {
+                session.dataSendToMe(ServerResponse.actionFailed());
+                return false;
+            }
+
+            const availability = BotAvailability.evaluateState(session, state);
+            if (!availability.available) {
+                BotSocialMemory.recordEvent(session, state, 'invite_attempt', source);
+                BotSocialMemory.recordEvent(session, state, 'party_refused', availability.reason);
+                session.dataSendToMe(ServerResponse.actionFailed());
+                coldBotTell(session, state, `I can't join right now: ${availability.reasonText}.`);
+                console.info(
+                    'BotParty :: %s refused remote invite from %s: %s',
+                    state.name || lookup,
+                    actor?.fetchName() || 'unknown',
+                    availability.reason
+                );
+                return false;
+            }
+
+            return PopulationService.activate(state, 'remote_invite', {
+                playerLoc: actorLoc(actor),
+                forceNearPlayer: true
+            }).then((result) => {
+                if (!result.ok) {
+                    BotSocialMemory.recordEvent(session, state, 'invite_attempt', source);
+                    BotSocialMemory.recordEvent(session, state, 'party_refused', result.reason || 'activation_failed');
+                    session.dataSendToMe(ServerResponse.actionFailed());
+                    coldBotTell(session, state, `I can't get to you right now.`);
+                    return false;
+                }
+
+                return waitForBotSession(BotManager, state.name || lookup).then((targetSession) => {
+                    if (!targetSession) {
+                        session.dataSendToMe(ServerResponse.actionFailed());
+                        coldBotTell(session, state, `I tried to come over, but something went wrong.`);
+                        return false;
+                    }
+
+                    return this.inviteBotCompanion(session, actor, targetSession, distribution, source);
+                });
+            });
+        }).catch((err) => {
+            utils.infoWarn('BotParty', 'remote invite failed for %s: %s', lookup, err.message);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        });
     },
 
     answerForTeamUp(session, actor, data) {

@@ -64,7 +64,7 @@ function validPlayerPlacement(loc, playerLoc) {
 function activationPlacement(state, options = {}) {
     const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
     const baseLoc = options.playerLoc
-        ? (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 })
+        ? (options.forceNearPlayer ? options.playerLoc : (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
         : (spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 });
     let candidate = null;
 
