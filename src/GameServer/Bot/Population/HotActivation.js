@@ -89,6 +89,11 @@ function spotSnapshot(spot) {
     };
 }
 
+function activationDistance(placement, options) {
+    const dist = distance2d(placement?.loc, options?.playerLoc);
+    return Number.isFinite(dist) ? String(Math.round(dist)) : 'n/a';
+}
+
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
         const loadState = typeof stateOrName === 'string'
@@ -105,11 +110,12 @@ const HotActivation = {
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             const placement = activationPlacement(state, options);
+            const plan = activationPlan(state, options);
             pendingActivations.add(state.characterId);
             BotManager.loadAndSpawnBot(state.accountName, {
                 name: state.name,
                 homeRegion: state.homeRegion,
-                plan: activationPlan(state, options),
+                plan,
                 backgroundActivity: state.activity || 'hunting',
                 currentSpot: spotSnapshot(placement.spot),
                 activationRecovery: options.recoverOnActivation ? {
@@ -125,7 +131,19 @@ const HotActivation = {
                 pendingActivations.delete(state.characterId);
             }, 10000);
 
-            console.info('BotPopulation :: requested activation for %s reason=%s', state.name, reason);
+            console.info(
+                'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s recovery=%s',
+                state.name,
+                reason,
+                state.activity || 'hunting',
+                plan,
+                placement.spot?.id || state.spotId || 'none',
+                placement.loc?.locX || 0,
+                placement.loc?.locY || 0,
+                placement.loc?.locZ || 0,
+                activationDistance(placement, options),
+                options.recoverOnActivation ? 'yes' : 'no'
+            );
             Metrics.recordActivation();
             return { ok: true, state, reason };
         });
