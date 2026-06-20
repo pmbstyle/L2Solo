@@ -464,18 +464,10 @@ const BotManager = {
     botSay(session, text) {
         if (!session.actor) return;
         const ServerResponse = invoke('GameServer/Network/Response');
-        
-        if (session.plan === 'following' && session.followPlayerSession && session.partyCompanion === true) {
-            const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
-            if (session.followPlayerSession.dataSendToMe) {
-                session.followPlayerSession.dataSendToMe(packet);
-            }
-        } else {
-            session.dataSendToOthers(
-                ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-                session.actor
-            );
-        }
+        session.dataSendToOthers(
+            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
+            session.actor
+        );
     },
 
     botTell(session, targetSession, text) {
