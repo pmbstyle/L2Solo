@@ -646,6 +646,59 @@ const BotLifeState = {
             });
     },
 
+    upsertState(state, reason = 'seed') {
+        if (!state || !state.characterId) return Promise.resolve(null);
+
+        const timestamp = now();
+        const nextState = {
+            ...state,
+            phase: state.phase || 'cold',
+            activity: state.activity || 'hunting',
+            timing: {
+                ...(state.timing || {}),
+                activityStartedAt: state.timing?.activityStartedAt || timestamp,
+                nextResolveAt: state.timing?.nextResolveAt || timestamp + 30000 + Math.round(Math.random() * 90000)
+            },
+            stats: {
+                ...(state.stats || {}),
+                lastReason: reason
+            },
+            updatedAt: timestamp
+        };
+        const row = rowFromState(nextState);
+        const characterId = row.characterId;
+        const previous = pendingWrites.get(characterId) || Promise.resolve();
+        const ready = initialized ? Promise.resolve(true) : this.init();
+        const next = previous.then(() => ready).then((isReady) => {
+            if (!isReady) {
+                throw new Error('state table unavailable');
+            }
+            return save(row);
+        }).then(() => Database.updateCharacterLocation(row.characterId, {
+            locX: row.locX,
+            locY: row.locY,
+            locZ: row.locZ
+        })).then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(characterId, snapshot);
+                return snapshot;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                return null;
+            });
+
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(characterId) === tracked) {
+                pendingWrites.delete(characterId);
+            }
+        });
+        pendingWrites.set(characterId, tracked);
+        return next;
+    },
+
     counts() {
         const counts = { cold: 0, warm: 0, hot: 0, total: 0 };
         cache.forEach((state) => {

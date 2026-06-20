@@ -11,6 +11,7 @@ const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
+const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -52,6 +53,7 @@ const PopulationService = {
     schedulerTimer: null,
     partyFormationTimer: null,
     phasePolicyTimer: null,
+    seedTimer: null,
     resolving: false,
     partyFormationRunning: false,
     phasePolicyRunning: false,
@@ -121,6 +123,27 @@ const PopulationService = {
             }
         }
 
+        if (Config.generatedColdTarget > 0) {
+            this.seedTimer = setTimeout(() => {
+                this.seedTimer = null;
+                GeneratedColdSeeder.seedToTarget(Config.generatedColdTarget).then((result) => {
+                    if (result.seeded > 0) {
+                        console.info(
+                            'BotPopulation :: generated cold seed seeded=%d created=%d total=%d target=%d',
+                            result.seeded,
+                            result.created,
+                            result.total,
+                            result.desired
+                        );
+                    }
+                });
+            }, Config.generatedColdSeedDelayMs);
+
+            if (typeof this.seedTimer.unref === 'function') {
+                this.seedTimer.unref();
+            }
+        }
+
         Director.start();
     },
 
@@ -144,6 +167,10 @@ const PopulationService = {
         if (this.phasePolicyTimer) {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
+        }
+        if (this.seedTimer) {
+            clearTimeout(this.seedTimer);
+            this.seedTimer = null;
         }
         Director.stop();
         Metrics.stopEventLoopMonitor();
