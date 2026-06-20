@@ -5,6 +5,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
@@ -26,6 +27,7 @@ const PopulationService = {
         Metrics.startEventLoopMonitor();
         LifeState.init();
         LifeEvents.init();
+        BackgroundPartyState.init();
         Director.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
