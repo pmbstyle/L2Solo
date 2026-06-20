@@ -1,9 +1,12 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'pk_hunting']);
 
-function activationPlan(state) {
+function activationPlan(state, options = {}) {
+    if (options.recoverOnActivation) return 'hunting';
+
     const activity = state?.activity || 'hunting';
     if (activity === 'dead' || activity === 'resting') return 'resting';
     if (HOT_PLANS.has(activity)) return activity;
@@ -11,7 +14,7 @@ function activationPlan(state) {
 }
 
 const HotActivation = {
-    activate(stateOrName, reason = 'activation') {
+    activate(stateOrName, reason = 'activation', options = {}) {
         const loadState = typeof stateOrName === 'string'
             ? LifeState.findByName(stateOrName)
             : Promise.resolve(stateOrName);
@@ -29,8 +32,12 @@ const HotActivation = {
             BotManager.loadAndSpawnBot(state.accountName, {
                 name: state.name,
                 homeRegion: state.homeRegion,
-                plan: activationPlan(state),
+                plan: activationPlan(state, options),
                 backgroundActivity: state.activity || 'hunting',
+                activationRecovery: options.recoverOnActivation ? {
+                    hpPct: Config.activationRecoveryHpPct,
+                    mpPct: Config.activationRecoveryMpPct
+                } : null,
                 locX: state.loc?.locX,
                 locY: state.loc?.locY,
                 locZ: state.loc?.locZ

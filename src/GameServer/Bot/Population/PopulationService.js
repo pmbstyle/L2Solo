@@ -114,9 +114,9 @@ const PopulationService = {
         return Cooldown.cooldown(session, reason);
     },
 
-    requestActivation(stateOrName, reason = 'manual') {
+    requestActivation(stateOrName, reason = 'manual', options = {}) {
         if (Config.enabled === false) return Promise.resolve({ ok: false, reason: 'disabled' });
-        return HotActivation.activate(stateOrName, reason);
+        return HotActivation.activate(stateOrName, reason, options);
     },
 
     tickPhasePolicy() {
@@ -146,11 +146,22 @@ const PopulationService = {
         ));
     },
 
+    isRestingActivationState(state) {
+        const activity = state?.activity || 'hunting';
+        if (activity === 'resting' || activity === 'dead') return true;
+
+        const vitals = state?.vitals || {};
+        const hpPct = Number(vitals.hp || 0) / Math.max(1, Number(vitals.maxHp || vitals.hp || 1));
+        const mpPct = Number(vitals.mp || 0) / Math.max(1, Number(vitals.maxMp || vitals.mp || 1));
+        return hpPct < 0.35 || mpPct < 0.20;
+    },
+
     activateNearPlayers() {
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
 
         const activated = [];
+        let restingPresented = 0;
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
@@ -165,11 +176,24 @@ const PopulationService = {
                 const remaining = Config.maxActivationsPerScan - activated.length;
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
-                    .then((states) => states.reduce((stateChain, state) => (
-                        stateChain.then(() => this.requestActivation(state, 'near_player').then((result) => {
-                            if (result.ok) activated.push(result);
-                        }))
-                    ), Promise.resolve()));
+                    .then((states) => {
+                        const maxRestingPresented = Math.max(1, Math.floor(states.length * Config.maxRestingActivationRatio));
+                        return states.reduce((stateChain, state) => (
+                            stateChain.then(() => {
+                                const restingLike = this.isRestingActivationState(state);
+                                const recoverOnActivation = restingLike && restingPresented >= maxRestingPresented;
+                                if (restingLike && !recoverOnActivation) {
+                                    restingPresented += 1;
+                                }
+
+                                return this.requestActivation(state, 'near_player', {
+                                    recoverOnActivation
+                                });
+                            }).then((result) => {
+                                if (result.ok) activated.push(result);
+                            })
+                        ), Promise.resolve());
+                    });
             });
         });
 

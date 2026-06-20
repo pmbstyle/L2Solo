@@ -276,6 +276,13 @@ const BotManager = {
                 } else {
                     session.plan = botData.plan || 'hunting';
                     session.backgroundActivity = botData.backgroundActivity || session.plan;
+                    if (botData.activationRecovery) {
+                        const hpPct = Number(botData.activationRecovery.hpPct || 0.85);
+                        const mpPct = Number(botData.activationRecovery.mpPct || 0.85);
+                        session.actor.setHp(Math.max(session.actor.fetchHp(), Math.round(session.actor.fetchMaxHp() * hpPct)));
+                        session.actor.setMp(Math.max(session.actor.fetchMp(), Math.round(session.actor.fetchMaxMp() * mpPct)));
+                        session.actor.state.setDead(false);
+                    }
                     session.actor.state.setSeated(session.plan === 'resting');
                 }
 
