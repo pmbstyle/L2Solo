@@ -275,7 +275,8 @@ const BotManager = {
                     });
                 } else {
                     session.plan = botData.plan || 'hunting';
-                    session.actor.state.setSeated(false);
+                    session.backgroundActivity = botData.backgroundActivity || session.plan;
+                    session.actor.state.setSeated(session.plan === 'resting');
                 }
 
                 // Spawn the bot actor in the World
