@@ -157,10 +157,11 @@ const BotAI = {
             { name: "Dark Elven Village", x: 12111, y: 16686, z: -4582 },
             { name: "Dwarven Village", x: 115632, y: -177996, z: -905 },
             { name: "Orc Village", x: -45032, y: -113598, z: -192 },
-            { name: "Gludio", x: -12672, y: 122776, z: -3730 },
-            { name: "Dion", x: 15664, y: 142979, z: -3730 },
-            { name: "Giran", x: 83400, y: 147943, z: -3730 },
-            { name: "Oren", x: 82960, y: 53177, z: -3730 }
+            { name: "Gludin", x: -80752, y: 149776, z: -3044 },
+            { name: "Gludio", x: -12736, y: 122816, z: -3114 },
+            { name: "Dion", x: 15631, y: 142885, z: -2704 },
+            { name: "Giran", x: 83396, y: 147904, z: -3404 },
+            { name: "Oren", x: 82960, y: 53177, z: -1497 }
         ];
         let closest = towns[0];
         let minDist = Infinity;

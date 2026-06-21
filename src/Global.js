@@ -84,6 +84,7 @@ global.utils = {
     isInPeaceZone(locX, locY) {
         const PEACE_ZONES = [
             { x: -84318, y: 244579, r: 8000 }, // TI
+            { x: -80752, y: 149776, r: 6000 }, // Gludin
             { x: -12672, y: 122776, r: 6000 }, // Gludio
             { x: 15664,  y: 142979, r: 6000 }, // Dion
             { x: 83400,  y: 147943, r: 8000 }, // Giran
