@@ -42,6 +42,16 @@ function newbieSpawnCoords(classId) {
     return DataCache.newbieSpawns.find(ob => ob.classId === classId)?.spawns ?? [{ locX: -84318, locY: 244579, locZ: -3730 }];
 }
 
+function isRealPlayerSession(session) {
+    return !!(
+        session &&
+        session.actor &&
+        session.actor.fetchIsOnline() &&
+        session.accountId &&
+        !String(session.accountId).startsWith('bot_')
+    );
+}
+
 const States = {
     fleeing: invoke('GameServer/Bot/AI/States/FleeingState'),
     pk_fleeing: invoke('GameServer/Bot/AI/States/PkFleeingState'),
@@ -114,12 +124,7 @@ const BotAI = {
         }
 
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = World.user.sessions.filter(s => 
-            s.actor && 
-            s.actor.fetchIsOnline() && 
-            s.accountId && 
-            !s.accountId.startsWith('bot_')
-        );
+        const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
 
         if (onlinePlayers.length === 0) {
             return 30000;
@@ -258,29 +263,10 @@ const BotAI = {
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = World.user.sessions.filter(s => 
-            s.actor && 
-            s.actor.fetchIsOnline() && 
-            s.accountId && 
-            !s.accountId.startsWith('bot_')
-        );
+        const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
+        const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
-        let minDist = Infinity;
-        if (onlinePlayers.length > 0) {
-            const botX = bot.fetchLocX();
-            const botY = bot.fetchLocY();
-            onlinePlayers.forEach(pSession => {
-                const player = pSession.actor;
-                const dx = player.fetchLocX() - botX;
-                const dy = player.fetchLocY() - botY;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < minDist) {
-                    minDist = dist;
-                }
-            });
-        }
-
-        if (onlinePlayers.length > 0 && minDist > 1500 && !isCompanion && session.plan !== 'shopping') {
+        if (onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -502,6 +488,11 @@ const BotAI = {
                 user.dataSendToMe(packet);
             }
         });
+    },
+
+    visibleRealPlayers(session, bot, World = invoke('GameServer/World/World')) {
+        if (!session || !bot || !World || typeof World.fetchVisibleUsers !== 'function') return [];
+        return World.fetchVisibleUsers(session, bot).filter(isRealPlayerSession);
     },
 
     getStatus(session) {
