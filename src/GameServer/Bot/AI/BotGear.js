@@ -30,6 +30,12 @@ const GRADE_BANDS = [
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEARABLE_SLOTS = new Set(Object.values(ARMOR_SLOTS));
+const NO_GRADE_PRICE_CAPS = [
+    { maxLevel: 5, price: 1000 },
+    { maxLevel: 10, price: 12500 },
+    { maxLevel: 15, price: 33600 },
+    { maxLevel: 19, price: 66600 }
+];
 
 function gradeForLevel(level) {
     const value = Number(level || 1);
@@ -77,7 +83,15 @@ function validRank(item, rank) {
 }
 
 function notQuestOddity(item) {
-    return item.price > 0;
+    return item.price > 0 && item.pAtk < 1000 && item.mAtk < 1000;
+}
+
+function priceCapFor(rank, level) {
+    if (rank !== 'none') return Infinity;
+
+    const value = Number(level || 1);
+    const band = NO_GRADE_PRICE_CAPS.find((entry) => value <= entry.maxLevel);
+    return band ? band.price : NO_GRADE_PRICE_CAPS[NO_GRADE_PRICE_CAPS.length - 1].price;
 }
 
 function candidatesFor(rank, predicate) {
@@ -94,11 +108,17 @@ function choose(rank, level, predicate, score) {
 
     const band = gradeForLevel(level);
     const pct = rank === band.rank ? progression(level, band) : 0.55;
+    const levelPriceCap = priceCapFor(rank, level);
     const priced = candidates.filter((item) => item.price > 0);
     const sorted = priced.length > 0 ? priced : candidates;
     const capIndex = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * pct)));
-    const priceCap = sorted[capIndex].price;
+    const progressivePriceCap = sorted[capIndex].price;
+    const priceCap = Number.isFinite(levelPriceCap)
+        ? Math.min(progressivePriceCap || levelPriceCap, levelPriceCap)
+        : progressivePriceCap;
     const affordable = candidates.filter((item) => !priceCap || item.price <= priceCap);
+    if (affordable.length === 0 && Number.isFinite(levelPriceCap)) return null;
+
     const pool = affordable.length > 0 ? affordable : candidates;
 
     return pool.reduce((best, item) => {
@@ -196,6 +216,13 @@ function chooseShield(rank, level) {
     );
 }
 
+function noGradeArmorStyles(style, rank) {
+    if (rank !== 'none') return [style];
+    if (style === 'heavy') return ['heavy', 'light'];
+    if (style === 'light') return ['light', 'heavy'];
+    return [style];
+}
+
 function itemEntry(item, slot) {
     if (!item) return null;
     return {
@@ -209,17 +236,31 @@ function itemEntry(item, slot) {
 
 function buildArmor(rank, level, style) {
     const pieces = [];
-    const chest = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.chest);
-    const pants = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.pants);
-    const full = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.fullArmor);
+    let fullFallback = null;
 
-    if (style === 'robe' && full) {
-        pieces.push(itemEntry(full, ARMOR_SLOTS.fullArmor));
-    } else if (chest && pants) {
-        pieces.push(itemEntry(chest, ARMOR_SLOTS.chest));
-        pieces.push(itemEntry(pants, ARMOR_SLOTS.pants));
-    } else if (full) {
-        pieces.push(itemEntry(full, ARMOR_SLOTS.fullArmor));
+    noGradeArmorStyles(style, rank).some((candidateStyle) => {
+        const chest = chooseArmorPiece(rank, level, candidateStyle, ARMOR_SLOTS.chest);
+        const pants = chooseArmorPiece(rank, level, candidateStyle, ARMOR_SLOTS.pants);
+        const full = chooseArmorPiece(rank, level, candidateStyle, ARMOR_SLOTS.fullArmor);
+
+        if (candidateStyle === 'robe' && full) fullFallback = fullFallback || full;
+
+        if (chest && pants) {
+            pieces.push(itemEntry(chest, ARMOR_SLOTS.chest));
+            pieces.push(itemEntry(pants, ARMOR_SLOTS.pants));
+            return true;
+        }
+
+        if (candidateStyle !== 'robe' && full) {
+            pieces.push(itemEntry(full, ARMOR_SLOTS.fullArmor));
+            return true;
+        }
+
+        return false;
+    });
+
+    if (pieces.length === 0 && fullFallback) {
+        pieces.push(itemEntry(fullFallback, ARMOR_SLOTS.fullArmor));
     }
 
     pieces.push(itemEntry(chooseWear(rank, level, ARMOR_SLOTS.head), ARMOR_SLOTS.head));
@@ -255,7 +296,7 @@ function planFor(character) {
 
     if (weapon) {
         plan.push(itemEntry(weapon, weapon.slot));
-        if (weapon.slot === ARMOR_SLOTS.weapon && role !== 'dagger' && role !== 'archer') {
+        if (weapon.slot === ARMOR_SLOTS.weapon && !['dagger', 'archer', 'mage', 'healer', 'buffer'].includes(role)) {
             plan.push(itemEntry(chooseShield(rank, level), ARMOR_SLOTS.shield));
         }
     }
