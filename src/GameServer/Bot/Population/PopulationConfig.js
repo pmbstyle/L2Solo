@@ -24,9 +24,6 @@ const DEFAULTS = {
     activationRadius: 4500,
     activationLevelRange: 5,
     maxActivationsPerScan: 6,
-    maxRestingActivationRatio: 0.2,
-    activationRecoveryHpPct: 0.85,
-    activationRecoveryMpPct: 0.85,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
     activationPlacementAttempts: 8,
@@ -61,7 +58,6 @@ const ENV_KEYS = {
     activationRadius: 'BOT_ACTIVATION_RADIUS',
     activationLevelRange: 'BOT_ACTIVATION_LEVEL_RANGE',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
-    maxRestingActivationRatio: 'BOT_MAX_RESTING_ACTIVATION_RATIO',
     partyInviteRange: 'BOT_PARTY_INVITE_RANGE',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'

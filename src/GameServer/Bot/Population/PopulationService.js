@@ -260,7 +260,6 @@ const PopulationService = {
         if (players.length === 0) return Promise.resolve([]);
 
         const activated = [];
-        let restingPresented = 0;
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
@@ -277,17 +276,11 @@ const PopulationService = {
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
                         const candidates = activationCandidatesForPlayer(states, actor.fetchLevel());
-                        const maxRestingPresented = Math.max(0, Math.floor(candidates.length * Config.maxRestingActivationRatio));
                         return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
-                                const restingLike = this.isRestingActivationState(state);
-                                const recoverOnActivation = restingLike && restingPresented >= maxRestingPresented;
-                                if (restingLike && !recoverOnActivation) {
-                                    restingPresented += 1;
-                                }
-
                                 return this.requestActivation(state, 'near_player', {
-                                    recoverOnActivation,
+                                    recoverOnActivation: this.isRestingActivationState(state),
+                                    readyOnActivation: true,
                                     playerLoc: loc
                                 });
                             }).then((result) => {

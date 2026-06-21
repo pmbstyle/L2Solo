@@ -11,6 +11,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
@@ -224,6 +225,22 @@ const BotManager = {
         });
     },
 
+    prepareBotForSpawn(session, botData = {}) {
+        if (!session || !session.actor) return null;
+
+        const Generics = invoke(path.actor);
+        const actor = session.actor;
+
+        actor.state.setDead(false);
+        if (botData.fullNewbieBlessing !== false && BotBuffs.isNewbieEligible(actor)) {
+            return BotBuffs.applyFullNewbieBlessing(session, actor, Generics);
+        }
+
+        actor.fillupVitals();
+        actor.statusUpdateVitals(actor);
+        return { buffs: [], expiresAt: null };
+    },
+
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
         
@@ -275,12 +292,8 @@ const BotManager = {
                     session.plan = botData.plan || 'hunting';
                     session.backgroundActivity = botData.backgroundActivity || session.plan;
                     session.currentSpot = botData.currentSpot || null;
-                    if (botData.activationRecovery) {
-                        const hpPct = Number(botData.activationRecovery.hpPct || 0.85);
-                        const mpPct = Number(botData.activationRecovery.mpPct || 0.85);
-                        session.actor.setHp(Math.max(session.actor.fetchHp(), Math.round(session.actor.fetchMaxHp() * hpPct)));
-                        session.actor.setMp(Math.max(session.actor.fetchMp(), Math.round(session.actor.fetchMaxMp() * mpPct)));
-                        session.actor.state.setDead(false);
+                    if (botData.spawnReady !== false) {
+                        this.prepareBotForSpawn(session, botData);
                     }
                     session.actor.state.setSeated(session.plan === 'resting');
                 }
