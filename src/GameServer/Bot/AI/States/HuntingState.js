@@ -5,6 +5,7 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
+const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -18,6 +19,19 @@ function isClaimedByOtherSoloBot(session, npc) {
         if (otherSession === session || !otherSession.actor || !isSoloHunter(otherSession)) return false;
         if (otherSession.currentTargetId !== npcId) return false;
         return !otherSession.actor.state.fetchDead();
+    });
+}
+
+function startShopping(session, bot, BotAI, reason) {
+    const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
+    session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    session.plan = 'shopping';
+    session.shopTimer = Date.now();
+    session.shoppingTarget = undefined;
+    BotAI.say(session, reason || `Walking back to ${closestTown.name} to sell and restock.`);
+    bot.moveTo({
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+        to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
     });
 }
 
@@ -65,6 +79,12 @@ module.exports = {
                 BotAI.say(session, "My newbie blessings have expired! Heading to the Newbie Guide to get buffed.");
                 return;
             }
+        }
+
+        if (isSoloHunter(session) && ShotStock.needsActorRestock(bot, 0)) {
+            const plan = ShotStock.planForActor(bot);
+            startShopping(session, bot, BotAI, `Out of ${ShotStock.describe(plan)}. Heading to town to restock.`);
+            return;
         }
 
         // 2. PK Spotting & Fleeing Check
@@ -166,15 +186,7 @@ module.exports = {
 
         if (Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
-            session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-            session.plan = 'shopping';
-            session.shopTimer = Date.now();
-            session.shoppingTarget = undefined;
-            BotAI.say(session, `My bags are full of loot. Walking back to ${closestTown.name} to sell and restock.`);
-            bot.moveTo({
-                from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
-            });
+            startShopping(session, bot, BotAI, `My bags are full of loot. Walking back to ${closestTown.name} to sell and restock.`);
             return;
         }
 

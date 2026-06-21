@@ -1,6 +1,7 @@
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
+const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -93,42 +94,30 @@ module.exports = {
     },
 
     scheduleRestock(session, bot, Generics, BotAI) {
-        const Database = invoke('Database');
-
         setTimeout(() => {
-            const backpack = bot.backpack;
-            const adena = backpack.fetchTotalAdena();
+            const plan = ShotStock.planForActor(bot);
+            const current = ShotStock.shotAmount(bot, plan);
+            const amount = Math.max(0, ShotStock.DEFAULT_TARGET_AMOUNT - current);
+            const expectedCost = amount * Number(plan.price || 0);
 
-            if (adena >= 7000) {
-                backpack.stackableExists(57).then((adenaItem) => {
-                    const total = adenaItem.fetchAmount() - 7000;
-                    Database.updateItemAmount(bot.fetchId(), adenaItem.fetchId(), total).then(() => {
-                        adenaItem.setAmount(total);
-                    });
-                });
+            ShotStock.purchaseActorRestock(bot, {
+                plan,
+                targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
+            }).then((result) => {
+                if (!result.ok) {
+                    BotAI.say(session, `Not enough Adena to buy ${ShotStock.describe(plan)} (Have ${result.adena || 0}/${result.cost || expectedCost} Adena). Skipping restocking.`);
+                    return;
+                }
 
-                backpack.stackableExists(1835).then((shotItem) => {
-                    const total = shotItem.fetchAmount() + 1000;
-                    Database.updateItemAmount(bot.fetchId(), shotItem.fetchId(), total).then(() => {
-                        shotItem.setAmount(total);
-                    });
-                }).catch(() => {
-                    Database.setItem(bot.fetchId(), {
-                        selfId: 1835,
-                        name: "Soulshot: No Grade",
-                        amount: 1000,
-                        equipped: false,
-                        slot: 0
-                    }).then((packet) => {
-                        backpack.insertItem(Number(packet.insertId), 1835, { amount: 1000 });
-                    });
-                });
-
-                BotAI.say(session, "Bought 1000x Soulshot: No Grade (-7000 Adena)!");
+                if (result.delta > 0) {
+                    BotAI.say(session, `Bought ${result.delta}x ${ShotStock.describe(plan)} (-${formatAdena(result.cost)} Adena)!`);
+                } else {
+                    BotAI.say(session, `Still stocked on ${ShotStock.describe(plan)}.`);
+                }
                 session.dataSendToOthers(ServerResponse.skillStarted(bot, bot.fetchId(), { fetchSelfId: () => 2001, fetchCalculatedHitTime: () => 500, fetchReuseTime: () => 500 }), bot);
-            } else {
-                BotAI.say(session, `Not enough Adena to buy Soulshots (Have ${adena}/7000 Adena). Skipping restocking.`);
-            }
+            }).catch((err) => {
+                utils.infoWarn('Shopping', 'shot restock failed for %s: %s', bot.fetchName(), err.message);
+            });
         }, 4000);
 
         setTimeout(() => {

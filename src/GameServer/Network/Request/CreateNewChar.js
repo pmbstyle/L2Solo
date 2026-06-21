@@ -3,6 +3,7 @@ const Shared         = invoke('GameServer/Network/Shared');
 const DataCache      = invoke('GameServer/DataCache');
 const ReceivePacket  = invoke('Packet/Receive');
 const Database       = invoke('Database');
+const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 function createNewChar(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -57,6 +58,7 @@ function consume(session, data) {
                     const charId = Number(packet.insertId);
                     awardBaseSkills   (charId, data.classId);
                     awardBaseGear     (charId, data.classId);
+                    awardBaseShots    (charId, data.classId);
                     awardBaseShortcuts(charId, data.classId);
         
                     Shared.fetchCharacters(session.accountId).then((characters) => {
@@ -94,6 +96,11 @@ function awardBaseGear(id, classId) {
         item.slot = DataCache.items.find(ob => ob.selfId === item.selfId)?.etc?.slot ?? 0;
         Database.setItem(id, item);
     });
+}
+
+function awardBaseShots(id, classId) {
+    ShotStock.ensureCharacterStock(id, { classId, targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT })
+        .catch((err) => utils.infoWarn('Character', 'failed to award starter shots: %s', err.message));
 }
 
 function awardBaseShortcuts(id, classId) {

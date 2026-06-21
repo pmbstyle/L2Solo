@@ -6,6 +6,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const World          = invoke('GameServer/World/World');
 const Database       = invoke('Database');
+const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 class Backpack extends BackpackModel {
     constructor(data) {
@@ -62,7 +63,32 @@ class Backpack extends BackpackModel {
             return callback(false);
         }
 
-        const found = this.items.find(item => [1835, 1463, 1464, 1465, 1466, 1467].includes(item.fetchSelfId()));
+        const plan = ShotStock.planForActor(session.actor);
+        if (plan.kind !== 'soulshot') {
+            return callback(false);
+        }
+
+        const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
+        if (found) {
+            this.deleteItem(session, found.fetchId(), 1, () => {
+                callback(true);
+            });
+        } else {
+            callback(false);
+        }
+    }
+
+    consumeSpiritshot(session, callback = () => {}) {
+        if (session.actor.isDead()) {
+            return callback(false);
+        }
+
+        const plan = ShotStock.planForActor(session.actor);
+        if (plan.kind !== 'spiritshot') {
+            return callback(false);
+        }
+
+        const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
         if (found) {
             this.deleteItem(session, found.fetchId(), 1, () => {
                 callback(true);
@@ -92,7 +118,7 @@ class Backpack extends BackpackModel {
                 this.equipGear(session, item);
             }
             else {
-                if ([1835, 1463, 1464, 1465, 1466, 1467].includes(item.fetchSelfId())) {
+                if (ShotStock.SOULSHOT_IDS.includes(item.fetchSelfId())) {
                     if (session.actor.soulshotLoaded) {
                         return; // Already loaded
                     }
@@ -106,6 +132,26 @@ class Backpack extends BackpackModel {
                                 fetchCalculatedHitTime: () => 0,
                                 fetchReuseTime: () => 0
                             }), 
+                            session.actor
+                        );
+                    });
+                    return;
+                }
+                else
+                if (ShotStock.SPIRITSHOT_IDS.includes(item.fetchSelfId())) {
+                    if (session.actor.spiritshotLoaded) {
+                        return; // Already loaded
+                    }
+                    this.deleteItem(session, id, 1, () => {
+                        session.actor.spiritshotLoaded = true;
+
+                        // Play activation effect (Skill 2047)
+                        session.dataSendToMeAndOthers(
+                            ServerResponse.skillStarted(session.actor, session.actor.fetchId(), {
+                                fetchSelfId: () => 2047,
+                                fetchCalculatedHitTime: () => 0,
+                                fetchReuseTime: () => 0
+                            }),
                             session.actor
                         );
                     });

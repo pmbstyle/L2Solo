@@ -136,6 +136,23 @@ class Attack {
             return;
         }
 
+        if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
+            actor.backpack.consumeSpiritshot(session, (success) => {
+                if (success) {
+                    actor.spiritshotLoaded = true;
+
+                    session.dataSendToMeAndOthers(
+                        ServerResponse.skillStarted(actor, actor.fetchId(), {
+                            fetchSelfId: () => 2047,
+                            fetchCalculatedHitTime: () => 0,
+                            fetchReuseTime: () => 0
+                        }),
+                        actor
+                    );
+                }
+            });
+        }
+
         skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), actor.fetchCollectiveCastSpd()));
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
@@ -150,7 +167,12 @@ class Attack {
             actor.statusUpdateVitals(actor);
 
             const mAtk = actor.fetchCollectiveMAtk();
-            this.hit(session, actor, creature, Formulas.calcRemoteHit(mAtk, skill.fetchPower(), creature.fetchCollectiveMDef()));
+            let damage = Formulas.calcRemoteHit(mAtk, skill.fetchPower(), creature.fetchCollectiveMDef());
+            if (actor.spiritshotLoaded) {
+                damage = Math.round(damage * 2.0);
+                actor.spiritshotLoaded = false;
+            }
+            this.hit(session, actor, creature, damage);
             actor.state.setCasts(false);
 
             // Start replenish
