@@ -13,6 +13,7 @@ const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
@@ -250,10 +251,14 @@ const BotManager = {
             if (!firstCharacter) return;
 
             const firstStoreCfg = merchantConfigFor(botData, firstCharacter.name);
-            const gearReady = firstStoreCfg
-                ? Promise.resolve(characters)
-                : BotGear.ensureCharacterGear(firstCharacter, botData)
-                    .then(() => Shared.fetchCharacters(username));
+            const gearReady = (firstStoreCfg
+                ? Promise.resolve()
+                : BotGear.ensureCharacterGear(firstCharacter, botData))
+                .then(() => ShotStock.ensureCharacterStock(firstCharacter.id, {
+                    classId: firstCharacter.classId,
+                    targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
+                }))
+                .then(() => Shared.fetchCharacters(username));
 
             gearReady.then((readyCharacters) => {
                 const character = readyCharacters[0];

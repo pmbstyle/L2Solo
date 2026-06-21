@@ -4,6 +4,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
@@ -150,7 +151,11 @@ function ensureAdena(characterId, amount) {
 function ensureBaseLoadout(characterId, classId, adena) {
     return awardBaseGear(characterId, classId)
         .then(() => awardBaseSkills(characterId, classId))
-        .then(() => ensureAdena(characterId, adena));
+        .then(() => ensureAdena(characterId, adena))
+        .then(() => ShotStock.ensureCharacterStock(characterId, {
+            classId,
+            targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
+        }));
 }
 
 function ensureAccount(username) {
@@ -213,6 +218,7 @@ function stateFor(character, index, seedMeta = {}) {
     }, index);
     const vitals = seedMeta.vitals || vitalsFor(classInfo(base.classId), level);
     const now = Date.now();
+    const shotPlan = ShotStock.planFor({ classId: base.classId, rank: 'none' });
 
     return {
         characterId: Number(character.id),
@@ -248,6 +254,11 @@ function stateFor(character, index, seedMeta = {}) {
                 selfId: 57,
                 name: 'Adena',
                 amount: Number(character.adena || Math.round(level * 85))
+            },
+            [shotPlan.selfId]: {
+                selfId: shotPlan.selfId,
+                name: shotPlan.name,
+                amount: ShotStock.DEFAULT_TARGET_AMOUNT
             }
         }
     };
