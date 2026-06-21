@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>World Observer</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/observer/styles.css">
+</head>
+<body>
+    <main class="observer-shell">
+        <section class="map-panel" aria-label="World map">
+            <header class="topbar">
+                <div>
+                    <h1>World Observer</h1>
+                    <p id="serverLine">Waiting for server snapshot</p>
+                </div>
+                <div class="topbar-actions">
+                    <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
+                        <span>F</span>
+                    </button>
+                    <button class="live-toggle is-live" id="liveToggle" title="Pause live refresh" aria-label="Pause live refresh">
+                        <span class="pulse"></span>
+                        Live
+                    </button>
+                </div>
+            </header>
+
+            <div class="filter-strip" id="filterStrip" aria-label="Map filters">
+                <button class="filter is-active" data-phase="all">All</button>
+                <button class="filter" data-phase="hot">Hot</button>
+                <button class="filter" data-phase="warm">Warm</button>
+                <button class="filter" data-phase="cold">Cold</button>
+                <button class="filter" data-phase="players">Players</button>
+            </div>
+
+            <div class="map-stage">
+                <svg id="worldMap" viewBox="0 0 1200 760" role="img" aria-label="Lineage II C2 world observer map">
+                    <defs>
+                        <radialGradient id="seaGlow" cx="50%" cy="45%" r="70%">
+                            <stop offset="0%" stop-color="#172d31"></stop>
+                            <stop offset="100%" stop-color="#081114"></stop>
+                        </radialGradient>
+                        <linearGradient id="landGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#796b48"></stop>
+                            <stop offset="45%" stop-color="#3c513e"></stop>
+                            <stop offset="100%" stop-color="#222f31"></stop>
+                        </linearGradient>
+                        <filter id="pinGlow" x="-80%" y="-80%" width="260%" height="260%">
+                            <feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
+                            <feMerge>
+                                <feMergeNode in="blur"></feMergeNode>
+                                <feMergeNode in="SourceGraphic"></feMergeNode>
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <rect class="sea" x="0" y="0" width="1200" height="760"></rect>
+                    <g class="tile-layer" id="tileLayer"></g>
+                    <g class="grid-lines" id="gridLines"></g>
+                    <g class="region-labels" id="regionLabels"></g>
+                    <g class="points" id="pointsLayer"></g>
+                </svg>
+
+                <div class="selected-card" id="selectedCard">
+                    <span class="eyeline">Selected</span>
+                    <strong>No actor selected</strong>
+                    <p>Click any bot or player point on the map.</p>
+                </div>
+            </div>
+        </section>
+
+        <aside class="side-panel" aria-label="World statistics">
+            <section class="metric-grid">
+                <div class="metric">
+                    <span>Bots</span>
+                    <strong id="botsTotal">0</strong>
+                </div>
+                <div class="metric">
+                    <span>Players</span>
+                    <strong id="playersTotal">0</strong>
+                </div>
+                <div class="metric">
+                    <span>Moving</span>
+                    <strong id="movingTotal">0</strong>
+                </div>
+                <div class="metric">
+                    <span>Targets</span>
+                    <strong id="targetsTotal">0</strong>
+                </div>
+            </section>
+
+            <section class="panel-section">
+                <div class="section-title">
+                    <h2>Population</h2>
+                    <span id="lastRefresh">--</span>
+                </div>
+                <div class="phase-bars" id="phaseBars"></div>
+            </section>
+
+            <section class="panel-section">
+                <div class="section-title">
+                    <h2>Mode Mix</h2>
+                    <span id="heapLine">heap -- MB</span>
+                </div>
+                <div class="mode-list" id="modeList"></div>
+            </section>
+
+            <section class="panel-section actor-list-section">
+                <div class="section-title">
+                    <h2>Active Bots</h2>
+                    <span id="visibleCount">0 visible</span>
+                </div>
+                <div class="actor-list" id="actorList"></div>
+            </section>
+
+            <section class="panel-section events-section">
+                <div class="section-title">
+                    <h2>Events</h2>
+                    <span>recent</span>
+                </div>
+                <div class="event-list" id="eventList"></div>
+            </section>
+        </aside>
+    </main>
+
+    <script src="/observer/app.js"></script>
+</body>
+</html>

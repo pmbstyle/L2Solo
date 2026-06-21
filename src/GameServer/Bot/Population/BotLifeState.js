@@ -795,6 +795,13 @@ const BotLifeState = {
         return counts;
     },
 
+    allStates(limit = 500) {
+        const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 500));
+        return Array.from(cache.values())
+            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+            .slice(0, safeLimit);
+    },
+
     levelHistogram() {
         if (!initialized) {
             return Promise.resolve({ levels: [], phases: {}, total: 0 });
