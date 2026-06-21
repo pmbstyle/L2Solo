@@ -78,10 +78,17 @@ npm start
 
 That command will:
 
+- open the local launcher at `http://127.0.0.1:8090/`;
+- show the current server state;
+- start and stop the server from the launcher;
+- open the world observer map when the server is running.
+
+Press `Start` in the launcher to run the normal server bootstrap. That start action will:
+
 - install Node dependencies if `node_modules` is missing;
 - create or start a local `nodel2-mariadb` Docker container when the configured database host is `127.0.0.1` or `localhost`;
 - import `database/sql/database.sql` on first boot if database `nodel2` does not exist;
-- start the auth server on `2106` and the game server on `7777`.
+- start the auth server on `2106`, the game server on `7777`, and the world observer on `8088`.
 
 If you run MariaDB yourself, set:
 
@@ -225,6 +232,8 @@ Run a full boot check:
 ```bash
 npm start
 ```
+
+Then press `Start` in the launcher.
 
 Expected healthy boot signs:
 
