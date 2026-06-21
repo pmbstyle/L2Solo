@@ -21,7 +21,7 @@ const DEFAULTS = {
     maxBackgroundParties: 20,
     cooldownGraceMs: 25000,
     cooldownBatchSize: 20,
-    activationRadius: 4500,
+    activationRadius: 9000,
     activationLevelRange: 5,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
