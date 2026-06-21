@@ -11,6 +11,8 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
@@ -224,87 +226,109 @@ const BotManager = {
         });
     },
 
+    prepareBotForSpawn(session, botData = {}) {
+        if (!session || !session.actor) return null;
+
+        const Generics = invoke(path.actor);
+        const actor = session.actor;
+
+        actor.state.setDead(false);
+        if (botData.fullNewbieBlessing !== false && BotBuffs.isNewbieEligible(actor)) {
+            return BotBuffs.applyFullNewbieBlessing(session, actor, Generics);
+        }
+
+        actor.fillupVitals();
+        actor.statusUpdateVitals(actor);
+        return { buffs: [], expiresAt: null };
+    },
+
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
         
         Shared.fetchCharacters(username).then((characters) => {
-            const character = characters[0];
-            if (!character) return;
+            const firstCharacter = characters[0];
+            if (!firstCharacter) return;
 
-            Shared.fetchClassInformation(character.classId).then((classInfo) => {
+            const firstStoreCfg = merchantConfigFor(botData, firstCharacter.name);
+            const gearReady = firstStoreCfg
+                ? Promise.resolve(characters)
+                : BotGear.ensureCharacterGear(firstCharacter, botData)
+                    .then(() => Shared.fetchCharacters(username));
+
+            gearReady.then((readyCharacters) => {
+                const character = readyCharacters[0];
+                if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);
 
-                if (botData.locX !== undefined) {
-                    character.locX = botData.locX;
-                    character.locY = botData.locY;
-                    character.locZ = botData.locZ;
-                }
-
-                character.locZ = GeodataEngine.getHeight(character.locX, character.locY, character.locZ);
-
-                session.setActor({
-                    ...character, ...utils.crushOb(classInfo)
-                });
-
-                session.homeRegion = botData.homeRegion || null;
-                session.visitor = !!botData.visitor;
-                session.newbieAnchor = !!botData.newbieAnchor;
-                
-                session.initialSpawnCoord = {
-                    locX: character.locX,
-                    locY: character.locY,
-                    locZ: character.locZ
-                };
-
-                if (storeCfg) {
-                    session.plan = 'merchant';
-                    session.actor.state.setSeated(true);
-
-                    session.actor.setTitle(storeCfg.title);
-                    session.actor.setPrivateStoreType(storeCfg.storeType);
-
-                    const storeItems = TradeService.normalizeStoreItems(storeCfg);
-
-                    session.actor.setPrivateStore({
-                        storeType: storeCfg.storeType,
-                        title: storeCfg.title,
-                        town: storeCfg.town,
-                        items: storeItems
-                    });
-                } else {
-                    session.plan = botData.plan || 'hunting';
-                    session.backgroundActivity = botData.backgroundActivity || session.plan;
-                    session.currentSpot = botData.currentSpot || null;
-                    if (botData.activationRecovery) {
-                        const hpPct = Number(botData.activationRecovery.hpPct || 0.85);
-                        const mpPct = Number(botData.activationRecovery.mpPct || 0.85);
-                        session.actor.setHp(Math.max(session.actor.fetchHp(), Math.round(session.actor.fetchMaxHp() * hpPct)));
-                        session.actor.setMp(Math.max(session.actor.fetchMp(), Math.round(session.actor.fetchMaxMp() * mpPct)));
-                        session.actor.state.setDead(false);
+                Shared.fetchClassInformation(character.classId).then((classInfo) => {
+                    if (botData.locX !== undefined) {
+                        character.locX = botData.locX;
+                        character.locY = botData.locY;
+                        character.locZ = botData.locZ;
                     }
-                    session.actor.state.setSeated(session.plan === 'resting');
-                }
 
-                // Spawn the bot actor in the World
-                World.insertUser(session);
-                session.actor.enterWorld();
+                    character.locZ = GeodataEngine.getHeight(character.locX, character.locY, character.locZ);
 
-                // Explicitly send the bot's CharInfo to other players in the world
-                const ServerResponse = invoke('GameServer/Network/Response');
-                session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
-                session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+                    session.setActor({
+                        ...character, ...utils.crushOb(classInfo)
+                    });
 
-                // Start AI loop
-                BotAI.init(session);
+                    session.homeRegion = botData.homeRegion || null;
+                    session.visitor = !!botData.visitor;
+                    session.newbieAnchor = !!botData.newbieAnchor;
                 
-                this.sessions.push(session);
-                session.populationHotAt = Date.now();
-                PopulationService.markHot(session, 'spawn');
-                let modeText = "[Hunting Mode]";
-                if (session.townGossip) modeText = "[Gossip Mode]";
-                if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
-                if (session.plan === 'merchant') modeText = "[Merchant Mode]";
-                utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
+                    session.initialSpawnCoord = {
+                        locX: character.locX,
+                        locY: character.locY,
+                        locZ: character.locZ
+                    };
+
+                    if (storeCfg) {
+                        session.plan = 'merchant';
+                        session.actor.state.setSeated(true);
+
+                        session.actor.setTitle(storeCfg.title);
+                        session.actor.setPrivateStoreType(storeCfg.storeType);
+
+                        const storeItems = TradeService.normalizeStoreItems(storeCfg);
+
+                        session.actor.setPrivateStore({
+                            storeType: storeCfg.storeType,
+                            title: storeCfg.title,
+                            town: storeCfg.town,
+                            items: storeItems
+                        });
+                    } else {
+                        session.plan = botData.plan || 'hunting';
+                        session.backgroundActivity = botData.backgroundActivity || session.plan;
+                        session.currentSpot = botData.currentSpot || null;
+                        if (botData.spawnReady !== false) {
+                            this.prepareBotForSpawn(session, botData);
+                        }
+                        session.actor.state.setSeated(session.plan === 'resting');
+                    }
+
+                    // Spawn the bot actor in the World
+                    World.insertUser(session);
+                    session.actor.enterWorld();
+
+                    // Explicitly send the bot's CharInfo to other players in the world
+                    const ServerResponse = invoke('GameServer/Network/Response');
+                    session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
+                    session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+
+                    // Start AI loop
+                    BotAI.init(session);
+                
+                    this.sessions.push(session);
+                    session.populationHotAt = Date.now();
+                    PopulationService.markHot(session, 'spawn');
+                    let modeText = "[Hunting Mode]";
+                    if (session.townGossip) modeText = "[Gossip Mode]";
+                    if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
+                    if (session.plan === 'merchant') modeText = "[Merchant Mode]";
+                    utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
+                });
             });
         });
     },

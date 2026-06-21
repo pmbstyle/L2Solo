@@ -8,9 +8,11 @@ const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'pk_hunting']);
 
 function activationPlan(state, options = {}) {
-    if (options.recoverOnActivation) return 'hunting';
-
     const activity = state?.activity || 'hunting';
+    if (options.recoverOnActivation || (options.readyOnActivation && (activity === 'dead' || activity === 'resting'))) {
+        return 'hunting';
+    }
+
     if (activity === 'dead' || activity === 'resting') return 'resting';
     if (HOT_PLANS.has(activity)) return activity;
     return 'hunting';
@@ -135,10 +137,7 @@ const HotActivation = {
                 plan,
                 backgroundActivity: state.activity || 'hunting',
                 currentSpot: spotSnapshot(placement.spot),
-                activationRecovery: options.recoverOnActivation ? {
-                    hpPct: Config.activationRecoveryHpPct,
-                    mpPct: Config.activationRecoveryMpPct
-                } : null,
+                spawnReady: true,
                 locX: placement.loc?.locX,
                 locY: placement.loc?.locY,
                 locZ: placement.loc?.locZ
@@ -149,7 +148,7 @@ const HotActivation = {
             }, 10000);
 
             console.info(
-                'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s recovery=%s',
+                'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s ready=%s',
                 state.name,
                 reason,
                 state.activity || 'hunting',
@@ -159,7 +158,7 @@ const HotActivation = {
                 placement.loc?.locY || 0,
                 placement.loc?.locZ || 0,
                 activationDistance(placement, options),
-                options.recoverOnActivation ? 'yes' : 'no'
+                (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
             );
             Metrics.recordActivation();
             return { ok: true, state, reason };
