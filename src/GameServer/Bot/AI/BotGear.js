@@ -1,0 +1,375 @@
+const Database = invoke('Database');
+const DataCache = invoke('GameServer/DataCache');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+
+const ARMOR_SLOTS = {
+    earringRight: 1,
+    earringLeft: 2,
+    necklace: 3,
+    ringRight: 4,
+    ringLeft: 5,
+    head: 6,
+    weapon: 7,
+    shield: 8,
+    hands: 9,
+    chest: 10,
+    pants: 11,
+    feet: 12,
+    dual: 14,
+    fullArmor: 15
+};
+
+const GRADE_BANDS = [
+    { rank: 'none', min: 1, max: 19 },
+    { rank: 'd', min: 20, max: 39 },
+    { rank: 'c', min: 40, max: 51 },
+    { rank: 'b', min: 52, max: 60 },
+    { rank: 'a', min: 61, max: 75 },
+    { rank: 's', min: 76, max: 99 }
+];
+
+const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
+const WEARABLE_SLOTS = new Set(Object.values(ARMOR_SLOTS));
+
+function gradeForLevel(level) {
+    const value = Number(level || 1);
+    return GRADE_BANDS.find((band) => value >= band.min && value <= band.max) || GRADE_BANDS[0];
+}
+
+function progression(level, band) {
+    const value = Number(level || 1);
+    const span = Math.max(1, band.max - band.min);
+    const inBand = Math.max(0, Math.min(1, (value - band.min) / span));
+    return Math.max(0.20, Math.min(0.78, 0.30 + inBand * 0.42));
+}
+
+function flattenItem(item) {
+    const stats = item.stats || {};
+    const etc = item.etc || {};
+    const template = item.template || {};
+
+    return {
+        selfId: item.selfId,
+        name: template.name,
+        kind: template.kind || '',
+        price: Number(template.price || 0),
+        slot: etc.slot,
+        rank: etc.rank || 'none',
+        pAtk: stats.pAtk || 0,
+        mAtk: stats.mAtk || 0,
+        pDef: stats.pDef || 0,
+        mDef: stats.mDef || 0,
+        maxMp: stats.maxMp || 0
+    };
+}
+
+function allItems() {
+    return (DataCache.items || [])
+        .filter((item) => {
+            const kind = item?.template?.kind || '';
+            return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
+        })
+        .map(flattenItem);
+}
+
+function validRank(item, rank) {
+    return RANK_ORDER.indexOf(item.rank) >= 0 && item.rank === rank;
+}
+
+function notQuestOddity(item) {
+    return item.price > 0;
+}
+
+function candidatesFor(rank, predicate) {
+    return allItems()
+        .filter((item) => validRank(item, rank))
+        .filter(notQuestOddity)
+        .filter(predicate)
+        .sort((a, b) => a.price - b.price || a.selfId - b.selfId);
+}
+
+function choose(rank, level, predicate, score) {
+    const candidates = candidatesFor(rank, predicate);
+    if (candidates.length === 0) return null;
+
+    const band = gradeForLevel(level);
+    const pct = rank === band.rank ? progression(level, band) : 0.55;
+    const priced = candidates.filter((item) => item.price > 0);
+    const sorted = priced.length > 0 ? priced : candidates;
+    const capIndex = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * pct)));
+    const priceCap = sorted[capIndex].price;
+    const affordable = candidates.filter((item) => !priceCap || item.price <= priceCap);
+    const pool = affordable.length > 0 ? affordable : candidates;
+
+    return pool.reduce((best, item) => {
+        if (!best) return item;
+        const itemScore = score(item);
+        const bestScore = score(best);
+        if (itemScore !== bestScore) return itemScore > bestScore ? item : best;
+        if (item.price !== best.price) return item.price < best.price ? item : best;
+        return item.selfId < best.selfId ? item : best;
+    }, null);
+}
+
+function weaponKindsFor(role, classId) {
+    if (role === 'archer') return ['Weapon.Bow'];
+    if (role === 'dagger') return ['Weapon.Knife'];
+    if (role === 'mage' || role === 'healer' || role === 'buffer') {
+        return ['Weapon.Sword', 'Weapon.Blunt'];
+    }
+    if ([44, 45, 47, 49, 50, 51, 53, 54, 56].includes(Number(classId))) {
+        return ['Weapon.Blunt'];
+    }
+    return ['Weapon.Sword', 'Weapon.Blunt'];
+}
+
+function armorStyleFor(role) {
+    if (role === 'mage' || role === 'healer' || role === 'buffer') return 'robe';
+    if (role === 'archer' || role === 'dagger') return 'light';
+    return 'heavy';
+}
+
+function chooseWeapon(rank, level, role, classId) {
+    const kinds = weaponKindsFor(role, classId);
+    const prefersOneHander = !(role === 'mage' || role === 'healer' || role === 'buffer' || role === 'archer');
+    const weapon = choose(
+        rank,
+        level,
+        (item) => kinds.includes(item.kind) && (!prefersOneHander || item.slot === ARMOR_SLOTS.weapon),
+        (item) => {
+            if (role === 'mage' || role === 'healer' || role === 'buffer') {
+                return item.mAtk * 3 + item.pAtk;
+            }
+            return item.pAtk * 2 + item.mAtk;
+        }
+    );
+
+    if (weapon) return weapon;
+
+    return choose(
+        rank,
+        level,
+        (item) => item.kind.startsWith('Weapon.'),
+        (item) => item.pAtk + item.mAtk
+    );
+}
+
+function chooseArmorPiece(rank, level, style, slot) {
+    const kind = style === 'robe'
+        ? 'Armor.Fabric'
+        : style === 'light'
+            ? 'Armor.Leather'
+            : 'Armor.Chain';
+
+    return choose(
+        rank,
+        level,
+        (item) => item.kind === kind && item.slot === slot,
+        (item) => item.pDef + item.maxMp
+    );
+}
+
+function chooseWear(rank, level, slot) {
+    return choose(
+        rank,
+        level,
+        (item) => item.kind === 'Armor.Wear' && item.slot === slot,
+        (item) => item.pDef
+    );
+}
+
+function chooseJewel(rank, level, slot) {
+    return choose(
+        rank,
+        level,
+        (item) => item.kind === 'Armor.Jewel' && item.slot === slot,
+        (item) => item.mDef
+    );
+}
+
+function chooseShield(rank, level) {
+    return choose(
+        rank,
+        level,
+        (item) => item.kind === 'Armor.Shield' && item.slot === ARMOR_SLOTS.shield,
+        (item) => item.pDef
+    );
+}
+
+function itemEntry(item, slot) {
+    if (!item) return null;
+    return {
+        selfId: item.selfId,
+        name: item.name,
+        amount: 1,
+        equipped: true,
+        slot: slot || item.slot
+    };
+}
+
+function buildArmor(rank, level, style) {
+    const pieces = [];
+    const chest = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.chest);
+    const pants = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.pants);
+    const full = chooseArmorPiece(rank, level, style, ARMOR_SLOTS.fullArmor);
+
+    if (style === 'robe' && full) {
+        pieces.push(itemEntry(full, ARMOR_SLOTS.fullArmor));
+    } else if (chest && pants) {
+        pieces.push(itemEntry(chest, ARMOR_SLOTS.chest));
+        pieces.push(itemEntry(pants, ARMOR_SLOTS.pants));
+    } else if (full) {
+        pieces.push(itemEntry(full, ARMOR_SLOTS.fullArmor));
+    }
+
+    pieces.push(itemEntry(chooseWear(rank, level, ARMOR_SLOTS.head), ARMOR_SLOTS.head));
+    pieces.push(itemEntry(chooseWear(rank, level, ARMOR_SLOTS.hands), ARMOR_SLOTS.hands));
+    pieces.push(itemEntry(chooseWear(rank, level, ARMOR_SLOTS.feet), ARMOR_SLOTS.feet));
+
+    return pieces.filter(Boolean);
+}
+
+function buildJewels(rank, level) {
+    const earring = chooseJewel(rank, level, ARMOR_SLOTS.earringRight);
+    const necklace = chooseJewel(rank, level, ARMOR_SLOTS.necklace);
+    const ring = chooseJewel(rank, level, ARMOR_SLOTS.ringRight);
+
+    return [
+        itemEntry(earring, ARMOR_SLOTS.earringRight),
+        itemEntry(earring, ARMOR_SLOTS.earringLeft),
+        itemEntry(necklace, ARMOR_SLOTS.necklace),
+        itemEntry(ring, ARMOR_SLOTS.ringRight),
+        itemEntry(ring, ARMOR_SLOTS.ringLeft)
+    ].filter(Boolean);
+}
+
+function planFor(character) {
+    const level = Number(character.level || 1);
+    const classId = Number(character.classId || 0);
+    const role = BotRoles.inferRole(classId);
+    const band = gradeForLevel(level);
+    const rank = band.rank;
+    const style = armorStyleFor(role);
+    const weapon = chooseWeapon(rank, level, role, classId);
+    const plan = [];
+
+    if (weapon) {
+        plan.push(itemEntry(weapon, weapon.slot));
+        if (weapon.slot === ARMOR_SLOTS.weapon && role !== 'dagger' && role !== 'archer') {
+            plan.push(itemEntry(chooseShield(rank, level), ARMOR_SLOTS.shield));
+        }
+    }
+
+    plan.push(...buildArmor(rank, level, style));
+    plan.push(...buildJewels(rank, level));
+
+    return {
+        rank,
+        role,
+        style,
+        items: plan.filter(Boolean)
+    };
+}
+
+function templateFor(selfId) {
+    return allItems().find((item) => Number(item.selfId) === Number(selfId)) || null;
+}
+
+function isWearableRow(row) {
+    const template = templateFor(row.selfId);
+    return !!template && WEARABLE_SLOTS.has(Number(row.slot || template.slot || 0));
+}
+
+function desiredKey(item, index) {
+    return `${item.selfId}:${item.slot}:${index}`;
+}
+
+function assignExistingItems(existing, desired) {
+    const available = new Map();
+    existing.forEach((row) => {
+        const selfId = Number(row.selfId || 0);
+        if (!available.has(selfId)) available.set(selfId, []);
+        available.get(selfId).push(row);
+    });
+
+    return desired.map((item, index) => {
+        const rows = available.get(Number(item.selfId)) || [];
+        const existingRow = rows.shift() || null;
+        return {
+            key: desiredKey(item, index),
+            desired: item,
+            existing: existingRow
+        };
+    });
+}
+
+function createMissingItem(characterId, desired) {
+    return Database.setItem(characterId, {
+        selfId: desired.selfId,
+        name: desired.name,
+        amount: desired.amount || 1,
+        equipped: false,
+        slot: desired.slot
+    }).then((result) => ({
+        id: Number(result.insertId),
+        selfId: desired.selfId,
+        slot: desired.slot,
+        equipped: false
+    }));
+}
+
+function syncAssignments(characterId, existing, assignments) {
+    const assignedIds = new Map();
+    let chain = Promise.resolve();
+    let changed = false;
+
+    assignments.forEach((assignment) => {
+        chain = chain.then(() => {
+            if (assignment.existing) return assignment.existing;
+            changed = true;
+            return createMissingItem(characterId, assignment.desired);
+        }).then((row) => {
+            assignedIds.set(Number(row.id), assignment.desired);
+            if (Number(row.slot) !== Number(assignment.desired.slot) || Number(row.equipped) !== 1) {
+                changed = true;
+                return Database.updateItemEquipState(characterId, row.id, true, assignment.desired.slot);
+            }
+            return null;
+        });
+    });
+
+    existing.filter(isWearableRow).forEach((row) => {
+        chain = chain.then(() => {
+            if (assignedIds.has(Number(row.id))) return null;
+            if (Number(row.equipped) !== 1) return null;
+            changed = true;
+            return Database.updateItemEquipState(characterId, row.id, false, row.slot || 0);
+        });
+    });
+
+    return chain.then(() => changed);
+}
+
+const BotGear = {
+    planFor,
+
+    ensureCharacterGear(character, options = {}) {
+        if (!character || !character.id || options.disabled === true) {
+            return Promise.resolve({ changed: false, plan: null });
+        }
+
+        const plan = planFor(character);
+        if (!plan.items.length) return Promise.resolve({ changed: false, plan });
+
+        return Database.fetchItems(character.id).then((existing) => {
+            const assignments = assignExistingItems(existing || [], plan.items);
+            return syncAssignments(character.id, existing || [], assignments)
+                .then((changed) => ({ changed, plan }));
+        }).catch((err) => {
+            utils.infoWarn('BotGear', 'failed to gear %s: %s', character.name || character.id, err.message);
+            return { changed: false, plan, error: err.message };
+        });
+    }
+};
+
+module.exports = BotGear;
