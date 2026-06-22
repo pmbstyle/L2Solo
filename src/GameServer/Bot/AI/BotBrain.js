@@ -1,5 +1,6 @@
-const ServerResponse = invoke('GameServer/Network/Response');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
+const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
+const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -94,43 +95,6 @@ function visibleRealPlayers(session, bot, cfg = config()) {
     return visible;
 }
 
-function compactStatus(status) {
-    if (!status || !status.available) return status;
-    return {
-        name: status.name,
-        level: status.level,
-        classId: status.classId,
-        mode: status.mode,
-        intent: status.intent,
-        role: status.role,
-        vitals: {
-            hpPct: Math.round(status.vitals.hpPct * 100),
-            mpPct: Math.round(status.vitals.mpPct * 100)
-        },
-        target: status.target ? {
-            type: status.target.type,
-            name: status.target.name || null,
-            level: status.target.level || null,
-            dead: status.target.dead,
-            distance: status.target.distance ? Math.round(status.target.distance) : null
-        } : null,
-        party: status.party ? {
-            leader: status.party.leader?.name || null,
-            stance: status.party.stance,
-            role: status.party.role
-        } : null,
-        nearby: status.nearby,
-        blockers: status.blockers,
-        spot: status.spot ? {
-            id: status.spot.id,
-            name: status.spot.name,
-            minLevel: status.spot.minLevel,
-            maxLevel: status.spot.maxLevel,
-            density: status.spot.density
-        } : null
-    };
-}
-
 function candidateSpots(status) {
     if (!status || !status.available || status.mode !== 'hunting') return [];
 
@@ -158,7 +122,7 @@ function schema() {
         properties: {
             action: {
                 type: 'string',
-                enum: ['none', 'say', 'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot']
+                enum: BotAgentTools.ACTIONS
             },
             reply: {
                 type: 'string',
@@ -172,6 +136,11 @@ function schema() {
                 type: 'string',
                 description: 'Candidate spot id for move_to_spot, or empty string.'
             },
+            buffType: {
+                type: 'string',
+                enum: ['', 'might', 'shield', 'haste', 'windwalk'],
+                description: 'Buff type for buff_target, or empty string.'
+            },
             reason: {
                 type: 'string',
                 description: 'Short private reason for logs/status.'
@@ -182,7 +151,7 @@ function schema() {
                 maximum: 1
             }
         },
-        required: ['action', 'reply', 'targetPlayerName', 'spotId', 'reason', 'confidence'],
+        required: ['action', 'reply', 'targetPlayerName', 'spotId', 'buffType', 'reason', 'confidence'],
         additionalProperties: false
     };
 }
@@ -195,6 +164,8 @@ function systemPrompt() {
         'React only when a real visible player writes to this bot or nearby bots.',
         'For player_chat, react only if the message is addressed to this bot, nearby bots, or clearly asks for help.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
+        'For buff_target and heal_target, choose a visible player and let the server validate class, MP, range, and safety.',
+        'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }
@@ -203,10 +174,11 @@ function userPayload(event, session, status, visiblePlayers, text) {
     return {
         event,
         playerMessage: text || '',
-        bot: compactStatus(status),
+        bot: BotBrainContext.compactStatus(session, status, text),
         visiblePlayers,
         candidateSpots: candidateSpots(status),
-        allowedActions: ['none', 'say', 'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot'],
+        allowedActions: BotAgentTools.ACTIONS,
+        tools: BotAgentTools.toolDescriptions(),
         constraints: {
             keepReplyShort: true,
             avoidSpam: true,
@@ -290,183 +262,10 @@ async function requestDecision(payload, cfg) {
     }
 }
 
-function findVisiblePlayerByName(name, visiblePlayers) {
-    if (!name) return null;
-
-    const lookup = String(name).toLowerCase();
-    const visible = visiblePlayers.find((player) => player.name.toLowerCase() === lookup);
-    if (!visible) return null;
-
-    const World = invoke('GameServer/World/World');
-    return World.user.sessions.find((session) =>
-        isRealPlayer(session) &&
-        session.actor.fetchId() === visible.id
-    ) || null;
-}
-
-function responseTargetSession(decision, visiblePlayers) {
-    return findVisiblePlayerByName(decision?.targetPlayerName, visiblePlayers) ||
-        findVisiblePlayerByName(visiblePlayers[0]?.name, visiblePlayers);
-}
-
-function say(session, text, targetSession = null) {
-    const clean = String(text || '').trim().slice(0, 120);
-    if (!clean) return;
-    const BotAI = invoke('GameServer/Bot/BotAI');
-    if (targetSession) {
-        BotAI.tell(session, targetSession, clean);
-    } else {
-        BotAI.say(session, clean);
-    }
-}
-
-function sit(session, bot) {
-    if (bot.state.fetchSeated()) return;
-    bot.state.setSeated(true);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-}
-
-function stand(session, bot) {
-    if (!bot.state.fetchSeated()) return;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-}
-
-function applyMoveToSpot(session, bot, spotId) {
-    const spot = SpotService.findById(spotId);
-    if (!spot) return false;
-
-    const assignedSpot = SpotService.assignSpot(session, spot);
-    const targetLoc = SpotService.randomPointNear(spot);
-    session.initialSpawnCoord = { ...assignedSpot.center };
-    session.lastSpotMoveAt = Date.now();
-    session.noTargetTicks = 0;
-
-    bot.moveTo({
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: targetLoc
-    });
-
-    return true;
-}
-
-function startShopping(session, bot) {
-    const BotAI = invoke('GameServer/Bot/BotAI');
-    const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
-    session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    session.plan = 'shopping';
-    session.shopTimer = Date.now();
-    session.shoppingTarget = undefined;
-    bot.moveTo({
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
-    });
-}
-
-function isPartyCompanionOf(session, targetSession) {
-    return session.partyCompanion === true && session.followPlayerSession === targetSession;
-}
-
-function approachPlayer(session, bot, targetSession) {
-    const player = targetSession?.actor;
-    if (!player) return false;
-
-    const dx = player.fetchLocX() - bot.fetchLocX();
-    const dy = player.fetchLocY() - bot.fetchLocY();
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= 350) return true;
-
-    bot.moveTo({
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: {
-            locX: player.fetchLocX() + utils.oneFromSpan(-80, 80),
-            locY: player.fetchLocY() + utils.oneFromSpan(-80, 80),
-            locZ: player.fetchLocZ()
-        }
-    });
-
-    return true;
-}
-
 function applyDecision(session, decision, visiblePlayers) {
-    const bot = session.actor;
-    if (!bot || !decision || decision.confidence < 0.45) return false;
-
-    const action = decision.action;
-    const targetSession = responseTargetSession(decision, visiblePlayers);
-    let applied = false;
-
-    if (action === 'none') {
-        applied = true;
-    } else if (action === 'say') {
-        say(session, decision.reply, targetSession);
-        applied = true;
-    } else if (action === 'follow_player') {
-        if (targetSession) {
-            stand(session, bot);
-            if (isPartyCompanionOf(session, targetSession)) {
-                session.plan = 'following';
-                session.botStay = false;
-                say(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
-            } else {
-                approachPlayer(session, bot, targetSession);
-                say(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
-            }
-            applied = true;
-        }
-    } else if (action === 'stay_here') {
-        session.botStay = true;
-        session.stayLocation = {
-            locX: bot.fetchLocX(),
-            locY: bot.fetchLocY(),
-            locZ: bot.fetchLocZ()
-        };
-        if (session.followPlayerSession && session.partyCompanion === true) {
-            session.plan = 'following';
-        }
-        say(session, decision.reply || 'Holding this position.', targetSession);
-        applied = true;
-    } else if (action === 'hunt') {
-        stand(session, bot);
-        session.plan = 'hunting';
-        session.followPlayerSession = null;
-        session.partyCompanion = false;
-        session.botStay = false;
-        say(session, decision.reply, targetSession);
-        applied = true;
-    } else if (action === 'rest') {
-        session.plan = 'resting';
-        session.currentTargetId = undefined;
-        bot.unselect();
-        sit(session, bot);
-        say(session, decision.reply, targetSession);
-        applied = true;
-    } else if (action === 'shop') {
-        startShopping(session, bot);
-        say(session, decision.reply, targetSession);
-        applied = true;
-    } else if (action === 'move_to_spot') {
-        if (applyMoveToSpot(session, bot, decision.spotId)) {
-            say(session, decision.reply, targetSession);
-            applied = true;
-        }
-    }
-
-    if (applied) {
-        session.lastBrainDecision = {
-            action: decision.action,
-            reason: decision.reason,
-            at: Date.now(),
-            model: config().model,
-            usage: decision.usage ? {
-                promptTokens: decision.usage.prompt_tokens,
-                completionTokens: decision.usage.completion_tokens,
-                cost: decision.usage.cost
-            } : null
-        };
-    }
-
-    return applied;
+    const result = BotAgentTools.execute(session, decision, visiblePlayers);
+    BotAgentTools.remember(session, decision, result, config().model);
+    return result.applied;
 }
 
 const BotBrain = {
