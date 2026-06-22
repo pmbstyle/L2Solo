@@ -94,6 +94,10 @@ function applyMoveToSpot(session, bot, spotId) {
 }
 
 function startShopping(session, bot) {
+    if (session.partyCompanion === true && session.followPlayerSession) {
+        return false;
+    }
+
     const BotAI = invoke('GameServer/Bot/BotAI');
     const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
@@ -104,6 +108,8 @@ function startShopping(session, bot) {
         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
         to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
     });
+
+    return true;
 }
 
 function isPartyCompanionOf(session, targetSession) {
@@ -240,8 +246,11 @@ function execute(session, decision, visiblePlayers) {
         return { applied: true, reason: 'rest' };
     }
     if (action === 'shop') {
-        startShopping(session, bot);
-        say(session, decision.reply, targetSession);
+        if (startShopping(session, bot)) {
+            say(session, decision.reply, targetSession);
+        } else {
+            say(session, decision.reply || 'I will stay with the party and sell later.', targetSession);
+        }
         return { applied: true, reason: 'shop' };
     }
     if (action === 'move_to_spot') {

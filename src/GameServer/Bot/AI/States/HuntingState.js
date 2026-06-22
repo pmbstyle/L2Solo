@@ -11,6 +11,10 @@ function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
 }
 
+function isPartyCompanion(session) {
+    return session.partyCompanion === true && !!session.followPlayerSession;
+}
+
 function isClaimedByOtherSoloBot(session, npc) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const npcId = npc.fetchId();
@@ -23,6 +27,14 @@ function isClaimedByOtherSoloBot(session, npc) {
 }
 
 function startShopping(session, bot, BotAI, reason) {
+    if (isPartyCompanion(session)) {
+        session.plan = 'following';
+        session.shoppingTarget = undefined;
+        session.shoppingDoneAnnounced = false;
+        BotAI.say(session, "Staying with the party. I can sell loot later.");
+        return false;
+    }
+
     const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
@@ -33,6 +45,8 @@ function startShopping(session, bot, BotAI, reason) {
         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
         to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
     });
+
+    return true;
 }
 
 function findPreferredMonster(session, bot, radius, options = {}) {
@@ -184,7 +198,7 @@ module.exports = {
             return;
         }
 
-        if (Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
+        if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
             startShopping(session, bot, BotAI, `My bags are full of loot. Walking back to ${closestTown.name} to sell and restock.`);
             return;
