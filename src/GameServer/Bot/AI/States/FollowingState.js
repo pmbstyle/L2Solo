@@ -3,8 +3,11 @@ const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 const SUPPORT_BUFF_MP_COST = 20;
+const FOLLOW_RUN_DISTANCE = 250;
+const FOLLOW_TELEPORT_DISTANCE = 4500;
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -17,6 +20,13 @@ function isBusy(bot) {
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+}
+
+function standUp(session, bot) {
+    if (!bot.state.fetchSeated()) return false;
+    bot.state.setSeated(false);
+    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    return true;
 }
 
 function ensureSkill(bot, selfId, data) {
@@ -152,6 +162,7 @@ module.exports = {
         const player = playerSession.actor;
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
+        const partyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
 
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
@@ -169,9 +180,22 @@ module.exports = {
             session.stuckTicks = 0;
         }
 
-        if (session.stuckTicks >= 3 || distance > 1000) {
+        if (bot.state.fetchSeated() && (partyThreat || distance > FOLLOW_RUN_DISTANCE)) {
+            session.plan = 'following';
+            session.currentTargetId = partyThreat?.actor?.fetchId?.();
+            standUp(session, bot);
+            recordRoleDecision(
+                session,
+                bot,
+                partyThreat ? assistActionForRole(role) : 'follow_leader',
+                partyThreat ? 'party_under_attack' : 'leader_moved'
+            );
+            return;
+        }
+
+        if (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE) {
             session.stuckTicks = 0;
-            recordRoleDecision(session, bot, 'follow_leader', distance > 1000 ? 'catch_up' : 'unstuck');
+            recordRoleDecision(session, bot, 'follow_leader', distance > FOLLOW_TELEPORT_DISTANCE ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
             if (TeleportTo && typeof TeleportTo === 'function') {
                 const targetLoc = {
@@ -196,7 +220,7 @@ module.exports = {
             mpRatio: ratio(player.fetchMp(), player.fetchMaxMp())
         };
 
-        if (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15) {
+        if (!partyThreat && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
             session.plan = 'resting';
             session.currentTargetId = undefined;
             bot.unselect();
@@ -406,9 +430,37 @@ module.exports = {
             }
         }
 
+        if (!acted && partyThreat?.actor) {
+            const target = partyThreat.actor;
+            const targetId = target.fetchId();
+
+            if (session.currentTargetId !== targetId) {
+                session.currentTargetId = targetId;
+                bot.select({ id: targetId });
+                recordRoleDecision(session, bot, assistActionForRole(role), 'party_under_attack', {
+                    targetId,
+                    targetType: partyThreat.type,
+                    protectedId: partyThreat.targetId
+                });
+                if (Math.random() < 0.20) {
+                    BotAI.say(session, "I'm helping the party!");
+                }
+            }
+
+            if (!isBusy(bot)) {
+                if (partyThreat.type === 'player') {
+                    BotAI.executePvPCombat(session, bot, target, Generics);
+                } else {
+                    BotAI.executeCombat(session, bot, target, Generics);
+                }
+            }
+            acted = true;
+        }
+
         if (!acted) {
             const playerTargetId = player.fetchDestId();
             if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
+                acted = true;
                 World.fetchUser(playerTargetId).then((user) => {
                     const targetIsTeammate = user.session && (
                         user.session === playerSession ||
@@ -498,7 +550,7 @@ module.exports = {
                         to: { locX: session.stayLocation.locX, locY: session.stayLocation.locY, locZ: session.stayLocation.locZ }
                     });
                 }
-            } else if (distance > 250) {
+            } else if (distance > FOLLOW_RUN_DISTANCE) {
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
                 }

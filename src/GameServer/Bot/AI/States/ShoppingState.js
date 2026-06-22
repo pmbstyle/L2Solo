@@ -9,6 +9,15 @@ function formatAdena(value) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
+        if (session.partyCompanion === true && session.followPlayerSession) {
+            session.plan = 'following';
+            session.shoppingTarget = undefined;
+            session.shoppingDoneAnnounced = false;
+            session.preShopLocation = undefined;
+            BotAI.say(session, "Shopping can wait. Staying with the party.");
+            return;
+        }
+
         const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
 
         if (!session.shoppingTarget) {
@@ -122,11 +131,13 @@ module.exports = {
 
         setTimeout(() => {
             BotAI.say(session, "All stocked up! Returning to the hunting spot.");
-            session.plan = 'hunting';
+            session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
 
-            if (session.preShopLocation) {
+            if (session.partyCompanion === true && session.followPlayerSession) {
+                session.preShopLocation = undefined;
+            } else if (session.preShopLocation) {
                 Generics.teleportTo(session, bot, session.preShopLocation);
                 session.preShopLocation = undefined;
             } else if (session.initialSpawnCoord) {

@@ -8,7 +8,8 @@ function logPlayerChat(session, data) {
 
     const name = session.actor.fetchName ? session.actor.fetchName() : session.accountId || 'unknown';
     const text = String(data.text || '').replace(/\s+/g, ' ').slice(0, 180);
-    console.info('PlayerChat :: %s kind=%s text="%s"', name, data.kind, text);
+    const target = data.target ? ` target="${String(data.target).slice(0, 40)}"` : '';
+    console.info('PlayerChat :: %s kind=%s%s text="%s"', name, data.kind, target, text);
 }
 
 function speak(session, buffer) {
@@ -18,14 +19,66 @@ function speak(session, buffer) {
         .readS()  // Text
         .readD(); // Kind
 
+    if (packet.data[1] === 2) {
+        packet.readS(); // Target name for private tell
+    }
+
     consume(session, {
         text: packet.data[0],
         kind: packet.data[1],
+        target: packet.data[2],
     });
+}
+
+function findOnlineUserByName(name) {
+    const lookup = String(name || '').trim().toLowerCase();
+    if (!lookup) return null;
+
+    const World = invoke('GameServer/World/World');
+    return World.user.sessions.find((user) => (
+        user?.actor &&
+        user.actor.fetchIsOnline?.() === true &&
+        !String(user.accountId || '').startsWith('bot_') &&
+        user.actor.fetchName().toLowerCase() === lookup
+    )) || null;
+}
+
+function handlePrivateTell(session, data) {
+    const World = invoke('GameServer/World/World');
+    const target = String(data.target || '').trim();
+    const text = String(data.text || '').trim();
+
+    if (!target || !text) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const botSession = BotManager.findSessionByName(target);
+    if (botSession) {
+        session.dataSendToMe(ServerResponse.speak(session.actor, data));
+        World.messageBotByName(session, session.actor, target, text, 'client_tell');
+        return;
+    }
+
+    const targetSession = findOnlineUserByName(target);
+    if (!targetSession) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
+    const packet = ServerResponse.speak(session.actor, data);
+    targetSession.dataSendToMe(packet);
+    session.dataSendToMe(packet);
 }
 
 function consume(session, data) {
     logPlayerChat(session, data);
+
+    if (data.kind === 2) {
+        handlePrivateTell(session, data);
+        return;
+    }
 
     if (data.kind === 0) { // TODO: Remove, temp solution
         if (data.text === '.admin') {

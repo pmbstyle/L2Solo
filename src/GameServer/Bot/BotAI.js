@@ -3,6 +3,7 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -355,6 +356,8 @@ const BotAI = {
         if (!session.plan) {
             session.plan = 'hunting';
         }
+
+        BotEquipmentUpgrade.applyBestUpgrades(session);
 
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];

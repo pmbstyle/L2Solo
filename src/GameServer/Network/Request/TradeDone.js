@@ -3,6 +3,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
+const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const BotManager = invoke('GameServer/Bot/BotManager');
 
 function describeMovedItems(items) {
@@ -42,6 +43,7 @@ async function tradeDone(session, buffer) {
             session,
             lootRequest ? `Thanks, that's exactly what I needed: ${detail}.` : `Thanks for the trade. I got ${detail}.`
         );
+        BotEquipmentUpgrade.applyBestUpgrades(result.partnerSession, { force: true });
 
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
         session.dataSendToMe(ServerResponse.tradeDone(true));
