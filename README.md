@@ -1,18 +1,18 @@
-<img  alt="Lineage2 Solo" src="https://github.com/user-attachments/assets/99b34112-87c3-40c9-97eb-e82cb3864c3d" />
+<img alt="Lineage2 Solo" src="https://github.com/user-attachments/assets/2dc69d67-5a2d-4270-8806-6f66a79b2334" />
 
 
 
-# Lineage2 Solo (C4 Protocol)
+# Lineage2 Solo (C4: Scions of Destiny)
 
-Old-school Lineage 2 solo play, locally in a live world.
+Old-school Lineage 2 solo play, locally in a live world with over 1500 population.
 
-L2Solo is a local-first Lineage II server emulator using a C4 client protocol, tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
+L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and SimPlayers with AI that make the server feel alive.
 
-It is not trying to be a retail-complete private server. The current focus is bot behavior, party companions, town trade loops, and observability while keeping the server easy to run locally.
+Work in progress. Playable.
 
 ## Game Checklist
 
-L2Solo is judged by what the world feels like in the client, not by how many server subsystems exist under the hood.
+L2Solo is judged by what the world feels like to the player, not by how many server subsystems exist under the hood.
 
 ### Playable Now
 
@@ -55,12 +55,6 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 - [ ] Crafting, enchanting, warehouse, freight, and deeper item economy systems.
 - [ ] Clan/social systems and longer-term player identity.
 - [ ] Safer public-server hardening. Right now this is a local development shard, not a production private server.
-
-### Known Rough Edges
-
-- Some geodata regions may be missing locally; the server falls back and logs warnings.
-- C4 client packet compatibility is fragile. Store presentation, party UI, and unusual packet changes need live client testing.
-- The database bootstrap preserves existing data by default. Resets are explicit.
 
 ## Requirements
 
