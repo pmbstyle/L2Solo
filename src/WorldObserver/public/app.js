@@ -48,10 +48,15 @@ const DEFAULT_TILES = {
     blockPx: 900,
     x: { min: 16, max: 26, mid: 20 },
     y: { min: 10, max: 25, mid: 18 },
-    hiddenRanges: [
-        { x1: 16, x2: 16, y1: 11, y2: 13 },
-        { x1: 17, x2: 22, y1: 10, y2: 13 },
-        { x1: 26, x2: 26, y1: 10, y2: 25 }
+    missingTiles: [
+        '17_14',
+        '18_13',
+        '26_13',
+        '26_15',
+        '26_16',
+        '26_17',
+        '26_18',
+        '26_19'
     ]
 };
 
@@ -208,7 +213,9 @@ function renderGrid() {
 function renderTiles() {
     const tiles = mapMeta();
     const hiddenKey = JSON.stringify(tiles.hiddenRanges || []);
-    const tileKey = `${tiles.rawBaseUrl}|${tiles.x.min}-${tiles.x.max}|${tiles.y.min}-${tiles.y.max}|${tiles.blockPx}|${hiddenKey}`;
+    const missingTiles = new Set(tiles.missingTiles || []);
+    const missingKey = JSON.stringify(tiles.missingTiles || []);
+    const tileKey = `${tiles.rawBaseUrl}|${tiles.x.min}-${tiles.x.max}|${tiles.y.min}-${tiles.y.max}|${tiles.blockPx}|${hiddenKey}|${missingKey}`;
     if (state.renderedTileKey === tileKey) return;
 
     els.tileLayer.innerHTML = '';
@@ -218,7 +225,7 @@ function renderTiles() {
             const hidden = (tiles.hiddenRanges || []).some((range) => (
                 x >= range.x1 && x <= range.x2 && y >= range.y1 && y <= range.y2
             ));
-            if (hidden) continue;
+            if (hidden || missingTiles.has(`${x}_${y}`)) continue;
 
             const image = svgEl('image', {
                 href: `${tiles.rawBaseUrl}/${x}_${y}.jpg`,

@@ -25,21 +25,26 @@ const MAP_TILES = {
     blockPx: 900,
     x: { min: 16, max: 26, mid: 20 },
     y: { min: 10, max: 25, mid: 18 },
-    hiddenRanges: [
-        { x1: 16, x2: 16, y1: 11, y2: 13 },
-        { x1: 17, x2: 22, y1: 10, y2: 13 },
-        { x1: 26, x2: 26, y1: 10, y2: 25 }
+    missingTiles: [
+        '17_14',
+        '18_13',
+        '26_13',
+        '26_15',
+        '26_16',
+        '26_17',
+        '26_18',
+        '26_19'
     ],
     alternatives: [
         {
-            name: 'L2J Aden',
-            url: 'https://l2j.ru/freya/img/maps/c2_aden.jpg',
-            note: 'clean poster map; needs manual coordinate calibration'
+            name: 'L2J C4 common map',
+            url: 'https://l2j.ru/img/maps/c4_all.jpg',
+            note: 'large C4 poster map; needs manual coordinate calibration'
         },
         {
-            name: 'L2J Elmore',
-            url: 'https://l2j.ru/freya/img/maps/c2_elmore.jpg',
-            note: 'clean poster map; separate northern continent image'
+            name: 'PMfun Aden World Map C4 (big)',
+            url: 'https://lineage.pmfun.com/data/maps/world/Aden%20World%20Map%20C4%20%28big%29.jpg',
+            note: 'large C4 poster map; useful as a visual reference'
         }
     ]
 };
@@ -51,7 +56,11 @@ const REGION_LABELS = [
     { name: 'Dion', locX: 15664, locY: 142979, kind: 'town' },
     { name: 'Giran', locX: 83400, locY: 147943, kind: 'town' },
     { name: 'Oren', locX: 82960, locY: 53177, kind: 'town' },
+    { name: 'Aden', locX: 146785, locY: 25813, kind: 'town' },
+    { name: "Hunter's Village", locX: 117110, locY: 76883, kind: 'town' },
     { name: 'Heine', locX: 111395, locY: 219000, kind: 'town' },
+    { name: 'Goddard', locX: 147725, locY: -56517, kind: 'town' },
+    { name: 'Rune', locX: 43835, locY: -47749, kind: 'town' },
     { name: 'Elven Village', locX: 46934, locY: 51467, kind: 'starter' },
     { name: 'Dark Elven Village', locX: 9745, locY: 15606, kind: 'starter' },
     { name: 'Orc Village', locX: -44133, locY: -113911, kind: 'starter' },
