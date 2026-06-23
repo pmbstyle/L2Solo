@@ -1,10 +1,10 @@
-# C2 HTML UI Kit
+# Client HTML UI Kit
 
 `HtmlKit.js` is the shared builder for custom `NpcHtml` windows.
 
 ## Rules
 
-- Keep payloads small. The C2 client crashed around large stress pages, so prefer short rows and paged views.
+- Keep payloads small. Legacy clients can crash around large stress pages, so prefer short rows and paged views.
 - Use links for navigation, refresh, close, and dense item actions.
 - Use bitmap buttons only for short primary actions near the top of a page.
 - Avoid native checkbox UI for primary controls. Redraws can jump scroll position.

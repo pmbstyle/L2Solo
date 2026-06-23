@@ -1,10 +1,10 @@
 const SendPacket = invoke('Packet/Send');
 
-function askForTeamUp(id, distribution) {
+function askForTeamUp(name, distribution) {
     const packet = new SendPacket(0x39);
 
     packet
-        .writeD(id)
+        .writeS(name)
         .writeD(distribution);
 
     return packet.fetchBuffer();

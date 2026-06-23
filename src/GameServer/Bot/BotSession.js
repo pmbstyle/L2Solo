@@ -26,6 +26,9 @@ class BotSession {
         const packet = this.packData(data);
         World.fetchVisibleUsers(this, creature).forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function' && user.accountId !== this.accountId) {
+                if (user.recordOutboundPacket) {
+                    user.recordOutboundPacket(data);
+                }
                 user.socket.write(packet);
             }
         });

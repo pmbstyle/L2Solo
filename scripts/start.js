@@ -11,12 +11,19 @@ const isWindows = process.platform === 'win32';
 const host = process.env.L2NODE_LAUNCHER_HOST || '127.0.0.1';
 const port = Number(process.env.L2NODE_LAUNCHER_PORT || 8090);
 const maxLogLines = 80;
+const logsDir = path.join(rootDir, 'tmp', 'logs');
+const latestLogPath = path.join(logsDir, 'latest-server.log');
+const previousLogPath = path.join(logsDir, 'previous-server.log');
+const debugFlagNames = [
+    'L2NODE_PACKET_TRACE'
+];
 
 const state = {
     phase: 'stopped',
     child: null,
     startedAt: null,
     lastExit: null,
+    logFilePath: latestLogPath,
     logs: []
 };
 
@@ -26,6 +33,10 @@ function log(message) {
 
 function warn(message) {
     console.warn(`Launcher  :: ${message}`);
+}
+
+function stripAnsi(value) {
+    return String(value).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
 function parseIni(raw) {
@@ -100,12 +111,51 @@ function launcherUrl() {
     return `http://${host}:${port}/`;
 }
 
+function prepareLogFile() {
+    fs.mkdirSync(logsDir, { recursive: true });
+
+    if (fs.existsSync(latestLogPath)) {
+        fs.copyFileSync(latestLogPath, previousLogPath);
+    }
+
+    const header = [
+        `L2Solo launcher server log`,
+        `Started: ${new Date().toISOString()}`,
+        `Command: ${process.execPath} scripts/run-server.js`,
+        `Working directory: ${rootDir}`,
+        `Debug flags: ${debugFlagSummary()}`,
+        ''
+    ].join('\n');
+
+    fs.writeFileSync(latestLogPath, header, 'utf8');
+    state.logFilePath = latestLogPath;
+}
+
+function debugFlagSummary() {
+    const enabled = debugFlagNames
+        .map((name) => `${name}=${process.env[name] ?? ''}`)
+        .filter((entry) => !entry.endsWith('='));
+
+    return enabled.length > 0 ? enabled.join(', ') : 'none';
+}
+
+function appendLogFile(source, line) {
+    try {
+        fs.mkdirSync(logsDir, { recursive: true });
+        fs.appendFileSync(latestLogPath, `[${new Date().toISOString()}] [${source}] ${stripAnsi(line)}\n`, 'utf8');
+    } catch (err) {
+        warn(`could not write server log: ${err.message}`);
+    }
+}
+
 function appendLog(source, chunk) {
     String(chunk)
         .split(/\r?\n/)
         .map((line) => line.trimEnd())
         .filter(Boolean)
         .forEach((line) => {
+            appendLogFile(source, line);
+
             if (line.includes('GameServer :: successful init')) {
                 state.phase = 'running';
             }
@@ -131,6 +181,8 @@ function publicState() {
         lastExit: state.lastExit,
         mapUrl: observerUrl(),
         launcherUrl: launcherUrl(),
+        logUrl: `${launcherUrl()}api/log`,
+        logFilePath: state.logFilePath,
         logs: state.logs.slice(-40)
     };
 }
@@ -144,6 +196,7 @@ function startServer() {
     state.startedAt = Date.now();
     state.lastExit = null;
     state.logs = [];
+    prepareLogFile();
 
     const child = spawn(process.execPath, [path.join('scripts', 'run-server.js')], {
         cwd: rootDir,
@@ -305,7 +358,7 @@ function sendHtml(response) {
 
         .controls {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 10px;
         }
 
@@ -355,6 +408,7 @@ function sendHtml(response) {
 
         .value {
             text-align: right;
+            overflow-wrap: anywhere;
         }
 
         pre {
@@ -402,12 +456,14 @@ function sendHtml(response) {
             <button id="start" class="primary" type="button">Start</button>
             <button id="stop" type="button">Stop</button>
             <button id="map" type="button">Open Map</button>
+            <button id="logFile" type="button">Open Log</button>
         </section>
 
         <section class="meta">
             <div class="row"><span class="label">Server</span><span id="server" class="value">Stopped</span></div>
             <div class="row"><span class="label">PID</span><span id="pid" class="value">-</span></div>
             <div class="row"><span class="label">Uptime</span><span id="uptime" class="value">-</span></div>
+            <div class="row"><span class="label">Log</span><span id="logPath" class="value">-</span></div>
         </section>
 
         <pre id="log">Launcher ready.</pre>
@@ -419,11 +475,14 @@ function sendHtml(response) {
         const serverEl = document.getElementById('server');
         const pidEl = document.getElementById('pid');
         const uptimeEl = document.getElementById('uptime');
+        const logPathEl = document.getElementById('logPath');
         const logEl = document.getElementById('log');
         const startButton = document.getElementById('start');
         const stopButton = document.getElementById('stop');
         const mapButton = document.getElementById('map');
+        const logFileButton = document.getElementById('logFile');
         let mapUrl = '';
+        let logUrl = '';
 
         function titleCase(value) {
             return value.charAt(0).toUpperCase() + value.slice(1);
@@ -452,6 +511,8 @@ function sendHtml(response) {
             serverEl.textContent = titleCase(phase);
             pidEl.textContent = data.pid || '-';
             uptimeEl.textContent = formatUptime(data.uptimeMs);
+            logPathEl.textContent = data.logFilePath || '-';
+            logUrl = data.logUrl || '';
             startButton.disabled = phase === 'starting' || phase === 'running' || phase === 'stopping';
             stopButton.disabled = phase === 'stopped' || phase === 'stopping';
             logEl.textContent = data.logs && data.logs.length
@@ -480,6 +541,10 @@ function sendHtml(response) {
             if (mapUrl) window.open(mapUrl, '_blank', 'noopener');
         });
 
+        logFileButton.addEventListener('click', () => {
+            if (logUrl) window.open(logUrl, '_blank', 'noopener');
+        });
+
         refresh();
         setInterval(refresh, 1500);
     </script>
@@ -497,6 +562,23 @@ async function route(request, response) {
 
     if (request.method === 'GET' && url.pathname === '/api/status') {
         sendJson(response, publicState());
+        return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/log') {
+        const logPath = fs.existsSync(latestLogPath) ? latestLogPath : previousLogPath;
+
+        if (!fs.existsSync(logPath)) {
+            response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            response.end('No server log has been written yet.');
+            return;
+        }
+
+        response.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store'
+        });
+        fs.createReadStream(logPath).pipe(response);
         return;
     }
 

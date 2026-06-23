@@ -1,4 +1,4 @@
-// C2 HTML is not browser HTML. Keep payloads small, prefer links for navigation,
+// Client HTML is not browser HTML. Keep payloads small, prefer links for navigation,
 // and use bitmap buttons only for short primary actions near the top of a page.
 const HtmlKit = {
     WIDTH: 270,

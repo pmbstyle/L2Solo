@@ -48,6 +48,7 @@ const Opcodes = {
         table[0x63] = ClientRequest.questList;
         table[0x6d] = ClientRequest.restartPoint;
         table[0xaa] = ClientRequest.userCommand;
+        table[0xcd] = ClientRequest.showMap;
 
         table[0x57] = (session) => { invoke(path.actor).adminPanel(session, session.actor); }; // Board
         table[0x9d] = () => {}; // Skill Cool Time, not needed?
@@ -55,6 +56,7 @@ const Opcodes = {
         table[0xc1] = () => {}; // Macro
         table[0x4a] = () => {}; // StartRotating
         table[0x4b] = () => {}; // FinishRotating
+        table[0xd0] = () => {}; // Multi-purpose extended request root in later clients.
 
         return table;
     })()

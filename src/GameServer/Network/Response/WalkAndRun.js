@@ -6,7 +6,7 @@ function walkAndRun(creatureId, movement) {
     packet
         .writeD(creatureId)
         .writeD(movement)
-        .writeD(0x00); // C2?
+        .writeD(0x00); // Unknown legacy tail.
 
     return packet.fetchBuffer();
 }

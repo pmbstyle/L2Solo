@@ -1,7 +1,7 @@
 {
     "name": "nodel2",
     "version": "0.0.7",
-    "description": "L2 Chronicle 2 server emulator in NodeJS",
+    "description": "L2 C4 protocol server emulator in NodeJS",
     "author": "Dennis Koluris",
     "scripts": {
         "start": "node scripts/start.js",
@@ -17,6 +17,7 @@
         "like-sql": "^0.1.1",
         "mariadb": "^3.1.1",
         "objcrush": "^1.0.1",
-        "random-point-in-shape": "^1.0.0"
+        "random-point-in-shape": "^1.0.0",
+        "rsa-raw": "^1.0.3"
     }
 }

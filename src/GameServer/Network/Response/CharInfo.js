@@ -2,6 +2,16 @@ const SendPacket = invoke('Packet/Send');
 
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
+    const pvpFlag = actor.fetchPvpFlag();
+    const karma = actor.fetchKarma();
+    const runSpeed = actor.fetchCollectiveRunSpd();
+    const walkSpeed = actor.fetchCollectiveWalkSpd();
+    const swimSpeed = actor.fetchSwim && actor.fetchSwim();
+    const swimRunSpeed = swimSpeed || runSpeed;
+    const swimWalkSpeed = swimSpeed || walkSpeed;
+    const privateStoreType = actor.fetchPrivateStoreType();
+    const standingState = actor.state.fetchSeated() ? 0x00 : 0x01;
+    const title = actor.fetchTitle();
 
     packet
         .writeD(actor.fetchLocX())
@@ -13,7 +23,7 @@ function charInfo(actor) {
         .writeD(actor.fetchRace())
         .writeD(actor.fetchSex())
         .writeD(actor.fetchClassId())
-        .writeD(0x00)  // ?
+        .writeD(0x00)  // Hair all
         .writeD(actor.backpack.fetchPaperdollSelfId( 6)) // Head
         .writeD(actor.backpack.fetchPaperdollSelfId( 7)) // Weapon
         .writeD(actor.backpack.fetchPaperdollSelfId( 8)) // Shield
@@ -22,21 +32,22 @@ function charInfo(actor) {
         .writeD(actor.backpack.fetchPaperdollSelfId(11)) // Pants
         .writeD(actor.backpack.fetchPaperdollSelfId(12)) // Feet
         .writeD(0x00)  // Back
-        .writeD(actor.backpack.fetchPaperdollSelfId(14)) // Dual weapon
+        .writeD(actor.backpack.fetchPaperdollSelfId( 7)) // Two-hand weapon display
         .writeD(0x00)  // Hair
-        .writeD(0x00)  // ?
+        .writeD(pvpFlag)  // Purple = 0x01
+        .writeD(karma)
         .writeD(actor.fetchCollectiveCastSpd())
         .writeD(actor.fetchCollectiveAtkSpd())
-        .writeD(actor.fetchPvpFlag())  // Purple = 0x01
-        .writeD(actor.fetchKarma())
-        .writeD(actor.fetchCollectiveRunSpd())
-        .writeD(actor.fetchCollectiveWalkSpd())
-        .writeD(actor.fetchSwim())
-        .writeD(actor.fetchSwim())
-        .writeD(0x00)  // ?
-        .writeD(0x00)  // ?
-        .writeD(0x00)  // ?
-        .writeD(0x00)  // ?
+        .writeD(pvpFlag)  // Purple = 0x01
+        .writeD(karma)
+        .writeD(runSpeed)
+        .writeD(walkSpeed)
+        .writeD(swimRunSpeed)
+        .writeD(swimWalkSpeed)
+        .writeD(runSpeed)   // Floating run speed
+        .writeD(walkSpeed)  // Floating walk speed
+        .writeD(runSpeed)   // Flying run speed
+        .writeD(walkSpeed)  // Flying walk speed
         .writeF(1.0)   // Move multiplier
         .writeF(actor.fetchAtkSpdMultiplier())
         .writeF(actor.fetchRadius())
@@ -44,26 +55,41 @@ function charInfo(actor) {
         .writeD(actor.fetchHair())
         .writeD(actor.fetchHairColor())
         .writeD(actor.fetchFace())
-        .writeS(actor.fetchTitle())
+        .writeS(title)
         .writeD(0x00)  // Clan Id
         .writeD(0x00)  // Clan Crest Id
         .writeD(0x00)  // Ally Id
         .writeD(0x00)  // Ally Crest Id
         .writeD(0x00)  // ?
-        .writeC(actor.state.fetchSeated() ? 0x00 : 0x01)  // Sitting = 0, Standing = 1
+        .writeC(standingState)  // Sitting = 0, Standing = 1
         .writeC(0x01)  // Running = 1
         .writeC(0x00)  // Combat = 1
         .writeC(0x00)  // Dead = 1
         .writeC(0x00)  // Invisible = 1
         .writeC(0x00)  // Mount
-        .writeC(actor.fetchPrivateStoreType())  // Sells
+        .writeC(privateStoreType)  // Private store type
         .writeH(0x00)  // Cubic count
         .writeC(0x00)  // Party matching
         .writeD(0x00)  // Abnormal effect
         .writeC(0x00)  // Recommendations left
-        .writeH(0x00); // Recommendations won
+        .writeH(0x00)  // Recommendations won
+        .writeD(0x00)  // Mount NPC ID
+        .writeD(actor.fetchClassId())
+        .writeD(0x00)  // Special effects
+        .writeC(0x00)  // Enchant effect
+        .writeC(0x00)  // Team circle color
+        .writeD(0x00)  // Clan large crest ID
+        .writeC(0x00)  // Noble
+        .writeC(0x00)  // Hero
+        .writeC(0x00)  // Fishing
+        .writeD(0x00)  // Fishing X
+        .writeD(0x00)  // Fishing Y
+        .writeD(0x00)  // Fishing Z
+        .writeD(0xffffff); // Name color
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:titleLen=${title.length}`;
+    return buffer;
 }
 
 module.exports = charInfo;
