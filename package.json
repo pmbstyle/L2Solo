@@ -6,6 +6,8 @@
     "scripts": {
         "start": "node scripts/start.js",
         "NodeL2": "node --openssl-legacy-provider src/NodeL2",
+        "check": "node scripts/check-syntax.js",
+        "test": "node scripts/run-tests.js",
         "wipe:bots": "node scripts/wipe-bots.js"
     },
     "dependencies": {
