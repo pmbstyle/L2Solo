@@ -35,7 +35,7 @@ function overview() {
         Html.line(),
         Html.keyValueRows([
             ['Packet', 'NpcHtmlMessage 0x0f'],
-            ['Target', 'C2-safe NPC dialog subset'],
+            ['Target', 'Legacy-safe NPC dialog subset'],
             ['Width', '270 px test baseline']
         ]),
         Html.section('Quick Probes', Html.columns([
@@ -43,7 +43,7 @@ function overview() {
             Html.cell(Html.button('Inputs', 'ui-test page inputs')),
             Html.cell(Html.button('Images', 'ui-test page images'))
         ])),
-        Html.section('Observed C2 Notes',
+        Html.section('Observed Client Notes',
             `${Html.font('OK:', Html.COLOR.ok)} tables, links, edit, combobox, multiedit, common item/skill icons.<br1>` +
             `${Html.font('Mixed:', Html.COLOR.warn)} button textures vary; checkbox texture is usable only in small sizes.<br1>` +
             `${Html.font('UX:', Html.COLOR.warn)} server redraw after deep clicks scrolls the window upward.<br1>` +
@@ -62,15 +62,15 @@ function buttons(state) {
 
     return [
         `${Html.font('Button Texture Matrix', Html.COLOR.title)}<br1>`,
-        `${Html.font('Use compact labels; C2 button text rendering is fixed and cramped.', Html.COLOR.muted)}<br>`,
-        Html.section('C2/CH3 Candidates', Html.table([
+        `${Html.font('Use compact labels; legacy button text rendering is fixed and cramped.', Html.COLOR.muted)}<br>`,
+        Html.section('Legacy Candidates', Html.table([
             Html.row([
                 Html.cell(Html.button('Default', 'ui-test press default', { width: 75 })),
                 Html.cell(Html.button('CH3', 'ui-test press ch3', { width: 75, fore: 'L2UI_ch3.Btn1_normal', back: 'L2UI_ch3.Btn1_normalOn' })),
                 Html.cell(Html.button('Big', 'ui-test press big', { width: 90, fore: 'L2UI_ch3.BigButton3', back: 'L2UI_ch3.BigButton3_over' }))
             ])
         ])),
-        Html.section('Maybe Missing On C2', Html.table([
+        Html.section('Maybe Missing On Legacy Clients', Html.table([
             Html.row([
                 Html.cell(Html.button('CT1', 'ui-test press ct1', { width: 75, fore: 'L2UI_CT1.Button_DF', back: 'L2UI_CT1.Button_DF_Down' })),
                 Html.cell(Html.button('', 'ui-test press checkbox-on', { width: 18, height: 18, fore: 'L2UI.CheckBox_checked', back: 'L2UI.CheckBox_checked' })),
@@ -224,7 +224,7 @@ function titleProbe(state) {
 
     return [
         `${Html.font('Window Title Probe', Html.COLOR.title)}<br1>`,
-        `${Html.font('If the outer frame still says Chat, C2 ignores <title> for this dialog.', Html.COLOR.muted)}<br>`,
+        `${Html.font('If the outer frame still says Chat, the client ignores <title> for this dialog.', Html.COLOR.muted)}<br>`,
         Html.keyValueRows([
             ['HTML title', Html.font(titleMode || '<empty>', Html.COLOR.link)],
             ['Frame title', 'Check the top bar manually']
@@ -245,7 +245,7 @@ function stress(parts) {
     const requested = parseInt(parts[2], 10);
     const rows = Number.isFinite(requested) ? Math.max(10, Math.min(requested, 25)) : 10;
     let body = `${Html.font('Payload Size Probe', Html.COLOR.title)}<br1>`;
-    body += `${Html.font('60 rows crashed the C2 client. This page now caps at 25.', Html.COLOR.muted)}<br>`;
+    body += `${Html.font('60 rows crashed a legacy client. This page now caps at 25.', Html.COLOR.muted)}<br>`;
     body += Html.columns([
         Html.cell(Html.button('10 rows', 'ui-test stress 10', { width: 75 })),
         Html.cell(Html.button('18 rows', 'ui-test stress 18', { width: 75 })),

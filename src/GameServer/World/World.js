@@ -81,7 +81,20 @@ const World = {
     fetchUser(id) {
         return new Promise((success, fail) => {
             let user = this.user.sessions.find((ob) => id === ob.actor?.fetchId());
-            return user.actor ? success(user.actor) : fail();
+            return user?.actor ? success(user.actor) : fail(new Error('user_not_found'));
+        });
+    },
+
+    fetchUserByName(name) {
+        const lookup = String(name || '').trim().toLowerCase();
+        return new Promise((success, fail) => {
+            if (!lookup) {
+                fail(new Error('user_not_found'));
+                return;
+            }
+
+            let user = this.user.sessions.find((ob) => ob.actor?.fetchName?.().toLowerCase() === lookup);
+            return user?.actor ? success(user.actor) : fail(new Error('user_not_found'));
         });
     },
 
@@ -92,15 +105,25 @@ const World = {
 
     askForTeamUp(session, actor, data) {
         ConsoleText.transmit(session, ConsoleText.caption.waitForResponse);
-        this.fetchUser(data.id).then((user) => {
+        const request = data.name
+            ? this.fetchUserByName(data.name)
+            : this.fetchUser(data.id);
+
+        request.then((user) => {
             const targetSession = user.session;
             const targetIsBot = targetSession && (targetSession.constructor.name === 'BotSession' || (targetSession.accountId && targetSession.accountId.startsWith('bot_')));
 
             if (targetIsBot) {
                 this.inviteBotCompanion(session, actor, targetSession, data.distribution, 'invite');
             } else {
-                user.session.dataSendToMe(ServerResponse.askForTeamUp(actor.fetchId(), data.distribution));
+                user.session.dataSendToMe(ServerResponse.askForTeamUp(actor.fetchName(), data.distribution));
             }
+        }).catch(() => {
+            if (data.name) {
+                return this.inviteBotByName(session, actor, data.name, data.distribution, 'invite');
+            }
+
+            session.dataSendToMe(ServerResponse.actionFailed());
         });
     },
 

@@ -17,7 +17,7 @@ function updateEnvironment(session, actor) {
             session.dataSendToMe(ServerResponse.relationChanged(user.actor));
 
             // Merchant bots already expose their store state through CharInfo.
-            // Sending a custom 0x8c text for them is client-unstable on C2.
+            // Sending a custom 0x8c text here is unstable on legacy clients.
             const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
             const isMerchantBot = user.constructor.name === 'BotSession' && user.plan === 'merchant';
             if (!isMerchantBot && visibleStoreType === 1) {

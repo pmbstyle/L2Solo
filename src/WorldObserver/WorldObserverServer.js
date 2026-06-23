@@ -32,12 +32,12 @@ const MAP_TILES = {
     ],
     alternatives: [
         {
-            name: 'L2J C2 Aden',
+            name: 'L2J Aden',
             url: 'https://l2j.ru/freya/img/maps/c2_aden.jpg',
             note: 'clean poster map; needs manual coordinate calibration'
         },
         {
-            name: 'L2J C2 Elmore',
+            name: 'L2J Elmore',
             url: 'https://l2j.ru/freya/img/maps/c2_elmore.jpg',
             note: 'clean poster map; separate northern continent image'
         }

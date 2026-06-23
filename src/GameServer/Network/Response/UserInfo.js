@@ -30,12 +30,12 @@ function userInfo(actor) {
         .writeD(actor.fetchMaxLoad())
         .writeD(0x28); // ?
 
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 16; i++) {
             packet
                 .writeD(actor.backpack.fetchPaperdollId(i));
         }
 
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 16; i++) {
             packet
                 .writeD(actor.backpack.fetchPaperdollSelfId(i));
         }
@@ -93,7 +93,23 @@ function userInfo(actor) {
         .writeD(0x00)  // ?
         .writeD(0x00)  // ?
         .writeH(actor.fetchRecRemain())
-        .writeH(actor.fetchEvalScore());
+        .writeH(actor.fetchEvalScore())
+        .writeD(0x00)  // Mount ID
+        .writeH(0x00)  // Inventory limit
+        .writeD(actor.fetchClassId())
+        .writeD(0x00)  // Special effects
+        .writeD(actor.fetchMaxCp())
+        .writeD(actor.fetchCp())
+        .writeC(0x00)  // Mounted
+        .writeC(0x00)  // Team circle color
+        .writeD(0x00)  // Clan large crest ID
+        .writeC(0x00)  // Noble
+        .writeC(0x00)  // Hero
+        .writeC(0x00)  // Fishing
+        .writeD(0x00)  // Fishing X
+        .writeD(0x00)  // Fishing Y
+        .writeD(0x00)  // Fishing Z
+        .writeD(0xffffff); // Name color
 
     return packet.fetchBuffer();
 }

@@ -42,12 +42,19 @@ class ReceivePacket {
     }
 
     readS() {
-        const index = this.buffer.indexOf(Buffer.alloc(2), this.offset) + 1;
-        if (index > 0) {
+        let index = -1;
+        for (let i = this.offset; i + 1 < this.buffer.length; i += 2) {
+            if (this.buffer[i] === 0x00 && this.buffer[i + 1] === 0x00) {
+                index = i;
+                break;
+            }
+        }
+
+        if (index >= 0) {
             this.data.push(utils.stripNull(
-                this.buffer.slice(this.offset, index)
+                this.buffer.toString('ucs2', this.offset, index)
             ));
-            this.offset += index + 1;
+            this.offset = index + 2;
         }
         return this;
     }

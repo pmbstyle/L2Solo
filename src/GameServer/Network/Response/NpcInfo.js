@@ -16,12 +16,12 @@ function npcInfo(npc) {
         .writeD(npc.fetchCollectiveAtkSpd())
         .writeD(npc.fetchCollectiveRunSpd())
         .writeD(npc.fetchCollectiveWalkSpd())
-        .writeD(0x00)  // Swim
-        .writeD(0x00)  // Swim
-        .writeD(100)   // ?
-        .writeD(100)   // ?
-        .writeD(100)   // ?
-        .writeD(100)   // ?
+        .writeD(npc.fetchCollectiveRunSpd())  // Swim run speed
+        .writeD(npc.fetchCollectiveWalkSpd()) // Swim walk speed
+        .writeD(npc.fetchCollectiveRunSpd())  // Floating run speed
+        .writeD(npc.fetchCollectiveWalkSpd()) // Floating walk speed
+        .writeD(npc.fetchCollectiveRunSpd())  // Flying run speed
+        .writeD(npc.fetchCollectiveWalkSpd()) // Flying walk speed
         .writeF(1.1)   // Move multiplier
         .writeF(npc.fetchAtkSpdMultiplier())
         .writeF(npc.fetchRadius())
@@ -44,9 +44,15 @@ function npcInfo(npc) {
         .writeD(0x00)  // Clan crest
         .writeD(0x00)  // Ally Id
         .writeD(0x00)  // Ally crest
-        .writeC(0x00); // ?
+        .writeC(0x00)  // ?
+        .writeC(0x00)  // Team circle color
+        .writeF(npc.fetchRadius())
+        .writeF(npc.fetchSize())
+        .writeD(0x00); // C4 collision/team tail
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `npc=${npc.fetchId()}:${npc.fetchDispSelfId()}:${npc.fetchName()}`;
+    return buffer;
 }
 
 module.exports = npcInfo;

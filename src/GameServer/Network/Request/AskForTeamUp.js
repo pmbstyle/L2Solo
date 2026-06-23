@@ -5,11 +5,11 @@ function askForTeamUp(session, buffer) {
     const packet = new ReceivePacket(buffer);
 
     packet
-        .readD()  // Id
+        .readS()  // Name
         .readD(); // Distribution
 
     consume(session, {
-                  id: packet.data[0],
+                name: packet.data[0],
         distribution: packet.data[1],
     });
 }

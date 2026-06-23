@@ -5,6 +5,8 @@ function partySmallWindowUpdate(member) {
 
     const id = member.fetchId();
     const name = member.fetchName();
+    const cp = Math.round(member.fetchCp());
+    const maxCp = Math.round(member.fetchMaxCp());
     const hp = Math.round(member.fetchHp());
     const maxHp = Math.round(member.fetchMaxHp());
     const mp = Math.round(member.fetchMp());
@@ -12,10 +14,11 @@ function partySmallWindowUpdate(member) {
     const lvl = member.fetchLevel();
     const classId = member.fetchClassId();
 
-    // Format is "dSdddddd"
     packet
         .writeD(id)
         .writeS(name)
+        .writeD(cp)
+        .writeD(maxCp)
         .writeD(hp)
         .writeD(maxHp)
         .writeD(mp)

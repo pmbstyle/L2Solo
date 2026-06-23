@@ -1,7 +1,7 @@
 const SendPacket = invoke('Packet/Send');
 
 function partySmallWindowDelete(memberId, name) {
-    const packet = new SendPacket(0x50);
+    const packet = new SendPacket(0x51);
 
     packet
         .writeD(memberId)

@@ -130,6 +130,14 @@ class ActorModel extends CreatureModel {
         return this.model.maxLoad;
     }
 
+    fetchCp() {
+        return this.model.cp || 0;
+    }
+
+    fetchMaxCp() {
+        return this.model.maxCp || 0;
+    }
+
     fetchSwim() {
         return this.model.swim;
     }

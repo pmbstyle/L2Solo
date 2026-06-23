@@ -1,12 +1,12 @@
-<img  alt="Lineage2 C2 Solo" src="https://github.com/user-attachments/assets/99b34112-87c3-40c9-97eb-e82cb3864c3d" />
+<img  alt="Lineage2 Solo" src="https://github.com/user-attachments/assets/99b34112-87c3-40c9-97eb-e82cb3864c3d" />
 
 
 
-# Lineage2 Solo (Chronicle 2)
+# Lineage2 Solo (C4 Protocol)
 
-Old-school Lineage 2 C2, but play solo, locally in a live world!
+Old-school Lineage 2 solo play, locally in a live world.
 
-L2Solo is a local-first Lineage II Chronicle 2 server emulator tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
+L2Solo is a local-first Lineage II server emulator using a C4 client protocol, tuned for a solo MMO experiment: one real player, a live world, and SimPlayer bots that make the server feel populated.
 
 It is not trying to be a retail-complete private server. The current focus is bot behavior, party companions, town trade loops, and observability while keeping the server easy to run locally.
 
@@ -16,17 +16,17 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 
 ### Playable Now
 
-- [x] Log in with a Chronicle 2 client and enter the world locally.
+- [x] Log in with a C4 client and enter the world locally.
 - [x] Create and persist characters, inventory, skills, shortcuts, position, and basic progression.
 - [x] Move through the world, target NPCs, fight monsters, take damage, die, revive, and continue playing.
 - [x] Pick up drops, use basic items, equip and unequip gear, use soulshots, and sell junk with `.sell`.
-- [x] Buy and sell through NPC shops with city and NPC-specific C2 assortments, prices, and Giran luxury exchanges.
+- [x] Buy and sell through NPC shops with city and NPC-specific assortments, prices, and Giran luxury exchanges.
 - [x] Explore populated starter areas with persistent SimPlayer characters instead of bots teleporting around the player.
 - [x] See race-appropriate starter populations around each available race start, with a small number of visitor characters for MMO flavor.
 - [x] Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat.
 - [x] Find available SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel.
 - [x] Inspect companion, social memory, and bot state through `.botstatus`, companion `Status` links, and server-side status logs.
-- [x] Trade directly with targeted SimPlayers through the native C2 trade window, with `.trade` as a fallback while testing.
+- [x] Trade directly with targeted SimPlayers through the native trade window, with `.trade` as a fallback while testing.
 - [x] See companion bots ask for useful non-junk drops, then satisfy the request by handing the item over through the real trade flow.
 - [x] Use basic dwarf Spoil/Sweeper mechanics: spoil a living monster, kill it, then sweep the marked corpse for spoil-table rewards.
 - [x] Run with role-aware companions: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range.
@@ -59,16 +59,16 @@ L2Solo is judged by what the world feels like in the client, not by how many ser
 ### Known Rough Edges
 
 - Some geodata regions may be missing locally; the server falls back and logs warnings.
-- C2 client packet compatibility is fragile. Store presentation, party UI, and unusual packet changes need live client testing.
+- C4 client packet compatibility is fragile. Store presentation, party UI, and unusual packet changes need live client testing.
 - The database bootstrap preserves existing data by default. Resets are explicit.
 
 ## Requirements
 
 - Node.js LTS.
 - Docker, unless you run MariaDB yourself.
-- A Lineage II C2 Splendor client using protocol 485.
+- A Lineage II C4 client using protocol 656.
 
-Client reference: [LINEAGE II C2 Splendor Client](https://drive.google.com/file/d/1NVA4XY3bC2xD_Jejggo_b0fuMFChsZqe/view?usp=sharing)
+Client reference: use a clean Lineage II C4 client matching protocol 656.
 
 ## Quick Start
 
@@ -82,6 +82,8 @@ That command will:
 - show the current server state;
 - start and stop the server from the launcher;
 - open the world observer map when the server is running.
+
+The launcher keeps the latest server session log at `tmp/logs/latest-server.log` and rotates the prior one to `tmp/logs/previous-server.log`.
 
 Press `Start` in the launcher to run the normal server bootstrap. That start action will:
 
@@ -191,7 +193,7 @@ NPC shop assortments are NPC-specific: each trader HTML opens the active NPC's o
 
 ## Bot Trade and Loot Etiquette
 
-Player-to-bot trade uses the normal C2 trade flow. Target a SimPlayer and use the native trade action, or type `.trade` / `/trade` while testing. The server opens the trade window, accepts offered items, moves them into the bot inventory, and records the interaction in social memory.
+Player-to-bot trade uses the normal client trade flow. Target a SimPlayer and use the native trade action, or type `.trade` / `/trade` while testing. The server opens the trade window, accepts offered items, moves them into the bot inventory, and records the interaction in social memory.
 
 Grouped companion bots also watch notable drops. They ignore Adena and obvious junk, score item usefulness by role, throttle requests, and ask only when a nearby companion has a reason to want the item. If the player trades the requested item to that bot before the request expires, the handoff records `gave_useful_loot`; ignored requests are only remembered when the bot is still an active nearby companion.
 

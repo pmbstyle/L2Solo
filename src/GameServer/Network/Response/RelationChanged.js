@@ -10,7 +10,9 @@ function relationChanged(actor) {
         .writeD(actor.fetchKarma())
         .writeD(actor.fetchPvpFlag());
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `actor=${actor.fetchId()}:${actor.fetchName()}`;
+    return buffer;
 }
 
 module.exports = relationChanged;
