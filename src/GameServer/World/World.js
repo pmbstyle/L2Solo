@@ -394,7 +394,7 @@ const World = {
     npcTalk         : invoke(path.world + 'NpcTalk'),
     npcTalkResponse : invoke(path.world + 'NpcTalkResponse'),
 
-    fetchItem       : invoke(path.world + 'fetchItem'),
+    fetchItem       : invoke(path.world + 'FetchItem'),
     spawnItem       : invoke(path.world + 'SpawnItem'),
     pickupItem      : invoke(path.world + 'PickupItem'),
     purchaseItem    : invoke(path.world + 'PurchaseItem'),

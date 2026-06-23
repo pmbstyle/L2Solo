@@ -7,6 +7,10 @@ const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
 const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
 const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
+const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
+const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
+const Database = invoke('Database');
+const DataCache = invoke('GameServer/DataCache');
 
 class FakeState {
     constructor() {
@@ -27,6 +31,7 @@ class FakeState {
     fetchCasts() { return this.casts; }
     fetchAnimated() { return this.animated; }
     fetchPickinUp() { return false; }
+    setCombats() {}
     isBlocked() { return this.hits || this.casts || this.animated || this.seated; }
 }
 
@@ -41,6 +46,8 @@ function fakeActor(id, loc = {}) {
         maxHp: loc.maxHp || 100,
         mp: loc.mp || 100,
         maxMp: loc.maxMp || 100,
+        exp: loc.exp || 0,
+        sp: loc.sp || 0,
         classId: loc.classId || 0,
         level: loc.level || 26,
         karma: loc.karma || 0,
@@ -56,6 +63,7 @@ function fakeActor(id, loc = {}) {
         moves: [],
         fetchId() { return this.id; },
         fetchName() { return this.name; },
+        fetchHead() { return 0; },
         fetchLocX() { return this.locX; },
         fetchLocY() { return this.locY; },
         fetchLocZ() { return this.locZ; },
@@ -63,8 +71,50 @@ function fakeActor(id, loc = {}) {
         fetchMaxHp() { return this.maxHp; },
         fetchMp() { return this.mp; },
         fetchMaxMp() { return this.maxMp; },
+        fetchExp() { return this.exp; },
+        fetchSp() { return this.sp; },
+        setExp(data) { this.exp = data; },
+        setSp(data) { this.sp = data; },
+        setExpSp(exp, sp) { this.exp = exp; this.sp = sp; },
         fetchClassId() { return this.classId; },
+        fetchRace() { return 0; },
+        fetchSex() { return 0; },
         fetchLevel() { return this.level; },
+        fetchStr() { return 10; },
+        fetchDex() { return 10; },
+        fetchCon() { return 10; },
+        fetchInt() { return 10; },
+        fetchWit() { return 10; },
+        fetchMen() { return 10; },
+        fetchMaxLoad() { return 1000; },
+        fetchCollectivePAtk() { return 10; },
+        fetchCollectiveAtkSpd() { return 300; },
+        fetchCollectivePDef() { return 10; },
+        fetchCollectiveEvasion() { return 10; },
+        fetchCollectiveAccur() { return 10; },
+        fetchCollectiveCritical() { return 4; },
+        fetchCollectiveMAtk() { return 10; },
+        fetchCollectiveCastSpd() { return 300; },
+        fetchCollectiveMDef() { return 10; },
+        fetchCollectiveRunSpd() { return 120; },
+        fetchCollectiveWalkSpd() { return 80; },
+        fetchSwim() { return 0; },
+        fetchAtkSpdMultiplier() { return 1; },
+        fetchRadius() { return 8; },
+        fetchSize() { return 23; },
+        fetchHair() { return 0; },
+        fetchHairColor() { return 0; },
+        fetchFace() { return 0; },
+        fetchIsGM() { return 0; },
+        fetchTitle() { return ''; },
+        fetchPrivateStoreType() { return 0; },
+        fetchIsCrafter() { return 0; },
+        fetchPk() { return 0; },
+        fetchPvp() { return 0; },
+        fetchRecRemain() { return 0; },
+        fetchEvalScore() { return 0; },
+        fetchMaxCp() { return 0; },
+        fetchCp() { return 0; },
         fetchKarma() { return this.karma; },
         fetchPvpFlag() { return this.pvpFlag; },
         fetchDestId() { return this.destId; },
@@ -75,6 +125,11 @@ function fakeActor(id, loc = {}) {
         select(data) { this.destId = data.id; },
         unselect() { this.destId = undefined; },
         statusUpdateVitals() {},
+        backpack: {
+            fetchTotalLoad: () => 0,
+            fetchPaperdollId: () => 0,
+            fetchPaperdollSelfId: () => 0
+        },
         skillset: { fetchSkill: () => null },
         automation: { abortAll() {}, replenishVitals() {} }
     };
@@ -96,10 +151,16 @@ const originalUsers = World.user;
 const originalFetchUser = World.fetchUser;
 const originalFetchNpc = World.fetchNpc;
 const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const originalNpcs = World.npc;
+const originalRemoveNpc = World.removeNpc;
+const originalUpdateCharacterExperience = Database.updateCharacterExperience;
+const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
 
 try {
     Math.random = () => 1;
+    Database.updateCharacterExperience = () => {};
+    DataCache.experience = Array.from({ length: 82 }, (_, index) => index * 1000000);
 
     const leader = fakeActor(2000001, { locX: 0, locY: 0 });
     const leaderSession = fakeSession('player_test', leader);
@@ -130,6 +191,53 @@ try {
 
     assert.strictEqual(movingBot.moves.length, 0, 'companion should not restart follow movement while the existing waypoint is still useful');
     assert(movingSession.lastFollowMoveHeldAt, 'companion should record that a follow retarget was held');
+
+    leader.state.setSeated(true);
+    const campBot = fakeActor(2000014, { locX: 80, locY: 0 });
+    const campSession = fakeSession('bot_camp_follow', campBot);
+    campSession.followPlayerSession = leaderSession;
+    campSession.partyCompanion = true;
+    campSession.plan = 'following';
+    World.user = { sessions: [leaderSession, campSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(campSession, campBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(campBot.state.fetchSeated(), true, 'companion should sit down when party leader sits nearby');
+    assert.strictEqual(campSession.currentTargetId, undefined, 'sitting with leader should clear stale target');
+
+    const farCampBot = fakeActor(2000015, { locX: 900, locY: 0 });
+    const farCampSession = fakeSession('bot_far_camp_follow', farCampBot);
+    farCampSession.followPlayerSession = leaderSession;
+    farCampSession.partyCompanion = true;
+    farCampSession.plan = 'following';
+    World.user = { sessions: [leaderSession, farCampSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(farCampSession, farCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(farCampBot.moves.length, 1, 'far companion should move closer before sitting with leader');
+    assert.strictEqual(farCampBot.state.fetchSeated(), false, 'far companion should not sit before reaching leader');
+
+    leader.state.setSeated(false);
+    campBot.state.setSeated(true);
+
+    FollowingState.tick(campSession, campBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(campBot.state.fetchSeated(), false, 'fully recovered companion should stand when leader stands');
+
+    const recoveringCampBot = fakeActor(2000016, { locX: 80, locY: 0, hp: 70, maxHp: 100 });
+    recoveringCampBot.state.setSeated(true);
+    const recoveringCampSession = fakeSession('bot_recovering_camp_follow', recoveringCampBot);
+    recoveringCampSession.followPlayerSession = leaderSession;
+    recoveringCampSession.partyCompanion = true;
+    recoveringCampSession.plan = 'following';
+    World.user = { sessions: [leaderSession, recoveringCampSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(recoveringCampSession, recoveringCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(recoveringCampBot.state.fetchSeated(), true, 'recovering companion should stay seated when leader stands without combat');
 
     const unknownMoveBot = fakeActor(2000008, { locX: 500, locY: 0 });
     unknownMoveBot.state.setTowards('move');
@@ -167,13 +275,47 @@ try {
     assert.strictEqual(restingBot.state.fetchSeated(), false, 'resting companion should stand before assisting');
     assert.strictEqual(restingSession.currentTargetId, 1001, 'resting companion should remember the threat target');
 
+    leader.destId = 1005;
+    const targetWakeBot = fakeActor(2000017, { locX: 0, locY: 0, hp: 60, maxHp: 100 });
+    targetWakeBot.state.setSeated(true);
+    const targetWakeSession = fakeSession('bot_target_wake', targetWakeBot);
+    targetWakeSession.followPlayerSession = leaderSession;
+    targetWakeSession.partyCompanion = true;
+    targetWakeSession.plan = 'resting';
+    const wakeTargetNpc = {
+        fetchId: () => 1005,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 120,
+        fetchLocY: () => 0
+    };
+    World.user = { sessions: [leaderSession, targetWakeSession] };
+    World.npc = { spawns: [wakeTargetNpc] };
+    World.fetchNpcsInRadius = () => [];
+
+    RestingState.tick(targetWakeSession, targetWakeBot, {}, { say() {} });
+
+    assert.strictEqual(targetWakeSession.plan, 'following', 'resting companion should wake when leader attacks a target');
+    assert.strictEqual(targetWakeBot.state.fetchSeated(), false, 'resting companion should stand when leader attacks');
+    assert.strictEqual(targetWakeSession.currentTargetId, 1005, 'resting companion should remember leader target');
+
     leader.destId = 1003;
     const assistingBot = fakeActor(2000006, { locX: 500, locY: 0 });
     const assistingSession = fakeSession('bot_assisting', assistingBot);
     assistingSession.followPlayerSession = leaderSession;
     assistingSession.partyCompanion = true;
     assistingSession.plan = 'following';
+    const leaderTargetNpc = {
+        fetchId: () => 1003,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 800,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'next mob'
+    };
     World.user = { sessions: [leaderSession, assistingSession] };
+    World.npc = { spawns: [leaderTargetNpc] };
     World.fetchNpcsInRadius = () => [];
     World.fetchUser = () => ({
         then: () => ({
@@ -184,15 +326,7 @@ try {
     });
     World.fetchNpc = () => ({
         then: (handler) => {
-            handler({
-                fetchId: () => 1003,
-                fetchAttackable: () => true,
-                isDead: () => false,
-                fetchLocX: () => 800,
-                fetchLocY: () => 0,
-                fetchLocZ: () => 0,
-                fetchName: () => 'next mob'
-            });
+            handler(leaderTargetNpc);
             return { catch() {} };
         }
     });
@@ -205,6 +339,219 @@ try {
 
     assert.strictEqual(assistingBot.moves.length, 0, 'companion should not run back to leader while leader has a next target');
     assert.strictEqual(assistingSession.currentTargetId, 1003, 'companion should switch directly to the leader target');
+
+    leader.destId = 1009;
+    const staleTargetBot = fakeActor(2000023, { locX: 900, locY: 0 });
+    const staleTargetSession = fakeSession('bot_stale_target_follow', staleTargetBot);
+    staleTargetSession.followPlayerSession = leaderSession;
+    staleTargetSession.partyCompanion = true;
+    staleTargetSession.plan = 'following';
+    staleTargetSession.currentTargetId = 1009;
+    World.user = { sessions: [leaderSession, staleTargetSession] };
+    World.npc = { spawns: [{
+        fetchId: () => 1009,
+        fetchAttackable: () => true,
+        isDead: () => true,
+        fetchLocX: () => 800,
+        fetchLocY: () => 0
+    }] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(staleTargetSession, staleTargetBot, {}, {
+        say() {},
+        executeCombat() {},
+        executePvPCombat() {}
+    });
+
+    assert.strictEqual(staleTargetSession.currentTargetId, undefined, 'dead leader target should not keep companion in assist mode');
+    assert.strictEqual(staleTargetBot.moves.length, 1, 'companion should resume following after stale combat target dies');
+
+    leader.destId = undefined;
+    const threatAssistBot = fakeActor(2000018, { locX: 120, locY: 0 });
+    const threatAssistSession = fakeSession('bot_threat_assist', threatAssistBot);
+    threatAssistSession.followPlayerSession = leaderSession;
+    threatAssistSession.partyCompanion = true;
+    threatAssistSession.plan = 'following';
+    let assistedNpcId = null;
+    World.user = { sessions: [leaderSession, threatAssistSession] };
+    World.fetchNpcsInRadius = () => [{
+        fetchId: () => 1006,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => leader.fetchId(),
+        fetchLocX: () => 80,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'angry mob'
+    }];
+
+    FollowingState.tick(threatAssistSession, threatAssistBot, {}, {
+        say() {},
+        executeCombat(session, bot, npc) { assistedNpcId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+
+    assert.strictEqual(threatAssistSession.currentTargetId, 1006, 'companion with no target should acquire mob attacking leader');
+    assert.strictEqual(assistedNpcId, 1006, 'companion should assist against mob attacking leader');
+
+    const hiddenAggroNpc = {
+        fetchId: () => 1007,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => undefined,
+        fetchLocX: () => 80,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'hidden aggro mob'
+    };
+    const hiddenAggroBot = fakeActor(2000021, { locX: 120, locY: 0 });
+    const hiddenAggroSession = fakeSession('bot_hidden_aggro_assist', hiddenAggroBot);
+    hiddenAggroSession.followPlayerSession = leaderSession;
+    hiddenAggroSession.partyCompanion = true;
+    hiddenAggroSession.plan = 'following';
+    let hiddenAggroAssistId = null;
+    leaderSession.incomingThreatId = hiddenAggroNpc.fetchId();
+    leaderSession.incomingThreatAt = Date.now();
+    World.user = { sessions: [leaderSession, hiddenAggroSession] };
+    World.npc = { spawns: [hiddenAggroNpc] };
+    World.fetchNpcsInRadius = () => [hiddenAggroNpc];
+
+    FollowingState.tick(hiddenAggroSession, hiddenAggroBot, {}, {
+        say() {},
+        executeCombat(session, bot, npc) { hiddenAggroAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+
+    assert.strictEqual(hiddenAggroSession.currentTargetId, hiddenAggroNpc.fetchId(), 'companion should acquire recent incoming mob even without npc dest target');
+    assert.strictEqual(hiddenAggroAssistId, hiddenAggroNpc.fetchId(), 'companion should assist against recent incoming mob');
+    leaderSession.incomingThreatId = undefined;
+    leaderSession.incomingThreatAt = undefined;
+
+    const selfDefenseNpc = {
+        fetchId: () => 1008,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => undefined,
+        fetchLocX: () => 120,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'bot attacker'
+    };
+    const selfDefenseBot = fakeActor(2000022, { locX: 120, locY: 0 });
+    const selfDefenseSession = fakeSession('bot_self_defense_assist', selfDefenseBot);
+    selfDefenseSession.followPlayerSession = leaderSession;
+    selfDefenseSession.partyCompanion = true;
+    selfDefenseSession.plan = 'following';
+    selfDefenseSession.incomingThreatId = selfDefenseNpc.fetchId();
+    selfDefenseSession.incomingThreatAt = Date.now();
+    let selfDefenseAssistId = null;
+    World.user = { sessions: [leaderSession, selfDefenseSession] };
+    World.npc = { spawns: [selfDefenseNpc] };
+    World.fetchNpcsInRadius = () => [selfDefenseNpc];
+
+    FollowingState.tick(selfDefenseSession, selfDefenseBot, {}, {
+        say() {},
+        executeCombat(session, bot, npc) { selfDefenseAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+
+    assert.strictEqual(selfDefenseSession.currentTargetId, selfDefenseNpc.fetchId(), 'companion should defend itself against recent incoming mob');
+    assert.strictEqual(selfDefenseAssistId, selfDefenseNpc.fetchId(), 'companion should fight back when mob hits the bot');
+
+    const hostileBot = fakeActor(2000019, { locX: 140, locY: 0, pvpFlag: 1, destId: leader.fetchId() });
+    const hostileBotSession = fakeSession('bot_hostile_attacker', hostileBot);
+    const pvpAssistBot = fakeActor(2000020, { locX: 120, locY: 0 });
+    const pvpAssistSession = fakeSession('bot_pvp_threat_assist', pvpAssistBot);
+    pvpAssistSession.followPlayerSession = leaderSession;
+    pvpAssistSession.partyCompanion = true;
+    pvpAssistSession.plan = 'following';
+    let assistedPlayerId = null;
+    World.user = { sessions: [leaderSession, pvpAssistSession, hostileBotSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(pvpAssistSession, pvpAssistBot, {}, {
+        say() {},
+        executeCombat() {},
+        executePvPCombat(session, bot, target) { assistedPlayerId = target.fetchId(); }
+    });
+
+    assert.strictEqual(pvpAssistSession.currentTargetId, hostileBot.fetchId(), 'companion with no target should acquire bot attacking leader');
+    assert.strictEqual(assistedPlayerId, hostileBot.fetchId(), 'companion should assist against bot attacking leader');
+
+    const rewardLeader = fakeActor(2000010, { locX: 0, locY: 0 });
+    const rewardLeaderSession = fakeSession('player_reward', rewardLeader);
+    const rewardBot = fakeActor(2000011, { locX: 80, locY: 0 });
+    const rewardBotSession = fakeSession('bot_reward', rewardBot);
+    rewardBotSession.followPlayerSession = rewardLeaderSession;
+    rewardBotSession.partyCompanion = true;
+    rewardBotSession.plan = 'hunting';
+    World.user = { sessions: [rewardLeaderSession, rewardBotSession] };
+    World.removeNpc = () => {};
+
+    NpcDied(rewardBotSession, rewardBot, {
+        fetchId: () => 1004,
+        fetchLocX: () => 60,
+        fetchLocY: () => 0,
+        fetchAcquiredExp: () => 100,
+        fetchRewardSp: () => 20
+    });
+
+    assert.strictEqual(rewardLeader.fetchExp(), 50, 'leader should receive split exp when companion kills nearby mob');
+    assert.strictEqual(rewardLeader.fetchSp(), 10, 'leader should receive split sp when companion kills nearby mob');
+    assert.strictEqual(rewardBot.fetchExp(), 50, 'companion should keep its split exp from the kill');
+    assert.strictEqual(rewardBot.fetchSp(), 10, 'companion should keep its split sp from the kill');
+
+    const toolBot = fakeActor(2000012, { locX: 0, locY: 0 });
+    const toolSession = fakeSession('bot_tool_companion', toolBot);
+    toolSession.followPlayerSession = leaderSession;
+    toolSession.partyCompanion = true;
+    toolSession.plan = 'following';
+    World.user = { sessions: [leaderSession, toolSession] };
+
+    const huntResult = BotAgentTools.execute(toolSession, {
+        action: 'hunt',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: '',
+        spotId: '',
+        buffType: '',
+        reason: 'player_order'
+    }, []);
+
+    assert.strictEqual(huntResult.reason, 'party_hunt', 'hunt tool should keep companion in party hunt mode');
+    assert.strictEqual(toolSession.partyCompanion, true, 'hunt tool should not clear party companion flag');
+    assert.strictEqual(toolSession.followPlayerSession, leaderSession, 'hunt tool should not detach the party leader');
+    assert.strictEqual(toolSession.plan, 'hunting', 'hunt tool should let companion hunt locally with party');
+
+    const moveResult = BotAgentTools.execute(toolSession, {
+        action: 'move_to_spot',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: '',
+        spotId: 'somewhere_else',
+        buffType: '',
+        reason: 'no_mobs'
+    }, []);
+
+    assert.strictEqual(moveResult.reason, 'party_companion_stays_with_party', 'companion should reject autonomous spot moves');
+    assert.strictEqual(toolBot.moves.length, 0, 'move_to_spot should not move a companion away from the party');
+    assert.strictEqual(toolSession.followPlayerSession, leaderSession, 'move_to_spot should keep party leader attached');
+
+    toolBot.state.setSeated(true);
+    toolSession.plan = 'resting';
+    const restResult = BotAgentTools.execute(toolSession, {
+        action: 'rest',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: '',
+        spotId: '',
+        buffType: '',
+        reason: 'player_order'
+    }, []);
+
+    assert.strictEqual(restResult.reason, 'already_recovered', 'rest tool should not keep a fully recovered bot seated');
+    assert.strictEqual(toolBot.state.fetchSeated(), false, 'fully recovered companion should stand');
+    assert.strictEqual(toolSession.plan, 'following', 'fully recovered companion should return to following');
 
     Math.random = () => 0;
     const huntingCompanion = fakeActor(2000004, { locX: 0, locY: 0 });
@@ -233,6 +580,25 @@ try {
 
     assert.notStrictEqual(huntingSession.plan, 'shopping', 'party companion should not start random loot shopping');
 
+    const emptyHuntBot = fakeActor(2000013, { locX: 0, locY: 0 });
+    const emptyHuntSession = fakeSession('bot_empty_party_hunt', emptyHuntBot);
+    emptyHuntSession.followPlayerSession = leaderSession;
+    emptyHuntSession.partyCompanion = true;
+    emptyHuntSession.plan = 'hunting';
+    emptyHuntSession.currentSpot = { id: 'test-spot', name: 'Test Spot' };
+    World.user = { sessions: [leaderSession, emptyHuntSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    HuntingState.tick(emptyHuntSession, emptyHuntBot, {}, {
+        say() {},
+        getRandomPhrase: () => 'target found',
+        executeCombat() {}
+    });
+
+    assert.strictEqual(emptyHuntSession.plan, 'following', 'party hunter with no nearby mobs should return to leader');
+    assert.strictEqual(emptyHuntSession.lastDecision.reason, 'party_hunt_no_targets', 'party hunter should not request a new spot');
+    assert.strictEqual(emptyHuntBot.moves.length, 0, 'party hunter should not walk to another spot when mobs are scarce');
+
     const shoppingCompanion = fakeActor(2000005, { locX: 0, locY: 0 });
     const shoppingSession = fakeSession('bot_shopping_companion', shoppingCompanion);
     shoppingSession.followPlayerSession = leaderSession;
@@ -250,6 +616,10 @@ try {
     World.fetchUser = originalFetchUser;
     World.fetchNpc = originalFetchNpc;
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+    World.npc = originalNpcs;
+    World.removeNpc = originalRemoveNpc;
+    Database.updateCharacterExperience = originalUpdateCharacterExperience;
+    DataCache.experience = originalExperience;
 }
 
 console.log('Party companion rest/follow regression checks passed');

@@ -10,7 +10,17 @@ const blockY = 114;
 
 const buffer = GeodataEngine.getRegionBuffer(22, 24);
 const offsetIndex = GeodataEngine.index_22_24;
+if (!buffer || !offsetIndex) {
+    console.log("SKIP: raw geodata region 22_24 is not available");
+    process.exit(0);
+}
+
 const blockOffset = offsetIndex[(blockX * 256) + blockY];
+if (blockOffset === undefined) {
+    console.log(`SKIP: raw geodata block ${blockX},${blockY} is not indexed`);
+    process.exit(0);
+}
+
 const type = buffer.readUInt8(blockOffset);
 
 console.log(`Block ${blockX},${blockY} offset: ${blockOffset}, Type: ${type}`);

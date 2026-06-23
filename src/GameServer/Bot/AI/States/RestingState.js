@@ -41,18 +41,25 @@ module.exports = {
 
             const distance = point(bot).distance(point(player));
             const threat = PartyAwareness.findThreatTargetingParty(playerSession);
+            const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
+            const leaderSeated = player.state?.fetchSeated?.() === true;
+            const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
+            const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
+            const recovered = hpRatio >= 0.95 && mpRatio >= 0.95;
 
-            if (threat || distance > REST_FOLLOW_WAKE_DISTANCE) {
+            if (threat || leaderTargetId || distance > REST_FOLLOW_WAKE_DISTANCE || (!leaderSeated && recovered)) {
                 session.plan = 'following';
-                session.currentTargetId = threat?.actor?.fetchId?.();
+                session.currentTargetId = threat?.actor?.fetchId?.() || leaderTargetId || undefined;
                 session.townGossip = false;
                 standUp(session, bot);
                 recordWakeDecision(
                     session,
                     bot,
-                    threat ? 'assist_party' : 'follow_leader',
-                    threat ? 'party_under_attack' : 'leader_moved',
-                    threat ? { targetId: session.currentTargetId, protectedId: threat.targetId } : { distance: Math.round(distance) }
+                    threat || leaderTargetId ? 'assist_party' : 'follow_leader',
+                    threat ? 'party_under_attack' : (leaderTargetId ? 'leader_target' : (distance > REST_FOLLOW_WAKE_DISTANCE ? 'leader_moved' : 'leader_stood_ready')),
+                    threat
+                        ? { targetId: session.currentTargetId, protectedId: threat.targetId }
+                        : { targetId: session.currentTargetId || null, distance: Math.round(distance) }
                 );
                 return;
             }
