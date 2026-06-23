@@ -1,5 +1,6 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -201,7 +202,12 @@ const BotStatus = {
             movement: {
                 moving: !!session.moveTimer || !!bot.state.fetchTowards(),
                 towards: bot.state.fetchTowards() || false,
-                stuckTicks: session.stuckTicks || 0
+                stuckTicks: session.stuckTicks || 0,
+                followTarget: session.lastFollowMoveTarget || null,
+                followHeldAt: session.lastFollowMoveHeldAt || null,
+                townRoute: session.townRoutePlan || null,
+                pathfinding: session.lastPathfinding || null,
+                pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute)
             },
             buffs: BotBuffs.snapshot(bot),
             timers: {
@@ -231,10 +237,11 @@ const BotStatus = {
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
         const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
+        const path = status.movement?.pathfinding?.townRoute?.changedTarget ? ' path=town' : '';
         const buffs = status.buffs?.needsRefresh ? ' buffs=refresh' : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${buffs}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${path}${buffs}${blockers}`;
     }
 };
 

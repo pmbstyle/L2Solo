@@ -14,17 +14,21 @@ function moveTo(session, actor, coords) {
     // Abort scheduled movement, user redirected the actor
     actor.automation.abortAll(actor);
 
+    const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
+    const requestedTo = { ...coords.to };
+    let townRouteDiagnostics = null;
+
     // Dynamic city exit/entrance routing middleware for bots
-    if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+    if (isBot) {
         const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-        const routedTo = TownPathfinder.route(actor, coords.from, coords.to);
+        const routeResult = TownPathfinder.routeWithSession(session, actor, coords.from, coords.to);
+        const routedTo = routeResult.to;
+        townRouteDiagnostics = routeResult.diagnostics;
         
         coords.to.locX = routedTo.locX;
         coords.to.locY = routedTo.locY;
         coords.to.locZ = routedTo.locZ;
     }
-
-    const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
 
     if (!isBot) {
         // Normal player movement
@@ -71,6 +75,15 @@ function moveTo(session, actor, coords) {
             const snappedTo = { ...coords.to };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
             actor.setLocXYZ(snappedTo);
+            session.lastPathfinding = {
+                requestedTo,
+                routedTo: { ...coords.to },
+                townRoute: townRouteDiagnostics,
+                pathLength: 0,
+                lowLodWarp: true,
+                distanceToPlayer,
+                at: Date.now()
+            };
             return;
         }
 
@@ -82,6 +95,15 @@ function moveTo(session, actor, coords) {
         if (!path || path.length <= 1) {
             path = [{ locX: endX, locY: endY, locZ: endZ }];
         }
+        session.lastPathfinding = {
+            requestedTo,
+            routedTo: { ...coords.to },
+            townRoute: townRouteDiagnostics,
+            pathLength: path.length,
+            lowLodWarp: false,
+            distanceToPlayer,
+            at: Date.now()
+        };
 
         const moveAlongPath = (index) => {
             if (index >= path.length) {

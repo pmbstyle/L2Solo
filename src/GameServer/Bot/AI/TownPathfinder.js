@@ -155,6 +155,19 @@ function distance(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
+function cloneLoc(loc) {
+    return { locX: loc.locX, locY: loc.locY, locZ: loc.locZ };
+}
+
+function sameLoc(a, b) {
+    return !!a && !!b && a.locX === b.locX && a.locY === b.locY && a.locZ === b.locZ;
+}
+
+function locLabel(loc) {
+    if (!loc) return 'none';
+    return `${loc.locX},${loc.locY},${loc.locZ}`;
+}
+
 function pointInPolygon(loc, polygon) {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -223,10 +236,20 @@ function boundaryNodeToward(town, loc) {
 function chooseNextTownStep(town, from, finalTarget) {
     let bestNode = null;
     let bestScore = Infinity;
+    const currentTargetDistance = distance(from, finalTarget);
+
+    if (currentTargetDistance <= 1500) {
+        return finalTarget;
+    }
+
     for (const node of town.nodes) {
         const fromDistance = distance(from, node);
         const targetDistance = distance(finalTarget, node);
         if (fromDistance <= 350 || targetDistance <= 350) {
+            continue;
+        }
+
+        if (targetDistance >= currentTargetDistance - 100) {
             continue;
         }
 
@@ -241,11 +264,41 @@ function chooseNextTownStep(town, from, finalTarget) {
         return bestNode;
     }
 
-    if (distance(from, town.center) > 700 && distance(finalTarget, town.center) > 700) {
+    if (
+        distance(from, town.center) > 700 &&
+        distance(finalTarget, town.center) > 700 &&
+        distance(town.center, finalTarget) < currentTargetDistance - 100
+    ) {
         return town.center;
     }
 
     return finalTarget;
+}
+
+function createDiagnostics(from, to, routedTo, fromTown, toTown, routePlan, reason) {
+    return {
+        from: cloneLoc(from),
+        to: cloneLoc(to),
+        routedTo: cloneLoc(routedTo),
+        fromTown: fromTown ? fromTown.name : null,
+        toTown: toTown ? toTown.name : null,
+        changedTarget: !sameLoc(routedTo, to),
+        plan: routePlan ? {
+            townName: routePlan.townName,
+            finalTarget: cloneLoc(routePlan.finalTarget),
+            waypoint: cloneLoc(routePlan.waypoint),
+            createdAt: routePlan.createdAt,
+            updatedAt: routePlan.updatedAt,
+            reason: routePlan.reason
+        } : null,
+        reason
+    };
+}
+
+function clearSessionRoute(session) {
+    if (session) {
+        session.townRoutePlan = null;
+    }
 }
 
 const TownPathfinder = {
@@ -257,6 +310,60 @@ const TownPathfinder = {
 
     getTown(loc) {
         return findTown(loc);
+    },
+
+    routeWithSession(session, actor, from, to) {
+        const now = Date.now();
+        const existing = session ? session.townRoutePlan : null;
+        if (existing) {
+            const targetShift = distance(existing.finalTarget, to);
+            const waypointDistance = distance(from, existing.waypoint);
+            const expired = now - existing.createdAt > 30000;
+
+            if (!expired && targetShift <= 900 && waypointDistance > 250) {
+                existing.updatedAt = now;
+                const fromTown = findTown(from);
+                const toTown = findTown(to);
+                return {
+                    to: cloneLoc(existing.waypoint),
+                    diagnostics: createDiagnostics(from, to, existing.waypoint, fromTown, toTown, existing, 'sticky_waypoint')
+                };
+            }
+
+            clearSessionRoute(session);
+        }
+
+        const fromTown = findTown(from);
+        const toTown = findTown(to);
+        const routedTo = this.route(actor, from, to);
+        const usesTownRoute = !sameLoc(routedTo, to);
+        let routePlan = null;
+
+        if (session && usesTownRoute) {
+            routePlan = {
+                townName: (fromTown || toTown)?.name || null,
+                finalTarget: cloneLoc(to),
+                waypoint: cloneLoc(routedTo),
+                createdAt: now,
+                updatedAt: now,
+                reason: 'new_waypoint'
+            };
+            session.townRoutePlan = routePlan;
+        }
+
+        return {
+            to: routedTo,
+            diagnostics: createDiagnostics(from, to, routedTo, fromTown, toTown, routePlan, usesTownRoute ? 'new_waypoint' : 'direct')
+        };
+    },
+
+    describeDiagnostics(diagnostics) {
+        if (!diagnostics) return 'no path diagnostics';
+        const route = `${locLabel(diagnostics.from)} -> ${locLabel(diagnostics.to)}`;
+        const town = `${diagnostics.fromTown || 'field'} -> ${diagnostics.toTown || 'field'}`;
+        const routed = diagnostics.changedTarget ? ` via ${locLabel(diagnostics.routedTo)}` : '';
+        const plan = diagnostics.plan ? ` plan=${diagnostics.plan.townName || 'town'}/${diagnostics.reason}` : ` reason=${diagnostics.reason}`;
+        return `${town}: ${route}${routed}${plan}`;
     },
 
     route(actor, from, to) {
@@ -277,6 +384,9 @@ const TownPathfinder = {
         if (fromTown && !toTown) {
             const exit = boundaryNodeToward(fromTown, to);
             const staging = nearestNode(fromTown, exit);
+            if (distance(from, exit) <= 350) {
+                return to;
+            }
             if (distance(from, staging) > 350 && distance(exit, staging) > 350) {
                 return staging;
             }
