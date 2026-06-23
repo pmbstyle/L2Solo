@@ -1,4 +1,4 @@
-<img alt="Lineage2 Solo" src="https://github.com/user-attachments/assets/2dc69d67-5a2d-4270-8806-6f66a79b2334" />
+<img alt="LineageII Solo" src="https://github.com/user-attachments/assets/a78e7191-80a1-4411-937e-e5e7de69ff4b" />
 
 
 
