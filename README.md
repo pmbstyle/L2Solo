@@ -2,7 +2,7 @@
 
 
 
-# Lineage2 Solo (C4: Scions of Destiny)
+# L2Solo (C4: Scions of Destiny)
 
 Old-school Lineage 2 solo play, locally in a live world with over 1500 population.
 
@@ -11,8 +11,6 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 Work in progress. Playable.
 
 ## Game Checklist
-
-L2Solo is judged by what the world feels like to the player, not by how many server subsystems exist under the hood.
 
 ### Playable Now
 
@@ -98,7 +96,7 @@ The old direct server command still works:
 npm run NodeL2
 ```
 
-Use it when dependencies and database are already prepared and you want no bootstrap behavior.
+Use it when dependencies and the database are already prepared, and you want no bootstrap behavior.
 
 ## Configuration
 
