@@ -274,6 +274,18 @@ module.exports = {
             } else {
                 session.noTargetTicks = (session.noTargetTicks || 0) + 1;
 
+                if (isPartyCompanion(session)) {
+                    session.plan = 'following';
+                    session.noTargetTicks = 0;
+                    session.lastDecision = {
+                        action: 'follow_leader',
+                        reason: 'party_hunt_no_targets',
+                        spotId: session.currentSpot?.id || null,
+                        spotName: session.currentSpot?.name || null
+                    };
+                    return;
+                }
+
                 const currentSpot = SpotService.findCurrentSpot({
                     locX: bot.fetchLocX(),
                     locY: bot.fetchLocY(),

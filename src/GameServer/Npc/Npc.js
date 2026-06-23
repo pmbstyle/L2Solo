@@ -53,6 +53,7 @@ class Npc extends NpcModel {
             return;
         }
 
+        this.setDestId(actor.fetchId());
         this.state.setCombats(true);
 
         this.setStateRun(true);
@@ -170,6 +171,11 @@ class Npc extends NpcModel {
         ConsoleText.transmit(session, ConsoleText.caption.monsterHit, [
             { kind: ConsoleText.kind.npc, value: this.fetchDispSelfId() }, { kind: ConsoleText.kind.number, value: hit }
         ]);
+
+        if (actor?.session) {
+            actor.session.incomingThreatId = this.fetchId();
+            actor.session.incomingThreatAt = Date.now();
+        }
         invoke(path.actor).receivedHit(session, actor, hit);
     }
 

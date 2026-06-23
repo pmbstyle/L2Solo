@@ -76,6 +76,10 @@ function stand(session, bot) {
 }
 
 function applyMoveToSpot(session, bot, spotId) {
+    if (session.partyCompanion === true && session.followPlayerSession) {
+        return false;
+    }
+
     const spot = SpotService.findById(spotId);
     if (!spot) return false;
 
@@ -230,6 +234,13 @@ function execute(session, decision, visiblePlayers) {
     }
     if (action === 'hunt') {
         stand(session, bot);
+        if (session.partyCompanion === true && session.followPlayerSession) {
+            session.plan = 'hunting';
+            session.botStay = false;
+            say(session, decision.reply || 'Hunting with the party.', targetSession);
+            return { applied: true, reason: 'party_hunt' };
+        }
+
         session.plan = 'hunting';
         session.followPlayerSession = null;
         session.partyCompanion = false;
@@ -238,6 +249,20 @@ function execute(session, decision, visiblePlayers) {
         return { applied: true, reason: 'hunt' };
     }
     if (action === 'rest') {
+        const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
+        const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
+        if (hpRatio >= 0.95 && mpRatio >= 0.95) {
+            stand(session, bot);
+            session.currentTargetId = undefined;
+            if (session.partyCompanion === true && session.followPlayerSession) {
+                session.plan = 'following';
+            } else {
+                session.plan = 'hunting';
+            }
+            say(session, decision.reply || "I'm already recovered.", targetSession);
+            return { applied: true, reason: 'already_recovered' };
+        }
+
         session.plan = 'resting';
         session.currentTargetId = undefined;
         bot.unselect();
@@ -254,6 +279,11 @@ function execute(session, decision, visiblePlayers) {
         return { applied: true, reason: 'shop' };
     }
     if (action === 'move_to_spot') {
+        if (session.partyCompanion === true && session.followPlayerSession) {
+            say(session, decision.reply || 'I will stay with the party.', targetSession);
+            return { applied: true, reason: 'party_companion_stays_with_party' };
+        }
+
         const applied = applyMoveToSpot(session, bot, decision.spotId);
         if (applied) say(session, decision.reply, targetSession);
         return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot' };

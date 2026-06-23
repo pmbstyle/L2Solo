@@ -52,6 +52,13 @@ function standUp(session, bot) {
     return true;
 }
 
+function sitDown(session, bot) {
+    if (bot.state.fetchSeated()) return false;
+    bot.state.setSeated(true);
+    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    return true;
+}
+
 function ensureSkill(bot, selfId, data) {
     let skill = bot.skillset.fetchSkill(selfId);
     if (skill) return skill;
@@ -186,6 +193,7 @@ module.exports = {
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
         const partyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
 
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
@@ -203,15 +211,15 @@ module.exports = {
             session.stuckTicks = 0;
         }
 
-        if (bot.state.fetchSeated() && (partyThreat || distance > FOLLOW_RUN_DISTANCE)) {
+        if (bot.state.fetchSeated() && (partyThreat || leaderTargetId || distance > FOLLOW_RUN_DISTANCE)) {
             session.plan = 'following';
-            session.currentTargetId = partyThreat?.actor?.fetchId?.();
+            session.currentTargetId = partyThreat?.actor?.fetchId?.() || leaderTargetId || undefined;
             standUp(session, bot);
             recordRoleDecision(
                 session,
                 bot,
-                partyThreat ? assistActionForRole(role) : 'follow_leader',
-                partyThreat ? 'party_under_attack' : 'leader_moved'
+                partyThreat || leaderTargetId ? assistActionForRole(role) : 'follow_leader',
+                partyThreat ? 'party_under_attack' : (leaderTargetId ? assistReasonForRole(role) : 'leader_moved')
             );
             return;
         }
@@ -242,13 +250,48 @@ module.exports = {
             hpRatio: ratio(player.fetchHp(), player.fetchMaxHp()),
             mpRatio: ratio(player.fetchMp(), player.fetchMaxMp())
         };
+        const leaderSeated = player.state?.fetchSeated?.() === true;
+        const botRecovering = botVitals.hpRatio < 0.95 || botVitals.mpRatio < 0.95;
 
-        if (!partyThreat && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
+        if (!partyThreat && !leaderTargetId && leaderSeated) {
+            session.currentTargetId = undefined;
+            bot.unselect();
+
+            if (distance > FOLLOW_RUN_DISTANCE) {
+                standUp(session, bot);
+                recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
+                if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
+                    const followTarget = {
+                        locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
+                        locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
+                        locZ: player.fetchLocZ()
+                    };
+                    session.lastFollowMoveTarget = followTarget;
+                    bot.moveTo({
+                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                        to: followTarget
+                    });
+                }
+                return;
+            }
+
+            session.lastFollowMoveTarget = null;
+            sitDown(session, bot);
+            recordRoleDecision(session, bot, 'rest_with_leader', 'leader_sitting');
+            return;
+        }
+
+        if (!partyThreat && !leaderTargetId && bot.state.fetchSeated() && !leaderSeated && !botRecovering) {
+            standUp(session, bot);
+            recordRoleDecision(session, bot, 'follow_leader', 'leader_stood_ready');
+            return;
+        }
+
+        if (!partyThreat && !leaderTargetId && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
             session.plan = 'resting';
             session.currentTargetId = undefined;
             bot.unselect();
-            bot.state.setSeated(true);
-            session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            sitDown(session, bot);
             recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'resting');
             BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
             return;
@@ -481,7 +524,7 @@ module.exports = {
         }
 
         if (!acted) {
-            const playerTargetId = player.fetchDestId();
+            const playerTargetId = leaderTargetId;
             if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
                 acted = true;
                 World.fetchUser(playerTargetId).then((user) => {

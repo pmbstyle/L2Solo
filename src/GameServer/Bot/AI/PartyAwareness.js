@@ -1,5 +1,7 @@
 const World = invoke('GameServer/World/World');
 
+const RECENT_INCOMING_THREAT_MS = 5000;
+
 function isOnlineActor(actor) {
     return !!actor && actor.fetchIsOnline && actor.fetchIsOnline() && !actor.state?.fetchDead?.();
 }
@@ -24,6 +26,10 @@ function partySessions(leaderSession) {
 
 function partyActors(leaderSession) {
     return partySessions(leaderSession).map((session) => session.actor);
+}
+
+function partyActorIds(leaderSession) {
+    return new Set(partyActors(leaderSession).map(actorId).filter((id) => id !== null));
 }
 
 function actorId(actor) {
@@ -59,13 +65,40 @@ function uniqueNpcsAround(actors, radius) {
     return npcs;
 }
 
+function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
+    const now = Date.now();
+
+    for (const memberSession of memberSessions) {
+        const threatId = memberSession.incomingThreatId;
+        const threatAt = Number(memberSession.incomingThreatAt || 0);
+        if (!threatId || now - threatAt > RECENT_INCOMING_THREAT_MS) continue;
+
+        const npc = (World.npc?.spawns || []).find((spawn) => actorId(spawn) === threatId);
+        if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) continue;
+        if (distance2d(actorLoc(npc), actorLoc(memberSession.actor)) > npcRadius) continue;
+
+        return {
+            type: 'npc',
+            actor: npc,
+            targetId: actorId(memberSession.actor),
+            source: 'recent_incoming_hit'
+        };
+    }
+
+    return null;
+}
+
 function findThreatTargetingParty(leaderSession, options = {}) {
-    const members = partyActors(leaderSession);
+    const memberSessions = partySessions(leaderSession);
+    const members = memberSessions.map((session) => session.actor);
     if (members.length === 0) return null;
 
     const memberIds = new Set(members.map(actorId).filter((id) => id !== null));
     const npcRadius = options.npcRadius || 1400;
     const playerRadius = options.playerRadius || 1800;
+
+    const recentThreat = recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius);
+    if (recentThreat) return recentThreat;
 
     const npcThreat = uniqueNpcsAround(members, npcRadius).find((npc) => (
         npc.fetchAttackable &&
@@ -105,9 +138,34 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     return null;
 }
 
+function leaderCombatTargetId(leaderSession) {
+    const leader = leaderSession?.actor;
+    if (!isOnlineActor(leader)) return null;
+
+    const targetId = leader.fetchDestId?.();
+    if (!targetId) return null;
+    if (partyActorIds(leaderSession).has(targetId)) return null;
+
+    const npc = (World.npc?.spawns || []).find((spawn) => actorId(spawn) === targetId);
+    if (npc) {
+        return npc.fetchAttackable?.() && !npc.isDead?.() ? targetId : null;
+    }
+
+    const targetSession = (World.user?.sessions || []).find((session) => actorId(session?.actor) === targetId);
+    const target = targetSession?.actor;
+    if (target) {
+        if (!isOnlineActor(target)) return null;
+        if (isPartySession(targetSession, leaderSession)) return null;
+        return target.fetchKarma?.() > 0 || target.fetchPvpFlag?.() > 0 ? targetId : null;
+    }
+
+    return null;
+}
+
 module.exports = {
     findThreatTargetingParty,
     isPartySession,
+    leaderCombatTargetId,
     partyActors,
     partySessions
 };
