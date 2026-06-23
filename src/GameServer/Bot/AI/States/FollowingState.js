@@ -7,6 +7,8 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 const SUPPORT_BUFF_MP_COST = 20;
 const FOLLOW_RUN_DISTANCE = 250;
+const FOLLOW_RETARGET_DISTANCE = 900;
+const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
 
 function ratio(value, max) {
@@ -20,6 +22,27 @@ function isBusy(bot) {
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+}
+
+function loc(actor) {
+    return { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+}
+
+function distance2d(a, b) {
+    const dx = a.locX - b.locX;
+    const dy = a.locY - b.locY;
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function shouldKeepCurrentFollowMove(session, bot, player, leaderDistance) {
+    const isMoving = !!session.moveTimer || bot.state.fetchTowards();
+    if (!isMoving) return false;
+    if ((session.stuckTicks || 0) >= 2) return false;
+    if (leaderDistance > FOLLOW_RETARGET_DISTANCE) return false;
+
+    const target = session.lastFollowMoveTarget;
+    if (!target) return false;
+    return distance2d(target, loc(player)) <= FOLLOW_TARGET_DRIFT;
 }
 
 function standUp(session, bot) {
@@ -536,6 +559,7 @@ module.exports = {
 
         if (!session.currentTargetId && !acted) {
             if (session.botStay && session.stayLocation) {
+                session.lastFollowMoveTarget = null;
                 const stayDist = point(bot).distance(new SpeckMath.Point3D(
                     session.stayLocation.locX,
                     session.stayLocation.locY,
@@ -554,11 +578,22 @@ module.exports = {
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
                 }
+                if (shouldKeepCurrentFollowMove(session, bot, player, distance)) {
+                    session.lastFollowMoveHeldAt = Date.now();
+                    return;
+                }
+                const followTarget = {
+                    locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
+                    locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
+                    locZ: player.fetchLocZ()
+                };
+                session.lastFollowMoveTarget = followTarget;
                 bot.moveTo({
                     from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: { locX: player.fetchLocX() + utils.oneFromSpan(-60, 60), locY: player.fetchLocY() + utils.oneFromSpan(-60, 60), locZ: player.fetchLocZ() }
+                    to: followTarget
                 });
             } else {
+                session.lastFollowMoveTarget = null;
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'ready');
                 }

@@ -116,6 +116,35 @@ try {
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
 
+    const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
+    movingBot.state.setTowards('move');
+    const movingSession = fakeSession('bot_moving_follow', movingBot);
+    movingSession.followPlayerSession = leaderSession;
+    movingSession.partyCompanion = true;
+    movingSession.plan = 'following';
+    movingSession.lastFollowMoveTarget = { locX: 40, locY: 0, locZ: 0 };
+    World.user = { sessions: [leaderSession, movingSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(movingSession, movingBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(movingBot.moves.length, 0, 'companion should not restart follow movement while the existing waypoint is still useful');
+    assert(movingSession.lastFollowMoveHeldAt, 'companion should record that a follow retarget was held');
+
+    const unknownMoveBot = fakeActor(2000008, { locX: 500, locY: 0 });
+    unknownMoveBot.state.setTowards('move');
+    const unknownMoveSession = fakeSession('bot_unknown_move_follow', unknownMoveBot);
+    unknownMoveSession.followPlayerSession = leaderSession;
+    unknownMoveSession.partyCompanion = true;
+    unknownMoveSession.plan = 'following';
+    World.user = { sessions: [leaderSession, unknownMoveSession] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(unknownMoveSession, unknownMoveBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(unknownMoveBot.moves.length, 1, 'companion should retarget when existing movement is not known to be a follow move');
+    assert(unknownMoveSession.lastFollowMoveTarget, 'companion should record the new follow target after retargeting');
+
     const restingBot = fakeActor(2000003, { locX: 0, locY: 0 });
     restingBot.state.setSeated(true);
     const restingSession = fakeSession('bot_resting', restingBot);

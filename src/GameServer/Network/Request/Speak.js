@@ -140,6 +140,12 @@ function consume(session, data) {
             BotStatus(session, ['bot-status', parts[1]]);
             return;
         }
+        if (data.text === '.botpath' || data.text.startsWith('.botpath ')) {
+            const BotPath = invoke('GameServer/World/Generics/NpcBypasses/BotPath');
+            const parts = data.text.split(/\s+/);
+            BotPath(session, ['bot-path', parts[1]]);
+            return;
+        }
         if (data.text === '/trade' || data.text === '.trade') {
             const BotManager = invoke('GameServer/Bot/BotManager');
             const BotTradeService = invoke('GameServer/Bot/BotTradeService');

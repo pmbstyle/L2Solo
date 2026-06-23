@@ -92,6 +92,9 @@ const BotManager = {
         const roleDecision = status.roleDecision ? `${status.roleDecision.action} / ${status.roleDecision.reason}` : null;
         const huntDecision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : null;
         const decision = roleDecision || huntDecision || 'none';
+        const pathInfo = status.movement.pathfinding
+            ? `${status.movement.pathSummary} / geodata ${status.movement.pathfinding.pathLength}`
+            : 'none';
         const buffs = status.buffs?.eligible
             ? `WW ${status.buffs.windWalk}s / Shield ${status.buffs.shield}s / Haste ${status.buffs.haste}s / Might ${status.buffs.might}s${status.buffs.needsRefresh ? ' / refresh' : ''}`
             : `Might ${status.buffs?.might ?? 0}s`;
@@ -114,6 +117,7 @@ const BotManager = {
             ['Spot', safe(spot)],
             ['Nearby', safe(`players ${status.nearby.realPlayers}, bots ${status.nearby.friendlyBots}, mobs ${status.nearby.attackableNpcs}`)],
             ['Move', safe(status.movement.moving ? `moving (${status.movement.towards})` : 'idle')],
+            ['Path', safe(pathInfo)],
             ['Blockers', safe(blockers)],
             ['Decision', safe(decision)],
             ['Buffs', safe(buffs)],
@@ -126,6 +130,65 @@ const BotManager = {
         ]);
         const html = Html.page(body, { title: 'Bot Status' });
 
+        playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+    },
+
+    renderBotPathPanel(playerSession, botSession = null) {
+        if (!playerSession.actor) return;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const Html = invoke('GameServer/World/Generics/HtmlKit');
+        const safe = (value) => Html.esc(value);
+        const locText = (loc) => loc ? `${loc.locX},${loc.locY},${loc.locZ}` : 'none';
+
+        if (!botSession) {
+            const statuses = this.getAllBotStatuses().slice(0, 14);
+            let body = `${Html.font('Bot Path Diagnostics', Html.COLOR.title)}<br>`;
+            statuses.forEach((status) => {
+                const path = status.movement.pathfinding;
+                const subtitle = path
+                    ? `${status.movement.pathSummary} / geodata ${path.pathLength}`
+                    : 'no movement recorded';
+                body += Html.botCard({
+                    name: status.name,
+                    badge: status.movement.moving ? Html.font('moving', Html.COLOR.ok) : Html.font('idle', Html.COLOR.muted),
+                    subtitle,
+                    actions: [
+                        { label: 'Open', command: `bot-path ${status.name}` },
+                        { label: 'Status', command: `bot-status ${status.name}` }
+                    ]
+                });
+                body += Html.spacer(3);
+            });
+            const html = Html.page(body, { title: 'Bot Paths' });
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+            return;
+        }
+
+        const status = this.getBotStatus(botSession);
+        if (!status || !status.available) {
+            const html = Html.page(Html.emptyState('Bot Paths', 'Bot path diagnostics unavailable.'), { title: 'Bot Paths' });
+            playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
+            return;
+        }
+
+        const path = status.movement.pathfinding;
+        const route = path?.townRoute || null;
+        const body = `${Html.font(status.name, Html.COLOR.title)}<br>` + Html.statusTable([
+            ['Moving', safe(status.movement.moving ? `yes (${status.movement.towards})` : 'no')],
+            ['Stuck', safe(String(status.movement.stuckTicks))],
+            ['Follow Target', safe(locText(status.movement.followTarget))],
+            ['Requested', safe(locText(path?.requestedTo))],
+            ['Routed', safe(locText(path?.routedTo))],
+            ['Town Route', safe(status.movement.pathSummary)],
+            ['Geodata Path', safe(path ? String(path.pathLength) : 'none')],
+            ['LOD Warp', safe(path?.lowLodWarp ? 'yes' : 'no')],
+            ['From/To Town', safe(route ? `${route.fromTown || 'field'} -> ${route.toTown || 'field'}` : 'none')]
+        ]) + '<br>' + Html.actionFooter([
+            { label: 'Refresh', command: `bot-path ${status.name}` },
+            { label: 'Status', command: `bot-status ${status.name}` }
+        ]);
+        const html = Html.page(body, { title: 'Bot Paths' });
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
     },
 

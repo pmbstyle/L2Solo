@@ -142,6 +142,7 @@ Useful startup variables:
 - `.bot` or `.companion` - open the companion control panel.
 - `.botstatus` - show a bot overview panel.
 - `.botstatus <name>` - show detailed status for a specific bot.
+- `.botpath` / `.botpath <name>` - inspect bot movement, town-route waypoints, and geodata path diagnostics.
 - `.trade` or `/trade` - open the bot trade window with the targeted SimPlayer, useful as a fallback to the native client trade action.
 - `.leave` - dismiss all companion bots.
 - `.kick <name>` - dismiss one companion bot.
@@ -166,7 +167,7 @@ Main bot modes:
 
 Companion behavior is role-aware. `BotRoles` infers healer, buffer, tank, dagger, archer, mage, or generic DPS from class id. In party mode, tanks can protect the leader and avoid unsafe pulls, healers heal while conserving MP, buffers apply `Might`, `Shield`, `Haste`, and `Wind Walk`, daggers close-assist, and ranged roles keep ranged assist intent.
 
-Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state, social memory, role decisions, buff timers, and loot requests, companion panel `Status` links, or watch `BotStatus :: ...`, `BotSocial :: ...`, `BotRole :: ...`, and `BotLoot :: ...` lines in the server logs.
+Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state, social memory, role decisions, buff timers, and loot requests, `.botpath` for movement and town-route diagnostics, companion panel `Status` links, or watch `BotStatus :: ...`, `BotSocial :: ...`, `BotRole :: ...`, and `BotLoot :: ...` lines in the server logs.
 
 To reset generated SimPlayer accounts and characters while keeping the rest of the database intact:
 
