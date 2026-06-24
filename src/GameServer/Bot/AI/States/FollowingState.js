@@ -4,6 +4,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 const SUPPORT_BUFF_MP_COST = 20;
 const FOLLOW_RUN_DISTANCE = 250;
@@ -248,8 +249,15 @@ module.exports = {
         const player = playerSession.actor;
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
-        const partyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
-        const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
+        const partySettings = PartyCompanionService.getSettings(playerSession);
+        const combatMode = partySettings.combatMode || 'assist';
+        const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        const partyThreat = combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId()
+            ? null
+            : rawPartyThreat;
+        const leaderTargetId = combatMode === 'assist'
+            ? PartyAwareness.leaderCombatTargetId(playerSession)
+            : undefined;
 
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {

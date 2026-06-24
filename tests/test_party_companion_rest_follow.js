@@ -13,6 +13,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
+const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -611,6 +612,28 @@ try {
     assert(changedDistributionPacket, 'explicit party distribution update should rebuild the party window');
     assert.strictEqual(changedDistributionPacket.readInt32LE(5), 2, 'explicit party distribution update should be stored');
     assert.strictEqual(changedDistributionPacket.readInt32LE(9), 2, 'distribution update should keep both party members');
+
+    partyHudBotASession.currentTargetId = 3001;
+    partyHudBotBSession.currentTargetId = 3002;
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'combat', 'protect']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).combatMode, 'protect', 'party control should store combat mode');
+    assert.strictEqual(partyHudBotASession.currentTargetId, undefined, 'combat mode change should clear stale companion targets');
+    assert.strictEqual(partyHudBotBSession.currentTargetId, undefined, 'combat mode change should clear stale party targets');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'movement', 'hold']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).movementMode, 'hold', 'party control should store movement mode');
+    assert.strictEqual(partyHudBotASession.botStay, true, 'hold mode should park the first companion');
+    assert.strictEqual(partyHudBotBSession.botStay, true, 'hold mode should park the second companion');
+    assert(partyHudBotASession.stayLocation, 'hold mode should record a stay location');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'movement', 'follow']);
+    assert.strictEqual(partyHudBotASession.botStay, false, 'follow mode should release held companions');
+    assert.strictEqual(partyHudBotBSession.botStay, false, 'follow mode should release the full group');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'pull', 'off']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'off', 'party control should store pull mode');
+    assert.strictEqual(partyHudBotASession.autoTaunt, false, 'pull off should disable companion taunt');
+    assert.strictEqual(partyHudBotBSession.autoTaunt, false, 'pull off should apply to every companion');
 
     assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
     const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);

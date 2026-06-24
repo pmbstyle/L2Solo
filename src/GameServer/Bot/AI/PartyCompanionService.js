@@ -1,6 +1,12 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
+const DEFAULT_PARTY_SETTINGS = {
+    distribution: DEFAULT_PARTY_DISTRIBUTION,
+    movementMode: 'follow',
+    combatMode: 'assist',
+    pullMode: 'auto'
+};
 
 function hasOwn(object, key) {
     return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -13,14 +19,30 @@ function normalizeDistribution(distribution) {
 }
 
 function settingsForLeader(leaderSession) {
-    if (!leaderSession) return { distribution: DEFAULT_PARTY_DISTRIBUTION };
+    if (!leaderSession) return { ...DEFAULT_PARTY_SETTINGS };
     if (!leaderSession.partyCompanionSettings) {
-        leaderSession.partyCompanionSettings = { distribution: DEFAULT_PARTY_DISTRIBUTION };
+        leaderSession.partyCompanionSettings = { ...DEFAULT_PARTY_SETTINGS };
     }
-    if (!hasOwn(leaderSession.partyCompanionSettings, 'distribution')) {
-        leaderSession.partyCompanionSettings.distribution = DEFAULT_PARTY_DISTRIBUTION;
-    }
+    Object.keys(DEFAULT_PARTY_SETTINGS).forEach((key) => {
+        if (!hasOwn(leaderSession.partyCompanionSettings, key)) {
+            leaderSession.partyCompanionSettings[key] = DEFAULT_PARTY_SETTINGS[key];
+        }
+    });
     return leaderSession.partyCompanionSettings;
+}
+
+function getSettings(leaderSession) {
+    return { ...settingsForLeader(leaderSession) };
+}
+
+function updateSettings(leaderSession, patch = {}) {
+    const settings = settingsForLeader(leaderSession);
+    Object.keys(patch).forEach((key) => {
+        if (patch[key] !== undefined && patch[key] !== null) {
+            settings[key] = patch[key];
+        }
+    });
+    return getSettings(leaderSession);
 }
 
 function distributionForLeader(leaderSession) {
@@ -107,6 +129,10 @@ const PartyCompanionService = {
 
     distributionForLeader,
 
+    getSettings,
+
+    updateSettings,
+
     rebuildWindow(leaderSession, distribution) {
         const effectiveDistribution = arguments.length > 1
             ? setDistribution(leaderSession, distribution)
@@ -140,6 +166,7 @@ const PartyCompanionService = {
         companionSession.stayLocation = null;
         companionSession.currentTargetId = undefined;
         companionSession.actor?.unselect?.();
+        companionSession.autoTaunt = settingsForLeader(leaderSession).pullMode !== 'off';
 
         if (previousLeader && previousLeader !== leaderSession) {
             refreshLeaderView(previousLeader);

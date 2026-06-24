@@ -2,6 +2,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -203,9 +204,11 @@ const BotStatus = {
         const role = BotRoles.inferRole(bot);
         const target = findTarget(session, bot);
         const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
+        const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
         const party = leaderSession ? {
             leader: actorSummary(leaderSession.actor, bot),
             role,
+            settings: partySettings,
             stance: session.botStay ? 'stay' : 'follow',
             roleStance: BotRoles.partyRoleStance(role),
             autoTaunt: session.autoTaunt !== false,
