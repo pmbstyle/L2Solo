@@ -48,7 +48,30 @@ function compactParty(party) {
     return {
         leader: party.leader?.name || null,
         stance: party.stance,
-        role: party.role
+        role: party.role,
+        members: (party.members || []).map((member) => ({
+            name: member.name,
+            role: member.role,
+            leader: !!member.leader,
+            self: !!member.self,
+            hpPct: pct(member.hpPct),
+            mpPct: pct(member.mpPct),
+            distance: member.distance ? Math.round(member.distance) : null,
+            dead: !!member.dead,
+            stance: member.stance || null
+        })),
+        threat: party.threat ? {
+            type: party.threat.type,
+            source: party.threat.source || null,
+            targetId: party.threat.targetId || null,
+            actor: compactTarget({
+                type: party.threat.type,
+                name: party.threat.actor?.name || null,
+                level: party.threat.actor?.level || null,
+                dead: party.threat.actor?.dead,
+                distance: party.threat.actor?.distance
+            })
+        } : null
     };
 }
 

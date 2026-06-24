@@ -11,6 +11,8 @@ const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
+const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -133,6 +135,10 @@ function fakeActor(id, loc = {}) {
         statusUpdateVitals() {},
         backpack: {
             fetchTotalLoad: () => 0,
+            fetchTotalAdena: () => 0,
+            fetchItems: () => [],
+            fetchItemFromSelfId: () => null,
+            fetchEquippedWeapon: () => null,
             fetchPaperdollId: () => 0,
             fetchPaperdollSelfId: () => 0
         },
@@ -545,6 +551,16 @@ try {
 
     assert.strictEqual(buffedTargetId, unbuffedCompanion.fetchId(), 'buffer should refresh buffs on party companions');
     assert.strictEqual(appliedBuffType, 'shield', 'buffer should apply the missing support buff');
+
+    const compactPartyStatus = BotBrainContext.compactStatus(
+        bufferSession,
+        BotStatus.getStatus(bufferSession),
+        'how is the party?'
+    );
+    assert.strictEqual(compactPartyStatus.party.members.length, 3, 'BotBrain context should include all party members');
+    assert(compactPartyStatus.party.members.some((member) => member.name === unbuffedCompanion.fetchName() && member.hpPct === 100), 'compact party context should expose companion vitals');
+    assert(compactPartyStatus.party.members.some((member) => member.name === bufferBot.fetchName() && member.self === true), 'compact party context should mark the bot itself');
+    assert(compactPartyStatus.party.members.some((member) => member.name === bufferLeader.fetchName() && member.leader === true), 'compact party context should mark the leader');
 
     const rewardLeader = fakeActor(2000010, { locX: 0, locY: 0 });
     const rewardLeaderSession = fakeSession('player_reward', rewardLeader);
