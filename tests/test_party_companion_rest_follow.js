@@ -8,6 +8,8 @@ const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
 const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const BotManager = invoke('GameServer/Bot/BotManager');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -137,14 +139,17 @@ function fakeActor(id, loc = {}) {
 }
 
 function fakeSession(accountId, actor) {
-    return {
+    const session = {
         accountId,
         actor,
         sent: 0,
-        dataSendToMe() { this.sent++; },
-        dataSendToOthers() { this.sent++; },
-        dataSendToMeAndOthers() { this.sent++; }
+        packets: [],
+        dataSendToMe(packet) { this.sent++; if (packet) this.packets.push(packet); },
+        dataSendToOthers(packet) { this.sent++; if (packet) this.packets.push(packet); },
+        dataSendToMeAndOthers(packet) { this.sent++; if (packet) this.packets.push(packet); }
     };
+    actor.session = session;
+    return session;
 }
 
 const originalUsers = World.user;
@@ -156,6 +161,11 @@ const originalRemoveNpc = World.removeNpc;
 const originalUpdateCharacterExperience = Database.updateCharacterExperience;
 const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
+const originalBotSessions = BotManager.sessions;
+
+function lastPartyAllPacket(session) {
+    return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
+}
 
 try {
     Math.random = () => 1;
@@ -501,6 +511,34 @@ try {
     assert.strictEqual(rewardBot.fetchExp(), 50, 'companion should keep its split exp from the kill');
     assert.strictEqual(rewardBot.fetchSp(), 10, 'companion should keep its split sp from the kill');
 
+    const partyHudLeader = fakeActor(2000030, { locX: 0, locY: 0 });
+    const partyHudLeaderSession = fakeSession('player_party_hud', partyHudLeader);
+    const partyHudBotA = fakeActor(2000031, { locX: 40, locY: 0 });
+    const partyHudBotASession = fakeSession('bot_party_hud_a', partyHudBotA);
+    const partyHudBotB = fakeActor(2000032, { locX: 80, locY: 0 });
+    const partyHudBotBSession = fakeSession('bot_party_hud_b', partyHudBotB);
+    BotManager.sessions = [partyHudBotASession, partyHudBotBSession];
+
+    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotASession), true, 'first companion should attach');
+    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotBSession), true, 'second companion should attach');
+
+    const twoMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(twoMemberPacket, 'attaching companions should send a party window packet');
+    assert.strictEqual(twoMemberPacket.readInt32LE(9), 2, 'party window should include both active companions');
+    assert.deepStrictEqual(
+        PartyCompanionService.membersForLeader(partyHudLeaderSession).map((memberSession) => memberSession.actor.fetchName()),
+        [partyHudBotA.fetchName(), partyHudBotB.fetchName()],
+        'service should preserve both server-side companions'
+    );
+
+    assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
+    const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(oneMemberPacket, 'dismissing one companion should rebuild the party window');
+    assert.strictEqual(oneMemberPacket.readInt32LE(9), 1, 'party window should keep the remaining companion');
+    assert.strictEqual(partyHudBotASession.partyCompanion, false, 'dismissed companion should clear party flag');
+    assert.strictEqual(partyHudBotASession.followPlayerSession, null, 'dismissed companion should clear leader link');
+    assert.strictEqual(partyHudBotBSession.partyCompanion, true, 'remaining companion should stay in party');
+
     const toolBot = fakeActor(2000012, { locX: 0, locY: 0 });
     const toolSession = fakeSession('bot_tool_companion', toolBot);
     toolSession.followPlayerSession = leaderSession;
@@ -620,6 +658,7 @@ try {
     World.removeNpc = originalRemoveNpc;
     Database.updateCharacterExperience = originalUpdateCharacterExperience;
     DataCache.experience = originalExperience;
+    BotManager.sessions = originalBotSessions;
 }
 
 console.log('Party companion rest/follow regression checks passed');

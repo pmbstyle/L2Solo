@@ -4,6 +4,7 @@ const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -287,12 +288,7 @@ const BotAI = {
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
         if (session.followPlayerSession && session.partyCompanion === true) {
-            const playerSession = session.followPlayerSession;
-            if (playerSession && playerSession.actor && playerSession.actor.fetchIsOnline()) {
-                playerSession.dataSendToMe(
-                    ServerResponse.partySmallWindowUpdate(bot)
-                );
-            }
+            PartyCompanionService.updateMember(session);
         }
 
         const Generics = invoke(path.actor);

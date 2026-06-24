@@ -1,9 +1,9 @@
 const BotManager = invoke('GameServer/Bot/BotManager');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 function companionControl(session, parts) {
     const actor = session.actor;
@@ -59,16 +59,11 @@ function companionControl(session, parts) {
                     BotManager.botSay(targetSession, "Summoned to your side!");
                 }
                 else if (subCommand === 'dismiss') {
-                    session.dataSendToMe(ServerResponse.partySmallWindowDelete(bot.fetchId(), bot.fetchName()));
-                    setTimeout(() => {
-                        BotSocialMemory.recordEvent(session, targetSession, 'party_dismissed', 'companion_panel');
-                        BotManager.botSay(targetSession, "Leaving the group. Goodbye!");
-                        targetSession.plan = 'hunting';
-                        targetSession.followPlayerSession = null;
-                        targetSession.partyCompanion = false;
-                        targetSession.botStay = false;
-                        targetSession.stayLocation = null;
-                    }, 1000);
+                    PartyCompanionService.detach(session, targetSession, {
+                        event: 'party_dismissed',
+                        source: 'companion_panel',
+                        message: 'Leaving the group. Goodbye!'
+                    });
                 }
             }
         }
@@ -83,7 +78,7 @@ function renderCompanionPanel(session) {
     if (!actor) return;
 
     // Find all bot sessions following this player
-    const myCompanions = BotManager.sessions.filter(s => s.followPlayerSession === session && s.partyCompanion === true && s.actor);
+    const myCompanions = PartyCompanionService.membersForLeader(session);
 
     if (myCompanions.length === 0) {
         const html = Html.page(
