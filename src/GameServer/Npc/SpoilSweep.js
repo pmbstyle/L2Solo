@@ -1,6 +1,7 @@
 const DataCache      = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 const SPOIL_SKILL_ID = 254;
 const SWEEP_SKILL_ID = 42;
@@ -87,6 +88,17 @@ function castUtilitySkill(session, actor, target, skill, effect) {
     }, skill.fetchCalculatedHitTime());
 }
 
+function spoilRecipientSession(session, npc, selfId) {
+    const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+        ? session.followPlayerSession
+        : session;
+    const distribution = PartyCompanionService.distributionForLeader(leaderSession);
+    if (distribution === 2 || distribution === 4) {
+        return PartyCompanionService.resolveLootSession(session, selfId, npc);
+    }
+    return session;
+}
+
 const SpoilSweep = {
     isSpoilSkill(selfId) {
         return Number(selfId) === SPOIL_SKILL_ID;
@@ -170,12 +182,13 @@ const SpoilSweep = {
                 session.dataSendToMe(ServerResponse.actionFailed());
             } else {
                 awarded.forEach((item) => {
-                    invoke('GameServer/World/World').purchaseItem(session, item.selfId, item.amount);
+                    const recipientSession = spoilRecipientSession(session, npc, item.selfId);
+                    invoke('GameServer/World/World').purchaseItem(recipientSession, item.selfId, item.amount);
                     const textName = { kind: ConsoleText.kind.item, value: item.selfId };
                     const textAmount = { kind: ConsoleText.kind.number, value: item.amount };
                     item.amount > 1
-                        ? ConsoleText.transmit(session, ConsoleText.caption.pickupAmountOf, [textName, textAmount])
-                        : ConsoleText.transmit(session, ConsoleText.caption.pickup, [textName]);
+                        ? ConsoleText.transmit(recipientSession, ConsoleText.caption.pickupAmountOf, [textName, textAmount])
+                        : ConsoleText.transmit(recipientSession, ConsoleText.caption.pickup, [textName]);
                     console.info('SpoilSweep :: %s swept %d %s from %s', actor.fetchName(), item.amount, item.name, npc.fetchName());
                 });
             }
