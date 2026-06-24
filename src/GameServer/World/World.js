@@ -156,6 +156,7 @@ const World = {
             attachOptions.distribution = distribution;
         }
 
+        const wasResting = targetSession.plan === 'resting';
         PartyCompanionService.attach(session, targetSession, attachOptions);
 
         BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);

@@ -13,6 +13,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
@@ -210,6 +211,40 @@ try {
 
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
+
+    const inviteBot = fakeActor(2000033, { locX: 50, locY: 0 });
+    const inviteBotSession = fakeSession('bot_invite_resting', inviteBot);
+    inviteBotSession.plan = 'resting';
+    const originalSetTimeout = global.setTimeout;
+    const originalBotTell = BotManager.botTell;
+    const originalInviteBotSessions = BotManager.sessions;
+    const originalSocialSnapshot = BotSocialMemory.getSnapshot;
+    const originalSocialRecordEvent = BotSocialMemory.recordEvent;
+    let inviteTell = null;
+    try {
+        global.setTimeout = (callback) => {
+            callback();
+            return 0;
+        };
+        BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0, recentlyAbandonedAt: null });
+        BotSocialMemory.recordEvent = () => Promise.resolve(null);
+        BotManager.botTell = (sourceSession, targetSession, text) => {
+            assert.strictEqual(sourceSession, inviteBotSession, 'invite acknowledgement should come from invited bot');
+            assert.strictEqual(targetSession, leaderSession, 'invite acknowledgement should target party leader');
+            inviteTell = text;
+        };
+        BotManager.sessions = [inviteBotSession];
+
+        assert.strictEqual(World.inviteBotCompanion(leaderSession, leader, inviteBotSession, 1, 'test_invite'), true, 'available resting bot should join the party');
+    } finally {
+        global.setTimeout = originalSetTimeout;
+        BotManager.botTell = originalBotTell;
+        BotManager.sessions = originalInviteBotSessions;
+        BotSocialMemory.getSnapshot = originalSocialSnapshot;
+        BotSocialMemory.recordEvent = originalSocialRecordEvent;
+    }
+    assert.strictEqual(inviteTell, `I'll join you, just need a moment to recover.`, 'resting invite acknowledgement should survive PartyCompanionService.attach');
+    assert.strictEqual(inviteBotSession.plan, 'resting', 'attaching a resting bot should preserve resting state');
 
     const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
     movingBot.state.setTowards('move');
