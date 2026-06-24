@@ -192,6 +192,18 @@ function lastPartySpelledPacket(session, actorId) {
     ));
 }
 
+function lastNpcHtml(session) {
+    const packet = [...session.packets].reverse().find((candidate) => candidate[0] === 0x0f);
+    if (!packet) return '';
+
+    let end = 5;
+    while (end + 1 < packet.length) {
+        if (packet[end] === 0 && packet[end + 1] === 0) break;
+        end += 2;
+    }
+    return packet.toString('ucs2', 5, end);
+}
+
 try {
     Math.random = () => 1;
     Database.updateCharacterExperience = () => {};
@@ -767,6 +779,24 @@ try {
     assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'off', 'party control should store pull mode');
     assert.strictEqual(partyHudBotASession.autoTaunt, false, 'pull off should disable companion taunt');
     assert.strictEqual(partyHudBotBSession.autoTaunt, false, 'pull off should apply to every companion');
+    const companionHtml = lastNpcHtml(partyHudLeaderSession);
+    assert(companionHtml.includes('2 active'), 'party control panel should show active companion count');
+    assert(companionHtml.includes('Loot: Random+Spoil'), 'party control panel should show readable loot mode');
+    assert(companionHtml.includes('<a action='), 'party control panel should use compact links for controls');
+    assert(!companionHtml.includes('<button'), 'party control panel should avoid legacy buttons because they break this client layout');
+    assert(!companionHtml.includes('['), 'active party control items should use color only, not bracket labels');
+    assert(
+        /companion-control pull auto[\s\S]*<td width=90 align=center><\/td>[\s\S]*companion-control pull off/.test(companionHtml),
+        'pull controls should keep Auto in the first column and Off in the third column'
+    );
+    assert(companionHtml.includes('Call'), 'companion cards should expose summon as a compact call action');
+    assert(companionHtml.includes('Info'), 'companion cards should keep a compact status action');
+    assert(companionHtml.includes('Dismiss'), 'companion cards should expose a dismiss action');
+    assert(!companionHtml.includes('HP '), 'party control panel should not duplicate native party HP display');
+    assert(!companionHtml.includes('MP '), 'party control panel should not duplicate native party MP display');
+    assert(!companionHtml.includes('native #'), 'party control panel should not expose raw native loot debug text');
+    assert(!companionHtml.includes('bgcolor=222222'), 'party control panel should avoid the flat grey panel background');
+    assert(!companionHtml.includes('bgcolor=333333'), 'companion cards should avoid the flat grey card background');
 
     assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
     const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
