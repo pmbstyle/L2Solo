@@ -539,6 +539,20 @@ try {
     assert.strictEqual(partyHudBotASession.followPlayerSession, null, 'dismissed companion should clear leader link');
     assert.strictEqual(partyHudBotBSession.partyCompanion, true, 'remaining companion should stay in party');
 
+    const packetsBeforeDisconnectCleanup = partyHudLeaderSession.packets.length;
+    assert.strictEqual(
+        PartyCompanionService.detachAll(partyHudLeaderSession, { rebuildWindow: false, refreshPanel: false }),
+        1,
+        'disconnect cleanup should detach the remaining companion'
+    );
+    assert.strictEqual(
+        partyHudLeaderSession.packets.length,
+        packetsBeforeDisconnectCleanup,
+        'disconnect cleanup should not write party packets to a closing leader session'
+    );
+    assert.strictEqual(partyHudBotBSession.partyCompanion, false, 'disconnect cleanup should clear remaining companion flag');
+    assert.strictEqual(partyHudBotBSession.followPlayerSession, null, 'disconnect cleanup should clear remaining leader link');
+
     const toolBot = fakeActor(2000012, { locX: 0, locY: 0 });
     const toolSession = fakeSession('bot_tool_companion', toolBot);
     toolSession.followPlayerSession = leaderSession;

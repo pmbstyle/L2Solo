@@ -45,6 +45,15 @@ function renderPanel(leaderSession) {
     }
 }
 
+function refreshLeaderView(leaderSession, options = {}) {
+    if (options.rebuildWindow !== false) {
+        sendPartyWindow(leaderSession, 0);
+    }
+    if (options.refreshPanel !== false) {
+        renderPanel(leaderSession);
+    }
+}
+
 function detachState(companionSession, plan = 'hunting') {
     companionSession.plan = plan;
     companionSession.followPlayerSession = null;
@@ -93,12 +102,10 @@ const PartyCompanionService = {
         companionSession.actor?.unselect?.();
 
         if (previousLeader && previousLeader !== leaderSession) {
-            sendPartyWindow(previousLeader, 0);
-            renderPanel(previousLeader);
+            refreshLeaderView(previousLeader);
         }
 
-        sendPartyWindow(leaderSession, 0);
-        renderPanel(leaderSession);
+        refreshLeaderView(leaderSession);
         return true;
     },
 
@@ -120,8 +127,7 @@ const PartyCompanionService = {
             BotManager.botSay(companionSession, options.message);
         }
 
-        sendPartyWindow(leaderSession, 0);
-        renderPanel(leaderSession);
+        refreshLeaderView(leaderSession, options);
         return true;
     },
 
@@ -130,11 +136,11 @@ const PartyCompanionService = {
         members.forEach((memberSession) => {
             this.detach(leaderSession, memberSession, {
                 ...options,
-                refresh: false
+                rebuildWindow: false,
+                refreshPanel: false
             });
         });
-        sendPartyWindow(leaderSession, 0);
-        renderPanel(leaderSession);
+        refreshLeaderView(leaderSession, options);
         return members.length;
     },
 
@@ -143,8 +149,7 @@ const PartyCompanionService = {
         if (!companionSession?.partyCompanion) return false;
         detachState(companionSession, options.plan || 'hunting');
         if (leaderSession) {
-            sendPartyWindow(leaderSession, 0);
-            renderPanel(leaderSession);
+            refreshLeaderView(leaderSession, options);
         }
         return true;
     },

@@ -247,6 +247,14 @@ class Session {
             utils.infoWarn('GameServer', 'connection closed');
         }
         if (this.actor) {
+            const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+            PartyCompanionService.detachAll(this, {
+                event: 'party_dismissed',
+                source: 'leader_disconnect',
+                message: 'My companion disconnected. Returning to hunt.',
+                rebuildWindow: false,
+                refreshPanel: false
+            });
             this.actor.destructor();
             this.actor = null;
         }
