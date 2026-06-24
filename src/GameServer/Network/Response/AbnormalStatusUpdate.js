@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function abnormalStatusUpdate(buffs = []) {
     const packet = new SendPacket(0x7f); // Opcode 0x7f for MagicEffectIcons / AbnormalStatusUpdate
@@ -15,6 +16,11 @@ function abnormalStatusUpdate(buffs = []) {
 }
 
 abnormalStatusUpdate.fromActor = function(actor) {
+    const effects = EffectStore.packetEffects(actor);
+    if (effects.length > 0) {
+        return abnormalStatusUpdate(effects);
+    }
+
     const buffs = [];
     if (actor && actor.activeBuffs) {
         const now = Date.now();

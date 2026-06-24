@@ -4,6 +4,7 @@ const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -287,18 +288,14 @@ const BotAI = {
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
         if (session.followPlayerSession && session.partyCompanion === true) {
-            const playerSession = session.followPlayerSession;
-            if (playerSession && playerSession.actor && playerSession.actor.fetchIsOnline()) {
-                playerSession.dataSendToMe(
-                    ServerResponse.partySmallWindowUpdate(bot)
-                );
-            }
+            PartyCompanionService.updateMember(session);
         }
 
         const Generics = invoke(path.actor);
 
         // 1. Handle Death State
         if (bot.isDead()) {
+            const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
                 this.say(session, "Oops... I died! Resurrecting shortly.");
@@ -329,19 +326,40 @@ const BotAI = {
                             locZ: session.initialSpawnCoord.locZ
                         };
                     } else {
-                        session.plan = 'hunting'; // Reset plan
-                        
-                        // Teleport back to spawn coordinate to prevent getting stuck in deep water
-                        if (!session.initialSpawnCoord) {
-                            session.initialSpawnCoord = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                        const leader = session.followPlayerSession?.actor;
+                        if (wasCompanion && leader?.fetchIsOnline?.()) {
+                            session.plan = 'following';
+                            spawnTarget = session.botStay && session.stayLocation ? {
+                                locX: session.stayLocation.locX,
+                                locY: session.stayLocation.locY,
+                                locZ: session.stayLocation.locZ
+                            } : {
+                                locX: leader.fetchLocX() + utils.oneFromSpan(-80, 80),
+                                locY: leader.fetchLocY() + utils.oneFromSpan(-80, 80),
+                                locZ: leader.fetchLocZ()
+                            };
+                        } else {
+                            if (wasCompanion) {
+                                PartyCompanionService.clearCompanion(session, {
+                                    plan: 'hunting',
+                                    rebuildWindow: false,
+                                    refreshPanel: false
+                                });
+                            }
+                            session.plan = 'hunting'; // Reset plan
+                            
+                            // Teleport back to spawn coordinate to prevent getting stuck in deep water
+                            if (!session.initialSpawnCoord) {
+                                session.initialSpawnCoord = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+                            }
+                            
+                            spawnTarget = {
+                                locX: session.initialSpawnCoord.locX + (Math.random() - 0.5) * 1000,
+                                locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
+                                locZ: session.initialSpawnCoord.locZ
+                            };
+                            spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                         }
-                        
-                        spawnTarget = {
-                            locX: session.initialSpawnCoord.locX + (Math.random() - 0.5) * 1000,
-                            locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
-                            locZ: session.initialSpawnCoord.locZ
-                        };
-                        spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
                     }
                 }
                 

@@ -8,6 +8,14 @@ const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
 const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const BotManager = invoke('GameServer/Bot/BotManager');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
+const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -71,6 +79,9 @@ function fakeActor(id, loc = {}) {
         fetchMaxHp() { return this.maxHp; },
         fetchMp() { return this.mp; },
         fetchMaxMp() { return this.maxMp; },
+        setHp(value) { this.hp = value; },
+        setMp(value) { this.mp = value; },
+        fillupVitals() { this.hp = this.maxHp; this.mp = this.maxMp; },
         fetchExp() { return this.exp; },
         fetchSp() { return this.sp; },
         setExp(data) { this.exp = data; },
@@ -127,24 +138,34 @@ function fakeActor(id, loc = {}) {
         statusUpdateVitals() {},
         backpack: {
             fetchTotalLoad: () => 0,
+            fetchTotalAdena: () => 0,
+            fetchItems: () => [],
+            fetchItemFromSelfId: () => null,
+            fetchEquippedWeapon: () => null,
             fetchPaperdollId: () => 0,
             fetchPaperdollSelfId: () => 0
         },
-        skillset: { fetchSkill: () => null },
+        skillset: {
+            skills: [],
+            fetchSkill(selfId) { return this.skills.find((skill) => skill.fetchSelfId() === selfId) || null; }
+        },
         automation: { abortAll() {}, replenishVitals() {} }
     };
     return actor;
 }
 
 function fakeSession(accountId, actor) {
-    return {
+    const session = {
         accountId,
         actor,
         sent: 0,
-        dataSendToMe() { this.sent++; },
-        dataSendToOthers() { this.sent++; },
-        dataSendToMeAndOthers() { this.sent++; }
+        packets: [],
+        dataSendToMe(packet) { this.sent++; if (packet) this.packets.push(packet); },
+        dataSendToOthers(packet) { this.sent++; if (packet) this.packets.push(packet); },
+        dataSendToMeAndOthers(packet) { this.sent++; if (packet) this.packets.push(packet); }
     };
+    actor.session = session;
+    return session;
 }
 
 const originalUsers = World.user;
@@ -156,6 +177,20 @@ const originalRemoveNpc = World.removeNpc;
 const originalUpdateCharacterExperience = Database.updateCharacterExperience;
 const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
+const originalBotSessions = BotManager.sessions;
+const originalApplySupportBuff = BotBuffs.applySupportBuff;
+
+function lastPartyAllPacket(session) {
+    return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
+}
+
+function lastPartySpelledPacket(session, actorId) {
+    return [...session.packets].reverse().find((packet) => (
+        packet[0] === 0xee &&
+        (!actorId || packet.readInt32LE(5) === actorId) &&
+        packet.readInt32LE(9) > 0
+    ));
+}
 
 try {
     Math.random = () => 1;
@@ -176,6 +211,40 @@ try {
 
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
+
+    const inviteBot = fakeActor(2000033, { locX: 50, locY: 0 });
+    const inviteBotSession = fakeSession('bot_invite_resting', inviteBot);
+    inviteBotSession.plan = 'resting';
+    const originalSetTimeout = global.setTimeout;
+    const originalBotTell = BotManager.botTell;
+    const originalInviteBotSessions = BotManager.sessions;
+    const originalSocialSnapshot = BotSocialMemory.getSnapshot;
+    const originalSocialRecordEvent = BotSocialMemory.recordEvent;
+    let inviteTell = null;
+    try {
+        global.setTimeout = (callback) => {
+            callback();
+            return 0;
+        };
+        BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0, recentlyAbandonedAt: null });
+        BotSocialMemory.recordEvent = () => Promise.resolve(null);
+        BotManager.botTell = (sourceSession, targetSession, text) => {
+            assert.strictEqual(sourceSession, inviteBotSession, 'invite acknowledgement should come from invited bot');
+            assert.strictEqual(targetSession, leaderSession, 'invite acknowledgement should target party leader');
+            inviteTell = text;
+        };
+        BotManager.sessions = [inviteBotSession];
+
+        assert.strictEqual(World.inviteBotCompanion(leaderSession, leader, inviteBotSession, 1, 'test_invite'), true, 'available resting bot should join the party');
+    } finally {
+        global.setTimeout = originalSetTimeout;
+        BotManager.botTell = originalBotTell;
+        BotManager.sessions = originalInviteBotSessions;
+        BotSocialMemory.getSnapshot = originalSocialSnapshot;
+        BotSocialMemory.recordEvent = originalSocialRecordEvent;
+    }
+    assert.strictEqual(inviteTell, `I'll join you, just need a moment to recover.`, 'resting invite acknowledgement should survive PartyCompanionService.attach');
+    assert.strictEqual(inviteBotSession.plan, 'resting', 'attaching a resting bot should preserve resting state');
 
     const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
     movingBot.state.setTowards('move');
@@ -478,6 +547,66 @@ try {
     assert.strictEqual(pvpAssistSession.currentTargetId, hostileBot.fetchId(), 'companion with no target should acquire bot attacking leader');
     assert.strictEqual(assistedPlayerId, hostileBot.fetchId(), 'companion should assist against bot attacking leader');
 
+    const healerLeader = fakeActor(2000024, { locX: 0, locY: 0 });
+    const healerLeaderSession = fakeSession('player_healer_party', healerLeader);
+    const healerBot = fakeActor(2000025, { locX: 80, locY: 0, classId: 15 });
+    const healerSession = fakeSession('bot_healer_party', healerBot);
+    healerSession.followPlayerSession = healerLeaderSession;
+    healerSession.partyCompanion = true;
+    healerSession.plan = 'following';
+    const woundedCompanion = fakeActor(2000026, { locX: 120, locY: 0, hp: 25, maxHp: 100 });
+    const woundedCompanionSession = fakeSession('bot_wounded_party', woundedCompanion);
+    woundedCompanionSession.followPlayerSession = healerLeaderSession;
+    woundedCompanionSession.partyCompanion = true;
+    woundedCompanionSession.plan = 'following';
+    World.user = { sessions: [healerLeaderSession, healerSession, woundedCompanionSession] };
+    World.fetchNpcsInRadius = () => [];
+    let healedTargetId = null;
+
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healedTargetId = data.id; }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(healedTargetId, woundedCompanion.fetchId(), 'healer should heal the wounded companion, not only the leader');
+    assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
+
+    const bufferLeader = fakeActor(2000027, { locX: 0, locY: 0 });
+    const bufferLeaderSession = fakeSession('player_buffer_party', bufferLeader);
+    const bufferBot = fakeActor(2000028, { locX: 80, locY: 0, classId: 17 });
+    const bufferSession = fakeSession('bot_buffer_party', bufferBot);
+    bufferSession.followPlayerSession = bufferLeaderSession;
+    bufferSession.partyCompanion = true;
+    bufferSession.plan = 'following';
+    const unbuffedCompanion = fakeActor(2000029, { locX: 120, locY: 0 });
+    unbuffedCompanion.activeBuffs.shield = 0;
+    const unbuffedCompanionSession = fakeSession('bot_unbuffed_party', unbuffedCompanion);
+    unbuffedCompanionSession.followPlayerSession = bufferLeaderSession;
+    unbuffedCompanionSession.partyCompanion = true;
+    unbuffedCompanionSession.plan = 'following';
+    World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
+    let buffedTargetId = null;
+    let appliedBuffType = null;
+    BotBuffs.applySupportBuff = (targetSession, target, buffType) => {
+        buffedTargetId = target.fetchId();
+        appliedBuffType = buffType;
+        return { name: buffType };
+    };
+
+    FollowingState.tick(bufferSession, bufferBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(buffedTargetId, unbuffedCompanion.fetchId(), 'buffer should refresh buffs on party companions');
+    assert.strictEqual(appliedBuffType, 'shield', 'buffer should apply the missing support buff');
+
+    const compactPartyStatus = BotBrainContext.compactStatus(
+        bufferSession,
+        BotStatus.getStatus(bufferSession),
+        'how is the party?'
+    );
+    assert.strictEqual(compactPartyStatus.party.members.length, 3, 'BotBrain context should include all party members');
+    assert(compactPartyStatus.party.members.some((member) => member.name === unbuffedCompanion.fetchName() && member.hpPct === 100), 'compact party context should expose companion vitals');
+    assert(compactPartyStatus.party.members.some((member) => member.name === bufferBot.fetchName() && member.self === true), 'compact party context should mark the bot itself');
+    assert(compactPartyStatus.party.members.some((member) => member.name === bufferLeader.fetchName() && member.leader === true), 'compact party context should mark the leader');
+
     const rewardLeader = fakeActor(2000010, { locX: 0, locY: 0 });
     const rewardLeaderSession = fakeSession('player_reward', rewardLeader);
     const rewardBot = fakeActor(2000011, { locX: 80, locY: 0 });
@@ -500,6 +629,167 @@ try {
     assert.strictEqual(rewardLeader.fetchSp(), 10, 'leader should receive split sp when companion kills nearby mob');
     assert.strictEqual(rewardBot.fetchExp(), 50, 'companion should keep its split exp from the kill');
     assert.strictEqual(rewardBot.fetchSp(), 10, 'companion should keep its split sp from the kill');
+
+    const partyHudLeader = fakeActor(2000030, { locX: 0, locY: 0 });
+    const partyHudLeaderSession = fakeSession('player_party_hud', partyHudLeader);
+    const partyHudBotA = fakeActor(2000031, { locX: 40, locY: 0 });
+    const partyHudBotASession = fakeSession('bot_party_hud_a', partyHudBotA);
+    const partyHudBotB = fakeActor(2000032, { locX: 80, locY: 0 });
+    const partyHudBotBSession = fakeSession('bot_party_hud_b', partyHudBotB);
+    BotManager.sessions = [partyHudBotASession, partyHudBotBSession];
+
+    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotASession, { distribution: 0 }), true, 'first companion should attach');
+    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotBSession), true, 'second companion should attach');
+
+    const twoMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(twoMemberPacket, 'attaching companions should send a party window packet');
+    assert.strictEqual(twoMemberPacket.readInt32LE(5), 0, 'party window should preserve the native loot distribution from invite');
+    assert.strictEqual(twoMemberPacket.readInt32LE(9), 2, 'party window should include both active companions');
+    assert.deepStrictEqual(
+        PartyCompanionService.membersForLeader(partyHudLeaderSession).map((memberSession) => memberSession.actor.fetchName()),
+        [partyHudBotA.fetchName(), partyHudBotB.fetchName()],
+        'service should preserve both server-side companions'
+    );
+
+    World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
+    World.fetchNpcsInRadius = () => [];
+    partyHudBotA.locX = 520;
+    partyHudBotB.locX = 540;
+    partyHudBotA.moves = [];
+    partyHudBotB.moves = [];
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert(partyHudBotASession.lastFollowMoveTarget, 'first companion should get a formation follow target');
+    assert(partyHudBotBSession.lastFollowMoveTarget, 'second companion should get a formation follow target');
+    assert.notDeepStrictEqual(
+        partyHudBotASession.lastFollowMoveTarget,
+        partyHudBotBSession.lastFollowMoveTarget,
+        'companions should occupy different formation slots'
+    );
+    assert.deepStrictEqual(
+        PartyCompanionService.formationTargetFor(partyHudBotASession),
+        { locX: partyHudLeader.fetchLocX() - 90, locY: partyHudLeader.fetchLocY() - 70, locZ: partyHudLeader.fetchLocZ(), slot: 0 },
+        'first companion should use the first formation slot'
+    );
+
+    const casterBot = fakeActor(2000033, { locX: 20, locY: 0, classId: 17 });
+    const casterSession = fakeSession('bot_party_caster', casterBot);
+    casterSession.followPlayerSession = partyHudLeaderSession;
+    casterSession.partyCompanion = true;
+    casterSession.plan = 'following';
+    originalApplySupportBuff(partyHudBotASession, partyHudBotA, 'shield', { calculateStats() {} }, {
+        casterSession,
+        caster: casterBot
+    });
+    assert(EffectStore.packetEffects(partyHudBotA).some((effect) => effect.id === 1040), 'support buff should be stored as a structured effect');
+    const partyShieldPacket = lastPartySpelledPacket(partyHudLeaderSession, partyHudBotA.fetchId());
+    assert(partyShieldPacket, 'support buff should refresh native party effect icons');
+    assert.strictEqual(partyShieldPacket.readInt32LE(13), 1040, 'party effect packet should include shield skill id');
+    assert(casterSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(5) === partyHudBotA.fetchId()), 'support buff should broadcast a visible skill cast from the caster');
+
+    EffectStore.apply(partyHudBotB, {
+        key: 'stun',
+        id: 101,
+        level: 1,
+        name: 'Stun',
+        type: 'debuff',
+        category: 'stun',
+        durationMs: 30000
+    });
+    partyHudBotB.moves = [];
+    partyHudBotB.locX = 900;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(partyHudBotB.moves.length, 0, 'stunned companion should not follow or fight');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'disabled', 'stunned companion should expose disabled behavior state');
+    assert(BotStatus.getStatus(partyHudBotBSession).debuffs.some((effect) => effect.key === 'stun'), 'bot status should expose active debuffs');
+    EffectStore.remove(partyHudBotB, 'stun');
+    partyHudBotB.locX = 80;
+
+    PartyCompanionService.rebuildWindow(partyHudLeaderSession, 2);
+    const changedDistributionPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(changedDistributionPacket, 'explicit party distribution update should rebuild the party window');
+    assert.strictEqual(changedDistributionPacket.readInt32LE(5), 2, 'explicit party distribution update should be stored');
+    assert.strictEqual(changedDistributionPacket.readInt32LE(9), 2, 'distribution update should keep both party members');
+
+    const lootTarget = {
+        fetchLocX: () => 0,
+        fetchLocY: () => 0
+    };
+    PartyCompanionService.updateSettings(partyHudLeaderSession, { distribution: 3, itemLastLootIndex: -1 });
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudLeaderSession,
+        'by-turn loot should first route party drops to the leader'
+    );
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudBotASession,
+        'by-turn loot should rotate to the next companion'
+    );
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudBotBSession,
+        'by-turn loot should include every nearby party member'
+    );
+    PartyCompanionService.updateSettings(partyHudLeaderSession, { distribution: 0 });
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotBSession, 1864, lootTarget),
+        partyHudBotBSession,
+        'finders keepers loot should stay with the looter'
+    );
+    const adenaAllocations = PartyCompanionService.adenaAllocations(partyHudBotASession, 10, lootTarget);
+    assert.strictEqual(adenaAllocations.reduce((sum, entry) => sum + entry.amount, 0), 10, 'party adena split should preserve the full amount');
+    assert.deepStrictEqual(
+        adenaAllocations.map((entry) => entry.session),
+        [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession],
+        'party adena split should include every nearby party member'
+    );
+    PartyCompanionService.rebuildWindow(partyHudLeaderSession, 2);
+
+    partyHudBotASession.currentTargetId = 3001;
+    partyHudBotBSession.currentTargetId = 3002;
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'combat', 'protect']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).combatMode, 'protect', 'party control should store combat mode');
+    assert.strictEqual(partyHudBotASession.currentTargetId, undefined, 'combat mode change should clear stale companion targets');
+    assert.strictEqual(partyHudBotBSession.currentTargetId, undefined, 'combat mode change should clear stale party targets');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'movement', 'hold']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).movementMode, 'hold', 'party control should store movement mode');
+    assert.strictEqual(partyHudBotASession.botStay, true, 'hold mode should park the first companion');
+    assert.strictEqual(partyHudBotBSession.botStay, true, 'hold mode should park the second companion');
+    assert(partyHudBotASession.stayLocation, 'hold mode should record a stay location');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'movement', 'follow']);
+    assert.strictEqual(partyHudBotASession.botStay, false, 'follow mode should release held companions');
+    assert.strictEqual(partyHudBotBSession.botStay, false, 'follow mode should release the full group');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'pull', 'off']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'off', 'party control should store pull mode');
+    assert.strictEqual(partyHudBotASession.autoTaunt, false, 'pull off should disable companion taunt');
+    assert.strictEqual(partyHudBotBSession.autoTaunt, false, 'pull off should apply to every companion');
+
+    assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
+    const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(oneMemberPacket, 'dismissing one companion should rebuild the party window');
+    assert.strictEqual(oneMemberPacket.readInt32LE(5), 2, 'party window should keep the stored loot distribution after detach');
+    assert.strictEqual(oneMemberPacket.readInt32LE(9), 1, 'party window should keep the remaining companion');
+    assert.strictEqual(partyHudBotASession.partyCompanion, false, 'dismissed companion should clear party flag');
+    assert.strictEqual(partyHudBotASession.followPlayerSession, null, 'dismissed companion should clear leader link');
+    assert.strictEqual(partyHudBotBSession.partyCompanion, true, 'remaining companion should stay in party');
+
+    const packetsBeforeDisconnectCleanup = partyHudLeaderSession.packets.length;
+    assert.strictEqual(
+        PartyCompanionService.detachAll(partyHudLeaderSession, { rebuildWindow: false, refreshPanel: false }),
+        1,
+        'disconnect cleanup should detach the remaining companion'
+    );
+    assert.strictEqual(
+        partyHudLeaderSession.packets.length,
+        packetsBeforeDisconnectCleanup,
+        'disconnect cleanup should not write party packets to a closing leader session'
+    );
+    assert.strictEqual(partyHudBotBSession.partyCompanion, false, 'disconnect cleanup should clear remaining companion flag');
+    assert.strictEqual(partyHudBotBSession.followPlayerSession, null, 'disconnect cleanup should clear remaining leader link');
 
     const toolBot = fakeActor(2000012, { locX: 0, locY: 0 });
     const toolSession = fakeSession('bot_tool_companion', toolBot);
@@ -620,6 +910,8 @@ try {
     World.removeNpc = originalRemoveNpc;
     Database.updateCharacterExperience = originalUpdateCharacterExperience;
     DataCache.experience = originalExperience;
+    BotManager.sessions = originalBotSessions;
+    BotBuffs.applySupportBuff = originalApplySupportBuff;
 }
 
 console.log('Party companion rest/follow regression checks passed');

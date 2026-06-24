@@ -127,10 +127,11 @@ const World = {
         });
     },
 
-    inviteBotCompanion(session, actor, targetSession, distribution = 1, source = 'invite') {
+    inviteBotCompanion(session, actor, targetSession, distribution, source = 'invite') {
         const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
         const BotManager = invoke('GameServer/Bot/BotManager');
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         const availability = BotAvailability.evaluate(session, targetSession);
         const bot = targetSession.actor;
 
@@ -150,20 +151,13 @@ const World = {
             return false;
         }
 
-        session.dataSendToMe(ServerResponse.joinParty(distribution || 1));
-        session.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
+        const attachOptions = {};
+        if (distribution !== undefined && distribution !== null) {
+            attachOptions.distribution = distribution;
+        }
 
         const wasResting = targetSession.plan === 'resting';
-        targetSession.plan = wasResting ? 'resting' : 'following';
-        targetSession.followPlayerSession = session;
-        targetSession.partyCompanion = true;
-        targetSession.botStay = false;
-        targetSession.stayLocation = null;
-
-        session.dataSendToMe(ServerResponse.partySmallWindowAll(actor.fetchId(), 0, [bot]));
-
-        const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
-        CompanionControl.render(session);
+        PartyCompanionService.attach(session, targetSession, attachOptions);
 
         BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
         setTimeout(() => {
@@ -176,7 +170,7 @@ const World = {
         return true;
     },
 
-    inviteBotByName(session, actor, name, distribution = 1, source = 'named_invite') {
+    inviteBotByName(session, actor, name, distribution, source = 'named_invite') {
         const lookup = String(name || '').trim();
         if (!lookup) {
             session.dataSendToMe(ServerResponse.actionFailed());
@@ -305,20 +299,16 @@ const World = {
 
     oustPartyMember(session, actor, data) {
         const BotManager = invoke('GameServer/Bot/BotManager');
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         let botFound = false;
         BotManager.sessions.forEach((targetSession) => {
             if (targetSession.actor && targetSession.actor.fetchName().toLowerCase() === data.name.toLowerCase() && targetSession.followPlayerSession === session && targetSession.partyCompanion === true) {
                 botFound = true;
-                session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
-                
-                setTimeout(() => {
-                    const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
-                    BotSocialMemory.recordEvent(session, targetSession, 'party_kicked', 'oust');
-                    BotManager.botSay(targetSession, `I have been kicked from the party. Returning to hunt on my own!`);
-                    targetSession.plan = 'hunting';
-                    targetSession.followPlayerSession = null;
-                    targetSession.partyCompanion = false;
-                }, 1000);
+                PartyCompanionService.detach(session, targetSession, {
+                    event: 'party_kicked',
+                    source: 'oust',
+                    message: 'I have been kicked from the party. Returning to hunt on my own!'
+                });
             }
         });
         if (!botFound) {
@@ -327,22 +317,11 @@ const World = {
     },
 
     dismissParty(session, actor) {
-        const BotManager = invoke('GameServer/Bot/BotManager');
-        let botsDisbanded = 0;
-        BotManager.sessions.forEach((targetSession) => {
-            if (targetSession.followPlayerSession === session && targetSession.partyCompanion === true) {
-                botsDisbanded++;
-                session.dataSendToMe(ServerResponse.partySmallWindowDelete(targetSession.actor.fetchId(), targetSession.actor.fetchName()));
-
-                setTimeout(() => {
-                    const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
-                    BotSocialMemory.recordEvent(session, targetSession, 'party_dismissed', 'dismiss');
-                    BotManager.botSay(targetSession, `Party dismissed! Returning to my farming fields.`);
-                    targetSession.plan = 'hunting';
-                    targetSession.followPlayerSession = null;
-                    targetSession.partyCompanion = false;
-                }, 1000);
-            }
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+        const botsDisbanded = PartyCompanionService.detachAll(session, {
+            event: 'party_dismissed',
+            source: 'dismiss',
+            message: 'Party dismissed! Returning to my farming fields.'
         });
         if (botsDisbanded === 0) {
             session.dataSendToMe(ServerResponse.actionFailed());

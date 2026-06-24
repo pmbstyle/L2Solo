@@ -203,6 +203,15 @@ assert.strictEqual(partyUpdate.readInt32LE(updateVitalsOffset + 8), actor.fetchH
 assert.strictEqual(ServerResponse.partySmallWindowDeleteAll()[0], 0x50, 'C4 party delete all opcode should be 0x50');
 assert.strictEqual(ServerResponse.partySmallWindowDelete(actor.fetchId(), actor.fetchName())[0], 0x51, 'C4 party delete opcode should be 0x51');
 
+const partySpelled = ServerResponse.partySpelled(actor.fetchId(), [{ id: 1040, level: 2, duration: 120 }]);
+assert.strictEqual(partySpelled[0], 0xee, 'C4 PartySpelled opcode should be 0xee');
+assert.strictEqual(partySpelled.readInt32LE(1), 0, 'PartySpelled should mark normal party member effects');
+assert.strictEqual(partySpelled.readInt32LE(5), actor.fetchId(), 'PartySpelled should include member object id');
+assert.strictEqual(partySpelled.readInt32LE(9), 1, 'PartySpelled should include effect count');
+assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should include effect skill id');
+assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
+assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
+
 const npcInfo = ServerResponse.npcInfo(fakeNpc());
 assert.strictEqual(npcInfo[0], 0x16);
 assert.ok(npcInfo.length >= 208, 'C4 NpcInfo should include team/collision tail fields');

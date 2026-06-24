@@ -4,6 +4,8 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 
 const SUPPORT_BUFF_MP_COST = 20;
 const FOLLOW_RUN_DISTANCE = 250;
@@ -128,24 +130,80 @@ function castSkillOn(session, bot, Generics, target, skillId, ctrl) {
     Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skillId, ctrl });
 }
 
-function leaderAggroCount(player) {
-    return World.fetchNpcsInRadius(player.fetchLocX(), player.fetchLocY(), 900)
-        .filter((npc) => npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === player.fetchId())
+function partyActorIds(leaderSession) {
+    return new Set(PartyAwareness.partyActors(leaderSession)
+        .map((actor) => actor.fetchId())
+        .filter((id) => id !== null && id !== undefined));
+}
+
+function partyAggroCount(leaderSession) {
+    const ids = partyActorIds(leaderSession);
+    if (ids.size === 0) return 0;
+
+    const seen = new Set();
+    return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
+        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 900)
+    ))
+        .filter((npc) => {
+            const id = npc.fetchId?.() || npc;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .filter((npc) => npc.fetchAttackable() && !npc.isDead() && ids.has(npc.fetchDestId()))
         .length;
 }
 
-function unsafeSupportMoment(session, bot, player, activeMobs) {
+function unsafeSupportMoment(session, bot, target, activeMobs) {
     return !!session.currentTargetId ||
-        !!player.fetchDestId() ||
+        !!target.fetchDestId() ||
         activeMobs > 0 ||
         isBusy(bot);
 }
 
-function pullBlockReason(session, botVitals, leaderVitals, activeMobs) {
+function partyMembersInSupportRange(leaderSession, bot, maxDistance = 900) {
+    return PartyAwareness.partySessions(leaderSession)
+        .filter((memberSession) => memberSession.actor && !memberSession.actor.isDead?.())
+        .map((memberSession) => ({
+            session: memberSession,
+            actor: memberSession.actor,
+            hpRatio: ratio(memberSession.actor.fetchHp(), memberSession.actor.fetchMaxHp()),
+            mpRatio: ratio(memberSession.actor.fetchMp(), memberSession.actor.fetchMaxMp()),
+            distance: point(bot).distance(point(memberSession.actor))
+        }))
+        .filter((entry) => entry.distance <= maxDistance);
+}
+
+function weakestPartyMember(leaderSession, bot, maxDistance = 900) {
+    return partyMembersInSupportRange(leaderSession, bot, maxDistance)
+        .filter((entry) => entry.actor !== bot)
+        .sort((a, b) => a.hpRatio - b.hpRatio)[0] || null;
+}
+
+function weakestPartyVitals(leaderSession, bot) {
+    return partyMembersInSupportRange(leaderSession, bot)
+        .reduce((lowest, entry) => !lowest || entry.hpRatio < lowest.hpRatio ? entry : lowest, null);
+}
+
+function nextSupportBuffTarget(leaderSession, bot) {
+    return partyMembersInSupportRange(leaderSession, bot)
+        .sort((a, b) => {
+            const aRank = a.session === leaderSession ? 0 : (a.actor === bot ? 2 : 1);
+            const bRank = b.session === leaderSession ? 0 : (b.actor === bot ? 2 : 1);
+            return aRank - bRank;
+        })
+        .map((entry) => ({
+            ...entry,
+            buff: BotBuffs.nextSupportBuff(entry.actor)
+        }))
+        .find((entry) => entry.buff) || null;
+}
+
+function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
     if (session.autoTaunt === false) return 'manual_pull_off';
     if (session.botStay) return 'stay_order';
     if (session.currentTargetId) return 'already_assisting';
-    if (leaderVitals.hpRatio < 0.65) return 'leader_low_hp';
+    if (partyVitals?.hpRatio < 0.65) return 'party_low_hp';
     if (botVitals.hpRatio < 0.55) return 'tank_low_hp';
     if (botVitals.mpRatio < 0.25) return 'save_mp';
     if (activeMobs >= 2) return 'active_mobs';
@@ -162,6 +220,14 @@ function assistActionForRole(role) {
 function assistReasonForRole(role) {
     if (role === 'dagger') return 'close_assist';
     return 'leader_target';
+}
+
+function followTargetFor(session, player) {
+    return PartyCompanionService.formationTargetFor(session) || {
+        locX: player.fetchLocX(),
+        locY: player.fetchLocY(),
+        locZ: player.fetchLocZ()
+    };
 }
 
 function supportBuffPhrase(buffType, playerName) {
@@ -192,8 +258,23 @@ module.exports = {
         const player = playerSession.actor;
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
-        const partyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
-        const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
+        const partySettings = PartyCompanionService.getSettings(playerSession);
+        const combatMode = partySettings.combatMode || 'assist';
+        const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        const partyThreat = combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId()
+            ? null
+            : rawPartyThreat;
+        const leaderTargetId = combatMode === 'assist'
+            ? PartyAwareness.leaderCombatTargetId(playerSession)
+            : undefined;
+        const impairments = EffectStore.impairments(bot);
+
+        if (impairments.disabled) {
+            session.currentTargetId = undefined;
+            bot.unselect();
+            recordRoleDecision(session, bot, 'disabled', 'debuff_control');
+            return;
+        }
 
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
@@ -224,15 +305,18 @@ module.exports = {
             return;
         }
 
+        if (impairments.rooted && !partyThreat && !leaderTargetId && distance > FOLLOW_RUN_DISTANCE) {
+            recordRoleDecision(session, bot, 'hold_position', 'rooted');
+            return;
+        }
+
         if (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE) {
             session.stuckTicks = 0;
             recordRoleDecision(session, bot, 'follow_leader', distance > FOLLOW_TELEPORT_DISTANCE ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
             if (TeleportTo && typeof TeleportTo === 'function') {
                 const targetLoc = {
-                    locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                    locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                    locZ: player.fetchLocZ()
+                    ...followTargetFor(session, player)
                 };
                 TeleportTo(session, bot, targetLoc);
                 if (Math.random() < 0.20) {
@@ -250,6 +334,7 @@ module.exports = {
             hpRatio: ratio(player.fetchHp(), player.fetchMaxHp()),
             mpRatio: ratio(player.fetchMp(), player.fetchMaxMp())
         };
+        const partyVitals = weakestPartyVitals(playerSession, bot) || leaderVitals;
         const leaderSeated = player.state?.fetchSeated?.() === true;
         const botRecovering = botVitals.hpRatio < 0.95 || botVitals.mpRatio < 0.95;
 
@@ -261,11 +346,7 @@ module.exports = {
                 standUp(session, bot);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
                 if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    const followTarget = {
-                        locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                        locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                        locZ: player.fetchLocZ()
-                    };
+                    const followTarget = followTargetFor(session, player);
                     session.lastFollowMoveTarget = followTarget;
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
@@ -302,7 +383,7 @@ module.exports = {
 
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
-            const unsafeToRefresh = unsafeSupportMoment(session, bot, player, leaderAggroCount(player));
+            const unsafeToRefresh = unsafeSupportMoment(session, bot, player, partyAggroCount(playerSession));
 
             if (unsafeToRefresh || session.partyCompanion === true) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
@@ -332,34 +413,40 @@ module.exports = {
             }
         }
 
-        const nextSupportBuff = BotBuffs.nextSupportBuff(player);
-        if (!acted && BotRoles.canBuff(bot) && nextSupportBuff) {
-            const activeMobs = leaderAggroCount(player);
-            if (unsafeSupportMoment(session, bot, player, activeMobs)) {
+        const supportBuffTarget = nextSupportBuffTarget(playerSession, bot);
+        if (!acted && BotRoles.canBuff(bot) && supportBuffTarget) {
+            const activeMobs = partyAggroCount(playerSession);
+            if (unsafeSupportMoment(session, bot, supportBuffTarget.actor, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
-                    buff: nextSupportBuff,
-                    targetId: player.fetchId(),
+                    buff: supportBuffTarget.buff,
+                    targetId: supportBuffTarget.actor.fetchId(),
                     activeMobs
                 });
                 keepRoleDecision = true;
+            } else if (impairments.silenced) {
+                recordRoleDecision(session, bot, 'save_mp', 'silenced');
+                keepRoleDecision = true;
             } else if (bot.fetchMp() < SUPPORT_BUFF_MP_COST || botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
-                    buff: nextSupportBuff,
-                    targetId: player.fetchId()
+                    buff: supportBuffTarget.buff,
+                    targetId: supportBuffTarget.actor.fetchId()
                 });
                 keepRoleDecision = true;
             } else {
-                const result = BotBuffs.applySupportBuff(playerSession, player, nextSupportBuff, Generics);
+                const result = BotBuffs.applySupportBuff(supportBuffTarget.session, supportBuffTarget.actor, supportBuffTarget.buff, Generics, {
+                    casterSession: session,
+                    caster: bot
+                });
                 if (result) {
                     acted = true;
                     bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
                     bot.statusUpdateVitals(bot);
-                    recordRoleDecision(session, bot, 'buff_party', nextSupportBuff, {
-                        buff: nextSupportBuff,
-                        targetId: player.fetchId()
+                    recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.buff, {
+                        buff: supportBuffTarget.buff,
+                        targetId: supportBuffTarget.actor.fetchId()
                     });
                     if (Math.random() < 0.30) {
-                        BotAI.say(session, supportBuffPhrase(nextSupportBuff, player.fetchName()));
+                        BotAI.say(session, supportBuffPhrase(supportBuffTarget.buff, supportBuffTarget.actor.fetchName()));
                     }
                 }
             }
@@ -405,24 +492,25 @@ module.exports = {
 
         if (role === 'healer') {
             const skill = healSkill(bot);
-            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot);
+            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
+            const woundedPartyMember = weakestPartyMember(playerSession, bot);
 
-            if (leaderVitals.hpRatio < 0.45 && canCast) {
+            if (woundedPartyMember?.hpRatio < 0.45 && canCast) {
                 acted = true;
-                recordRoleDecision(session, bot, 'heal_leader', 'emergency_heal', { targetId: player.fetchId() });
-                castSkillOn(session, bot, Generics, player, 1011, false);
+                recordRoleDecision(session, bot, 'heal_party', 'emergency_heal', { targetId: woundedPartyMember.actor.fetchId() });
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, 1011, false);
                 if (Math.random() < 0.15) {
-                    BotAI.say(session, "Emergency heal on " + player.fetchName() + "!");
+                    BotAI.say(session, "Emergency heal on " + woundedPartyMember.actor.fetchName() + "!");
                 }
-            } else if (leaderVitals.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && canCast) {
+            } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && canCast) {
                 acted = true;
-                recordRoleDecision(session, bot, 'heal_leader', 'top_off', { targetId: player.fetchId() });
-                castSkillOn(session, bot, Generics, player, 1011, false);
+                recordRoleDecision(session, bot, 'heal_party', 'top_off', { targetId: woundedPartyMember.actor.fetchId() });
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, 1011, false);
                 if (Math.random() < 0.15) {
-                    BotAI.say(session, "Healing you, " + player.fetchName() + "!");
+                    BotAI.say(session, "Healing " + woundedPartyMember.actor.fetchName() + "!");
                 }
-            } else if (leaderVitals.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
-                recordRoleDecision(session, bot, 'save_mp', leaderVitals.hpRatio < 0.45 ? 'low_mp_emergency' : 'leader_not_critical');
+            } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
+                recordRoleDecision(session, bot, 'save_mp', woundedPartyMember.hpRatio < 0.45 ? 'low_mp_emergency' : 'party_not_critical');
                 keepRoleDecision = true;
             } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && canCast) {
                 acted = true;
@@ -431,6 +519,9 @@ module.exports = {
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing myself!");
                 }
+            } else if (impairments.silenced) {
+                recordRoleDecision(session, bot, 'save_mp', 'silenced');
+                keepRoleDecision = true;
             } else if (botVitals.mpRatio < 0.25) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp');
                 keepRoleDecision = true;
@@ -439,7 +530,9 @@ module.exports = {
 
         if (!acted && role === 'tank') {
             const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 800);
-            const monsterToAggro = nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === player.fetchId());
+            const monsterToAggro = partyThreat?.type === 'npc'
+                ? partyThreat.actor
+                : nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
 
             if (monsterToAggro) {
                 const skill = aggressionSkill(bot);
@@ -458,8 +551,8 @@ module.exports = {
         }
 
         if (!acted && role === 'tank') {
-            const activeMobs = leaderAggroCount(player);
-            const blockReason = pullBlockReason(session, botVitals, leaderVitals, activeMobs);
+            const activeMobs = partyAggroCount(playerSession);
+            const blockReason = pullBlockReason(session, botVitals, partyVitals, activeMobs);
 
             if (blockReason) {
                 recordRoleDecision(session, bot, 'avoid_overpull', blockReason, { activeMobs });
@@ -618,6 +711,10 @@ module.exports = {
                     });
                 }
             } else if (distance > FOLLOW_RUN_DISTANCE) {
+                if (impairments.rooted) {
+                    recordRoleDecision(session, bot, 'hold_position', 'rooted');
+                    return;
+                }
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
                 }
@@ -625,11 +722,7 @@ module.exports = {
                     session.lastFollowMoveHeldAt = Date.now();
                     return;
                 }
-                const followTarget = {
-                    locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                    locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                    locZ: player.fetchLocZ()
-                };
+                const followTarget = followTargetFor(session, player);
                 session.lastFollowMoveTarget = followTarget;
                 bot.moveTo({
                     from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },

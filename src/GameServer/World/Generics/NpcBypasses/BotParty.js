@@ -75,7 +75,7 @@ function botParty(session, parts) {
         const botName = parts[2];
         const targetSession = BotManager.findSessionByName(botName);
         if (targetSession) {
-            World.inviteBotCompanion(session, actor, targetSession, 1, 'botparty');
+            World.inviteBotCompanion(session, actor, targetSession, undefined, 'botparty');
         }
     }
 

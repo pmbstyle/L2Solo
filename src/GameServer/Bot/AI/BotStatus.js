@@ -1,6 +1,9 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -34,6 +37,36 @@ function actorSummary(actor, fromActor) {
         distance: fromActor ? distance2d(loc, actorLocation(fromActor)) : null,
         dead: actor.state ? actor.state.fetchDead() : actor.isDead(),
         karma: typeof actor.fetchKarma === 'function' ? actor.fetchKarma() : 0
+    };
+}
+
+function partyMemberSummary(memberSession, leaderSession, bot) {
+    const actor = memberSession?.actor;
+    if (!actor) return null;
+
+    const summary = actorSummary(actor, bot);
+    if (!summary) return null;
+
+    return {
+        ...summary,
+        role: BotRoles.inferRole(actor),
+        leader: memberSession === leaderSession,
+        self: actor === bot,
+        hpPct: ratio(actor.fetchHp(), actor.fetchMaxHp()),
+        mpPct: ratio(actor.fetchMp(), actor.fetchMaxMp()),
+        stance: memberSession.botStay ? 'stay' : 'follow'
+    };
+}
+
+function partyThreatSummary(leaderSession, bot) {
+    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    if (!threat?.actor) return null;
+
+    return {
+        type: threat.type,
+        source: threat.source || null,
+        targetId: threat.targetId || null,
+        actor: actorSummary(threat.actor, bot)
     };
 }
 
@@ -171,13 +204,20 @@ const BotStatus = {
 
         const role = BotRoles.inferRole(bot);
         const target = findTarget(session, bot);
-        const party = session.followPlayerSession && session.partyCompanion === true ? {
-            leader: actorSummary(session.followPlayerSession.actor, bot),
+        const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
+        const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
+        const party = leaderSession ? {
+            leader: actorSummary(leaderSession.actor, bot),
             role,
+            settings: partySettings,
             stance: session.botStay ? 'stay' : 'follow',
             roleStance: BotRoles.partyRoleStance(role),
             autoTaunt: session.autoTaunt !== false,
-            decision: session.roleDecision || null
+            decision: session.roleDecision || null,
+            members: PartyAwareness.partySessions(leaderSession)
+                .map((memberSession) => partyMemberSummary(memberSession, leaderSession, bot))
+                .filter(Boolean),
+            threat: partyThreatSummary(leaderSession, bot)
         } : null;
 
         const status = {
@@ -210,6 +250,11 @@ const BotStatus = {
                 pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute)
             },
             buffs: BotBuffs.snapshot(bot),
+            debuffs: EffectStore.activeDebuffs(bot).map((effect) => ({
+                key: effect.key,
+                name: effect.name,
+                remainingSec: Math.round(EffectStore.remainingMs(bot, effect.key) / 1000)
+            })),
             timers: {
                 deathStartedAt: session.deathTimerStart || null,
                 fleeStartedAt: session.fleeStart || null,
