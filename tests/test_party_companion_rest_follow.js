@@ -613,6 +613,41 @@ try {
     assert.strictEqual(changedDistributionPacket.readInt32LE(5), 2, 'explicit party distribution update should be stored');
     assert.strictEqual(changedDistributionPacket.readInt32LE(9), 2, 'distribution update should keep both party members');
 
+    const lootTarget = {
+        fetchLocX: () => 0,
+        fetchLocY: () => 0
+    };
+    PartyCompanionService.updateSettings(partyHudLeaderSession, { distribution: 3, itemLastLootIndex: -1 });
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudLeaderSession,
+        'by-turn loot should first route party drops to the leader'
+    );
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudBotASession,
+        'by-turn loot should rotate to the next companion'
+    );
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotASession, 1864, lootTarget),
+        partyHudBotBSession,
+        'by-turn loot should include every nearby party member'
+    );
+    PartyCompanionService.updateSettings(partyHudLeaderSession, { distribution: 0 });
+    assert.strictEqual(
+        PartyCompanionService.resolveLootSession(partyHudBotBSession, 1864, lootTarget),
+        partyHudBotBSession,
+        'finders keepers loot should stay with the looter'
+    );
+    const adenaAllocations = PartyCompanionService.adenaAllocations(partyHudBotASession, 10, lootTarget);
+    assert.strictEqual(adenaAllocations.reduce((sum, entry) => sum + entry.amount, 0), 10, 'party adena split should preserve the full amount');
+    assert.deepStrictEqual(
+        adenaAllocations.map((entry) => entry.session),
+        [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession],
+        'party adena split should include every nearby party member'
+    );
+    PartyCompanionService.rebuildWindow(partyHudLeaderSession, 2);
+
     partyHudBotASession.currentTargetId = 3001;
     partyHudBotBSession.currentTargetId = 3002;
     CompanionControl(partyHudLeaderSession, ['companion-control', 'combat', 'protect']);

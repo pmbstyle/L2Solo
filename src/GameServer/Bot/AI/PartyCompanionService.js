@@ -5,8 +5,10 @@ const DEFAULT_PARTY_SETTINGS = {
     distribution: DEFAULT_PARTY_DISTRIBUTION,
     movementMode: 'follow',
     combatMode: 'assist',
-    pullMode: 'auto'
+    pullMode: 'auto',
+    itemLastLootIndex: -1
 };
+const PARTY_LOOT_RADIUS = 2500;
 
 function hasOwn(object, key) {
     return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -69,9 +71,58 @@ function isActiveCompanion(session, leaderSession) {
     );
 }
 
+function distance2d(a, b) {
+    const dx = a.fetchLocX() - b.fetchLocX();
+    const dy = a.fetchLocY() - b.fetchLocY();
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function isAliveOnline(session) {
+    const actor = session?.actor;
+    return actor && actor.fetchIsOnline?.() === true && !actor.isDead?.();
+}
+
+function partyLeaderSession(session) {
+    if (session?.partyCompanion === true && session.followPlayerSession) {
+        return session.followPlayerSession;
+    }
+    return session;
+}
+
 function membersForLeader(leaderSession) {
     if (!leaderSession) return [];
     return botSessions().filter((session) => isActiveCompanion(session, leaderSession));
+}
+
+function lootMembersForLeader(leaderSession, target) {
+    const members = [leaderSession, ...membersForLeader(leaderSession)]
+        .filter(isAliveOnline);
+
+    if (!target?.fetchLocX || !target?.fetchLocY) {
+        return members;
+    }
+
+    return members.filter((memberSession) => (
+        memberSession.actor?.fetchLocX &&
+        distance2d(memberSession.actor, target) <= PARTY_LOOT_RADIUS
+    ));
+}
+
+function randomMember(members) {
+    if (members.length === 0) return null;
+    const index = Math.min(members.length - 1, Math.floor(Math.random() * members.length));
+    return members[index];
+}
+
+function nextTurnMember(leaderSession, members) {
+    if (members.length === 0) return null;
+
+    const settings = settingsForLeader(leaderSession);
+    const rawLastIndex = Number(settings.itemLastLootIndex);
+    const lastIndex = Number.isFinite(rawLastIndex) ? rawLastIndex : -1;
+    const nextIndex = (lastIndex + 1) % members.length;
+    settings.itemLastLootIndex = nextIndex;
+    return members[nextIndex];
 }
 
 function sendPartyWindow(leaderSession, distribution = 0) {
@@ -127,6 +178,8 @@ const PartyCompanionService = {
         return membersForLeader(leaderSession).map((session) => session.actor).filter(Boolean);
     },
 
+    lootMembersForLeader,
+
     distributionForLeader,
 
     getSettings,
@@ -142,6 +195,42 @@ const PartyCompanionService = {
 
     refreshPanel(leaderSession) {
         renderPanel(leaderSession);
+    },
+
+    resolveLootSession(looterSession, selfId, target) {
+        const leaderSession = partyLeaderSession(looterSession);
+        const members = lootMembersForLeader(leaderSession, target);
+        if (!leaderSession || members.length <= 1) return looterSession;
+
+        const distribution = distributionForLeader(leaderSession);
+        if (distribution === 1 || distribution === 2) {
+            return randomMember(members) || looterSession;
+        }
+        if (distribution === 3 || distribution === 4) {
+            return nextTurnMember(leaderSession, members) || looterSession;
+        }
+        return members.includes(looterSession) ? looterSession : (leaderSession || looterSession);
+    },
+
+    adenaAllocations(looterSession, amount, target) {
+        const total = Math.max(0, Math.floor(Number(amount) || 0));
+        if (total <= 0) return [];
+
+        const leaderSession = partyLeaderSession(looterSession);
+        const members = lootMembersForLeader(leaderSession, target);
+        if (!leaderSession || members.length <= 1) {
+            return [{ session: looterSession, amount: total }];
+        }
+
+        const share = Math.floor(total / members.length);
+        let remainder = total - (share * members.length);
+        return members
+            .map((memberSession) => {
+                const extra = remainder > 0 ? 1 : 0;
+                remainder -= extra;
+                return { session: memberSession, amount: share + extra };
+            })
+            .filter((entry) => entry.amount > 0);
     },
 
     attach(leaderSession, companionSession, options = {}) {
