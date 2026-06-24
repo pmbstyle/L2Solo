@@ -113,7 +113,7 @@ function consume(session, data) {
         if (data.text.startsWith('/invite ') || data.text.startsWith('.invite ')) {
             const name = data.text.replace(/^\/invite\s+|^\.invite\s+/, '').trim();
             const World = invoke('GameServer/World/World');
-            World.inviteBotByName(session, session.actor, name, 1, 'chat_invite');
+            World.inviteBotByName(session, session.actor, name, undefined, 'chat_invite');
             return;
         }
         if (/^(\/tell|\.tell|\/w|\.w)\s+/i.test(data.text)) {

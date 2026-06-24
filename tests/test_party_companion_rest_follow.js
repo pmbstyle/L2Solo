@@ -593,11 +593,12 @@ try {
     const partyHudBotBSession = fakeSession('bot_party_hud_b', partyHudBotB);
     BotManager.sessions = [partyHudBotASession, partyHudBotBSession];
 
-    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotASession), true, 'first companion should attach');
+    assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotASession, { distribution: 0 }), true, 'first companion should attach');
     assert.strictEqual(PartyCompanionService.attach(partyHudLeaderSession, partyHudBotBSession), true, 'second companion should attach');
 
     const twoMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
     assert(twoMemberPacket, 'attaching companions should send a party window packet');
+    assert.strictEqual(twoMemberPacket.readInt32LE(5), 0, 'party window should preserve the native loot distribution from invite');
     assert.strictEqual(twoMemberPacket.readInt32LE(9), 2, 'party window should include both active companions');
     assert.deepStrictEqual(
         PartyCompanionService.membersForLeader(partyHudLeaderSession).map((memberSession) => memberSession.actor.fetchName()),
@@ -605,9 +606,16 @@ try {
         'service should preserve both server-side companions'
     );
 
+    PartyCompanionService.rebuildWindow(partyHudLeaderSession, 2);
+    const changedDistributionPacket = lastPartyAllPacket(partyHudLeaderSession);
+    assert(changedDistributionPacket, 'explicit party distribution update should rebuild the party window');
+    assert.strictEqual(changedDistributionPacket.readInt32LE(5), 2, 'explicit party distribution update should be stored');
+    assert.strictEqual(changedDistributionPacket.readInt32LE(9), 2, 'distribution update should keep both party members');
+
     assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
     const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
     assert(oneMemberPacket, 'dismissing one companion should rebuild the party window');
+    assert.strictEqual(oneMemberPacket.readInt32LE(5), 2, 'party window should keep the stored loot distribution after detach');
     assert.strictEqual(oneMemberPacket.readInt32LE(9), 1, 'party window should keep the remaining companion');
     assert.strictEqual(partyHudBotASession.partyCompanion, false, 'dismissed companion should clear party flag');
     assert.strictEqual(partyHudBotASession.followPlayerSession, null, 'dismissed companion should clear leader link');

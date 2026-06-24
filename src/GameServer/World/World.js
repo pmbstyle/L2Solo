@@ -127,7 +127,7 @@ const World = {
         });
     },
 
-    inviteBotCompanion(session, actor, targetSession, distribution = 1, source = 'invite') {
+    inviteBotCompanion(session, actor, targetSession, distribution, source = 'invite') {
         const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
         const BotManager = invoke('GameServer/Bot/BotManager');
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
@@ -151,7 +151,12 @@ const World = {
             return false;
         }
 
-        PartyCompanionService.attach(session, targetSession, { distribution: distribution || 1 });
+        const attachOptions = {};
+        if (distribution !== undefined && distribution !== null) {
+            attachOptions.distribution = distribution;
+        }
+
+        PartyCompanionService.attach(session, targetSession, attachOptions);
 
         BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
         setTimeout(() => {
@@ -164,7 +169,7 @@ const World = {
         return true;
     },
 
-    inviteBotByName(session, actor, name, distribution = 1, source = 'named_invite') {
+    inviteBotByName(session, actor, name, distribution, source = 'named_invite') {
         const lookup = String(name || '').trim();
         if (!lookup) {
             session.dataSendToMe(ServerResponse.actionFailed());

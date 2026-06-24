@@ -1,5 +1,38 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 
+const DEFAULT_PARTY_DISTRIBUTION = 1;
+
+function hasOwn(object, key) {
+    return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function normalizeDistribution(distribution) {
+    if (distribution === undefined || distribution === null) return DEFAULT_PARTY_DISTRIBUTION;
+    const value = Number(distribution);
+    return Number.isFinite(value) ? value : DEFAULT_PARTY_DISTRIBUTION;
+}
+
+function settingsForLeader(leaderSession) {
+    if (!leaderSession) return { distribution: DEFAULT_PARTY_DISTRIBUTION };
+    if (!leaderSession.partyCompanionSettings) {
+        leaderSession.partyCompanionSettings = { distribution: DEFAULT_PARTY_DISTRIBUTION };
+    }
+    if (!hasOwn(leaderSession.partyCompanionSettings, 'distribution')) {
+        leaderSession.partyCompanionSettings.distribution = DEFAULT_PARTY_DISTRIBUTION;
+    }
+    return leaderSession.partyCompanionSettings;
+}
+
+function distributionForLeader(leaderSession) {
+    return normalizeDistribution(settingsForLeader(leaderSession).distribution);
+}
+
+function setDistribution(leaderSession, distribution) {
+    const settings = settingsForLeader(leaderSession);
+    settings.distribution = normalizeDistribution(distribution);
+    return settings.distribution;
+}
+
 function botSessions() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     return BotManager.sessions || [];
@@ -47,7 +80,7 @@ function renderPanel(leaderSession) {
 
 function refreshLeaderView(leaderSession, options = {}) {
     if (options.rebuildWindow !== false) {
-        sendPartyWindow(leaderSession, 0);
+        sendPartyWindow(leaderSession, distributionForLeader(leaderSession));
     }
     if (options.refreshPanel !== false) {
         renderPanel(leaderSession);
@@ -72,8 +105,13 @@ const PartyCompanionService = {
         return membersForLeader(leaderSession).map((session) => session.actor).filter(Boolean);
     },
 
-    rebuildWindow(leaderSession, distribution = 0) {
-        sendPartyWindow(leaderSession, distribution);
+    distributionForLeader,
+
+    rebuildWindow(leaderSession, distribution) {
+        const effectiveDistribution = arguments.length > 1
+            ? setDistribution(leaderSession, distribution)
+            : distributionForLeader(leaderSession);
+        sendPartyWindow(leaderSession, effectiveDistribution);
     },
 
     refreshPanel(leaderSession) {
@@ -87,7 +125,9 @@ const PartyCompanionService = {
 
         const previousLeader = companionSession.followPlayerSession;
         const wasResting = companionSession.plan === 'resting';
-        const distribution = options.distribution || 1;
+        const distribution = hasOwn(options, 'distribution')
+            ? setDistribution(leaderSession, options.distribution)
+            : distributionForLeader(leaderSession);
 
         if (options.sendJoin !== false) {
             leaderSession.dataSendToMe(ServerResponse.joinParty(distribution));
