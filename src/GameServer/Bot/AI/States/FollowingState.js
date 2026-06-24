@@ -222,6 +222,14 @@ function assistReasonForRole(role) {
     return 'leader_target';
 }
 
+function followTargetFor(session, player) {
+    return PartyCompanionService.formationTargetFor(session) || {
+        locX: player.fetchLocX(),
+        locY: player.fetchLocY(),
+        locZ: player.fetchLocZ()
+    };
+}
+
 function supportBuffPhrase(buffType, playerName) {
     if (buffType === 'might') return "Might on " + playerName + ". Hit harder!";
     if (buffType === 'shield') return "Shield on " + playerName + ". Stay sturdy.";
@@ -308,9 +316,7 @@ module.exports = {
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
             if (TeleportTo && typeof TeleportTo === 'function') {
                 const targetLoc = {
-                    locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                    locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                    locZ: player.fetchLocZ()
+                    ...followTargetFor(session, player)
                 };
                 TeleportTo(session, bot, targetLoc);
                 if (Math.random() < 0.20) {
@@ -340,11 +346,7 @@ module.exports = {
                 standUp(session, bot);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
                 if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    const followTarget = {
-                        locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                        locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                        locZ: player.fetchLocZ()
-                    };
+                    const followTarget = followTargetFor(session, player);
                     session.lastFollowMoveTarget = followTarget;
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
@@ -720,11 +722,7 @@ module.exports = {
                     session.lastFollowMoveHeldAt = Date.now();
                     return;
                 }
-                const followTarget = {
-                    locX: player.fetchLocX() + utils.oneFromSpan(-60, 60),
-                    locY: player.fetchLocY() + utils.oneFromSpan(-60, 60),
-                    locZ: player.fetchLocZ()
-                };
+                const followTarget = followTargetFor(session, player);
                 session.lastFollowMoveTarget = followTarget;
                 bot.moveTo({
                     from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },

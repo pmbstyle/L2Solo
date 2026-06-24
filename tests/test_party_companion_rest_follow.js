@@ -616,6 +616,27 @@ try {
         'service should preserve both server-side companions'
     );
 
+    World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
+    World.fetchNpcsInRadius = () => [];
+    partyHudBotA.locX = 520;
+    partyHudBotB.locX = 540;
+    partyHudBotA.moves = [];
+    partyHudBotB.moves = [];
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert(partyHudBotASession.lastFollowMoveTarget, 'first companion should get a formation follow target');
+    assert(partyHudBotBSession.lastFollowMoveTarget, 'second companion should get a formation follow target');
+    assert.notDeepStrictEqual(
+        partyHudBotASession.lastFollowMoveTarget,
+        partyHudBotBSession.lastFollowMoveTarget,
+        'companions should occupy different formation slots'
+    );
+    assert.deepStrictEqual(
+        PartyCompanionService.formationTargetFor(partyHudBotASession),
+        { locX: partyHudLeader.fetchLocX() - 90, locY: partyHudLeader.fetchLocY() - 70, locZ: partyHudLeader.fetchLocZ(), slot: 0 },
+        'first companion should use the first formation slot'
+    );
+
     const casterBot = fakeActor(2000033, { locX: 20, locY: 0, classId: 17 });
     const casterSession = fakeSession('bot_party_caster', casterBot);
     casterSession.followPlayerSession = partyHudLeaderSession;

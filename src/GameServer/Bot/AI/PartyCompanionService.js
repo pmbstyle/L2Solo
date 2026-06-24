@@ -9,6 +9,16 @@ const DEFAULT_PARTY_SETTINGS = {
     itemLastLootIndex: -1
 };
 const PARTY_LOOT_RADIUS = 2500;
+const FORMATION_OFFSETS = [
+    { locX: -90, locY: -70 },
+    { locX: -90, locY: 70 },
+    { locX: -170, locY: -120 },
+    { locX: -170, locY: 120 },
+    { locX: -250, locY: 0 },
+    { locX: -250, locY: -170 },
+    { locX: -250, locY: 170 },
+    { locX: -330, locY: 0 }
+];
 
 function hasOwn(object, key) {
     return Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -125,6 +135,29 @@ function nextTurnMember(leaderSession, members) {
     return members[nextIndex];
 }
 
+function formationSlotFor(companionSession) {
+    const leaderSession = companionSession?.followPlayerSession;
+    const members = membersForLeader(leaderSession);
+    const index = Math.max(0, members.indexOf(companionSession));
+    return {
+        index,
+        offset: FORMATION_OFFSETS[index % FORMATION_OFFSETS.length]
+    };
+}
+
+function formationTargetFor(companionSession) {
+    const leader = companionSession?.followPlayerSession?.actor;
+    if (!leader) return null;
+
+    const slot = formationSlotFor(companionSession);
+    return {
+        locX: leader.fetchLocX() + slot.offset.locX,
+        locY: leader.fetchLocY() + slot.offset.locY,
+        locZ: leader.fetchLocZ(),
+        slot: slot.index
+    };
+}
+
 function sendPartyWindow(leaderSession, distribution = 0) {
     const leader = leaderSession?.actor;
     if (!leader || !leaderSession.dataSendToMe) return;
@@ -184,6 +217,10 @@ const PartyCompanionService = {
     activeActorsForLeader(leaderSession) {
         return membersForLeader(leaderSession).map((session) => session.actor).filter(Boolean);
     },
+
+    formationSlotFor,
+
+    formationTargetFor,
 
     lootMembersForLeader,
 
