@@ -10,6 +10,7 @@ const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -73,6 +74,9 @@ function fakeActor(id, loc = {}) {
         fetchMaxHp() { return this.maxHp; },
         fetchMp() { return this.mp; },
         fetchMaxMp() { return this.maxMp; },
+        setHp(value) { this.hp = value; },
+        setMp(value) { this.mp = value; },
+        fillupVitals() { this.hp = this.maxHp; this.mp = this.maxMp; },
         fetchExp() { return this.exp; },
         fetchSp() { return this.sp; },
         setExp(data) { this.exp = data; },
@@ -132,7 +136,10 @@ function fakeActor(id, loc = {}) {
             fetchPaperdollId: () => 0,
             fetchPaperdollSelfId: () => 0
         },
-        skillset: { fetchSkill: () => null },
+        skillset: {
+            skills: [],
+            fetchSkill(selfId) { return this.skills.find((skill) => skill.fetchSelfId() === selfId) || null; }
+        },
         automation: { abortAll() {}, replenishVitals() {} }
     };
     return actor;
@@ -162,6 +169,7 @@ const originalUpdateCharacterExperience = Database.updateCharacterExperience;
 const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
 const originalBotSessions = BotManager.sessions;
+const originalApplySupportBuff = BotBuffs.applySupportBuff;
 
 function lastPartyAllPacket(session) {
     return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
@@ -488,6 +496,56 @@ try {
     assert.strictEqual(pvpAssistSession.currentTargetId, hostileBot.fetchId(), 'companion with no target should acquire bot attacking leader');
     assert.strictEqual(assistedPlayerId, hostileBot.fetchId(), 'companion should assist against bot attacking leader');
 
+    const healerLeader = fakeActor(2000024, { locX: 0, locY: 0 });
+    const healerLeaderSession = fakeSession('player_healer_party', healerLeader);
+    const healerBot = fakeActor(2000025, { locX: 80, locY: 0, classId: 15 });
+    const healerSession = fakeSession('bot_healer_party', healerBot);
+    healerSession.followPlayerSession = healerLeaderSession;
+    healerSession.partyCompanion = true;
+    healerSession.plan = 'following';
+    const woundedCompanion = fakeActor(2000026, { locX: 120, locY: 0, hp: 25, maxHp: 100 });
+    const woundedCompanionSession = fakeSession('bot_wounded_party', woundedCompanion);
+    woundedCompanionSession.followPlayerSession = healerLeaderSession;
+    woundedCompanionSession.partyCompanion = true;
+    woundedCompanionSession.plan = 'following';
+    World.user = { sessions: [healerLeaderSession, healerSession, woundedCompanionSession] };
+    World.fetchNpcsInRadius = () => [];
+    let healedTargetId = null;
+
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healedTargetId = data.id; }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(healedTargetId, woundedCompanion.fetchId(), 'healer should heal the wounded companion, not only the leader');
+    assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
+
+    const bufferLeader = fakeActor(2000027, { locX: 0, locY: 0 });
+    const bufferLeaderSession = fakeSession('player_buffer_party', bufferLeader);
+    const bufferBot = fakeActor(2000028, { locX: 80, locY: 0, classId: 17 });
+    const bufferSession = fakeSession('bot_buffer_party', bufferBot);
+    bufferSession.followPlayerSession = bufferLeaderSession;
+    bufferSession.partyCompanion = true;
+    bufferSession.plan = 'following';
+    const unbuffedCompanion = fakeActor(2000029, { locX: 120, locY: 0 });
+    unbuffedCompanion.activeBuffs.shield = 0;
+    const unbuffedCompanionSession = fakeSession('bot_unbuffed_party', unbuffedCompanion);
+    unbuffedCompanionSession.followPlayerSession = bufferLeaderSession;
+    unbuffedCompanionSession.partyCompanion = true;
+    unbuffedCompanionSession.plan = 'following';
+    World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
+    let buffedTargetId = null;
+    let appliedBuffType = null;
+    BotBuffs.applySupportBuff = (targetSession, target, buffType) => {
+        buffedTargetId = target.fetchId();
+        appliedBuffType = buffType;
+        return { name: buffType };
+    };
+
+    FollowingState.tick(bufferSession, bufferBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(buffedTargetId, unbuffedCompanion.fetchId(), 'buffer should refresh buffs on party companions');
+    assert.strictEqual(appliedBuffType, 'shield', 'buffer should apply the missing support buff');
+
     const rewardLeader = fakeActor(2000010, { locX: 0, locY: 0 });
     const rewardLeaderSession = fakeSession('player_reward', rewardLeader);
     const rewardBot = fakeActor(2000011, { locX: 80, locY: 0 });
@@ -673,6 +731,7 @@ try {
     Database.updateCharacterExperience = originalUpdateCharacterExperience;
     DataCache.experience = originalExperience;
     BotManager.sessions = originalBotSessions;
+    BotBuffs.applySupportBuff = originalApplySupportBuff;
 }
 
 console.log('Party companion rest/follow regression checks passed');
