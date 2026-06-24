@@ -5,6 +5,7 @@ const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 
 const SUPPORT_BUFF_MP_COST = 20;
 const FOLLOW_RUN_DISTANCE = 250;
@@ -258,6 +259,14 @@ module.exports = {
         const leaderTargetId = combatMode === 'assist'
             ? PartyAwareness.leaderCombatTargetId(playerSession)
             : undefined;
+        const impairments = EffectStore.impairments(bot);
+
+        if (impairments.disabled) {
+            session.currentTargetId = undefined;
+            bot.unselect();
+            recordRoleDecision(session, bot, 'disabled', 'debuff_control');
+            return;
+        }
 
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
@@ -285,6 +294,11 @@ module.exports = {
                 partyThreat || leaderTargetId ? assistActionForRole(role) : 'follow_leader',
                 partyThreat ? 'party_under_attack' : (leaderTargetId ? assistReasonForRole(role) : 'leader_moved')
             );
+            return;
+        }
+
+        if (impairments.rooted && !partyThreat && !leaderTargetId && distance > FOLLOW_RUN_DISTANCE) {
+            recordRoleDecision(session, bot, 'hold_position', 'rooted');
             return;
         }
 
@@ -407,6 +421,9 @@ module.exports = {
                     activeMobs
                 });
                 keepRoleDecision = true;
+            } else if (impairments.silenced) {
+                recordRoleDecision(session, bot, 'save_mp', 'silenced');
+                keepRoleDecision = true;
             } else if (bot.fetchMp() < SUPPORT_BUFF_MP_COST || botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
                     buff: supportBuffTarget.buff,
@@ -414,7 +431,10 @@ module.exports = {
                 });
                 keepRoleDecision = true;
             } else {
-                const result = BotBuffs.applySupportBuff(supportBuffTarget.session, supportBuffTarget.actor, supportBuffTarget.buff, Generics);
+                const result = BotBuffs.applySupportBuff(supportBuffTarget.session, supportBuffTarget.actor, supportBuffTarget.buff, Generics, {
+                    casterSession: session,
+                    caster: bot
+                });
                 if (result) {
                     acted = true;
                     bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
@@ -470,7 +490,7 @@ module.exports = {
 
         if (role === 'healer') {
             const skill = healSkill(bot);
-            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot);
+            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
             const woundedPartyMember = weakestPartyMember(playerSession, bot);
 
             if (woundedPartyMember?.hpRatio < 0.45 && canCast) {
@@ -497,6 +517,9 @@ module.exports = {
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing myself!");
                 }
+            } else if (impairments.silenced) {
+                recordRoleDecision(session, bot, 'save_mp', 'silenced');
+                keepRoleDecision = true;
             } else if (botVitals.mpRatio < 0.25) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp');
                 keepRoleDecision = true;
@@ -686,6 +709,10 @@ module.exports = {
                     });
                 }
             } else if (distance > FOLLOW_RUN_DISTANCE) {
+                if (impairments.rooted) {
+                    recordRoleDecision(session, bot, 'hold_position', 'rooted');
+                    return;
+                }
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
                 }

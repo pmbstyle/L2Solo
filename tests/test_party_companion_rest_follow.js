@@ -14,6 +14,7 @@ const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -180,6 +181,14 @@ const originalApplySupportBuff = BotBuffs.applySupportBuff;
 
 function lastPartyAllPacket(session) {
     return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
+}
+
+function lastPartySpelledPacket(session, actorId) {
+    return [...session.packets].reverse().find((packet) => (
+        packet[0] === 0xee &&
+        (!actorId || packet.readInt32LE(5) === actorId) &&
+        packet.readInt32LE(9) > 0
+    ));
 }
 
 try {
@@ -606,6 +615,39 @@ try {
         [partyHudBotA.fetchName(), partyHudBotB.fetchName()],
         'service should preserve both server-side companions'
     );
+
+    const casterBot = fakeActor(2000033, { locX: 20, locY: 0, classId: 17 });
+    const casterSession = fakeSession('bot_party_caster', casterBot);
+    casterSession.followPlayerSession = partyHudLeaderSession;
+    casterSession.partyCompanion = true;
+    casterSession.plan = 'following';
+    originalApplySupportBuff(partyHudBotASession, partyHudBotA, 'shield', { calculateStats() {} }, {
+        casterSession,
+        caster: casterBot
+    });
+    assert(EffectStore.packetEffects(partyHudBotA).some((effect) => effect.id === 1040), 'support buff should be stored as a structured effect');
+    const partyShieldPacket = lastPartySpelledPacket(partyHudLeaderSession, partyHudBotA.fetchId());
+    assert(partyShieldPacket, 'support buff should refresh native party effect icons');
+    assert.strictEqual(partyShieldPacket.readInt32LE(13), 1040, 'party effect packet should include shield skill id');
+    assert(casterSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(5) === partyHudBotA.fetchId()), 'support buff should broadcast a visible skill cast from the caster');
+
+    EffectStore.apply(partyHudBotB, {
+        key: 'stun',
+        id: 101,
+        level: 1,
+        name: 'Stun',
+        type: 'debuff',
+        category: 'stun',
+        durationMs: 30000
+    });
+    partyHudBotB.moves = [];
+    partyHudBotB.locX = 900;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(partyHudBotB.moves.length, 0, 'stunned companion should not follow or fight');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'disabled', 'stunned companion should expose disabled behavior state');
+    assert(BotStatus.getStatus(partyHudBotBSession).debuffs.some((effect) => effect.key === 'stun'), 'bot status should expose active debuffs');
+    EffectStore.remove(partyHudBotB, 'stun');
+    partyHudBotB.locX = 80;
 
     PartyCompanionService.rebuildWindow(partyHudLeaderSession, 2);
     const changedDistributionPacket = lastPartyAllPacket(partyHudLeaderSession);

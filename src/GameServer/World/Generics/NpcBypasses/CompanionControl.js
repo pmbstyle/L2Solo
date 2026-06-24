@@ -175,6 +175,7 @@ function renderCompanionPanel(session) {
         const mpPct = status ? Math.round(status.vitals.mpPct * 100) : 0;
         const roleDecision = status?.roleDecision ? `${status.roleDecision.action}/${status.roleDecision.reason}` : status?.intent;
         const buffText = status?.buffs?.needsRefresh ? ' / buffs low' : '';
+        const debuffText = status?.debuffs?.length ? ` / debuff ${status.debuffs[0].key}` : '';
         const stance = stayActive ? 'hold' : 'follow';
         const pullText = BotRoles.isTank(bot) ? ` / pull ${companionSession.autoTaunt === false ? 'off' : 'auto'}` : '';
         const actions = [
@@ -188,7 +189,7 @@ function renderCompanionPanel(session) {
         body += Html.botCard({
             name: bot.fetchName(),
             badge: status ? Html.font(status.role || 'bot', Html.COLOR.link) : '',
-            subtitle: status ? `${roleDecision} / ${stance}${pullText} / HP ${hpPct}% / MP ${mpPct}%${buffText}` : 'status unavailable',
+            subtitle: status ? `${roleDecision} / ${stance}${pullText} / HP ${hpPct}% / MP ${mpPct}%${buffText}${debuffText}` : 'status unavailable',
             status: actions
         });
         body += Html.spacer(4);

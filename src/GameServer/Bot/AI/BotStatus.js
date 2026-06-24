@@ -3,6 +3,7 @@ const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -249,6 +250,11 @@ const BotStatus = {
                 pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute)
             },
             buffs: BotBuffs.snapshot(bot),
+            debuffs: EffectStore.activeDebuffs(bot).map((effect) => ({
+                key: effect.key,
+                name: effect.name,
+                remainingSec: Math.round(EffectStore.remainingMs(bot, effect.key) / 1000)
+            })),
             timers: {
                 deathStartedAt: session.deathTimerStart || null,
                 fleeStartedAt: session.fleeStart || null,

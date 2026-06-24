@@ -1,13 +1,14 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 
 const ALL_BUFFS = {
-    windwalk: { key: 'windWalk', id: 1204, name: 'Wind Walk' },
-    shield: { key: 'shield', id: 1040, name: 'Shield' },
-    haste: { key: 'haste', id: 1086, name: 'Haste' },
-    might: { key: 'might', id: 1068, name: 'Might' }
+    windwalk: { key: 'windWalk', id: 1204, level: 2, name: 'Wind Walk' },
+    shield: { key: 'shield', id: 1040, level: 2, name: 'Shield' },
+    haste: { key: 'haste', id: 1086, level: 2, name: 'Haste' },
+    might: { key: 'might', id: 1068, level: 2, name: 'Might' }
 };
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
@@ -31,6 +32,8 @@ function isNewbieEligible(actor) {
 }
 
 function remainingMs(actor, key) {
+    const effectRemaining = EffectStore.remainingMs(actor, key);
+    if (effectRemaining > 0) return effectRemaining;
     if (!actor?.activeBuffs?.[key]) return 0;
     return Math.max(0, actor.activeBuffs[key] - now());
 }
@@ -54,6 +57,12 @@ function refreshActorPackets(session, actor, Generics) {
 
     session.dataSendToMe(ServerResponse.userInfo(actor));
     session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+    try {
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+        PartyCompanionService.updateActorEffects(session);
+    } catch (err) {
+        utils.infoWarn('BotParty', 'party effect refresh failed: %s', err.message);
+    }
 
     if (session.accountId && String(session.accountId).startsWith('bot_')) {
         session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
@@ -70,12 +79,30 @@ function nextSupportBuff(actor, thresholdMs = REFRESH_THRESHOLD_MS) {
     return SUPPORT_BUFF_TYPES.find((type) => needsBuff(actor, type, thresholdMs)) || null;
 }
 
-function applyBuff(session, actor, buffType, Generics) {
+function broadcastSkillCast(casterSession, caster, target, buff) {
+    if (!casterSession?.dataSendToMeAndOthers || !caster || !target || caster === target) return;
+    casterSession.dataSendToMeAndOthers(ServerResponse.skillStarted(caster, target.fetchId(), {
+        fetchSelfId: () => buff.id,
+        fetchCalculatedHitTime: () => 800,
+        fetchReuseTime: () => 1000
+    }), caster);
+}
+
+function applyBuff(session, actor, buffType, Generics, source = {}) {
     const buff = ALL_BUFFS[buffType];
     if (!buff || !actor) return null;
 
     const store = ensureStore(actor);
     store[buff.key] = now() + BUFF_DURATION_MS;
+    EffectStore.apply(actor, {
+        key: buff.key,
+        id: buff.id,
+        level: buff.level,
+        name: buff.name,
+        type: 'buff',
+        durationMs: BUFF_DURATION_MS
+    });
+    broadcastSkillCast(source.casterSession, source.caster, actor, buff);
     refreshActorPackets(session, actor, Generics);
 
     return {
@@ -85,14 +112,14 @@ function applyBuff(session, actor, buffType, Generics) {
     };
 }
 
-function applyNewbieBuff(session, actor, buffType, Generics) {
+function applyNewbieBuff(session, actor, buffType, Generics, source) {
     if (!NEWBIE_BUFFS[buffType]) return null;
-    return applyBuff(session, actor, buffType, Generics);
+    return applyBuff(session, actor, buffType, Generics, source);
 }
 
-function applySupportBuff(session, actor, buffType, Generics) {
+function applySupportBuff(session, actor, buffType, Generics, source) {
     if (!SUPPORT_BUFFS[buffType]) return null;
-    return applyBuff(session, actor, buffType, Generics);
+    return applyBuff(session, actor, buffType, Generics, source);
 }
 
 function applyFullNewbieBlessing(session, actor, Generics) {
@@ -102,6 +129,14 @@ function applyFullNewbieBlessing(session, actor, Generics) {
     const expiresAt = now() + BUFF_DURATION_MS;
     NEWBIE_BUFF_TYPES.map((type) => ALL_BUFFS[type]).forEach((buff) => {
         store[buff.key] = expiresAt;
+        EffectStore.apply(actor, {
+            key: buff.key,
+            id: buff.id,
+            level: buff.level,
+            name: buff.name,
+            type: 'buff',
+            expiresAt
+        });
     });
 
     actor.setHp(actor.fetchMaxHp());

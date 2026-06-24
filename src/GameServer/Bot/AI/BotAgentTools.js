@@ -155,7 +155,10 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     if (bot.fetchMp() < SUPPORT_BUFF_MP_COST) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
-    const result = BotBuffs.applySupportBuff(targetSession, target, buffType, invoke(path.actor));
+    const result = BotBuffs.applySupportBuff(targetSession, target, buffType, invoke(path.actor), {
+        casterSession: session,
+        caster: bot
+    });
     if (!result) return { applied: false, reason: 'buff_failed' };
 
     bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));

@@ -129,13 +129,20 @@ function sendPartyWindow(leaderSession, distribution = 0) {
     const leader = leaderSession?.actor;
     if (!leader || !leaderSession.dataSendToMe) return;
 
-    const members = membersForLeader(leaderSession)
+    const memberSessions = membersForLeader(leaderSession);
+    const members = memberSessions
         .map((session) => session.actor)
         .filter(Boolean);
 
     leaderSession.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
     if (members.length > 0) {
         leaderSession.dataSendToMe(ServerResponse.partySmallWindowAll(leader.fetchId(), distribution, members));
+        leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(leader));
+        memberSessions.forEach((memberSession) => {
+            if (memberSession.actor) {
+                leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(memberSession.actor));
+            }
+        });
     }
 }
 
@@ -195,6 +202,23 @@ const PartyCompanionService = {
 
     refreshPanel(leaderSession) {
         renderPanel(leaderSession);
+    },
+
+    updateActorEffects(session) {
+        const actor = session?.actor;
+        if (!actor) return false;
+
+        if (session.partyCompanion === true && session.followPlayerSession?.dataSendToMe) {
+            session.followPlayerSession.dataSendToMe(ServerResponse.partySpelled.fromActor(actor));
+            return true;
+        }
+
+        if (membersForLeader(session).length > 0 && session.dataSendToMe) {
+            session.dataSendToMe(ServerResponse.partySpelled.fromActor(actor));
+            return true;
+        }
+
+        return false;
     },
 
     resolveLootSession(looterSession, selfId, target) {
@@ -318,6 +342,7 @@ const PartyCompanionService = {
         const leaderSession = companionSession.followPlayerSession;
         if (!leaderSession.actor?.fetchIsOnline?.()) return false;
         leaderSession.dataSendToMe(ServerResponse.partySmallWindowUpdate(companionSession.actor));
+        leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(companionSession.actor));
         return true;
     }
 };
