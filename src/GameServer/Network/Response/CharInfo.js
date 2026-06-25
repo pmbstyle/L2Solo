@@ -2,6 +2,7 @@ const SendPacket = invoke('Packet/Send');
 
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
+    const weaponDisplayId = actor.backpack.fetchPaperdollSelfId(7) || actor.backpack.fetchPaperdollSelfId(14) || 0;
     const pvpFlag = actor.fetchPvpFlag();
     const karma = actor.fetchKarma();
     const runSpeed = actor.fetchCollectiveRunSpd();
@@ -25,14 +26,14 @@ function charInfo(actor) {
         .writeD(actor.fetchClassId())
         .writeD(0x00)  // Hair all
         .writeD(actor.backpack.fetchPaperdollSelfId( 6)) // Head
-        .writeD(actor.backpack.fetchPaperdollSelfId( 7)) // Weapon
+        .writeD(weaponDisplayId) // Weapon
         .writeD(actor.backpack.fetchPaperdollSelfId( 8)) // Shield
         .writeD(actor.backpack.fetchPaperdollSelfId( 9)) // Hands
         .writeD(actor.backpack.fetchPaperdollSelfId(10)) // Chest
         .writeD(actor.backpack.fetchPaperdollSelfId(11)) // Pants
         .writeD(actor.backpack.fetchPaperdollSelfId(12)) // Feet
         .writeD(0x00)  // Back
-        .writeD(actor.backpack.fetchPaperdollSelfId( 7)) // Two-hand weapon display
+        .writeD(weaponDisplayId) // Two-hand weapon display
         .writeD(0x00)  // Hair
         .writeD(pvpFlag)  // Purple = 0x01
         .writeD(karma)
