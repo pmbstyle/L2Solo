@@ -5,13 +5,20 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 // Initialize geodata engine
 GeodataEngine.init();
 
-const blockX = 108;
-const blockY = 114;
+const sampleX = -84108;
+const sampleY = 244604;
+const regionX = (sampleX >> 15) + 20;
+const regionY = (sampleY >> 15) + 18;
+const localX = sampleX - ((regionX - 20) << 15);
+const localY = sampleY - ((regionY - 18) << 15);
+const blockX = localX >> 7;
+const blockY = localY >> 7;
+const regionKey = `${regionX}_${regionY}`;
 
-const buffer = GeodataEngine.getRegionBuffer(22, 24);
-const offsetIndex = GeodataEngine.index_22_24;
+const buffer = GeodataEngine.getRegionBuffer(regionX, regionY);
+const offsetIndex = GeodataEngine[`index_${regionKey}`];
 if (!buffer || !offsetIndex) {
-    console.log("SKIP: raw geodata region 22_24 is not available");
+    console.log(`SKIP: raw geodata region ${regionKey} is not available`);
     process.exit(0);
 }
 

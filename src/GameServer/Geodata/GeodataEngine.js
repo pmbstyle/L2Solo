@@ -2,6 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const VirtualObstacles = invoke('GameServer/Geodata/VirtualObstacles/index');
 
+const REGION_OFFSET_X = 20;
+const REGION_OFFSET_Y = 18;
+
+function getRegionX(x) {
+    return (x >> 15) + REGION_OFFSET_X;
+}
+
+function getRegionY(y) {
+    return (y >> 15) + REGION_OFFSET_Y;
+}
+
+function getLocalX(x, regionX) {
+    return x - ((regionX - REGION_OFFSET_X) << 15);
+}
+
+function getLocalY(y, regionY) {
+    return y - ((regionY - REGION_OFFSET_Y) << 15);
+}
+
 const GeodataEngine = {
     regions: {}, // Loaded region buffers, keyed by "XX_YY"
     missing: {}, // Keys of missing regions, to prevent console spam and repeat disk checks
@@ -10,48 +29,53 @@ const GeodataEngine = {
         console.info("GeodataEngine :: Initializing...");
         VirtualObstacles.init();
         // Preload active regions on startup
-        // NOTE: Giran (27_21), Elven Village (26_18), Orc Village (27_17),
-        //       Dwarven Village (28_11) are beyond geodata coverage (max regionX=26).
-        //       These cities will use fallback Z-height from current actor position.
+        // L2J geodata file names follow client map regions, e.g. T_22_19.
         const activeRegions = [
             // Talking Island (x≈-84k, y≈244k)
-            { x: 22, y: 24 }, // Talking Island Village (core)
-            { x: 22, y: 23 }, // Talking Island (west)
-            { x: 22, y: 25 }, // Talking Island (east)
+            { x: 17, y: 25 }, // Talking Island Village (core)
+            { x: 17, y: 24 }, // Talking Island (south)
 
             // Gludin (x≈-80k, y≈149k)
-            { x: 22, y: 21 }, // Gludin Town (core)
-            { x: 22, y: 20 }, // Gludin (south)
-            { x: 22, y: 22 }, // Gludin (north)
+            { x: 17, y: 22 }, // Gludin Town (core)
+            { x: 17, y: 21 }, // Gludin (south)
+            { x: 17, y: 23 }, // Gludin (north)
 
             // Gludio (x≈-12k, y≈122k)
-            { x: 24, y: 20 }, // Gludio Town (core)
-            { x: 24, y: 19 }, // Gludio (south)
-            { x: 24, y: 21 }, // Gludio (north)
+            { x: 19, y: 21 }, // Gludio Town (core)
+            { x: 19, y: 20 }, // Gludio (south)
+            { x: 19, y: 22 }, // Gludio (north)
 
             // Dion (x≈15k, y≈142k)
-            { x: 25, y: 21 }, // Dion Town (core)
-            { x: 25, y: 20 }, // Dion (south)
+            { x: 20, y: 22 }, // Dion Town (core)
+            { x: 20, y: 21 }, // Dion (south)
 
             // Dark Elven Village (x≈9k, y≈15k)
-            { x: 25, y: 17 }, // Dark Elven Village (core)
-            { x: 24, y: 17 }, // Dark Elven (west)
-            { x: 25, y: 18 }, // Dark Elven (north)
+            { x: 20, y: 18 }, // Dark Elven Village (core)
+            { x: 19, y: 18 }, // Dark Elven (west)
+            { x: 20, y: 19 }, // Dark Elven (north)
 
-            // Orc Village area (x≈84k — outside geodata coverage, but nearby regions)
-            { x: 25, y: 16 }, // Orc Village adjacent area
-            { x: 24, y: 16 }, // Orc Village adjacent area
+            // Orc Village area (x≈84k, y≈-112k)
+            { x: 22, y: 14 }, // Orc Village area
+            { x: 21, y: 14 }, // Orc Village adjacent area
 
             // Neutral Zone / Elven Forest (x≈-10k, y≈75k)
-            { x: 24, y: 19 }, // Neutral Zone area (already loaded for Gludio south)
+            { x: 19, y: 20 }, // Neutral Zone area (already loaded for Gludio south)
 
             // General world areas for pathfinding
-            { x: 25, y: 19 }, // Central area
-            { x: 24, y: 18 }, // Between cities
+            { x: 20, y: 20 }, // Central area
+            { x: 19, y: 19 }, // Between cities
         ];
         activeRegions.forEach(reg => {
             this.loadRegion(reg.x, reg.y);
         });
+    },
+
+    getGeodataDir() {
+        return process.env.L2NODE_GEODATA_DIR || path.join(__dirname, '../../../data/Geodata');
+    },
+
+    getRegionKey(x, y) {
+        return `${getRegionX(x)}_${getRegionY(y)}`;
     },
 
     loadRegion(regionX, regionY) {
@@ -60,8 +84,7 @@ const GeodataEngine = {
             return false;
         }
         
-        // Adjust path to find the Geodata directory under data/Geodata/
-        const filePath = path.join(__dirname, `../../../data/Geodata/${key}.l2j`);
+        const filePath = path.join(this.getGeodataDir(), `${key}.l2j`);
         
         if (fs.existsSync(filePath)) {
             try {
@@ -97,9 +120,8 @@ const GeodataEngine = {
     },
 
     getHeight(x, y, z) {
-        // Lineage 2 coordinate scaling region formula
-        const regionX = (x >> 15) + 25;
-        const regionY = (y >> 15) + 17;
+        const regionX = getRegionX(x);
+        const regionY = getRegionY(y);
 
         const buffer = this.getRegionBuffer(regionX, regionY);
         if (!buffer) {
@@ -107,8 +129,8 @@ const GeodataEngine = {
         }
 
         // Calculate local coordinates inside the region (0 to 32767)
-        const localX = x - ((regionX - 25) << 15);
-        const localY = y - ((regionY - 17) << 15);
+        const localX = getLocalX(x, regionX);
+        const localY = getLocalY(y, regionY);
 
         // Calculate block index inside the region (0 to 255)
         const blockX = localX >> 7;
@@ -180,8 +202,8 @@ const GeodataEngine = {
     },
 
     getCellData(x, y, z) {
-        const regionX = (x >> 15) + 25;
-        const regionY = (y >> 15) + 17;
+        const regionX = getRegionX(x);
+        const regionY = getRegionY(y);
         const regionKey = `${regionX}_${regionY}`;
 
         if (this.checkVirtualObstacles(x, y, regionKey)) {
@@ -193,8 +215,8 @@ const GeodataEngine = {
             return { z: z, nswe: 15 };
         }
 
-        const localX = x - ((regionX - 25) << 15);
-        const localY = y - ((regionY - 17) << 15);
+        const localX = getLocalX(x, regionX);
+        const localY = getLocalY(y, regionY);
 
         const blockX = localX >> 7;
         const blockY = localY >> 7;

@@ -4,6 +4,7 @@ const tests = [
     'tests/test_bot_ai_visibility.js',
     'tests/test_bot_gear.js',
     'tests/test_c4_protocol_packets.js',
+    'tests/test_geodata_regions.js',
     'tests/test_party_companion_rest_follow.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',
