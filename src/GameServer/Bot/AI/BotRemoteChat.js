@@ -108,7 +108,7 @@ function schema() {
         properties: {
             reply: {
                 type: 'string',
-                description: 'Short in-character private reply, max 120 chars.'
+                description: 'Short in-character private reply. Long factual lists may be up to 360 chars.'
             },
             intent: {
                 type: 'string',
@@ -185,7 +185,8 @@ async function requestLlmReply(payload, cfg) {
         if (!content) return null;
 
         const parsed = JSON.parse(content);
-        const reply = String(parsed.reply || '').trim().slice(0, 120);
+        const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+        const reply = BotChatText.normalize(parsed.reply).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
         if (!reply || Number(parsed.confidence || 0) < 0.35) return null;
 
         return {

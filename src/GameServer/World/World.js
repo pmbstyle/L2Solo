@@ -18,12 +18,16 @@ function coldActor(state) {
 }
 
 function coldBotTell(playerSession, state, text) {
-    const clean = String(text || '').trim().slice(0, 120);
-    if (!clean || !state || !playerSession?.dataSendToMe) return;
+    if (!state || !playerSession?.dataSendToMe) return;
+    const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+    const lines = BotChatText.splitForTell(text);
+    if (!lines.length) return;
 
-    playerSession.dataSendToMe(
-        ServerResponse.speak(coldActor(state), { kind: 2, text: clean })
-    );
+    lines.forEach((line) => {
+        playerSession.dataSendToMe(
+            ServerResponse.speak(coldActor(state), { kind: 2, text: line })
+        );
+    });
 }
 
 function waitForBotSession(BotManager, name, attempts = 40) {
