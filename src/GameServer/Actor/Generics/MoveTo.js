@@ -18,18 +18,6 @@ function moveTo(session, actor, coords) {
     const requestedTo = { ...coords.to };
     let townRouteDiagnostics = null;
 
-    // Dynamic city exit/entrance routing middleware for bots
-    if (isBot) {
-        const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-        const routeResult = TownPathfinder.routeWithSession(session, actor, coords.from, coords.to);
-        const routedTo = routeResult.to;
-        townRouteDiagnostics = routeResult.diagnostics;
-        
-        coords.to.locX = routedTo.locX;
-        coords.to.locY = routedTo.locY;
-        coords.to.locZ = routedTo.locZ;
-    }
-
     if (!isBot) {
         // Normal player movement
         session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), coords), actor);
@@ -38,9 +26,6 @@ function moveTo(session, actor, coords) {
         const startX = coords.from.locX;
         const startY = coords.from.locY;
         const startZ = coords.from.locZ;
-        const endX = coords.to.locX;
-        const endY = coords.to.locY;
-        const endZ = coords.to.locZ;
 
         // Helper to fetch distance to closest real player
         const getDistanceToClosestPlayer = () => {
@@ -72,16 +57,17 @@ function moveTo(session, actor, coords) {
 
         if (distanceToPlayer > 1500 && !isCompanion) {
             // Low LOD: instant warp (we do not calculate movements at all)
-            const snappedTo = { ...coords.to };
+            const snappedTo = { ...requestedTo };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
             actor.setLocXYZ(snappedTo);
             session.lastPathfinding = {
                 requestedTo,
-                routedTo: { ...coords.to },
-                townRoute: townRouteDiagnostics,
+                routedTo: { ...snappedTo },
+                townRoute: null,
                 pathLength: 0,
                 lowLodWarp: true,
                 distanceToPlayer,
+                strategy: 'low_lod_direct',
                 at: Date.now()
             };
             return;
@@ -89,19 +75,37 @@ function moveTo(session, actor, coords) {
 
         const isClose = isCompanion || distanceToPlayer <= 500;
 
-        // Compute path using geodata
-        let path = GeodataEngine.findPath(startX, startY, startZ, endX, endY, endZ);
-        console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${endX}, ${endY}, ${endZ}) -> Waypoints: ${path ? path.length : 0}`);
+        let pathTarget = { ...requestedTo };
+        let path = GeodataEngine.findPath(startX, startY, startZ, requestedTo.locX, requestedTo.locY, requestedTo.locZ);
+        let pathStrategy = 'direct_geodata';
+
         if (!path || path.length <= 1) {
-            path = [{ locX: endX, locY: endY, locZ: endZ }];
+            const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+            const routeResult = TownPathfinder.routeWithSession(session, actor, coords.from, requestedTo);
+            pathTarget = { ...routeResult.to };
+            townRouteDiagnostics = routeResult.diagnostics;
+            coords.to.locX = pathTarget.locX;
+            coords.to.locY = pathTarget.locY;
+            coords.to.locZ = pathTarget.locZ;
+            pathStrategy = townRouteDiagnostics?.changedTarget ? 'town_waypoint_fallback' : 'direct_fallback';
+
+            path = GeodataEngine.findPath(startX, startY, startZ, pathTarget.locX, pathTarget.locY, pathTarget.locZ);
+        } else if (session) {
+            session.townRoutePlan = null;
+        }
+
+        console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${pathTarget.locX}, ${pathTarget.locY}, ${pathTarget.locZ}) strategy=${pathStrategy} -> Waypoints: ${path ? path.length : 0}`);
+        if (!path || path.length <= 1) {
+            path = [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }];
         }
         session.lastPathfinding = {
             requestedTo,
-            routedTo: { ...coords.to },
+            routedTo: { ...pathTarget },
             townRoute: townRouteDiagnostics,
             pathLength: path.length,
             lowLodWarp: false,
             distanceToPlayer,
+            strategy: pathStrategy,
             at: Date.now()
         };
 

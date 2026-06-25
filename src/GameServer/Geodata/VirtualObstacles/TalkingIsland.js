@@ -1,6 +1,6 @@
 module.exports = {
     name: "Talking Island Town",
-    region: "22_24",
+    region: "17_25",
     walls: [
         { type: "horizontal", y: 243227, minX: -85400, maxX: -83150, gateX: -84081, gateWidth: 300 },
         { type: "horizontal", y: 245800, minX: -85400, maxX: -83150, gateX: -84318, gateWidth: 300 },
