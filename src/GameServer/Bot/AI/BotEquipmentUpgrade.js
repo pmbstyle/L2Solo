@@ -81,6 +81,13 @@ function armorKindsFor(role, slot) {
     return [];
 }
 
+function isUnsafeFullBodyRobe(role, item, slot) {
+    return ['mage', 'healer', 'buffer'].includes(role) &&
+        Number(slot) === ARMOR_SLOTS.fullArmor &&
+        item.fetchKind() === 'Armor.Fabric' &&
+        item.fetchRank?.() === 'none';
+}
+
 function isSuitableItem(actor, item) {
     if (!item?.isWearable?.() || item.fetchEquipped?.()) return false;
     if (!rankAllowed(item, actor)) return false;
@@ -99,6 +106,7 @@ function isSuitableItem(actor, item) {
 
     if (item.isArmor()) {
         if (slot === ARMOR_SLOTS.shield && ['mage', 'healer', 'buffer', 'archer', 'dagger'].includes(role)) return false;
+        if (isUnsafeFullBodyRobe(role, item, slot)) return false;
         return armorKindsFor(role, slot).includes(kind);
     }
 

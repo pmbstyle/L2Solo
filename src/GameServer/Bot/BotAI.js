@@ -489,13 +489,16 @@ const BotAI = {
 
     tell(session, targetSession, text) {
         if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
-        const clean = String(text || '').trim().slice(0, 120);
-        if (!clean) return;
+        const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+        const lines = BotChatText.splitForTell(text);
+        if (!lines.length) return;
 
         const ServerResponse = invoke('GameServer/Network/Response');
-        targetSession.dataSendToMe(
-            ServerResponse.speak(session.actor, { kind: 2, text: clean })
-        );
+        lines.forEach((line) => {
+            targetSession.dataSendToMe(
+                ServerResponse.speak(session.actor, { kind: 2, text: line })
+            );
+        });
     },
 
     trade(session, text) {

@@ -126,7 +126,7 @@ function schema() {
             },
             reply: {
                 type: 'string',
-                description: 'Short in-character bot line, max 120 chars. Empty string when no reply is needed.'
+                description: 'Short in-character bot reply. Empty string when no reply is needed. Long factual lists may be up to 360 chars.'
             },
             targetPlayerName: {
                 type: 'string',
@@ -181,6 +181,7 @@ function userPayload(event, session, status, visiblePlayers, text) {
         tools: BotAgentTools.toolDescriptions(),
         constraints: {
             keepReplyShort: true,
+            splitLongRepliesIntoChatLines: true,
             avoidSpam: true,
             noCombatMicromanagement: true
         },

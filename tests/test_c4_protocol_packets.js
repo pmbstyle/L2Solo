@@ -15,10 +15,9 @@ function fakePaperdoll() {
     }));
 }
 
-function fakeActor() {
+function fakeActor(paperdoll = fakePaperdoll()) {
     const paperdollIdSlots = [];
     const paperdollSelfIdSlots = [];
-    const paperdoll = fakePaperdoll();
 
     const actor = {
         paperdollIdSlots,
@@ -132,6 +131,18 @@ function findUtf16Terminator(buffer, offset) {
     return -1;
 }
 
+function charInfoEquipment(buffer) {
+    const nameEnd = findUtf16Terminator(buffer, 21);
+    const equipmentOffset = nameEnd + 2 + 16;
+
+    return {
+        head: buffer.readInt32LE(equipmentOffset),
+        weapon: buffer.readInt32LE(equipmentOffset + 4),
+        shield: buffer.readInt32LE(equipmentOffset + 8),
+        twoHand: buffer.readInt32LE(equipmentOffset + 32)
+    };
+}
+
 const authGG = AuthResponse.authGG(0x12345678);
 assert.strictEqual(authGG[0], 0x0b, 'C4 AuthGG response opcode should be 0x0b');
 assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
@@ -175,12 +186,22 @@ assert.ok(userInfo.includes(0xff), 'C4 UserInfo should include trailing name-col
 const charInfo = ServerResponse.charInfo(actor);
 assert.strictEqual(charInfo[0], 0x03);
 assert.ok(charInfo.includes(0xff), 'C4 CharInfo should include trailing name-color bytes');
+assert.strictEqual(charInfoEquipment(charInfo).weapon, 1007, 'C4 CharInfo should display right-hand weapons');
 const nameColorOffset = charInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
 assert.ok(nameColorOffset > 0, 'C4 CharInfo should end its meaningful payload with name color');
 const charInfoTail = charInfo.subarray(nameColorOffset + 4 - 37, nameColorOffset + 4);
 assert.strictEqual(charInfoTail.readInt32LE(0), 0, 'C4 CharInfo should send mount NPC id before class id');
 assert.strictEqual(charInfoTail.readInt32LE(4), 10, 'C4 CharInfo should send class id after mount NPC id');
 assert.strictEqual(charInfoTail.readInt32LE(8), 0, 'C4 CharInfo should not send CP in the public tail');
+
+const dualPaperdoll = fakePaperdoll();
+dualPaperdoll[7] = {};
+dualPaperdoll[8] = {};
+dualPaperdoll[14] = { id: 4000014, selfId: 999014 };
+const dualCharInfo = ServerResponse.charInfo(fakeActor(dualPaperdoll));
+const dualEquipment = charInfoEquipment(dualCharInfo);
+assert.strictEqual(dualEquipment.weapon, 999014, 'C4 CharInfo should display slot 14 two-hand weapons in the weapon field');
+assert.strictEqual(dualEquipment.twoHand, 999014, 'C4 CharInfo should display slot 14 two-hand weapons in the two-hand field');
 
 const partyAll = ServerResponse.partySmallWindowAll(actor.fetchId(), 1, [actor]);
 assert.strictEqual(partyAll[0], 0x4e);

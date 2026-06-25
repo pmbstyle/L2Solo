@@ -20,7 +20,8 @@ const ACTIONS = [
 ];
 
 function clean(text) {
-    return String(text || '').trim().slice(0, 120);
+    const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+    return BotChatText.normalize(text).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
 }
 
 function isRealPlayer(session) {

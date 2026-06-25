@@ -91,6 +91,17 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 assert.strictEqual(upgrades.length, 1, 'mage should only upgrade to a suitable caster weapon');
 assert.strictEqual(upgrades[0].item.fetchId(), 1103);
 
+const mageTunic = wearable(1110, { kind: 'Armor.Fabric', slot: 10, pDef: 21, maxMp: 38, equipped: true });
+const mageStockings = wearable(1111, { kind: 'Armor.Fabric', slot: 11, pDef: 13, maxMp: 23, equipped: true });
+const cottonRobe = wearable(1112, { kind: 'Armor.Fabric', slot: 15, pDef: 35, maxMp: 61, price: 3550 });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 10,
+    level: 11,
+    items: [mageTunic, mageStockings, cottonRobe],
+    paperdoll: { 10: { id: 1110 }, 11: { id: 1111 } }
+}));
+assert.strictEqual(upgrades.length, 0, 'mage should not upgrade into no-grade full-body robes');
+
 const lowOldSword = wearable(1201, { kind: 'Weapon.Sword', slot: 7, pAtk: 8, equipped: true });
 const tooHighGradeSword = wearable(1202, { kind: 'Weapon.Sword', slot: 7, pAtk: 80, rank: 'd' });
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
