@@ -181,8 +181,13 @@ function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
     return !(chance >= rng() * 100);
 }
 
+const RESIST_STAT_BY_TRAIT = {
+    shock: 'stunResist'
+};
+
 function traitResistModifier(target, trait) {
-    const resist = EffectStats.add(target, `${trait}Resist`);
+    const stat = RESIST_STAT_BY_TRAIT[trait] || `${trait}Resist`;
+    const resist = EffectStats.add(target, stat);
     return Math.max(0, 1 - (resist / 100));
 }
 

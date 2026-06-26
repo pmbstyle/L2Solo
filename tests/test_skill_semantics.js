@@ -463,6 +463,29 @@ assert.strictEqual(
     'Agility level 3 should apply the sourced L2J evasion addition'
 );
 
+const shockProtected = statActor();
+const resistShock = skill({ selfId: 1259, name: 'Resist Shock', spell: true, power: 1, level: 2, buff: 1200000 });
+const resistShockOutcome = SkillEffects.execute(session(), caster, shockProtected, resistShock, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(resistShockOutcome.effect.key, 'resist_shock', 'Resist Shock should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(shockProtected, 'stunResist'), 20, 'Resist Shock level 2 should use sourced stunResist +20');
+const stunAttack = skill({ selfId: 100, name: 'Stun Attack', spell: false, power: 10, level: 1, buff: 9000 });
+const resistedStunOutcome = SkillEffects.execute(session(), caster, shockProtected, stunAttack, {
+    magicSkill: false,
+    rng: () => 0.42,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 1
+    }
+});
+assert.strictEqual(resistedStunOutcome.damage, 1, 'Resisted Stun Attack should still deal its damage component');
+assert.strictEqual(resistedStunOutcome.effect, null, 'Resist Shock stunResist should lower Stun Attack land chance below the roll');
+assert.strictEqual(resistedStunOutcome.effectResisted, true, 'Stun blocked by Resist Shock should report effect resistance');
+assert.strictEqual(EffectStore.hasDebuff(shockProtected, 'stun'), false, 'Resisted Stun Attack should not leave a stun debuff');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {

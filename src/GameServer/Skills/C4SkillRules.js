@@ -73,7 +73,8 @@ const RULES = {
     1177: { skillType: DAMAGE, trait: 'wind', ssBoost: 1, baseLandRate: 92 },
     1204: { skillType: EFFECT, trait: 'buff', effect: 'windWalk', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1216: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
-    1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 }
+    1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1259: { skillType: EFFECT, trait: 'buff', effect: 'resist_shock', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { stunResist: [15, 20, 30, 40] } }
 };
 
 const SELF_NAME_PATTERNS = [
