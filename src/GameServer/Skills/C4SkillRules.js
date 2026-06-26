@@ -49,6 +49,7 @@ const RULES = {
         sleepResist: [20, 30, 40, 50],
         mentalResist: [20, 30, 40, 50]
     } },
+    1036: { skillType: EFFECT, trait: 'buff', effect: 'magic_barrier', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { mDefMul: [1.23, 1.3] } },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 80 },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },

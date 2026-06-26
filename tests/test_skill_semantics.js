@@ -321,6 +321,22 @@ const entangleAgainstShield = SkillEffects.execute(session(), caster, mentallyPr
 assert.strictEqual(entangleAgainstShield.effect, null, 'Mental Shield rootResist should lower Entangle land chance below the roll');
 assert.strictEqual(entangleAgainstShield.effectResisted, true, 'Entangle blocked by Mental Shield should report effect resistance');
 
+const magicBarrierTarget = statActor();
+const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
+const magicBarrierOutcome = SkillEffects.execute(session(), caster, magicBarrierTarget, magicBarrier, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(magicBarrierOutcome.effect.key, 'magic_barrier', 'Magic Barrier should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(magicBarrierTarget, 'mDefMul'), 1.3, 'Magic Barrier level 2 should use sourced mDef 1.3');
+calculateStats({}, magicBarrierTarget);
+assert.strictEqual(
+    magicBarrierTarget.collectiveMDef,
+    Math.round(Formulas.calcMDef(20, 30, 80) * 1.3),
+    'Magic Barrier level 2 should apply the sourced L2J MDef multiplier'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {

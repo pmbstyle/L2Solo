@@ -54,7 +54,8 @@ function setCollectiveTotalPDef(actor) {
 
 function setCollectiveTotalMDef(actor) {
     const mDef = actor.backpack.fetchTotalArmorMDef() ?? actor.fetchMDef();
-    const base = Formulas.calcMDef(actor.fetchLevel(), actor.fetchMen(), mDef);
+    let base = Formulas.calcMDef(actor.fetchLevel(), actor.fetchMen(), mDef);
+    base = Math.round(base * EffectStats.multiplier(actor, 'mDefMul'));
     actor.setCollectiveMDef(base);
 }
 
