@@ -13,7 +13,7 @@ const RULES = {
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
     100: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     101: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
-    102: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', baseLandRate: 70 },
+    102: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', baseLandRate: 80 },
     105: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'freezing_strike', effectType: 'debuff', baseLandRate: 60, stats: { runSpdMul: 0.7 } },
     115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
@@ -44,7 +44,12 @@ const RULES = {
     ] },
     1032: { skillType: EFFECT, trait: 'buff', effect: 'invigor', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { bleedResist: [30, 40, 50] } },
     1033: { skillType: EFFECT, trait: 'buff', effect: 'resist_poison', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { poisonResist: [30, 40, 50] } },
-    1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 70 },
+    1035: { skillType: EFFECT, trait: 'buff', effect: 'mental_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: {
+        rootResist: [20, 30, 40, 50],
+        sleepResist: [20, 30, 40, 50],
+        mentalResist: [20, 30, 40, 50]
+    } },
+    1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 80 },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },
     1172: { skillType: DAMAGE, trait: 'fire', ssBoost: 1, baseLandRate: 92 },

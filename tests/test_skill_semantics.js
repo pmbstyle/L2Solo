@@ -292,6 +292,35 @@ assert.strictEqual(resistedBleedOutcome.effect, null, 'Bleed should not apply wh
 assert.strictEqual(resistedBleedOutcome.effectResisted, true, 'Bleed resist should be reported separately from physical skill miss');
 assert.strictEqual(EffectStore.hasDebuff(bleedProtected, 'bleed'), false, 'Resisted Bleed should not leave a debuff');
 
+const mentallyProtected = statActor();
+const mentalShield = skill({ selfId: 1035, name: 'Mental Shield', spell: true, power: 1, level: 4, buff: 1200000 });
+const mentalShieldOutcome = SkillEffects.execute(session(), caster, mentallyProtected, mentalShield, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(mentalShieldOutcome.effect.key, 'mental_shield', 'Mental Shield should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(mentallyProtected, 'rootResist'), 50, 'Mental Shield level 4 should add sourced rootResist 50');
+assert.strictEqual(EffectStats.add(mentallyProtected, 'sleepResist'), 50, 'Mental Shield level 4 should add sourced sleepResist 50');
+assert.strictEqual(EffectStats.add(mentallyProtected, 'mentalResist'), 50, 'Mental Shield level 4 should add sourced mentalResist 50');
+
+const sleepAgainstShield = SkillEffects.execute(session(), caster, mentallyProtected, sleep, {
+    magicSkill: true,
+    rng: () => 0.5,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sleepAgainstShield.effect, null, 'Mental Shield sleepResist should lower Sleep land chance below the roll');
+assert.strictEqual(sleepAgainstShield.effectResisted, true, 'Sleep blocked by Mental Shield should report effect resistance');
+
+const entangle = skill({ selfId: 102, name: 'Entangle', spell: true, power: 1, level: 1, buff: 120000 });
+const entangleAgainstShield = SkillEffects.execute(session(), caster, mentallyProtected, entangle, {
+    magicSkill: true,
+    rng: () => 0.5,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(entangleAgainstShield.effect, null, 'Mental Shield rootResist should lower Entangle land chance below the roll');
+assert.strictEqual(entangleAgainstShield.effectResisted, true, 'Entangle blocked by Mental Shield should report effect resistance');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
