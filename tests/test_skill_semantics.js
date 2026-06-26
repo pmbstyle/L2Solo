@@ -209,6 +209,24 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
 EffectStore.remove(curseTarget, 'poison');
 
+const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 1, level: 4, buff: 20000 });
+const bleedTarget = statActor();
+const bleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, bleed, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(bleedOutcome.effect.dot.count, 7, 'Bleed should use the sourced 7 tick duration');
+assert.strictEqual(bleedOutcome.effect.dot.intervalMs, 3000, 'Bleed should tick every 3 seconds');
+assert.strictEqual(bleedOutcome.effect.dot.damage, 81, 'Bleed should use the sourced damage table instead of local flat power');
+const cureBleeding = skill({ selfId: 61, name: 'Cure Bleeding', spell: true, power: 7, level: 2 });
+const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cureBleeding, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(cureBleedOutcome.cleansed.length, 1, 'Cure Bleeding should remove matching bleed effects');
+assert.strictEqual(EffectStore.hasDebuff(bleedTarget, 'bleed'), false, 'Cure Bleeding should clear bleed debuff state');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
