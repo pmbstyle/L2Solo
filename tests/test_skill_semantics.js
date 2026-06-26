@@ -447,6 +447,22 @@ assert.strictEqual(berserkerTarget.collectiveCastSpd, Math.round(Formulas.calcCa
 assert.strictEqual(berserkerTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, 'Berserker Spirit should add run speed');
 assert.strictEqual(berserkerTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, 'Berserker Spirit should reduce evasion');
 
+const agilityTarget = statActor();
+const agility = skill({ selfId: 1087, name: 'Agility', spell: true, power: 1, level: 3, buff: 1200000 });
+const agilityOutcome = SkillEffects.execute(session(), caster, agilityTarget, agility, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(agilityOutcome.effect.key, 'agility', 'Agility should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(agilityTarget, 'pEvasionRateAdd'), 4, 'Agility level 3 should use sourced pEvasionRate +4');
+calculateStats({}, agilityTarget);
+assert.strictEqual(
+    agilityTarget.collectiveEvasion,
+    Formulas.calcEvasion(20, 30, 2) + 4,
+    'Agility level 3 should apply the sourced L2J evasion addition'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
