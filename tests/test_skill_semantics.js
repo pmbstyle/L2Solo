@@ -14,6 +14,8 @@ function creature(overrides = {}) {
     return {
         hp: overrides.hp ?? 100,
         maxHp: overrides.maxHp ?? 100,
+        mp: overrides.mp ?? 100,
+        maxMp: overrides.maxMp ?? 100,
         level: overrides.level ?? 20,
         effects: {},
         soulshotLoaded: false,
@@ -23,8 +25,8 @@ function creature(overrides = {}) {
         fetchLevel() { return this.level; },
         fetchHp() { return this.hp; },
         fetchMaxHp() { return this.maxHp; },
-        fetchMp: () => 100,
-        fetchMaxMp: () => 100,
+        fetchMp() { return this.mp; },
+        fetchMaxMp() { return this.maxMp; },
         fetchCollectiveMAtk: () => overrides.mAtk ?? 100,
         fetchCollectivePAtk: () => overrides.pAtk ?? 100,
         fetchCollectivePDef: () => overrides.pDef ?? 100,
@@ -400,6 +402,23 @@ assert.strictEqual(
     blessedBodyTarget.fetchMaxHp(),
     Formulas.calcHp(20, 0, 30) * 1.25,
     'Blessed Body level 4 should apply the sourced L2J maxHp multiplier'
+);
+
+const blessedSoulTarget = statActor();
+blessedSoulTarget.mp = 1000;
+const blessedSoul = skill({ selfId: 1048, name: 'Blessed Soul', spell: true, power: 1, level: 4, buff: 1200000 });
+const blessedSoulOutcome = SkillEffects.execute(session(), caster, blessedSoulTarget, blessedSoul, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessedSoulOutcome.effect.key, 'blessed_soul', 'Blessed Soul should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(blessedSoulTarget, 'maxMpMul'), 1.25, 'Blessed Soul level 4 should use sourced maxMp 1.25');
+calculateStats({}, blessedSoulTarget);
+assert.strictEqual(
+    blessedSoulTarget.fetchMaxMp(),
+    Formulas.calcMp(20, 0, 0, 30) * 1.25,
+    'Blessed Soul level 4 should apply the sourced L2J maxMp multiplier'
 );
 
 console.log('Skill semantic checks passed');

@@ -20,7 +20,7 @@ function setCollectiveTotalMp(actor) {
     const transfer = getClassTransfer(actor.fetchClassId());
     const base  = Formulas.calcMp(actor.fetchLevel(), actor.isSpellcaster(), transfer, actor.fetchMen());
     const bonus = actor.backpack.fetchTotalArmorBonusMp();
-    actor.setMaxMp(base + bonus);
+    actor.setMaxMp((base + bonus) * EffectStats.multiplier(actor, 'maxMpMul'));
     actor.setMp(Math.min(actor.fetchMp(), actor.fetchMaxMp()));
 }
 
