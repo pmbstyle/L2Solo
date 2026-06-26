@@ -11,6 +11,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
 const Attack = invoke('GameServer/Actor/Attack');
+const Automation = invoke('GameServer/Automation');
 const ServerResponse = invoke('GameServer/Network/Response');
 const activeSkills = require('../data/Skills/Active/active.json');
 
@@ -449,6 +450,34 @@ assert.strictEqual(sealSilence.fetchTargetKind(), 'enemy', 'Seal of Silence shou
 assert.strictEqual(sealSilenceOutcome.effect.key, 'silence', 'Seal of Silence should apply silence at sourced base land rate 40');
 assert.strictEqual(EffectStore.hasDebuff(sealSilenceTarget, 'silence'), true, 'Seal of Silence should leave a silence debuff when the sourced land rate passes');
 assert.strictEqual(EffectRestrictions.canCast(sealSilenceTarget), false, 'Seal of Silence should block casting through runtime restrictions');
+
+const regenAutomation = new Automation();
+regenAutomation.setRevHp(10);
+const sealScourgeTarget = statActor();
+const sealScourge = skill({ selfId: 1247, name: 'Seal of Scourge', spell: true, power: 1, level: 1, distance: -1, buff: 120000 });
+const sealScourgeOutcome = SkillEffects.execute(session(), caster, sealScourgeTarget, sealScourge, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealScourgeOutcome.effect.key, 'seal_of_scourge', 'Seal of Scourge should apply a structured regen debuff');
+assert.strictEqual(EffectStats.multiplier(sealScourgeTarget, 'regHp'), 0, 'Seal of Scourge should use sourced regHp 0');
+assert.strictEqual(regenAutomation.fetchRevHpAmount(sealScourgeTarget), 0, 'Seal of Scourge should stop runtime HP regeneration');
+
+const curseDiseaseData = activeSkills.find((entry) => entry.selfId === 1269);
+assert(curseDiseaseData, 'Curse Disease should be present in active skills data');
+assert.strictEqual(curseDiseaseData.levels.length, 9, 'Curse Disease active data should preserve sourced 9 levels');
+assert.strictEqual(curseDiseaseData.levels[8].mp, 55, 'Curse Disease active data should preserve sourced level 9 MP cost');
+const diseaseTarget = statActor();
+const curseDisease = skill({ selfId: 1269, name: 'Curse Disease', spell: true, power: 80, level: 9, buff: 120000 });
+const curseDiseaseOutcome = SkillEffects.execute(session(), caster, diseaseTarget, curseDisease, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseDiseaseOutcome.effect.key, 'curse_disease', 'Curse Disease should apply a structured regen debuff');
+assert.strictEqual(EffectStats.multiplier(diseaseTarget, 'regHp'), 0.5, 'Curse Disease should use sourced regHp 0.5');
+assert.strictEqual(regenAutomation.fetchRevHpAmount(diseaseTarget), 5, 'Curse Disease should halve runtime HP regeneration');
 
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });

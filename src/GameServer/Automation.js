@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SelectedModel  = invoke('GameServer/Model/Selected');
 const Timer          = invoke('GameServer/Timer');
 const SpeckMath      = invoke('GameServer/SpeckMath');
+const EffectStats    = invoke('GameServer/Effects/EffectStats');
 
 class Automation extends SelectedModel {
     constructor() {
@@ -54,7 +55,7 @@ class Automation extends SelectedModel {
             const maxHp = creature.fetchMaxHp();
             const maxMp = creature.fetchMaxMp();
 
-            const minHp = Math.min(creature.fetchHp() + this.fetchRevHp(), maxHp);
+            const minHp = Math.min(creature.fetchHp() + this.fetchRevHpAmount(creature), maxHp);
             const minMp = Math.min(creature.fetchMp() + this.fetchRevMp(), maxMp);
 
             creature.setHp(minHp);
@@ -71,6 +72,11 @@ class Automation extends SelectedModel {
                 this.stopReplenish();
             }
         }, 3000);
+    }
+
+    fetchRevHpAmount(creature) {
+        const base = Number(this.fetchRevHp()) || 0;
+        return Math.max(0, Math.round(base * EffectStats.multiplier(creature, 'regHp')));
     }
 
     stopReplenish() {

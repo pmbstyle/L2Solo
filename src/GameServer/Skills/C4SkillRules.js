@@ -85,6 +85,7 @@ const RULES = {
     1242: { skillType: EFFECT, trait: 'buff', effect: 'death_whisper', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.25, 1.3, 1.35] } },
     1243: { skillType: EFFECT, trait: 'buff', effect: 'bless_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { rShldMul: [1.05, 1.1, 1.15, 1.2, 1.25, 1.3] } },
     1246: { skillType: EFFECT, trait: 'derangement', effect: 'silence', effectType: 'debuff', target: 'enemy', baseLandRate: 40 },
+    1247: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_scourge', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { regHp: 0 } },
     1249: { skillType: EFFECT, trait: 'buff', effect: 'vision_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1250: { skillType: EFFECT, trait: 'buff', effect: 'protection_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { rShldMul: [1.3, 1.4, 1.5] } },
     1251: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_fury', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
@@ -105,6 +106,7 @@ const RULES = {
         pEvasionRateAdd: [-2, -4]
     } },
     1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } },
+    1269: { skillType: EFFECT, trait: 'debuff', effect: 'curse_disease', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { regHp: 0.5 } },
     1271: { skillType: HEAL_PERCENT, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [100], condition: { actorHpPercentAtMost: 25 } }
 };
 
