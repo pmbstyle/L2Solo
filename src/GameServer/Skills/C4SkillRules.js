@@ -1,6 +1,7 @@
 const DAMAGE = 'damage';
 const DAMAGE_EFFECT = 'damageEffect';
 const HEAL = 'heal';
+const HEAL_PERCENT = 'healPercent';
 const EFFECT = 'effect';
 const BLOW = 'blow';
 const CLEANSE = 'cleanse';
@@ -86,6 +87,7 @@ const RULES = {
     1251: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_fury', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
     1252: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_evasion', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
     1253: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_rage', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.25, 1.3, 1.35] } },
+    1258: { skillType: HEAL_PERCENT, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [15, 20, 25, 30] },
     1259: { skillType: EFFECT, trait: 'buff', effect: 'resist_shock', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { stunResist: [15, 20, 30, 40] } },
     1260: { skillType: EFFECT, trait: 'buff', effect: 'tact_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
     1261: { skillType: EFFECT, trait: 'buff', effect: 'rage_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: {
@@ -241,6 +243,7 @@ module.exports = {
     DAMAGE,
     DAMAGE_EFFECT,
     HEAL,
+    HEAL_PERCENT,
     EFFECT,
     BLOW,
     CLEANSE,

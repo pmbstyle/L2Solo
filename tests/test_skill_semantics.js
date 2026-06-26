@@ -89,6 +89,18 @@ assert.strictEqual(heal.fetchSkillType(), C4SkillRules.HEAL, 'Heal should resolv
 assert.strictEqual(wounded.fetchHp(), 89, 'Heal should restore datapack power without invented MAtk scaling');
 assert.strictEqual(healOutcome.damage, 0, 'Heal should not be routed as damage');
 
+const restoreTarget = creature({ id: 2000009, hp: 400, maxHp: 1000 });
+caster.spiritshotLoaded = true;
+const restoreLife = skill({ selfId: 1258, name: 'Restore Life', spell: true, power: 1, level: 4 });
+const restoreOutcome = SkillEffects.execute(session(), caster, restoreTarget, restoreLife, {
+    magicSkill: true,
+    attack: { clearLoadedShot(actor, magic) { actor.clearedRestore = magic; actor.spiritshotLoaded = false; } }
+});
+assert.strictEqual(restoreLife.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Restore Life should resolve to HEAL_PERCENT');
+assert.strictEqual(restoreOutcome.heal, 300, 'Restore Life level 4 should restore sourced 30% of max HP');
+assert.strictEqual(restoreTarget.fetchHp(), 700, 'Restore Life should apply the sourced percent heal instead of active.json power 1');
+assert.strictEqual(caster.spiritshotLoaded, false, 'Restore Life should clear but not boost with spiritshot');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();

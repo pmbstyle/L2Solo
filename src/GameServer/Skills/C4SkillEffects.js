@@ -27,6 +27,11 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.HEAL_PERCENT) {
+        result.heal = applyHealPercent(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.CLEANSE) {
         result.cleansed = applyCleanse(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
@@ -82,6 +87,18 @@ function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) 
 
     const maxHp = Number(target.fetchMaxHp?.()) || 0;
     const currentHp = Number(target.fetchHp?.()) || 0;
+    const nextHp = maxHp > 0 ? Math.min(maxHp, currentHp + amount) : currentHp + amount;
+    target.setHp(nextHp);
+    refreshVitals(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return Math.max(0, nextHp - currentHp);
+}
+
+function applyHealPercent(session, actor, target, skill, semantic, magicSkill, attack) {
+    const power = Number(semantic.healPower ?? skill.fetchPower()) || 0;
+    const maxHp = Number(target.fetchMaxHp?.()) || 0;
+    const currentHp = Number(target.fetchHp?.()) || 0;
+    const amount = Math.round(maxHp * power / 100);
     const nextHp = maxHp > 0 ? Math.min(maxHp, currentHp + amount) : currentHp + amount;
     target.setHp(nextHp);
     refreshVitals(session, actor, target);
