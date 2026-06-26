@@ -7,6 +7,7 @@ const tests = [
     'tests/test_bot_gear.js',
     'tests/test_c4_buff_modifiers.js',
     'tests/test_c4_protocol_packets.js',
+    'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
     'tests/test_geodata_regions.js',
     'tests/test_party_companion_rest_follow.js',

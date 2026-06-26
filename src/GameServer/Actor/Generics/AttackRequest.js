@@ -1,7 +1,13 @@
 function attackRequest(session, actor, data) {
     const Generics = invoke(path.actor);
+    const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
     if (actor.isDead()) {
+        return;
+    }
+
+    if (!EffectRestrictions.canAttack(actor)) {
+        EffectRestrictions.reject(session);
         return;
     }
 

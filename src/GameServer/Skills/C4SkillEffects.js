@@ -2,6 +2,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Formulas = invoke('GameServer/Formulas');
 const ServerResponse = invoke('GameServer/Network/Response');
 
@@ -96,6 +97,7 @@ function applyEffect(session, target, skill, semantic) {
         EffectTicker.applyDot(session, session?.actor, target, effect);
     }
 
+    EffectRestrictions.interruptOnApply(target?.session || session, target, effect);
     refreshEffects(session, target);
     return effect;
 }

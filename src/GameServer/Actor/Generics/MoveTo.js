@@ -1,8 +1,14 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
 function moveTo(session, actor, coords) {
     if (actor.isDead()) {
+        return;
+    }
+
+    if (!EffectRestrictions.canMove(actor)) {
+        EffectRestrictions.reject(session);
         return;
     }
 

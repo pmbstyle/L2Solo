@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
 function sitAndStand(session, actor, data) {
     if (actor.state.fetchHits() || actor.state.fetchCasts() || actor.state.fetchAnimated() || actor.state.inMotion()) {
@@ -22,6 +23,11 @@ function walkAndRun(session, actor) {
 
 function basicAction(session, actor, data) {
     if (actor.isDead()) {
+        return;
+    }
+
+    if (!EffectRestrictions.canUseBasicAction(actor)) {
+        EffectRestrictions.reject(session);
         return;
     }
 

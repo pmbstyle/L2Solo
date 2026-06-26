@@ -1,5 +1,6 @@
 function skillRequest(session, actor, data) {
     const Generics = invoke(path.actor);
+    const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const skill = actor.skillset.fetchSkill(data.selfId);
 
     if (actor.isDead()) {
@@ -7,6 +8,11 @@ function skillRequest(session, actor, data) {
     }
 
     if (!skill) {
+        return;
+    }
+
+    if (!EffectRestrictions.canCast(actor)) {
+        EffectRestrictions.reject(session);
         return;
     }
 
