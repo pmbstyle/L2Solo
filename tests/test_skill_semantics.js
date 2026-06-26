@@ -353,6 +353,22 @@ assert.strictEqual(
     'Empower level 3 should apply the sourced L2J MAtk multiplier'
 );
 
+const acumenTarget = statActor();
+const acumen = skill({ selfId: 1085, name: 'Acumen', spell: true, power: 1, level: 3, buff: 1200000 });
+const acumenOutcome = SkillEffects.execute(session(), caster, acumenTarget, acumen, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(acumenOutcome.effect.key, 'acumen', 'Acumen should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(acumenTarget, 'castSpdMul'), 1.3, 'Acumen level 3 should use sourced mAtkSpd 1.3');
+calculateStats({}, acumenTarget);
+assert.strictEqual(
+    acumenTarget.collectiveCastSpd,
+    Math.round(Formulas.calcCastSpd(30) * 1.3),
+    'Acumen level 3 should apply the sourced L2J mAtkSpd multiplier'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {

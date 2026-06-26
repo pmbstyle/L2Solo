@@ -86,7 +86,8 @@ function setCollectiveTotalAtkSpd(actor) {
 }
 
 function setCollectiveTotalCastSpd(actor) {
-    const base = Formulas.calcCastSpd(actor.fetchWit());
+    let base = Formulas.calcCastSpd(actor.fetchWit());
+    base = Math.round(base * EffectStats.multiplier(actor, 'castSpdMul'));
     actor.setCollectiveCastSpd(base);
 }
 
