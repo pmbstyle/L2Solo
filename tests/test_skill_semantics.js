@@ -543,6 +543,32 @@ assert.strictEqual(
     "The Tact of Pa'agrio level 2 should apply the sourced L2J evasion addition"
 );
 
+const ragePaagrioTarget = statActor();
+const ragePaagrio = skill({ selfId: 1261, name: "The Rage of Pa'agrio", spell: true, power: 1, level: 2, buff: 1200000 });
+const ragePaagrioOutcome = SkillEffects.execute(session(), caster, ragePaagrioTarget, ragePaagrio, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(ragePaagrioOutcome.effect.key, 'rage_of_paagrio', "The Rage of Pa'agrio should apply a structured buff effect");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'mAtkMul'), 1.16, "The Rage of Pa'agrio level 2 should use sourced mAtk 1.16");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'pAtkMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced pAtk 1.08");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'pDefMul'), 0.92, "The Rage of Pa'agrio level 2 should use sourced pDef 0.92");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'mDefMul'), 0.84, "The Rage of Pa'agrio level 2 should use sourced mDef 0.84");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'castSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced mAtkSpd 1.08");
+assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'pAtkSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced pAtkSpd 1.08");
+assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'runSpdAdd'), 8, "The Rage of Pa'agrio level 2 should use sourced runSpd +8");
+assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'pEvasionRateAdd'), -4, "The Rage of Pa'agrio level 2 should use sourced pEvasionRate -4");
+calculateStats({}, ragePaagrioTarget);
+assert.strictEqual(ragePaagrioTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.08), "The Rage of Pa'agrio should boost PAtk");
+assert.strictEqual(ragePaagrioTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.16), "The Rage of Pa'agrio should boost MAtk");
+assert.strictEqual(ragePaagrioTarget.collectivePDef, Math.round(Formulas.calcPDef(20, 100) * 0.92), "The Rage of Pa'agrio should reduce PDef");
+assert.strictEqual(ragePaagrioTarget.collectiveMDef, Math.round(Formulas.calcMDef(20, 30, 80) * 0.84), "The Rage of Pa'agrio should reduce MDef");
+assert.strictEqual(ragePaagrioTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), "The Rage of Pa'agrio should boost PAtkSpd");
+assert.strictEqual(ragePaagrioTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), "The Rage of Pa'agrio should boost MAtkSpd");
+assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, "The Rage of Pa'agrio should add run speed");
+assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, "The Rage of Pa'agrio should reduce evasion");
+
 const shockProtected = statActor();
 const resistShock = skill({ selfId: 1259, name: 'Resist Shock', spell: true, power: 1, level: 2, buff: 1200000 });
 const resistShockOutcome = SkillEffects.execute(session(), caster, shockProtected, resistShock, {
