@@ -68,7 +68,7 @@ function setCollectiveTotalAccur(actor) {
 
 function setCollectiveTotalEvasion(actor) {
     const evasion = actor.backpack.fetchTotalArmorEvasion() ?? actor.fetchEvasion();
-    const base    = Formulas.calcEvasion(actor.fetchLevel(), actor.fetchDex(), evasion);
+    const base    = Formulas.calcEvasion(actor.fetchLevel(), actor.fetchDex(), evasion) + EffectStats.add(actor, 'pEvasionRateAdd');
     actor.setCollectiveEvasion(base);
 }
 
@@ -82,6 +82,7 @@ function setCollectiveTotalAtkSpd(actor) {
     const atkSpd = actor.backpack.fetchTotalWeaponAtkSpd() ?? actor.fetchAtkSpd();
     let base   = Formulas.calcAtkSpd(actor.fetchDex(), atkSpd);
     base = Math.round(base * BuffCatalog.statMultiplier(actor, 'haste', 'pAtkSpdMul'));
+    base = Math.round(base * EffectStats.multiplier(actor, 'pAtkSpdMul'));
     actor.setCollectiveAtkSpd(base);
 }
 
@@ -99,6 +100,7 @@ function setCollectiveTotalWalkSpd(actor) {
 function setCollectiveTotalRunSpd(actor) {
     let base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchRunSpd());
     base += BuffCatalog.statAdd(actor, 'windwalk', 'runSpdAdd');
+    base += EffectStats.add(actor, 'runSpdAdd');
     const effectMultiplier = EffectStats.multiplier(actor, 'runSpdMul');
     if (effectMultiplier !== 1) {
         base = Math.round(base * effectMultiplier);

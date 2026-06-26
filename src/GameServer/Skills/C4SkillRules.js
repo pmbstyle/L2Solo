@@ -53,6 +53,16 @@ const RULES = {
     1045: { skillType: EFFECT, trait: 'buff', effect: 'blessed_body', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { maxHpMul: [1.1, 1.15, 1.2, 1.25, 1.3, 1.35] } },
     1048: { skillType: EFFECT, trait: 'buff', effect: 'blessed_soul', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { maxMpMul: [1.1, 1.15, 1.2, 1.25, 1.3, 1.35] } },
     1059: { skillType: EFFECT, trait: 'buff', effect: 'empower', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { mAtkMul: [1.55, 1.65, 1.75] } },
+    1062: { skillType: EFFECT, trait: 'buff', effect: 'berserker_spirit', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: {
+        mAtkMul: [1.1, 1.16],
+        pAtkMul: [1.05, 1.08],
+        pDefMul: [0.95, 0.92],
+        mDefMul: [0.90, 0.84],
+        castSpdMul: [1.05, 1.08],
+        pAtkSpdMul: [1.05, 1.08],
+        runSpdAdd: [5, 8],
+        pEvasionRateAdd: [-2, -4]
+    } },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 80 },
     1077: { skillType: EFFECT, trait: 'buff', effect: 'focus', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritRateAdd: [20, 25, 30] } },
     1085: { skillType: EFFECT, trait: 'buff', effect: 'acumen', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },

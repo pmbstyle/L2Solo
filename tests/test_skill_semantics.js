@@ -421,6 +421,32 @@ assert.strictEqual(
     'Blessed Soul level 4 should apply the sourced L2J maxMp multiplier'
 );
 
+const berserkerTarget = statActor();
+const berserker = skill({ selfId: 1062, name: 'Berserker Spirit', spell: true, power: 1, level: 2, buff: 1200000 });
+const berserkerOutcome = SkillEffects.execute(session(), caster, berserkerTarget, berserker, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(berserkerOutcome.effect.key, 'berserker_spirit', 'Berserker Spirit should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'mAtkMul'), 1.16, 'Berserker Spirit level 2 should use sourced mAtk 1.16');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'pAtkMul'), 1.08, 'Berserker Spirit level 2 should use sourced pAtk 1.08');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'pDefMul'), 0.92, 'Berserker Spirit level 2 should use sourced pDef 0.92');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'mDefMul'), 0.84, 'Berserker Spirit level 2 should use sourced mDef 0.84');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'castSpdMul'), 1.08, 'Berserker Spirit level 2 should use sourced mAtkSpd 1.08');
+assert.strictEqual(EffectStats.multiplier(berserkerTarget, 'pAtkSpdMul'), 1.08, 'Berserker Spirit level 2 should use sourced pAtkSpd 1.08');
+assert.strictEqual(EffectStats.add(berserkerTarget, 'runSpdAdd'), 8, 'Berserker Spirit level 2 should use sourced runSpd +8');
+assert.strictEqual(EffectStats.add(berserkerTarget, 'pEvasionRateAdd'), -4, 'Berserker Spirit level 2 should use sourced pEvasionRate -4');
+calculateStats({}, berserkerTarget);
+assert.strictEqual(berserkerTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.08), 'Berserker Spirit should boost PAtk');
+assert.strictEqual(berserkerTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.16), 'Berserker Spirit should boost MAtk');
+assert.strictEqual(berserkerTarget.collectivePDef, Math.round(Formulas.calcPDef(20, 100) * 0.92), 'Berserker Spirit should reduce PDef');
+assert.strictEqual(berserkerTarget.collectiveMDef, Math.round(Formulas.calcMDef(20, 30, 80) * 0.84), 'Berserker Spirit should reduce MDef');
+assert.strictEqual(berserkerTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), 'Berserker Spirit should boost PAtkSpd');
+assert.strictEqual(berserkerTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), 'Berserker Spirit should boost MAtkSpd');
+assert.strictEqual(berserkerTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, 'Berserker Spirit should add run speed');
+assert.strictEqual(berserkerTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, 'Berserker Spirit should reduce evasion');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
