@@ -347,11 +347,17 @@ class Attack {
     }
 
     fetchShieldRate(creature) {
+        const rateMultiplier = EffectStats.multiplier(creature, 'rShldMul');
+        let shieldRate = 0;
+
         if (creature?.backpack?.fetchTotalShieldRate) {
-            return creature.backpack.fetchTotalShieldRate();
+            shieldRate = creature.backpack.fetchTotalShieldRate();
+        }
+        else {
+            shieldRate = this.fetchNpcShieldItem(creature) || this.fetchShieldPDef(creature) > 0 ? Formulas.DEFAULT_SHIELD_RATE : 0;
         }
 
-        return this.fetchNpcShieldItem(creature) || this.fetchShieldPDef(creature) > 0 ? Formulas.DEFAULT_SHIELD_RATE : 0;
+        return Math.max(0, (Number(shieldRate) || 0) * rateMultiplier);
     }
 
     isBowAttack(creature) {

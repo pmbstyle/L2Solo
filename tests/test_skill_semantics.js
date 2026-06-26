@@ -10,6 +10,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
 const Attack = invoke('GameServer/Actor/Attack');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 function creature(overrides = {}) {
     return {
@@ -462,6 +463,38 @@ assert.strictEqual(
     Math.round(2 * 1.3 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
     'Chant of Rage level 2 should multiply physical critical damage by sourced pCritDamage'
 );
+
+const blessShieldTarget = statActor();
+blessShieldTarget.backpack.fetchTotalShieldPDef = () => 100;
+blessShieldTarget.backpack.fetchTotalShieldRate = () => 20;
+const blessShield = skill({ selfId: 1243, name: 'Bless Shield', spell: true, power: 1, level: 6, buff: 1200000 });
+const blessShieldOutcome = SkillEffects.execute(session(), caster, blessShieldTarget, blessShield, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessShieldOutcome.effect.key, 'bless_shield', 'Bless Shield should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(blessShieldTarget, 'rShldMul'), 1.3, 'Bless Shield level 6 should use sourced rShld 1.3');
+const shieldAttack = new Attack();
+assert.strictEqual(shieldAttack.fetchShieldRate(blessShieldTarget), 26, 'Bless Shield level 6 should multiply base shield rate');
+let blessShieldRolls = [0, 0.27, 0.99];
+const blessShieldBlock = shieldAttack.prepareMeleeHit(statActor(), blessShieldTarget, true, false, () => blessShieldRolls.shift());
+assert.ok(
+    blessShieldBlock.flags & ServerResponse.attack.HITFLAG_SHLD,
+    'Bless Shield should feed the runtime shield block chance'
+);
+
+const paagrioShieldTarget = statActor();
+paagrioShieldTarget.backpack.fetchTotalShieldRate = () => 20;
+const paagrioShield = skill({ selfId: 1250, name: "Under the Protection of Pa'agrio", spell: true, power: 1, level: 3, buff: 1200000 });
+const paagrioShieldOutcome = SkillEffects.execute(session(), caster, paagrioShieldTarget, paagrioShield, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(paagrioShieldOutcome.effect.key, 'protection_of_paagrio', "Under the Protection of Pa'agrio should apply a structured buff effect");
+assert.strictEqual(EffectStats.multiplier(paagrioShieldTarget, 'rShldMul'), 1.5, "Under the Protection of Pa'agrio level 3 should use sourced rShld 1.5");
+assert.strictEqual(new Attack().fetchShieldRate(paagrioShieldTarget), 30, "Under the Protection of Pa'agrio level 3 should multiply base shield rate");
 
 const blessedBodyTarget = statActor();
 blessedBodyTarget.hp = 1000;
