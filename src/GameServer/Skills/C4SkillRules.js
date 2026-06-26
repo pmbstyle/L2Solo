@@ -71,6 +71,7 @@ const RULES = {
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },
     1172: { skillType: DAMAGE, trait: 'fire', ssBoost: 1, baseLandRate: 92 },
     1177: { skillType: DAMAGE, trait: 'wind', ssBoost: 1, baseLandRate: 92 },
+    1201: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', baseLandRate: 80 },
     1204: { skillType: EFFECT, trait: 'buff', effect: 'windWalk', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1206: { skillType: EFFECT, trait: 'debuff', effect: 'wind_shackle', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAtkSpdMul: [0.83, 0.80, 0.80, 0.80, 0.80, 0.77] } },
     1216: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
