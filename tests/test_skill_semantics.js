@@ -244,6 +244,23 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
 EffectStore.remove(curseTarget, 'poison');
 
+const chantLifeTarget = statActor();
+chantLifeTarget.hp = 40;
+chantLifeTarget.maxHp = 100;
+const chantLife = skill({ selfId: 1229, name: 'Chant of Life', spell: true, power: 1, level: 9, buff: 15000 });
+const chantLifeOutcome = SkillEffects.execute(session(), caster, chantLifeTarget, chantLife, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(chantLife.fetchSkillType(), C4SkillRules.HOT, 'Chant of Life should resolve to HOT');
+assert.strictEqual(chantLifeOutcome.effect.key, 'chant_of_life', 'Chant of Life should apply a structured heal-over-time buff');
+assert.strictEqual(chantLifeOutcome.effect.hot.heal, 43, 'Chant of Life level 9 should use sourced HealOverTime value 43');
+assert.strictEqual(chantLifeOutcome.effect.hot.count, 15, 'Chant of Life should use sourced 15 heal ticks');
+assert.strictEqual(chantLifeOutcome.effect.hot.intervalMs, 1000, 'Chant of Life should tick every sourced second');
+assert(chantLifeTarget.effectTimers.chant_of_life, 'Chant of Life should start a runtime heal-over-time ticker');
+EffectStore.remove(chantLifeTarget, 'chant_of_life');
+
 const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 1, level: 4, buff: 20000 });
 const bleedTarget = statActor();
 const bleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, bleed, {

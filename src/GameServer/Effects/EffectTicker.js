@@ -36,6 +36,32 @@ function applyDot(session, source, target, effect) {
     return true;
 }
 
+function applyHot(session, source, target, effect) {
+    const hot = effect?.hot;
+    if (!target || !effect?.key || !hot) return false;
+
+    const heal = Math.max(0, Number(hot.heal) || 0);
+    const intervalMs = Math.max(1, Number(hot.intervalMs) || 1000);
+    let remaining = Math.max(0, Number(hot.count) || 0);
+    if (!heal || !remaining) return false;
+
+    const timers = ensureTimers(target);
+    clear(target, effect.key);
+    timers[effect.key] = setInterval(() => {
+        if (target.state?.fetchDead?.()) {
+            clear(target, effect.key);
+            return;
+        }
+
+        applyHeal(target, heal);
+        remaining -= 1;
+        if (remaining <= 0) {
+            clear(target, effect.key);
+        }
+    }, intervalMs);
+    return true;
+}
+
 function applyDamage(session, source, target, damage) {
     if (session && source && target?.fetchId && source !== target) {
         if (target.fetchId() >= 2000000) {
@@ -51,7 +77,17 @@ function applyDamage(session, source, target, damage) {
     else if (target.broadcastVitals) target.broadcastVitals();
 }
 
+function applyHeal(target, heal) {
+    const currentHp = Number(target.fetchHp?.()) || 0;
+    const maxHp = Number(target.fetchMaxHp?.()) || 0;
+    const nextHp = maxHp > 0 ? Math.min(maxHp, currentHp + heal) : currentHp + heal;
+    target.setHp(nextHp);
+    if (target.statusUpdateVitals) target.statusUpdateVitals(target);
+    else if (target.broadcastVitals) target.broadcastVitals();
+}
+
 module.exports = {
     applyDot,
+    applyHot,
     clear
 };

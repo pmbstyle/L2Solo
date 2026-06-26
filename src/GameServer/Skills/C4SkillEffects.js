@@ -32,6 +32,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.HOT) {
+        result.effect = applyEffect(session, target, skill, semantic);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.CLEANSE) {
         result.cleansed = applyCleanse(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
@@ -119,6 +125,7 @@ function applyEffect(session, target, skill, semantic) {
         category: semantic.trait || semantic.effect,
         stats: semantic.stats || {},
         dot: dotFromSkill(skill, semantic),
+        hot: hotFromSkill(skill, semantic),
         durationMs
     });
 
@@ -130,6 +137,10 @@ function applyEffect(session, target, skill, semantic) {
 
     if (effect?.dot) {
         EffectTicker.applyDot(session, session?.actor, target, effect);
+    }
+
+    if (effect?.hot) {
+        EffectTicker.applyHot(session, session?.actor, target, effect);
     }
 
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect);
@@ -154,6 +165,15 @@ function dotFromSkill(skill, semantic) {
         count: semantic.dot.count,
         intervalMs: semantic.dot.intervalMs,
         damage: semantic.dot.damage ?? damageByLevel(skill, semantic.dot) ?? skill.fetchPower()
+    };
+}
+
+function hotFromSkill(skill, semantic) {
+    if (!semantic.hot) return null;
+    return {
+        count: semantic.hot.count,
+        intervalMs: semantic.hot.intervalMs,
+        heal: semantic.hot.heal ?? skill.fetchPower()
     };
 }
 

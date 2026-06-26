@@ -2,6 +2,7 @@ const DAMAGE = 'damage';
 const DAMAGE_EFFECT = 'damageEffect';
 const HEAL = 'heal';
 const HEAL_PERCENT = 'healPercent';
+const HOT = 'hot';
 const EFFECT = 'effect';
 const BLOW = 'blow';
 const CLEANSE = 'cleanse';
@@ -78,6 +79,7 @@ const RULES = {
     1208: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', baseLandRate: 40 },
     1216: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1229: { skillType: HOT, trait: 'buff', effect: 'chant_of_life', effectType: 'buff', target: 'friendly', baseLandRate: 100, hot: { count: 15, intervalMs: 1000, healByLevel: [12, 15, 18, 23, 27, 31, 35, 39, 43, 45, 46, 48, 50, 52, 53, 55, 56, 58] } },
     1240: { skillType: EFFECT, trait: 'buff', effect: 'guidance', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1242: { skillType: EFFECT, trait: 'buff', effect: 'death_whisper', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.25, 1.3, 1.35] } },
     1243: { skillType: EFFECT, trait: 'buff', effect: 'bless_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { rShldMul: [1.05, 1.1, 1.15, 1.2, 1.25, 1.3] } },
@@ -132,6 +134,7 @@ function resolve(skill = {}) {
         blowChance: rule.blowChance ?? inferred.blowChance,
         healPower: resolveByLevel(rule.healPowerByLevel, skill.level),
         dot: rule.dot || inferred.dot || null,
+        hot: resolveHot(rule, inferred, skill.level),
         cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null
     };
@@ -152,6 +155,13 @@ function resolveByLevel(values, level) {
     if (!values) return null;
     const index = Math.max(0, Math.min(values.length - 1, (Number(level) || 1) - 1));
     return values[index];
+}
+
+function resolveHot(rule, inferred, level) {
+    const hot = rule.hot || inferred.hot || null;
+    if (!hot) return null;
+    const heal = resolveByLevel(hot.healByLevel, level);
+    return { ...hot, heal: heal ?? hot.heal };
 }
 
 function resolveStats(rule, inferred, level) {
@@ -244,6 +254,7 @@ module.exports = {
     DAMAGE_EFFECT,
     HEAL,
     HEAL_PERCENT,
+    HOT,
     EFFECT,
     BLOW,
     CLEANSE,
