@@ -495,6 +495,54 @@ assert.strictEqual(
     "The Vision of Pa'agrio level 2 should apply the sourced L2J pAccuracyCombat addition"
 );
 
+const furyTarget = statActor();
+const fury = skill({ selfId: 1251, name: 'Chant of Fury', spell: true, power: 1, level: 2, buff: 1200000 });
+const furyOutcome = SkillEffects.execute(session(), caster, furyTarget, fury, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(furyOutcome.effect.key, 'chant_of_fury', 'Chant of Fury should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(furyTarget, 'pAtkSpdMul'), 1.33, 'Chant of Fury level 2 should use sourced pAtkSpd 1.33');
+calculateStats({}, furyTarget);
+assert.strictEqual(
+    furyTarget.collectiveAtkSpd,
+    Math.round(Formulas.calcAtkSpd(30, 300) * 1.33),
+    'Chant of Fury level 2 should apply the sourced L2J pAtkSpd multiplier'
+);
+
+const chantEvasionTarget = statActor();
+const chantEvasion = skill({ selfId: 1252, name: 'Chant of Evasion', spell: true, power: 1, level: 3, buff: 1200000 });
+const chantEvasionOutcome = SkillEffects.execute(session(), caster, chantEvasionTarget, chantEvasion, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(chantEvasionOutcome.effect.key, 'chant_of_evasion', 'Chant of Evasion should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(chantEvasionTarget, 'pEvasionRateAdd'), 4, 'Chant of Evasion level 3 should use sourced pEvasionRate +4');
+calculateStats({}, chantEvasionTarget);
+assert.strictEqual(
+    chantEvasionTarget.collectiveEvasion,
+    Formulas.calcEvasion(20, 30, 2) + 4,
+    'Chant of Evasion level 3 should apply the sourced L2J evasion addition'
+);
+
+const tactTarget = statActor();
+const tact = skill({ selfId: 1260, name: "The Tact of Pa'agrio", spell: true, power: 1, level: 2, buff: 1200000 });
+const tactOutcome = SkillEffects.execute(session(), caster, tactTarget, tact, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(tactOutcome.effect.key, 'tact_of_paagrio', "The Tact of Pa'agrio should apply a structured buff effect");
+assert.strictEqual(EffectStats.add(tactTarget, 'pEvasionRateAdd'), 3, "The Tact of Pa'agrio level 2 should use sourced pEvasionRate +3");
+calculateStats({}, tactTarget);
+assert.strictEqual(
+    tactTarget.collectiveEvasion,
+    Formulas.calcEvasion(20, 30, 2) + 3,
+    "The Tact of Pa'agrio level 2 should apply the sourced L2J evasion addition"
+);
+
 const shockProtected = statActor();
 const resistShock = skill({ selfId: 1259, name: 'Resist Shock', spell: true, power: 1, level: 2, buff: 1200000 });
 const resistShockOutcome = SkillEffects.execute(session(), caster, shockProtected, resistShock, {
