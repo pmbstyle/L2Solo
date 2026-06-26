@@ -6,9 +6,10 @@
 
 - Keep payloads small. Legacy clients can crash around large stress pages, so prefer short rows and paged views.
 - Use links for navigation, refresh, close, and dense item actions.
-- Use bitmap buttons only for short primary actions near the top of a page.
+- Use CH3 bitmap buttons only for short primary actions near the top of a page. The old `L2UI.DefaultButton` texture renders worse in the C4 client.
 - Avoid native checkbox UI for primary controls. Redraws can jump scroll position.
-- Treat the outer window title as client-controlled. Put the reliable title inside the page body.
+- Treat the outer `Chat` window title as client-controlled for `NpcHtmlMessage`. Put the reliable title inside the page body.
+- `edit`, `combobox`, and `multiedit` inputs work and can return values through `$variables` in bypass actions.
 - Use client textures and icons only. Custom external images are not supported by this dialog path.
 
 ## Components

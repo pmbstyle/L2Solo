@@ -45,7 +45,8 @@ function overview() {
         ])),
         Html.section('Observed Client Notes',
             `${Html.font('OK:', Html.COLOR.ok)} tables, links, edit, combobox, multiedit, common item/skill icons.<br1>` +
-            `${Html.font('Mixed:', Html.COLOR.warn)} button textures vary; checkbox texture is usable only in small sizes.<br1>` +
+            `${Html.font('OK:', Html.COLOR.ok)} CH3 buttons render cleaner than the legacy default texture.<br1>` +
+            `${Html.font('Fixed:', Html.COLOR.warn)} NpcHtmlMessage keeps the outer frame title as Chat.<br1>` +
             `${Html.font('UX:', Html.COLOR.warn)} server redraw after deep clicks scrolls the window upward.<br1>` +
             `${Html.font('Crash:', Html.COLOR.danger)} 60-row payload crashed this client; size probes now stop at 25.`
         )
@@ -63,9 +64,16 @@ function buttons(state) {
     return [
         `${Html.font('Button Texture Matrix', Html.COLOR.title)}<br1>`,
         `${Html.font('Use compact labels; legacy button text rendering is fixed and cramped.', Html.COLOR.muted)}<br>`,
+        Html.section('Current Kit Default', Html.table([
+            Html.row([
+                Html.cell(Html.button('Small', 'ui-test press kit-small', { width: 75 })),
+                Html.cell(Html.button('Medium', 'ui-test press kit-medium', { width: 90 })),
+                Html.cell(Html.button('Wide', 'ui-test press kit-wide', { width: 120 }))
+            ])
+        ])),
         Html.section('Legacy Candidates', Html.table([
             Html.row([
-                Html.cell(Html.button('Default', 'ui-test press default', { width: 75 })),
+                Html.cell(Html.button('Old', 'ui-test press default', { width: 75, fore: Html.TEXTURE.legacyButton, back: Html.TEXTURE.legacyButtonDown })),
                 Html.cell(Html.button('CH3', 'ui-test press ch3', { width: 75, fore: 'L2UI_ch3.Btn1_normal', back: 'L2UI_ch3.Btn1_normalOn' })),
                 Html.cell(Html.button('Big', 'ui-test press big', { width: 90, fore: 'L2UI_ch3.BigButton3', back: 'L2UI_ch3.BigButton3_over' }))
             ])
@@ -224,10 +232,10 @@ function titleProbe(state) {
 
     return [
         `${Html.font('Window Title Probe', Html.COLOR.title)}<br1>`,
-        `${Html.font('If the outer frame still says Chat, the client ignores <title> for this dialog.', Html.COLOR.muted)}<br>`,
+        `${Html.font('Confirmed: NpcHtmlMessage does not expose an outer title field in this client.', Html.COLOR.muted)}<br>`,
         Html.keyValueRows([
             ['HTML title', Html.font(titleMode || '<empty>', Html.COLOR.link)],
-            ['Frame title', 'Check the top bar manually']
+            ['Frame title', 'Client-owned Chat']
         ]),
         Html.section('Title Variants', Html.columns([
             Html.cell(Html.link('Bot Party', 'ui-test title Bot_Party', { color: Html.COLOR.link })),

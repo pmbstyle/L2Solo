@@ -17,8 +17,10 @@ const HtmlKit = {
     TEXTURE: {
         line: 'L2UI.SquareWhite',
         blank: 'L2UI.SquareBlank',
-        defaultButton: 'L2UI.DefaultButton',
-        defaultButtonDown: 'L2UI.DefaultButton_click'
+        defaultButton: 'L2UI_ch3.Btn1_normal',
+        defaultButtonDown: 'L2UI_ch3.Btn1_normalOn',
+        legacyButton: 'L2UI.DefaultButton',
+        legacyButtonDown: 'L2UI.DefaultButton_click'
     }
 };
 
