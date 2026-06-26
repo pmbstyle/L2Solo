@@ -12,6 +12,7 @@ const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
 const Attack = invoke('GameServer/Actor/Attack');
 const ServerResponse = invoke('GameServer/Network/Response');
+const activeSkills = require('../data/Skills/Active/active.json');
 
 function creature(overrides = {}) {
     return {
@@ -100,6 +101,32 @@ assert.strictEqual(restoreLife.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Res
 assert.strictEqual(restoreOutcome.heal, 300, 'Restore Life level 4 should restore sourced 30% of max HP');
 assert.strictEqual(restoreTarget.fetchHp(), 700, 'Restore Life should apply the sourced percent heal instead of active.json power 1');
 assert.strictEqual(caster.spiritshotLoaded, false, 'Restore Life should clear but not boost with spiritshot');
+
+const benedictionData = activeSkills.find((entry) => entry.selfId === 1271);
+assert(benedictionData, 'Benediction should be present in active skills data');
+assert.strictEqual(benedictionData.levels[0].power, 100, 'Benediction active data should preserve sourced 100% heal power');
+assert.strictEqual(benedictionData.time.reuse, 3600000, 'Benediction active data should preserve sourced one hour reuse');
+const benediction = skill({ selfId: 1271, name: 'Benediction', spell: true, power: 1, level: 1 });
+const highHpCleric = creature({ hp: 500, maxHp: 1000 });
+const benedictionAttack = new Attack();
+assert(
+    benedictionAttack.skillUseConditionFailure(highHpCleric, benediction),
+    'Benediction should be blocked above the sourced HP condition'
+);
+const lowHpCleric = creature({ hp: 250, maxHp: 1000 });
+assert.strictEqual(
+    benedictionAttack.skillUseConditionFailure(lowHpCleric, benediction),
+    null,
+    'Benediction should be allowed at the sourced 25% HP threshold'
+);
+const benedictionTarget = creature({ hp: 100, maxHp: 1000 });
+const benedictionOutcome = SkillEffects.execute(session(), lowHpCleric, benedictionTarget, benediction, {
+    magicSkill: true,
+    attack: { clearLoadedShot(actor, magic) { actor.clearedBenediction = magic; } }
+});
+assert.strictEqual(benediction.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Benediction should resolve to HEAL_PERCENT');
+assert.strictEqual(benedictionOutcome.heal, 900, 'Benediction should restore up to 100% of max HP');
+assert.strictEqual(benedictionTarget.fetchHp(), 1000, 'Benediction should clamp the 100% heal at max HP');
 
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });

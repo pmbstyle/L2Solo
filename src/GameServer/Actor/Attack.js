@@ -137,6 +137,12 @@ class Attack {
             return;
         }
 
+        const conditionFailure = this.skillUseConditionFailure(actor, skill);
+        if (conditionFailure) {
+            this.rejectSkillUseCondition(session, actor, conditionFailure);
+            return;
+        }
+
         const magicSkill = this.isMagicSkill(skill);
         this.chargeShotForSkill(session, actor, magicSkill);
 
@@ -206,6 +212,26 @@ class Attack {
                 }
             });
         }
+    }
+
+    skillUseConditionFailure(actor, skill) {
+        const condition = skill.fetchSemantic?.().condition || null;
+        if (!condition) return null;
+
+        if (condition.actorHpPercentAtMost !== undefined) {
+            const maxHp = Number(actor.fetchMaxHp?.()) || 0;
+            const hp = Number(actor.fetchHp?.()) || 0;
+            if (maxHp > 0 && hp / maxHp * 100 > condition.actorHpPercentAtMost) {
+                return `Can only be used when one's own remaining HP is ${condition.actorHpPercentAtMost}% or less.`;
+            }
+        }
+
+        return null;
+    }
+
+    rejectSkillUseCondition(session, actor, message) {
+        session.dataSendToMe?.(ServerResponse.actionFailed());
+        session.dataSendToMe?.(ServerResponse.speak(actor, { kind: 0, text: message }));
     }
 
     broadcastShotCharge(session, actor, skillId) {

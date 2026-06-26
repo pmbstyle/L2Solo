@@ -104,7 +104,8 @@ const RULES = {
         runSpdAdd: [5, 8],
         pEvasionRateAdd: [-2, -4]
     } },
-    1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } }
+    1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } },
+    1271: { skillType: HEAL_PERCENT, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [100], condition: { actorHpPercentAtMost: 25 } }
 };
 
 const SELF_NAME_PATTERNS = [
@@ -138,7 +139,8 @@ function resolve(skill = {}) {
         dot: rule.dot || inferred.dot || null,
         hot: resolveHot(rule, inferred, skill.level),
         cleanse: resolveCleanse(rule, inferred, skill.level),
-        lethal: rule.lethal || inferred.lethal || null
+        lethal: rule.lethal || inferred.lethal || null,
+        condition: rule.condition || inferred.condition || null
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);
     return semantic;
