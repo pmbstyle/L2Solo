@@ -5,6 +5,7 @@ require('../src/Global');
 const SkillModel = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
@@ -253,6 +254,43 @@ assert.strictEqual(vitalizeOutcome.heal, 521, 'Vitalize should use sourced L2J h
 assert.strictEqual(vitalized.fetchHp(), 621, 'Vitalize should restore HP and not only cleanse');
 assert.strictEqual(vitalizeOutcome.cleansed.length, 2, 'Vitalize level 6 should cleanse poison and bleed up to sourced negate power 7');
 assert.strictEqual(EffectStore.hasDebuff(vitalized, ['poison', 'bleed']), false, 'Vitalize should clear supported DoT debuffs');
+
+const poisonProtected = statActor();
+const resistPoison = skill({ selfId: 1033, name: 'Resist Poison', spell: true, power: 1, level: 3, buff: 1200000 });
+const resistPoisonOutcome = SkillEffects.execute(session(), caster, poisonProtected, resistPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(resistPoisonOutcome.effect.key, 'resist_poison', 'Resist Poison should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(poisonProtected, 'poisonResist'), 50, 'Resist Poison level 3 should add sourced poisonResist 50');
+const basicPoison = skill({ selfId: 129, name: 'Poison', spell: true, power: 3, level: 1, buff: 30000 });
+const resistedPoisonOutcome = SkillEffects.execute(session(), caster, poisonProtected, basicPoison, {
+    magicSkill: true,
+    rng: () => 0.5,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(resistedPoisonOutcome.effect, null, 'Poison should not apply when sourced poisonResist lowers the land chance below the roll');
+assert.strictEqual(resistedPoisonOutcome.effectResisted, true, 'Poison resist should be reported separately from magic failure');
+assert.strictEqual(EffectStore.hasDebuff(poisonProtected, 'poison'), false, 'Resisted Poison should not leave a debuff');
+
+const bleedProtected = statActor();
+const invigor = skill({ selfId: 1032, name: 'Invigor', spell: true, power: 1, level: 2, buff: 1200000 });
+const invigorOutcome = SkillEffects.execute(session(), caster, bleedProtected, invigor, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(invigorOutcome.effect.key, 'invigor', 'Invigor should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(bleedProtected, 'bleedResist'), 40, 'Invigor level 2 should add sourced bleedResist 40');
+const resistedBleedOutcome = SkillEffects.execute(session(), caster, bleedProtected, bleed, {
+    magicSkill: false,
+    rng: () => 0.75,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(resistedBleedOutcome.effect, null, 'Bleed should not apply when sourced bleedResist lowers the land chance below the roll');
+assert.strictEqual(resistedBleedOutcome.effectResisted, true, 'Bleed resist should be reported separately from physical skill miss');
+assert.strictEqual(EffectStore.hasDebuff(bleedProtected, 'bleed'), false, 'Resisted Bleed should not leave a debuff');
 
 console.log('Skill semantic checks passed');
 

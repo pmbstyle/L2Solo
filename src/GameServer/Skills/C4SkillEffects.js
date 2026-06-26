@@ -3,6 +3,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 const Formulas = invoke('GameServer/Formulas');
 const ServerResponse = invoke('GameServer/Network/Response');
 
@@ -17,6 +18,7 @@ function execute(session, actor, target, skill, context = {}) {
         effect: null,
         missed: false,
         resisted: false,
+        effectResisted: false,
         lethal: false
     };
 
@@ -59,9 +61,13 @@ function execute(session, actor, target, skill, context = {}) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
     }
 
-    if ((semantic.skillType === C4SkillRules.EFFECT || semantic.skillType === C4SkillRules.DAMAGE_EFFECT) &&
-        (!isOffensive(semantic) || !resistEffect(actor, target, skill, semantic, magicSkill, rng))) {
-        result.effect = applyEffect(session, target, skill, semantic);
+    if (semantic.skillType === C4SkillRules.EFFECT || semantic.skillType === C4SkillRules.DAMAGE_EFFECT) {
+        const resisted = isOffensive(semantic) && resistEffect(actor, target, skill, semantic, magicSkill, rng);
+        if (resisted) {
+            result.effectResisted = true;
+        } else {
+            result.effect = applyEffect(session, target, skill, semantic);
+        }
     }
 
     return result;
@@ -169,9 +175,15 @@ function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
         attackerLevel: actor.fetchLevel?.(),
         targetLevel: target.fetchLevel?.(),
         magicLevel: semantic.magicLevel,
-        levelDepend: semantic.levelDepend
+        levelDepend: semantic.levelDepend,
+        resistModifier: traitResistModifier(target, semantic.trait)
     });
     return !(chance >= rng() * 100);
+}
+
+function traitResistModifier(target, trait) {
+    const resist = EffectStats.add(target, `${trait}Resist`);
+    return Math.max(0, 1 - (resist / 100));
 }
 
 function applyLethal(target, semantic, rng, result) {

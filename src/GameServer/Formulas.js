@@ -260,7 +260,7 @@ const Formulas = {
         return Math.max(1, Math.min(99, 100 - (failRate / 100)));
     },
 
-    // Adapted from aCis calcSkillSuccess with neutral stat/vulnerability modifiers until those stats exist.
+    // Adapted from aCis calcSkillSuccess; C4SkillEffects supplies sourced trait-resist modifiers.
     calcSkillEffectSuccessRate({
         baseChance = 80,
         magic = false,
@@ -270,7 +270,8 @@ const Formulas = {
         attackerLevel = 1,
         targetLevel = 1,
         magicLevel = 0,
-        levelDepend = 0
+        levelDepend = 0,
+        resistModifier = 1
     } = {}) {
         let mAtkModifier = 1;
         if (magic) {
@@ -285,7 +286,7 @@ const Formulas = {
             levelModifier = 1 + ((delta < 0 ? 0.01 : 0.005) * delta);
         }
 
-        const chance = (Number(baseChance) || 0) * mAtkModifier * Math.max(0, levelModifier);
+        const chance = (Number(baseChance) || 0) * mAtkModifier * Math.max(0, levelModifier) * Math.max(0, Number(resistModifier) || 0);
         return Math.max(1, Math.min(chance, 99));
     },
 
