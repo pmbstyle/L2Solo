@@ -3,6 +3,7 @@ const DAMAGE_EFFECT = 'damageEffect';
 const HEAL = 'heal';
 const EFFECT = 'effect';
 const BLOW = 'blow';
+const CLEANSE = 'cleanse';
 
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -16,11 +17,13 @@ const RULES = {
     115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
     127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },
+    21: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7] }] },
     129: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000 } },
     263: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     1040: { skillType: EFFECT, trait: 'buff', effect: 'shield', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1068: { skillType: EFFECT, trait: 'buff', effect: 'might', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1011: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1012: { skillType: CLEANSE, trait: 'poison', target: 'friendly', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
     1015: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 70 },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
@@ -59,10 +62,20 @@ function resolve(skill = {}) {
         baseLandRate: rule.baseLandRate ?? inferred.baseLandRate,
         blowChance: rule.blowChance ?? inferred.blowChance,
         dot: rule.dot || inferred.dot || null,
+        cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);
     return semantic;
+}
+
+function resolveCleanse(rule, inferred, level) {
+    return (rule.cleanse || inferred.cleanse || []).map((entry) => {
+        const maxLevel = entry.maxLevelByLevel
+            ? entry.maxLevelByLevel[Math.max(0, Math.min(entry.maxLevelByLevel.length - 1, (Number(level) || 1) - 1))]
+            : entry.maxLevel;
+        return { ...entry, maxLevel };
+    });
 }
 
 function resolveStats(rule, inferred, level) {
@@ -156,6 +169,7 @@ module.exports = {
     HEAL,
     EFFECT,
     BLOW,
+    CLEANSE,
     resolve,
     normalizeKey
 };

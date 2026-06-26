@@ -25,6 +25,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.CLEANSE) {
+        result.cleansed = applyCleanse(session, target, semantic);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.BLOW) {
         if (!rollBlow(actor, target, semantic, context.attack, rng)) {
             clearLoadedShot(context.attack, actor, magicSkill);
@@ -100,6 +106,17 @@ function applyEffect(session, target, skill, semantic) {
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect);
     refreshEffects(session, target);
     return effect;
+}
+
+function applyCleanse(session, target, semantic) {
+    const removed = [];
+    (semantic.cleanse || []).forEach((entry) => {
+        removed.push(...EffectStore.removeByCategory(target, entry.category, entry.maxLevel ?? Infinity));
+    });
+    if (removed.length) {
+        refreshEffects(session, target);
+    }
+    return removed;
 }
 
 function dotFromSkill(skill, semantic) {

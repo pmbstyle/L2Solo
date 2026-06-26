@@ -63,6 +63,18 @@ function remove(actor, key) {
     return true;
 }
 
+function removeByCategory(actor, category, maxLevel = Infinity) {
+    const removed = [];
+    list(actor).forEach((effect) => {
+        const matches = effect.key === category || effect.category === category;
+        const allowedLevel = Number(effect.level || 0) <= Number(maxLevel);
+        if (matches && allowedLevel && remove(actor, effect.key)) {
+            removed.push(effect);
+        }
+    });
+    return removed;
+}
+
 function remainingMs(actor, key) {
     const effect = prune(actor)[key];
     if (!effect) return 0;
@@ -114,6 +126,7 @@ function impairments(actor) {
 module.exports = {
     apply,
     remove,
+    removeByCategory,
     remainingMs,
     list,
     packetEffects,

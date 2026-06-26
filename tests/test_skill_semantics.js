@@ -178,6 +178,27 @@ assert.strictEqual(
     'Freezing Strike should apply the L2J RunSpeedDown 0.7 multiplier'
 );
 
+const poisoned = statActor();
+const poisonEffect = EffectStore.apply(poisoned, {
+    key: 'poison',
+    id: 129,
+    level: 3,
+    type: 'debuff',
+    category: 'poison',
+    dot: { damage: 3, count: 10, intervalMs: 3000 },
+    durationMs: 30000
+});
+invoke('GameServer/Effects/EffectTicker').applyDot(session(), caster, poisoned, poisonEffect);
+assert(poisoned.effectTimers.poison, 'Poison test setup should start a DoT ticker');
+const curePoison = skill({ selfId: 1012, name: 'Cure Poison', spell: true, power: 1, level: 1 });
+const cleanseOutcome = SkillEffects.execute(session(), caster, poisoned, curePoison, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(cleanseOutcome.cleansed.length, 1, 'Cure Poison level 1 should negate Poison effects up to sourced power 3');
+assert.strictEqual(EffectStore.hasDebuff(poisoned, 'poison'), false, 'Cure Poison should remove the poison debuff');
+assert.strictEqual(poisoned.effectTimers.poison, undefined, 'Cure Poison should stop the poison DoT ticker');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
