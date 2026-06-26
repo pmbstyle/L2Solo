@@ -3,7 +3,7 @@ const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function setCollectiveTotalHp(actor) {
-    const base = Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), actor.fetchCon());
+    const base = Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), actor.fetchCon()) * EffectStats.multiplier(actor, 'maxHpMul');
     actor.setMaxHp(base);
     actor.setHp(Math.min(actor.fetchHp(), actor.fetchMaxHp()));
 }

@@ -385,6 +385,23 @@ assert.strictEqual(
     'Focus level 3 should apply the sourced L2J pCritRate addition'
 );
 
+const blessedBodyTarget = statActor();
+blessedBodyTarget.hp = 1000;
+const blessedBody = skill({ selfId: 1045, name: 'Blessed Body', spell: true, power: 1, level: 4, buff: 1200000 });
+const blessedBodyOutcome = SkillEffects.execute(session(), caster, blessedBodyTarget, blessedBody, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessedBodyOutcome.effect.key, 'blessed_body', 'Blessed Body should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(blessedBodyTarget, 'maxHpMul'), 1.25, 'Blessed Body level 4 should use sourced maxHp 1.25');
+calculateStats({}, blessedBodyTarget);
+assert.strictEqual(
+    blessedBodyTarget.fetchMaxHp(),
+    Formulas.calcHp(20, 0, 30) * 1.25,
+    'Blessed Body level 4 should apply the sourced L2J maxHp multiplier'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
