@@ -74,7 +74,7 @@ function setCollectiveTotalEvasion(actor) {
 
 function setCollectiveTotalCritical(actor) {
     const critical = actor.backpack.fetchTotalWeaponCritical() ?? actor.fetchCritical();
-    const base    = Formulas.calcCritical(actor.fetchDex(), critical);
+    const base    = Formulas.calcCritical(actor.fetchDex(), critical) + EffectStats.add(actor, 'pCritRateAdd');
     actor.setCollectiveCritical(base);
 }
 

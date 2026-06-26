@@ -369,6 +369,22 @@ assert.strictEqual(
     'Acumen level 3 should apply the sourced L2J mAtkSpd multiplier'
 );
 
+const focusTarget = statActor();
+const focus = skill({ selfId: 1077, name: 'Focus', spell: true, power: 1, level: 3, buff: 1200000 });
+const focusOutcome = SkillEffects.execute(session(), caster, focusTarget, focus, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(focusOutcome.effect.key, 'focus', 'Focus should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(focusTarget, 'pCritRateAdd'), 30, 'Focus level 3 should use sourced pCritRate +30');
+calculateStats({}, focusTarget);
+assert.strictEqual(
+    focusTarget.collectiveCritical,
+    Formulas.calcCritical(30, 40) + 30,
+    'Focus level 3 should apply the sourced L2J pCritRate addition'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
