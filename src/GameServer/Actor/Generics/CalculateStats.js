@@ -62,7 +62,7 @@ function setCollectiveTotalMDef(actor) {
 
 function setCollectiveTotalAccur(actor) {
     const accur = actor.backpack.fetchTotalWeaponAccur() ?? actor.fetchAccur();
-    const base  = Formulas.calcAccur(actor.fetchLevel(), actor.fetchDex(), accur);
+    const base  = Formulas.calcAccur(actor.fetchLevel(), actor.fetchDex(), accur) + EffectStats.add(actor, 'pAccuracyCombatAdd');
     actor.setCollectiveAccur(base);
 }
 

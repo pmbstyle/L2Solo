@@ -463,6 +463,38 @@ assert.strictEqual(
     'Agility level 3 should apply the sourced L2J evasion addition'
 );
 
+const guidanceTarget = statActor();
+const guidance = skill({ selfId: 1240, name: 'Guidance', spell: true, power: 1, level: 3, buff: 1200000 });
+const guidanceOutcome = SkillEffects.execute(session(), caster, guidanceTarget, guidance, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(guidanceOutcome.effect.key, 'guidance', 'Guidance should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(guidanceTarget, 'pAccuracyCombatAdd'), 4, 'Guidance level 3 should use sourced pAccuracyCombat +4');
+calculateStats({}, guidanceTarget);
+assert.strictEqual(
+    guidanceTarget.collectiveAccur,
+    Formulas.calcAccur(20, 30, 5) + 4,
+    'Guidance level 3 should apply the sourced L2J pAccuracyCombat addition'
+);
+
+const visionTarget = statActor();
+const vision = skill({ selfId: 1249, name: "The Vision of Pa'agrio", spell: true, power: 1, level: 2, buff: 1200000 });
+const visionOutcome = SkillEffects.execute(session(), caster, visionTarget, vision, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(visionOutcome.effect.key, 'vision_of_paagrio', "The Vision of Pa'agrio should apply a structured buff effect");
+assert.strictEqual(EffectStats.add(visionTarget, 'pAccuracyCombatAdd'), 3, "The Vision of Pa'agrio level 2 should use sourced pAccuracyCombat +3");
+calculateStats({}, visionTarget);
+assert.strictEqual(
+    visionTarget.collectiveAccur,
+    Formulas.calcAccur(20, 30, 5) + 3,
+    "The Vision of Pa'agrio level 2 should apply the sourced L2J pAccuracyCombat addition"
+);
+
 const shockProtected = statActor();
 const resistShock = skill({ selfId: 1259, name: 'Resist Shock', spell: true, power: 1, level: 2, buff: 1200000 });
 const resistShockOutcome = SkillEffects.execute(session(), caster, shockProtected, resistShock, {

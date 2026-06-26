@@ -74,6 +74,8 @@ const RULES = {
     1204: { skillType: EFFECT, trait: 'buff', effect: 'windWalk', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1216: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1240: { skillType: EFFECT, trait: 'buff', effect: 'guidance', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
+    1249: { skillType: EFFECT, trait: 'buff', effect: 'vision_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1259: { skillType: EFFECT, trait: 'buff', effect: 'resist_shock', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { stunResist: [15, 20, 30, 40] } }
 };
 
