@@ -181,6 +181,23 @@ assert.strictEqual(
     'Freezing Strike should apply the L2J RunSpeedDown 0.7 multiplier'
 );
 
+const windShackled = statActor();
+const windShackle = skill({ selfId: 1206, name: 'Wind Shackle', spell: true, power: 1, level: 5, buff: 120000 });
+const windShackleOutcome = SkillEffects.execute(session(), caster, windShackled, windShackle, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(windShackle.fetchTargetKind(), 'enemy', 'Wind Shackle should resolve as an enemy debuff instead of a self buff');
+assert.strictEqual(windShackleOutcome.effect.key, 'wind_shackle', 'Wind Shackle should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(windShackled, 'pAtkSpdMul'), 0.80, 'Wind Shackle level 5 should use sourced pAtkSpd 0.80');
+calculateStats({}, windShackled);
+assert.strictEqual(
+    windShackled.collectiveAtkSpd,
+    Math.round(Formulas.calcAtkSpd(30, 300) * 0.80),
+    'Wind Shackle level 5 should apply the sourced L2J pAtkSpd multiplier'
+);
+
 const poisoned = statActor();
 const poisonEffect = EffectStore.apply(poisoned, {
     key: 'poison',

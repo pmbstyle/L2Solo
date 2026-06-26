@@ -72,6 +72,7 @@ const RULES = {
     1172: { skillType: DAMAGE, trait: 'fire', ssBoost: 1, baseLandRate: 92 },
     1177: { skillType: DAMAGE, trait: 'wind', ssBoost: 1, baseLandRate: 92 },
     1204: { skillType: EFFECT, trait: 'buff', effect: 'windWalk', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
+    1206: { skillType: EFFECT, trait: 'debuff', effect: 'wind_shackle', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAtkSpdMul: [0.83, 0.80, 0.80, 0.80, 0.80, 0.77] } },
     1216: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1240: { skillType: EFFECT, trait: 'buff', effect: 'guidance', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
