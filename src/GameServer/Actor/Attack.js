@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const Formulas       = invoke('GameServer/Formulas');
 const DataCache      = invoke('GameServer/DataCache');
+const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 
 class Attack {
     constructor() {
@@ -150,10 +151,22 @@ class Attack {
             }
 
             actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
+            if (skill.fetchConsumedHp() > 0) {
+                actor.setHp(Math.max(1, actor.fetchHp() - skill.fetchConsumedHp()));
+            }
             actor.statusUpdateVitals(actor);
 
-            const damage = this.prepareSkillDamage(actor, creature, skill, magicSkill);
-            this.hit(session, actor, creature, damage);
+            const outcome = SkillEffects.execute(session, actor, creature, skill, {
+                attack: this,
+                magicSkill
+            });
+
+            if (outcome.damage > 0) {
+                this.hit(session, actor, creature, outcome.damage);
+            }
+            else if (outcome.missed) {
+                ConsoleText.transmit(session, ConsoleText.caption.missedHit);
+            }
             actor.state.setCasts(false);
 
             // Start replenish

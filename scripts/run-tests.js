@@ -13,6 +13,7 @@ const tests = [
     'tests/test_pathfinder_astar.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',
+    'tests/test_skill_semantics.js',
     'tests/test_skill_damage_formulas.js',
     'tests/test_town_pathfinder.js',
     'tests/test_ui_test_window.js'

@@ -1,6 +1,7 @@
 class SkillModel {
     constructor(data) {
         this.model = data;
+        this.semantic = invoke('GameServer/Skills/C4SkillRules').resolve(data);
     }
 
     // Set
@@ -17,6 +18,10 @@ class SkillModel {
 
     fetchLevel() {
         return this.model.level;
+    }
+
+    fetchName() {
+        return this.model.name;
     }
 
     fetchPassive() {
@@ -53,6 +58,26 @@ class SkillModel {
 
     fetchPower() {
         return this.model.power;
+    }
+
+    fetchBuffTime() {
+        return this.model.buff;
+    }
+
+    fetchSemantic() {
+        return this.semantic;
+    }
+
+    fetchSkillType() {
+        return this.semantic.skillType;
+    }
+
+    fetchTargetKind() {
+        return this.semantic.target;
+    }
+
+    fetchSsBoost() {
+        return this.semantic.ssBoost;
     }
 }
 

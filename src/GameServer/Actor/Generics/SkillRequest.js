@@ -1,11 +1,19 @@
 function skillRequest(session, actor, data) {
     const Generics = invoke(path.actor);
+    const skill = actor.skillset.fetchSkill(data.selfId);
 
     if (actor.isDead()) {
         return;
     }
 
-    if ((data.id = actor.fetchDestId()) === undefined) {
+    if (!skill) {
+        return;
+    }
+
+    if (skill.fetchTargetKind() === 'self') {
+        data.id = actor.fetchId();
+    }
+    else if ((data.id = actor.fetchDestId()) === undefined) {
         return;
     }
 

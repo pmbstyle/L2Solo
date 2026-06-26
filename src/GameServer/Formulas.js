@@ -240,6 +240,55 @@ const Formulas = {
         return damage;
     },
 
+    // L2J-style Heal handler baseline: power with shot multipliers; stat bonuses need real effect stats first.
+    calcHealAmount(power, { spiritshot = false, blessedSpiritshot = false } = {}) {
+        let amount = Number(power) || 0;
+        if (blessedSpiritshot) amount *= 1.5;
+        else if (spiritshot) amount *= 1.3;
+        return Math.max(0, amount);
+    },
+
+    // Adapted from L2J/aCis magic failure: target level over magic level raises fail chance by 1.3^diff.
+    calcMagicSuccessRate({ attackerLevel = 1, targetLevel = 1, magicLevel = 0, levelDepend = 0 } = {}) {
+        const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
+        const levelDifference = (Number(targetLevel) || 1) - (effectiveMagicLevel + (Number(levelDepend) || 0));
+        let failRate = 100;
+        if (levelDifference > 0) {
+            failRate = Math.pow(1.3, levelDifference) * 100;
+        }
+        failRate = Math.min(failRate, 9900);
+        return Math.max(1, Math.min(99, 100 - (failRate / 100)));
+    },
+
+    // Adapted from aCis calcSkillSuccess with neutral stat/vulnerability modifiers until those stats exist.
+    calcSkillEffectSuccessRate({
+        baseChance = 80,
+        magic = false,
+        mAtk = 0,
+        mDef = 1,
+        blessedSpiritshot = false,
+        attackerLevel = 1,
+        targetLevel = 1,
+        magicLevel = 0,
+        levelDepend = 0
+    } = {}) {
+        let mAtkModifier = 1;
+        if (magic) {
+            const boostedMAtk = (Number(mAtk) || 0) * (blessedSpiritshot ? 4 : 1);
+            mAtkModifier = (utils.sqrt(boostedMAtk) / Math.max(1, Number(mDef) || 1)) * 11;
+        }
+
+        let levelModifier = 1;
+        if (Number(levelDepend) !== 0) {
+            const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
+            const delta = effectiveMagicLevel + Number(levelDepend) - (Number(targetLevel) || 1);
+            levelModifier = 1 + ((delta < 0 ? 0.01 : 0.005) * delta);
+        }
+
+        const chance = (Number(baseChance) || 0) * mAtkModifier * Math.max(0, levelModifier);
+        return Math.max(1, Math.min(chance, 99));
+    },
+
     calcRemoteHit(mAtk, power, mDef) {
         return this.calcMagicDamage(mAtk, power, mDef);
     },
