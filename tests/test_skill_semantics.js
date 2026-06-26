@@ -261,6 +261,23 @@ assert.strictEqual(chantLifeOutcome.effect.hot.intervalMs, 1000, 'Chant of Life 
 assert(chantLifeTarget.effectTimers.chant_of_life, 'Chant of Life should start a runtime heal-over-time ticker');
 EffectStore.remove(chantLifeTarget, 'chant_of_life');
 
+const heartTarget = statActor();
+heartTarget.hp = 400;
+heartTarget.maxHp = 1000;
+const heartPaagrio = skill({ selfId: 1256, name: 'Heart of Paagrio', spell: true, power: 1, level: 4, buff: 15000 });
+const heartOutcome = SkillEffects.execute(session(), caster, heartTarget, heartPaagrio, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(heartPaagrio.fetchSkillType(), C4SkillRules.HEAL_HOT, "Heart of Pa'agrio should resolve to instant heal plus HOT");
+assert.strictEqual(heartOutcome.heal, 127, "Heart of Pa'agrio level 4 should restore sourced instant heal 127");
+assert.strictEqual(heartTarget.fetchHp(), 527, "Heart of Pa'agrio should apply sourced instant heal instead of active.json power 1");
+assert.strictEqual(heartOutcome.effect.key, 'heart_of_paagrio', "Heart of Pa'agrio should apply a structured heal-over-time buff");
+assert.strictEqual(heartOutcome.effect.hot.heal, 43, "Heart of Pa'agrio level 4 should use sourced HealOverTime value 43");
+assert(heartTarget.effectTimers.heart_of_paagrio, "Heart of Pa'agrio should start a runtime heal-over-time ticker");
+EffectStore.remove(heartTarget, 'heart_of_paagrio');
+
 const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 1, level: 4, buff: 20000 });
 const bleedTarget = statActor();
 const bleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, bleed, {
