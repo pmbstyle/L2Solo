@@ -227,6 +227,18 @@ const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cu
 assert.strictEqual(cureBleedOutcome.cleansed.length, 1, 'Cure Bleeding should remove matching bleed effects');
 assert.strictEqual(EffectStore.hasDebuff(bleedTarget, 'bleed'), false, 'Cure Bleeding should clear bleed debuff state');
 
+const purified = statActor();
+EffectStore.apply(purified, { key: 'poison', id: 129, level: 3, type: 'debuff', category: 'poison', durationMs: 30000 });
+EffectStore.apply(purified, { key: 'bleed', id: 96, level: 4, type: 'debuff', category: 'bleed', durationMs: 30000 });
+EffectStore.apply(purified, { key: 'paralyze', id: 99901, level: 7, type: 'debuff', category: 'paralyze', durationMs: 30000 });
+const purify = skill({ selfId: 1018, name: 'Purify', spell: true, power: 1, level: 2 });
+const purifyOutcome = SkillEffects.execute(session(), caster, purified, purify, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(purifyOutcome.cleansed.length, 3, 'Purify level 2 should cleanse poison, bleed, and paralyze up to sourced power 7');
+assert.strictEqual(EffectStore.hasDebuff(purified, ['poison', 'bleed', 'paralyze']), false, 'Purify should clear supported abnormal states');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {

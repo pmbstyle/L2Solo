@@ -28,6 +28,12 @@ const RULES = {
     1011: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1012: { skillType: CLEANSE, trait: 'poison', target: 'friendly', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
     1015: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1018: { skillType: CLEANSE, trait: 'purify', target: 'friendly', cleanse: [
+        { category: 'poison', maxLevelByLevel: [3, 7, 9] },
+        { category: 'bleed', maxLevelByLevel: [3, 7, 9] },
+        { category: 'paralyze', maxLevelByLevel: [3, 7, 9] },
+        { category: 'petrification', maxLevelByLevel: [3, 7, 9] }
+    ] },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 70 },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },
