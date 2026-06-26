@@ -97,7 +97,8 @@ const RULES = {
         pAtkSpdMul: [1.05, 1.08],
         runSpdAdd: [5, 8],
         pEvasionRateAdd: [-2, -4]
-    } }
+    } },
+    1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } }
 };
 
 const SELF_NAME_PATTERNS = [

@@ -691,6 +691,27 @@ assert.strictEqual(ragePaagrioTarget.collectiveCastSpd, Math.round(Formulas.calc
 assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, "The Rage of Pa'agrio should add run speed");
 assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, "The Rage of Pa'agrio should reduce evasion");
 
+const gloomTarget = statActor();
+const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 87, level: 13, buff: 30000 });
+const gloomOutcome = SkillEffects.execute(session(), caster, gloomTarget, curseGloom, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 123
+    }
+});
+assert.strictEqual(curseGloom.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Curse Gloom should resolve as magic damage plus debuff');
+assert.strictEqual(gloomOutcome.damage, 123, 'Curse Gloom should keep its damage component');
+assert.strictEqual(gloomOutcome.effect.key, 'curse_gloom', 'Curse Gloom should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(gloomTarget, 'mDefMul'), 0.85, 'Curse Gloom should use sourced mDef 0.85');
+calculateStats({}, gloomTarget);
+assert.strictEqual(
+    gloomTarget.collectiveMDef,
+    Math.round(Formulas.calcMDef(20, 30, 80) * 0.85),
+    'Curse Gloom should lower MDef through the sourced L2J multiplier'
+);
+
 const shockProtected = statActor();
 const resistShock = skill({ selfId: 1259, name: 'Resist Shock', spell: true, power: 1, level: 2, buff: 1200000 });
 const resistShockOutcome = SkillEffects.execute(session(), caster, shockProtected, resistShock, {
