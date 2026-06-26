@@ -40,7 +40,8 @@ function setCollectiveTotalPAtk(actor) {
 
 function setCollectiveTotalMAtk(actor) {
     const mAtk = actor.backpack.fetchTotalWeaponMAtk() ?? actor.fetchMAtk();
-    const base = Formulas.calcMAtk(actor.fetchLevel(), actor.fetchInt(), mAtk);
+    let base = Formulas.calcMAtk(actor.fetchLevel(), actor.fetchInt(), mAtk);
+    base = Math.round(base * EffectStats.multiplier(actor, 'mAtkMul'));
     actor.setCollectiveMAtk(base);
 }
 

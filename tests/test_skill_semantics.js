@@ -337,6 +337,22 @@ assert.strictEqual(
     'Magic Barrier level 2 should apply the sourced L2J MDef multiplier'
 );
 
+const empowerTarget = statActor();
+const empower = skill({ selfId: 1059, name: 'Empower', spell: true, power: 1, level: 3, buff: 1200000 });
+const empowerOutcome = SkillEffects.execute(session(), caster, empowerTarget, empower, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(empowerOutcome.effect.key, 'empower', 'Empower should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(empowerTarget, 'mAtkMul'), 1.75, 'Empower level 3 should use sourced mAtk 1.75');
+calculateStats({}, empowerTarget);
+assert.strictEqual(
+    empowerTarget.collectiveMAtk,
+    Math.round(Formulas.calcMAtk(20, 30, 50) * 1.75),
+    'Empower level 3 should apply the sourced L2J MAtk multiplier'
+);
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
