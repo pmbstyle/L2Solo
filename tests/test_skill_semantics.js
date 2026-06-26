@@ -6,6 +6,7 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
@@ -363,6 +364,18 @@ const sealBindingOutcome = SkillEffects.execute(session(), caster, sealBindingTa
 assert.strictEqual(sealBinding.fetchTargetKind(), 'enemy', 'Seal of Binding should resolve as an enemy root effect for the handled target');
 assert.strictEqual(sealBindingOutcome.effect.key, 'root', 'Seal of Binding should apply root at sourced base land rate 40');
 assert.strictEqual(EffectStore.hasDebuff(sealBindingTarget, 'root'), true, 'Seal of Binding should leave a root debuff when the sourced land rate passes');
+
+const sealSilenceTarget = statActor();
+const sealSilence = skill({ selfId: 1246, name: 'Seal of Silence', spell: true, power: 1, level: 1, distance: -1, buff: 60000 });
+const sealSilenceOutcome = SkillEffects.execute(session(), caster, sealSilenceTarget, sealSilence, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealSilence.fetchTargetKind(), 'enemy', 'Seal of Silence should resolve as an enemy mute effect');
+assert.strictEqual(sealSilenceOutcome.effect.key, 'silence', 'Seal of Silence should apply silence at sourced base land rate 40');
+assert.strictEqual(EffectStore.hasDebuff(sealSilenceTarget, 'silence'), true, 'Seal of Silence should leave a silence debuff when the sourced land rate passes');
+assert.strictEqual(EffectRestrictions.canCast(sealSilenceTarget), false, 'Seal of Silence should block casting through runtime restrictions');
 
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
