@@ -351,6 +351,17 @@ assert.strictEqual(dryadRoot.fetchTargetKind(), 'enemy', 'Dryad Root should reso
 assert.strictEqual(dryadRootOutcome.effect.key, 'root', 'Dryad Root should apply the structured root effect at sourced base land rate 80');
 assert.strictEqual(EffectStore.hasDebuff(dryadRootTarget, 'root'), true, 'Dryad Root should leave a root debuff when the sourced land rate passes');
 
+const sealBindingTarget = statActor();
+const sealBinding = skill({ selfId: 1208, name: 'Seal of Binding', spell: true, power: 1, level: 1, distance: -1, buff: 30000 });
+const sealBindingOutcome = SkillEffects.execute(session(), caster, sealBindingTarget, sealBinding, {
+    magicSkill: true,
+    rng: () => 0.43,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealBinding.fetchTargetKind(), 'enemy', 'Seal of Binding should resolve as an enemy root effect for the handled target');
+assert.strictEqual(sealBindingOutcome.effect.key, 'root', 'Seal of Binding should apply root at sourced base land rate 40');
+assert.strictEqual(EffectStore.hasDebuff(sealBindingTarget, 'root'), true, 'Seal of Binding should leave a root debuff when the sourced land rate passes');
+
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
 const magicBarrierOutcome = SkillEffects.execute(session(), caster, magicBarrierTarget, magicBarrier, {
