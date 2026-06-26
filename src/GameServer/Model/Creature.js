@@ -178,6 +178,22 @@ class CreatureModel extends SelectedModel {
         return this.model.pDef;
     }
 
+    fetchAccur() {
+        return this.model.accur ?? 0;
+    }
+
+    fetchCollectiveAccur() {
+        return this.model.collectiveAccur ?? this.fetchAccur();
+    }
+
+    fetchEvasion() {
+        return this.model.evasion ?? 0;
+    }
+
+    fetchCollectiveEvasion() {
+        return this.model.collectiveEvasion ?? this.fetchEvasion();
+    }
+
     fetchCollectivePDef() {
         return this.model.collectivePDef ?? this.fetchPDef();
     }

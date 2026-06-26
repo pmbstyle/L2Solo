@@ -233,6 +233,18 @@ assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should incl
 assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
 assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
 
+const attack = ServerResponse.attack(actor, 3000001, {
+    damage: 123,
+    flags: ServerResponse.attack.HITFLAG_USESS | 1
+});
+assert.strictEqual(attack[0], 0x05, 'C4 Attack opcode should be 0x05');
+assert.strictEqual(attack.readInt32LE(1), actor.fetchId(), 'C4 Attack should include attacker id');
+assert.strictEqual(attack.readInt32LE(5), 3000001, 'C4 Attack should include target id');
+assert.strictEqual(attack.readInt32LE(9), 123, 'C4 Attack should include actual damage');
+assert.strictEqual(attack[13], 0x11, 'C4 Attack should include soulshot flag and grade');
+assert.strictEqual(attack.readInt32LE(14), actor.fetchLocX(), 'C4 Attack should include attacker X');
+assert.strictEqual(attack.readInt16LE(26), 0, 'C4 Attack should send no extra hits for a single target');
+
 const npcInfo = ServerResponse.npcInfo(fakeNpc());
 assert.strictEqual(npcInfo[0], 0x16);
 assert.ok(npcInfo.length >= 208, 'C4 NpcInfo should include team/collision tail fields');

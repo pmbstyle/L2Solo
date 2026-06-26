@@ -1,4 +1,5 @@
 const Formulas = invoke('GameServer/Formulas');
+const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 
 function setCollectiveTotalHp(actor) {
     const base = Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), actor.fetchCon());
@@ -31,9 +32,7 @@ function setCollectiveTotalLoad(actor) {
 function setCollectiveTotalPAtk(actor) {
     const pAtk = actor.backpack.fetchTotalWeaponPAtk() ?? actor.fetchPAtk();
     let base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
-    if (actor.activeBuffs && actor.activeBuffs.might && Date.now() < actor.activeBuffs.might) {
-        base = Math.round(base * 1.15); // +15% P.Atk
-    }
+    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'might', 'pAtkMul'));
     actor.setCollectivePAtk(base);
 }
 
@@ -46,9 +45,7 @@ function setCollectiveTotalMAtk(actor) {
 function setCollectiveTotalPDef(actor) {
     const pDef = actor.backpack.fetchTotalArmorPDef(actor.isSpellcaster()) ?? actor.fetchPDef();
     let base = Formulas.calcPDef(actor.fetchLevel(), pDef);
-    if (actor.activeBuffs && actor.activeBuffs.shield && Date.now() < actor.activeBuffs.shield) {
-        base = Math.round(base * 1.15); // +15% P.Def
-    }
+    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'shield', 'pDefMul'));
     actor.setCollectivePDef(base);
 }
 
@@ -79,9 +76,7 @@ function setCollectiveTotalCritical(actor) {
 function setCollectiveTotalAtkSpd(actor) {
     const atkSpd = actor.backpack.fetchTotalWeaponAtkSpd() ?? actor.fetchAtkSpd();
     let base   = Formulas.calcAtkSpd(actor.fetchDex(), atkSpd);
-    if (actor.activeBuffs && actor.activeBuffs.haste && Date.now() < actor.activeBuffs.haste) {
-        base = Math.round(base * 1.15); // +15% Atk.Spd
-    }
+    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'haste', 'pAtkSpdMul'));
     actor.setCollectiveAtkSpd(base);
 }
 
@@ -97,9 +92,7 @@ function setCollectiveTotalWalkSpd(actor) {
 
 function setCollectiveTotalRunSpd(actor) {
     let base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchRunSpd());
-    if (actor.activeBuffs && actor.activeBuffs.windWalk && Date.now() < actor.activeBuffs.windWalk) {
-        base += 33; // +33 Run Speed
-    }
+    base += BuffCatalog.statAdd(actor, 'windwalk', 'runSpdAdd');
     actor.setCollectiveRunSpd(base);
 }
 

@@ -69,8 +69,9 @@ class Backpack extends BackpackModel {
         }
 
         const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
-        if (found) {
-            this.deleteItem(session, found.fetchId(), 1, () => {
+        const cost = this.fetchShotCost('soulshot');
+        if (cost > 0 && found && found.fetchAmount() >= cost) {
+            this.deleteItem(session, found.fetchId(), cost, () => {
                 callback(true);
             });
         } else {
@@ -89,8 +90,9 @@ class Backpack extends BackpackModel {
         }
 
         const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
-        if (found) {
-            this.deleteItem(session, found.fetchId(), 1, () => {
+        const cost = this.fetchShotCost('spiritshot');
+        if (cost > 0 && found && found.fetchAmount() >= cost) {
+            this.deleteItem(session, found.fetchId(), cost, () => {
                 callback(true);
             });
         } else {
@@ -122,7 +124,11 @@ class Backpack extends BackpackModel {
                     if (session.actor.soulshotLoaded) {
                         return; // Already loaded
                     }
-                    this.deleteItem(session, id, 1, () => {
+                    const cost = this.fetchShotCost('soulshot');
+                    if (cost <= 0 || item.fetchAmount() < cost) {
+                        return;
+                    }
+                    this.deleteItem(session, id, cost, () => {
                         session.actor.soulshotLoaded = true;
                         
                         // Play activation effect (Skill 2039)
@@ -142,7 +148,11 @@ class Backpack extends BackpackModel {
                     if (session.actor.spiritshotLoaded) {
                         return; // Already loaded
                     }
-                    this.deleteItem(session, id, 1, () => {
+                    const cost = this.fetchShotCost('spiritshot');
+                    if (cost <= 0 || item.fetchAmount() < cost) {
+                        return;
+                    }
+                    this.deleteItem(session, id, cost, () => {
                         session.actor.spiritshotLoaded = true;
 
                         // Play activation effect (Skill 2047)
@@ -202,6 +212,14 @@ class Backpack extends BackpackModel {
                 utils.infoWarn('GameServer', 'unhandled item action');
             }
         });
+    }
+
+    fetchShotCost(kind) {
+        const weapon = this.fetchEquippedWeapon ? this.fetchEquippedWeapon() : null;
+        const cost = kind === 'spiritshot'
+            ? weapon?.fetchSpiritshot?.()
+            : weapon?.fetchSoulshot?.();
+        return Math.max(0, Number(cost) || 0);
     }
 
     equipGear(session, item) {

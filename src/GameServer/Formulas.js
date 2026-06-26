@@ -1,4 +1,11 @@
 const Formulas = {
+    SHIELD_DEFENSE_FAILED: 0,
+    SHIELD_DEFENSE_SUCCEED: 1,
+    SHIELD_DEFENSE_PERFECT_BLOCK: 2,
+    DEFAULT_SHIELD_RATE: 20,
+    DEFAULT_SHIELD_DEFENCE_ANGLE: 120,
+    DEFAULT_PERFECT_SHIELD_BLOCK_RATE: 0,
+
     calcBaseHp: (() => {
         const table = utils.tupleAlloc(100, (level) => {
             utils.infoFail('GameServer', 'unknown HP Table for Level %d', level);
@@ -152,7 +159,8 @@ const Formulas = {
     },
 
     calcMeleeAtkTime(atkSpd) {
-        return 500000 / atkSpd;
+        const rate = Number(atkSpd) || 0;
+        return rate < 2 ? 2700 : 470000 / rate;
     },
 
     calcRemoteAtkTime(time, castSpd) {
@@ -160,17 +168,90 @@ const Formulas = {
     },
 
     calcMeleeHit(pAtk, pAtkRnd, pDef) {
+        return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
+    },
+
+    calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0 } = {}) {
         const pAtkRndMul = 1 + (utils.oneFromSpan(-pAtkRnd, pAtkRnd) / 100);
-        return (77 * pAtk * pAtkRndMul) / pDef;
+        let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(skillPower) || 0);
+
+        if (critical) {
+            damage = 2 * (70 * damage / pDef);
+        }
+        else {
+            damage = 70 * damage / pDef;
+        }
+
+        return damage * pAtkRndMul;
+    },
+
+    calcPhysicalDamage(pAtk, pAtkRnd, pDef, power, options = {}) {
+        return this.calcMeleeDamage(pAtk, pAtkRnd, pDef, {
+            ...options,
+            skillPower: power
+        });
+    },
+
+    rollCritical(critical, rng = Math.random) {
+        return (Number(critical) || 0) > rng() * 1000;
+    },
+
+    rollShieldUse({ shieldRate = 0, dex = 0, facing = true, bow = false, perfectBlockRate = this.DEFAULT_PERFECT_SHIELD_BLOCK_RATE } = {}, rng = Math.random) {
+        if ((Number(shieldRate) || 0) <= 0 || !facing) return this.SHIELD_DEFENSE_FAILED;
+
+        let rate = Number(shieldRate) * this.calcBaseMod.DEX(Math.max(0, Math.min(Math.round(Number(dex) || 0), 99)));
+        if (bow) rate *= 1.3;
+
+        if (rate > 0 && 100 - Number(perfectBlockRate || 0) < rng() * 100) {
+            return this.SHIELD_DEFENSE_PERFECT_BLOCK;
+        }
+
+        return rate > rng() * 100
+            ? this.SHIELD_DEFENSE_SUCCEED
+            : this.SHIELD_DEFENSE_FAILED;
+    },
+
+    calcHitChance(attacker, target, rng = Math.random, context = {}) {
+        const accuracy = safeNumber(attacker?.fetchCollectiveAccur?.(), safeNumber(attacker?.fetchAccur?.(), 0));
+        const evasion = safeNumber(target?.fetchCollectiveEvasion?.(), safeNumber(target?.fetchEvasion?.(), 0));
+        let chance = (80 + (2 * (accuracy - evasion))) * 10;
+        let modifier = 100;
+
+        const zDiff = safeNumber(attacker?.fetchLocZ?.(), 0) - safeNumber(target?.fetchLocZ?.(), 0);
+        if (zDiff > 50) modifier += 3;
+        else if (zDiff < -50) modifier -= 3;
+
+        if (context.behind) modifier += 10;
+        else if (context.front === false) modifier += 5;
+        if (context.night) modifier -= 10;
+
+        chance *= modifier / 100;
+        chance = Math.max(Math.min(chance, 980), 200);
+        return chance >= rng() * 1000;
+    },
+
+    calcMagicDamage(mAtk, power, mDef, { spiritshot = false, blessedSpiritshot = false, magicCritical = false } = {}) {
+        let boostedMAtk = Number(mAtk) || 0;
+        if (blessedSpiritshot) boostedMAtk *= 4;
+        else if (spiritshot) boostedMAtk *= 2;
+
+        let damage = (91 * utils.sqrt(boostedMAtk) * power) / mDef;
+        if (magicCritical) damage *= 4;
+        return damage;
     },
 
     calcRemoteHit(mAtk, power, mDef) {
-        return (91 * utils.sqrt(mAtk) * power) / mDef;
+        return this.calcMagicDamage(mAtk, power, mDef);
     },
 
-    calcHitChance() { // TODO: This is faked for now
-        return Math.random() <= 90.0 / 100.0;
+    calcHitMiss(attacker, target, rng = Math.random, context = {}) {
+        return !this.calcHitChance(attacker, target, rng, context);
     }
 };
+
+function safeNumber(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
 
 module.exports = Formulas;
