@@ -5,6 +5,8 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const Formulas       = invoke('GameServer/Formulas');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
+const Attack         = invoke('GameServer/Actor/Attack');
+const AttackHelper   = new Attack();
 
 class Npc extends NpcModel {
     constructor(id, data) {
@@ -137,8 +139,10 @@ class Npc extends NpcModel {
         }
 
         const speed = Formulas.calcMeleeAtkTime(src.fetchCollectiveAtkSpd());
-        const hitLanded = Formulas.calcHitChance();
-        session.dataSendToMeAndOthers(ServerResponse.attack(src, dst.fetchId(), hitLanded ? 0x00 : 0x80), this);
+        const hitLanded = Formulas.calcHitChance(src, dst, Math.random, AttackHelper.positionContext(src, dst));
+        const hit = AttackHelper.prepareNpcMeleeHit(src, dst, hitLanded);
+
+        session.dataSendToMeAndOthers(ServerResponse.attack(src, dst.fetchId(), hit), this);
         src.state.setHits(true);
 
         setTimeout(() => {
@@ -147,8 +151,7 @@ class Npc extends NpcModel {
             }
 
             if (hitLanded) {
-                const pAtk = src.fetchCollectivePAtk();
-                this.hit(session, dst, Formulas.calcMeleeHit(pAtk, 0, dst.fetchCollectivePDef()));
+                this.hit(session, dst, hit.damage);
             }
 
         }, speed * 0.644);

@@ -102,22 +102,6 @@ class ActorModel extends CreatureModel {
         return this.model.sp;
     }
 
-    fetchAccur() {
-        return 0;
-    }
-
-    fetchCollectiveAccur() {
-        return this.model.collectiveAccur ?? this.fetchAccur();
-    }
-
-    fetchEvasion() {
-        return 0;
-    }
-
-    fetchCollectiveEvasion() {
-        return this.model.collectiveEvasion ?? this.fetchEvasion();
-    }
-
     fetchCritical() {
         return this.model.crit;
     }

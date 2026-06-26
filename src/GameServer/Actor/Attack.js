@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const Formulas       = invoke('GameServer/Formulas');
+const DataCache      = invoke('GameServer/DataCache');
 
 class Attack {
     constructor() {
@@ -82,8 +83,11 @@ class Attack {
         }
 
         const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
-        const hitLanded = Formulas.calcHitChance();
-        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), hitLanded ? 0x00 : 0x80), actor);
+        const hitLanded = Formulas.calcHitChance(actor, creature, Math.random, this.positionContext(actor, creature));
+        const usedSoulshot = hitLanded && !!actor.soulshotLoaded;
+        const hit = this.prepareMeleeHit(actor, creature, hitLanded, usedSoulshot);
+
+        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), hit), actor);
         actor.state.setHits(true);
 
         this.queueTimer(() => {
@@ -92,16 +96,11 @@ class Attack {
             }
 
             if (hitLanded) {
-                const pAtk  = actor.fetchCollectivePAtk();
-                const pRand = actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0;
-                let damage = Formulas.calcMeleeHit(pAtk, pRand, creature.fetchCollectivePDef());
-                
-                if (actor.soulshotLoaded) {
-                    damage = Math.round(damage * 2.0); // Double physical damage!
+                if (usedSoulshot) {
                     actor.soulshotLoaded = false;
                 }
-                
-                this.hit(session, actor, creature, damage);
+
+                this.hit(session, actor, creature, hit.damage);
             }
             else {
                 ConsoleText.transmit(session, ConsoleText.caption.missedHit);
@@ -136,24 +135,11 @@ class Attack {
             return;
         }
 
-        if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
-            actor.backpack.consumeSpiritshot(session, (success) => {
-                if (success) {
-                    actor.spiritshotLoaded = true;
+        const magicSkill = this.isMagicSkill(skill);
+        this.chargeShotForSkill(session, actor, magicSkill);
 
-                    session.dataSendToMeAndOthers(
-                        ServerResponse.skillStarted(actor, actor.fetchId(), {
-                            fetchSelfId: () => 2047,
-                            fetchCalculatedHitTime: () => 0,
-                            fetchReuseTime: () => 0
-                        }),
-                        actor
-                    );
-                }
-            });
-        }
-
-        skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), actor.fetchCollectiveCastSpd()));
+        const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
+        skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), attackRate));
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
@@ -166,12 +152,7 @@ class Attack {
             actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
             actor.statusUpdateVitals(actor);
 
-            const mAtk = actor.fetchCollectiveMAtk();
-            let damage = Formulas.calcRemoteHit(mAtk, skill.fetchPower(), creature.fetchCollectiveMDef());
-            if (actor.spiritshotLoaded) {
-                damage = Math.round(damage * 2.0);
-                actor.spiritshotLoaded = false;
-            }
+            const damage = this.prepareSkillDamage(actor, creature, skill, magicSkill);
             this.hit(session, actor, creature, damage);
             actor.state.setCasts(false);
 
@@ -188,6 +169,214 @@ class Attack {
         this.queueTimer(() => {
             // TODO: Prohibit same skill use before reuse time
         }, skill.fetchReuseTime());
+    }
+
+    chargeShotForSkill(session, actor, magicSkill) {
+        if (magicSkill) {
+            if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
+                actor.backpack.consumeSpiritshot(session, (success) => {
+                    if (success) {
+                        actor.spiritshotLoaded = true;
+                        this.broadcastShotCharge(session, actor, 2047);
+                    }
+                });
+            }
+            return;
+        }
+
+        if (!actor.soulshotLoaded && actor.backpack && typeof actor.backpack.consumeSoulshot === 'function') {
+            actor.backpack.consumeSoulshot(session, (success) => {
+                if (success) {
+                    actor.soulshotLoaded = true;
+                    this.broadcastShotCharge(session, actor, 2039);
+                }
+            });
+        }
+    }
+
+    broadcastShotCharge(session, actor, skillId) {
+        session.dataSendToMeAndOthers(
+            ServerResponse.skillStarted(actor, actor.fetchId(), {
+                fetchSelfId: () => skillId,
+                fetchCalculatedHitTime: () => 0,
+                fetchReuseTime: () => 0
+            }),
+            actor
+        );
+    }
+
+    isMagicSkill(skill) {
+        return skill.fetchSpell ? skill.fetchSpell() : true;
+    }
+
+    prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random) {
+        const shield = Formulas.rollShieldUse({
+            shieldRate: this.fetchShieldRate(creature),
+            dex: creature.fetchDex ? creature.fetchDex() : 0,
+            facing: this.isFacing(creature, actor),
+            bow: this.isBowAttack(actor)
+        }, rng);
+
+        if (shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK) {
+            this.clearLoadedShot(actor, magicSkill);
+            return 1;
+        }
+
+        if (magicSkill) {
+            const usedSpiritshot = !!actor.spiritshotLoaded;
+            const shieldMDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
+            const damage = Math.round(Formulas.calcMagicDamage(
+                actor.fetchCollectiveMAtk(),
+                skill.fetchPower(),
+                creature.fetchCollectiveMDef() + shieldMDef,
+                { spiritshot: usedSpiritshot }
+            ));
+            this.clearLoadedShot(actor, magicSkill);
+            return damage;
+        }
+
+        const usedSoulshot = !!actor.soulshotLoaded;
+        const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
+        const damage = Math.round(Formulas.calcPhysicalDamage(
+            actor.fetchCollectivePAtk(),
+            actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0,
+            creature.fetchCollectivePDef() + shieldPDef,
+            skill.fetchPower(),
+            { soulshot: usedSoulshot }
+        ));
+        this.clearLoadedShot(actor, magicSkill);
+        return damage;
+    }
+
+    clearLoadedShot(actor, magicSkill) {
+        if (magicSkill) actor.spiritshotLoaded = false;
+        else actor.soulshotLoaded = false;
+    }
+
+    prepareMeleeHit(actor, creature, hitLanded, usedSoulshot, rng = Math.random) {
+        if (!hitLanded) {
+            return {
+                damage: 0,
+                flags: ServerResponse.attack.HITFLAG_MISS
+            };
+        }
+
+        const pAtk  = actor.fetchCollectivePAtk();
+        const pRand = actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0;
+        const shieldPDef = this.fetchShieldPDef(creature);
+        const shield = Formulas.rollShieldUse({
+            shieldRate: this.fetchShieldRate(creature),
+            dex: creature.fetchDex ? creature.fetchDex() : 0,
+            facing: this.isFacing(creature, actor),
+            bow: this.isBowAttack(actor)
+        }, rng);
+        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
+        const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
+        const critical = Formulas.rollCritical(actor.fetchCollectiveCritical ? actor.fetchCollectiveCritical() : 0, rng);
+        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
+            ? 1
+            : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, { critical, soulshot: usedSoulshot }));
+        let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
+
+        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+
+        return {
+            damage,
+            flags
+        };
+    }
+
+    prepareNpcMeleeHit(src, dst, hitLanded, rng = Math.random) {
+        if (!hitLanded) {
+            return {
+                damage: 0,
+                flags: ServerResponse.attack.HITFLAG_MISS
+            };
+        }
+
+        const shieldPDef = this.fetchShieldPDef(dst);
+        const shield = Formulas.rollShieldUse({
+            shieldRate: this.fetchShieldRate(dst),
+            dex: dst.fetchDex ? dst.fetchDex() : 0,
+            facing: this.isFacing(dst, src),
+            bow: this.isBowAttack(src)
+        }, rng);
+        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
+        const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
+        const critical = Formulas.rollCritical(src.fetchCollectiveCritical ? src.fetchCollectiveCritical() : 0, rng);
+        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
+            ? 1
+            : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, { critical }));
+        let flags = 0;
+
+        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+
+        return { damage, flags };
+    }
+
+    fetchShieldPDef(creature) {
+        if (creature?.backpack?.fetchTotalShieldPDef) {
+            return creature.backpack.fetchTotalShieldPDef();
+        }
+
+        const shield = this.fetchNpcShieldItem(creature);
+        return Number(shield?.stats?.pDef || shield?.pDef || 0);
+    }
+
+    fetchShieldRate(creature) {
+        if (creature?.backpack?.fetchTotalShieldRate) {
+            return creature.backpack.fetchTotalShieldRate();
+        }
+
+        return this.fetchNpcShieldItem(creature) || this.fetchShieldPDef(creature) > 0 ? Formulas.DEFAULT_SHIELD_RATE : 0;
+    }
+
+    isBowAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Bow';
+    }
+
+    fetchNpcWeaponKind(creature) {
+        if (!creature?.fetchWeapon || !DataCache.items) return '';
+        const item = DataCache.items.find((entry) => Number(entry.selfId) === Number(creature.fetchWeapon()));
+        return item?.template?.kind || '';
+    }
+
+    fetchNpcShieldItem(creature) {
+        if (!creature?.fetchShield || !DataCache.items) return null;
+        const shieldId = Number(creature.fetchShield());
+        if (!shieldId) return null;
+        return DataCache.items.find((entry) => Number(entry.selfId) === shieldId) || null;
+    }
+
+    isFacing(target, attacker, degrees = Formulas.DEFAULT_SHIELD_DEFENCE_ANGLE) {
+        if (!target?.fetchHead || !attacker?.fetchLocX || degrees >= 360) return true;
+
+        const dx = attacker.fetchLocX() - target.fetchLocX();
+        const dy = attacker.fetchLocY() - target.fetchLocY();
+        if (dx === 0 && dy === 0) return true;
+
+        const heading = Number(target.fetchHead()) || 0;
+        const facingRadians = (heading / 65535) * Math.PI * 2;
+        const targetRadians = Math.atan2(dy, dx);
+        let diff = Math.abs(facingRadians - targetRadians) % (Math.PI * 2);
+        if (diff > Math.PI) diff = (Math.PI * 2) - diff;
+
+        return diff <= (degrees / 2) * (Math.PI / 180);
+    }
+
+    isBehindTarget(attacker, target) {
+        if (!target?.fetchHead || !attacker?.fetchLocX) return false;
+        return this.isFacing(target, attacker, 60) === false && this.isFacing(target, attacker, 240) === false;
+    }
+
+    positionContext(attacker, target) {
+        return {
+            behind: this.isBehindTarget(attacker, target),
+            front: this.isFacing(target, attacker, 120)
+        };
     }
 
     checkParticipants(src, dst) {

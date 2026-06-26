@@ -1,15 +1,10 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
-
-const ALL_BUFFS = {
-    windwalk: { key: 'windWalk', id: 1204, level: 2, name: 'Wind Walk' },
-    shield: { key: 'shield', id: 1040, level: 2, name: 'Shield' },
-    haste: { key: 'haste', id: 1086, level: 2, name: 'Haste' },
-    might: { key: 'might', id: 1068, level: 2, name: 'Might' }
-};
+const ALL_BUFFS = BuffCatalog.ALL_BUFFS;
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
 const SUPPORT_BUFF_TYPES = ['might', 'shield', 'haste', 'windwalk'];

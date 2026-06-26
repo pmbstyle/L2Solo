@@ -81,6 +81,10 @@ class Item extends ItemModel {
         return this.model.pDef ?? 0;
     }
 
+    fetchShieldRate() {
+        return this.model.shieldRate ?? 0;
+    }
+
     fetchMDef() {
         return this.model.mDef ?? 0;
     }

@@ -95,6 +95,16 @@ class BackpackModel {
         );
     }
 
+    fetchTotalShieldPDef() {
+        return this.fetchEquippedArmor(this.equipment.shield)?.fetchPDef() ?? 0;
+    }
+
+    fetchTotalShieldRate() {
+        const shield = this.fetchEquippedArmor(this.equipment.shield);
+        if (!shield) return 0;
+        return shield.fetchShieldRate?.() || 20;
+    }
+
     fetchTotalArmorMDef() {
         const equip = this.equipment;
 
@@ -139,6 +149,18 @@ class BackpackModel {
 
     fetchTotalWeaponAccur() {
         return this.fetchEquippedWeapon()?.fetchAccur();
+    }
+
+    fetchTotalWeaponKind() {
+        return this.fetchEquippedWeapon()?.fetchKind();
+    }
+
+    fetchTotalWeaponSoulshot() {
+        return this.fetchEquippedWeapon()?.fetchSoulshot() ?? 1;
+    }
+
+    fetchTotalWeaponSpiritshot() {
+        return this.fetchEquippedWeapon()?.fetchSpiritshot() ?? 1;
     }
 
     fetchTotalLoad() {

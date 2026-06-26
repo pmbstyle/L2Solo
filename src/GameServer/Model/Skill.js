@@ -23,6 +23,10 @@ class SkillModel {
         return this.model.passive;
     }
 
+    fetchSpell() {
+        return this.model.spell === true;
+    }
+
     fetchDistance() {
         return this.model.distance;
     }
