@@ -1,6 +1,7 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const Formulas = invoke('GameServer/Formulas');
 const ServerResponse = invoke('GameServer/Network/Response');
 
@@ -81,6 +82,7 @@ function applyEffect(session, target, skill, semantic) {
         type: semantic.effectType || 'buff',
         category: semantic.trait || semantic.effect,
         stats: semantic.stats || {},
+        dot: dotFromSkill(skill, semantic),
         durationMs
     });
 
@@ -90,8 +92,21 @@ function applyEffect(session, target, skill, semantic) {
         target.activeBuffs[buff.key] = Date.now() + durationMs;
     }
 
+    if (effect?.dot) {
+        EffectTicker.applyDot(session, session?.actor, target, effect);
+    }
+
     refreshEffects(session, target);
     return effect;
+}
+
+function dotFromSkill(skill, semantic) {
+    if (!semantic.dot) return null;
+    return {
+        count: semantic.dot.count,
+        intervalMs: semantic.dot.intervalMs,
+        damage: semantic.dot.damage ?? skill.fetchPower()
+    };
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {

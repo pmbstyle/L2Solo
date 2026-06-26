@@ -16,7 +16,7 @@ const RULES = {
     115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
     127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },
-    129: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70 },
+    129: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000 } },
     263: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     1040: { skillType: EFFECT, trait: 'buff', effect: 'shield', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1068: { skillType: EFFECT, trait: 'buff', effect: 'might', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
@@ -58,6 +58,7 @@ function resolve(skill = {}) {
         ssBoost: rule.ssBoost ?? inferred.ssBoost,
         baseLandRate: rule.baseLandRate ?? inferred.baseLandRate,
         blowChance: rule.blowChance ?? inferred.blowChance,
+        dot: rule.dot || inferred.dot || null,
         lethal: rule.lethal || inferred.lethal || null
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);

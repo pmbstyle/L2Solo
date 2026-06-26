@@ -27,6 +27,7 @@ function normalize(effect = {}) {
         name: effect.name || key,
         category: effect.category || null,
         stats: effect.stats || {},
+        dot: effect.dot || null,
         expiresAt
     };
 }
@@ -55,6 +56,9 @@ function apply(actor, effect) {
 function remove(actor, key) {
     if (!actor?.effects) return false;
     if (!actor.effects[key]) return false;
+    try {
+        invoke('GameServer/Effects/EffectTicker').clear(actor, key);
+    } catch (_) {}
     delete actor.effects[key];
     return true;
 }
