@@ -199,6 +199,16 @@ assert.strictEqual(cleanseOutcome.cleansed.length, 1, 'Cure Poison level 1 shoul
 assert.strictEqual(EffectStore.hasDebuff(poisoned, 'poison'), false, 'Cure Poison should remove the poison debuff');
 assert.strictEqual(poisoned.effectTimers.poison, undefined, 'Cure Poison should stop the poison DoT ticker');
 
+const cursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 1, level: 4, buff: 30000 });
+const curseTarget = statActor();
+const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, cursePoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
+EffectStore.remove(curseTarget, 'poison');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {

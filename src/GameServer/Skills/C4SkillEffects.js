@@ -124,8 +124,15 @@ function dotFromSkill(skill, semantic) {
     return {
         count: semantic.dot.count,
         intervalMs: semantic.dot.intervalMs,
-        damage: semantic.dot.damage ?? skill.fetchPower()
+        damage: semantic.dot.damage ?? damageByLevel(skill, semantic.dot) ?? skill.fetchPower()
     };
+}
+
+function damageByLevel(skill, dot) {
+    if (!dot.damageByLevel) return null;
+    const values = dot.damageByLevel;
+    const index = Math.max(0, Math.min(values.length - 1, (Number(skill.fetchLevel()) || 1) - 1));
+    return values[index];
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {
