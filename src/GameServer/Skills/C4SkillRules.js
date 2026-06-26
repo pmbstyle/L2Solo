@@ -4,6 +4,7 @@ const HEAL = 'heal';
 const EFFECT = 'effect';
 const BLOW = 'blow';
 const CLEANSE = 'cleanse';
+const HEAL_CLEANSE = 'healCleanse';
 
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -33,6 +34,13 @@ const RULES = {
         { category: 'bleed', maxLevelByLevel: [3, 7, 9] },
         { category: 'paralyze', maxLevelByLevel: [3, 7, 9] },
         { category: 'petrification', maxLevelByLevel: [3, 7, 9] }
+    ] },
+    1020: { skillType: HEAL_CLEANSE, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [
+        440, 454, 467, 494, 508, 521, 548, 562, 575, 588, 602, 615, 627, 640,
+        653, 665, 677, 689, 700, 711, 722, 733, 743, 753, 763, 772, 780
+    ], cleanse: [
+        { category: 'poison', maxLevelByLevel: [3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9] },
+        { category: 'bleed', maxLevelByLevel: [3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9] }
     ] },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 70 },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
@@ -71,6 +79,7 @@ function resolve(skill = {}) {
         ssBoost: rule.ssBoost ?? inferred.ssBoost,
         baseLandRate: rule.baseLandRate ?? inferred.baseLandRate,
         blowChance: rule.blowChance ?? inferred.blowChance,
+        healPower: resolveByLevel(rule.healPowerByLevel, skill.level),
         dot: rule.dot || inferred.dot || null,
         cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null
@@ -86,6 +95,12 @@ function resolveCleanse(rule, inferred, level) {
             : entry.maxLevel;
         return { ...entry, maxLevel };
     });
+}
+
+function resolveByLevel(values, level) {
+    if (!values) return null;
+    const index = Math.max(0, Math.min(values.length - 1, (Number(level) || 1) - 1));
+    return values[index];
 }
 
 function resolveStats(rule, inferred, level) {
@@ -180,6 +195,7 @@ module.exports = {
     EFFECT,
     BLOW,
     CLEANSE,
+    HEAL_CLEANSE,
     resolve,
     normalizeKey
 };

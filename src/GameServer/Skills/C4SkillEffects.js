@@ -21,13 +21,19 @@ function execute(session, actor, target, skill, context = {}) {
     };
 
     if (semantic.skillType === C4SkillRules.HEAL) {
-        result.heal = applyHeal(session, actor, target, skill, magicSkill, context.attack);
+        result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
     }
 
     if (semantic.skillType === C4SkillRules.CLEANSE) {
         result.cleansed = applyCleanse(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.HEAL_CLEANSE) {
+        result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
+        result.cleansed = applyCleanse(session, target, semantic);
         return result;
     }
 
@@ -61,10 +67,10 @@ function execute(session, actor, target, skill, context = {}) {
     return result;
 }
 
-function applyHeal(session, actor, target, skill, magicSkill, attack) {
+function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) {
     const usedSpiritshot = !!actor.spiritshotLoaded;
     const amount = Math.round(Formulas.calcHealAmount(
-        skill.fetchPower(),
+        semantic.healPower ?? skill.fetchPower(),
         { spiritshot: usedSpiritshot && skill.fetchSsBoost() > 0 }
     ));
 

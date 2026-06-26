@@ -239,6 +239,21 @@ const purifyOutcome = SkillEffects.execute(session(), caster, purified, purify, 
 assert.strictEqual(purifyOutcome.cleansed.length, 3, 'Purify level 2 should cleanse poison, bleed, and paralyze up to sourced power 7');
 assert.strictEqual(EffectStore.hasDebuff(purified, ['poison', 'bleed', 'paralyze']), false, 'Purify should clear supported abnormal states');
 
+const vitalized = statActor();
+vitalized.hp = 100;
+vitalized.maxHp = 1000;
+EffectStore.apply(vitalized, { key: 'poison', id: 129, level: 7, type: 'debuff', category: 'poison', durationMs: 30000 });
+EffectStore.apply(vitalized, { key: 'bleed', id: 96, level: 7, type: 'debuff', category: 'bleed', durationMs: 30000 });
+const vitalize = skill({ selfId: 1020, name: 'Vitalize', spell: true, power: 1, level: 6 });
+const vitalizeOutcome = SkillEffects.execute(session(), caster, vitalized, vitalize, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(vitalizeOutcome.heal, 521, 'Vitalize should use sourced L2J heal power table');
+assert.strictEqual(vitalized.fetchHp(), 621, 'Vitalize should restore HP and not only cleanse');
+assert.strictEqual(vitalizeOutcome.cleansed.length, 2, 'Vitalize level 6 should cleanse poison and bleed up to sourced negate power 7');
+assert.strictEqual(EffectStore.hasDebuff(vitalized, ['poison', 'bleed']), false, 'Vitalize should clear supported DoT debuffs');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
