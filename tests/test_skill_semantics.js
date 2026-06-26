@@ -479,6 +479,37 @@ assert.strictEqual(curseDiseaseOutcome.effect.key, 'curse_disease', 'Curse Disea
 assert.strictEqual(EffectStats.multiplier(diseaseTarget, 'regHp'), 0.5, 'Curse Disease should use sourced regHp 0.5');
 assert.strictEqual(regenAutomation.fetchRevHpAmount(diseaseTarget), 5, 'Curse Disease should halve runtime HP regeneration');
 
+const vampiricRageData = activeSkills.find((entry) => entry.selfId === 1268);
+assert(vampiricRageData, 'Vampiric Rage should be present in active skills data');
+assert.strictEqual(vampiricRageData.levels.length, 4, 'Vampiric Rage active data should preserve sourced 4 levels');
+assert.strictEqual(vampiricRageData.levels[3].mp, 53, 'Vampiric Rage active data should preserve sourced level 4 MP cost');
+const vampiricTarget = statActor();
+vampiricTarget.hp = 900;
+vampiricTarget.maxHp = 1000;
+const vampiricRage = skill({ selfId: 1268, name: 'Vampiric Rage', spell: true, power: 0, level: 4, buff: 1200000 });
+const vampiricOutcome = SkillEffects.execute(session(), caster, vampiricTarget, vampiricRage, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(vampiricOutcome.effect.key, 'vampiric_rage', 'Vampiric Rage should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(vampiricTarget, 'absorbDam'), 9, 'Vampiric Rage level 4 should use sourced absorbDam 9');
+const vampiricAttack = new Attack();
+assert.strictEqual(vampiricAttack.applyDamageAbsorb(session(), vampiricTarget, 333), 29, 'Vampiric Rage should floor sourced percent drain from melee damage');
+assert.strictEqual(vampiricTarget.fetchHp(), 929, 'Vampiric Rage should restore drained HP to the attacker');
+vampiricTarget.hp = 995;
+assert.strictEqual(vampiricAttack.applyDamageAbsorb(session(), vampiricTarget, 333), 5, 'Vampiric Rage should clamp drain to missing HP');
+const bowVampiricTarget = statActor();
+bowVampiricTarget.backpack.fetchTotalWeaponKind = () => 'Weapon.Bow';
+EffectStore.apply(bowVampiricTarget, {
+    key: 'vampiric_rage',
+    type: 'buff',
+    category: 'buff',
+    stats: { absorbDam: 9 },
+    durationMs: 1200000
+});
+assert.strictEqual(vampiricAttack.applyDamageAbsorb(session(), bowVampiricTarget, 333), 0, 'Vampiric Rage should not drain for bow attacks');
+
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
 const magicBarrierOutcome = SkillEffects.execute(session(), caster, magicBarrierTarget, magicBarrier, {

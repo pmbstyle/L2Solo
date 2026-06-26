@@ -103,6 +103,7 @@ class Attack {
                 }
 
                 this.hit(session, actor, creature, hit.damage);
+                this.applyDamageAbsorb(session, actor, hit.damage);
             }
             else {
                 ConsoleText.transmit(session, ConsoleText.caption.missedHit);
@@ -402,6 +403,23 @@ class Attack {
         const shieldId = Number(creature.fetchShield());
         if (!shieldId) return null;
         return DataCache.items.find((entry) => Number(entry.selfId) === shieldId) || null;
+    }
+
+    applyDamageAbsorb(session, actor, damage) {
+        if (this.isBowAttack(actor)) return 0;
+
+        const absorbPercent = EffectStats.add(actor, 'absorbDam');
+        if (absorbPercent <= 0) return 0;
+
+        const maxHp = Number(actor.fetchMaxHp?.()) || 0;
+        const currentHp = Number(actor.fetchHp?.()) || 0;
+        const maxCanAbsorb = Math.max(0, maxHp - currentHp);
+        const absorbDamage = Math.min(maxCanAbsorb, Math.floor(absorbPercent / 100 * (Number(damage) || 0)));
+        if (absorbDamage <= 0) return 0;
+
+        actor.setHp(currentHp + absorbDamage);
+        actor.statusUpdateVitals?.(actor);
+        return absorbDamage;
     }
 
     isFacing(target, attacker, degrees = Formulas.DEFAULT_SHIELD_DEFENCE_ANGLE) {

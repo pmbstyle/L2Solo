@@ -106,6 +106,7 @@ const RULES = {
         pEvasionRateAdd: [-2, -4]
     } },
     1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } },
+    1268: { skillType: EFFECT, trait: 'buff', effect: 'vampiric_rage', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { absorbDam: [6, 7, 8, 9] } },
     1269: { skillType: EFFECT, trait: 'debuff', effect: 'curse_disease', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { regHp: 0.5 } },
     1271: { skillType: HEAL_PERCENT, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [100], condition: { actorHpPercentAtMost: 25 } }
 };
