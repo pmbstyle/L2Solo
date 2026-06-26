@@ -171,12 +171,12 @@ const Formulas = {
         return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
     },
 
-    calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0 } = {}) {
+    calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0, criticalDamageMultiplier = 1 } = {}) {
         const pAtkRndMul = 1 + (utils.oneFromSpan(-pAtkRnd, pAtkRnd) / 100);
         let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(skillPower) || 0);
 
         if (critical) {
-            damage = 2 * (70 * damage / pDef);
+            damage = 2 * Math.max(0, Number(criticalDamageMultiplier) || 1) * (70 * damage / pDef);
         }
         else {
             damage = 70 * damage / pDef;

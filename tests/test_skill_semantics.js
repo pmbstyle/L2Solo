@@ -9,6 +9,7 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
+const Attack = invoke('GameServer/Actor/Attack');
 
 function creature(overrides = {}) {
     return {
@@ -426,6 +427,42 @@ assert.strictEqual(
     'Focus level 3 should apply the sourced L2J pCritRate addition'
 );
 
+const deathWhisperTarget = statActor();
+const deathWhisper = skill({ selfId: 1242, name: 'Death Whisper', spell: true, power: 1, level: 3, buff: 1200000 });
+const deathWhisperOutcome = SkillEffects.execute(session(), caster, deathWhisperTarget, deathWhisper, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(deathWhisperOutcome.effect.key, 'death_whisper', 'Death Whisper should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(deathWhisperTarget, 'pCritDamageMul'), 1.35, 'Death Whisper level 3 should use sourced pCritDamage 1.35');
+calculateStats({}, deathWhisperTarget);
+deathWhisperTarget.fetchCollectiveCritical = () => 1000;
+const deathWhisperCrit = new Attack().prepareMeleeHit(deathWhisperTarget, statActor(), true, false, () => 0);
+assert.strictEqual(
+    deathWhisperCrit.damage,
+    Math.round(2 * 1.35 * (70 * deathWhisperTarget.fetchCollectivePAtk() / 100)),
+    'Death Whisper level 3 should multiply physical critical damage by sourced pCritDamage'
+);
+
+const chantRageTarget = statActor();
+const chantRage = skill({ selfId: 1253, name: 'Chant of Rage', spell: true, power: 1, level: 2, buff: 1200000 });
+const chantRageOutcome = SkillEffects.execute(session(), caster, chantRageTarget, chantRage, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(chantRageOutcome.effect.key, 'chant_of_rage', 'Chant of Rage should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(chantRageTarget, 'pCritDamageMul'), 1.3, 'Chant of Rage level 2 should use sourced pCritDamage 1.3');
+calculateStats({}, chantRageTarget);
+chantRageTarget.fetchCollectiveCritical = () => 1000;
+const chantRageCrit = new Attack().prepareMeleeHit(chantRageTarget, statActor(), true, false, () => 0);
+assert.strictEqual(
+    chantRageCrit.damage,
+    Math.round(2 * 1.3 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
+    'Chant of Rage level 2 should multiply physical critical damage by sourced pCritDamage'
+);
+
 const blessedBodyTarget = statActor();
 blessedBodyTarget.hp = 1000;
 const blessedBody = skill({ selfId: 1045, name: 'Blessed Body', spell: true, power: 1, level: 4, buff: 1200000 });
@@ -674,6 +711,7 @@ function statActor() {
         fetchTotalArmorBonusMp: () => 0,
         fetchTotalLoad: () => 0,
         fetchTotalWeaponPAtk: () => 100,
+        fetchTotalWeaponPAtkRnd: () => 0,
         fetchTotalWeaponMAtk: () => 50,
         fetchTotalArmorPDef: () => 100,
         fetchTotalArmorMDef: () => 80,

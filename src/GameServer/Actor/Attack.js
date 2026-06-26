@@ -3,6 +3,7 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const Formulas       = invoke('GameServer/Formulas');
 const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
+const EffectStats    = invoke('GameServer/Effects/EffectStats');
 
 class Attack {
     constructor() {
@@ -288,7 +289,11 @@ class Attack {
         const critical = Formulas.rollCritical(actor.fetchCollectiveCritical ? actor.fetchCollectiveCritical() : 0, rng);
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
-            : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, { critical, soulshot: usedSoulshot }));
+            : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
+                critical,
+                soulshot: usedSoulshot,
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+            }));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -320,7 +325,10 @@ class Attack {
         const critical = Formulas.rollCritical(src.fetchCollectiveCritical ? src.fetchCollectiveCritical() : 0, rng);
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
-            : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, { critical }));
+            : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
+                critical,
+                criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul')
+            }));
         let flags = 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
