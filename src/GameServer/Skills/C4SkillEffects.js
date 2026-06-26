@@ -80,6 +80,7 @@ function applyEffect(session, target, skill, semantic) {
         name: skill.fetchName(),
         type: semantic.effectType || 'buff',
         category: semantic.trait || semantic.effect,
+        stats: semantic.stats || {},
         durationMs
     });
 

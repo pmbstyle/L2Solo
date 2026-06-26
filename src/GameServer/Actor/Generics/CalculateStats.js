@@ -1,5 +1,6 @@
 const Formulas = invoke('GameServer/Formulas');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function setCollectiveTotalHp(actor) {
     const base = Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), actor.fetchCon());
@@ -33,6 +34,7 @@ function setCollectiveTotalPAtk(actor) {
     const pAtk = actor.backpack.fetchTotalWeaponPAtk() ?? actor.fetchPAtk();
     let base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
     base = Math.round(base * BuffCatalog.statMultiplier(actor, 'might', 'pAtkMul'));
+    base = Math.round(base * EffectStats.multiplier(actor, 'pAtkMul'));
     actor.setCollectivePAtk(base);
 }
 
@@ -46,6 +48,7 @@ function setCollectiveTotalPDef(actor) {
     const pDef = actor.backpack.fetchTotalArmorPDef(actor.isSpellcaster()) ?? actor.fetchPDef();
     let base = Formulas.calcPDef(actor.fetchLevel(), pDef);
     base = Math.round(base * BuffCatalog.statMultiplier(actor, 'shield', 'pDefMul'));
+    base = Math.round(base * EffectStats.multiplier(actor, 'pDefMul'));
     actor.setCollectivePDef(base);
 }
 
@@ -93,6 +96,10 @@ function setCollectiveTotalWalkSpd(actor) {
 function setCollectiveTotalRunSpd(actor) {
     let base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchRunSpd());
     base += BuffCatalog.statAdd(actor, 'windwalk', 'runSpdAdd');
+    const effectMultiplier = EffectStats.multiplier(actor, 'runSpdMul');
+    if (effectMultiplier !== 1) {
+        base = Math.round(base * effectMultiplier);
+    }
     actor.setCollectiveRunSpd(base);
 }
 

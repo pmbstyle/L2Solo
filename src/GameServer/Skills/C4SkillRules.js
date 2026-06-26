@@ -12,6 +12,10 @@ const RULES = {
     100: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     101: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     102: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', baseLandRate: 70 },
+    105: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'freezing_strike', effectType: 'debuff', baseLandRate: 60, stats: { runSpdMul: 0.7 } },
+    115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
+    122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
+    127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },
     129: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70 },
     263: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     1040: { skillType: EFFECT, trait: 'buff', effect: 'shield', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
@@ -45,7 +49,7 @@ function resolve(skill = {}) {
     const rule = RULES[Number(skill.selfId)] || {};
     const inferred = infer(skill, name);
 
-    return {
+    const semantic = {
         skillType: rule.skillType || inferred.skillType,
         target: rule.target || inferred.target,
         effect: rule.effect || inferred.effect,
@@ -56,6 +60,17 @@ function resolve(skill = {}) {
         blowChance: rule.blowChance ?? inferred.blowChance,
         lethal: rule.lethal || inferred.lethal || null
     };
+    semantic.stats = resolveStats(rule, inferred, skill.level);
+    return semantic;
+}
+
+function resolveStats(rule, inferred, level) {
+    const stats = { ...(inferred.stats || {}), ...(rule.stats || {}) };
+    Object.entries(rule.statsByLevel || {}).forEach(([stat, values]) => {
+        const index = Math.max(0, Math.min(values.length - 1, (Number(level) || 1) - 1));
+        stats[stat] = values[index];
+    });
+    return stats;
 }
 
 function infer(skill, name) {

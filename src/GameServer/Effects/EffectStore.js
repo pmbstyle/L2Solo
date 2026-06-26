@@ -26,6 +26,7 @@ function normalize(effect = {}) {
         type: effect.type || 'buff',
         name: effect.name || key,
         category: effect.category || null,
+        stats: effect.stats || {},
         expiresAt
     };
 }
