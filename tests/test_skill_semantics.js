@@ -196,6 +196,67 @@ assert.strictEqual(shield.fetchTargetKind(), 'friendly', 'Shield should resolve 
 assert.strictEqual(shieldOutcome.effect.key, 'shield', 'Shield should apply the existing BuffCatalog key');
 assert(shieldTarget.activeBuffs.shield > Date.now(), 'Skill-cast Shield should feed activeBuffs for stat modifiers');
 
+const shieldStatsTarget = statActor();
+const shieldLevelOne = skill({ selfId: 1040, name: 'Shield', spell: true, power: 1, level: 1, buff: 1200000 });
+SkillEffects.execute(session(), caster, shieldStatsTarget, shieldLevelOne, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(EffectStats.multiplier(shieldStatsTarget, 'pDefMul'), 1.08, 'Shield level 1 should use sourced pDef 1.08');
+assert(shieldStatsTarget.activeBuffs.shield > Date.now(), 'Structured Shield should still feed legacy activeBuffs for UI and bot state');
+calculateStats({}, shieldStatsTarget);
+assert.strictEqual(
+    shieldStatsTarget.collectivePDef,
+    Math.round(Formulas.calcPDef(20, 100) * 1.08),
+    'Shield level 1 should not receive the legacy BuffCatalog level 2 multiplier on top'
+);
+
+const mightStatsTarget = statActor();
+const mightLevelOne = skill({ selfId: 1068, name: 'Might', spell: true, power: 1, level: 1, buff: 1200000 });
+SkillEffects.execute(session(), caster, mightStatsTarget, mightLevelOne, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(EffectStats.multiplier(mightStatsTarget, 'pAtkMul'), 1.08, 'Might level 1 should use sourced pAtk 1.08');
+calculateStats({}, mightStatsTarget);
+assert.strictEqual(
+    mightStatsTarget.collectivePAtk,
+    Math.round(Formulas.calcPAtk(20, 30, 100) * 1.08),
+    'Might level 1 should not receive the legacy BuffCatalog level 2 multiplier on top'
+);
+
+const hasteStatsTarget = statActor();
+const hasteLevelOne = skill({ selfId: 1086, name: 'Haste', spell: true, power: 1, level: 1, buff: 1200000 });
+SkillEffects.execute(session(), caster, hasteStatsTarget, hasteLevelOne, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(EffectStats.multiplier(hasteStatsTarget, 'pAtkSpdMul'), 1.15, 'Haste level 1 should use sourced pAtkSpd 1.15');
+calculateStats({}, hasteStatsTarget);
+assert.strictEqual(
+    hasteStatsTarget.collectiveAtkSpd,
+    Math.round(Math.round(Formulas.calcAtkSpd(30, 300)) * 1.15),
+    'Haste level 1 should not receive the legacy BuffCatalog level 2 multiplier on top'
+);
+
+const windWalkStatsTarget = statActor();
+const windWalkLevelOne = skill({ selfId: 1204, name: 'Wind Walk', spell: true, power: 1, level: 1, buff: 1200000 });
+SkillEffects.execute(session(), caster, windWalkStatsTarget, windWalkLevelOne, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(EffectStats.add(windWalkStatsTarget, 'runSpdAdd'), 20, 'Wind Walk level 1 should use sourced runSpd +20');
+calculateStats({}, windWalkStatsTarget);
+assert.strictEqual(
+    windWalkStatsTarget.collectiveRunSpd,
+    Formulas.calcSpeed(30, 120) + 20,
+    'Wind Walk level 1 should not receive the legacy BuffCatalog level 2 addition on top'
+);
+
 const resistTarget = creature({ id: 1000002, level: 80 });
 const windStrike = skill({ selfId: 1177, name: 'Wind Strike', spell: true, power: 12 });
 const resisted = SkillEffects.execute(session(), creature({ level: 1 }), resistTarget, windStrike, {

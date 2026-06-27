@@ -1,5 +1,6 @@
 const Formulas = invoke('GameServer/Formulas');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function setCollectiveTotalHp(actor) {
@@ -33,7 +34,7 @@ function setCollectiveTotalLoad(actor) {
 function setCollectiveTotalPAtk(actor) {
     const pAtk = actor.backpack.fetchTotalWeaponPAtk() ?? actor.fetchPAtk();
     let base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
-    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'might', 'pAtkMul'));
+    base = Math.round(base * legacyBuffMultiplier(actor, 'might', 'pAtkMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pAtkMul'));
     actor.setCollectivePAtk(base);
 }
@@ -48,7 +49,7 @@ function setCollectiveTotalMAtk(actor) {
 function setCollectiveTotalPDef(actor) {
     const pDef = actor.backpack.fetchTotalArmorPDef(actor.isSpellcaster()) ?? actor.fetchPDef();
     let base = Formulas.calcPDef(actor.fetchLevel(), pDef);
-    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'shield', 'pDefMul'));
+    base = Math.round(base * legacyBuffMultiplier(actor, 'shield', 'pDefMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pDefMul'));
     actor.setCollectivePDef(base);
 }
@@ -81,7 +82,7 @@ function setCollectiveTotalCritical(actor) {
 function setCollectiveTotalAtkSpd(actor) {
     const atkSpd = actor.backpack.fetchTotalWeaponAtkSpd() ?? actor.fetchAtkSpd();
     let base   = Formulas.calcAtkSpd(actor.fetchDex(), atkSpd);
-    base = Math.round(base * BuffCatalog.statMultiplier(actor, 'haste', 'pAtkSpdMul'));
+    base = Math.round(base * legacyBuffMultiplier(actor, 'haste', 'pAtkSpdMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pAtkSpdMul'));
     actor.setCollectiveAtkSpd(base);
 }
@@ -99,13 +100,31 @@ function setCollectiveTotalWalkSpd(actor) {
 
 function setCollectiveTotalRunSpd(actor) {
     let base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchRunSpd());
-    base += BuffCatalog.statAdd(actor, 'windwalk', 'runSpdAdd');
+    base += legacyBuffAdd(actor, 'windwalk', 'runSpdAdd');
     base += EffectStats.add(actor, 'runSpdAdd');
     const effectMultiplier = EffectStats.multiplier(actor, 'runSpdMul');
     if (effectMultiplier !== 1) {
         base = Math.round(base * effectMultiplier);
     }
     actor.setCollectiveRunSpd(base);
+}
+
+function hasStructuredBuffStat(actor, typeOrKey, stat) {
+    const buff = BuffCatalog.byTypeOrKey(typeOrKey);
+    if (!buff) return false;
+    return EffectStore.list(actor).some((effect) => (
+        effect.key === buff.key && Number.isFinite(Number(effect.stats?.[stat]))
+    ));
+}
+
+function legacyBuffMultiplier(actor, typeOrKey, stat, fallback = 1) {
+    if (hasStructuredBuffStat(actor, typeOrKey, stat)) return fallback;
+    return BuffCatalog.statMultiplier(actor, typeOrKey, stat, fallback);
+}
+
+function legacyBuffAdd(actor, typeOrKey, stat, fallback = 0) {
+    if (hasStructuredBuffStat(actor, typeOrKey, stat)) return fallback;
+    return BuffCatalog.statAdd(actor, typeOrKey, stat, fallback);
 }
 
 function calculateStats(session, actor) {
