@@ -1020,6 +1020,45 @@ assert.strictEqual(summonCorruptedMan.fetchSkillType(), C4SkillRules.SUMMON, 'Su
 assert.strictEqual(summonCorruptedMan.fetchTargetKind(), 'corpse_mob', 'Summon Corrupted Man should preserve sourced TARGET_CORPSE_MOB semantics');
 assert.strictEqual(summonCorruptedMan.fetchSsBoost(), 0, 'Summon Corrupted Man should not consume offensive shot boost semantics');
 
+const noviceLifeCubicData = activeSkills.find((entry) => entry.selfId === 4338);
+assert(noviceLifeCubicData, 'Life Cubic For Novice should be present in active skills data');
+assert.strictEqual(noviceLifeCubicData.summon.totalLifeTime, 3600000, 'Life Cubic For Novice should preserve sourced cubic lifetime');
+assert.strictEqual(noviceLifeCubicData.summon.expPenalty, 0, 'Life Cubic For Novice should preserve sourced zero exp penalty');
+assert.strictEqual(noviceLifeCubicData.summon.isCubic, true, 'Life Cubic For Novice should preserve sourced cubic flag');
+assert.strictEqual(noviceLifeCubicData.summon.npcId, 3, 'Life Cubic For Novice should preserve sourced cubic npcId');
+assert.strictEqual(noviceLifeCubicData.summon.saveCubicOnExit, true, 'Life Cubic For Novice should preserve sourced save-on-exit flag');
+assert.strictEqual(noviceLifeCubicData.summon.activationChance, 0, 'Life Cubic For Novice should preserve sourced activation chance');
+assert.strictEqual(noviceLifeCubicData.summon.activationTime, 13, 'Life Cubic For Novice should preserve sourced activation time');
+const noviceLifeCubic = skill({ selfId: 4338, name: 'Life Cubic For Novice', spell: true, power: 1, level: 1, distance: -1 });
+assert.strictEqual(noviceLifeCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Life Cubic For Novice should resolve to SUMMON instead of magic damage');
+assert.strictEqual(noviceLifeCubic.fetchTargetKind(), 'self', 'Life Cubic For Novice should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(noviceLifeCubic.fetchSsBoost(), 0, 'Life Cubic For Novice should not consume offensive shot boost semantics');
+
+[
+    { id: 7030, name: 'Summon King Bugbear', npcId: 150 },
+    { id: 7031, name: 'Summon Skeleton Royal Guard', npcId: 622 },
+    { id: 7032, name: 'Summon Hunter Gargoyle', npcId: 241 }
+].forEach(({ id, name, npcId }) => {
+    const summonData = activeSkills.find((entry) => entry.selfId === id);
+    assert(summonData, `${name} should be present in active skills data`);
+    assert.strictEqual(summonData.time.hitTime, 4000, `${name} should preserve sourced 4000ms hit time`);
+    assert.strictEqual(summonData.time.reuse, 18600000, `${name} should preserve sourced reuse`);
+    assert.strictEqual(summonData.summon.totalLifeTime, 1200000, `${name} should preserve sourced summon lifetime`);
+    assert.strictEqual(summonData.summon.timeLostIdle, 500, `${name} should preserve sourced idle time loss`);
+    assert.strictEqual(summonData.summon.timeLostActive, 1000, `${name} should preserve sourced active time loss`);
+    assert.strictEqual(summonData.summon.expPenalty, 0.3, `${name} should preserve sourced exp penalty`);
+    assert.strictEqual(summonData.summon.itemConsumeSteps, 0, `${name} should preserve sourced summon crystal consume step mode`);
+    assert.strictEqual(summonData.levels.length, 1, `${name} should preserve sourced single base level`);
+    assert.strictEqual(summonData.levels[0].mp, 3, `${name} should preserve sourced MP consume`);
+    assert.strictEqual(summonData.levels[0].itemId, 1458, `${name} should preserve sourced crystal item id`);
+    assert.strictEqual(summonData.levels[0].itemCount, 8, `${name} should preserve sourced crystal count`);
+    assert.strictEqual(summonData.levels[0].npcId, npcId, `${name} should preserve sourced npcId`);
+    const summonSkill = skill({ selfId: id, name, spell: true, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(summonSkill.fetchSkillType(), C4SkillRules.SUMMON, `${name} should resolve to SUMMON instead of magic damage`);
+    assert.strictEqual(summonSkill.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(summonSkill.fetchSsBoost(), 0, `${name} should not consume offensive shot boost semantics`);
+});
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
