@@ -2297,6 +2297,19 @@ assert.strictEqual(anchorOutcome.effect.key, 'paralyze', 'Anchor should apply so
 assert.strictEqual(EffectRestrictions.canMove(anchorTarget), false, 'Anchor paralyze should block movement through runtime restrictions');
 EffectStore.remove(anchorTarget, 'paralyze');
 
+const deathSpikeData = activeSkills.find((entry) => entry.selfId === 1148);
+assert(deathSpikeData, 'Death Spike should be present in active skills data');
+assert.strictEqual(deathSpikeData.levels.length, 13, 'Death Spike should preserve sourced 13 base levels');
+assert.strictEqual(deathSpikeData.levels[0].mp, 23, 'Death Spike level 1 MP should use sourced initial + consume total');
+assert.strictEqual(deathSpikeData.levels[12].power, 108, 'Death Spike level 13 should preserve sourced power 108');
+assert.strictEqual(deathSpikeData.levels[12].mp, 50, 'Death Spike level 13 MP should use sourced initial + consume total');
+assert.strictEqual(deathSpikeData.levels[12].itemId, 2508, 'Death Spike should preserve sourced cursed bone item consume');
+assert.strictEqual(deathSpikeData.levels[12].itemCount, 1, 'Death Spike should preserve sourced cursed bone count');
+const deathSpike = skill({ selfId: 1148, name: 'Death Spike', spell: true, power: 108, level: 13, distance: 900 });
+assert.strictEqual(deathSpike.fetchSkillType(), C4SkillRules.DAMAGE, 'Death Spike should resolve as sourced MDAM damage');
+assert.strictEqual(deathSpike.fetchSemantic().trait, 'dark', 'Death Spike should preserve sourced dark element');
+assert.strictEqual(deathSpike.fetchTargetKind(), 'enemy', 'Death Spike should resolve as an enemy nuke');
+
 const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
 assert(chillFlameData, 'Chill Flame should be present in active skills data');
 assert.strictEqual(chillFlameData.levels.length, 2, 'Chill Flame should preserve sourced 2 base levels');

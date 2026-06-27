@@ -166,6 +166,7 @@ const RULES = {
     1144: { skillType: EFFECT, trait: 'buff', effect: 'servitor_wind_walk', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     1145: { skillType: EFFECT, trait: 'buff', effect: 'bright_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mAtkMul: [1.55, 1.65, 1.75] } },
     1146: { skillType: EFFECT, trait: 'buff', effect: 'mighty_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
+    1148: { skillType: DAMAGE, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1154: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
     1160: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
