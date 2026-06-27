@@ -762,6 +762,22 @@ assert.strictEqual(summonMirage.fetchSkillType(), C4SkillRules.SUMMON, 'Summon U
 assert.strictEqual(summonMirage.fetchTargetKind(), 'self', 'Summon Unicorn Mirage should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonMirage.fetchSsBoost(), 0, 'Summon Unicorn Mirage should not consume offensive shot boost semantics');
 
+const summonSilhouetteData = activeSkills.find((entry) => entry.selfId === 1228);
+assert(summonSilhouetteData, 'Summon Silhouette should be present in active skills data');
+assert.strictEqual(summonSilhouetteData.time.hitTime, 15000, 'Summon Silhouette should preserve sourced 15000ms hit time');
+assert.strictEqual(summonSilhouetteData.summon.totalLifeTime, 1200000, 'Summon Silhouette should preserve sourced summon lifetime');
+assert.strictEqual(summonSilhouetteData.summon.expPenalty, 0.9, 'Summon Silhouette should preserve sourced exp penalty');
+assert.strictEqual(summonSilhouetteData.levels.length, 18, 'Summon Silhouette should preserve sourced 18 base levels');
+assert.strictEqual(summonSilhouetteData.levels[0].itemCount, 1, 'Summon Silhouette should preserve sourced crystal count');
+assert.strictEqual(summonSilhouetteData.levels[0].npcId, 12366, 'Summon Silhouette level 1 should preserve sourced npcId');
+assert.strictEqual(summonSilhouetteData.levels[17].mp, 137, 'Summon Silhouette level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonSilhouetteData.levels[17].npcId, 12464, 'Summon Silhouette level 18 should preserve sourced npcId');
+assert.strictEqual(summonSilhouetteData.levels[17].reuse, 20000, 'Summon Silhouette trained levels should preserve sourced 20000ms reuse');
+const summonSilhouette = skill({ selfId: 1228, name: 'Summon Silhouette', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonSilhouette.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Silhouette should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonSilhouette.fetchTargetKind(), 'self', 'Summon Silhouette should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonSilhouette.fetchSsBoost(), 0, 'Summon Silhouette should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
