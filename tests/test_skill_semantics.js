@@ -818,6 +818,26 @@ assert.strictEqual(summonMerrow.fetchSkillType(), C4SkillRules.SUMMON, 'Summon U
 assert.strictEqual(summonMerrow.fetchTargetKind(), 'self', 'Summon Unicorn Merrow should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonMerrow.fetchSsBoost(), 0, 'Summon Unicorn Merrow should not consume offensive shot boost semantics');
 
+const summonSoullessData = activeSkills.find((entry) => entry.selfId === 1278);
+assert(summonSoullessData, 'Summon Soulless should be present in active skills data');
+assert.strictEqual(summonSoullessData.time.hitTime, 15000, 'Summon Soulless should preserve sourced 15000ms hit time');
+assert.strictEqual(summonSoullessData.summon.totalLifeTime, 1200000, 'Summon Soulless should preserve sourced summon lifetime');
+assert.strictEqual(summonSoullessData.summon.expPenalty, 0.1, 'Summon Soulless should preserve sourced exp penalty');
+assert.strictEqual(summonSoullessData.summon.itemConsumeSteps, 4, 'Summon Soulless should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonSoullessData.levels.length, 14, 'Summon Soulless should preserve sourced 14 base levels');
+assert.strictEqual(summonSoullessData.levels[0].mp, 70, 'Summon Soulless level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonSoullessData.levels[0].itemId, 1459, 'Summon Soulless should preserve sourced crystal item id');
+assert.strictEqual(summonSoullessData.levels[0].itemCountOT, 1, 'Summon Soulless level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonSoullessData.levels[0].npcId, 12503, 'Summon Soulless level 1 should preserve sourced npcId');
+assert.strictEqual(summonSoullessData.levels[13].mp, 137, 'Summon Soulless level 14 MP should use sourced initial + consume total');
+assert.strictEqual(summonSoullessData.levels[13].itemCount, 4, 'Summon Soulless level 14 should preserve sourced crystal count');
+assert.strictEqual(summonSoullessData.levels[13].itemCountOT, 3, 'Summon Soulless level 14 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonSoullessData.levels[13].npcId, 12538, 'Summon Soulless level 14 should preserve sourced npcId');
+const summonSoulless = skill({ selfId: 1278, name: 'Summon Soulless', spell: true, power: 1, level: 14, distance: -1 });
+assert.strictEqual(summonSoulless.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Soulless should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonSoulless.fetchTargetKind(), 'self', 'Summon Soulless should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonSoulless.fetchSsBoost(), 0, 'Summon Soulless should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
