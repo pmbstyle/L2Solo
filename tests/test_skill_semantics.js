@@ -125,6 +125,23 @@ assert.strictEqual(greaterBattleHeal.fetchSkillType(), C4SkillRules.HEAL, 'Great
 assert.strictEqual(greaterBattleHealOutcome.heal, 858, 'Greater Battle Heal level 33 should heal by sourced power 858');
 assert.strictEqual(greaterBattleHealTarget.fetchHp(), 908, 'Greater Battle Heal should apply sourced power to target HP');
 
+const greaterGroupHealData = activeSkills.find((entry) => entry.selfId === 1219);
+assert(greaterGroupHealData, 'Greater Group Heal should be present in active skills data');
+assert.strictEqual(greaterGroupHealData.levels.length, 33, 'Greater Group Heal should preserve sourced 33 base levels');
+assert.strictEqual(greaterGroupHealData.levels[0].power, 297, 'Greater Group Heal level 1 should use sourced power instead of aggro');
+assert.strictEqual(greaterGroupHealData.levels[32].power, 687, 'Greater Group Heal level 33 should preserve sourced power 687');
+assert.strictEqual(greaterGroupHealData.levels[32].mp, 239, 'Greater Group Heal level 33 MP should use sourced initial + consume total');
+const greaterGroupHealTarget = creature({ id: 2000012, hp: 100, maxHp: 1000 });
+const greaterGroupHeal = skill({ selfId: 1219, name: 'Greater Group Heal', spell: true, power: 687, level: 33, distance: 600 });
+const greaterGroupHealOutcome = SkillEffects.execute(session(), caster, greaterGroupHealTarget, greaterGroupHeal, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(greaterGroupHeal.fetchSkillType(), C4SkillRules.HEAL, 'Greater Group Heal should resolve to HEAL');
+assert.strictEqual(greaterGroupHeal.fetchTargetKind(), 'friendly', 'Greater Group Heal should remain castable on selected friendly targets until party-radius execution exists');
+assert.strictEqual(greaterGroupHealOutcome.heal, 687, 'Greater Group Heal level 33 should heal by sourced power 687');
+assert.strictEqual(greaterGroupHealTarget.fetchHp(), 787, 'Greater Group Heal should apply sourced power to target HP');
+
 const restoreTarget = creature({ id: 2000009, hp: 400, maxHp: 1000 });
 caster.spiritshotLoaded = true;
 const restoreLife = skill({ selfId: 1258, name: 'Restore Life', spell: true, power: 1, level: 4 });
