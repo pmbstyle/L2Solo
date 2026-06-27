@@ -625,6 +625,31 @@ assert.strictEqual(
     'Seal of Chaos level 16 should apply the sourced C4 accuracy subtraction'
 );
 
+const curseChaosData = activeSkills.find((entry) => entry.selfId === 1222);
+assert(curseChaosData, 'Curse Chaos should be present in active skills data');
+assert.strictEqual(curseChaosData.time.hitTime, 1500, 'Curse Chaos should preserve sourced 1500ms hit time');
+assert.strictEqual(curseChaosData.time.reuse, 8000, 'Curse Chaos should preserve sourced 8000ms reuse');
+assert.strictEqual(curseChaosData.time.buff, 15000, 'Curse Chaos should preserve sourced 15 second Debuff duration');
+assert.strictEqual(curseChaosData.levels.length, 15, 'Curse Chaos should preserve sourced 15 base levels');
+assert.strictEqual(curseChaosData.levels[0].power, 80, 'Curse Chaos should preserve sourced power 80');
+assert.strictEqual(curseChaosData.levels[14].mp, 69, 'Curse Chaos level 15 MP should use sourced initial + consume total');
+const curseChaosed = statActor();
+const curseChaos = skill({ selfId: 1222, name: 'Curse Chaos', spell: true, power: 80, level: 15, distance: 600, buff: 15000 });
+const curseChaosOutcome = SkillEffects.execute(session(), caster, curseChaosed, curseChaos, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseChaos.fetchTargetKind(), 'enemy', 'Curse Chaos should resolve as an enemy accuracy debuff');
+assert.strictEqual(curseChaosOutcome.effect.key, 'curse_chaos', 'Curse Chaos should apply a structured accuracy debuff');
+assert.strictEqual(EffectStats.add(curseChaosed, 'pAccuracyCombatAdd'), -13, 'Curse Chaos level 15 should use sourced accCombat -13');
+calculateStats({}, curseChaosed);
+assert.strictEqual(
+    curseChaosed.collectiveAccur,
+    Formulas.calcAccur(20, 30, 5) - 13,
+    'Curse Chaos level 15 should apply the sourced C4 accuracy subtraction'
+);
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
