@@ -1329,6 +1329,43 @@ assert.strictEqual(undeadRequiemOutcome.damage, 0, 'Requiem should not be routed
 assert.strictEqual(undeadRequiemOutcome.aggroRemoved, true, 'Requiem should mark successful AGGREMOVE on undead targets');
 assert.strictEqual(undeadRequiemOutcome.effectResisted, false, 'Requiem should pass sourced AGGREMOVE success checks on undead targets');
 
+const cancelData = activeSkills.find((entry) => entry.selfId === 1056);
+assert(cancelData, 'Cancel should be present in active skills data');
+assert.strictEqual(cancelData.template.distance, 600, 'Cancel should preserve sourced 600 cast range');
+assert.strictEqual(cancelData.time.hitTime, 6000, 'Cancel should preserve sourced 6000ms hit time');
+assert.strictEqual(cancelData.time.reuse, 120000, 'Cancel should preserve sourced 120000ms reuse');
+assert.strictEqual(cancelData.levels.length, 12, 'Cancel should preserve sourced 12 base levels');
+assert.strictEqual(cancelData.levels[0].power, 25, 'Cancel level 1 should preserve sourced power 25');
+assert.strictEqual(cancelData.levels[11].power, 25, 'Cancel level 12 should preserve sourced power 25');
+assert.strictEqual(cancelData.levels[0].mp, 44, 'Cancel level 1 MP should use sourced initial + consume total');
+assert.strictEqual(cancelData.levels[11].mp, 69, 'Cancel level 12 MP should use sourced initial + consume total');
+const cancelTarget = creature({ id: 2000520, mDef: 50 });
+EffectStore.apply(cancelTarget, { key: 'shield', id: 1040, level: 1, type: 'buff', category: 'buff', durationMs: 120000 });
+EffectStore.apply(cancelTarget, { key: 'might', id: 1068, level: 9, type: 'buff', category: 'buff', durationMs: 120000 });
+EffectStore.apply(cancelTarget, { key: 'protected_buff', id: 9999, level: 1, type: 'buff', category: 'buff', dispellable: false, durationMs: 120000 });
+EffectStore.apply(cancelTarget, { key: 'hex', id: 122, level: 1, type: 'debuff', category: 'debuff', durationMs: 30000 });
+const cancel = skill({ selfId: 1056, name: 'Cancel', spell: true, power: 25, level: 12, distance: 600 });
+const cancelRolls = [0, 0, 0.5, 0.5];
+const cancelSession = session();
+const cancelOutcome = SkillEffects.execute(cancelSession, caster, cancelTarget, cancel, {
+    magicSkill: true,
+    rng: () => cancelRolls.shift() ?? 0,
+    attack: { clearLoadedShot() {} }
+});
+const remainingCancelEffects = EffectStore.list(cancelTarget).map((effect) => effect.key);
+assert.strictEqual(cancel.fetchSkillType(), C4SkillRules.CANCEL, 'Cancel should resolve as sourced CANCEL');
+assert.strictEqual(cancel.fetchTargetKind(), 'enemy', 'Cancel should resolve as an enemy-targeted cancel skill');
+assert.strictEqual(cancel.fetchSemantic().trait, 'cancel', 'Cancel should use sourced CANCEL vulnerability semantics');
+assert.strictEqual(cancel.fetchSemantic().baseLandRate, 25, 'Cancel should use sourced power 25 as land rate');
+assert.strictEqual(cancel.fetchSemantic().maxCancelled, 0, 'Cancel should preserve sourced maxNegated=0 as no removal cap');
+assert.strictEqual(cancelOutcome.cancelled.length, 1, 'Cancel should remove buffs whose sourced per-effect cancel roll passes');
+assert.strictEqual(cancelOutcome.cancelled[0].key, 'shield', 'Cancel should remove the low-level dispellable buff');
+assert.strictEqual(remainingCancelEffects.includes('shield'), false, 'Cancel should remove dispellable buffs from EffectStore');
+assert.strictEqual(remainingCancelEffects.includes('might'), true, 'Cancel should leave buffs whose per-effect cancel roll fails');
+assert.strictEqual(remainingCancelEffects.includes('protected_buff'), true, 'Cancel should not remove non-dispellable buffs');
+assert.strictEqual(remainingCancelEffects.includes('hex'), true, 'Cancel should not cleanse debuffs');
+assert.strictEqual(cancelSession.packets[0][0], 0x7f, 'Cancel should refresh abnormal status icons after removing a buff');
+
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
 assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');

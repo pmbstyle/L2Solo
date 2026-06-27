@@ -26,6 +26,7 @@ function normalize(effect = {}) {
         type: effect.type || 'buff',
         name: effect.name || key,
         category: effect.category || null,
+        dispellable: effect.dispellable !== false,
         stats: effect.stats || {},
         dot: effect.dot || null,
         manaDot: effect.manaDot || null,

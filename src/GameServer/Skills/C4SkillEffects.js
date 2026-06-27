@@ -21,7 +21,8 @@ function execute(session, actor, target, skill, context = {}) {
         effectResisted: false,
         lethal: false,
         mpRestore: 0,
-        aggroRemoved: false
+        aggroRemoved: false,
+        cancelled: []
     };
 
     if (semantic.skillType === C4SkillRules.HEAL) {
@@ -108,6 +109,16 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = true;
         } else {
             result.aggroRemoved = true;
+        }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.CANCEL) {
+        if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
+            result.effectResisted = true;
+        } else {
+            result.cancelled = applyCancel(session, target, semantic, rng);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
@@ -233,6 +244,24 @@ function applyCleanse(session, target, semantic) {
             return;
         }
         removed.push(...EffectStore.removeByCategory(target, entry.category, entry.maxLevel ?? Infinity));
+    });
+    if (removed.length) {
+        refreshEffects(session, target);
+    }
+    return removed;
+}
+
+function applyCancel(session, target, semantic, rng) {
+    const removed = [];
+    const maxToRemove = Number(semantic.maxCancelled) || 0;
+    EffectStore.list(target, { includeBuffs: true, includeDebuffs: false }).forEach((effect) => {
+        if (effect.dispellable === false) return;
+        if (maxToRemove > 0 && removed.length >= maxToRemove) return;
+
+        const rate = Math.max(25, Math.min(75, 150 / (1 + (Number(effect.level) || 1))));
+        if (rng() * 100 < rate && EffectStore.remove(target, effect.key)) {
+            removed.push(effect);
+        }
     });
     if (removed.length) {
         refreshEffects(session, target);

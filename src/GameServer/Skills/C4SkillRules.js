@@ -13,6 +13,7 @@ const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
 const AGGRO_REMOVE = 'aggroRemove';
+const CANCEL = 'cancel';
 
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -120,6 +121,7 @@ const RULES = {
     1047: { skillType: EFFECT, trait: 'buff', effect: 'mana_regeneration', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { regMp: [1.72, 2.16, 2.74, 3.09] } },
     1048: { skillType: EFFECT, trait: 'buff', effect: 'blessed_soul', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { maxMpMul: [1.1, 1.15, 1.2, 1.25, 1.3, 1.35] } },
     1049: { skillType: AGGRO_REMOVE, trait: 'derangement', target: 'enemy', ssBoost: 1, undeadOnly: true, baseLandRate: 35 },
+    1056: { skillType: CANCEL, trait: 'cancel', target: 'enemy', ssBoost: 1, baseLandRate: 25, maxCancelled: 0 },
     1059: { skillType: EFFECT, trait: 'buff', effect: 'empower', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { mAtkMul: [1.55, 1.65, 1.75] } },
     1062: { skillType: EFFECT, trait: 'buff', effect: 'berserker_spirit', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: {
         mAtkMul: [1.1, 1.16],
@@ -315,7 +317,8 @@ function resolve(skill = {}) {
         lethal: rule.lethal || inferred.lethal || null,
         condition: rule.condition || inferred.condition || null,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
-        undeadOnly: rule.undeadOnly || inferred.undeadOnly || false
+        undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
+        maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);
     return semantic;
@@ -444,6 +447,7 @@ module.exports = {
     MANA_HEAL,
     SUMMON,
     AGGRO_REMOVE,
+    CANCEL,
     resolve,
     normalizeKey
 };
