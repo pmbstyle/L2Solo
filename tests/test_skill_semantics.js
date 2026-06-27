@@ -320,6 +320,120 @@ const servitorRecharge = skill({ selfId: 1126, name: 'Servitor Recharge', spell:
 assert.strictEqual(servitorRecharge.fetchSkillType(), C4SkillRules.MANA_RECHARGE, 'Servitor Recharge should resolve to MANARECHARGE semantics');
 assert.strictEqual(servitorRecharge.fetchTargetKind(), 'pet', 'Servitor Recharge should preserve sourced TARGET_PET semantics');
 
+[
+    { id: 2011, name: 'Quick step potion', buff: 1200000, effect: 'quick_step_potion', stat: 'runSpdAdd', statValue: 20, statKind: 'add' },
+    { id: 2012, name: 'Potion of Alacrity', buff: 1200000, effect: 'potion_of_alacrity', stat: 'pAtkSpdMul', statValue: 1.15, statKind: 'mul' },
+    { id: 2033, name: 'Haste potion', buff: 1200000, effect: 'haste_potion', stat: 'runSpdAdd', statValue: 33, statKind: 'add' },
+    { id: 2034, name: 'Greater Haste Potion', buff: 1200000, effect: 'greater_haste_potion', stat: 'runSpdAdd', statValue: 33, statKind: 'add' },
+    { id: 2035, name: 'Greater Swift Attack Potion', buff: 1200000, effect: 'greater_swift_attack_potion', stat: 'pAtkSpdMul', statValue: 1.33, statKind: 'mul' },
+    { id: 2050, name: 'Scroll of Guidance', buff: 3600000, effect: 'scroll_of_guidance', stat: 'pAccuracyCombatAdd', statValue: 4, statKind: 'add' },
+    { id: 2051, name: 'Scroll of Death Whisper', buff: 3600000, effect: 'scroll_of_death_whisper', stat: 'pCritDamageMul', statValue: 1.5, statKind: 'mul' },
+    { id: 2052, name: 'Scroll of Focus', buff: 3600000, effect: 'scroll_of_focus', stat: 'pCritRateMul', statValue: 1.3, statKind: 'mul' },
+    { id: 2053, name: 'Scroll of Greater Acumen', buff: 3600000, effect: 'scroll_of_greater_acumen', stat: 'castSpdMul', statValue: 1.3, statKind: 'mul' },
+    { id: 2054, name: 'Scroll of Haste', buff: 3600000, effect: 'scroll_of_haste', stat: 'pAtkSpdMul', statValue: 1.33, statKind: 'mul' },
+    { id: 2055, name: 'Scroll of Agility', buff: 3600000, effect: 'scroll_of_agility', stat: 'pEvasionRateAdd', statValue: 4, statKind: 'add' },
+    { id: 2056, name: 'Scroll of Mystic Empower', buff: 3600000, effect: 'scroll_of_mystic_empower', stat: 'mAtkMul', statValue: 1.75, statKind: 'mul' },
+    { id: 2057, name: 'Scroll of Might', buff: 3600000, effect: 'scroll_of_might', stat: 'pAtkMul', statValue: 1.15, statKind: 'mul' },
+    { id: 2058, name: 'Scroll of Wind Walk', buff: 3600000, effect: 'scroll_of_wind_walk', stat: 'runSpdAdd', statValue: 33, statKind: 'add' },
+    { id: 2059, name: 'Scroll of Shield', buff: 3600000, effect: 'scroll_of_shield', stat: 'pDefMul', statValue: 1.15, statKind: 'mul' }
+].forEach(({ id, name, buff, effect, stat, statValue, statKind }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} should preserve sourced skill name`);
+    assert.strictEqual(data.template.distance, -1, `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(data.time.buff, buff, `${name} should preserve sourced buff duration`);
+    const buffTarget = statActor();
+    const buffSkill = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1, buff });
+    const outcome = SkillEffects.execute(session(), buffTarget, buffTarget, buffSkill, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(buffSkill.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve to BUFF effect semantics`);
+    assert.strictEqual(buffSkill.fetchTargetKind(), 'self', `${name} should resolve as a self buff`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply sourced effect key`);
+    if (statKind === 'add') {
+        assert.strictEqual(EffectStats.add(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    } else {
+        assert.strictEqual(EffectStats.multiplier(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    }
+});
+
+const scrollFocusTarget = statActor();
+SkillEffects.execute(session(), scrollFocusTarget, scrollFocusTarget, skill({
+    selfId: 2052,
+    name: 'Scroll of Focus',
+    spell: false,
+    power: 1,
+    level: 1,
+    distance: -1,
+    buff: 3600000
+}), {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+calculateStats({}, scrollFocusTarget);
+assert.strictEqual(
+    scrollFocusTarget.collectiveCritical,
+    Formulas.calcCritical(30, 40) * 1.3,
+    'Scroll of Focus should apply sourced rCrit basemul 0.3 as a 1.3 runtime multiplier'
+);
+
+const scrollStatsTarget = statActor();
+[
+    { id: 2050, name: 'Scroll of Guidance', buff: 3600000 },
+    { id: 2053, name: 'Scroll of Greater Acumen', buff: 3600000 },
+    { id: 2055, name: 'Scroll of Agility', buff: 3600000 },
+    { id: 2056, name: 'Scroll of Mystic Empower', buff: 3600000 },
+    { id: 2057, name: 'Scroll of Might', buff: 3600000 },
+    { id: 2058, name: 'Scroll of Wind Walk', buff: 3600000 },
+    { id: 2059, name: 'Scroll of Shield', buff: 3600000 }
+].forEach(({ id, name, buff }) => {
+    SkillEffects.execute(session(), scrollStatsTarget, scrollStatsTarget, skill({
+        selfId: id,
+        name,
+        spell: false,
+        power: 1,
+        level: 1,
+        distance: -1,
+        buff
+    }), {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+});
+calculateStats({}, scrollStatsTarget);
+assert.strictEqual(scrollStatsTarget.collectiveAccur, Formulas.calcAccur(20, 30, 5) + 4, 'Scroll of Guidance should add sourced accuracy');
+assert.strictEqual(scrollStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Scroll of Greater Acumen should multiply sourced cast speed');
+assert.strictEqual(scrollStatsTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) + 4, 'Scroll of Agility should add sourced evasion');
+assert.strictEqual(scrollStatsTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.75), 'Scroll of Mystic Empower should multiply sourced MAtk');
+assert.strictEqual(scrollStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.15), 'Scroll of Might should multiply sourced PAtk');
+assert.strictEqual(scrollStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 33, 'Scroll of Wind Walk should add sourced run speed');
+assert.strictEqual(scrollStatsTarget.collectivePDef, Math.round(Formulas.calcPDef(20, 100) * 1.15), 'Scroll of Shield should multiply sourced PDef');
+
+const potionSpeedTarget = statActor();
+SkillEffects.execute(session(), potionSpeedTarget, potionSpeedTarget, skill({
+    selfId: 2035,
+    name: 'Greater Swift Attack Potion',
+    spell: false,
+    power: 1,
+    level: 1,
+    distance: -1,
+    buff: 1200000
+}), {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+calculateStats({}, potionSpeedTarget);
+assert.strictEqual(
+    potionSpeedTarget.collectiveAtkSpd,
+    Math.round(Formulas.calcAtkSpd(30, 300) * 1.33),
+    'Greater Swift Attack Potion should apply sourced pAtkSpd 1.33'
+);
+
 const servitorMagicShieldData = activeSkills.find((entry) => entry.selfId === 1139);
 assert(servitorMagicShieldData, 'Servitor Magic Shield should be present in active skills data');
 assert.strictEqual(servitorMagicShieldData.levels[0].mp, 39, 'Servitor Magic Shield level 1 MP should use sourced initial + consume total');
