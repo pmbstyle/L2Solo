@@ -165,6 +165,7 @@ function applyEffect(session, target, skill, semantic) {
         category: semantic.trait || semantic.effect,
         stats: semantic.stats || {},
         dot: dotFromSkill(skill, semantic),
+        manaDot: manaDotFromSkill(skill, semantic),
         hot: hotFromSkill(skill, semantic),
         durationMs
     });
@@ -177,6 +178,10 @@ function applyEffect(session, target, skill, semantic) {
 
     if (effect?.dot) {
         EffectTicker.applyDot(session, session?.actor, target, effect);
+    }
+
+    if (effect?.manaDot) {
+        EffectTicker.applyManaDot(session, session?.actor, target, effect);
     }
 
     if (effect?.hot) {
@@ -214,6 +219,15 @@ function hotFromSkill(skill, semantic) {
         count: semantic.hot.count,
         intervalMs: semantic.hot.intervalMs,
         heal: semantic.hot.heal ?? skill.fetchPower()
+    };
+}
+
+function manaDotFromSkill(skill, semantic) {
+    if (!semantic.manaDot) return null;
+    return {
+        count: semantic.manaDot.count,
+        intervalMs: semantic.manaDot.intervalMs,
+        damage: semantic.manaDot.damage ?? damageByLevel(skill, semantic.manaDot) ?? skill.fetchPower()
     };
 }
 

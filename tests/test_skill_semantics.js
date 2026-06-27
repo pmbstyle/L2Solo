@@ -692,6 +692,28 @@ assert.strictEqual(sealPoisonOutcome.effect.dot.intervalMs, 3000, 'Seal of Poiso
 assert.strictEqual(EffectStore.hasDebuff(sealPoisonTarget, 'poison'), true, 'Seal of Poison should leave a poison debuff');
 EffectStore.remove(sealPoisonTarget, 'poison');
 
+const sealGloomData = activeSkills.find((entry) => entry.selfId === 1210);
+assert(sealGloomData, 'Seal of Gloom should be present in active skills data');
+assert.strictEqual(sealGloomData.time.buff, 15000, 'Seal of Gloom should preserve sourced 15 second MDOT duration');
+assert.strictEqual(sealGloomData.levels.length, 4, 'Seal of Gloom should preserve sourced 4 base levels');
+assert.strictEqual(sealGloomData.levels[3].power, 53, 'Seal of Gloom level 4 should preserve sourced power 53');
+assert.strictEqual(sealGloomData.levels[3].mp, 100, 'Seal of Gloom level 4 MP should use sourced initial + consume total');
+const sealGloom = skill({ selfId: 1210, name: 'Seal of Gloom', spell: true, power: 53, level: 4, distance: -1, buff: 15000 });
+const sealGloomTarget = statActor();
+const sealGloomOutcome = SkillEffects.execute(session(), caster, sealGloomTarget, sealGloom, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealGloom.fetchTargetKind(), 'enemy', 'Seal of Gloom should resolve as an enemy mana damage-over-time effect');
+assert.strictEqual(sealGloom.fetchSemantic().baseLandRate, 53, 'Seal of Gloom should use sourced level 4 power as land rate');
+assert.strictEqual(sealGloomOutcome.effect.key, 'seal_of_gloom', 'Seal of Gloom should apply a structured debuff effect');
+assert.strictEqual(sealGloomOutcome.effect.manaDot.damage, 12, 'Seal of Gloom level 4 should use sourced ManaDamOverTime value 12');
+assert.strictEqual(sealGloomOutcome.effect.manaDot.count, 15, 'Seal of Gloom should use sourced 15 mana damage ticks');
+assert.strictEqual(sealGloomOutcome.effect.manaDot.intervalMs, 1000, 'Seal of Gloom should tick every sourced second');
+assert.strictEqual(EffectStore.hasDebuff(sealGloomTarget, 'seal_of_gloom'), true, 'Seal of Gloom should leave a debuff entry');
+EffectStore.remove(sealGloomTarget, 'seal_of_gloom');
+
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;

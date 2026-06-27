@@ -28,6 +28,7 @@ function normalize(effect = {}) {
         category: effect.category || null,
         stats: effect.stats || {},
         dot: effect.dot || null,
+        manaDot: effect.manaDot || null,
         hot: effect.hot || null,
         expiresAt
     };
