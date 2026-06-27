@@ -118,6 +118,7 @@ function hasDebuff(actor, keys) {
 function impairments(actor) {
     return {
         disabled: hasDebuff(actor, ['stun', 'sleep', 'paralyze']),
+        confused: hasDebuff(actor, ['confusion']),
         rooted: hasDebuff(actor, ['root']),
         silenced: hasDebuff(actor, ['silence']),
         slowed: hasDebuff(actor, ['slow'])

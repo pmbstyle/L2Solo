@@ -286,6 +286,33 @@ assert.strictEqual(dreamingSpirit.fetchTargetKind(), 'enemy', 'Dreaming Spirit s
 assert.strictEqual(dreamingOutcome.effect.key, 'sleep', 'Dreaming Spirit should apply a structured sleep debuff');
 assert(EffectStore.hasDebuff(dreamingTarget, 'sleep'), 'Dreaming Spirit sleep should be visible through EffectStore');
 
+const madnessData = activeSkills.find((entry) => entry.selfId === 1105);
+assert(madnessData, 'Madness should be present in active skills data');
+assert.strictEqual(madnessData.levels.length, 18, 'Madness should preserve sourced 18 base levels');
+assert.strictEqual(madnessData.time.reuse, 40000, 'Madness should preserve sourced 40000ms reuse');
+assert.strictEqual(madnessData.time.buff, 30000, 'Madness should preserve sourced Confusion count/time duration');
+assert.strictEqual(madnessData.levels[1].mp, 23, 'Madness level 2 MP should use sourced initial + consume total');
+assert.strictEqual(madnessData.levels[17].mp, 69, 'Madness level 18 MP should use sourced initial + consume total');
+const playerMadnessTarget = creature({ id: 1000008, hp: 100, maxHp: 100, level: 20 });
+const madness = skill({ selfId: 1105, name: 'Madness', spell: true, level: 18, buff: 30000 });
+const playerMadnessOutcome = SkillEffects.execute(session(), caster, playerMadnessTarget, madness, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(playerMadnessOutcome.effect, null, 'Madness should not apply CONFUSE_MOB_ONLY to non-attackable targets');
+assert.strictEqual(playerMadnessOutcome.effectResisted, true, 'Madness mob-only rejection should report effect resistance');
+const mobMadnessTarget = creature({ id: 1000009, hp: 100, maxHp: 100, level: 20 });
+mobMadnessTarget.fetchAttackable = () => true;
+const mobMadnessOutcome = SkillEffects.execute(session(), caster, mobMadnessTarget, madness, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(madness.fetchTargetKind(), 'enemy', 'Madness should resolve as an enemy mob-only debuff');
+assert.strictEqual(mobMadnessOutcome.effect.key, 'confusion', 'Madness should apply a structured confusion debuff to attackable NPCs');
+assert.strictEqual(EffectStore.impairments(mobMadnessTarget).confused, true, 'Madness confusion should be visible through impairments');
+
 const silenceData = activeSkills.find((entry) => entry.selfId === 1064);
 assert(silenceData, 'Silence should be present in active skills data');
 assert.strictEqual(silenceData.levels.length, 14, 'Silence should preserve sourced 14 base levels');
