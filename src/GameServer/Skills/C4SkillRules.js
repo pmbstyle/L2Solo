@@ -94,6 +94,7 @@ const RULES = {
     1099: { skillType: EFFECT, trait: 'slow', effect: 'seal_of_slow', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     1104: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_winter', effectType: 'debuff', target: 'enemy', baseLandRate: 40, stats: { pAtkSpdMul: 0.77 } },
     1105: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', mobOnly: true },
+    1111: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1126: { skillType: MANA_RECHARGE, trait: 'mana', target: 'pet', ssBoost: 0 },
     1139: { skillType: EFFECT, trait: 'buff', effect: 'servitor_magic_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mDefMul: [1.23, 1.3] } },
     1140: { skillType: EFFECT, trait: 'buff', effect: 'servitor_physical_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },

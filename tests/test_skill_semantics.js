@@ -922,6 +922,31 @@ assert.strictEqual(summonBigBoom.fetchSkillType(), C4SkillRules.SUMMON, 'Summon 
 assert.strictEqual(summonBigBoom.fetchTargetKind(), 'self', 'Summon Big Boom should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonBigBoom.fetchSsBoost(), 0, 'Summon Big Boom should not consume offensive shot boost semantics');
 
+const summonKatCatData = activeSkills.find((entry) => entry.selfId === 1111);
+assert(summonKatCatData, 'Summon Kat the Cat should be present in active skills data');
+assert.strictEqual(summonKatCatData.time.hitTime, 15000, 'Summon Kat the Cat should preserve sourced 15000ms hit time');
+assert.strictEqual(summonKatCatData.summon.totalLifeTime, 1200000, 'Summon Kat the Cat should preserve sourced summon lifetime');
+assert.strictEqual(summonKatCatData.summon.timeLostIdle, 500, 'Summon Kat the Cat should preserve sourced idle time loss');
+assert.strictEqual(summonKatCatData.summon.timeLostActive, 1000, 'Summon Kat the Cat should preserve sourced active time loss');
+assert.strictEqual(summonKatCatData.summon.expPenalty, 0.3, 'Summon Kat the Cat should preserve sourced exp penalty');
+assert.strictEqual(summonKatCatData.summon.itemConsumeSteps, 1, 'Summon Kat the Cat should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonKatCatData.summon.itemIdOT, 1458, 'Summon Kat the Cat should preserve sourced ongoing crystal item id');
+assert.strictEqual(summonKatCatData.levels.length, 18, 'Summon Kat the Cat should preserve sourced 18 base levels');
+assert.strictEqual(summonKatCatData.levels[0].mp, 39, 'Summon Kat the Cat level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonKatCatData.levels[0].itemCount, 3, 'Summon Kat the Cat level 1 should preserve sourced crystal count');
+assert.strictEqual(summonKatCatData.levels[0].itemCountOT, 0, 'Summon Kat the Cat level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonKatCatData.levels[0].npcId, 12006, 'Summon Kat the Cat level 1 should preserve sourced npcId');
+assert.strictEqual(summonKatCatData.levels[3].reuse, 21600000, 'Summon Kat the Cat level 4 should preserve sourced 6-hour reuse');
+assert.strictEqual(summonKatCatData.levels[17].mp, 137, 'Summon Kat the Cat level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonKatCatData.levels[17].itemCount, 8, 'Summon Kat the Cat level 18 should preserve sourced crystal count');
+assert.strictEqual(summonKatCatData.levels[17].itemCountOT, 6, 'Summon Kat the Cat level 18 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonKatCatData.levels[17].npcId, 12419, 'Summon Kat the Cat level 18 should preserve sourced npcId');
+assert.strictEqual(summonKatCatData.levels[17].reuse, 20000, 'Summon Kat the Cat trained levels should preserve sourced 20000ms reuse');
+const summonKatCat = skill({ selfId: 1111, name: 'Summon Kat the Cat', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonKatCat.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Kat the Cat should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonKatCat.fetchTargetKind(), 'self', 'Summon Kat the Cat should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonKatCat.fetchSsBoost(), 0, 'Summon Kat the Cat should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
