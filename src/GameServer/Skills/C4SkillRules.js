@@ -38,6 +38,7 @@ const RULES = {
     278: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     283: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     299: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    301: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1040: { skillType: EFFECT, trait: 'buff', effect: 'shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
     1068: { skillType: EFFECT, trait: 'buff', effect: 'might', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
     1011: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },

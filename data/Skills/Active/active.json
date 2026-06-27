@@ -638,6 +638,12 @@
     "summon": { "totalLifeTime": 1200000, "timeLostIdle": 1000, "timeLostActive": 1000, "expPenalty": 0, "itemConsumeSteps": 20, "itemIdOT": 2132, "requiresSiegeAttacker": true },
     "levels": [{ "level": 1, "power": 1, "mp": 530, "hp": 0, "itemId": 1460, "itemCount": 120, "itemCountOT": 30, "npcId": 12375, "reuse": 20000 }]
 },{
+    "selfId": 301,
+    "template": { "name": "Summon Big Boom", "passive": false, "spell": true, "distance": -1 },
+    "time": { "hitTime": 6000, "reuse": 20000, "buff": 0 },
+    "summon": { "totalLifeTime": 1200000, "timeLostIdle": 500, "timeLostActive": 1000, "expPenalty": 0.3, "itemConsumeSteps": 4, "itemIdOT": 1458 },
+    "levels": [{ "level": 1, "power": 1, "mp": 74, "hp": 0, "itemId": 1458, "itemCount": 3, "itemCountOT": 5, "npcId": 12517, "reuse": 20000 }, { "level": 2, "power": 1, "mp": 82, "hp": 0, "itemId": 1458, "itemCount": 3, "itemCountOT": 5, "npcId": 12518, "reuse": 20000 }, { "level": 3, "power": 1, "mp": 88, "hp": 0, "itemId": 1458, "itemCount": 4, "itemCountOT": 5, "npcId": 12519, "reuse": 20000 }, { "level": 4, "power": 1, "mp": 94, "hp": 0, "itemId": 1458, "itemCount": 4, "itemCountOT": 5, "npcId": 12520, "reuse": 20000 }, { "level": 5, "power": 1, "mp": 100, "hp": 0, "itemId": 1458, "itemCount": 5, "itemCountOT": 5, "npcId": 12521, "reuse": 20000 }]
+},{
     "selfId": 1002,
     "template": { "name": "Chant of Flame", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 20000, "buff": 1200000 },

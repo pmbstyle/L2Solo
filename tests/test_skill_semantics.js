@@ -899,6 +899,29 @@ assert.strictEqual(summonWildHogCannon.fetchSkillType(), C4SkillRules.SUMMON, 'S
 assert.strictEqual(summonWildHogCannon.fetchTargetKind(), 'self', 'Summon Wild Hog Cannon should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonWildHogCannon.fetchSsBoost(), 0, 'Summon Wild Hog Cannon should not consume offensive shot boost semantics');
 
+const summonBigBoomData = activeSkills.find((entry) => entry.selfId === 301);
+assert(summonBigBoomData, 'Summon Big Boom should be present in active skills data');
+assert.strictEqual(summonBigBoomData.time.hitTime, 6000, 'Summon Big Boom should preserve sourced 6000ms hit time');
+assert.strictEqual(summonBigBoomData.summon.totalLifeTime, 1200000, 'Summon Big Boom should preserve sourced summon lifetime');
+assert.strictEqual(summonBigBoomData.summon.timeLostIdle, 500, 'Summon Big Boom should preserve sourced idle time loss');
+assert.strictEqual(summonBigBoomData.summon.timeLostActive, 1000, 'Summon Big Boom should preserve sourced active time loss');
+assert.strictEqual(summonBigBoomData.summon.expPenalty, 0.3, 'Summon Big Boom should preserve sourced exp penalty');
+assert.strictEqual(summonBigBoomData.summon.itemConsumeSteps, 4, 'Summon Big Boom should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonBigBoomData.summon.itemIdOT, 1458, 'Summon Big Boom should preserve sourced ongoing crystal item id');
+assert.strictEqual(summonBigBoomData.levels.length, 5, 'Summon Big Boom should preserve sourced 5 base levels');
+assert.strictEqual(summonBigBoomData.levels[0].mp, 74, 'Summon Big Boom level 1 MP should preserve sourced consume value');
+assert.strictEqual(summonBigBoomData.levels[0].itemCount, 3, 'Summon Big Boom level 1 should preserve sourced crystal count');
+assert.strictEqual(summonBigBoomData.levels[0].itemCountOT, 5, 'Summon Big Boom level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonBigBoomData.levels[0].npcId, 12517, 'Summon Big Boom level 1 should preserve sourced npcId');
+assert.strictEqual(summonBigBoomData.levels[4].mp, 100, 'Summon Big Boom level 5 MP should preserve sourced consume value');
+assert.strictEqual(summonBigBoomData.levels[4].itemCount, 5, 'Summon Big Boom level 5 should preserve sourced crystal count');
+assert.strictEqual(summonBigBoomData.levels[4].itemCountOT, 5, 'Summon Big Boom level 5 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonBigBoomData.levels[4].npcId, 12521, 'Summon Big Boom level 5 should preserve sourced npcId');
+const summonBigBoom = skill({ selfId: 301, name: 'Summon Big Boom', spell: true, power: 1, level: 5, distance: -1 });
+assert.strictEqual(summonBigBoom.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Big Boom should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonBigBoom.fetchTargetKind(), 'self', 'Summon Big Boom should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonBigBoom.fetchSsBoost(), 0, 'Summon Big Boom should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
