@@ -1582,6 +1582,48 @@ assert.strictEqual(cleanseOutcome.cleansed.length, 1, 'Cure Poison level 1 shoul
 assert.strictEqual(EffectStore.hasDebuff(poisoned, 'poison'), false, 'Cure Poison should remove the poison debuff');
 assert.strictEqual(poisoned.effectTimers.poison, undefined, 'Cure Poison should stop the poison DoT ticker');
 
+const antidoteData = activeSkills.find((entry) => entry.selfId === 2042);
+assert(antidoteData, 'Antidote should be present in active skills data');
+assert.strictEqual(antidoteData.levels[0].power, 3, 'Antidote active data should preserve sourced negatePower 3');
+const advancedAntidoteData = activeSkills.find((entry) => entry.selfId === 2043);
+assert(advancedAntidoteData, 'Advanced antidote should be present in active skills data');
+assert.strictEqual(advancedAntidoteData.levels[0].power, 7, 'Advanced antidote active data should preserve sourced negatePower 7');
+const antidoteTarget = statActor();
+EffectStore.apply(antidoteTarget, { key: 'minor_poison', id: 129, level: 3, type: 'debuff', category: 'poison', durationMs: 30000 });
+EffectStore.apply(antidoteTarget, { key: 'strong_poison', id: 129, level: 7, type: 'debuff', category: 'poison', durationMs: 30000 });
+const antidote = skill({ selfId: 2042, name: 'Antidote', spell: false, power: 3, level: 1, distance: -1 });
+const antidoteOutcome = SkillEffects.execute(session(), caster, antidoteTarget, antidote, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(antidote.fetchSkillType(), C4SkillRules.CLEANSE, 'Antidote should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(antidoteOutcome.cleansed.length, 1, 'Antidote should cleanse poison up to sourced negatePower 3 only');
+assert.strictEqual(EffectStore.hasDebuff(antidoteTarget, 'minor_poison'), false, 'Antidote should remove low-level poison');
+assert.strictEqual(EffectStore.hasDebuff(antidoteTarget, 'strong_poison'), true, 'Antidote should not remove poison above sourced negatePower 3');
+const advancedAntidote = skill({ selfId: 2043, name: 'Advanced antidote', spell: false, power: 7, level: 1, distance: -1 });
+const advancedAntidoteOutcome = SkillEffects.execute(session(), caster, antidoteTarget, advancedAntidote, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(advancedAntidoteOutcome.cleansed.length, 1, 'Advanced antidote should cleanse poison up to sourced negatePower 7');
+assert.strictEqual(EffectStore.hasDebuff(antidoteTarget, 'strong_poison'), false, 'Advanced antidote should remove level 7 poison');
+
+const healingMedicineData = activeSkills.find((entry) => entry.selfId === 2060);
+assert(healingMedicineData, 'Healing Medicine should be present in active skills data');
+const medicineTarget = statActor();
+EffectStore.apply(medicineTarget, { key: 'poison', id: 129, level: 1, type: 'debuff', category: 'poison', durationMs: 30000 });
+EffectStore.apply(medicineTarget, { key: 'poison_of_death', id: 4082, level: 1, type: 'debuff', category: 'poison', durationMs: 30000 });
+const healingMedicine = skill({ selfId: 2060, name: 'Healing Medicine', spell: false, power: 1, level: 1, distance: -1 });
+const medicineOutcome = SkillEffects.execute(session(), caster, medicineTarget, healingMedicine, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(healingMedicine.fetchSkillType(), C4SkillRules.CLEANSE, 'Healing Medicine should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(medicineOutcome.cleansed.length, 1, 'Healing Medicine should cleanse only sourced negateId 4082');
+assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison_of_death'), false, 'Healing Medicine should remove Poison of Death');
+assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison'), true, 'Healing Medicine should not remove unrelated poison effects');
+EffectStore.remove(medicineTarget, 'poison');
+
 const cursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 1, level: 4, buff: 30000 });
 const curseTarget = statActor();
 const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, cursePoison, {
@@ -1761,6 +1803,38 @@ const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cu
 });
 assert.strictEqual(cureBleedOutcome.cleansed.length, 1, 'Cure Bleeding should remove matching bleed effects');
 assert.strictEqual(EffectStore.hasDebuff(bleedTarget, 'bleed'), false, 'Cure Bleeding should clear bleed debuff state');
+
+const remedyData = activeSkills.find((entry) => entry.selfId === 44);
+assert(remedyData, 'Remedy should be present in active skills data');
+assert.strictEqual(remedyData.levels.length, 3, 'Remedy active data should preserve sourced 3 levels');
+assert.strictEqual(remedyData.levels[2].power, 9, 'Remedy level 3 active data should preserve sourced negatePower 9');
+assert.strictEqual(remedyData.levels[2].mp, 55, 'Remedy level 3 active data should combine sourced initial and consume MP');
+const bandageData = activeSkills.find((entry) => entry.selfId === 2044);
+assert(bandageData, 'Bandage should be present in active skills data');
+assert.strictEqual(bandageData.levels[0].power, 3, 'Bandage active data should preserve sourced negatePower 3');
+const emergencyDressingData = activeSkills.find((entry) => entry.selfId === 2045);
+assert(emergencyDressingData, 'Emergency dressing should be present in active skills data');
+assert.strictEqual(emergencyDressingData.levels[0].power, 7, 'Emergency dressing active data should preserve sourced negatePower 7');
+const bleedCleanseTarget = statActor();
+EffectStore.apply(bleedCleanseTarget, { key: 'minor_bleed', id: 96, level: 3, type: 'debuff', category: 'bleed', durationMs: 30000 });
+EffectStore.apply(bleedCleanseTarget, { key: 'major_bleed', id: 96, level: 9, type: 'debuff', category: 'bleed', durationMs: 30000 });
+const bandage = skill({ selfId: 2044, name: 'Bandage', spell: false, power: 3, level: 1, distance: -1 });
+const bandageOutcome = SkillEffects.execute(session(), caster, bleedCleanseTarget, bandage, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(bandage.fetchSkillType(), C4SkillRules.CLEANSE, 'Bandage should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(bandageOutcome.cleansed.length, 1, 'Bandage should cleanse bleed up to sourced negatePower 3 only');
+assert.strictEqual(EffectStore.hasDebuff(bleedCleanseTarget, 'minor_bleed'), false, 'Bandage should remove low-level bleed');
+assert.strictEqual(EffectStore.hasDebuff(bleedCleanseTarget, 'major_bleed'), true, 'Bandage should not remove bleed above sourced negatePower 3');
+const remedy = skill({ selfId: 44, name: 'Remedy', spell: true, power: 9, level: 3, distance: -1 });
+const remedyOutcome = SkillEffects.execute(session(), caster, bleedCleanseTarget, remedy, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(remedy.fetchSkillType(), C4SkillRules.CLEANSE, 'Remedy should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(remedyOutcome.cleansed.length, 1, 'Remedy level 3 should cleanse bleed up to sourced negatePower 9');
+assert.strictEqual(EffectStore.hasDebuff(bleedCleanseTarget, 'major_bleed'), false, 'Remedy level 3 should remove level 9 bleed');
 
 const purified = statActor();
 EffectStore.apply(purified, { key: 'poison', id: 129, level: 3, type: 'debuff', category: 'poison', durationMs: 30000 });

@@ -217,6 +217,10 @@ function applyEffect(session, target, skill, semantic) {
 function applyCleanse(session, target, semantic) {
     const removed = [];
     (semantic.cleanse || []).forEach((entry) => {
+        if (entry.skillId) {
+            removed.push(...EffectStore.removeBySkillId(target, entry.skillId, entry.maxLevel ?? Infinity));
+            return;
+        }
         removed.push(...EffectStore.removeByCategory(target, entry.category, entry.maxLevel ?? Infinity));
     });
     if (removed.length) {

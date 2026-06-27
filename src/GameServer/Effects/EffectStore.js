@@ -77,6 +77,19 @@ function removeByCategory(actor, category, maxLevel = Infinity) {
     return removed;
 }
 
+function removeBySkillId(actor, skillId, maxLevel = Infinity) {
+    const removed = [];
+    const id = Number(skillId);
+    list(actor).forEach((effect) => {
+        const matches = Number(effect.id || 0) === id;
+        const allowedLevel = Number(effect.level || 0) <= Number(maxLevel);
+        if (matches && allowedLevel && remove(actor, effect.key)) {
+            removed.push(effect);
+        }
+    });
+    return removed;
+}
+
 function remainingMs(actor, key) {
     const effect = prune(actor)[key];
     if (!effect) return 0;
@@ -130,6 +143,7 @@ module.exports = {
     apply,
     remove,
     removeByCategory,
+    removeBySkillId,
     remainingMs,
     list,
     packetEffects,
