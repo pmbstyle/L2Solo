@@ -877,6 +877,28 @@ assert.strictEqual(summonDarkPanther.fetchSkillType(), C4SkillRules.SUMMON, 'Sum
 assert.strictEqual(summonDarkPanther.fetchTargetKind(), 'self', 'Summon Dark Panther should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonDarkPanther.fetchSsBoost(), 0, 'Summon Dark Panther should not consume offensive shot boost semantics');
 
+const summonWildHogCannonData = activeSkills.find((entry) => entry.selfId === 299);
+assert(summonWildHogCannonData, 'Summon Wild Hog Cannon should be present in active skills data');
+assert.strictEqual(summonWildHogCannonData.template.spell, false, 'Summon Wild Hog Cannon should preserve sourced non-magic cast semantics');
+assert.strictEqual(summonWildHogCannonData.time.hitTime, 300000, 'Summon Wild Hog Cannon should preserve sourced 300000ms hit time');
+assert.strictEqual(summonWildHogCannonData.summon.totalLifeTime, 1200000, 'Summon Wild Hog Cannon should preserve sourced summon lifetime');
+assert.strictEqual(summonWildHogCannonData.summon.timeLostIdle, 1000, 'Summon Wild Hog Cannon should preserve sourced idle time loss');
+assert.strictEqual(summonWildHogCannonData.summon.timeLostActive, 1000, 'Summon Wild Hog Cannon should preserve sourced active time loss');
+assert.strictEqual(summonWildHogCannonData.summon.expPenalty, 0, 'Summon Wild Hog Cannon should preserve sourced zero exp penalty');
+assert.strictEqual(summonWildHogCannonData.summon.itemConsumeSteps, 20, 'Summon Wild Hog Cannon should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonWildHogCannonData.summon.itemIdOT, 2132, 'Summon Wild Hog Cannon should preserve sourced ongoing fuel item id');
+assert.strictEqual(summonWildHogCannonData.summon.requiresSiegeAttacker, true, 'Summon Wild Hog Cannon should preserve sourced siege attacker condition');
+assert.strictEqual(summonWildHogCannonData.levels.length, 1, 'Summon Wild Hog Cannon should preserve sourced single base level');
+assert.strictEqual(summonWildHogCannonData.levels[0].mp, 530, 'Summon Wild Hog Cannon MP should preserve sourced initial consume');
+assert.strictEqual(summonWildHogCannonData.levels[0].itemId, 1460, 'Summon Wild Hog Cannon should preserve sourced crystal item id');
+assert.strictEqual(summonWildHogCannonData.levels[0].itemCount, 120, 'Summon Wild Hog Cannon should preserve sourced crystal count');
+assert.strictEqual(summonWildHogCannonData.levels[0].itemCountOT, 30, 'Summon Wild Hog Cannon should preserve sourced ongoing fuel count');
+assert.strictEqual(summonWildHogCannonData.levels[0].npcId, 12375, 'Summon Wild Hog Cannon should preserve sourced npcId');
+const summonWildHogCannon = skill({ selfId: 299, name: 'Summon Wild Hog Cannon', spell: false, power: 1, level: 1, distance: -1 });
+assert.strictEqual(summonWildHogCannon.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Wild Hog Cannon should resolve to SUMMON instead of a physical fallback');
+assert.strictEqual(summonWildHogCannon.fetchTargetKind(), 'self', 'Summon Wild Hog Cannon should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonWildHogCannon.fetchSsBoost(), 0, 'Summon Wild Hog Cannon should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
