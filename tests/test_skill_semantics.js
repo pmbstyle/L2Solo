@@ -859,6 +859,27 @@ assert.strictEqual(summonBindingCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Su
 assert.strictEqual(summonBindingCubic.fetchTargetKind(), 'self', 'Summon Binding Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonBindingCubic.fetchSsBoost(), 0, 'Summon Binding Cubic should not consume offensive shot boost semantics');
 
+const summonAquaCubicData = activeSkills.find((entry) => entry.selfId === 1280);
+assert(summonAquaCubicData, 'Summon Aqua Cubic should be present in active skills data');
+assert.strictEqual(summonAquaCubicData.time.hitTime, 6000, 'Summon Aqua Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonAquaCubicData.summon.totalLifeTime, 900000, 'Summon Aqua Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonAquaCubicData.summon.expPenalty, 0, 'Summon Aqua Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonAquaCubicData.summon.isCubic, true, 'Summon Aqua Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonAquaCubicData.summon.npcId, 7, 'Summon Aqua Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonAquaCubicData.summon.activationChance, 30, 'Summon Aqua Cubic should preserve sourced activation chance');
+assert.strictEqual(summonAquaCubicData.summon.activationTime, 30, 'Summon Aqua Cubic should preserve sourced activation time');
+assert.strictEqual(summonAquaCubicData.levels.length, 9, 'Summon Aqua Cubic should preserve sourced 9 base levels');
+assert.strictEqual(summonAquaCubicData.levels[0].power, 282, 'Summon Aqua Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonAquaCubicData.levels[0].mp, 35, 'Summon Aqua Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonAquaCubicData.levels[0].itemCount, 2, 'Summon Aqua Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonAquaCubicData.levels[8].power, 1975, 'Summon Aqua Cubic level 9 should preserve sourced cubic power');
+assert.strictEqual(summonAquaCubicData.levels[8].mp, 69, 'Summon Aqua Cubic level 9 MP should use sourced initial + consume total');
+assert.strictEqual(summonAquaCubicData.levels[8].itemCount, 7, 'Summon Aqua Cubic level 9 should preserve sourced crystal count');
+const summonAquaCubic = skill({ selfId: 1280, name: 'Summon Aqua Cubic', spell: true, power: 1975, level: 9, distance: -1 });
+assert.strictEqual(summonAquaCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Aqua Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonAquaCubic.fetchTargetKind(), 'self', 'Summon Aqua Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonAquaCubic.fetchSsBoost(), 0, 'Summon Aqua Cubic should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
