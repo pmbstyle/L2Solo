@@ -855,7 +855,12 @@ assert.strictEqual(dryadRootOutcome.effect.key, 'root', 'Dryad Root should apply
 assert.strictEqual(EffectStore.hasDebuff(dryadRootTarget, 'root'), true, 'Dryad Root should leave a root debuff when the sourced land rate passes');
 
 const sealBindingTarget = statActor();
-const sealBinding = skill({ selfId: 1208, name: 'Seal of Binding', spell: true, power: 1, level: 1, distance: -1, buff: 30000 });
+const sealBindingData = activeSkills.find((entry) => entry.selfId === 1208);
+assert(sealBindingData, 'Seal of Binding should be present in active skills data');
+assert.strictEqual(sealBindingData.levels.length, 17, 'Seal of Binding should preserve sourced 17 base levels');
+assert.strictEqual(sealBindingData.levels[0].power, 40, 'Seal of Binding should preserve sourced power 40');
+assert.strictEqual(sealBindingData.levels[16].mp, 103, 'Seal of Binding level 17 MP should use sourced initial + consume total');
+const sealBinding = skill({ selfId: 1208, name: 'Seal of Binding', spell: true, power: 40, level: 17, distance: -1, buff: 30000 });
 const sealBindingOutcome = SkillEffects.execute(session(), caster, sealBindingTarget, sealBinding, {
     magicSkill: true,
     rng: () => 0.43,
