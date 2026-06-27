@@ -1661,6 +1661,34 @@ const mobMirageOutcome = SkillEffects.execute(session(), caster, mobMirageTarget
 assert.strictEqual(mobMirageOutcome.effect.key, 'confusion', 'Seal of Mirage should apply sourced Confusion to attackable NPCs');
 assert.strictEqual(EffectStore.impairments(mobMirageTarget).confused, true, 'Seal of Mirage confusion should be visible through impairments');
 
+[
+    { id: 2001, name: 'Red potion', power: 1, reuse: 0, buff: 15000, count: 3, intervalMs: 5000, heal: 2 },
+    { id: 2002, name: 'Healing drug', power: 1, reuse: 0, buff: 20000, count: 4, intervalMs: 5000, heal: 1.5 },
+    { id: 2031, name: 'Lesser healing potion', power: 1, reuse: 9000, buff: 14000, count: 7, intervalMs: 2000, heal: 16 },
+    { id: 2032, name: 'Healing potion', power: 2, reuse: 9000, buff: 14000, count: 7, intervalMs: 2000, heal: 48 },
+    { id: 2037, name: 'Greater healing potion', power: 3, reuse: 9000, buff: 14000, count: 7, intervalMs: 2000, heal: 100 }
+].forEach(({ id, name, power, reuse, buff, count, intervalMs, heal: hotHeal }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.time.reuse, reuse, `${name} active data should preserve sourced reuse`);
+    assert.strictEqual(data.time.buff, buff, `${name} active data should preserve sourced HOT duration`);
+    assert.strictEqual(data.levels[0].power, power, `${name} active data should preserve sourced power`);
+    const target = statActor();
+    const potion = skill({ selfId: id, name, spell: false, power, level: 1, distance: -1, buff });
+    const outcome = SkillEffects.execute(session(), caster, target, potion, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(potion.fetchSkillType(), C4SkillRules.HOT, `${name} should resolve to HOT`);
+    assert.strictEqual(potion.fetchTargetKind(), 'self', `${name} should preserve sourced self target semantics`);
+    assert.strictEqual(outcome.effect.hot.count, count, `${name} should use sourced heal tick count`);
+    assert.strictEqual(outcome.effect.hot.intervalMs, intervalMs, `${name} should use sourced heal tick interval`);
+    assert.strictEqual(outcome.effect.hot.heal, hotHeal, `${name} should use sourced HealOverTime value`);
+    assert(target.effectTimers[outcome.effect.key], `${name} should start a runtime heal-over-time ticker`);
+    EffectStore.remove(target, outcome.effect.key);
+});
+
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;
@@ -1694,6 +1722,27 @@ assert.strictEqual(heartOutcome.effect.key, 'heart_of_paagrio', "Heart of Pa'agr
 assert.strictEqual(heartOutcome.effect.hot.heal, 43, "Heart of Pa'agrio level 4 should use sourced HealOverTime value 43");
 assert(heartTarget.effectTimers.heart_of_paagrio, "Heart of Pa'agrio should start a runtime heal-over-time ticker");
 EffectStore.remove(heartTarget, 'heart_of_paagrio');
+
+const npcChantLifeData = activeSkills.find((entry) => entry.selfId === 4097);
+assert(npcChantLifeData, 'NPC Chant of Life should be present in active skills data');
+assert.strictEqual(npcChantLifeData.template.name, 'NPC Chant of Life', 'NPC Chant of Life active data should preserve sourced name');
+assert.strictEqual(npcChantLifeData.levels.length, 12, 'NPC Chant of Life active data should preserve sourced 12 levels');
+assert.strictEqual(npcChantLifeData.levels[11].power, 12, 'NPC Chant of Life level 12 should preserve sourced power');
+assert.strictEqual(npcChantLifeData.levels[11].mp, 262, 'NPC Chant of Life level 12 should preserve sourced MP cost');
+const npcChantLifeTarget = statActor();
+const npcChantLife = skill({ selfId: 4097, name: 'NPC Chant of Life', spell: true, power: 12, level: 12, buff: 15000 });
+const npcChantLifeOutcome = SkillEffects.execute(session(), caster, npcChantLifeTarget, npcChantLife, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcChantLife.fetchSkillType(), C4SkillRules.HOT, 'NPC Chant of Life should resolve to HOT');
+assert.strictEqual(npcChantLife.fetchTargetKind(), 'self', 'NPC Chant of Life should preserve sourced self target semantics');
+assert.strictEqual(npcChantLifeOutcome.effect.hot.heal, 58, 'NPC Chant of Life level 12 should use sourced HealOverTime value 58');
+assert.strictEqual(npcChantLifeOutcome.effect.hot.count, 5, 'NPC Chant of Life should use sourced 5 heal ticks');
+assert.strictEqual(npcChantLifeOutcome.effect.hot.intervalMs, 3000, 'NPC Chant of Life should tick every sourced 3 seconds');
+assert(npcChantLifeTarget.effectTimers.npc_chant_of_life, 'NPC Chant of Life should start a runtime heal-over-time ticker');
+EffectStore.remove(npcChantLifeTarget, 'npc_chant_of_life');
 
 const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 1, level: 4, buff: 20000 });
 const bleedTarget = statActor();
