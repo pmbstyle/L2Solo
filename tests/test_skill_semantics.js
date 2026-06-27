@@ -855,6 +855,28 @@ assert.strictEqual(summonViperCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summ
 assert.strictEqual(summonViperCubic.fetchTargetKind(), 'self', 'Summon Viper Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonViperCubic.fetchSsBoost(), 0, 'Summon Viper Cubic should not consume offensive shot boost semantics');
 
+const summonDarkPantherData = activeSkills.find((entry) => entry.selfId === 283);
+assert(summonDarkPantherData, 'Summon Dark Panther should be present in active skills data');
+assert.strictEqual(summonDarkPantherData.time.hitTime, 15000, 'Summon Dark Panther should preserve sourced 15000ms hit time');
+assert.strictEqual(summonDarkPantherData.summon.totalLifeTime, 1200000, 'Summon Dark Panther should preserve sourced summon lifetime');
+assert.strictEqual(summonDarkPantherData.summon.timeLostIdle, 500, 'Summon Dark Panther should preserve sourced idle lifetime loss');
+assert.strictEqual(summonDarkPantherData.summon.timeLostActive, 1000, 'Summon Dark Panther should preserve sourced active lifetime loss');
+assert.strictEqual(summonDarkPantherData.summon.expPenalty, 0.15, 'Summon Dark Panther should preserve sourced exp penalty');
+assert.strictEqual(summonDarkPantherData.summon.itemConsumeSteps, 4, 'Summon Dark Panther should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonDarkPantherData.levels.length, 7, 'Summon Dark Panther should preserve sourced 7 base levels');
+assert.strictEqual(summonDarkPantherData.levels[0].mp, 70, 'Summon Dark Panther level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonDarkPantherData.levels[0].itemCount, 1, 'Summon Dark Panther level 1 should preserve sourced crystal count');
+assert.strictEqual(summonDarkPantherData.levels[0].itemCountOT, 1, 'Summon Dark Panther level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonDarkPantherData.levels[0].npcId, 12184, 'Summon Dark Panther level 1 should preserve sourced npcId');
+assert.strictEqual(summonDarkPantherData.levels[6].mp, 137, 'Summon Dark Panther level 7 MP should use sourced initial + consume total');
+assert.strictEqual(summonDarkPantherData.levels[6].itemCount, 4, 'Summon Dark Panther level 7 should preserve sourced crystal count');
+assert.strictEqual(summonDarkPantherData.levels[6].itemCountOT, 4, 'Summon Dark Panther level 7 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonDarkPantherData.levels[6].npcId, 12476, 'Summon Dark Panther level 7 should preserve sourced npcId');
+const summonDarkPanther = skill({ selfId: 283, name: 'Summon Dark Panther', spell: true, power: 1, level: 7, distance: -1 });
+assert.strictEqual(summonDarkPanther.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Dark Panther should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonDarkPanther.fetchTargetKind(), 'self', 'Summon Dark Panther should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonDarkPanther.fetchSsBoost(), 0, 'Summon Dark Panther should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
