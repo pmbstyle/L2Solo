@@ -947,6 +947,31 @@ assert.strictEqual(summonKatCat.fetchSkillType(), C4SkillRules.SUMMON, 'Summon K
 assert.strictEqual(summonKatCat.fetchTargetKind(), 'self', 'Summon Kat the Cat should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonKatCat.fetchSsBoost(), 0, 'Summon Kat the Cat should not consume offensive shot boost semantics');
 
+const summonShadowData = activeSkills.find((entry) => entry.selfId === 1128);
+assert(summonShadowData, 'Summon Shadow should be present in active skills data');
+assert.strictEqual(summonShadowData.time.hitTime, 15000, 'Summon Shadow should preserve sourced 15000ms hit time');
+assert.strictEqual(summonShadowData.summon.totalLifeTime, 1200000, 'Summon Shadow should preserve sourced summon lifetime');
+assert.strictEqual(summonShadowData.summon.timeLostIdle, 500, 'Summon Shadow should preserve sourced idle time loss');
+assert.strictEqual(summonShadowData.summon.timeLostActive, 1000, 'Summon Shadow should preserve sourced active time loss');
+assert.strictEqual(summonShadowData.summon.expPenalty, 0.3, 'Summon Shadow should preserve sourced exp penalty');
+assert.strictEqual(summonShadowData.summon.itemConsumeSteps, 1, 'Summon Shadow should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonShadowData.summon.itemIdOT, 1458, 'Summon Shadow should preserve sourced ongoing crystal item id');
+assert.strictEqual(summonShadowData.levels.length, 18, 'Summon Shadow should preserve sourced 18 base levels');
+assert.strictEqual(summonShadowData.levels[0].mp, 39, 'Summon Shadow level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonShadowData.levels[0].itemCount, 3, 'Summon Shadow level 1 should preserve sourced crystal count');
+assert.strictEqual(summonShadowData.levels[0].itemCountOT, 0, 'Summon Shadow level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonShadowData.levels[0].npcId, 12070, 'Summon Shadow level 1 should preserve sourced npcId');
+assert.strictEqual(summonShadowData.levels[3].reuse, 21600000, 'Summon Shadow level 4 should preserve sourced 6-hour reuse');
+assert.strictEqual(summonShadowData.levels[17].mp, 137, 'Summon Shadow level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonShadowData.levels[17].itemCount, 8, 'Summon Shadow level 18 should preserve sourced crystal count');
+assert.strictEqual(summonShadowData.levels[17].itemCountOT, 6, 'Summon Shadow level 18 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonShadowData.levels[17].npcId, 12455, 'Summon Shadow level 18 should preserve sourced npcId');
+assert.strictEqual(summonShadowData.levels[17].reuse, 20000, 'Summon Shadow trained levels should preserve sourced 20000ms reuse');
+const summonShadow = skill({ selfId: 1128, name: 'Summon Shadow', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonShadow.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Shadow should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonShadow.fetchTargetKind(), 'self', 'Summon Shadow should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonShadow.fetchSsBoost(), 0, 'Summon Shadow should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
