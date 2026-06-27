@@ -1293,6 +1293,42 @@ assert.strictEqual(undeadReposeOutcome.damage, 0, 'Repose should not be routed a
 assert.strictEqual(undeadReposeOutcome.aggroRemoved, true, 'Repose should mark successful AGGREMOVE on undead targets');
 assert.strictEqual(undeadReposeOutcome.effectResisted, false, 'Repose should pass sourced AGGREMOVE success checks on undead targets');
 
+const requiemData = activeSkills.find((entry) => entry.selfId === 1049);
+assert(requiemData, 'Requiem should be present in active skills data');
+assert.strictEqual(requiemData.template.distance, -1, 'Requiem should preserve sourced self-centered TARGET_AURA_UNDEAD semantics');
+assert.strictEqual(requiemData.time.hitTime, 7000, 'Requiem should preserve sourced 7000ms hit time');
+assert.strictEqual(requiemData.time.reuse, 20000, 'Requiem should preserve sourced 20000ms reuse');
+assert.strictEqual(requiemData.time.buff, 120000, 'Requiem should preserve sourced 120 second aggression debuff duration');
+assert.strictEqual(requiemData.levels.length, 14, 'Requiem should preserve sourced 14 base levels');
+assert.strictEqual(requiemData.levels[0].power, 35, 'Requiem level 1 should preserve sourced AGGREMOVE power');
+assert.strictEqual(requiemData.levels[13].power, 35, 'Requiem level 14 should preserve sourced AGGREMOVE power');
+assert.strictEqual(requiemData.levels[0].mp, 53, 'Requiem level 1 MP should use sourced initial + consume total');
+assert.strictEqual(requiemData.levels[13].mp, 103, 'Requiem level 14 MP should use sourced initial + consume total');
+const requiem = skill({ selfId: 1049, name: 'Requiem', spell: true, power: 35, level: 14, distance: -1, buff: 120000 });
+const livingRequiemTarget = creature({ id: 2000510, mDef: 50 });
+const livingRequiemOutcome = SkillEffects.execute(session(), caster, livingRequiemTarget, requiem, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(requiem.fetchSkillType(), C4SkillRules.AGGRO_REMOVE, 'Requiem should resolve as sourced AGGREMOVE');
+assert.strictEqual(requiem.fetchTargetKind(), 'enemy', 'Requiem should resolve as an enemy undead-only aggro remove');
+assert.strictEqual(requiem.fetchSemantic().trait, 'derangement', 'Requiem should use sourced AGGREMOVE derangement vulnerability semantics');
+assert.strictEqual(requiem.fetchSemantic().baseLandRate, 35, 'Requiem should use sourced power 35 as land rate');
+assert.strictEqual(requiem.fetchSemantic().undeadOnly, true, 'Requiem should preserve sourced TARGET_AURA_UNDEAD semantics');
+assert.strictEqual(livingRequiemOutcome.aggroRemoved, false, 'Requiem should not remove aggro from living targets');
+assert.strictEqual(livingRequiemOutcome.effectResisted, true, 'Requiem should reject living targets through TARGET_AURA_UNDEAD');
+const undeadRequiemTarget = creature({ id: 2000511, mDef: 50 });
+undeadRequiemTarget.fetchUndead = () => true;
+const undeadRequiemOutcome = SkillEffects.execute(session(), caster, undeadRequiemTarget, requiem, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(undeadRequiemOutcome.damage, 0, 'Requiem should not be routed as magic damage');
+assert.strictEqual(undeadRequiemOutcome.aggroRemoved, true, 'Requiem should mark successful AGGREMOVE on undead targets');
+assert.strictEqual(undeadRequiemOutcome.effectResisted, false, 'Requiem should pass sourced AGGREMOVE success checks on undead targets');
+
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
 assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');
