@@ -2391,6 +2391,26 @@ assert.strictEqual(sealFlameOutcome.effect.dot.count, 15, 'Seal of Flame should 
 assert.strictEqual(sealFlameOutcome.effect.dot.intervalMs, 1000, 'Seal of Flame should tick every sourced second');
 EffectStore.remove(sealFlameTarget, 'seal_of_flame');
 
+const blazingCircleData = activeSkills.find((entry) => entry.selfId === 1171);
+assert(blazingCircleData, 'Blazing Circle should be present in active skills data');
+assert.strictEqual(blazingCircleData.levels.length, 19, 'Blazing Circle should preserve sourced 19 base levels');
+assert.strictEqual(blazingCircleData.levels[18].power, 64, 'Blazing Circle level 19 should preserve sourced power 64');
+assert.strictEqual(blazingCircleData.levels[18].mp, 103, 'Blazing Circle level 19 MP should use sourced initial + consume total');
+const blazingCircle = skill({ selfId: 1171, name: 'Blazing Circle', spell: true, power: 64, level: 19, distance: -1 });
+assert.strictEqual(blazingCircle.fetchSkillType(), C4SkillRules.DAMAGE, 'Blazing Circle should resolve as sourced MDAM damage');
+assert.strictEqual(blazingCircle.fetchSemantic().trait, 'fire', 'Blazing Circle should preserve sourced fire element');
+assert.strictEqual(blazingCircle.fetchTargetKind(), 'enemy', 'Blazing Circle should resolve as an enemy nuke');
+
+const frostWallData = activeSkills.find((entry) => entry.selfId === 1174);
+assert(frostWallData, 'Frost Wall should be present in active skills data');
+assert.strictEqual(frostWallData.levels.length, 22, 'Frost Wall should preserve sourced 22 base levels');
+assert.strictEqual(frostWallData.levels[21].power, 76, 'Frost Wall level 22 should preserve sourced power 76');
+assert.strictEqual(frostWallData.levels[21].mp, 103, 'Frost Wall level 22 MP should use sourced initial + consume total');
+const frostWall = skill({ selfId: 1174, name: 'Frost Wall', spell: true, power: 76, level: 22, distance: 50 });
+assert.strictEqual(frostWall.fetchSkillType(), C4SkillRules.DAMAGE, 'Frost Wall should resolve as sourced MDAM damage');
+assert.strictEqual(frostWall.fetchSemantic().trait, 'water', 'Frost Wall should preserve sourced water element');
+assert.strictEqual(frostWall.fetchTargetKind(), 'enemy', 'Frost Wall should resolve as an enemy nuke');
+
 const aquaSwirlData = activeSkills.find((entry) => entry.selfId === 1175);
 assert(aquaSwirlData, 'Aqua Swirl should be present in active skills data');
 assert.strictEqual(aquaSwirlData.levels.length, 8, 'Aqua Swirl should preserve sourced 8 base levels');
