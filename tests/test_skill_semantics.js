@@ -92,6 +92,34 @@ assert.strictEqual(heal.fetchSkillType(), C4SkillRules.HEAL, 'Heal should resolv
 assert.strictEqual(wounded.fetchHp(), 89, 'Heal should restore datapack power without invented MAtk scaling');
 assert.strictEqual(healOutcome.damage, 0, 'Heal should not be routed as damage');
 
+[
+    { id: 45, name: 'Divine Heal', levels: 9, target: 'self', lastPower: 219, lastMp: 107, healLevel: 9 },
+    { id: 58, name: 'Elemental Heal', levels: 55, target: 'self', lastPower: 546, lastMp: 239, healLevel: 55 },
+    { id: 69, name: 'Sacrifice', levels: 25, target: 'friendly', lastPower: 1170, lastMp: 0, lastHp: 1560, healLevel: 25 },
+    { id: 262, name: 'Holy Blessing', levels: 37, target: 'friendly', lastPower: 546, lastMp: 191, healLevel: 37 },
+    { id: 1027, name: 'Group Heal', levels: 15, target: 'party', lastPower: 241, lastMp: 103, healLevel: 15 },
+    { id: 1127, name: 'Servitor Heal', levels: 45, target: 'pet', lastPower: 936, lastMp: 120, healLevel: 45 },
+    { id: 4080, name: 'Dark Heal', levels: 1, target: 'friendly', lastPower: 627, lastMp: 98, healLevel: 1 },
+    { id: 4115, name: 'Aden Heal', levels: 1, target: 'friendly', lastPower: 689, lastMp: 105, healLevel: 1 }
+].forEach(({ id, name, levels, target, lastPower, lastMp, lastHp = 0, healLevel }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].power, lastPower, `${name} should preserve sourced final heal power`);
+    assert.strictEqual(data.levels[levels - 1].mp, lastMp, `${name} should preserve sourced final MP cost`);
+    assert.strictEqual(data.levels[levels - 1].hp, lastHp, `${name} should preserve sourced final HP cost`);
+    const healTarget = creature({ id: 2000100 + id, hp: 100, maxHp: 2000 });
+    const healSkill = skill({ selfId: id, name, spell: true, power: lastPower, level: healLevel });
+    const outcome = SkillEffects.execute(session(), caster, healTarget, healSkill, {
+        magicSkill: true,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(healSkill.fetchSkillType(), C4SkillRules.HEAL, `${name} should resolve to HEAL`);
+    assert.strictEqual(healSkill.fetchTargetKind(), target, `${name} should preserve sourced target semantics`);
+    assert.strictEqual(healSkill.fetchSsBoost(), 0, `${name} should not consume offensive shot boost semantics`);
+    assert.strictEqual(outcome.heal, Math.min(lastPower, 1900), `${name} should heal by sourced power`);
+});
+
 const greaterHealData = activeSkills.find((entry) => entry.selfId === 1217);
 assert(greaterHealData, 'Greater Heal should be present in active skills data');
 assert.strictEqual(greaterHealData.levels.length, 33, 'Greater Heal should preserve sourced 33 base levels');
@@ -138,7 +166,7 @@ const greaterGroupHealOutcome = SkillEffects.execute(session(), caster, greaterG
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(greaterGroupHeal.fetchSkillType(), C4SkillRules.HEAL, 'Greater Group Heal should resolve to HEAL');
-assert.strictEqual(greaterGroupHeal.fetchTargetKind(), 'friendly', 'Greater Group Heal should remain castable on selected friendly targets until party-radius execution exists');
+assert.strictEqual(greaterGroupHeal.fetchTargetKind(), 'party', 'Greater Group Heal should preserve sourced TARGET_PARTY semantics');
 assert.strictEqual(greaterGroupHealOutcome.heal, 687, 'Greater Group Heal level 33 should heal by sourced power 687');
 assert.strictEqual(greaterGroupHealTarget.fetchHp(), 787, 'Greater Group Heal should apply sourced power to target HP');
 
