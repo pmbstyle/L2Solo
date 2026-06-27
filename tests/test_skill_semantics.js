@@ -838,6 +838,27 @@ assert.strictEqual(summonSoulless.fetchSkillType(), C4SkillRules.SUMMON, 'Summon
 assert.strictEqual(summonSoulless.fetchTargetKind(), 'self', 'Summon Soulless should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonSoulless.fetchSsBoost(), 0, 'Summon Soulless should not consume offensive shot boost semantics');
 
+const summonBindingCubicData = activeSkills.find((entry) => entry.selfId === 1279);
+assert(summonBindingCubicData, 'Summon Binding Cubic should be present in active skills data');
+assert.strictEqual(summonBindingCubicData.time.hitTime, 6000, 'Summon Binding Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonBindingCubicData.summon.totalLifeTime, 900000, 'Summon Binding Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonBindingCubicData.summon.expPenalty, 0, 'Summon Binding Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonBindingCubicData.summon.isCubic, true, 'Summon Binding Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonBindingCubicData.summon.npcId, 6, 'Summon Binding Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonBindingCubicData.summon.activationChance, 12, 'Summon Binding Cubic should preserve sourced activation chance');
+assert.strictEqual(summonBindingCubicData.summon.activationTime, 30, 'Summon Binding Cubic should preserve sourced activation time');
+assert.strictEqual(summonBindingCubicData.levels.length, 9, 'Summon Binding Cubic should preserve sourced 9 base levels');
+assert.strictEqual(summonBindingCubicData.levels[0].power, 282, 'Summon Binding Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonBindingCubicData.levels[0].mp, 35, 'Summon Binding Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonBindingCubicData.levels[0].itemCount, 5, 'Summon Binding Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonBindingCubicData.levels[8].power, 1822, 'Summon Binding Cubic level 9 should preserve sourced cubic power');
+assert.strictEqual(summonBindingCubicData.levels[8].mp, 67, 'Summon Binding Cubic level 9 MP should use sourced initial + consume total');
+assert.strictEqual(summonBindingCubicData.levels[8].itemCount, 13, 'Summon Binding Cubic level 9 should preserve sourced crystal count');
+const summonBindingCubic = skill({ selfId: 1279, name: 'Summon Binding Cubic', spell: true, power: 1822, level: 9, distance: -1 });
+assert.strictEqual(summonBindingCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Binding Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonBindingCubic.fetchTargetKind(), 'self', 'Summon Binding Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonBindingCubic.fetchSsBoost(), 0, 'Summon Binding Cubic should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
