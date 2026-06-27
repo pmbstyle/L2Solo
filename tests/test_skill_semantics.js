@@ -1027,6 +1027,28 @@ assert.strictEqual(summonNightshade.fetchSkillType(), C4SkillRules.SUMMON, 'Summ
 assert.strictEqual(summonNightshade.fetchTargetKind(), 'self', 'Summon Nightshade should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonNightshade.fetchSsBoost(), 0, 'Summon Nightshade should not consume offensive shot boost semantics');
 
+const summonCursedManData = activeSkills.find((entry) => entry.selfId === 1334);
+assert(summonCursedManData, 'Summon Cursed Man should be present in active skills data');
+assert.strictEqual(summonCursedManData.template.distance, 40, 'Summon Cursed Man should preserve sourced corpse cast range');
+assert.strictEqual(summonCursedManData.time.hitTime, 1500, 'Summon Cursed Man should preserve sourced 1500ms hit time');
+assert.strictEqual(summonCursedManData.summon.totalLifeTime, 1200000, 'Summon Cursed Man should preserve sourced summon lifetime');
+assert.strictEqual(summonCursedManData.summon.expPenalty, 0.15, 'Summon Cursed Man should preserve sourced exp penalty');
+assert.strictEqual(summonCursedManData.summon.itemConsumeSteps, 4, 'Summon Cursed Man should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonCursedManData.summon.effectRange, 400, 'Summon Cursed Man should preserve sourced effect range');
+assert.strictEqual(summonCursedManData.levels.length, 7, 'Summon Cursed Man should preserve sourced 7 base levels');
+assert.strictEqual(summonCursedManData.levels[0].mp, 103, 'Summon Cursed Man level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonCursedManData.levels[0].itemId, 1459, 'Summon Cursed Man should preserve sourced crystal item id');
+assert.strictEqual(summonCursedManData.levels[0].itemCountOT, 2, 'Summon Cursed Man level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonCursedManData.levels[0].npcId, 13179, 'Summon Cursed Man level 1 should preserve sourced npcId');
+assert.strictEqual(summonCursedManData.levels[6].mp, 137, 'Summon Cursed Man level 7 MP should use sourced initial + consume total');
+assert.strictEqual(summonCursedManData.levels[6].itemCount, 3, 'Summon Cursed Man level 7 should preserve sourced crystal count');
+assert.strictEqual(summonCursedManData.levels[6].itemCountOT, 4, 'Summon Cursed Man level 7 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonCursedManData.levels[6].npcId, 13185, 'Summon Cursed Man level 7 should preserve sourced npcId');
+const summonCursedMan = skill({ selfId: 1334, name: 'Summon Cursed Man', spell: true, power: 1, level: 7, distance: 40 });
+assert.strictEqual(summonCursedMan.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Cursed Man should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonCursedMan.fetchTargetKind(), 'corpse_mob', 'Summon Cursed Man should preserve sourced TARGET_CORPSE_MOB semantics');
+assert.strictEqual(summonCursedMan.fetchSsBoost(), 0, 'Summon Cursed Man should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
