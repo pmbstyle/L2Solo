@@ -778,6 +778,26 @@ assert.strictEqual(summonSilhouette.fetchSkillType(), C4SkillRules.SUMMON, 'Summ
 assert.strictEqual(summonSilhouette.fetchTargetKind(), 'self', 'Summon Silhouette should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonSilhouette.fetchSsBoost(), 0, 'Summon Silhouette should not consume offensive shot boost semantics');
 
+const summonKaiData = activeSkills.find((entry) => entry.selfId === 1276);
+assert(summonKaiData, 'Summon Kai the Cat should be present in active skills data');
+assert.strictEqual(summonKaiData.time.hitTime, 15000, 'Summon Kai the Cat should preserve sourced 15000ms hit time');
+assert.strictEqual(summonKaiData.summon.totalLifeTime, 1200000, 'Summon Kai the Cat should preserve sourced summon lifetime');
+assert.strictEqual(summonKaiData.summon.expPenalty, 0.1, 'Summon Kai the Cat should preserve sourced exp penalty');
+assert.strictEqual(summonKaiData.summon.itemConsumeSteps, 4, 'Summon Kai the Cat should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonKaiData.levels.length, 14, 'Summon Kai the Cat should preserve sourced 14 base levels');
+assert.strictEqual(summonKaiData.levels[0].mp, 70, 'Summon Kai the Cat level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonKaiData.levels[0].itemId, 1459, 'Summon Kai the Cat should preserve sourced crystal item id');
+assert.strictEqual(summonKaiData.levels[0].itemCountOT, 1, 'Summon Kai the Cat level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonKaiData.levels[0].npcId, 12477, 'Summon Kai the Cat level 1 should preserve sourced npcId');
+assert.strictEqual(summonKaiData.levels[13].mp, 137, 'Summon Kai the Cat level 14 MP should use sourced initial + consume total');
+assert.strictEqual(summonKaiData.levels[13].itemCount, 4, 'Summon Kai the Cat level 14 should preserve sourced crystal count');
+assert.strictEqual(summonKaiData.levels[13].itemCountOT, 3, 'Summon Kai the Cat level 14 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonKaiData.levels[13].npcId, 12536, 'Summon Kai the Cat level 14 should preserve sourced npcId');
+const summonKai = skill({ selfId: 1276, name: 'Summon Kai the Cat', spell: true, power: 1, level: 14, distance: -1 });
+assert.strictEqual(summonKai.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Kai the Cat should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonKai.fetchTargetKind(), 'self', 'Summon Kai the Cat should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonKai.fetchSsBoost(), 0, 'Summon Kai the Cat should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
