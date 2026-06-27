@@ -3,12 +3,14 @@ const DAMAGE_EFFECT = 'damageEffect';
 const HEAL = 'heal';
 const HEAL_PERCENT = 'healPercent';
 const HEAL_HOT = 'healHot';
+const HEAL_STATIC = 'healStatic';
 const HOT = 'hot';
 const EFFECT = 'effect';
 const BLOW = 'blow';
 const CLEANSE = 'cleanse';
 const HEAL_CLEANSE = 'healCleanse';
 const MANA_RECHARGE = 'manaRecharge';
+const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
 
 const RULES = {
@@ -36,7 +38,10 @@ const RULES = {
     69: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     61: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     96: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', baseLandRate: 100, dot: { count: 7, intervalMs: 3000, damageByLevel: [39, 51, 66, 81, 93, 102] } },
+    109: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [20] },
+    121: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [9.1, 13, 16.6, 20, 23, 25.7] },
     129: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000 } },
+    181: { skillType: HEAL_STATIC, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [1685], condition: { actorHpPercentAtMost: 10 } },
     262: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     263: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     278: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -111,6 +116,7 @@ const RULES = {
     1145: { skillType: EFFECT, trait: 'buff', effect: 'bright_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mAtkMul: [1.55, 1.65, 1.75] } },
     1146: { skillType: EFFECT, trait: 'buff', effect: 'mighty_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
     1154: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
+    1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
     1160: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     1164: { skillType: EFFECT, trait: 'debuff', effect: 'curse_weakness', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAtkMul: [0.83, 0.8, 0.8, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77] } },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },
@@ -149,7 +155,10 @@ const RULES = {
     1333: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1334: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     4080: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    4091: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [14] },
     4115: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    2005: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [400] },
+    2038: { skillType: HEAL_STATIC, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [435] },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7031: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -215,6 +224,7 @@ function resolve(skill = {}) {
         baseLandRate: resolveByLevel(rule.baseLandRateByLevel, skill.level) ?? rule.baseLandRate ?? inferred.baseLandRate,
         blowChance: rule.blowChance ?? inferred.blowChance,
         healPower: resolveByLevel(rule.healPowerByLevel, skill.level),
+        manaPower: resolveByLevel(rule.manaPowerByLevel, skill.level),
         dot: rule.dot || inferred.dot || null,
         manaDot: rule.manaDot || inferred.manaDot || null,
         hot: resolveHot(rule, inferred, skill.level),
@@ -341,12 +351,14 @@ module.exports = {
     HEAL,
     HEAL_PERCENT,
     HEAL_HOT,
+    HEAL_STATIC,
     HOT,
     EFFECT,
     BLOW,
     CLEANSE,
     HEAL_CLEANSE,
     MANA_RECHARGE,
+    MANA_HEAL,
     SUMMON,
     resolve,
     normalizeKey

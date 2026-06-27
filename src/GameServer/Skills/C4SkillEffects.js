@@ -33,6 +33,11 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.HEAL_STATIC) {
+        result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.HEAL_HOT) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.effect = applyEffect(session, target, skill, semantic);
@@ -59,6 +64,11 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.MANA_RECHARGE) {
         result.mpRestore = applyManaRecharge(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.MANA_HEAL) {
+        result.mpRestore = applyManaHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
     }
 
@@ -143,6 +153,17 @@ function applyManaRecharge(session, actor, target, skill, semantic, magicSkill, 
         casterLevel: actor.fetchLevel?.(),
         targetLevel: target.fetchLevel?.()
     });
+    const maxMp = Number(target.fetchMaxMp?.()) || 0;
+    const currentMp = Number(target.fetchMp?.()) || 0;
+    const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + amount) : currentMp + amount;
+    target.setMp(nextMp);
+    refreshVitals(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return Math.max(0, nextMp - currentMp);
+}
+
+function applyManaHeal(session, actor, target, skill, semantic, magicSkill, attack) {
+    const amount = Math.round(Number(semantic.manaPower ?? skill.fetchPower()) || 0);
     const maxMp = Number(target.fetchMaxMp?.()) || 0;
     const currentMp = Number(target.fetchMp?.()) || 0;
     const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + amount) : currentMp + amount;

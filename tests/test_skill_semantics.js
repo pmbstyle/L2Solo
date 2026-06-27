@@ -219,6 +219,64 @@ assert.strictEqual(benediction.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Ben
 assert.strictEqual(benedictionOutcome.heal, 900, 'Benediction should restore up to 100% of max HP');
 assert.strictEqual(benedictionTarget.fetchHp(), 1000, 'Benediction should clamp the 100% heal at max HP');
 
+[
+    { id: 109, name: 'Spirit of Ogre', levels: 1, type: C4SkillRules.HEAL_PERCENT, target: 'self', power: 20, mp: 5, buff: 120000, expectedHeal: 200 },
+    { id: 121, name: 'Battle Roar', levels: 6, type: C4SkillRules.HEAL_PERCENT, target: 'self', power: 25.7, dataPower: 26, mp: 33, buff: 600000, expectedHeal: 257 },
+    { id: 4091, name: 'NPC Ogre Stun', levels: 1, type: C4SkillRules.HEAL_PERCENT, target: 'self', power: 14, mp: 18, buff: 600000, expectedHeal: 140 },
+    { id: 181, name: 'Revival', levels: 1, type: C4SkillRules.HEAL_STATIC, target: 'self', power: 1685, mp: 25, buff: 0, expectedHeal: 900 },
+    { id: 2038, name: 'Quick healing potion', levels: 1, type: C4SkillRules.HEAL_STATIC, target: 'self', power: 435, mp: 0, buff: 0, expectedHeal: 435 }
+].forEach(({ id, name, levels, type, target, power, dataPower = power, mp, buff, expectedHeal }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} should preserve sourced name`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].power, dataPower, `${name} active data should preserve schema-safe final power`);
+    assert.strictEqual(data.levels[levels - 1].mp, mp, `${name} should preserve sourced final MP cost`);
+    assert.strictEqual(data.time.buff, buff, `${name} should preserve sourced buff/effect duration`);
+    const recoveryTarget = creature({ id: 2000200 + id, hp: 100, maxHp: 1000 });
+    const recoverySkill = skill({ selfId: id, name, spell: true, power, level: levels, distance: -1 });
+    const outcome = SkillEffects.execute(session(), recoveryTarget, recoveryTarget, recoverySkill, {
+        magicSkill: recoverySkill.fetchSpell(),
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(recoverySkill.fetchSkillType(), type, `${name} should resolve to sourced recovery skill type`);
+    assert.strictEqual(recoverySkill.fetchTargetKind(), target, `${name} should preserve sourced target semantics`);
+    assert.strictEqual(recoverySkill.fetchSemantic().healPower, power, `${name} should preserve sourced semantic recovery power`);
+    assert.strictEqual(outcome.heal, expectedHeal, `${name} should restore sourced HP amount`);
+});
+
+const revival = skill({ selfId: 181, name: 'Revival', spell: false, power: 1685, level: 1, distance: -1 });
+const revivalAttack = new Attack();
+assert(
+    revivalAttack.skillUseConditionFailure(creature({ hp: 101, maxHp: 1000 }), revival),
+    'Revival should be blocked above the sourced 10% HP condition'
+);
+assert.strictEqual(
+    revivalAttack.skillUseConditionFailure(creature({ hp: 100, maxHp: 1000 }), revival),
+    null,
+    'Revival should be allowed at the sourced 10% HP threshold'
+);
+
+[
+    { id: 1157, name: 'Body To Mind', levels: 5, power: 61, hp: 366, expectedMp: 61 },
+    { id: 2005, name: 'Mana potion', levels: 1, power: 400, hp: 0, expectedMp: 190 }
+].forEach(({ id, name, levels, power, hp, expectedMp }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].power, power, `${name} should preserve sourced final MP restore power`);
+    assert.strictEqual(data.levels[levels - 1].hp, hp, `${name} should preserve sourced HP consume`);
+    const manaTarget = creature({ id: 2000300 + id, mp: 10, maxMp: 200, level: 80 });
+    const manaSkill = skill({ selfId: id, name, spell: true, power, level: levels, distance: -1 });
+    const outcome = SkillEffects.execute(session(), manaTarget, manaTarget, manaSkill, {
+        magicSkill: true,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(manaSkill.fetchSkillType(), C4SkillRules.MANA_HEAL, `${name} should resolve to MANAHEAL semantics`);
+    assert.strictEqual(manaSkill.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(outcome.mpRestore, expectedMp, `${name} should restore sourced MP without Recharge scaling`);
+});
+
 const rechargeData = activeSkills.find((entry) => entry.selfId === 1013);
 assert(rechargeData, 'Recharge should be present in active skills data');
 assert.strictEqual(rechargeData.levels.length, 32, 'Recharge should preserve sourced 32 base levels');
