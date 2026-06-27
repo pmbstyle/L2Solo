@@ -434,6 +434,57 @@ assert.strictEqual(partyBuffStatsTarget.collectiveAtkSpd, Math.round(Math.round(
 assert.strictEqual(partyBuffStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Dance of concentration should multiply sourced MAtkSpd');
 
 [
+    { id: 1010, name: 'Soul Shield', levels: 3, mp: 30, effect: 'soul_shield', stat: 'pDefMul', statValue: 1.15, statKind: 'mul' },
+    { id: 1043, name: 'Holy Weapon', levels: 1, mp: 23, effect: 'holy_weapon', stat: 'pAtkUndeadMul', statValue: 1.2, statKind: 'mul' },
+    { id: 1073, name: 'Kiss of Eva', levels: 2, mp: 48, effect: 'kiss_of_eva', stat: 'breath', statValue: 7, statKind: 'mul' },
+    { id: 1078, name: 'Concentration', levels: 6, mp: 64, effect: 'concentration', stat: 'cancelAdd', statValue: -53, statKind: 'add' },
+    { id: 1182, name: 'Resist Aqua', levels: 3, mp: 39, effect: 'resist_aqua', stat: 'waterVuln', statValue: 0.7, statKind: 'mul' },
+    { id: 1189, name: 'Resist Wind', levels: 3, mp: 39, effect: 'resist_wind', stat: 'windVuln', statValue: 0.7, statKind: 'mul' },
+    { id: 1191, name: 'Resist Fire', levels: 3, mp: 39, effect: 'resist_fire', stat: 'fireVuln', statValue: 0.7, statKind: 'mul' }
+].forEach(({ id, name, levels, mp, effect, stat, statValue, statKind }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} should preserve sourced skill name`);
+    assert.strictEqual(data.template.distance, 400, `${name} should preserve sourced TARGET_ONE cast range`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].mp, mp, `${name} should preserve sourced final MP cost`);
+    assert.strictEqual(data.time.buff, 1200000, `${name} should preserve sourced 1200s buff duration`);
+    assert.strictEqual(data.time.reuse, id === 1010 ? 5000 : 6000, `${name} should preserve sourced reuse`);
+    const buffTarget = statActor();
+    const friendlyBuff = skill({ selfId: id, name, spell: data.template.spell, power: 1, level: levels, distance: 400, buff: 1200000 });
+    const outcome = SkillEffects.execute(session(), caster, buffTarget, friendlyBuff, {
+        magicSkill: friendlyBuff.fetchSpell(),
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(friendlyBuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve to sourced BUFF effect semantics`);
+    assert.strictEqual(friendlyBuff.fetchTargetKind(), 'friendly', `${name} should preserve sourced friendly TARGET_ONE semantics`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply sourced effect key`);
+    if (statKind === 'add') {
+        assert.strictEqual(EffectStats.add(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    } else {
+        assert.strictEqual(EffectStats.multiplier(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    }
+});
+
+const soulShieldStatsTarget = statActor();
+SkillEffects.execute(session(), caster, soulShieldStatsTarget, skill({
+    selfId: 1010,
+    name: 'Soul Shield',
+    spell: true,
+    power: 1,
+    level: 3,
+    distance: 400,
+    buff: 1200000
+}), {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+calculateStats({}, soulShieldStatsTarget);
+assert.strictEqual(soulShieldStatsTarget.collectivePDef, Math.round(Math.round(Formulas.calcPDef(20, 100)) * 1.15), 'Soul Shield level 3 should multiply sourced PDef');
+
+[
     { id: 1157, name: 'Body To Mind', levels: 5, power: 61, hp: 366, expectedMp: 61 },
     { id: 2005, name: 'Mana potion', levels: 1, power: 400, hp: 0, expectedMp: 190 }
 ].forEach(({ id, name, levels, power, hp, expectedMp }) => {
