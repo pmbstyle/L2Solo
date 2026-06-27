@@ -1213,6 +1213,50 @@ SkillEffects.execute(session(), caster, firstFireSurrenderTarget, firstFireSurre
 });
 assert.strictEqual(EffectStats.multiplier(firstFireSurrenderTarget, 'fireVuln'), 1.25, 'Surrenders To Fire level 1 should use sourced fireVuln 1.25');
 
+[
+    { id: 1028, name: 'Might of Heaven', levels: 19, firstPower: 39, lastPower: 87, firstMp: 34, lastMp: 69 },
+    { id: 1031, name: 'Disrupt Undead', levels: 8, firstPower: 19, lastPower: 36, firstMp: 18, lastMp: 30 }
+].forEach(({ id, name, levels, firstPower, lastPower, firstMp, lastMp }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.distance, 400, `${name} should preserve sourced 400 cast range`);
+    assert.strictEqual(data.time.hitTime, 2500, `${name} should preserve sourced 2500ms hit time`);
+    assert.strictEqual(data.time.reuse, 4000, `${name} should preserve sourced 4000ms reuse`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[0].power, firstPower, `${name} level 1 should preserve sourced power`);
+    assert.strictEqual(data.levels[levels - 1].power, lastPower, `${name} final level should preserve sourced power`);
+    assert.strictEqual(data.levels[0].mp, firstMp, `${name} level 1 MP should use sourced initial + consume total`);
+    assert.strictEqual(data.levels[levels - 1].mp, lastMp, `${name} final MP should use sourced initial + consume total`);
+
+    const holyNuke = skill({ selfId: id, name, spell: true, power: lastPower, level: levels, distance: 400 });
+    const livingTarget = creature({ id: 2000300 + id, mDef: 50 });
+    const livingOutcome = SkillEffects.execute(session(), caster, livingTarget, holyNuke, {
+        magicSkill: true,
+        rng: () => 0,
+        attack: { prepareSkillDamage: () => 999, clearLoadedShot() {} }
+    });
+    assert.strictEqual(holyNuke.fetchSkillType(), C4SkillRules.DAMAGE, `${name} should resolve as magic damage`);
+    assert.strictEqual(holyNuke.fetchTargetKind(), 'enemy', `${name} should resolve as an enemy undead-only nuke`);
+    assert.strictEqual(holyNuke.fetchSemantic().trait, 'holy', `${name} should preserve sourced holy element semantics`);
+    assert.strictEqual(holyNuke.fetchSemantic().undeadOnly, true, `${name} should preserve sourced TARGET_UNDEAD semantics`);
+    assert.strictEqual(holyNuke.fetchSsBoost(), 1, `${name} should keep offensive magic shot boost semantics`);
+    assert.strictEqual(livingOutcome.damage, 0, `${name} should not damage living targets`);
+    assert.strictEqual(livingOutcome.effectResisted, true, `${name} should reject living targets through TARGET_UNDEAD`);
+
+    const undeadTarget = creature({ id: 2000400 + id, mDef: 50 });
+    undeadTarget.fetchUndead = () => true;
+    const undeadOutcome = SkillEffects.execute(session(), caster, undeadTarget, holyNuke, {
+        magicSkill: true,
+        rng: () => 0.99,
+        attack: new Attack()
+    });
+    assert.strictEqual(
+        undeadOutcome.damage,
+        Math.round(Formulas.calcMagicDamage(100, lastPower, 50)),
+        `${name} should damage undead targets with sourced holy MDAM power`
+    );
+});
+
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
 assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');

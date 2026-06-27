@@ -93,6 +93,8 @@ const RULES = {
         { category: 'bleed', maxLevelByLevel: [3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9] }
     ] },
     1027: { skillType: HEAL, trait: 'heal', target: 'party', ssBoost: 0 },
+    1028: { skillType: DAMAGE, trait: 'holy', target: 'enemy', ssBoost: 1, undeadOnly: true },
+    1031: { skillType: DAMAGE, trait: 'holy', target: 'enemy', ssBoost: 1, undeadOnly: true },
     1003: { skillType: EFFECT, trait: 'buff', effect: 'power_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
     1004: { skillType: EFFECT, trait: 'buff', effect: 'wisdom_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
     1005: { skillType: EFFECT, trait: 'buff', effect: 'blessing_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
