@@ -349,6 +349,91 @@ assert.strictEqual(auraStatsTarget.collectivePDef, Math.round(Formulas.calcPDef(
 assert.strictEqual(auraStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 33, 'Sprint should add sourced run speed');
 
 [
+    { id: 264, name: 'Song of Earth', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_earth', target: 'party', stat: 'pDefMul', statValue: 1.25, statKind: 'mul' },
+    { id: 265, name: 'Song of Life', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_life', target: 'party', stat: 'regHp', statValue: 1.2, statKind: 'mul' },
+    { id: 266, name: 'Song of Water', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_water', target: 'party', stat: 'pEvasionRateAdd', statValue: 3, statKind: 'add' },
+    { id: 267, name: 'Song of Warding', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_warding', target: 'party', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
+    { id: 268, name: 'Song of Wind', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_wind', target: 'party', stat: 'runSpdAdd', statValue: 20, statKind: 'add' },
+    { id: 269, name: 'Song of Hunter', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_hunter', target: 'party', stat: 'pCritRateMul', statValue: 2, statKind: 'mul' },
+    { id: 270, name: 'Song of Invocation', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_invocation', target: 'party', stat: 'darkVuln', statValue: 0.8, statKind: 'mul' },
+    { id: 271, name: 'Dance of Warrior', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_warrior', target: 'party', stat: 'pAtkMul', statValue: 1.12, statKind: 'mul' },
+    { id: 272, name: 'Dance of Inspiration', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_inspiration', target: 'party', stat: 'pAccuracyCombatAdd', statValue: 4, statKind: 'add' },
+    { id: 273, name: 'Dance of Mystic', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_mystic', target: 'party', stat: 'mAtkMul', statValue: 1.2, statKind: 'mul' },
+    { id: 274, name: 'Dance of Fire', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_fire', target: 'party', stat: 'pCritDamageMul', statValue: 1.5, statKind: 'mul' },
+    { id: 275, name: 'Dance of Fury', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_fury', target: 'party', stat: 'pAtkSpdMul', statValue: 1.15, statKind: 'mul' },
+    { id: 276, name: 'Dance of concentration', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_concentration', target: 'party', stat: 'castSpdMul', statValue: 1.3, statKind: 'mul', extraStat: 'cancelAdd', extraValue: -40 },
+    { id: 277, name: 'Dance of Light', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'dance_of_light', target: 'party', stat: 'pAtkUndeadMul', statValue: 1.3, statKind: 'mul' },
+    { id: 1002, name: 'Chant of Flame', levels: 3, mp: 204, buff: 1200000, reuse: 20000, effect: 'chant_of_flame', target: 'party', stat: 'castSpdMul', statValue: 1.3, statKind: 'mul' },
+    { id: 1006, name: 'Chant of Fire', levels: 3, mp: 188, buff: 1200000, reuse: 20000, effect: 'chant_of_fire', target: 'party', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
+    { id: 1007, name: 'Chant of Battle', levels: 3, mp: 154, buff: 1200000, reuse: 20000, effect: 'chant_of_battle', target: 'party', stat: 'pAtkMul', statValue: 1.15, statKind: 'mul' },
+    { id: 1009, name: 'Chant of Shielding', levels: 3, mp: 139, buff: 1200000, reuse: 20000, effect: 'chant_of_shielding', target: 'party', stat: 'pDefMul', statValue: 1.15, statKind: 'mul' }
+].forEach(({ id, name, levels, mp, buff, reuse, effect, target, stat, statValue, statKind, extraStat, extraValue }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} should preserve sourced skill name`);
+    assert.strictEqual(data.template.distance, -1, `${name} should preserve party/self-centered targeting distance`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].mp, mp, `${name} should preserve sourced final MP cost`);
+    assert.strictEqual(data.time.buff, buff, `${name} should preserve sourced buff duration`);
+    assert.strictEqual(data.time.reuse, reuse, `${name} should preserve sourced reuse`);
+    const partyTarget = statActor();
+    const partyBuff = skill({ selfId: id, name, spell: data.template.spell, power: 1, level: levels, distance: -1, buff });
+    const outcome = SkillEffects.execute(session(), caster, partyTarget, partyBuff, {
+        magicSkill: partyBuff.fetchSpell(),
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(partyBuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve to sourced BUFF effect semantics`);
+    assert.strictEqual(partyBuff.fetchTargetKind(), target, `${name} should preserve sourced target semantics`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply sourced effect key`);
+    if (statKind === 'add') {
+        assert.strictEqual(EffectStats.add(partyTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    } else {
+        assert.strictEqual(EffectStats.multiplier(partyTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    }
+    if (extraStat) {
+        assert.strictEqual(EffectStats.add(partyTarget, extraStat), extraValue, `${name} should preserve sourced ${extraStat} ${extraValue}`);
+    }
+});
+
+const partyBuffStatsTarget = statActor();
+[
+    { id: 264, name: 'Song of Earth', buff: 120000 },
+    { id: 266, name: 'Song of Water', buff: 120000 },
+    { id: 268, name: 'Song of Wind', buff: 120000 },
+    { id: 269, name: 'Song of Hunter', buff: 120000 },
+    { id: 271, name: 'Dance of Warrior', buff: 120000 },
+    { id: 272, name: 'Dance of Inspiration', buff: 120000 },
+    { id: 273, name: 'Dance of Mystic', buff: 120000 },
+    { id: 275, name: 'Dance of Fury', buff: 120000 },
+    { id: 276, name: 'Dance of concentration', buff: 120000 }
+].forEach(({ id, name, buff }) => {
+    SkillEffects.execute(session(), caster, partyBuffStatsTarget, skill({
+        selfId: id,
+        name,
+        spell: false,
+        power: 1,
+        level: 1,
+        distance: -1,
+        buff
+    }), {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+});
+calculateStats({}, partyBuffStatsTarget);
+assert.strictEqual(partyBuffStatsTarget.collectivePDef, Math.round(Math.round(Formulas.calcPDef(20, 100)) * 1.25), 'Song of Earth should multiply sourced PDef');
+assert.strictEqual(partyBuffStatsTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) + 3, 'Song of Water should add sourced evasion');
+assert.strictEqual(partyBuffStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 20, 'Song of Wind should add sourced run speed');
+assert.strictEqual(partyBuffStatsTarget.collectiveCritical, Formulas.calcCritical(30, 40) * 2, 'Song of Hunter should apply sourced rCrit basemul 1 as a 2x multiplier');
+assert.strictEqual(partyBuffStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.12), 'Dance of Warrior should multiply sourced PAtk');
+assert.strictEqual(partyBuffStatsTarget.collectiveAccur, Formulas.calcAccur(20, 30, 5) + 4, 'Dance of Inspiration should add sourced accuracy');
+assert.strictEqual(partyBuffStatsTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.2), 'Dance of Mystic should multiply sourced MAtk');
+assert.strictEqual(partyBuffStatsTarget.collectiveAtkSpd, Math.round(Math.round(Formulas.calcAtkSpd(30, 300)) * 1.15), 'Dance of Fury should multiply sourced PAtkSpd');
+assert.strictEqual(partyBuffStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Dance of concentration should multiply sourced MAtkSpd');
+
+[
     { id: 1157, name: 'Body To Mind', levels: 5, power: 61, hp: 366, expectedMp: 61 },
     { id: 2005, name: 'Mana potion', levels: 1, power: 400, hp: 0, expectedMp: 190 }
 ].forEach(({ id, name, levels, power, hp, expectedMp }) => {

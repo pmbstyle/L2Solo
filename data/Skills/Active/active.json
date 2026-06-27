@@ -586,7 +586,7 @@
     "levels": [{ "level": 1, "power": 1, "mp": 60, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 276,
-    "template": { "name": "Dance of Concentration", "passive": false, "spell": false, "distance": -1 },
+    "template": { "name": "Dance of concentration", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 10000, "buff": 120000 },
     "levels": [{ "level": 1, "power": 1, "mp": 60, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
