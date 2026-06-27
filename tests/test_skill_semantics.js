@@ -1006,6 +1006,27 @@ assert.strictEqual(summonSeraphim.fetchSkillType(), C4SkillRules.SUMMON, 'Summon
 assert.strictEqual(summonSeraphim.fetchTargetKind(), 'self', 'Summon Unicorn Seraphim should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonSeraphim.fetchSsBoost(), 0, 'Summon Unicorn Seraphim should not consume offensive shot boost semantics');
 
+const summonNightshadeData = activeSkills.find((entry) => entry.selfId === 1333);
+assert(summonNightshadeData, 'Summon Nightshade should be present in active skills data');
+assert.strictEqual(summonNightshadeData.time.hitTime, 15000, 'Summon Nightshade should preserve sourced 15000ms hit time');
+assert.strictEqual(summonNightshadeData.summon.totalLifeTime, 1200000, 'Summon Nightshade should preserve sourced summon lifetime');
+assert.strictEqual(summonNightshadeData.summon.expPenalty, 0.05, 'Summon Nightshade should preserve sourced exp penalty');
+assert.strictEqual(summonNightshadeData.summon.itemConsumeSteps, 4, 'Summon Nightshade should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonNightshadeData.levels.length, 10, 'Summon Nightshade should preserve sourced 10 base levels');
+assert.strictEqual(summonNightshadeData.levels[0].mp, 70, 'Summon Nightshade level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonNightshadeData.levels[1].mp, 108, 'Summon Nightshade level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonNightshadeData.levels[0].itemId, 1459, 'Summon Nightshade should preserve sourced crystal item id');
+assert.strictEqual(summonNightshadeData.levels[0].itemCountOT, 1, 'Summon Nightshade level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonNightshadeData.levels[0].npcId, 13165, 'Summon Nightshade level 1 should preserve sourced npcId');
+assert.strictEqual(summonNightshadeData.levels[9].mp, 123, 'Summon Nightshade level 10 MP should use sourced initial + consume total');
+assert.strictEqual(summonNightshadeData.levels[9].itemCount, 4, 'Summon Nightshade level 10 should preserve sourced crystal count');
+assert.strictEqual(summonNightshadeData.levels[9].itemCountOT, 3, 'Summon Nightshade level 10 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonNightshadeData.levels[9].npcId, 13174, 'Summon Nightshade level 10 should preserve sourced npcId');
+const summonNightshade = skill({ selfId: 1333, name: 'Summon Nightshade', spell: true, power: 1, level: 10, distance: -1 });
+assert.strictEqual(summonNightshade.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Nightshade should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonNightshade.fetchTargetKind(), 'self', 'Summon Nightshade should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonNightshade.fetchSsBoost(), 0, 'Summon Nightshade should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
