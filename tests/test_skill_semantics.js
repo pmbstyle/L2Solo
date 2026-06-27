@@ -709,6 +709,27 @@ const poisonAfterSurrenderOutcome = SkillEffects.execute(session(), caster, surr
 assert.strictEqual(poisonAfterSurrenderOutcome.effect.key, 'poison', 'Surrender To Poison should raise poison effect land chance through sourced poisonVuln');
 EffectStore.remove(surrenderedToPoison, 'poison');
 
+const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
+assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
+assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonStormCubicData.summon.totalLifeTime, 900000, 'Summon Storm Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonStormCubicData.summon.expPenalty, 0, 'Summon Storm Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonStormCubicData.summon.isCubic, true, 'Summon Storm Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonStormCubicData.summon.npcId, 1, 'Summon Storm Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonStormCubicData.summon.activationChance, 12, 'Summon Storm Cubic should preserve sourced activation chance');
+assert.strictEqual(summonStormCubicData.summon.activationTime, 10, 'Summon Storm Cubic should preserve sourced activation time');
+assert.strictEqual(summonStormCubicData.levels.length, 8, 'Summon Storm Cubic should preserve sourced 8 base levels');
+assert.strictEqual(summonStormCubicData.levels[0].power, 282, 'Summon Storm Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonStormCubicData.levels[0].mp, 35, 'Summon Storm Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonStormCubicData.levels[0].itemCount, 5, 'Summon Storm Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonStormCubicData.levels[7].power, 1975, 'Summon Storm Cubic level 8 should preserve sourced cubic power');
+assert.strictEqual(summonStormCubicData.levels[7].mp, 69, 'Summon Storm Cubic level 8 MP should use sourced initial + consume total');
+assert.strictEqual(summonStormCubicData.levels[7].itemCount, 14, 'Summon Storm Cubic level 8 should preserve sourced crystal count');
+const summonStormCubic = skill({ selfId: 10, name: 'Summon Storm Cubic', spell: true, power: 1975, level: 8, distance: -1 });
+assert.strictEqual(summonStormCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Storm Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonStormCubic.fetchTargetKind(), 'self', 'Summon Storm Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonStormCubic.fetchSsBoost(), 0, 'Summon Storm Cubic should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
