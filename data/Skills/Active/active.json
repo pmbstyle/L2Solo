@@ -63,7 +63,8 @@
     "selfId": 13,
     "template": { "name": "Summon Siege Golem", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 300000, "reuse": 20000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 530, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "summon": { "totalLifeTime": 1200000, "timeLostIdle": 1000, "timeLostActive": 1000, "expPenalty": 0, "itemConsumeSteps": 20, "itemIdOT": 2131, "requiresSiegeAttacker": true },
+    "levels": [{ "level": 1, "power": 1, "mp": 530, "hp": 0, "itemId": 1459, "itemCount": 300, "itemCountOT": 70, "npcId": 12251, "reuse": 20000 }]
 },{
     "selfId": 15,
     "template": { "name": "Charm", "passive": false, "spell": true, "distance": 600 },

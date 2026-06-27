@@ -730,6 +730,27 @@ assert.strictEqual(summonStormCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summ
 assert.strictEqual(summonStormCubic.fetchTargetKind(), 'self', 'Summon Storm Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonStormCubic.fetchSsBoost(), 0, 'Summon Storm Cubic should not consume offensive shot boost semantics');
 
+const summonSiegeGolemData = activeSkills.find((entry) => entry.selfId === 13);
+assert(summonSiegeGolemData, 'Summon Siege Golem should be present in active skills data');
+assert.strictEqual(summonSiegeGolemData.time.hitTime, 300000, 'Summon Siege Golem should preserve sourced 300000ms hit time');
+assert.strictEqual(summonSiegeGolemData.summon.totalLifeTime, 1200000, 'Summon Siege Golem should preserve sourced summon lifetime');
+assert.strictEqual(summonSiegeGolemData.summon.timeLostIdle, 1000, 'Summon Siege Golem should preserve sourced idle time loss');
+assert.strictEqual(summonSiegeGolemData.summon.timeLostActive, 1000, 'Summon Siege Golem should preserve sourced active time loss');
+assert.strictEqual(summonSiegeGolemData.summon.expPenalty, 0, 'Summon Siege Golem should preserve sourced zero exp penalty');
+assert.strictEqual(summonSiegeGolemData.summon.itemConsumeSteps, 20, 'Summon Siege Golem should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonSiegeGolemData.summon.itemIdOT, 2131, 'Summon Siege Golem should preserve sourced ongoing fuel item id');
+assert.strictEqual(summonSiegeGolemData.summon.requiresSiegeAttacker, true, 'Summon Siege Golem should preserve sourced siege attacker condition');
+assert.strictEqual(summonSiegeGolemData.levels.length, 1, 'Summon Siege Golem should preserve sourced single base level');
+assert.strictEqual(summonSiegeGolemData.levels[0].mp, 530, 'Summon Siege Golem MP should preserve sourced initial consume');
+assert.strictEqual(summonSiegeGolemData.levels[0].itemId, 1459, 'Summon Siege Golem should preserve sourced crystal item id');
+assert.strictEqual(summonSiegeGolemData.levels[0].itemCount, 300, 'Summon Siege Golem should preserve sourced crystal count');
+assert.strictEqual(summonSiegeGolemData.levels[0].itemCountOT, 70, 'Summon Siege Golem should preserve sourced ongoing fuel count');
+assert.strictEqual(summonSiegeGolemData.levels[0].npcId, 12251, 'Summon Siege Golem should preserve sourced npcId');
+const summonSiegeGolem = skill({ selfId: 13, name: 'Summon Siege Golem', spell: false, power: 1, level: 1, distance: -1 });
+assert.strictEqual(summonSiegeGolem.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Siege Golem should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonSiegeGolem.fetchTargetKind(), 'self', 'Summon Siege Golem should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonSiegeGolem.fetchSsBoost(), 0, 'Summon Siege Golem should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');

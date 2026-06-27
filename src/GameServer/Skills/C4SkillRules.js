@@ -14,6 +14,7 @@ const SUMMON = 'summon';
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
