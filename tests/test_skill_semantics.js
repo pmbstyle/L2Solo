@@ -793,6 +793,28 @@ assert.strictEqual(summonMechanicGolem.fetchSkillType(), C4SkillRules.SUMMON, 'S
 assert.strictEqual(summonMechanicGolem.fetchTargetKind(), 'self', 'Summon Mechanic Golem should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonMechanicGolem.fetchSsBoost(), 0, 'Summon Mechanic Golem should not consume offensive shot boost semantics');
 
+const summonPhantomCubicData = activeSkills.find((entry) => entry.selfId === 33);
+assert(summonPhantomCubicData, 'Summon Phantom Cubic should be present in active skills data');
+assert.strictEqual(summonPhantomCubicData.template.name, 'Summon Phantom Cubic', 'Summon Phantom Cubic should preserve sourced skill name');
+assert.strictEqual(summonPhantomCubicData.time.hitTime, 6000, 'Summon Phantom Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonPhantomCubicData.summon.totalLifeTime, 900000, 'Summon Phantom Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonPhantomCubicData.summon.expPenalty, 0, 'Summon Phantom Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonPhantomCubicData.summon.isCubic, true, 'Summon Phantom Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonPhantomCubicData.summon.npcId, 5, 'Summon Phantom Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonPhantomCubicData.summon.activationChance, 30, 'Summon Phantom Cubic should preserve sourced activation chance');
+assert.strictEqual(summonPhantomCubicData.summon.activationTime, 8, 'Summon Phantom Cubic should preserve sourced activation time');
+assert.strictEqual(summonPhantomCubicData.levels.length, 8, 'Summon Phantom Cubic should preserve sourced 8 base levels');
+assert.strictEqual(summonPhantomCubicData.levels[0].power, 282, 'Summon Phantom Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonPhantomCubicData.levels[0].mp, 35, 'Summon Phantom Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonPhantomCubicData.levels[0].itemCount, 2, 'Summon Phantom Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonPhantomCubicData.levels[7].power, 1975, 'Summon Phantom Cubic level 8 should preserve sourced cubic power');
+assert.strictEqual(summonPhantomCubicData.levels[7].mp, 69, 'Summon Phantom Cubic level 8 MP should use sourced initial + consume total');
+assert.strictEqual(summonPhantomCubicData.levels[7].itemCount, 7, 'Summon Phantom Cubic level 8 should preserve sourced crystal count');
+const summonPhantomCubic = skill({ selfId: 33, name: 'Summon Phantom Cubic', spell: true, power: 1975, level: 8, distance: -1 });
+assert.strictEqual(summonPhantomCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Phantom Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonPhantomCubic.fetchTargetKind(), 'self', 'Summon Phantom Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonPhantomCubic.fetchSsBoost(), 0, 'Summon Phantom Cubic should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
