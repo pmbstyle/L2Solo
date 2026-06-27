@@ -1167,6 +1167,52 @@ const poisonAfterSurrenderOutcome = SkillEffects.execute(session(), caster, surr
 assert.strictEqual(poisonAfterSurrenderOutcome.effect.key, 'poison', 'Surrender To Poison should raise poison effect land chance through sourced poisonVuln');
 EffectStore.remove(surrenderedToPoison, 'poison');
 
+[
+    { id: 1071, name: 'Surrender To Water', levels: 14, firstMp: 35, lastMp: 69, trait: 'water', stat: 'waterVuln', effect: 'surrender_to_water', nukeTrait: 'water' },
+    { id: 1074, name: 'Surrender To Wind', levels: 14, firstMp: 35, lastMp: 69, trait: 'wind', stat: 'windVuln', effect: 'surrender_to_wind', nukeTrait: 'wind' },
+    { id: 1083, name: 'Surrenders To Fire', levels: 17, firstMp: 12, lastMp: 69, trait: 'fire', stat: 'fireVuln', effect: 'surrender_to_fire', nukeTrait: 'fire' }
+].forEach(({ id, name, levels, firstMp, lastMp, trait, stat, effect, nukeTrait }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.distance, 900, `${name} should use sourced 900 cast range for trained levels`);
+    assert.strictEqual(data.time.hitTime, 1500, `${name} should preserve sourced 1500ms hit time`);
+    assert.strictEqual(data.time.reuse, 8000, `${name} should preserve sourced 8000ms reuse`);
+    assert.strictEqual(data.time.buff, 15000, `${name} should preserve sourced 15 second Debuff duration`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[0].power, 80, `${name} should preserve sourced power 80`);
+    assert.strictEqual(data.levels[0].mp, firstMp, `${name} level 1 MP should use sourced initial + consume total`);
+    assert.strictEqual(data.levels[levels - 1].mp, lastMp, `${name} final MP should use sourced initial + consume total`);
+    const surrendered = creature({ id: 2000040 + id, mDef: 50 });
+    const surrender = skill({ selfId: id, name, spell: true, power: 80, level: levels, distance: 900, buff: 15000 });
+    const outcome = SkillEffects.execute(session(), caster, surrendered, surrender, {
+        magicSkill: true,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(surrender.fetchTargetKind(), 'enemy', `${name} should resolve as an enemy weakness debuff`);
+    assert.strictEqual(surrender.fetchSemantic().trait, trait, `${name} should preserve sourced ${trait} weakness semantics`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply a structured ${trait} weakness debuff`);
+    assert.strictEqual(EffectStats.multiplier(surrendered, stat), 1.3, `${name} final level should use sourced ${stat} 1.3`);
+    const nuke = {
+        fetchPower: () => 10,
+        fetchSemantic: () => ({ trait: nukeTrait })
+    };
+    assert.strictEqual(
+        new Attack().prepareSkillDamage(caster, surrendered, nuke, true, () => 0.99),
+        Math.round(Formulas.calcMagicDamage(100, 10, 50) * 1.3),
+        `${name} should amplify ${nukeTrait}-trait magic damage by the sourced vulnerability multiplier`
+    );
+});
+
+const firstFireSurrenderTarget = creature({ id: 2000120, mDef: 50 });
+const firstFireSurrender = skill({ selfId: 1083, name: 'Surrenders To Fire', spell: true, power: 80, level: 1, distance: 900, buff: 15000 });
+SkillEffects.execute(session(), caster, firstFireSurrenderTarget, firstFireSurrender, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(EffectStats.multiplier(firstFireSurrenderTarget, 'fireVuln'), 1.25, 'Surrenders To Fire level 1 should use sourced fireVuln 1.25');
+
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
 assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');
