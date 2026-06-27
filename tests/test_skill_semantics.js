@@ -680,6 +680,35 @@ assert.strictEqual(
     'Surrender To Earth should amplify earth-trait magic damage by the sourced earthVuln multiplier'
 );
 
+const surrenderPoisonData = activeSkills.find((entry) => entry.selfId === 1224);
+assert(surrenderPoisonData, 'Surrender To Poison should be present in active skills data');
+assert.strictEqual(surrenderPoisonData.template.distance, 900, 'Surrender To Poison should use sourced 900 cast range for trained levels');
+assert.strictEqual(surrenderPoisonData.time.hitTime, 1500, 'Surrender To Poison should preserve sourced 1500ms hit time');
+assert.strictEqual(surrenderPoisonData.time.reuse, 8000, 'Surrender To Poison should preserve sourced 8000ms reuse');
+assert.strictEqual(surrenderPoisonData.time.buff, 15000, 'Surrender To Poison should preserve sourced 15 second Debuff duration');
+assert.strictEqual(surrenderPoisonData.levels.length, 17, 'Surrender To Poison should preserve sourced 17 base levels');
+assert.strictEqual(surrenderPoisonData.levels[0].mp, 12, 'Surrender To Poison level 1 MP should use sourced initial + consume total');
+assert.strictEqual(surrenderPoisonData.levels[16].mp, 69, 'Surrender To Poison level 17 MP should use sourced initial + consume total');
+const surrenderedToPoison = creature({ id: 2000018, mDef: 100 });
+const surrenderPoison = skill({ selfId: 1224, name: 'Surrender To Poison', spell: true, power: 80, level: 17, distance: 900, buff: 15000 });
+const surrenderPoisonOutcome = SkillEffects.execute(session(), caster, surrenderedToPoison, surrenderPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(surrenderPoison.fetchTargetKind(), 'enemy', 'Surrender To Poison should resolve as an enemy weakness debuff');
+assert.strictEqual(surrenderPoison.fetchSemantic().trait, 'poison', 'Surrender To Poison should preserve sourced poison weakness semantics');
+assert.strictEqual(surrenderPoisonOutcome.effect.key, 'surrender_to_poison', 'Surrender To Poison should apply a structured poison weakness debuff');
+assert.strictEqual(EffectStats.multiplier(surrenderedToPoison, 'poisonVuln'), 1.3, 'Surrender To Poison level 17 should use sourced poisonVuln 1.3');
+const poisonAfterSurrender = skill({ selfId: 129, name: 'Poison', spell: true, power: 3, level: 1, buff: 30000 });
+const poisonAfterSurrenderOutcome = SkillEffects.execute(session(), caster, surrenderedToPoison, poisonAfterSurrender, {
+    magicSkill: true,
+    rng: () => 0.8,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(poisonAfterSurrenderOutcome.effect.key, 'poison', 'Surrender To Poison should raise poison effect land chance through sourced poisonVuln');
+EffectStore.remove(surrenderedToPoison, 'poison');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');

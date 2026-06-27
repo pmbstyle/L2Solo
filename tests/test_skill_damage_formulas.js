@@ -79,6 +79,22 @@ assert.strictEqual(
     'magic skill damage should apply sourced elemental vulnerability multipliers by trait'
 );
 
+const poisonVulnerableTarget = target();
+EffectStore.apply(poisonVulnerableTarget, {
+    key: 'surrender_to_poison',
+    id: 1224,
+    level: 17,
+    type: 'debuff',
+    stats: { poisonVuln: 1.3 },
+    durationMs: 15000
+});
+const poisonDirectDamage = attack.prepareSkillDamage(actor(), poisonVulnerableTarget, skill({ spell: true, power: 10, trait: 'poison' }), true, () => 0.99);
+assert.strictEqual(
+    poisonDirectDamage,
+    Math.round(Formulas.calcMagicDamage(100, 10, 50)),
+    'non-elemental poison vulnerability should not be applied as direct magic damage'
+);
+
 const physicalActor = actor();
 physicalActor.soulshotLoaded = true;
 const strikeDamage = attack.prepareSkillDamage(physicalActor, target(), skill({ spell: false, power: 25 }), false, () => 0.99);

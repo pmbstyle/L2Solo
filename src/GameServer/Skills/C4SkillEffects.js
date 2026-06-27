@@ -279,7 +279,8 @@ const RESIST_STAT_BY_TRAIT = {
 function traitResistModifier(target, trait) {
     const stat = RESIST_STAT_BY_TRAIT[trait] || `${trait}Resist`;
     const resist = EffectStats.add(target, stat);
-    return Math.max(0, 1 - (resist / 100));
+    const vulnerability = EffectStats.multiplier(target, `${trait}Vuln`, 1);
+    return Math.max(0, 1 - (resist / 100)) * Math.max(0, vulnerability);
 }
 
 function applyLethal(target, semantic, rng, result) {

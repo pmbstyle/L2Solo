@@ -499,8 +499,10 @@ class Attack {
     }
 }
 
+const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+
 function traitVulnerabilityModifier(target, trait) {
-    if (!trait) return 1;
+    if (!ELEMENTAL_DAMAGE_TRAITS.has(trait)) return 1;
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
