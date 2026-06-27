@@ -25,7 +25,7 @@ function setCollectiveTotalMp(actor) {
 }
 
 function setCollectiveTotalLoad(actor) {
-    const base = Formulas.calcMaxLoad(actor.fetchCon());
+    const base = Formulas.calcMaxLoad(actor.fetchCon()) + EffectStats.add(actor, 'maxLoad');
     actor.setMaxLoad(base);
     actor.setLoad(actor.backpack.fetchTotalLoad());
 }

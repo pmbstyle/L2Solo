@@ -510,6 +510,25 @@ EffectStore.apply(bowVampiricTarget, {
 });
 assert.strictEqual(vampiricAttack.applyDamageAbsorb(session(), bowVampiricTarget, 333), 0, 'Vampiric Rage should not drain for bow attacks');
 
+const decreaseWeightData = activeSkills.find((entry) => entry.selfId === 1257);
+assert.strictEqual(decreaseWeightData.time.buff, 1200000, 'Decrease Weight active data should preserve sourced 1200s duration');
+assert.strictEqual(decreaseWeightData.levels[2].mp, 19, 'Decrease Weight active data should preserve sourced level 3 MP cost');
+const lighterTarget = statActor();
+const decreaseWeight = skill({ selfId: 1257, name: 'Decrease Weight', spell: true, power: 1, level: 3, buff: 1200000 });
+const decreaseWeightOutcome = SkillEffects.execute(session(), caster, lighterTarget, decreaseWeight, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(decreaseWeightOutcome.effect.key, 'decrease_weight', 'Decrease Weight should apply a structured maxLoad buff');
+assert.strictEqual(EffectStats.add(lighterTarget, 'maxLoad'), 9000, 'Decrease Weight level 3 should use sourced maxLoad +9000');
+calculateStats({}, lighterTarget);
+assert.strictEqual(
+    lighterTarget.maxLoad,
+    Formulas.calcMaxLoad(30) + 9000,
+    'Decrease Weight level 3 should increase runtime max load by the sourced amount'
+);
+
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
 const magicBarrierOutcome = SkillEffects.execute(session(), caster, magicBarrierTarget, magicBarrier, {
