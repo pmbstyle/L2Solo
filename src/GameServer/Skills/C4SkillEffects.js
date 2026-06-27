@@ -20,7 +20,8 @@ function execute(session, actor, target, skill, context = {}) {
         resisted: false,
         effectResisted: false,
         lethal: false,
-        mpRestore: 0
+        mpRestore: 0,
+        aggroRemoved: false
     };
 
     if (semantic.skillType === C4SkillRules.HEAL) {
@@ -99,6 +100,16 @@ function execute(session, actor, target, skill, context = {}) {
     if (semantic.undeadOnly && !isUndead(target)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.effectResisted = true;
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.AGGRO_REMOVE) {
+        if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
+            result.effectResisted = true;
+        } else {
+            result.aggroRemoved = true;
+        }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
 

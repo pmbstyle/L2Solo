@@ -12,6 +12,7 @@ const HEAL_CLEANSE = 'healCleanse';
 const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
+const AGGRO_REMOVE = 'aggroRemove';
 
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -105,6 +106,7 @@ const RULES = {
     1009: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_shielding', effectType: 'buff', target: 'party', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
     1032: { skillType: EFFECT, trait: 'buff', effect: 'invigor', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { bleedResist: [30, 40, 50] } },
     1033: { skillType: EFFECT, trait: 'buff', effect: 'resist_poison', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { poisonResist: [30, 40, 50] } },
+    1034: { skillType: AGGRO_REMOVE, trait: 'derangement', target: 'enemy', ssBoost: 1, undeadOnly: true, baseLandRateByLevel: [30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150] },
     1035: { skillType: EFFECT, trait: 'buff', effect: 'mental_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: {
         rootResist: [20, 30, 40, 50],
         sleepResist: [20, 30, 40, 50],
@@ -440,6 +442,7 @@ module.exports = {
     MANA_RECHARGE,
     MANA_HEAL,
     SUMMON,
+    AGGRO_REMOVE,
     resolve,
     normalizeKey
 };

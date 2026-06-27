@@ -1257,6 +1257,42 @@ assert.strictEqual(EffectStats.multiplier(firstFireSurrenderTarget, 'fireVuln'),
     );
 });
 
+const reposeData = activeSkills.find((entry) => entry.selfId === 1034);
+assert(reposeData, 'Repose should be present in active skills data');
+assert.strictEqual(reposeData.template.distance, -1, 'Repose should preserve sourced self-centered TARGET_UNDEAD radius semantics');
+assert.strictEqual(reposeData.time.hitTime, 1500, 'Repose should preserve sourced 1500ms hit time');
+assert.strictEqual(reposeData.time.reuse, 20000, 'Repose should preserve sourced 20000ms reuse');
+assert.strictEqual(reposeData.levels.length, 13, 'Repose should preserve sourced 13 base levels');
+assert.strictEqual(reposeData.levels[0].power, 30, 'Repose level 1 power should preserve sourced AGGREMOVE land rate');
+assert.strictEqual(reposeData.levels[12].power, 150, 'Repose level 13 power should preserve sourced AGGREMOVE land rate');
+assert.strictEqual(reposeData.levels[0].mp, 59, 'Repose level 1 MP should use sourced initial + consume total');
+assert.strictEqual(reposeData.levels[12].mp, 103, 'Repose level 13 MP should use sourced initial + consume total');
+const repose = skill({ selfId: 1034, name: 'Repose', spell: true, power: 150, level: 13, distance: -1 });
+const livingReposeTarget = creature({ id: 2000500, mDef: 50 });
+const livingReposeOutcome = SkillEffects.execute(session(), caster, livingReposeTarget, repose, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(repose.fetchSkillType(), C4SkillRules.AGGRO_REMOVE, 'Repose should resolve as sourced AGGREMOVE');
+assert.strictEqual(repose.fetchTargetKind(), 'enemy', 'Repose should resolve as an enemy undead-only aggro remove');
+assert.strictEqual(repose.fetchSemantic().trait, 'derangement', 'Repose should use sourced AGGREMOVE derangement vulnerability semantics');
+assert.strictEqual(repose.fetchSemantic().baseLandRate, 150, 'Repose level 13 should use sourced power as land rate');
+assert.strictEqual(repose.fetchSemantic().undeadOnly, true, 'Repose should preserve sourced TARGET_UNDEAD semantics');
+assert.strictEqual(repose.fetchSsBoost(), 1, 'Repose should keep offensive magic shot boost semantics');
+assert.strictEqual(livingReposeOutcome.aggroRemoved, false, 'Repose should not remove aggro from living targets');
+assert.strictEqual(livingReposeOutcome.effectResisted, true, 'Repose should reject living targets through TARGET_UNDEAD');
+const undeadReposeTarget = creature({ id: 2000501, mDef: 50 });
+undeadReposeTarget.fetchUndead = () => true;
+const undeadReposeOutcome = SkillEffects.execute(session(), caster, undeadReposeTarget, repose, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(undeadReposeOutcome.damage, 0, 'Repose should not be routed as magic damage');
+assert.strictEqual(undeadReposeOutcome.aggroRemoved, true, 'Repose should mark successful AGGREMOVE on undead targets');
+assert.strictEqual(undeadReposeOutcome.effectResisted, false, 'Repose should pass sourced AGGREMOVE success checks on undead targets');
+
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
 assert.strictEqual(summonStormCubicData.time.hitTime, 6000, 'Summon Storm Cubic should preserve sourced 6000ms hit time');
