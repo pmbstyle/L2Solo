@@ -396,6 +396,52 @@ assert.strictEqual(
     'Power Break level 3 should apply the L2J pAtkDown 0.77 stat multiplier'
 );
 
+const slowData = activeSkills.find((entry) => entry.selfId === 1160);
+assert(slowData, 'Slow should be present in active skills data');
+assert.strictEqual(slowData.levels.length, 15, 'Slow should preserve sourced 15 base levels');
+assert.strictEqual(slowData.levels[0].power, 80, 'Slow active data should preserve sourced power 80');
+assert.strictEqual(slowData.levels[14].mp, 69, 'Slow level 15 MP should use sourced initial + consume total');
+const slowed = statActor();
+const slow = skill({ selfId: 1160, name: 'Slow', spell: true, power: 80, level: 2, buff: 120000 });
+const slowOutcome = SkillEffects.execute(session(), caster, slowed, slow, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(slow.fetchTargetKind(), 'enemy', 'Slow should resolve as an enemy debuff');
+assert.strictEqual(slowOutcome.effect.key, 'slow', 'Slow should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(slowed, 'runSpdMul'), 0.5, 'Slow level 2 should use sourced C4 runSpd 0.5');
+calculateStats({}, slowed);
+assert.strictEqual(
+    slowed.collectiveRunSpd,
+    Math.round(Formulas.calcSpeed(30, 120) * 0.5),
+    'Slow level 2 should apply the sourced C4 run speed multiplier'
+);
+
+const curseWeaknessData = activeSkills.find((entry) => entry.selfId === 1164);
+assert(curseWeaknessData, 'Curse:Weakness should be present in active skills data');
+assert.strictEqual(curseWeaknessData.levels.length, 19, 'Curse:Weakness should preserve sourced 19 base levels');
+assert.strictEqual(curseWeaknessData.time.hitTime, 1500, 'Curse:Weakness should preserve sourced 1500ms hit time');
+assert.strictEqual(curseWeaknessData.time.buff, 15000, 'Curse:Weakness should preserve sourced 15 second duration');
+assert.strictEqual(curseWeaknessData.levels[0].mp, 3, 'Curse:Weakness level 1 MP should use sourced initial + consume total');
+assert.strictEqual(curseWeaknessData.levels[18].mp, 69, 'Curse:Weakness level 19 MP should use sourced initial + consume total');
+const weakened = statActor();
+const curseWeakness = skill({ selfId: 1164, name: 'Curse:Weakness', spell: true, power: 80, level: 6, buff: 15000 });
+const curseWeaknessOutcome = SkillEffects.execute(session(), caster, weakened, curseWeakness, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseWeakness.fetchTargetKind(), 'enemy', 'Curse:Weakness should resolve as an enemy debuff');
+assert.strictEqual(curseWeaknessOutcome.effect.key, 'curse_weakness', 'Curse:Weakness should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(weakened, 'pAtkMul'), 0.77, 'Curse:Weakness level 6 should use sourced pAtk 0.77');
+calculateStats({}, weakened);
+assert.strictEqual(
+    weakened.collectivePAtk,
+    Math.round(Formulas.calcPAtk(20, 30, 100) * 0.77),
+    'Curse:Weakness level 6 should apply the sourced pAtk multiplier'
+);
+
 const frozen = statActor();
 const freezingStrike = skill({ selfId: 105, name: 'Freezing Strike', spell: true, power: 26, buff: 30000 });
 SkillEffects.execute(session(), caster, frozen, freezingStrike, {
