@@ -1076,12 +1076,12 @@
     "selfId": 1167,
     "template": { "name": "Poisonous Cloud", "passive": false, "spell": true, "distance": 500 },
     "time": { "hitTime": 4000, "reuse": 20000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 34, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 45, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 65, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 1, "mp": 77, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 3, "mp": 34, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 4, "mp": 45, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 5, "mp": 65, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 6, "mp": 77, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 7, "mp": 89, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 8, "mp": 103, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1168,
     "template": { "name": "Curse:Poison", "passive": false, "spell": true, "distance": 600 },
     "time": { "hitTime": 4000, "reuse": 12000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 20, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 27, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 1, "mp": 39, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 1, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 3, "mp": 20, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 4, "mp": 27, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 5, "mp": 39, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 6, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 7, "mp": 58, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 7, "power": 8, "mp": 67, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1169,
     "template": { "name": "Curse Fear", "passive": false, "spell": true, "distance": 600 },

@@ -2195,14 +2195,41 @@ assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison_of_death'), fal
 assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison'), true, 'Healing Medicine should not remove unrelated poison effects');
 EffectStore.remove(medicineTarget, 'poison');
 
-const cursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 1, level: 4, buff: 30000 });
+const poisonCloudData = activeSkills.find((entry) => entry.selfId === 1167);
+assert(poisonCloudData, 'Poisonous Cloud should be present in active skills data');
+assert.strictEqual(poisonCloudData.levels.length, 6, 'Poisonous Cloud should preserve sourced 6 base levels');
+assert.strictEqual(poisonCloudData.levels[5].power, 8, 'Poisonous Cloud level 6 should preserve sourced power 8');
+assert.strictEqual(poisonCloudData.levels[5].mp, 103, 'Poisonous Cloud level 6 MP should use sourced initial + consume total');
+const poisonCloud = skill({ selfId: 1167, name: 'Poisonous Cloud', spell: true, power: 8, level: 6, distance: 500, buff: 30000 });
+const poisonCloudTarget = statActor();
+const poisonCloudOutcome = SkillEffects.execute(session(), caster, poisonCloudTarget, poisonCloud, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(poisonCloud.fetchTargetKind(), 'enemy', 'Poisonous Cloud should resolve as an enemy poison effect');
+assert.strictEqual(poisonCloud.fetchSemantic().baseLandRate, 8, 'Poisonous Cloud should use sourced level 6 power as land rate');
+assert.strictEqual(poisonCloudOutcome.effect.key, 'poison', 'Poisonous Cloud should apply the structured poison effect');
+assert.strictEqual(poisonCloudOutcome.effect.dot.damage, 48, 'Poisonous Cloud level 6 should use sourced DamOverTime value 48');
+assert.strictEqual(poisonCloudOutcome.effect.dot.count, 10, 'Poisonous Cloud should use sourced 10 damage ticks');
+assert.strictEqual(poisonCloudOutcome.effect.dot.intervalMs, 3000, 'Poisonous Cloud should tick every sourced 3 seconds');
+EffectStore.remove(poisonCloudTarget, 'poison');
+
+const cursePoisonData = activeSkills.find((entry) => entry.selfId === 1168);
+assert(cursePoisonData, 'Curse: Poison should be present in active skills data');
+assert.strictEqual(cursePoisonData.levels.length, 7, 'Curse: Poison should preserve sourced 7 base levels');
+assert.strictEqual(cursePoisonData.levels[6].power, 8, 'Curse: Poison level 7 should preserve sourced power 8');
+assert.strictEqual(cursePoisonData.levels[6].mp, 67, 'Curse: Poison level 7 MP should use sourced initial + consume total');
+const cursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 5, level: 4, buff: 30000 });
 const curseTarget = statActor();
 const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, cursePoison, {
     magicSkill: true,
     rng: () => 0,
     attack: { clearLoadedShot() {} }
 });
-assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
+assert.strictEqual(cursePoison.fetchTargetKind(), 'enemy', 'Curse: Poison should resolve as an enemy poison effect');
+assert.strictEqual(cursePoison.fetchSemantic().baseLandRate, 5, 'Curse: Poison level 4 should use sourced power as land rate');
+assert.strictEqual(curseOutcome.effect.dot.damage, 31, 'Curse: Poison level 4 should use the sourced L2J damage table');
 EffectStore.remove(curseTarget, 'poison');
 
 const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
