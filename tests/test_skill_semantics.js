@@ -480,6 +480,31 @@ assert.strictEqual(
     'Seal of Slow level 2 should apply the sourced C4 run speed multiplier'
 );
 
+const sealChaosData = activeSkills.find((entry) => entry.selfId === 1096);
+assert(sealChaosData, 'Seal of Chaos should be present in active skills data');
+assert.strictEqual(sealChaosData.levels.length, 16, 'Seal of Chaos should preserve sourced 16 base levels');
+assert.strictEqual(sealChaosData.time.hitTime, 1500, 'Seal of Chaos should preserve sourced 1500ms hit time');
+assert.strictEqual(sealChaosData.time.reuse, 8000, 'Seal of Chaos should preserve sourced 8000ms reuse');
+assert.strictEqual(sealChaosData.time.buff, 15000, 'Seal of Chaos should preserve sourced 15 second duration');
+assert.strictEqual(sealChaosData.levels[0].mp, 20, 'Seal of Chaos level 1 MP should use sourced initial + consume total');
+assert.strictEqual(sealChaosData.levels[15].mp, 103, 'Seal of Chaos level 16 MP should use sourced initial + consume total');
+const chaosed = statActor();
+const sealChaos = skill({ selfId: 1096, name: 'Seal of Chaos', spell: true, power: 40, level: 16, buff: 15000 });
+const sealChaosOutcome = SkillEffects.execute(session(), caster, chaosed, sealChaos, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealChaos.fetchTargetKind(), 'enemy', 'Seal of Chaos should resolve as an enemy debuff');
+assert.strictEqual(sealChaosOutcome.effect.key, 'seal_of_chaos', 'Seal of Chaos should apply a structured debuff effect');
+assert.strictEqual(EffectStats.add(chaosed, 'pAccuracyCombatAdd'), -13, 'Seal of Chaos level 16 should use sourced C4 accCombat -13');
+calculateStats({}, chaosed);
+assert.strictEqual(
+    chaosed.collectiveAccur,
+    Formulas.calcAccur(20, 30, 5) - 13,
+    'Seal of Chaos level 16 should apply the sourced C4 accuracy subtraction'
+);
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
