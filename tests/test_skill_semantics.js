@@ -458,6 +458,28 @@ assert.strictEqual(
     'Curse:Weakness level 6 should apply the sourced pAtk multiplier'
 );
 
+const sealSlowData = activeSkills.find((entry) => entry.selfId === 1099);
+assert(sealSlowData, 'Seal of Slow should be present in active skills data');
+assert.strictEqual(sealSlowData.levels.length, 15, 'Seal of Slow should preserve sourced 15 base levels');
+assert.strictEqual(sealSlowData.levels[0].power, 40, 'Seal of Slow active data should preserve sourced power 40');
+assert.strictEqual(sealSlowData.levels[14].mp, 103, 'Seal of Slow level 15 MP should use sourced initial + consume total');
+const sealSlowed = statActor();
+const sealSlow = skill({ selfId: 1099, name: 'Seal of Slow', spell: true, power: 40, level: 2, buff: 120000 });
+const sealSlowOutcome = SkillEffects.execute(session(), caster, sealSlowed, sealSlow, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealSlow.fetchTargetKind(), 'enemy', 'Seal of Slow should resolve as an enemy debuff');
+assert.strictEqual(sealSlowOutcome.effect.key, 'seal_of_slow', 'Seal of Slow should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(sealSlowed, 'runSpdMul'), 0.5, 'Seal of Slow level 2 should use sourced C4 runSpd 0.5');
+calculateStats({}, sealSlowed);
+assert.strictEqual(
+    sealSlowed.collectiveRunSpd,
+    Math.round(Formulas.calcSpeed(30, 120) * 0.5),
+    'Seal of Slow level 2 should apply the sourced C4 run speed multiplier'
+);
+
 const frozen = statActor();
 const freezingStrike = skill({ selfId: 105, name: 'Freezing Strike', spell: true, power: 26, buff: 30000 });
 SkillEffects.execute(session(), caster, frozen, freezingStrike, {

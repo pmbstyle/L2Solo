@@ -76,6 +76,7 @@ const RULES = {
     1085: { skillType: EFFECT, trait: 'buff', effect: 'acumen', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
     1087: { skillType: EFFECT, trait: 'buff', effect: 'agility', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
+    1099: { skillType: EFFECT, trait: 'slow', effect: 'seal_of_slow', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     1126: { skillType: MANA_RECHARGE, trait: 'mana', target: 'pet', ssBoost: 0 },
     1139: { skillType: EFFECT, trait: 'buff', effect: 'servitor_magic_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mDefMul: [1.23, 1.3] } },
     1140: { skillType: EFFECT, trait: 'buff', effect: 'servitor_physical_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
