@@ -173,6 +173,62 @@ const servitorRecharge = skill({ selfId: 1126, name: 'Servitor Recharge', spell:
 assert.strictEqual(servitorRecharge.fetchSkillType(), C4SkillRules.MANA_RECHARGE, 'Servitor Recharge should resolve to MANARECHARGE semantics');
 assert.strictEqual(servitorRecharge.fetchTargetKind(), 'pet', 'Servitor Recharge should preserve sourced TARGET_PET semantics');
 
+const servitorMagicShieldData = activeSkills.find((entry) => entry.selfId === 1139);
+assert(servitorMagicShieldData, 'Servitor Magic Shield should be present in active skills data');
+assert.strictEqual(servitorMagicShieldData.levels[0].mp, 39, 'Servitor Magic Shield level 1 MP should use sourced initial + consume total');
+const servitorMagicShieldTarget = statActor();
+const servitorMagicShield = skill({ selfId: 1139, name: 'Servitor Magic Shield', spell: true, power: 1, level: 2, buff: 1200000 });
+const servitorMagicShieldOutcome = SkillEffects.execute(session(), caster, servitorMagicShieldTarget, servitorMagicShield, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(servitorMagicShield.fetchTargetKind(), 'pet', 'Servitor Magic Shield should preserve sourced TARGET_PET semantics');
+assert.strictEqual(servitorMagicShieldOutcome.effect.key, 'servitor_magic_shield', 'Servitor Magic Shield should apply a structured pet buff');
+assert.strictEqual(EffectStats.multiplier(servitorMagicShieldTarget, 'mDefMul'), 1.3, 'Servitor Magic Shield level 2 should use sourced mDef 1.3');
+
+const servitorPhysicalShieldData = activeSkills.find((entry) => entry.selfId === 1140);
+assert(servitorPhysicalShieldData, 'Servitor Physical Shield should be present in active skills data');
+assert.strictEqual(servitorPhysicalShieldData.levels[2].mp, 52, 'Servitor Physical Shield level 3 MP should use sourced initial + consume total');
+const servitorPhysicalShieldTarget = statActor();
+const servitorPhysicalShield = skill({ selfId: 1140, name: 'Servitor Physical Shield', spell: true, power: 1, level: 3, buff: 1200000 });
+const servitorPhysicalShieldOutcome = SkillEffects.execute(session(), caster, servitorPhysicalShieldTarget, servitorPhysicalShield, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(servitorPhysicalShield.fetchTargetKind(), 'pet', 'Servitor Physical Shield should preserve sourced TARGET_PET semantics');
+assert.strictEqual(servitorPhysicalShieldOutcome.effect.key, 'servitor_physical_shield', 'Servitor Physical Shield should apply a structured pet buff');
+assert.strictEqual(EffectStats.multiplier(servitorPhysicalShieldTarget, 'pDefMul'), 1.15, 'Servitor Physical Shield level 3 should use sourced pDef 1.15');
+
+const servitorHasteData = activeSkills.find((entry) => entry.selfId === 1141);
+assert(servitorHasteData, 'Servitor Haste should be present in active skills data');
+assert.strictEqual(servitorHasteData.levels[0].mp, 39, 'Servitor Haste level 1 MP should use sourced initial + consume total');
+const servitorHasteTarget = statActor();
+const servitorHaste = skill({ selfId: 1141, name: 'Servitor Haste', spell: true, power: 1, level: 1, buff: 1200000 });
+const servitorHasteOutcome = SkillEffects.execute(session(), caster, servitorHasteTarget, servitorHaste, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(servitorHaste.fetchTargetKind(), 'pet', 'Servitor Haste should preserve sourced TARGET_PET semantics');
+assert.strictEqual(servitorHasteOutcome.effect.key, 'servitor_haste', 'Servitor Haste should apply a structured pet buff');
+assert.strictEqual(EffectStats.multiplier(servitorHasteTarget, 'pAtkSpdMul'), 1.15, 'Servitor Haste level 1 should use sourced pAtkSpd 1.15');
+
+const servitorWindWalkData = activeSkills.find((entry) => entry.selfId === 1144);
+assert(servitorWindWalkData, 'Servitor Wind Walk should be present in active skills data');
+assert.strictEqual(servitorWindWalkData.levels[1].mp, 46, 'Servitor Wind Walk level 2 MP should use sourced initial + consume total');
+const servitorWindWalkTarget = statActor();
+const servitorWindWalk = skill({ selfId: 1144, name: 'Servitor Wind Walk', spell: true, power: 1, level: 2, buff: 1200000 });
+const servitorWindWalkOutcome = SkillEffects.execute(session(), caster, servitorWindWalkTarget, servitorWindWalk, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(servitorWindWalk.fetchTargetKind(), 'pet', 'Servitor Wind Walk should preserve sourced TARGET_PET semantics');
+assert.strictEqual(servitorWindWalkOutcome.effect.key, 'servitor_wind_walk', 'Servitor Wind Walk should apply a structured pet buff');
+assert.strictEqual(EffectStats.add(servitorWindWalkTarget, 'runSpdAdd'), 33, 'Servitor Wind Walk level 2 should use sourced runSpd +33');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();

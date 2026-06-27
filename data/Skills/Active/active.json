@@ -967,17 +967,17 @@
     "selfId": 1139,
     "template": { "name": "Servitor Magic Shield", "passive": false, "spell": true, "distance": 400 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 40, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 39, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1140,
     "template": { "name": "Servitor Physical Shield", "passive": false, "spell": true, "distance": 400 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 36, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 46, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 54, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 44, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 52, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1141,
     "template": { "name": "Servitor Haste", "passive": false, "spell": true, "distance": 400 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 40, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 39, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 48, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1144,
     "template": { "name": "Fast Servitor", "passive": false, "spell": true, "distance": 400 },
