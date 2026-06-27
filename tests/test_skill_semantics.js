@@ -258,6 +258,97 @@ assert.strictEqual(
 );
 
 [
+    { id: 72, name: 'Iron Will', levels: 3, mp: 50, buff: 1200000, reuse: 6000, effect: 'iron_will', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
+    { id: 77, name: 'Attack Aura', levels: 2, mp: 25, buff: 1200000, reuse: 6000, effect: 'attack_aura', stat: 'pAtkMul', statValue: 1.12, statKind: 'mul' },
+    { id: 78, name: 'War Cry', levels: 2, mp: 19, buff: 60000, reuse: 180000, effect: 'war_cry', stat: 'pAtkMul', statValue: 1.25, statKind: 'mul' },
+    { id: 91, name: 'Defence Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul' },
+    { id: 94, name: 'Rage', levels: 2, mp: 25, buff: 90000, reuse: 300000, effect: 'rage', stat: 'pAtkMul', statValue: 1.55, statKind: 'mul' },
+    { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
+    { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
+    { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
+    { id: 230, name: 'Sprint', levels: 2, mp: 48, buff: 1200000, reuse: 10000, effect: 'sprint', stat: 'runSpdAdd', statValue: 33, statKind: 'add' }
+].forEach(({ id, name, levels, mp, buff, reuse, effect, stat, statValue, statKind, hpGate }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].mp, mp, `${name} should preserve sourced final MP cost`);
+    assert.strictEqual(data.time.buff, buff, `${name} should preserve sourced buff duration`);
+    assert.strictEqual(data.time.reuse, reuse, `${name} should preserve sourced reuse`);
+    const buffTarget = statActor();
+    const selfBuff = skill({ selfId: id, name, spell: data.template.spell, power: 1, level: levels, distance: -1, buff });
+    assert.strictEqual(selfBuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve to BUFF effect semantics`);
+    assert.strictEqual(selfBuff.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    if (hpGate) {
+        const attack = new Attack();
+        assert(
+            attack.skillUseConditionFailure(creature({ hp: hpGate + 1, maxHp: 100 }), selfBuff),
+            `${name} should be blocked above the sourced ${hpGate}% HP condition`
+        );
+        assert.strictEqual(
+            attack.skillUseConditionFailure(creature({ hp: hpGate, maxHp: 100 }), selfBuff),
+            null,
+            `${name} should be allowed at the sourced ${hpGate}% HP threshold`
+        );
+    }
+    const outcome = SkillEffects.execute(session(), buffTarget, buffTarget, selfBuff, {
+        magicSkill: selfBuff.fetchSpell(),
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply sourced effect key`);
+    if (statKind === 'add') {
+        assert.strictEqual(EffectStats.add(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    } else {
+        assert.strictEqual(EffectStats.multiplier(buffTarget, stat), statValue, `${name} should apply sourced ${stat} ${statValue}`);
+    }
+});
+
+const auraStatsTarget = statActor();
+SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
+    selfId: 77,
+    name: 'Attack Aura',
+    spell: true,
+    power: 1,
+    level: 2,
+    distance: -1,
+    buff: 1200000
+}), {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
+    selfId: 91,
+    name: 'Defence Aura',
+    spell: true,
+    power: 1,
+    level: 2,
+    distance: -1,
+    buff: 1200000
+}), {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
+    selfId: 230,
+    name: 'Sprint',
+    spell: true,
+    power: 1,
+    level: 2,
+    distance: -1,
+    buff: 1200000
+}), {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+calculateStats({}, auraStatsTarget);
+assert.strictEqual(auraStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.12), 'Attack Aura should multiply sourced PAtk');
+assert.strictEqual(auraStatsTarget.collectivePDef, Math.round(Formulas.calcPDef(20, 100) * 1.12), 'Defence Aura should multiply sourced PDef');
+assert.strictEqual(auraStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 33, 'Sprint should add sourced run speed');
+
+[
     { id: 1157, name: 'Body To Mind', levels: 5, power: 61, hp: 366, expectedMp: 61 },
     { id: 2005, name: 'Mana potion', levels: 1, power: 400, hp: 0, expectedMp: 190 }
 ].forEach(({ id, name, levels, power, hp, expectedMp }) => {

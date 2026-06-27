@@ -258,7 +258,7 @@
     "selfId": 78,
     "template": { "name": "War Cry", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 1500, "reuse": 180000, "buff": 60000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 2, "mp": 18, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 2, "mp": 19, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 80,
     "template": { "name": "Detect Monster Weakness", "passive": false, "spell": false, "distance": -1 },
@@ -312,8 +312,8 @@
 },{
     "selfId": 94,
     "template": { "name": "Rage", "passive": false, "spell": false, "distance": -1 },
-    "time": { "hitTime": 1500, "reuse": 180000, "buff": 60000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 12, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 25, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 1500, "reuse": 300000, "buff": 90000 },
+    "levels": [{ "level": 1, "power": 1, "mp": 11, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 25, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 95,
     "template": { "name": "Cripple", "passive": false, "spell": false, "distance": 50 },
@@ -452,13 +452,13 @@
 },{
     "selfId": 139,
     "template": { "name": "Guts", "passive": false, "spell": false, "distance": -1 },
-    "time": { "hitTime": 1500, "reuse": 600000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 17, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 28, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 1500, "reuse": 600000, "buff": 90000 },
+    "levels": [{ "level": 1, "power": 1, "mp": 16, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 19, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 24, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 176,
     "template": { "name": "Frenzy", "passive": false, "spell": false, "distance": -1 },
-    "time": { "hitTime": 1500, "reuse": 600000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 14, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 19, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 25, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 1500, "reuse": 600000, "buff": 90000 },
+    "levels": [{ "level": 1, "power": 1, "mp": 14, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 21, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 25, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 181,
     "template": {"name": "Revival", "passive": false, "spell": false, "distance": -1},
