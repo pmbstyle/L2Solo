@@ -108,6 +108,23 @@ assert.strictEqual(greaterHeal.fetchSkillType(), C4SkillRules.HEAL, 'Greater Hea
 assert.strictEqual(greaterHealOutcome.heal, 858, 'Greater Heal level 33 should heal by sourced power 858');
 assert.strictEqual(greaterHealTarget.fetchHp(), 958, 'Greater Heal should apply sourced power to target HP');
 
+const greaterBattleHealData = activeSkills.find((entry) => entry.selfId === 1218);
+assert(greaterBattleHealData, 'Greater Battle Heal should be present in active skills data');
+assert.strictEqual(greaterBattleHealData.template.name, 'Greater Battle Heal', 'Greater Battle Heal should preserve sourced skill name');
+assert.strictEqual(greaterBattleHealData.levels.length, 33, 'Greater Battle Heal should preserve sourced 33 base levels');
+assert.strictEqual(greaterBattleHealData.levels[0].power, 371, 'Greater Battle Heal level 1 should use sourced power');
+assert.strictEqual(greaterBattleHealData.levels[32].power, 858, 'Greater Battle Heal level 33 should preserve sourced power 858');
+assert.strictEqual(greaterBattleHealData.levels[32].mp, 179, 'Greater Battle Heal level 33 MP should use sourced initial + consume total');
+const greaterBattleHealTarget = creature({ id: 2000011, hp: 50, maxHp: 1200 });
+const greaterBattleHeal = skill({ selfId: 1218, name: 'Greater Battle Heal', spell: true, power: 858, level: 33 });
+const greaterBattleHealOutcome = SkillEffects.execute(session(), caster, greaterBattleHealTarget, greaterBattleHeal, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(greaterBattleHeal.fetchSkillType(), C4SkillRules.HEAL, 'Greater Battle Heal should resolve to HEAL');
+assert.strictEqual(greaterBattleHealOutcome.heal, 858, 'Greater Battle Heal level 33 should heal by sourced power 858');
+assert.strictEqual(greaterBattleHealTarget.fetchHp(), 908, 'Greater Battle Heal should apply sourced power to target HP');
+
 const restoreTarget = creature({ id: 2000009, hp: 400, maxHp: 1000 });
 caster.spiritshotLoaded = true;
 const restoreLife = skill({ selfId: 1258, name: 'Restore Life', spell: true, power: 1, level: 4 });
