@@ -714,6 +714,32 @@ assert.strictEqual(sealGloomOutcome.effect.manaDot.intervalMs, 1000, 'Seal of Gl
 assert.strictEqual(EffectStore.hasDebuff(sealGloomTarget, 'seal_of_gloom'), true, 'Seal of Gloom should leave a debuff entry');
 EffectStore.remove(sealGloomTarget, 'seal_of_gloom');
 
+const sealMirageData = activeSkills.find((entry) => entry.selfId === 1213);
+assert(sealMirageData, 'Seal of Mirage should be present in active skills data');
+assert.strictEqual(sealMirageData.time.buff, 30000, 'Seal of Mirage should preserve sourced Confusion duration');
+assert.strictEqual(sealMirageData.levels.length, 13, 'Seal of Mirage should preserve sourced 13 base levels');
+assert.strictEqual(sealMirageData.levels[1].mp, 65, 'Seal of Mirage level 2 MP should use sourced initial + consume total');
+assert.strictEqual(sealMirageData.levels[12].mp, 103, 'Seal of Mirage level 13 MP should use sourced initial + consume total');
+const sealMirage = skill({ selfId: 1213, name: 'Seal of Mirage', spell: true, power: 1, level: 13, distance: -1, buff: 30000 });
+const livingMirageTarget = statActor();
+const livingMirageOutcome = SkillEffects.execute(session(), caster, livingMirageTarget, sealMirage, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealMirage.fetchTargetKind(), 'enemy', 'Seal of Mirage should resolve as an enemy mob-only debuff');
+assert.strictEqual(livingMirageOutcome.effect, null, 'Seal of Mirage should not apply CONFUSE_MOB_ONLY to living players');
+assert.strictEqual(livingMirageOutcome.effectResisted, true, 'Seal of Mirage mob-only rejection should report effect resistance');
+const mobMirageTarget = statActor();
+mobMirageTarget.fetchAttackable = () => true;
+const mobMirageOutcome = SkillEffects.execute(session(), caster, mobMirageTarget, sealMirage, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(mobMirageOutcome.effect.key, 'confusion', 'Seal of Mirage should apply sourced Confusion to attackable NPCs');
+assert.strictEqual(EffectStore.impairments(mobMirageTarget).confused, true, 'Seal of Mirage confusion should be visible through impairments');
+
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;
