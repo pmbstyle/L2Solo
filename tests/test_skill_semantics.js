@@ -834,6 +834,27 @@ assert.strictEqual(summonLifeCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summo
 assert.strictEqual(summonLifeCubic.fetchTargetKind(), 'self', 'Summon Life Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonLifeCubic.fetchSsBoost(), 0, 'Summon Life Cubic should not consume offensive shot boost semantics');
 
+const summonViperCubicData = activeSkills.find((entry) => entry.selfId === 278);
+assert(summonViperCubicData, 'Summon Viper Cubic should be present in active skills data');
+assert.strictEqual(summonViperCubicData.time.hitTime, 6000, 'Summon Viper Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonViperCubicData.summon.totalLifeTime, 900000, 'Summon Viper Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonViperCubicData.summon.expPenalty, 0, 'Summon Viper Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonViperCubicData.summon.isCubic, true, 'Summon Viper Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonViperCubicData.summon.npcId, 4, 'Summon Viper Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonViperCubicData.summon.activationChance, 20, 'Summon Viper Cubic should preserve sourced activation chance');
+assert.strictEqual(summonViperCubicData.summon.activationTime, 20, 'Summon Viper Cubic should preserve sourced activation time');
+assert.strictEqual(summonViperCubicData.levels.length, 6, 'Summon Viper Cubic should preserve sourced 6 base levels');
+assert.strictEqual(summonViperCubicData.levels[0].power, 531, 'Summon Viper Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonViperCubicData.levels[0].mp, 44, 'Summon Viper Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonViperCubicData.levels[0].itemCount, 3, 'Summon Viper Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonViperCubicData.levels[5].power, 1822, 'Summon Viper Cubic level 6 should preserve sourced cubic power');
+assert.strictEqual(summonViperCubicData.levels[5].mp, 67, 'Summon Viper Cubic level 6 MP should use sourced initial + consume total');
+assert.strictEqual(summonViperCubicData.levels[5].itemCount, 6, 'Summon Viper Cubic level 6 should preserve sourced crystal count');
+const summonViperCubic = skill({ selfId: 278, name: 'Summon Viper Cubic', spell: true, power: 1822, level: 6, distance: -1 });
+assert.strictEqual(summonViperCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Viper Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonViperCubic.fetchTargetKind(), 'self', 'Summon Viper Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonViperCubic.fetchSsBoost(), 0, 'Summon Viper Cubic should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
