@@ -726,6 +726,26 @@ assert.strictEqual(summonMew.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Mew 
 assert.strictEqual(summonMew.fetchTargetKind(), 'self', 'Summon Mew the Cat should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonMew.fetchSsBoost(), 0, 'Summon Mew the Cat should not consume offensive shot boost semantics');
 
+const summonBoxerData = activeSkills.find((entry) => entry.selfId === 1226);
+assert(summonBoxerData, 'Summon Unicorn Boxer should be present in active skills data');
+assert.strictEqual(summonBoxerData.time.hitTime, 15000, 'Summon Unicorn Boxer should preserve sourced 15000ms hit time');
+assert.strictEqual(summonBoxerData.summon.totalLifeTime, 1200000, 'Summon Unicorn Boxer should preserve sourced summon lifetime');
+assert.strictEqual(summonBoxerData.summon.expPenalty, 0.3, 'Summon Unicorn Boxer should preserve sourced exp penalty');
+assert.strictEqual(summonBoxerData.summon.itemConsumeSteps, 1, 'Summon Unicorn Boxer should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonBoxerData.levels.length, 18, 'Summon Unicorn Boxer should preserve sourced 18 base levels');
+assert.strictEqual(summonBoxerData.levels[0].itemCount, 3, 'Summon Unicorn Boxer level 1 should preserve sourced crystal count');
+assert.strictEqual(summonBoxerData.levels[2].itemCountOT, 1, 'Summon Unicorn Boxer level 3 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonBoxerData.levels[0].npcId, 12064, 'Summon Unicorn Boxer level 1 should preserve sourced npcId');
+assert.strictEqual(summonBoxerData.levels[17].mp, 137, 'Summon Unicorn Boxer level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonBoxerData.levels[17].itemCount, 8, 'Summon Unicorn Boxer level 18 should preserve sourced crystal count');
+assert.strictEqual(summonBoxerData.levels[17].itemCountOT, 6, 'Summon Unicorn Boxer level 18 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonBoxerData.levels[17].npcId, 12446, 'Summon Unicorn Boxer level 18 should preserve sourced npcId');
+assert.strictEqual(summonBoxerData.levels[17].reuse, 20000, 'Summon Unicorn Boxer trained levels should preserve sourced 20000ms reuse');
+const summonBoxer = skill({ selfId: 1226, name: 'Summon Unicorn Boxer', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonBoxer.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Unicorn Boxer should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonBoxer.fetchTargetKind(), 'self', 'Summon Unicorn Boxer should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonBoxer.fetchSsBoost(), 0, 'Summon Unicorn Boxer should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
