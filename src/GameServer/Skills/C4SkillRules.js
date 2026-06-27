@@ -183,6 +183,7 @@ const RULES = {
     1181: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1182: { skillType: EFFECT, trait: 'buff', effect: 'resist_aqua', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { waterVuln: [0.85, 0.77, 0.7] } },
     1183: { skillType: EFFECT, trait: 'water', effect: 'freezing_shackle', effectType: 'debuff', target: 'enemy', baseLandRate: 70, dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 94, 108, 118] } },
+    1184: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'ice_bolt', effectType: 'debuff', target: 'enemy', baseLandRate: 60, stats: { runSpdMul: 0.7 } },
     1189: { skillType: EFFECT, trait: 'buff', effect: 'resist_wind', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { windVuln: [0.85, 0.77, 0.7] } },
     1191: { skillType: EFFECT, trait: 'buff', effect: 'resist_fire', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { fireVuln: [0.85, 0.77, 0.7] } },
     1201: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', baseLandRate: 80 },

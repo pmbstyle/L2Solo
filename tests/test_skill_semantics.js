@@ -2449,6 +2449,32 @@ assert.strictEqual(freezingShackleOutcome.effect.dot.count, 15, 'Freezing Shackl
 assert.strictEqual(freezingShackleOutcome.effect.dot.intervalMs, 1000, 'Freezing Shackle should tick every sourced second');
 EffectStore.remove(freezingShackleTarget, 'freezing_shackle');
 
+const iceBoltData = activeSkills.find((entry) => entry.selfId === 1184);
+assert(iceBoltData, 'Ice Bolt should be present in active skills data');
+assert.strictEqual(iceBoltData.time.hitTime, 3100, 'Ice Bolt should preserve sourced hit time');
+assert.strictEqual(iceBoltData.time.reuse, 8000, 'Ice Bolt should preserve sourced reuse');
+assert.strictEqual(iceBoltData.time.buff, 120000, 'Ice Bolt should preserve sourced 120 second RunSpeedDown duration');
+assert.strictEqual(iceBoltData.levels.length, 6, 'Ice Bolt should preserve sourced 6 base levels');
+assert.strictEqual(iceBoltData.levels[5].power, 16, 'Ice Bolt level 6 should preserve sourced MDAM power 16');
+assert.strictEqual(iceBoltData.levels[5].mp, 20, 'Ice Bolt level 6 MP should use sourced initial + consume total');
+const iceBoltTarget = statActor();
+const iceBolt = skill({ selfId: 1184, name: 'Ice Bolt', spell: true, power: 16, level: 6, distance: 600, buff: 120000 });
+const iceBoltOutcome = SkillEffects.execute(session(), caster, iceBoltTarget, iceBolt, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 37
+    }
+});
+assert.strictEqual(iceBolt.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Ice Bolt should resolve as sourced MDAM with additional debuff');
+assert.strictEqual(iceBolt.fetchSemantic().trait, 'water', 'Ice Bolt should preserve sourced water element');
+assert.strictEqual(iceBolt.fetchSemantic().baseLandRate, 60, 'Ice Bolt should use sourced effectPower 60 as debuff land rate');
+assert.strictEqual(iceBoltOutcome.damage, 37, 'Ice Bolt should still deal direct MDAM damage');
+assert.strictEqual(iceBoltOutcome.effect.key, 'ice_bolt', 'Ice Bolt should apply a structured slow debuff');
+assert.strictEqual(EffectStats.multiplier(iceBoltTarget, 'runSpdMul'), 0.7, 'Ice Bolt should apply sourced RunSpeedDown 0.7 multiplier');
+EffectStore.remove(iceBoltTarget, 'ice_bolt');
+
 const sealPoisonData = activeSkills.find((entry) => entry.selfId === 1209);
 assert(sealPoisonData, 'Seal of Poison should be present in active skills data');
 assert.strictEqual(sealPoisonData.levels.length, 6, 'Seal of Poison should preserve sourced 6 base levels');
