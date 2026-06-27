@@ -1322,7 +1322,7 @@
     "selfId": 1248,
     "template": { "name": "Seal of Suspension", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 4000, "reuse": 20000, "buff": 120000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 65, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 77, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 60, "mp": 65, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 60, "mp": 70, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 60, "mp": 77, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 60, "mp": 80, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 60, "mp": 83, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 60, "mp": 87, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 7, "power": 60, "mp": 89, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 8, "power": 60, "mp": 93, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 9, "power": 60, "mp": 95, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 10, "power": 60, "mp": 98, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 11, "power": 60, "mp": 100, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 12, "power": 60, "mp": 103, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1249,
     "template": { "name": "Sight of Paagrio", "passive": false, "spell": true, "distance": -1 },

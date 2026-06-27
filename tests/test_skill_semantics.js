@@ -530,6 +530,23 @@ assert.strictEqual(
     'Seal of Winter should apply the sourced C4 attack speed multiplier'
 );
 
+const sealSuspensionData = activeSkills.find((entry) => entry.selfId === 1248);
+assert(sealSuspensionData, 'Seal of Suspension should be present in active skills data');
+assert.strictEqual(sealSuspensionData.levels.length, 12, 'Seal of Suspension should preserve sourced 12 base levels');
+assert.strictEqual(sealSuspensionData.levels[0].power, 60, 'Seal of Suspension active data should preserve sourced power 60');
+assert.strictEqual(sealSuspensionData.levels[11].mp, 103, 'Seal of Suspension level 12 MP should use sourced initial + consume total');
+const suspended = statActor();
+const sealSuspension = skill({ selfId: 1248, name: 'Seal of Suspension', spell: true, power: 60, level: 12, buff: 120000 });
+const sealSuspensionOutcome = SkillEffects.execute(session(), caster, suspended, sealSuspension, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealSuspension.fetchTargetKind(), 'enemy', 'Seal of Suspension should resolve as an enemy debuff');
+assert.strictEqual(sealSuspensionOutcome.effect.key, 'seal_of_suspension', 'Seal of Suspension should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(suspended, 'mReuseMul'), 3, 'Seal of Suspension should use sourced C4 mReuse multiplier 3');
+assert.strictEqual(EffectStats.multiplier(suspended, 'pReuseMul'), 3, 'Seal of Suspension should use sourced C4 pReuse multiplier 3');
+
 const frozen = statActor();
 const freezingStrike = skill({ selfId: 105, name: 'Freezing Strike', spell: true, power: 26, buff: 30000 });
 SkillEffects.execute(session(), caster, frozen, freezingStrike, {

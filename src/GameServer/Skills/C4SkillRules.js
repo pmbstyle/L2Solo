@@ -103,6 +103,7 @@ const RULES = {
     1243: { skillType: EFFECT, trait: 'buff', effect: 'bless_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { rShldMul: [1.05, 1.1, 1.15, 1.2, 1.25, 1.3] } },
     1246: { skillType: EFFECT, trait: 'derangement', effect: 'silence', effectType: 'debuff', target: 'enemy', baseLandRate: 40 },
     1247: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_scourge', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { regHp: 0 } },
+    1248: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_suspension', effectType: 'debuff', target: 'enemy', baseLandRate: 60, stats: { mReuseMul: 3, pReuseMul: 3 } },
     1249: { skillType: EFFECT, trait: 'buff', effect: 'vision_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1250: { skillType: EFFECT, trait: 'buff', effect: 'protection_of_paagrio', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { rShldMul: [1.3, 1.4, 1.5] } },
     1251: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_fury', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
