@@ -269,6 +269,23 @@ assert.strictEqual(sleepOutcome.effect.key, 'sleep', 'Sleep should apply a struc
 assert(EffectStore.hasDebuff(sleepyTarget, 'sleep'), 'Sleep debuff should be visible through EffectStore');
 assert.strictEqual(sleepSession.packets[0][0], 0x7f, 'Debuff application should refresh abnormal status icons');
 
+const dreamingSpiritData = activeSkills.find((entry) => entry.selfId === 1097);
+assert(dreamingSpiritData, 'Dreaming Spirit should be present in active skills data');
+assert.strictEqual(dreamingSpiritData.levels.length, 20, 'Dreaming Spirit should preserve sourced 20 base levels');
+assert.strictEqual(dreamingSpiritData.levels[0].power, 80, 'Dreaming Spirit should preserve sourced power 80');
+assert.strictEqual(dreamingSpiritData.levels[1].mp, 15, 'Dreaming Spirit level 2 MP should use sourced initial + consume total');
+assert.strictEqual(dreamingSpiritData.levels[19].mp, 69, 'Dreaming Spirit level 20 MP should use sourced initial + consume total');
+const dreamingTarget = creature({ id: 1000006, hp: 100, maxHp: 100, level: 20 });
+const dreamingSpirit = skill({ selfId: 1097, name: 'Dreaming Spirit', spell: true, power: 80, level: 20, buff: 30000 });
+const dreamingOutcome = SkillEffects.execute(session(), caster, dreamingTarget, dreamingSpirit, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(dreamingSpirit.fetchTargetKind(), 'enemy', 'Dreaming Spirit should resolve as an enemy sleep debuff');
+assert.strictEqual(dreamingOutcome.effect.key, 'sleep', 'Dreaming Spirit should apply a structured sleep debuff');
+assert(EffectStore.hasDebuff(dreamingTarget, 'sleep'), 'Dreaming Spirit sleep should be visible through EffectStore');
+
 const silenceData = activeSkills.find((entry) => entry.selfId === 1064);
 assert(silenceData, 'Silence should be present in active skills data');
 assert.strictEqual(silenceData.levels.length, 14, 'Silence should preserve sourced 14 base levels');
