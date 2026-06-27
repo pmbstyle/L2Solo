@@ -42,6 +42,7 @@ function creature(overrides = {}) {
         fetchLocZ: () => 0,
         fetchHead: () => overrides.head ?? 0,
         setHp(value) { this.hp = value; },
+        setMp(value) { this.mp = value; },
         statusUpdateVitals() {},
         backpack: {
             fetchTotalWeaponPAtkRnd: () => 0
@@ -128,6 +129,49 @@ const benedictionOutcome = SkillEffects.execute(session(), lowHpCleric, benedict
 assert.strictEqual(benediction.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Benediction should resolve to HEAL_PERCENT');
 assert.strictEqual(benedictionOutcome.heal, 900, 'Benediction should restore up to 100% of max HP');
 assert.strictEqual(benedictionTarget.fetchHp(), 1000, 'Benediction should clamp the 100% heal at max HP');
+
+const rechargeData = activeSkills.find((entry) => entry.selfId === 1013);
+assert(rechargeData, 'Recharge should be present in active skills data');
+assert.strictEqual(rechargeData.levels.length, 32, 'Recharge should preserve sourced 32 base levels');
+assert.strictEqual(rechargeData.levels[0].power, 49, 'Recharge level 1 should use sourced power instead of legacy half power');
+assert.strictEqual(rechargeData.levels[31].power, 136, 'Recharge level 32 should preserve sourced power');
+assert.strictEqual(rechargeData.levels[31].mp, 137, 'Recharge level 32 MP should use sourced initial + consume total');
+const rechargeCaster = creature({ level: 20 });
+const rechargeTarget = creature({ id: 2000010, mp: 10, maxMp: 200, level: 20 });
+EffectStore.apply(rechargeTarget, {
+    key: 'higher_mana_gain',
+    id: 285,
+    level: 1,
+    type: 'passive',
+    category: 'gainMp',
+    stats: { gainMp: 22 },
+    durationMs: 1200000
+});
+const recharge = skill({ selfId: 1013, name: 'Recharge', spell: true, power: 49, level: 1 });
+const rechargeOutcome = SkillEffects.execute(session(), rechargeCaster, rechargeTarget, recharge, {
+    magicSkill: true,
+    attack: { clearLoadedShot(actor, magic) { actor.clearedRecharge = magic; } }
+});
+assert.strictEqual(recharge.fetchSkillType(), C4SkillRules.MANA_RECHARGE, 'Recharge should resolve to MANARECHARGE semantics');
+assert.strictEqual(rechargeOutcome.mpRestore, 71, 'Recharge should add sourced gainMp to skill power');
+assert.strictEqual(rechargeTarget.fetchMp(), 81, 'Recharge should restore MP on the target');
+EffectStore.remove(rechargeTarget, 'higher_mana_gain');
+const highLevelRechargeTarget = creature({ id: 2000011, mp: 10, maxMp: 200, level: 30 });
+const penalizedRecharge = skill({ selfId: 1013, name: 'Recharge', spell: true, power: 100, level: 1 });
+const penalizedRechargeOutcome = SkillEffects.execute(session(), rechargeCaster, highLevelRechargeTarget, penalizedRecharge, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(penalizedRechargeOutcome.mpRestore, 50, 'Recharge should apply sourced target-caster level difference penalty');
+
+const servitorRechargeData = activeSkills.find((entry) => entry.selfId === 1126);
+assert(servitorRechargeData, 'Servitor Recharge should be present in active skills data');
+assert.strictEqual(servitorRechargeData.levels.length, 34, 'Servitor Recharge should preserve sourced 34 base levels');
+assert.strictEqual(servitorRechargeData.levels[0].power, 41, 'Servitor Recharge level 1 should use sourced power');
+assert.strictEqual(servitorRechargeData.levels[33].mp, 137, 'Servitor Recharge level 34 MP should use sourced initial + consume total');
+const servitorRecharge = skill({ selfId: 1126, name: 'Servitor Recharge', spell: true, power: 41, level: 1 });
+assert.strictEqual(servitorRecharge.fetchSkillType(), C4SkillRules.MANA_RECHARGE, 'Servitor Recharge should resolve to MANARECHARGE semantics');
+assert.strictEqual(servitorRecharge.fetchTargetKind(), 'pet', 'Servitor Recharge should preserve sourced TARGET_PET semantics');
 
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });

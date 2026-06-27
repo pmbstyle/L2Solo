@@ -248,6 +248,17 @@ const Formulas = {
         return Math.max(0, amount);
     },
 
+    // Lisvus C4 ManaHeal MANARECHARGE: target gainMp stat is added to skill power,
+    // then high-level targets receive a level-difference penalty.
+    calcManaRechargeAmount({ power = 0, gainMp = 0, casterLevel = 1, targetLevel = 1 } = {}) {
+        let amount = (Number(power) || 0) + (Number(gainMp) || 0);
+        const levelDiff = (Number(targetLevel) || 1) - (Number(casterLevel) || 1);
+        if (levelDiff > 5 && amount > 0) {
+            amount -= levelDiff * (amount / 20);
+        }
+        return Math.max(0, amount);
+    },
+
     // Adapted from L2J/aCis magic failure: target level over magic level raises fail chance by 1.3^diff.
     calcMagicSuccessRate({ attackerLevel = 1, targetLevel = 1, magicLevel = 0, levelDepend = 0 } = {}) {
         const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);

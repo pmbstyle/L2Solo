@@ -8,6 +8,7 @@ const EFFECT = 'effect';
 const BLOW = 'blow';
 const CLEANSE = 'cleanse';
 const HEAL_CLEANSE = 'healCleanse';
+const MANA_RECHARGE = 'manaRecharge';
 
 const RULES = {
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -31,6 +32,7 @@ const RULES = {
     1068: { skillType: EFFECT, trait: 'buff', effect: 'might', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1011: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1012: { skillType: CLEANSE, trait: 'poison', target: 'friendly', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
+    1013: { skillType: MANA_RECHARGE, trait: 'mana', target: 'friendly', ssBoost: 0 },
     1015: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1018: { skillType: CLEANSE, trait: 'purify', target: 'friendly', cleanse: [
         { category: 'poison', maxLevelByLevel: [3, 7, 9] },
@@ -73,6 +75,7 @@ const RULES = {
     1085: { skillType: EFFECT, trait: 'buff', effect: 'acumen', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100 },
     1087: { skillType: EFFECT, trait: 'buff', effect: 'agility', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
+    1126: { skillType: MANA_RECHARGE, trait: 'mana', target: 'pet', ssBoost: 0 },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', baseLandRate: 70, dot: { count: 10, intervalMs: 3000, damageByLevel: [1, 3, 4, 5, 6, 7, 8] } },
     1172: { skillType: DAMAGE, trait: 'fire', ssBoost: 1, baseLandRate: 92 },
     1177: { skillType: DAMAGE, trait: 'wind', ssBoost: 1, baseLandRate: 92 },
@@ -270,6 +273,7 @@ module.exports = {
     BLOW,
     CLEANSE,
     HEAL_CLEANSE,
+    MANA_RECHARGE,
     resolve,
     normalizeKey
 };

@@ -19,7 +19,8 @@ function execute(session, actor, target, skill, context = {}) {
         missed: false,
         resisted: false,
         effectResisted: false,
-        lethal: false
+        lethal: false,
+        mpRestore: 0
     };
 
     if (semantic.skillType === C4SkillRules.HEAL) {
@@ -53,6 +54,11 @@ function execute(session, actor, target, skill, context = {}) {
     if (semantic.skillType === C4SkillRules.HEAL_CLEANSE) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.cleansed = applyCleanse(session, target, semantic);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.MANA_RECHARGE) {
+        result.mpRestore = applyManaRecharge(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
     }
 
@@ -116,6 +122,22 @@ function applyHealPercent(session, actor, target, skill, semantic, magicSkill, a
     refreshVitals(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextHp - currentHp);
+}
+
+function applyManaRecharge(session, actor, target, skill, semantic, magicSkill, attack) {
+    const amount = Formulas.calcManaRechargeAmount({
+        power: semantic.manaPower ?? skill.fetchPower(),
+        gainMp: EffectStats.add(target, 'gainMp'),
+        casterLevel: actor.fetchLevel?.(),
+        targetLevel: target.fetchLevel?.()
+    });
+    const maxMp = Number(target.fetchMaxMp?.()) || 0;
+    const currentMp = Number(target.fetchMp?.()) || 0;
+    const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + amount) : currentMp + amount;
+    target.setMp(nextMp);
+    refreshVitals(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return Math.max(0, nextMp - currentMp);
 }
 
 function applyEffect(session, target, skill, semantic) {
