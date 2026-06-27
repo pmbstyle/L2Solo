@@ -701,6 +701,11 @@ assert.strictEqual(sealSilence.fetchTargetKind(), 'enemy', 'Seal of Silence shou
 assert.strictEqual(sealSilenceOutcome.effect.key, 'silence', 'Seal of Silence should apply silence at sourced base land rate 40');
 assert.strictEqual(EffectStore.hasDebuff(sealSilenceTarget, 'silence'), true, 'Seal of Silence should leave a silence debuff when the sourced land rate passes');
 assert.strictEqual(EffectRestrictions.canCast(sealSilenceTarget), false, 'Seal of Silence should block casting through runtime restrictions');
+const sealSilenceData = activeSkills.find((entry) => entry.selfId === 1246);
+assert(sealSilenceData, 'Seal of Silence should be present in active skills data');
+assert.strictEqual(sealSilenceData.levels.length, 12, 'Seal of Silence should preserve sourced 12 base levels');
+assert.strictEqual(sealSilenceData.levels[0].power, 40, 'Seal of Silence should preserve sourced power 40');
+assert.strictEqual(sealSilenceData.levels[11].mp, 103, 'Seal of Silence level 12 MP should use sourced initial + consume total');
 
 const regenAutomation = new Automation();
 regenAutomation.setRevHp(10);
