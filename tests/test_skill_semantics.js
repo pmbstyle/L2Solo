@@ -709,6 +709,23 @@ const poisonAfterSurrenderOutcome = SkillEffects.execute(session(), caster, surr
 assert.strictEqual(poisonAfterSurrenderOutcome.effect.key, 'poison', 'Surrender To Poison should raise poison effect land chance through sourced poisonVuln');
 EffectStore.remove(surrenderedToPoison, 'poison');
 
+const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
+assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
+assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
+assert.strictEqual(summonMewData.summon.totalLifeTime, 1200000, 'Summon Mew the Cat should preserve sourced summon lifetime');
+assert.strictEqual(summonMewData.summon.expPenalty, 0.9, 'Summon Mew the Cat should preserve sourced exp penalty');
+assert.strictEqual(summonMewData.levels.length, 18, 'Summon Mew the Cat should preserve sourced 18 base levels');
+assert.strictEqual(summonMewData.levels[0].mp, 39, 'Summon Mew the Cat level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonMewData.levels[0].itemCount, 1, 'Summon Mew the Cat should preserve sourced crystal count');
+assert.strictEqual(summonMewData.levels[0].npcId, 12348, 'Summon Mew the Cat level 1 should preserve sourced npcId');
+assert.strictEqual(summonMewData.levels[17].mp, 137, 'Summon Mew the Cat level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonMewData.levels[17].npcId, 12428, 'Summon Mew the Cat level 18 should preserve sourced npcId');
+assert.strictEqual(summonMewData.levels[17].reuse, 20000, 'Summon Mew the Cat trained levels should preserve sourced 20000ms reuse');
+const summonMew = skill({ selfId: 1225, name: 'Summon Mew the Cat', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonMew.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Mew the Cat should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonMew.fetchTargetKind(), 'self', 'Summon Mew the Cat should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonMew.fetchSsBoost(), 0, 'Summon Mew the Cat should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
