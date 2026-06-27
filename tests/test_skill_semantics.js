@@ -815,6 +815,25 @@ assert.strictEqual(summonPhantomCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Su
 assert.strictEqual(summonPhantomCubic.fetchTargetKind(), 'self', 'Summon Phantom Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonPhantomCubic.fetchSsBoost(), 0, 'Summon Phantom Cubic should not consume offensive shot boost semantics');
 
+const summonLifeCubicData = activeSkills.find((entry) => entry.selfId === 67);
+assert(summonLifeCubicData, 'Summon Life Cubic should be present in active skills data');
+assert.strictEqual(summonLifeCubicData.time.hitTime, 6000, 'Summon Life Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonLifeCubicData.summon.totalLifeTime, 900000, 'Summon Life Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonLifeCubicData.summon.expPenalty, 0, 'Summon Life Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonLifeCubicData.summon.isCubic, true, 'Summon Life Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonLifeCubicData.summon.npcId, 3, 'Summon Life Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonLifeCubicData.summon.activationChance, 0, 'Summon Life Cubic should preserve sourced activation chance');
+assert.strictEqual(summonLifeCubicData.summon.activationTime, 13, 'Summon Life Cubic should preserve sourced activation time');
+assert.strictEqual(summonLifeCubicData.levels.length, 7, 'Summon Life Cubic should preserve sourced 7 base levels');
+assert.strictEqual(summonLifeCubicData.levels[0].mp, 38, 'Summon Life Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonLifeCubicData.levels[0].itemCount, 6, 'Summon Life Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonLifeCubicData.levels[6].mp, 67, 'Summon Life Cubic level 7 MP should use sourced initial + consume total');
+assert.strictEqual(summonLifeCubicData.levels[6].itemCount, 13, 'Summon Life Cubic level 7 should preserve sourced crystal count');
+const summonLifeCubic = skill({ selfId: 67, name: 'Summon Life Cubic', spell: true, power: 1, level: 7, distance: -1 });
+assert.strictEqual(summonLifeCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Life Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonLifeCubic.fetchTargetKind(), 'self', 'Summon Life Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonLifeCubic.fetchSsBoost(), 0, 'Summon Life Cubic should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');

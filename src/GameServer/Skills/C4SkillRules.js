@@ -21,6 +21,7 @@ const RULES = {
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
+    67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     100: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     101: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     102: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', baseLandRate: 80 },

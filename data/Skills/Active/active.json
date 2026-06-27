@@ -222,7 +222,8 @@
     "selfId": 67,
     "template": { "name": "Summon Life Cubic", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 6000, "reuse": 20000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 38, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 44, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 50, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "summon": { "totalLifeTime": 900000, "expPenalty": 0, "isCubic": true, "npcId": 3, "activationChance": 0, "activationTime": 13 },
+    "levels": [{ "level": 1, "power": 1, "mp": 38, "hp": 0, "itemId": 1458, "itemCount": 6, "npcId": 3, "reuse": 20000 }, { "level": 2, "power": 1, "mp": 44, "hp": 0, "itemId": 1458, "itemCount": 7, "npcId": 3, "reuse": 20000 }, { "level": 3, "power": 1, "mp": 50, "hp": 0, "itemId": 1458, "itemCount": 8, "npcId": 3, "reuse": 20000 }, { "level": 4, "power": 1, "mp": 55, "hp": 0, "itemId": 1458, "itemCount": 9, "npcId": 3, "reuse": 20000 }, { "level": 5, "power": 1, "mp": 60, "hp": 0, "itemId": 1458, "itemCount": 11, "npcId": 3, "reuse": 20000 }, { "level": 6, "power": 1, "mp": 64, "hp": 0, "itemId": 1458, "itemCount": 12, "npcId": 3, "reuse": 20000 }, { "level": 7, "power": 1, "mp": 67, "hp": 0, "itemId": 1458, "itemCount": 13, "npcId": 3, "reuse": 20000 }]
 },{
     "selfId": 69,
     "template": { "name": "Sacrifice", "passive": false, "spell": true, "distance": 600 },
