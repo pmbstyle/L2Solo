@@ -97,6 +97,7 @@ const RULES = {
     1111: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1126: { skillType: MANA_RECHARGE, trait: 'mana', target: 'pet', ssBoost: 0 },
     1128: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    1129: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     1139: { skillType: EFFECT, trait: 'buff', effect: 'servitor_magic_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mDefMul: [1.23, 1.3] } },
     1140: { skillType: EFFECT, trait: 'buff', effect: 'servitor_physical_shield', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
     1141: { skillType: EFFECT, trait: 'buff', effect: 'servitor_haste', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },

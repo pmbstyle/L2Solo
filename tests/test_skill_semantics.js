@@ -972,6 +972,31 @@ assert.strictEqual(summonShadow.fetchSkillType(), C4SkillRules.SUMMON, 'Summon S
 assert.strictEqual(summonShadow.fetchTargetKind(), 'self', 'Summon Shadow should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonShadow.fetchSsBoost(), 0, 'Summon Shadow should not consume offensive shot boost semantics');
 
+const summonReanimatedManData = activeSkills.find((entry) => entry.selfId === 1129);
+assert(summonReanimatedManData, 'Summon Reanimated Man should be present in active skills data');
+assert.strictEqual(summonReanimatedManData.template.distance, 40, 'Summon Reanimated Man should preserve sourced cast range');
+assert.strictEqual(summonReanimatedManData.time.hitTime, 1500, 'Summon Reanimated Man should preserve sourced 1500ms hit time');
+assert.strictEqual(summonReanimatedManData.summon.totalLifeTime, 1200000, 'Summon Reanimated Man should preserve sourced summon lifetime');
+assert.strictEqual(summonReanimatedManData.summon.timeLostIdle, 500, 'Summon Reanimated Man should preserve sourced idle time loss');
+assert.strictEqual(summonReanimatedManData.summon.timeLostActive, 1000, 'Summon Reanimated Man should preserve sourced active time loss');
+assert.strictEqual(summonReanimatedManData.summon.expPenalty, 0.15, 'Summon Reanimated Man should preserve sourced exp penalty');
+assert.strictEqual(summonReanimatedManData.summon.itemConsumeSteps, 4, 'Summon Reanimated Man should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonReanimatedManData.summon.itemIdOT, 1459, 'Summon Reanimated Man should preserve sourced ongoing crystal item id');
+assert.strictEqual(summonReanimatedManData.summon.effectRange, 400, 'Summon Reanimated Man should preserve sourced effect range');
+assert.strictEqual(summonReanimatedManData.levels.length, 7, 'Summon Reanimated Man should preserve sourced 7 base levels');
+assert.strictEqual(summonReanimatedManData.levels[0].mp, 78, 'Summon Reanimated Man level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonReanimatedManData.levels[0].itemCount, 2, 'Summon Reanimated Man level 1 should preserve sourced crystal count');
+assert.strictEqual(summonReanimatedManData.levels[0].itemCountOT, 1, 'Summon Reanimated Man level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonReanimatedManData.levels[0].npcId, 12192, 'Summon Reanimated Man level 1 should preserve sourced npcId');
+assert.strictEqual(summonReanimatedManData.levels[6].mp, 137, 'Summon Reanimated Man level 7 MP should use sourced initial + consume total');
+assert.strictEqual(summonReanimatedManData.levels[6].itemCount, 4, 'Summon Reanimated Man level 7 should preserve sourced crystal count');
+assert.strictEqual(summonReanimatedManData.levels[6].itemCountOT, 4, 'Summon Reanimated Man level 7 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonReanimatedManData.levels[6].npcId, 12469, 'Summon Reanimated Man level 7 should preserve sourced npcId');
+const summonReanimatedMan = skill({ selfId: 1129, name: 'Summon Reanimated Man', spell: true, power: 1, level: 7, distance: 40 });
+assert.strictEqual(summonReanimatedMan.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Reanimated Man should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonReanimatedMan.fetchTargetKind(), 'corpse_mob', 'Summon Reanimated Man should preserve sourced TARGET_CORPSE_MOB semantics');
+assert.strictEqual(summonReanimatedMan.fetchSsBoost(), 0, 'Summon Reanimated Man should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
