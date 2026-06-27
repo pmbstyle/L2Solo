@@ -652,17 +652,17 @@
     "selfId": 1003,
     "template": { "name": "Power of Paagrio", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 20000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 157, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 209, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 257, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 105, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 139, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 172, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1004,
     "template": { "name": "Wisdom of Paagrio", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 20000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 209, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 257, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 305, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 139, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 172, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 204, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1005,
     "template": { "name": "Blessing of Paagrio", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 20000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 180, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 232, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 280, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 120, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 154, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 188, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1006,
     "template": { "name": "Chant of Fire", "passive": false, "spell": true, "distance": -1 },
@@ -677,7 +677,7 @@
     "selfId": 1008,
     "template": { "name": "Glory of Paagrio", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 2500, "reuse": 20000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 209, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 257, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 305, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 139, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 172, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 204, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1009,
     "template": { "name": "Chant of Shielding", "passive": false, "spell": true, "distance": -1 },

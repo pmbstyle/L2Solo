@@ -349,6 +349,10 @@ assert.strictEqual(auraStatsTarget.collectivePDef, Math.round(Formulas.calcPDef(
 assert.strictEqual(auraStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 33, 'Sprint should add sourced run speed');
 
 [
+    { id: 1003, name: 'Power of Paagrio', levels: 3, mp: 172, buff: 1200000, reuse: 20000, effect: 'power_of_paagrio', target: 'ally', stat: 'pAtkMul', statValue: 1.15, statKind: 'mul' },
+    { id: 1004, name: 'Wisdom of Paagrio', levels: 3, mp: 204, buff: 1200000, reuse: 20000, effect: 'wisdom_of_paagrio', target: 'ally', stat: 'castSpdMul', statValue: 1.3, statKind: 'mul' },
+    { id: 1005, name: 'Blessing of Paagrio', levels: 3, mp: 188, buff: 1200000, reuse: 20000, effect: 'blessing_of_paagrio', target: 'ally', stat: 'pDefMul', statValue: 1.15, statKind: 'mul' },
+    { id: 1008, name: 'Glory of Paagrio', levels: 3, mp: 204, buff: 1200000, reuse: 20000, effect: 'glory_of_paagrio', target: 'ally', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 264, name: 'Song of Earth', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_earth', target: 'party', stat: 'pDefMul', statValue: 1.25, statKind: 'mul' },
     { id: 265, name: 'Song of Life', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_life', target: 'party', stat: 'regHp', statValue: 1.2, statKind: 'mul' },
     { id: 266, name: 'Song of Water', levels: 1, mp: 60, buff: 120000, reuse: 10000, effect: 'song_of_water', target: 'party', stat: 'pEvasionRateAdd', statValue: 3, statKind: 'add' },
@@ -432,6 +436,33 @@ assert.strictEqual(partyBuffStatsTarget.collectiveAccur, Formulas.calcAccur(20, 
 assert.strictEqual(partyBuffStatsTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.2), 'Dance of Mystic should multiply sourced MAtk');
 assert.strictEqual(partyBuffStatsTarget.collectiveAtkSpd, Math.round(Math.round(Formulas.calcAtkSpd(30, 300)) * 1.15), 'Dance of Fury should multiply sourced PAtkSpd');
 assert.strictEqual(partyBuffStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Dance of concentration should multiply sourced MAtkSpd');
+
+const paagrioStatsTarget = statActor();
+[
+    { id: 1003, name: 'Power of Paagrio' },
+    { id: 1004, name: 'Wisdom of Paagrio' },
+    { id: 1005, name: 'Blessing of Paagrio' },
+    { id: 1008, name: 'Glory of Paagrio' }
+].forEach(({ id, name }) => {
+    SkillEffects.execute(session(), caster, paagrioStatsTarget, skill({
+        selfId: id,
+        name,
+        spell: true,
+        power: 1,
+        level: 3,
+        distance: -1,
+        buff: 1200000
+    }), {
+        magicSkill: true,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+});
+calculateStats({}, paagrioStatsTarget);
+assert.strictEqual(paagrioStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.15), 'Power of Paagrio should multiply sourced PAtk');
+assert.strictEqual(paagrioStatsTarget.collectivePDef, Math.round(Math.round(Formulas.calcPDef(20, 100)) * 1.15), 'Blessing of Paagrio should multiply sourced PDef');
+assert.strictEqual(paagrioStatsTarget.collectiveMDef, Math.round(Math.round(Formulas.calcMDef(20, 30, 80)) * 1.3), 'Glory of Paagrio should multiply sourced MDef');
+assert.strictEqual(paagrioStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Wisdom of Paagrio should multiply sourced MAtkSpd');
 
 [
     { id: 1010, name: 'Soul Shield', levels: 3, mp: 30, effect: 'soul_shield', stat: 'pDefMul', statValue: 1.15, statKind: 'mul' },

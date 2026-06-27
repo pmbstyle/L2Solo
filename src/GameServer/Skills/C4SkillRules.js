@@ -93,9 +93,13 @@ const RULES = {
         { category: 'bleed', maxLevelByLevel: [3, 3, 3, 3, 3, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9] }
     ] },
     1027: { skillType: HEAL, trait: 'heal', target: 'party', ssBoost: 0 },
+    1003: { skillType: EFFECT, trait: 'buff', effect: 'power_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
+    1004: { skillType: EFFECT, trait: 'buff', effect: 'wisdom_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
+    1005: { skillType: EFFECT, trait: 'buff', effect: 'blessing_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
     1002: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_flame', effectType: 'buff', target: 'party', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
     1006: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_fire', effectType: 'buff', target: 'party', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
     1007: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_battle', effectType: 'buff', target: 'party', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
+    1008: { skillType: EFFECT, trait: 'buff', effect: 'glory_of_paagrio', effectType: 'buff', target: 'ally', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
     1009: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_shielding', effectType: 'buff', target: 'party', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
     1032: { skillType: EFFECT, trait: 'buff', effect: 'invigor', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { bleedResist: [30, 40, 50] } },
     1033: { skillType: EFFECT, trait: 'buff', effect: 'resist_poison', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { poisonResist: [30, 40, 50] } },
