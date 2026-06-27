@@ -773,6 +773,26 @@ assert.strictEqual(summonVampiricCubic.fetchSkillType(), C4SkillRules.SUMMON, 'S
 assert.strictEqual(summonVampiricCubic.fetchTargetKind(), 'self', 'Summon Vampiric Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonVampiricCubic.fetchSsBoost(), 0, 'Summon Vampiric Cubic should not consume offensive shot boost semantics');
 
+const summonMechanicGolemData = activeSkills.find((entry) => entry.selfId === 25);
+assert(summonMechanicGolemData, 'Summon Mechanic Golem should be present in active skills data');
+assert.strictEqual(summonMechanicGolemData.time.hitTime, 15000, 'Summon Mechanic Golem should preserve sourced 15000ms hit time');
+assert.strictEqual(summonMechanicGolemData.summon.totalLifeTime, 1200000, 'Summon Mechanic Golem should preserve sourced summon lifetime');
+assert.strictEqual(summonMechanicGolemData.summon.expPenalty, 0.15, 'Summon Mechanic Golem should preserve sourced exp penalty');
+assert.strictEqual(summonMechanicGolemData.summon.itemConsumeSteps, 4, 'Summon Mechanic Golem should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonMechanicGolemData.levels.length, 9, 'Summon Mechanic Golem should preserve sourced 9 base levels');
+assert.strictEqual(summonMechanicGolemData.levels[0].mp, 49, 'Summon Mechanic Golem level 1 MP should preserve sourced consume value');
+assert.strictEqual(summonMechanicGolemData.levels[0].itemId, 1459, 'Summon Mechanic Golem should preserve sourced crystal item id');
+assert.strictEqual(summonMechanicGolemData.levels[0].itemCountOT, 1, 'Summon Mechanic Golem level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonMechanicGolemData.levels[0].npcId, 12187, 'Summon Mechanic Golem level 1 should preserve sourced npcId');
+assert.strictEqual(summonMechanicGolemData.levels[8].mp, 133, 'Summon Mechanic Golem level 9 MP should preserve sourced consume value');
+assert.strictEqual(summonMechanicGolemData.levels[8].itemCount, 5, 'Summon Mechanic Golem level 9 should preserve sourced crystal count');
+assert.strictEqual(summonMechanicGolemData.levels[8].itemCountOT, 4, 'Summon Mechanic Golem level 9 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonMechanicGolemData.levels[8].npcId, 12525, 'Summon Mechanic Golem level 9 should preserve sourced npcId');
+const summonMechanicGolem = skill({ selfId: 25, name: 'Summon Mechanic Golem', spell: true, power: 1, level: 9, distance: -1 });
+assert.strictEqual(summonMechanicGolem.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Mechanic Golem should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonMechanicGolem.fetchTargetKind(), 'self', 'Summon Mechanic Golem should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonMechanicGolem.fetchSsBoost(), 0, 'Summon Mechanic Golem should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
