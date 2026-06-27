@@ -165,7 +165,7 @@ class BackpackModel {
 
     fetchTotalLoad() {
         let values = this.fetchItems().map((ob) => ob.fetchMass()) ?? [];
-        return values.reduce((acc, value) => acc + value);
+        return values.reduce((acc, value) => acc + value, 0);
     }
 
     fetchTotalAdena() {

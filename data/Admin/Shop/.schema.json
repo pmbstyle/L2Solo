@@ -1,15 +1,75 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
+    "definitions": {
+        "category": {
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                {
+                    "type": "string",
+                    "pattern": "^(armor|weapon):(none|d|c|b|a|s)$"
+                }
+            ]
+        }
+    },
+    "additionalProperties": {
+        "$ref": "#/definitions/category"
+    },
     "properties": {
         "armor-none": {
-            "type": "array",
-            "items": {
-                "type": "integer"
-            }
+            "$ref": "#/definitions/category"
+        },
+        "armor-d": {
+            "$ref": "#/definitions/category"
+        },
+        "armor-c": {
+            "$ref": "#/definitions/category"
+        },
+        "armor-b": {
+            "$ref": "#/definitions/category"
+        },
+        "armor-a": {
+            "$ref": "#/definitions/category"
+        },
+        "armor-s": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-none": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-d": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-c": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-b": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-a": {
+            "$ref": "#/definitions/category"
+        },
+        "weapon-s": {
+            "$ref": "#/definitions/category"
         }
     },
     "required": [
-        "armor-none"
+        "armor-none",
+        "armor-d",
+        "armor-c",
+        "armor-b",
+        "armor-a",
+        "armor-s",
+        "weapon-none",
+        "weapon-d",
+        "weapon-c",
+        "weapon-b",
+        "weapon-a",
+        "weapon-s"
     ]
 }

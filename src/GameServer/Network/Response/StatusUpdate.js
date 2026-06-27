@@ -5,7 +5,7 @@ function statusUpdate(id, params = []) {
 
     packet
         .writeD(id)
-        .writeD(0x04);
+        .writeD(utils.size(params));
 
     params.forEach((param) => {
         packet

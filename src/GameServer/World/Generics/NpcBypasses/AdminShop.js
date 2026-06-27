@@ -2,8 +2,26 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const Item           = invoke('GameServer/Item/Item');
 const DataCache      = invoke('GameServer/DataCache');
 
+function itemIdsForSource(source) {
+    if (Array.isArray(source)) {
+        return source;
+    }
+
+    const match = typeof source === 'string' ? source.match(/^(armor|weapon):(none|d|c|b|a|s)$/) : null;
+    if (match) {
+        const kindPrefix = match[1] === 'armor' ? 'Armor.' : 'Weapon.';
+        const rank = match[2];
+        return DataCache.items
+            .filter((item) => item.template?.kind?.startsWith(kindPrefix))
+            .filter((item) => (item.etc?.rank || 'none') === rank)
+            .map((item) => item.selfId);
+    }
+
+    return null;
+}
+
 module.exports = function(session, parts) {
-    const itemIds = DataCache.adminShop[parts[1]];
+    const itemIds = itemIdsForSource(DataCache.adminShop[parts[1]]);
     if (!itemIds) {
         session.dataSendToMe(ServerResponse.actionFailed());
         return;
@@ -29,3 +47,5 @@ module.exports = function(session, parts) {
         ServerResponse.purchaseList(list, session.actor.backpack.fetchTotalAdena())
     );
 };
+
+module.exports.itemIdsForSource = itemIdsForSource;
