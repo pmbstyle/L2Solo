@@ -1890,6 +1890,54 @@ assert.strictEqual(sealScourgeOutcome.effect.key, 'seal_of_scourge', 'Seal of Sc
 assert.strictEqual(EffectStats.multiplier(sealScourgeTarget, 'regHp'), 0, 'Seal of Scourge should use sourced regHp 0');
 assert.strictEqual(regenAutomation.fetchRevHpAmount(sealScourgeTarget), 0, 'Seal of Scourge should stop runtime HP regeneration');
 
+const sealDespairData = activeSkills.find((entry) => entry.selfId === 1366);
+assert(sealDespairData, 'Seal of Despair should be present in active skills data');
+assert.strictEqual(sealDespairData.levels.length, 1, 'Seal of Despair active data should preserve sourced single base level');
+assert.strictEqual(sealDespairData.levels[0].power, 40, 'Seal of Despair active data should preserve sourced power 40');
+assert.strictEqual(sealDespairData.levels[0].mp, 107, 'Seal of Despair active data should combine sourced initial and consume MP');
+assert.strictEqual(sealDespairData.time.reuse, 300000, 'Seal of Despair active data should preserve sourced reuse');
+const sealDespairTarget = statActor();
+const sealDespair = skill({ selfId: 1366, name: 'Seal of Despair', spell: true, power: 40, level: 1, distance: -1, buff: 120000 });
+const sealDespairOutcome = SkillEffects.execute(session(), caster, sealDespairTarget, sealDespair, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealDespair.fetchTargetKind(), 'enemy', 'Seal of Despair should resolve as an enemy debuff');
+assert.strictEqual(sealDespairOutcome.effect.key, 'seal_of_despair', 'Seal of Despair should apply a structured debuff');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'pAtkMul'), 0.9, 'Seal of Despair should use sourced pAtk 0.9');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'runSpdMul'), 0.8, 'Seal of Despair should use sourced runSpd 0.8');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'mDefMul'), 0.7, 'Seal of Despair should use sourced mDef 0.7');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'pAtkSpdMul'), 0.7, 'Seal of Despair should use sourced pAtkSpd 0.7');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'pCritRateMul'), 0.7, 'Seal of Despair should use sourced rCrit base multiplier 0.7');
+assert.strictEqual(EffectStats.multiplier(sealDespairTarget, 'pCritDamageMul'), 0.7, 'Seal of Despair should use sourced cAtk 0.7');
+assert.strictEqual(EffectStats.add(sealDespairTarget, 'pAccuracyCombatAdd'), -6, 'Seal of Despair should use sourced accCombat -6');
+calculateStats({}, sealDespairTarget);
+assert.strictEqual(sealDespairTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 0.9), 'Seal of Despair should reduce physical attack');
+assert.strictEqual(sealDespairTarget.collectiveMDef, Math.round(Formulas.calcMDef(20, 30, 80) * 0.7), 'Seal of Despair should reduce magic defense');
+assert.strictEqual(sealDespairTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 0.7), 'Seal of Despair should reduce attack speed');
+assert.strictEqual(sealDespairTarget.collectiveRunSpd, Math.round(Formulas.calcSpeed(30, 120) * 0.8), 'Seal of Despair should reduce run speed');
+assert.strictEqual(sealDespairTarget.collectiveCritical, Formulas.calcCritical(30, 40) * 0.7, 'Seal of Despair should reduce physical critical rate');
+
+const sealDiseaseData = activeSkills.find((entry) => entry.selfId === 1367);
+assert(sealDiseaseData, 'Seal of Disease should be present in active skills data');
+assert.strictEqual(sealDiseaseData.levels.length, 1, 'Seal of Disease active data should preserve sourced single base level');
+assert.strictEqual(sealDiseaseData.levels[0].power, 40, 'Seal of Disease active data should preserve sourced power 40');
+assert.strictEqual(sealDiseaseData.levels[0].mp, 105, 'Seal of Disease active data should combine sourced initial and consume MP');
+assert.strictEqual(sealDiseaseData.time.reuse, 60000, 'Seal of Disease active data should preserve sourced reuse');
+const sealDiseaseTarget = statActor();
+const sealDisease = skill({ selfId: 1367, name: 'Seal of Disease', spell: true, power: 40, level: 1, distance: 600, buff: 120000 });
+const sealDiseaseOutcome = SkillEffects.execute(session(), caster, sealDiseaseTarget, sealDisease, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealDisease.fetchTargetKind(), 'enemy', 'Seal of Disease should resolve as an enemy debuff');
+assert.strictEqual(sealDiseaseOutcome.effect.key, 'seal_of_disease', 'Seal of Disease should apply a structured regen debuff');
+assert.strictEqual(EffectStats.multiplier(sealDiseaseTarget, 'regHp'), 0.5, 'Seal of Disease should use sourced gainHp 0.5');
+assert.strictEqual(EffectStats.multiplier(sealDiseaseTarget, 'cancelVuln'), 1.3, 'Seal of Disease should use sourced cancelVuln 1.3');
+assert.strictEqual(regenAutomation.fetchRevHpAmount(sealDiseaseTarget), 5, 'Seal of Disease should halve runtime HP regeneration');
+
 const curseDiseaseData = activeSkills.find((entry) => entry.selfId === 1269);
 assert(curseDiseaseData, 'Curse Disease should be present in active skills data');
 assert.strictEqual(curseDiseaseData.levels.length, 9, 'Curse Disease active data should preserve sourced 9 levels');

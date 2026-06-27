@@ -154,6 +154,16 @@ const RULES = {
     1332: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1333: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1334: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
+    1366: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_despair', effectType: 'debuff', target: 'enemy', baseLandRate: 40, stats: {
+        pAtkMul: 0.9,
+        runSpdMul: 0.8,
+        mDefMul: 0.7,
+        pAtkSpdMul: 0.7,
+        pCritRateMul: 0.7,
+        pCritDamageMul: 0.7,
+        pAccuracyCombatAdd: -6
+    } },
+    1367: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_disease', effectType: 'debuff', target: 'enemy', baseLandRate: 40, stats: { regHp: 0.5, cancelVuln: 1.3 } },
     4080: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     4091: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [14] },
     4115: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
