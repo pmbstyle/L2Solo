@@ -142,6 +142,17 @@ assert.strictEqual(greaterGroupHeal.fetchTargetKind(), 'friendly', 'Greater Grou
 assert.strictEqual(greaterGroupHealOutcome.heal, 687, 'Greater Group Heal level 33 should heal by sourced power 687');
 assert.strictEqual(greaterGroupHealTarget.fetchHp(), 787, 'Greater Group Heal should apply sourced power to target HP');
 
+const blazeData = activeSkills.find((entry) => entry.selfId === 1220);
+assert(blazeData, 'Blaze should be present in active skills data');
+assert.strictEqual(blazeData.levels.length, 8, 'Blaze should preserve sourced 8 base levels');
+assert.strictEqual(blazeData.levels[7].power, 44, 'Blaze level 8 should preserve sourced power 44');
+assert.strictEqual(blazeData.levels[7].mp, 30, 'Blaze level 8 MP should use sourced initial + consume total');
+const blaze = skill({ selfId: 1220, name: 'Blaze', spell: true, power: 44, level: 8, distance: 750 });
+assert.strictEqual(blaze.fetchSkillType(), C4SkillRules.DAMAGE, 'Blaze should resolve to direct magic damage');
+assert.strictEqual(blaze.fetchTargetKind(), 'enemy', 'Blaze should resolve as an enemy MDAM skill');
+assert.strictEqual(blaze.fetchSemantic().trait, 'fire', 'Blaze should preserve sourced fire element semantics');
+assert.strictEqual(blaze.fetchSsBoost(), 1, 'Blaze should preserve sourced offensive shot boost behavior');
+
 const restoreTarget = creature({ id: 2000009, hp: 400, maxHp: 1000 });
 caster.spiritshotLoaded = true;
 const restoreLife = skill({ selfId: 1258, name: 'Restore Life', spell: true, power: 1, level: 4 });
