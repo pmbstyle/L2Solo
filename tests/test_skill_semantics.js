@@ -92,6 +92,22 @@ assert.strictEqual(heal.fetchSkillType(), C4SkillRules.HEAL, 'Heal should resolv
 assert.strictEqual(wounded.fetchHp(), 89, 'Heal should restore datapack power without invented MAtk scaling');
 assert.strictEqual(healOutcome.damage, 0, 'Heal should not be routed as damage');
 
+const greaterHealData = activeSkills.find((entry) => entry.selfId === 1217);
+assert(greaterHealData, 'Greater Heal should be present in active skills data');
+assert.strictEqual(greaterHealData.levels.length, 33, 'Greater Heal should preserve sourced 33 base levels');
+assert.strictEqual(greaterHealData.levels[0].power, 371, 'Greater Heal level 1 should use sourced power instead of aggro');
+assert.strictEqual(greaterHealData.levels[32].power, 858, 'Greater Heal level 33 should preserve sourced power 858');
+assert.strictEqual(greaterHealData.levels[32].mp, 120, 'Greater Heal level 33 MP should use sourced initial + consume total');
+const greaterHealTarget = creature({ id: 2000010, hp: 100, maxHp: 1000 });
+const greaterHeal = skill({ selfId: 1217, name: 'Greater Heal', spell: true, power: 858, level: 33 });
+const greaterHealOutcome = SkillEffects.execute(session(), caster, greaterHealTarget, greaterHeal, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(greaterHeal.fetchSkillType(), C4SkillRules.HEAL, 'Greater Heal should resolve to HEAL');
+assert.strictEqual(greaterHealOutcome.heal, 858, 'Greater Heal level 33 should heal by sourced power 858');
+assert.strictEqual(greaterHealTarget.fetchHp(), 958, 'Greater Heal should apply sourced power to target HP');
+
 const restoreTarget = creature({ id: 2000009, hp: 400, maxHp: 1000 });
 caster.spiritshotLoaded = true;
 const restoreLife = skill({ selfId: 1258, name: 'Restore Life', spell: true, power: 1, level: 4 });
