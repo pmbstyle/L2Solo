@@ -229,6 +229,34 @@ assert.strictEqual(servitorWindWalk.fetchTargetKind(), 'pet', 'Servitor Wind Wal
 assert.strictEqual(servitorWindWalkOutcome.effect.key, 'servitor_wind_walk', 'Servitor Wind Walk should apply a structured pet buff');
 assert.strictEqual(EffectStats.add(servitorWindWalkTarget, 'runSpdAdd'), 33, 'Servitor Wind Walk level 2 should use sourced runSpd +33');
 
+const brightServitorData = activeSkills.find((entry) => entry.selfId === 1145);
+assert(brightServitorData, 'Bright Servitor should be present in active skills data');
+assert.strictEqual(brightServitorData.levels[2].mp, 54, 'Bright Servitor level 3 MP should use sourced initial + consume total');
+const brightServitorTarget = statActor();
+const brightServitor = skill({ selfId: 1145, name: 'Bright Servitor', spell: true, power: 1, level: 3, buff: 1200000 });
+const brightServitorOutcome = SkillEffects.execute(session(), caster, brightServitorTarget, brightServitor, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(brightServitor.fetchTargetKind(), 'pet', 'Bright Servitor should preserve sourced TARGET_PET semantics');
+assert.strictEqual(brightServitorOutcome.effect.key, 'bright_servitor', 'Bright Servitor should apply a structured pet buff');
+assert.strictEqual(EffectStats.multiplier(brightServitorTarget, 'mAtkMul'), 1.75, 'Bright Servitor level 3 should use sourced mAtk 1.75');
+
+const mightyServitorData = activeSkills.find((entry) => entry.selfId === 1146);
+assert(mightyServitorData, 'Mighty Servitor should be present in active skills data');
+assert.strictEqual(mightyServitorData.levels[1].mp, 46, 'Mighty Servitor level 2 MP should use sourced initial + consume total');
+const mightyServitorTarget = statActor();
+const mightyServitor = skill({ selfId: 1146, name: 'Mighty Servitor', spell: true, power: 1, level: 2, buff: 1200000 });
+const mightyServitorOutcome = SkillEffects.execute(session(), caster, mightyServitorTarget, mightyServitor, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(mightyServitor.fetchTargetKind(), 'pet', 'Mighty Servitor should preserve sourced TARGET_PET semantics');
+assert.strictEqual(mightyServitorOutcome.effect.key, 'mighty_servitor', 'Mighty Servitor should apply a structured pet buff');
+assert.strictEqual(EffectStats.multiplier(mightyServitorTarget, 'pAtkMul'), 1.12, 'Mighty Servitor level 2 should use sourced pAtk 1.12');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
