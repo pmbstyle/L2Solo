@@ -985,6 +985,27 @@ assert.strictEqual(summonQueenCat.fetchSkillType(), C4SkillRules.SUMMON, 'Summon
 assert.strictEqual(summonQueenCat.fetchTargetKind(), 'self', 'Summon Queen of Cat should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonQueenCat.fetchSsBoost(), 0, 'Summon Queen of Cat should not consume offensive shot boost semantics');
 
+const summonSeraphimData = activeSkills.find((entry) => entry.selfId === 1332);
+assert(summonSeraphimData, 'Summon Unicorn Seraphim should be present in active skills data');
+assert.strictEqual(summonSeraphimData.time.hitTime, 15000, 'Summon Unicorn Seraphim should preserve sourced 15000ms hit time');
+assert.strictEqual(summonSeraphimData.summon.totalLifeTime, 1200000, 'Summon Unicorn Seraphim should preserve sourced summon lifetime');
+assert.strictEqual(summonSeraphimData.summon.expPenalty, 0.05, 'Summon Unicorn Seraphim should preserve sourced exp penalty');
+assert.strictEqual(summonSeraphimData.summon.itemConsumeSteps, 4, 'Summon Unicorn Seraphim should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonSeraphimData.levels.length, 10, 'Summon Unicorn Seraphim should preserve sourced 10 base levels');
+assert.strictEqual(summonSeraphimData.levels[0].mp, 70, 'Summon Unicorn Seraphim level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonSeraphimData.levels[1].mp, 108, 'Summon Unicorn Seraphim level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonSeraphimData.levels[0].itemId, 1459, 'Summon Unicorn Seraphim should preserve sourced crystal item id');
+assert.strictEqual(summonSeraphimData.levels[0].itemCountOT, 1, 'Summon Unicorn Seraphim level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonSeraphimData.levels[0].npcId, 13151, 'Summon Unicorn Seraphim level 1 should preserve sourced npcId');
+assert.strictEqual(summonSeraphimData.levels[9].mp, 123, 'Summon Unicorn Seraphim level 10 MP should use sourced initial + consume total');
+assert.strictEqual(summonSeraphimData.levels[9].itemCount, 4, 'Summon Unicorn Seraphim level 10 should preserve sourced crystal count');
+assert.strictEqual(summonSeraphimData.levels[9].itemCountOT, 3, 'Summon Unicorn Seraphim level 10 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonSeraphimData.levels[9].npcId, 13160, 'Summon Unicorn Seraphim level 10 should preserve sourced npcId');
+const summonSeraphim = skill({ selfId: 1332, name: 'Summon Unicorn Seraphim', spell: true, power: 1, level: 10, distance: -1 });
+assert.strictEqual(summonSeraphim.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Unicorn Seraphim should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonSeraphim.fetchTargetKind(), 'self', 'Summon Unicorn Seraphim should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonSeraphim.fetchSsBoost(), 0, 'Summon Unicorn Seraphim should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
