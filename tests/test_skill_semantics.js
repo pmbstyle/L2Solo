@@ -2232,6 +2232,71 @@ assert.strictEqual(cursePoison.fetchSemantic().baseLandRate, 5, 'Curse: Poison l
 assert.strictEqual(curseOutcome.effect.dot.damage, 31, 'Curse: Poison level 4 should use the sourced L2J damage table');
 EffectStore.remove(curseTarget, 'poison');
 
+const curseDiscordData = activeSkills.find((entry) => entry.selfId === 1163);
+assert(curseDiscordData, 'Curse Discord should be present in active skills data');
+assert.strictEqual(curseDiscordData.time.buff, 30000, 'Curse Discord should preserve sourced 5x6s ConfuseMob duration');
+assert.strictEqual(curseDiscordData.levels.length, 14, 'Curse Discord should preserve sourced 14 base levels');
+assert.strictEqual(curseDiscordData.levels[13].mp, 69, 'Curse Discord level 14 MP should use sourced initial + consume total');
+const curseDiscord = skill({ selfId: 1163, name: 'Curse Discord', spell: true, power: 1, level: 14, distance: 600, buff: 30000 });
+const playerDiscordTarget = statActor();
+const playerDiscordOutcome = SkillEffects.execute(session(), caster, playerDiscordTarget, curseDiscord, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(playerDiscordOutcome.effect, null, 'Curse Discord should not apply CONFUSE_MOB_ONLY to living players');
+assert.strictEqual(playerDiscordOutcome.effectResisted, true, 'Curse Discord mob-only rejection should report effect resistance');
+const mobDiscordTarget = statActor();
+mobDiscordTarget.fetchAttackable = () => true;
+const mobDiscordOutcome = SkillEffects.execute(session(), caster, mobDiscordTarget, curseDiscord, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseDiscord.fetchSemantic().baseLandRate, 80, 'Curse Discord should use sourced core fallback land rate 80');
+assert.strictEqual(mobDiscordOutcome.effect.key, 'confusion', 'Curse Discord should apply sourced ConfuseMob to attackable NPCs');
+assert.strictEqual(EffectStore.impairments(mobDiscordTarget).confused, true, 'Curse Discord confusion should be visible through impairments');
+EffectStore.remove(mobDiscordTarget, 'confusion');
+
+const curseFearData = activeSkills.find((entry) => entry.selfId === 1169);
+assert(curseFearData, 'Curse Fear should be present in active skills data');
+assert.strictEqual(curseFearData.time.reuse, 12000, 'Curse Fear should preserve sourced 12 second reuse');
+assert.strictEqual(curseFearData.time.buff, 30000, 'Curse Fear should preserve sourced 5x6s Fear duration');
+assert.strictEqual(curseFearData.levels.length, 14, 'Curse Fear should preserve sourced 14 base levels');
+assert.strictEqual(curseFearData.levels[13].power, 20, 'Curse Fear level 14 should preserve sourced power 20');
+assert.strictEqual(curseFearData.levels[13].mp, 69, 'Curse Fear level 14 MP should use sourced initial + consume total');
+const curseFear = skill({ selfId: 1169, name: 'Curse Fear', spell: true, power: 20, level: 14, distance: 600, buff: 30000 });
+const fearTarget = statActor();
+const fearOutcome = SkillEffects.execute(session(), caster, fearTarget, curseFear, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseFear.fetchTargetKind(), 'enemy', 'Curse Fear should resolve as an enemy fear debuff');
+assert.strictEqual(curseFear.fetchSemantic().baseLandRate, 20, 'Curse Fear should use sourced power 20 as land rate');
+assert.strictEqual(fearOutcome.effect.key, 'fear', 'Curse Fear should apply a structured fear debuff');
+assert.strictEqual(EffectStore.hasDebuff(fearTarget, 'fear'), true, 'Curse Fear should leave a fear debuff');
+EffectStore.remove(fearTarget, 'fear');
+
+const anchorData = activeSkills.find((entry) => entry.selfId === 1170);
+assert(anchorData, 'Anchor should be present in active skills data');
+assert.strictEqual(anchorData.time.reuse, 150000, 'Anchor should preserve sourced 150 second reuse');
+assert.strictEqual(anchorData.levels.length, 13, 'Anchor should preserve sourced 13 base levels');
+assert.strictEqual(anchorData.levels[12].power, 20, 'Anchor level 13 should preserve sourced power 20');
+assert.strictEqual(anchorData.levels[12].mp, 69, 'Anchor level 13 MP should use sourced initial + consume total');
+const anchor = skill({ selfId: 1170, name: 'Anchor', spell: true, power: 20, level: 13, distance: 400, buff: 120000 });
+const anchorTarget = statActor();
+const anchorOutcome = SkillEffects.execute(session(), caster, anchorTarget, anchor, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(anchor.fetchTargetKind(), 'enemy', 'Anchor should resolve as an enemy paralyze effect');
+assert.strictEqual(anchor.fetchSemantic().baseLandRate, 20, 'Anchor should use sourced power 20 as land rate');
+assert.strictEqual(anchorOutcome.effect.key, 'paralyze', 'Anchor should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canMove(anchorTarget), false, 'Anchor paralyze should block movement through runtime restrictions');
+EffectStore.remove(anchorTarget, 'paralyze');
+
 const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
 assert(chillFlameData, 'Chill Flame should be present in active skills data');
 assert.strictEqual(chillFlameData.levels.length, 2, 'Chill Flame should preserve sourced 2 base levels');
