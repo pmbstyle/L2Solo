@@ -2391,6 +2391,64 @@ assert.strictEqual(sealFlameOutcome.effect.dot.count, 15, 'Seal of Flame should 
 assert.strictEqual(sealFlameOutcome.effect.dot.intervalMs, 1000, 'Seal of Flame should tick every sourced second');
 EffectStore.remove(sealFlameTarget, 'seal_of_flame');
 
+const aquaSwirlData = activeSkills.find((entry) => entry.selfId === 1175);
+assert(aquaSwirlData, 'Aqua Swirl should be present in active skills data');
+assert.strictEqual(aquaSwirlData.levels.length, 8, 'Aqua Swirl should preserve sourced 8 base levels');
+assert.strictEqual(aquaSwirlData.levels[7].power, 44, 'Aqua Swirl level 8 should preserve sourced power 44');
+assert.strictEqual(aquaSwirlData.levels[7].mp, 30, 'Aqua Swirl level 8 MP should use sourced initial + consume total');
+const aquaSwirl = skill({ selfId: 1175, name: 'Aqua Swirl', spell: true, power: 44, level: 8, distance: 750 });
+assert.strictEqual(aquaSwirl.fetchSkillType(), C4SkillRules.DAMAGE, 'Aqua Swirl should resolve as sourced MDAM damage');
+assert.strictEqual(aquaSwirl.fetchSemantic().trait, 'water', 'Aqua Swirl should preserve sourced water element');
+assert.strictEqual(aquaSwirl.fetchTargetKind(), 'enemy', 'Aqua Swirl should resolve as an enemy nuke');
+
+const tempestData = activeSkills.find((entry) => entry.selfId === 1176);
+assert(tempestData, 'Tempest should be present in active skills data');
+assert.strictEqual(tempestData.levels.length, 15, 'Tempest should preserve sourced 15 base levels');
+assert.strictEqual(tempestData.levels[14].power, 54, 'Tempest level 15 should preserve sourced power 54');
+assert.strictEqual(tempestData.levels[14].mp, 103, 'Tempest level 15 MP should use sourced initial + consume total');
+const tempest = skill({ selfId: 1176, name: 'Tempest', spell: true, power: 54, level: 15, distance: 500 });
+assert.strictEqual(tempest.fetchSkillType(), C4SkillRules.DAMAGE, 'Tempest should resolve as sourced MDAM damage');
+assert.strictEqual(tempest.fetchSemantic().trait, 'wind', 'Tempest should preserve sourced wind element');
+assert.strictEqual(tempest.fetchTargetKind(), 'enemy', 'Tempest should resolve as an enemy nuke');
+const twisterData = activeSkills.find((entry) => entry.selfId === 1178);
+assert(twisterData, 'Twister should be present in active skills data');
+assert.strictEqual(twisterData.levels.length, 8, 'Twister should preserve sourced 8 base levels');
+assert.strictEqual(twisterData.levels[7].power, 44, 'Twister level 8 should preserve sourced power 44');
+assert.strictEqual(twisterData.levels[7].mp, 30, 'Twister level 8 MP should use sourced initial + consume total');
+const twister = skill({ selfId: 1178, name: 'Twister', spell: true, power: 44, level: 8, distance: 750 });
+assert.strictEqual(twister.fetchSkillType(), C4SkillRules.DAMAGE, 'Twister should resolve as sourced MDAM damage');
+assert.strictEqual(twister.fetchSemantic().trait, 'wind', 'Twister should preserve sourced wind element');
+assert.strictEqual(twister.fetchTargetKind(), 'enemy', 'Twister should resolve as an enemy nuke');
+
+const flameStrikeData = activeSkills.find((entry) => entry.selfId === 1181);
+assert(flameStrikeData, 'Flame Strike should be present in active skills data');
+assert.strictEqual(flameStrikeData.levels.length, 3, 'Flame Strike should preserve sourced 3 base levels');
+assert.strictEqual(flameStrikeData.levels[2].power, 19, 'Flame Strike level 3 should preserve sourced power 19');
+assert.strictEqual(flameStrikeData.levels[2].mp, 40, 'Flame Strike level 3 MP should use sourced initial + consume total');
+const flameStrike = skill({ selfId: 1181, name: 'Flame Strike', spell: true, power: 19, level: 3, distance: 500 });
+assert.strictEqual(flameStrike.fetchSkillType(), C4SkillRules.DAMAGE, 'Flame Strike should resolve as sourced MDAM damage');
+assert.strictEqual(flameStrike.fetchSemantic().trait, 'fire', 'Flame Strike should preserve sourced fire element');
+assert.strictEqual(flameStrike.fetchTargetKind(), 'enemy', 'Flame Strike should resolve as an enemy nuke');
+
+const freezingShackleData = activeSkills.find((entry) => entry.selfId === 1183);
+assert(freezingShackleData, 'Freezing Shackle should be present in active skills data');
+assert.strictEqual(freezingShackleData.levels.length, 4, 'Freezing Shackle should preserve sourced 4 base levels');
+assert.strictEqual(freezingShackleData.levels[3].power, 70, 'Freezing Shackle level 4 should preserve sourced land rate power 70');
+assert.strictEqual(freezingShackleData.levels[3].mp, 103, 'Freezing Shackle level 4 MP should use sourced initial + consume total');
+const freezingShackle = skill({ selfId: 1183, name: 'Freezing Shackle', spell: true, power: 70, level: 4, distance: 600, buff: 15000 });
+const freezingShackleTarget = statActor();
+const freezingShackleOutcome = SkillEffects.execute(session(), caster, freezingShackleTarget, freezingShackle, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(freezingShackle.fetchTargetKind(), 'enemy', 'Freezing Shackle should resolve as an enemy water DOT');
+assert.strictEqual(freezingShackleOutcome.effect.key, 'freezing_shackle', 'Freezing Shackle should apply a structured debuff effect');
+assert.strictEqual(freezingShackleOutcome.effect.dot.damage, 118, 'Freezing Shackle level 4 should use sourced DamOverTime value 118');
+assert.strictEqual(freezingShackleOutcome.effect.dot.count, 15, 'Freezing Shackle should use sourced 15 damage ticks');
+assert.strictEqual(freezingShackleOutcome.effect.dot.intervalMs, 1000, 'Freezing Shackle should tick every sourced second');
+EffectStore.remove(freezingShackleTarget, 'freezing_shackle');
+
 const sealPoisonData = activeSkills.find((entry) => entry.selfId === 1209);
 assert(sealPoisonData, 'Seal of Poison should be present in active skills data');
 assert.strictEqual(sealPoisonData.levels.length, 6, 'Seal of Poison should preserve sourced 6 base levels');
