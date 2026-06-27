@@ -2205,6 +2205,100 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
 EffectStore.remove(curseTarget, 'poison');
 
+const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
+assert(chillFlameData, 'Chill Flame should be present in active skills data');
+assert.strictEqual(chillFlameData.levels.length, 2, 'Chill Flame should preserve sourced 2 base levels');
+assert.strictEqual(chillFlameData.levels[1].power, 70, 'Chill Flame level 2 should preserve sourced land rate power 70');
+assert.strictEqual(chillFlameData.levels[1].mp, 23, 'Chill Flame level 2 MP should use sourced initial + consume total');
+const chillFlame = skill({ selfId: 1100, name: 'Chill Flame', spell: true, power: 70, level: 2, distance: 600, buff: 15000 });
+const chillTarget = statActor();
+const chillOutcome = SkillEffects.execute(session(), caster, chillTarget, chillFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(chillFlame.fetchTargetKind(), 'enemy', 'Chill Flame should resolve as an enemy fire DOT');
+assert.strictEqual(chillOutcome.effect.key, 'chill_flame', 'Chill Flame should apply a structured debuff effect');
+assert.strictEqual(chillOutcome.effect.dot.damage, 30, 'Chill Flame level 2 should use sourced DamOverTime value 30');
+assert.strictEqual(chillOutcome.effect.dot.count, 15, 'Chill Flame should use sourced 15 damage ticks');
+assert.strictEqual(chillOutcome.effect.dot.intervalMs, 1000, 'Chill Flame should tick every sourced second');
+EffectStore.remove(chillTarget, 'chill_flame');
+
+const blazeQuakeData = activeSkills.find((entry) => entry.selfId === 1101);
+assert(blazeQuakeData, 'Blaze Quake should be present in active skills data');
+assert.strictEqual(blazeQuakeData.levels[0].power, 35, 'Blaze Quake should preserve sourced land rate power 35');
+assert.strictEqual(blazeQuakeData.levels[1].mp, 68, 'Blaze Quake level 2 MP should use sourced initial + consume total');
+const blazeQuake = skill({ selfId: 1101, name: 'Blaze Quake', spell: true, power: 35, level: 2, distance: -1, buff: 15000 });
+const blazeTarget = statActor();
+const blazeOutcome = SkillEffects.execute(session(), caster, blazeTarget, blazeQuake, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blazeQuake.fetchTargetKind(), 'enemy', 'Blaze Quake should resolve as an enemy fire DOT');
+assert.strictEqual(blazeOutcome.effect.key, 'blaze_quake', 'Blaze Quake should apply a structured debuff effect');
+assert.strictEqual(blazeOutcome.effect.dot.damage, 60, 'Blaze Quake level 2 should use sourced DamOverTime value 60');
+assert.strictEqual(blazeOutcome.effect.dot.count, 15, 'Blaze Quake should use sourced 15 damage ticks');
+assert.strictEqual(blazeOutcome.effect.dot.intervalMs, 1000, 'Blaze Quake should tick every sourced second');
+EffectStore.remove(blazeTarget, 'blaze_quake');
+
+const auraSinkData = activeSkills.find((entry) => entry.selfId === 1102);
+assert(auraSinkData, 'Aura Sink should be present in active skills data');
+assert.strictEqual(auraSinkData.time.buff, 30000, 'Aura Sink should preserve sourced 30 second MDOT duration');
+assert.strictEqual(auraSinkData.levels.length, 6, 'Aura Sink should preserve sourced 6 base levels');
+assert.strictEqual(auraSinkData.levels[5].power, 51, 'Aura Sink level 6 should preserve sourced power 51');
+assert.strictEqual(auraSinkData.levels[5].mp, 65, 'Aura Sink level 6 MP should use sourced initial + consume total');
+const auraSink = skill({ selfId: 1102, name: 'Aura Sink', spell: true, power: 51, level: 6, distance: 600, buff: 30000 });
+const auraSinkTarget = statActor();
+const auraSinkOutcome = SkillEffects.execute(session(), caster, auraSinkTarget, auraSink, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(auraSink.fetchTargetKind(), 'enemy', 'Aura Sink should resolve as an enemy mana damage-over-time effect');
+assert.strictEqual(auraSink.fetchSemantic().baseLandRate, 51, 'Aura Sink should use sourced level 6 power as land rate');
+assert.strictEqual(auraSinkOutcome.effect.key, 'aura_sink', 'Aura Sink should apply a structured debuff effect');
+assert.strictEqual(auraSinkOutcome.effect.manaDot.damage, 11, 'Aura Sink level 6 should use sourced ManaDamOverTime value 11');
+assert.strictEqual(auraSinkOutcome.effect.manaDot.count, 10, 'Aura Sink should use sourced 10 mana damage ticks');
+assert.strictEqual(auraSinkOutcome.effect.manaDot.intervalMs, 3000, 'Aura Sink should tick every sourced 3 seconds');
+EffectStore.remove(auraSinkTarget, 'aura_sink');
+
+const frostFlameData = activeSkills.find((entry) => entry.selfId === 1107);
+assert(frostFlameData, 'Frost Flame should be present in active skills data');
+assert.strictEqual(frostFlameData.levels[1].power, 70, 'Frost Flame level 2 should preserve sourced land rate power 70');
+assert.strictEqual(frostFlameData.levels[1].mp, 40, 'Frost Flame level 2 MP should use sourced initial + consume total');
+const frostFlame = skill({ selfId: 1107, name: 'Frost Flame', spell: true, power: 70, level: 2, distance: 750, buff: 15000 });
+const frostTarget = statActor();
+const frostOutcome = SkillEffects.execute(session(), caster, frostTarget, frostFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(frostOutcome.effect.key, 'frost_flame', 'Frost Flame should apply a structured debuff effect');
+assert.strictEqual(frostOutcome.effect.dot.damage, 60, 'Frost Flame level 2 should use sourced DamOverTime value 60');
+assert.strictEqual(frostOutcome.effect.dot.count, 15, 'Frost Flame should use sourced 15 damage ticks');
+assert.strictEqual(frostOutcome.effect.dot.intervalMs, 1000, 'Frost Flame should tick every sourced second');
+EffectStore.remove(frostTarget, 'frost_flame');
+
+const sealFlameData = activeSkills.find((entry) => entry.selfId === 1108);
+assert(sealFlameData, 'Seal of Flame should be present in active skills data');
+assert.strictEqual(sealFlameData.levels.length, 4, 'Seal of Flame should preserve sourced 4 base levels');
+assert.strictEqual(sealFlameData.levels[3].power, 35, 'Seal of Flame level 4 should preserve sourced land rate power 35');
+assert.strictEqual(sealFlameData.levels[3].mp, 153, 'Seal of Flame level 4 MP should use sourced initial + consume total');
+const sealFlame = skill({ selfId: 1108, name: 'Seal of Flame', spell: true, power: 35, level: 4, distance: -1, buff: 15000 });
+const sealFlameTarget = statActor();
+const sealFlameOutcome = SkillEffects.execute(session(), caster, sealFlameTarget, sealFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealFlame.fetchTargetKind(), 'enemy', 'Seal of Flame should resolve as an enemy fire DOT');
+assert.strictEqual(sealFlameOutcome.effect.key, 'seal_of_flame', 'Seal of Flame should apply a structured debuff effect');
+assert.strictEqual(sealFlameOutcome.effect.dot.damage, 118, 'Seal of Flame level 4 should use sourced DamOverTime value 118');
+assert.strictEqual(sealFlameOutcome.effect.dot.count, 15, 'Seal of Flame should use sourced 15 damage ticks');
+assert.strictEqual(sealFlameOutcome.effect.dot.intervalMs, 1000, 'Seal of Flame should tick every sourced second');
+EffectStore.remove(sealFlameTarget, 'seal_of_flame');
+
 const sealPoisonData = activeSkills.find((entry) => entry.selfId === 1209);
 assert(sealPoisonData, 'Seal of Poison should be present in active skills data');
 assert.strictEqual(sealPoisonData.levels.length, 6, 'Seal of Poison should preserve sourced 6 base levels');
