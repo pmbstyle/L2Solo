@@ -529,6 +529,33 @@ assert.strictEqual(
     'Decrease Weight level 3 should increase runtime max load by the sourced amount'
 );
 
+const regenerationData = activeSkills.find((entry) => entry.selfId === 1044);
+assert.strictEqual(regenerationData.levels[1].mp, 44, 'Regeneration active data should preserve sourced level 2 total MP cost');
+const regenerationTarget = statActor();
+const regeneration = skill({ selfId: 1044, name: 'Regeneration', spell: true, power: 1, level: 3, buff: 1200000 });
+const regenerationOutcome = SkillEffects.execute(session(), caster, regenerationTarget, regeneration, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(regenerationOutcome.effect.key, 'regeneration', 'Regeneration should apply a structured HP regen buff');
+assert.strictEqual(EffectStats.multiplier(regenerationTarget, 'regHp'), 1.2, 'Regeneration level 3 should use sourced regHp 1.2');
+const regenBuffAutomation = new Automation();
+regenBuffAutomation.setRevHp(10);
+regenBuffAutomation.setRevMp(10);
+assert.strictEqual(regenBuffAutomation.fetchRevHpAmount(regenerationTarget), 12, 'Regeneration should increase runtime HP regeneration by sourced multiplier');
+
+const manaRegenTarget = statActor();
+const manaRegeneration = skill({ selfId: 1047, name: 'Mana Regeneration', spell: true, power: 1, level: 4, distance: -1, buff: 1200000 });
+const manaRegenOutcome = SkillEffects.execute(session(), caster, manaRegenTarget, manaRegeneration, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(manaRegenOutcome.effect.key, 'mana_regeneration', 'Mana Regeneration should apply a structured MP regen buff');
+assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMp'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
+assert.strictEqual(regenBuffAutomation.fetchRevMpAmount(manaRegenTarget), 13, 'Mana Regeneration should increase runtime MP regeneration by sourced addition');
+
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
 const magicBarrierOutcome = SkillEffects.execute(session(), caster, magicBarrierTarget, magicBarrier, {

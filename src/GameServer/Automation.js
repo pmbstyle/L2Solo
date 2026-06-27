@@ -56,7 +56,7 @@ class Automation extends SelectedModel {
             const maxMp = creature.fetchMaxMp();
 
             const minHp = Math.min(creature.fetchHp() + this.fetchRevHpAmount(creature), maxHp);
-            const minMp = Math.min(creature.fetchMp() + this.fetchRevMp(), maxMp);
+            const minMp = Math.min(creature.fetchMp() + this.fetchRevMpAmount(creature), maxMp);
 
             creature.setHp(minHp);
             creature.setMp(minMp);
@@ -77,6 +77,11 @@ class Automation extends SelectedModel {
     fetchRevHpAmount(creature) {
         const base = Number(this.fetchRevHp()) || 0;
         return Math.max(0, Math.round(base * EffectStats.multiplier(creature, 'regHp')));
+    }
+
+    fetchRevMpAmount(creature) {
+        const base = Number(this.fetchRevMp()) || 0;
+        return Math.max(0, Math.round(base + EffectStats.add(creature, 'regMp')));
     }
 
     stopReplenish() {
