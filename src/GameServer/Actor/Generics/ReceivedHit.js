@@ -1,5 +1,31 @@
+const BOT_WAKEUP_THROTTLE_MS = 750;
+
+function isBotSession(session) {
+    return !!(
+        session &&
+        session.accountId &&
+        String(session.accountId).startsWith('bot_')
+    );
+}
+
+function wakeBotOnDamage(victimSession, attacker) {
+    if (!isBotSession(victimSession) || !victimSession.aiActive) return;
+
+    if (attacker && attacker !== victimSession.actor && typeof attacker.fetchId === 'function') {
+        victimSession.incomingThreatId = attacker.fetchId();
+        victimSession.incomingThreatAt = Date.now();
+    }
+
+    const now = Date.now();
+    if (now - Number(victimSession.lastDamageWakeAt || 0) < BOT_WAKEUP_THROTTLE_MS) return;
+
+    victimSession.lastDamageWakeAt = now;
+    invoke('GameServer/Bot/BotAI').wakeup(victimSession);
+}
+
 function receivedHit(session, actor, hit) {
     const Generics = invoke(path.actor);
+    const victimSession = actor?.session;
 
     actor.setHp(Math.max(0, actor.fetchHp() - hit)); // HP bar would disappear if less than zero
     actor.statusUpdateVitals(actor);
@@ -54,6 +80,7 @@ function receivedHit(session, actor, hit) {
         return;
     }
 
+    wakeBotOnDamage(victimSession, session?.actor);
     actor.automation.replenishVitals(actor);
     Generics.enterCombatState(session, actor);
 }
