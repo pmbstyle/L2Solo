@@ -512,7 +512,7 @@ assert.strictEqual(vampiricAttack.applyDamageAbsorb(session(), bowVampiricTarget
 
 const decreaseWeightData = activeSkills.find((entry) => entry.selfId === 1257);
 assert.strictEqual(decreaseWeightData.time.buff, 1200000, 'Decrease Weight active data should preserve sourced 1200s duration');
-assert.strictEqual(decreaseWeightData.levels[2].mp, 19, 'Decrease Weight active data should preserve sourced level 3 MP cost');
+assert.strictEqual(decreaseWeightData.levels[2].mp, 24, 'Decrease Weight active data should preserve sourced level 3 total MP cost');
 const lighterTarget = statActor();
 const decreaseWeight = skill({ selfId: 1257, name: 'Decrease Weight', spell: true, power: 1, level: 3, buff: 1200000 });
 const decreaseWeightOutcome = SkillEffects.execute(session(), caster, lighterTarget, decreaseWeight, {
