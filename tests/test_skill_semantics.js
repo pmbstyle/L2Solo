@@ -964,6 +964,27 @@ assert.strictEqual(massSummonPhantomCubic.fetchSkillType(), C4SkillRules.SUMMON,
 assert.strictEqual(massSummonPhantomCubic.fetchTargetKind(), 'party', 'Mass Summon Phantom Cubic should preserve sourced TARGET_PARTY semantics');
 assert.strictEqual(massSummonPhantomCubic.fetchSsBoost(), 0, 'Mass Summon Phantom Cubic should not consume offensive shot boost semantics');
 
+const summonQueenCatData = activeSkills.find((entry) => entry.selfId === 1331);
+assert(summonQueenCatData, 'Summon Queen of Cat should be present in active skills data');
+assert.strictEqual(summonQueenCatData.time.hitTime, 15000, 'Summon Queen of Cat should preserve sourced 15000ms hit time');
+assert.strictEqual(summonQueenCatData.summon.totalLifeTime, 1200000, 'Summon Queen of Cat should preserve sourced summon lifetime');
+assert.strictEqual(summonQueenCatData.summon.expPenalty, 0.05, 'Summon Queen of Cat should preserve sourced exp penalty');
+assert.strictEqual(summonQueenCatData.summon.itemConsumeSteps, 4, 'Summon Queen of Cat should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonQueenCatData.levels.length, 10, 'Summon Queen of Cat should preserve sourced 10 base levels');
+assert.strictEqual(summonQueenCatData.levels[0].mp, 70, 'Summon Queen of Cat level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonQueenCatData.levels[1].mp, 108, 'Summon Queen of Cat level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonQueenCatData.levels[0].itemId, 1459, 'Summon Queen of Cat should preserve sourced crystal item id');
+assert.strictEqual(summonQueenCatData.levels[0].itemCountOT, 1, 'Summon Queen of Cat level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonQueenCatData.levels[0].npcId, 13137, 'Summon Queen of Cat level 1 should preserve sourced npcId');
+assert.strictEqual(summonQueenCatData.levels[9].mp, 123, 'Summon Queen of Cat level 10 MP should use sourced initial + consume total');
+assert.strictEqual(summonQueenCatData.levels[9].itemCount, 4, 'Summon Queen of Cat level 10 should preserve sourced crystal count');
+assert.strictEqual(summonQueenCatData.levels[9].itemCountOT, 3, 'Summon Queen of Cat level 10 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonQueenCatData.levels[9].npcId, 13146, 'Summon Queen of Cat level 10 should preserve sourced npcId');
+const summonQueenCat = skill({ selfId: 1331, name: 'Summon Queen of Cat', spell: true, power: 1, level: 10, distance: -1 });
+assert.strictEqual(summonQueenCat.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Queen of Cat should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonQueenCat.fetchTargetKind(), 'self', 'Summon Queen of Cat should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonQueenCat.fetchSsBoost(), 0, 'Summon Queen of Cat should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
