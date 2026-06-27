@@ -480,6 +480,31 @@ assert.strictEqual(
     'Seal of Slow level 2 should apply the sourced C4 run speed multiplier'
 );
 
+const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
+assert(sealWinterData, 'Seal of Winter should be present in active skills data');
+assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
+assert.strictEqual(sealWinterData.time.hitTime, 1500, 'Seal of Winter should preserve sourced 1500ms hit time');
+assert.strictEqual(sealWinterData.time.reuse, 8000, 'Seal of Winter should preserve sourced 8000ms reuse');
+assert.strictEqual(sealWinterData.time.buff, 15000, 'Seal of Winter should preserve sourced 15 second duration');
+assert.strictEqual(sealWinterData.levels[0].power, 40, 'Seal of Winter active data should preserve sourced power 40');
+assert.strictEqual(sealWinterData.levels[13].mp, 103, 'Seal of Winter level 14 MP should use sourced initial + consume total');
+const wintered = statActor();
+const sealWinter = skill({ selfId: 1104, name: 'Seal of Winter', spell: true, power: 40, level: 14, buff: 15000 });
+const sealWinterOutcome = SkillEffects.execute(session(), caster, wintered, sealWinter, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealWinter.fetchTargetKind(), 'enemy', 'Seal of Winter should resolve as an enemy debuff');
+assert.strictEqual(sealWinterOutcome.effect.key, 'seal_of_winter', 'Seal of Winter should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(wintered, 'pAtkSpdMul'), 0.77, 'Seal of Winter should use sourced C4 pAtkSpd 0.77');
+calculateStats({}, wintered);
+assert.strictEqual(
+    wintered.collectiveAtkSpd,
+    Math.round(Formulas.calcAtkSpd(30, 300) * 0.77),
+    'Seal of Winter should apply the sourced C4 attack speed multiplier'
+);
+
 const frozen = statActor();
 const freezingStrike = skill({ selfId: 105, name: 'Freezing Strike', spell: true, power: 26, buff: 30000 });
 SkillEffects.execute(session(), caster, frozen, freezingStrike, {
