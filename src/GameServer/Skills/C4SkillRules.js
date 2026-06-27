@@ -106,6 +106,7 @@ const RULES = {
     1217: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     1220: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1222: { skillType: EFFECT, trait: 'debuff', effect: 'curse_chaos', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAccuracyCombatAdd: [-12, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13] } },
+    1223: { skillType: EFFECT, trait: 'earth', effect: 'surrender_to_earth', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { earthVuln: [1.25, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] } },
     1229: { skillType: HOT, trait: 'buff', effect: 'chant_of_life', effectType: 'buff', target: 'friendly', baseLandRate: 100, hot: { count: 15, intervalMs: 1000, healByLevel: [12, 15, 18, 23, 27, 31, 35, 39, 43, 45, 46, 48, 50, 52, 53, 55, 56, 58] } },
     1240: { skillType: EFFECT, trait: 'buff', effect: 'guidance', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1242: { skillType: EFFECT, trait: 'buff', effect: 'death_whisper', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.25, 1.3, 1.35] } },

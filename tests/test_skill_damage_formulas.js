@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const Attack = invoke('GameServer/Actor/Attack');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Formulas = invoke('GameServer/Formulas');
 
 function actor() {
@@ -25,6 +26,7 @@ function actor() {
 
 function target() {
     return {
+        effects: {},
         fetchCollectivePDef: () => 100,
         fetchCollectiveMDef: () => 50,
         fetchDex: () => 30,
@@ -35,10 +37,11 @@ function target() {
     };
 }
 
-function skill({ spell, power }) {
+function skill({ spell, power, trait }) {
     return {
         fetchSpell: () => spell,
-        fetchPower: () => power
+        fetchPower: () => power,
+        fetchSemantic: () => trait ? { trait } : {}
     };
 }
 
@@ -59,6 +62,22 @@ magicActor.spiritshotLoaded = true;
 const castDamage = attack.prepareSkillDamage(magicActor, target(), skill({ spell: true, power: 10 }), true, () => 0.99);
 assert.strictEqual(castDamage, 257, 'magic skill damage should follow C4 magic formula with spiritshot');
 assert.strictEqual(magicActor.spiritshotLoaded, false, 'magic skill should clear used spiritshot charge');
+
+const surrenderedTarget = target();
+EffectStore.apply(surrenderedTarget, {
+    key: 'surrender_to_earth',
+    id: 1223,
+    level: 15,
+    type: 'debuff',
+    stats: { earthVuln: 1.3 },
+    durationMs: 15000
+});
+const earthDamage = attack.prepareSkillDamage(actor(), surrenderedTarget, skill({ spell: true, power: 10, trait: 'earth' }), true, () => 0.99);
+assert.strictEqual(
+    earthDamage,
+    Math.round(Formulas.calcMagicDamage(100, 10, 50) * 1.3),
+    'magic skill damage should apply sourced elemental vulnerability multipliers by trait'
+);
 
 const physicalActor = actor();
 physicalActor.soulshotLoaded = true;

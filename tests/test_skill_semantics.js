@@ -650,6 +650,36 @@ assert.strictEqual(
     'Curse Chaos level 15 should apply the sourced C4 accuracy subtraction'
 );
 
+const surrenderEarthData = activeSkills.find((entry) => entry.selfId === 1223);
+assert(surrenderEarthData, 'Surrender To Earth should be present in active skills data');
+assert.strictEqual(surrenderEarthData.template.distance, 900, 'Surrender To Earth should use sourced 900 cast range for trained levels');
+assert.strictEqual(surrenderEarthData.time.hitTime, 1500, 'Surrender To Earth should preserve sourced 1500ms hit time');
+assert.strictEqual(surrenderEarthData.time.reuse, 8000, 'Surrender To Earth should preserve sourced 8000ms reuse');
+assert.strictEqual(surrenderEarthData.time.buff, 15000, 'Surrender To Earth should preserve sourced 15 second Debuff duration');
+assert.strictEqual(surrenderEarthData.levels.length, 15, 'Surrender To Earth should preserve sourced 15 base levels');
+assert.strictEqual(surrenderEarthData.levels[0].power, 80, 'Surrender To Earth should preserve sourced power 80');
+assert.strictEqual(surrenderEarthData.levels[14].mp, 69, 'Surrender To Earth level 15 MP should use sourced initial + consume total');
+const surrenderedToEarth = creature({ id: 2000017, mDef: 50 });
+const surrenderEarth = skill({ selfId: 1223, name: 'Surrender To Earth', spell: true, power: 80, level: 15, distance: 900, buff: 15000 });
+const surrenderEarthOutcome = SkillEffects.execute(session(), caster, surrenderedToEarth, surrenderEarth, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(surrenderEarth.fetchTargetKind(), 'enemy', 'Surrender To Earth should resolve as an enemy weakness debuff');
+assert.strictEqual(surrenderEarth.fetchSemantic().trait, 'earth', 'Surrender To Earth should preserve sourced earth weakness semantics');
+assert.strictEqual(surrenderEarthOutcome.effect.key, 'surrender_to_earth', 'Surrender To Earth should apply a structured earth weakness debuff');
+assert.strictEqual(EffectStats.multiplier(surrenderedToEarth, 'earthVuln'), 1.3, 'Surrender To Earth level 15 should use sourced earthVuln 1.3');
+const earthNuke = {
+    fetchPower: () => 10,
+    fetchSemantic: () => ({ trait: 'earth' })
+};
+assert.strictEqual(
+    new Attack().prepareSkillDamage(caster, surrenderedToEarth, earthNuke, true, () => 0.99),
+    Math.round(Formulas.calcMagicDamage(100, 10, 50) * 1.3),
+    'Surrender To Earth should amplify earth-trait magic damage by the sourced earthVuln multiplier'
+);
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');

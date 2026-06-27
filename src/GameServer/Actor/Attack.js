@@ -266,12 +266,14 @@ class Attack {
         if (magicSkill) {
             const usedSpiritshot = !!actor.spiritshotLoaded;
             const shieldMDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
+            const semantic = skill.fetchSemantic?.() || {};
+            const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
             const damage = Math.round(Formulas.calcMagicDamage(
                 actor.fetchCollectiveMAtk(),
                 skill.fetchPower(),
                 creature.fetchCollectiveMDef() + shieldMDef,
                 { spiritshot: usedSpiritshot }
-            ));
+            ) * vulnModifier);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
         }
@@ -495,6 +497,11 @@ class Attack {
             invoke(path.npc).receivedHit(session, actor, creature, hit);
         }
     }
+}
+
+function traitVulnerabilityModifier(target, trait) {
+    if (!trait) return 1;
+    return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
 module.exports = Attack;
