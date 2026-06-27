@@ -880,6 +880,27 @@ assert.strictEqual(summonAquaCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summo
 assert.strictEqual(summonAquaCubic.fetchTargetKind(), 'self', 'Summon Aqua Cubic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonAquaCubic.fetchSsBoost(), 0, 'Summon Aqua Cubic should not consume offensive shot boost semantics');
 
+const summonSparkCubicData = activeSkills.find((entry) => entry.selfId === 1281);
+assert(summonSparkCubicData, 'Summon Spark Cubic should be present in active skills data');
+assert.strictEqual(summonSparkCubicData.time.hitTime, 6000, 'Summon Spark Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonSparkCubicData.summon.totalLifeTime, 900000, 'Summon Spark Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonSparkCubicData.summon.expPenalty, 0, 'Summon Spark Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonSparkCubicData.summon.isCubic, true, 'Summon Spark Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonSparkCubicData.summon.npcId, 8, 'Summon Spark Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonSparkCubicData.summon.activationChance, 12, 'Summon Spark Cubic should preserve sourced activation chance');
+assert.strictEqual(summonSparkCubicData.summon.activationTime, 30, 'Summon Spark Cubic should preserve sourced activation time');
+assert.strictEqual(summonSparkCubicData.levels.length, 9, 'Summon Spark Cubic should preserve sourced 9 base levels');
+assert.strictEqual(summonSparkCubicData.levels[0].power, 282, 'Summon Spark Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonSparkCubicData.levels[0].mp, 35, 'Summon Spark Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonSparkCubicData.levels[0].itemCount, 5, 'Summon Spark Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonSparkCubicData.levels[8].power, 1822, 'Summon Spark Cubic level 9 should preserve sourced cubic power');
+assert.strictEqual(summonSparkCubicData.levels[8].mp, 67, 'Summon Spark Cubic level 9 MP should use sourced initial + consume total');
+assert.strictEqual(summonSparkCubicData.levels[8].itemCount, 13, 'Summon Spark Cubic level 9 should preserve sourced crystal count');
+const summonSparkCubic = skill({ selfId: 1281, name: 'Summon Spark Cubic', spell: true, power: 1822, level: 9, distance: -1 });
+assert.strictEqual(summonSparkCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Spark Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonSparkCubic.fetchTargetKind(), 'self', 'Summon Spark Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonSparkCubic.fetchSsBoost(), 0, 'Summon Spark Cubic should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
