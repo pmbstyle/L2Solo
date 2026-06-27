@@ -943,6 +943,27 @@ assert.strictEqual(massSummonAquaCubic.fetchSkillType(), C4SkillRules.SUMMON, 'M
 assert.strictEqual(massSummonAquaCubic.fetchTargetKind(), 'party', 'Mass Summon Aqua Cubic should preserve sourced TARGET_PARTY semantics');
 assert.strictEqual(massSummonAquaCubic.fetchSsBoost(), 0, 'Mass Summon Aqua Cubic should not consume offensive shot boost semantics');
 
+const massSummonPhantomCubicData = activeSkills.find((entry) => entry.selfId === 1330);
+assert(massSummonPhantomCubicData, 'Mass Summon Phantom Cubic should be present in active skills data');
+assert.strictEqual(massSummonPhantomCubicData.time.hitTime, 6000, 'Mass Summon Phantom Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(massSummonPhantomCubicData.summon.totalLifeTime, 900000, 'Mass Summon Phantom Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(massSummonPhantomCubicData.summon.expPenalty, 0, 'Mass Summon Phantom Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(massSummonPhantomCubicData.summon.isCubic, true, 'Mass Summon Phantom Cubic should preserve sourced cubic flag');
+assert.strictEqual(massSummonPhantomCubicData.summon.npcId, 5, 'Mass Summon Phantom Cubic should preserve sourced cubic npcId');
+assert.strictEqual(massSummonPhantomCubicData.summon.activationChance, 30, 'Mass Summon Phantom Cubic should preserve sourced activation chance');
+assert.strictEqual(massSummonPhantomCubicData.summon.activationTime, 8, 'Mass Summon Phantom Cubic should preserve sourced activation time');
+assert.strictEqual(massSummonPhantomCubicData.levels.length, 8, 'Mass Summon Phantom Cubic should preserve sourced 8 base levels');
+assert.strictEqual(massSummonPhantomCubicData.levels[0].power, 282, 'Mass Summon Phantom Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(massSummonPhantomCubicData.levels[0].mp, 139, 'Mass Summon Phantom Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(massSummonPhantomCubicData.levels[0].itemCount, 8, 'Mass Summon Phantom Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(massSummonPhantomCubicData.levels[7].power, 1975, 'Mass Summon Phantom Cubic level 8 should preserve sourced cubic power');
+assert.strictEqual(massSummonPhantomCubicData.levels[7].mp, 272, 'Mass Summon Phantom Cubic level 8 MP should use sourced initial + consume total');
+assert.strictEqual(massSummonPhantomCubicData.levels[7].itemCount, 28, 'Mass Summon Phantom Cubic level 8 should preserve sourced crystal count');
+const massSummonPhantomCubic = skill({ selfId: 1330, name: 'Mass Summon Phantom Cubic', spell: true, power: 1975, level: 8, distance: -1 });
+assert.strictEqual(massSummonPhantomCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Mass Summon Phantom Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(massSummonPhantomCubic.fetchTargetKind(), 'party', 'Mass Summon Phantom Cubic should preserve sourced TARGET_PARTY semantics');
+assert.strictEqual(massSummonPhantomCubic.fetchSsBoost(), 0, 'Mass Summon Phantom Cubic should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');

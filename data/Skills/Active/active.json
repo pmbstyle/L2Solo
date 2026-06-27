@@ -1446,6 +1446,12 @@
     "summon": { "totalLifeTime": 900000, "expPenalty": 0, "isCubic": true, "npcId": 7, "activationChance": 30, "activationTime": 30 },
     "levels": [{ "level": 1, "power": 282, "mp": 139, "hp": 0, "itemId": 1458, "itemCount": 8, "npcId": 7, "reuse": 20000 }, { "level": 2, "power": 377, "mp": 154, "hp": 0, "itemId": 1458, "itemCount": 12, "npcId": 7, "reuse": 20000 }, { "level": 3, "power": 497, "mp": 172, "hp": 0, "itemId": 1458, "itemCount": 12, "npcId": 7, "reuse": 20000 }, { "level": 4, "power": 644, "mp": 188, "hp": 0, "itemId": 1458, "itemCount": 16, "npcId": 7, "reuse": 20000 }, { "level": 5, "power": 820, "mp": 204, "hp": 0, "itemId": 1458, "itemCount": 16, "npcId": 7, "reuse": 20000 }, { "level": 6, "power": 1141, "mp": 229, "hp": 0, "itemId": 1458, "itemCount": 20, "npcId": 7, "reuse": 20000 }, { "level": 7, "power": 1394, "mp": 244, "hp": 0, "itemId": 1458, "itemCount": 24, "npcId": 7, "reuse": 20000 }, { "level": 8, "power": 1673, "mp": 259, "hp": 0, "itemId": 1458, "itemCount": 24, "npcId": 7, "reuse": 20000 }, { "level": 9, "power": 1975, "mp": 272, "hp": 0, "itemId": 1458, "itemCount": 28, "npcId": 7, "reuse": 20000 }]
 },{
+    "selfId": 1330,
+    "template": { "name": "Mass Summon Phantom Cubic", "passive": false, "spell": true, "distance": -1 },
+    "time": { "hitTime": 6000, "reuse": 20000, "buff": 0 },
+    "summon": { "totalLifeTime": 900000, "expPenalty": 0, "isCubic": true, "npcId": 5, "activationChance": 30, "activationTime": 8 },
+    "levels": [{ "level": 1, "power": 282, "mp": 139, "hp": 0, "itemId": 1458, "itemCount": 8, "npcId": 5, "reuse": 20000 }, { "level": 2, "power": 434, "mp": 163, "hp": 0, "itemId": 1458, "itemCount": 12, "npcId": 5, "reuse": 20000 }, { "level": 3, "power": 644, "mp": 188, "hp": 0, "itemId": 1458, "itemCount": 16, "npcId": 5, "reuse": 20000 }, { "level": 4, "power": 919, "mp": 213, "hp": 0, "itemId": 1458, "itemCount": 16, "npcId": 5, "reuse": 20000 }, { "level": 5, "power": 1141, "mp": 229, "hp": 0, "itemId": 1458, "itemCount": 20, "npcId": 5, "reuse": 20000 }, { "level": 6, "power": 1394, "mp": 244, "hp": 0, "itemId": 1458, "itemCount": 24, "npcId": 5, "reuse": 20000 }, { "level": 7, "power": 1673, "mp": 259, "hp": 0, "itemId": 1458, "itemCount": 24, "npcId": 5, "reuse": 20000 }, { "level": 8, "power": 1975, "mp": 272, "hp": 0, "itemId": 1458, "itemCount": 28, "npcId": 5, "reuse": 20000 }]
+},{
     "selfId": 2001,
     "template": { "name": "Red potion", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 0, "reuse": 0, "buff": 15000 },
