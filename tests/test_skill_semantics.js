@@ -269,6 +269,21 @@ assert.strictEqual(sleepOutcome.effect.key, 'sleep', 'Sleep should apply a struc
 assert(EffectStore.hasDebuff(sleepyTarget, 'sleep'), 'Sleep debuff should be visible through EffectStore');
 assert.strictEqual(sleepSession.packets[0][0], 0x7f, 'Debuff application should refresh abnormal status icons');
 
+const sleepingCloudData = activeSkills.find((entry) => entry.selfId === 1072);
+assert(sleepingCloudData, 'Sleeping Cloud should be present in active skills data');
+assert.strictEqual(sleepingCloudData.levels.length, 5, 'Sleeping Cloud should preserve sourced 5 base levels');
+assert.strictEqual(sleepingCloudData.levels[0].power, 40, 'Sleeping Cloud should preserve sourced power 40');
+assert.strictEqual(sleepingCloudData.levels[4].mp, 98, 'Sleeping Cloud level 5 MP should use sourced initial + consume total');
+const sleepingCloudTarget = creature({ id: 1000010, hp: 100, maxHp: 100, level: 20 });
+const sleepingCloud = skill({ selfId: 1072, name: 'Sleeping Cloud', spell: true, power: 40, level: 5, buff: 30000, distance: 500 });
+const sleepingCloudOutcome = SkillEffects.execute(session(), caster, sleepingCloudTarget, sleepingCloud, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sleepingCloud.fetchTargetKind(), 'enemy', 'Sleeping Cloud should resolve as an enemy sleep debuff');
+assert.strictEqual(sleepingCloudOutcome.effect.key, 'sleep', 'Sleeping Cloud should apply a structured sleep debuff');
+
 const dreamingSpiritData = activeSkills.find((entry) => entry.selfId === 1097);
 assert(dreamingSpiritData, 'Dreaming Spirit should be present in active skills data');
 assert.strictEqual(dreamingSpiritData.levels.length, 20, 'Dreaming Spirit should preserve sourced 20 base levels');
