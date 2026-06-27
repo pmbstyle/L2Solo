@@ -671,6 +671,27 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(curseOutcome.effect.dot.damage, 5, 'Curse: Poison should use the sourced L2J damage table when local active.json has flat power');
 EffectStore.remove(curseTarget, 'poison');
 
+const sealPoisonData = activeSkills.find((entry) => entry.selfId === 1209);
+assert(sealPoisonData, 'Seal of Poison should be present in active skills data');
+assert.strictEqual(sealPoisonData.levels.length, 6, 'Seal of Poison should preserve sourced 6 base levels');
+assert.strictEqual(sealPoisonData.levels[5].power, 8, 'Seal of Poison level 6 should preserve sourced power 8');
+assert.strictEqual(sealPoisonData.levels[5].mp, 98, 'Seal of Poison level 6 MP should use sourced initial + consume total');
+const sealPoison = skill({ selfId: 1209, name: 'Seal of Poison', spell: true, power: 8, level: 6, distance: -1, buff: 30000 });
+const sealPoisonTarget = statActor();
+const sealPoisonOutcome = SkillEffects.execute(session(), caster, sealPoisonTarget, sealPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sealPoison.fetchTargetKind(), 'enemy', 'Seal of Poison should resolve as an enemy poison effect');
+assert.strictEqual(sealPoison.fetchSemantic().baseLandRate, 8, 'Seal of Poison should use sourced level 6 power as land rate');
+assert.strictEqual(sealPoisonOutcome.effect.key, 'poison', 'Seal of Poison should apply the structured poison effect');
+assert.strictEqual(sealPoisonOutcome.effect.dot.damage, 48, 'Seal of Poison level 6 should use sourced DamOverTime value 48');
+assert.strictEqual(sealPoisonOutcome.effect.dot.count, 10, 'Seal of Poison should use sourced 10 damage ticks');
+assert.strictEqual(sealPoisonOutcome.effect.dot.intervalMs, 3000, 'Seal of Poison should tick every sourced 3 seconds');
+assert.strictEqual(EffectStore.hasDebuff(sealPoisonTarget, 'poison'), true, 'Seal of Poison should leave a poison debuff');
+EffectStore.remove(sealPoisonTarget, 'poison');
+
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;
