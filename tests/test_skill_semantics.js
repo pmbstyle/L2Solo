@@ -997,6 +997,29 @@ assert.strictEqual(summonReanimatedMan.fetchSkillType(), C4SkillRules.SUMMON, 'S
 assert.strictEqual(summonReanimatedMan.fetchTargetKind(), 'corpse_mob', 'Summon Reanimated Man should preserve sourced TARGET_CORPSE_MOB semantics');
 assert.strictEqual(summonReanimatedMan.fetchSsBoost(), 0, 'Summon Reanimated Man should not consume offensive shot boost semantics');
 
+const summonCorruptedManData = activeSkills.find((entry) => entry.selfId === 1154);
+assert(summonCorruptedManData, 'Summon Corrupted Man should be present in active skills data');
+assert.strictEqual(summonCorruptedManData.template.distance, 40, 'Summon Corrupted Man should preserve sourced cast range');
+assert.strictEqual(summonCorruptedManData.time.hitTime, 1500, 'Summon Corrupted Man should preserve sourced 1500ms hit time');
+assert.strictEqual(summonCorruptedManData.summon.totalLifeTime, 1200000, 'Summon Corrupted Man should preserve sourced summon lifetime');
+assert.strictEqual(summonCorruptedManData.summon.timeLostIdle, 500, 'Summon Corrupted Man should preserve sourced idle time loss');
+assert.strictEqual(summonCorruptedManData.summon.timeLostActive, 1000, 'Summon Corrupted Man should preserve sourced active time loss');
+assert.strictEqual(summonCorruptedManData.summon.expPenalty, 0.9, 'Summon Corrupted Man should preserve sourced exp penalty');
+assert.strictEqual(summonCorruptedManData.summon.itemConsumeSteps, 0, 'Summon Corrupted Man should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonCorruptedManData.summon.effectRange, 400, 'Summon Corrupted Man should preserve sourced effect range');
+assert.strictEqual(summonCorruptedManData.levels.length, 6, 'Summon Corrupted Man should preserve sourced 6 base levels');
+assert.strictEqual(summonCorruptedManData.levels[0].mp, 70, 'Summon Corrupted Man level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonCorruptedManData.levels[0].itemId, 1458, 'Summon Corrupted Man should preserve sourced crystal item id');
+assert.strictEqual(summonCorruptedManData.levels[0].itemCount, 3, 'Summon Corrupted Man level 1 should preserve sourced crystal count');
+assert.strictEqual(summonCorruptedManData.levels[0].npcId, 12194, 'Summon Corrupted Man level 1 should preserve sourced npcId');
+assert.strictEqual(summonCorruptedManData.levels[5].mp, 130, 'Summon Corrupted Man level 6 MP should use sourced initial + consume total');
+assert.strictEqual(summonCorruptedManData.levels[5].itemCount, 3, 'Summon Corrupted Man level 6 should preserve sourced crystal count');
+assert.strictEqual(summonCorruptedManData.levels[5].npcId, 12472, 'Summon Corrupted Man level 6 should preserve sourced npcId');
+const summonCorruptedMan = skill({ selfId: 1154, name: 'Summon Corrupted Man', spell: true, power: 1, level: 6, distance: 40 });
+assert.strictEqual(summonCorruptedMan.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Corrupted Man should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonCorruptedMan.fetchTargetKind(), 'corpse_mob', 'Summon Corrupted Man should preserve sourced TARGET_CORPSE_MOB semantics');
+assert.strictEqual(summonCorruptedMan.fetchSsBoost(), 0, 'Summon Corrupted Man should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
