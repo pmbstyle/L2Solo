@@ -798,6 +798,26 @@ assert.strictEqual(summonKai.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Kai 
 assert.strictEqual(summonKai.fetchTargetKind(), 'self', 'Summon Kai the Cat should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonKai.fetchSsBoost(), 0, 'Summon Kai the Cat should not consume offensive shot boost semantics');
 
+const summonMerrowData = activeSkills.find((entry) => entry.selfId === 1277);
+assert(summonMerrowData, 'Summon Unicorn Merrow should be present in active skills data');
+assert.strictEqual(summonMerrowData.time.hitTime, 15000, 'Summon Unicorn Merrow should preserve sourced 15000ms hit time');
+assert.strictEqual(summonMerrowData.summon.totalLifeTime, 1200000, 'Summon Unicorn Merrow should preserve sourced summon lifetime');
+assert.strictEqual(summonMerrowData.summon.expPenalty, 0.1, 'Summon Unicorn Merrow should preserve sourced exp penalty');
+assert.strictEqual(summonMerrowData.summon.itemConsumeSteps, 4, 'Summon Unicorn Merrow should preserve sourced summon crystal consume step mode');
+assert.strictEqual(summonMerrowData.levels.length, 14, 'Summon Unicorn Merrow should preserve sourced 14 base levels');
+assert.strictEqual(summonMerrowData.levels[0].mp, 70, 'Summon Unicorn Merrow level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonMerrowData.levels[0].itemId, 1459, 'Summon Unicorn Merrow should preserve sourced crystal item id');
+assert.strictEqual(summonMerrowData.levels[0].itemCountOT, 1, 'Summon Unicorn Merrow level 1 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonMerrowData.levels[0].npcId, 12490, 'Summon Unicorn Merrow level 1 should preserve sourced npcId');
+assert.strictEqual(summonMerrowData.levels[13].mp, 137, 'Summon Unicorn Merrow level 14 MP should use sourced initial + consume total');
+assert.strictEqual(summonMerrowData.levels[13].itemCount, 4, 'Summon Unicorn Merrow level 14 should preserve sourced crystal count');
+assert.strictEqual(summonMerrowData.levels[13].itemCountOT, 3, 'Summon Unicorn Merrow level 14 should preserve sourced ongoing crystal count');
+assert.strictEqual(summonMerrowData.levels[13].npcId, 12537, 'Summon Unicorn Merrow level 14 should preserve sourced npcId');
+const summonMerrow = skill({ selfId: 1277, name: 'Summon Unicorn Merrow', spell: true, power: 1, level: 14, distance: -1 });
+assert.strictEqual(summonMerrow.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Unicorn Merrow should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonMerrow.fetchTargetKind(), 'self', 'Summon Unicorn Merrow should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonMerrow.fetchSsBoost(), 0, 'Summon Unicorn Merrow should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
