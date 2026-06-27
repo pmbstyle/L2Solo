@@ -816,6 +816,33 @@ const entangleAgainstShield = SkillEffects.execute(session(), caster, mentallyPr
 assert.strictEqual(entangleAgainstShield.effect, null, 'Mental Shield rootResist should lower Entangle land chance below the roll');
 assert.strictEqual(entangleAgainstShield.effectResisted, true, 'Entangle blocked by Mental Shield should report effect resistance');
 
+const holdUndeadData = activeSkills.find((entry) => entry.selfId === 1042);
+assert(holdUndeadData, 'Hold Undead should be present in active skills data');
+assert.strictEqual(holdUndeadData.levels.length, 12, 'Hold Undead should preserve sourced 12 base levels');
+assert.strictEqual(holdUndeadData.time.reuse, 60000, 'Hold Undead should preserve sourced 60000ms reuse');
+assert.strictEqual(holdUndeadData.levels[0].power, 20, 'Hold Undead should preserve sourced power 20');
+assert.strictEqual(holdUndeadData.levels[11].mp, 204, 'Hold Undead level 12 MP should use sourced initial + consume total');
+const livingHoldTarget = statActor();
+const holdUndead = skill({ selfId: 1042, name: 'Hold Undead', spell: true, power: 20, level: 12, distance: 400, buff: 120000 });
+const livingHoldOutcome = SkillEffects.execute(session(), caster, livingHoldTarget, holdUndead, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(livingHoldOutcome.effect, null, 'Hold Undead should not apply TARGET_UNDEAD to living targets');
+assert.strictEqual(livingHoldOutcome.effectResisted, true, 'Hold Undead undead-only rejection should report effect resistance');
+const undeadHoldTarget = statActor();
+undeadHoldTarget.fetchUndead = () => true;
+const undeadHoldOutcome = SkillEffects.execute(session(), caster, undeadHoldTarget, holdUndead, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(holdUndead.fetchTargetKind(), 'enemy', 'Hold Undead should resolve as an enemy undead-only debuff');
+assert.strictEqual(undeadHoldOutcome.effect.key, 'paralyze', 'Hold Undead should apply sourced Paralyze to undead targets');
+assert.strictEqual(EffectStore.hasDebuff(undeadHoldTarget, 'paralyze'), true, 'Hold Undead should leave a paralyze debuff');
+assert.strictEqual(EffectRestrictions.canMove(undeadHoldTarget), false, 'Hold Undead paralyze should block movement through runtime restrictions');
+
 const dryadRootTarget = statActor();
 const dryadRoot = skill({ selfId: 1201, name: 'Dryad Root', spell: true, power: 1, level: 5, buff: 30000 });
 const dryadRootOutcome = SkillEffects.execute(session(), caster, dryadRootTarget, dryadRoot, {

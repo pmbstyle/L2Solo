@@ -55,6 +55,7 @@ const RULES = {
         mentalResist: [20, 30, 40, 50]
     } },
     1036: { skillType: EFFECT, trait: 'buff', effect: 'magic_barrier', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { mDefMul: [1.23, 1.3] } },
+    1042: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', baseLandRate: 20, undeadOnly: true },
     1044: { skillType: EFFECT, trait: 'buff', effect: 'regeneration', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { regHp: [1.1, 1.15, 1.2] } },
     1045: { skillType: EFFECT, trait: 'buff', effect: 'blessed_body', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { maxHpMul: [1.1, 1.15, 1.2, 1.25, 1.3, 1.35] } },
     1047: { skillType: EFFECT, trait: 'buff', effect: 'mana_regeneration', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { regMp: [1.72, 2.16, 2.74, 3.09] } },
@@ -166,7 +167,8 @@ function resolve(skill = {}) {
         cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null,
         condition: rule.condition || inferred.condition || null,
-        mobOnly: rule.mobOnly || inferred.mobOnly || false
+        mobOnly: rule.mobOnly || inferred.mobOnly || false,
+        undeadOnly: rule.undeadOnly || inferred.undeadOnly || false
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);
     return semantic;

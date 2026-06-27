@@ -86,6 +86,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.undeadOnly && !isUndead(target)) {
+        clearLoadedShot(context.attack, actor, magicSkill);
+        result.effectResisted = true;
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
     }
@@ -289,6 +295,10 @@ function isOffensive(semantic) {
 
 function isAttackableNpc(target) {
     return target?.fetchAttackable?.() === true;
+}
+
+function isUndead(target) {
+    return target?.fetchUndead?.() === true;
 }
 
 function clearLoadedShot(attack, actor, magicSkill) {
