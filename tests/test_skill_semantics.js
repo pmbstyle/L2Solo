@@ -751,6 +751,28 @@ assert.strictEqual(summonSiegeGolem.fetchSkillType(), C4SkillRules.SUMMON, 'Summ
 assert.strictEqual(summonSiegeGolem.fetchTargetKind(), 'self', 'Summon Siege Golem should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonSiegeGolem.fetchSsBoost(), 0, 'Summon Siege Golem should not consume offensive shot boost semantics');
 
+const summonVampiricCubicData = activeSkills.find((entry) => entry.selfId === 22);
+assert(summonVampiricCubicData, 'Summon Vampiric Cubic should be present in active skills data');
+assert.strictEqual(summonVampiricCubicData.template.name, 'Summon Vampiric Cubic', 'Summon Vampiric Cubic should preserve sourced skill name');
+assert.strictEqual(summonVampiricCubicData.time.hitTime, 6000, 'Summon Vampiric Cubic should preserve sourced 6000ms hit time');
+assert.strictEqual(summonVampiricCubicData.summon.totalLifeTime, 900000, 'Summon Vampiric Cubic should preserve sourced cubic lifetime');
+assert.strictEqual(summonVampiricCubicData.summon.expPenalty, 0, 'Summon Vampiric Cubic should preserve sourced zero exp penalty');
+assert.strictEqual(summonVampiricCubicData.summon.isCubic, true, 'Summon Vampiric Cubic should preserve sourced cubic flag');
+assert.strictEqual(summonVampiricCubicData.summon.npcId, 2, 'Summon Vampiric Cubic should preserve sourced cubic npcId');
+assert.strictEqual(summonVampiricCubicData.summon.activationChance, 8, 'Summon Vampiric Cubic should preserve sourced activation chance');
+assert.strictEqual(summonVampiricCubicData.summon.activationTime, 15, 'Summon Vampiric Cubic should preserve sourced activation time');
+assert.strictEqual(summonVampiricCubicData.levels.length, 7, 'Summon Vampiric Cubic should preserve sourced 7 base levels');
+assert.strictEqual(summonVampiricCubicData.levels[0].power, 351, 'Summon Vampiric Cubic level 1 should preserve sourced cubic power');
+assert.strictEqual(summonVampiricCubicData.levels[0].mp, 38, 'Summon Vampiric Cubic level 1 MP should use sourced initial + consume total');
+assert.strictEqual(summonVampiricCubicData.levels[0].itemCount, 6, 'Summon Vampiric Cubic level 1 should preserve sourced crystal count');
+assert.strictEqual(summonVampiricCubicData.levels[6].power, 1822, 'Summon Vampiric Cubic level 7 should preserve sourced cubic power');
+assert.strictEqual(summonVampiricCubicData.levels[6].mp, 67, 'Summon Vampiric Cubic level 7 MP should use sourced initial + consume total');
+assert.strictEqual(summonVampiricCubicData.levels[6].itemCount, 13, 'Summon Vampiric Cubic level 7 should preserve sourced crystal count');
+const summonVampiricCubic = skill({ selfId: 22, name: 'Summon Vampiric Cubic', spell: true, power: 1822, level: 7, distance: -1 });
+assert.strictEqual(summonVampiricCubic.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Vampiric Cubic should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonVampiricCubic.fetchTargetKind(), 'self', 'Summon Vampiric Cubic should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonVampiricCubic.fetchSsBoost(), 0, 'Summon Vampiric Cubic should not consume offensive shot boost semantics');
+
 const summonMewData = activeSkills.find((entry) => entry.selfId === 1225);
 assert(summonMewData, 'Summon Mew the Cat should be present in active skills data');
 assert.strictEqual(summonMewData.time.hitTime, 15000, 'Summon Mew the Cat should preserve sourced 15000ms hit time');
