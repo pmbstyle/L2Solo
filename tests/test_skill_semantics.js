@@ -746,6 +746,22 @@ assert.strictEqual(summonBoxer.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Un
 assert.strictEqual(summonBoxer.fetchTargetKind(), 'self', 'Summon Unicorn Boxer should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonBoxer.fetchSsBoost(), 0, 'Summon Unicorn Boxer should not consume offensive shot boost semantics');
 
+const summonMirageData = activeSkills.find((entry) => entry.selfId === 1227);
+assert(summonMirageData, 'Summon Unicorn Mirage should be present in active skills data');
+assert.strictEqual(summonMirageData.time.hitTime, 15000, 'Summon Unicorn Mirage should preserve sourced 15000ms hit time');
+assert.strictEqual(summonMirageData.summon.totalLifeTime, 1200000, 'Summon Unicorn Mirage should preserve sourced summon lifetime');
+assert.strictEqual(summonMirageData.summon.expPenalty, 0.9, 'Summon Unicorn Mirage should preserve sourced exp penalty');
+assert.strictEqual(summonMirageData.levels.length, 18, 'Summon Unicorn Mirage should preserve sourced 18 base levels');
+assert.strictEqual(summonMirageData.levels[0].itemCount, 1, 'Summon Unicorn Mirage should preserve sourced crystal count');
+assert.strictEqual(summonMirageData.levels[0].npcId, 12357, 'Summon Unicorn Mirage level 1 should preserve sourced npcId');
+assert.strictEqual(summonMirageData.levels[17].mp, 137, 'Summon Unicorn Mirage level 18 MP should use sourced initial + consume total');
+assert.strictEqual(summonMirageData.levels[17].npcId, 12437, 'Summon Unicorn Mirage level 18 should preserve sourced npcId');
+assert.strictEqual(summonMirageData.levels[17].reuse, 20000, 'Summon Unicorn Mirage trained levels should preserve sourced 20000ms reuse');
+const summonMirage = skill({ selfId: 1227, name: 'Summon Unicorn Mirage', spell: true, power: 1, level: 18, distance: -1 });
+assert.strictEqual(summonMirage.fetchSkillType(), C4SkillRules.SUMMON, 'Summon Unicorn Mirage should resolve to SUMMON instead of magic damage');
+assert.strictEqual(summonMirage.fetchTargetKind(), 'self', 'Summon Unicorn Mirage should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(summonMirage.fetchSsBoost(), 0, 'Summon Unicorn Mirage should not consume offensive shot boost semantics');
+
 const sealWinterData = activeSkills.find((entry) => entry.selfId === 1104);
 assert(sealWinterData, 'Seal of Winter should be present in active skills data');
 assert.strictEqual(sealWinterData.levels.length, 14, 'Seal of Winter should preserve sourced 14 base levels');
