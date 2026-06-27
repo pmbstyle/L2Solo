@@ -269,6 +269,22 @@ assert.strictEqual(sleepOutcome.effect.key, 'sleep', 'Sleep should apply a struc
 assert(EffectStore.hasDebuff(sleepyTarget, 'sleep'), 'Sleep debuff should be visible through EffectStore');
 assert.strictEqual(sleepSession.packets[0][0], 0x7f, 'Debuff application should refresh abnormal status icons');
 
+const silenceData = activeSkills.find((entry) => entry.selfId === 1064);
+assert(silenceData, 'Silence should be present in active skills data');
+assert.strictEqual(silenceData.levels.length, 14, 'Silence should preserve sourced 14 base levels');
+assert.strictEqual(silenceData.time.reuse, 60000, 'Silence should preserve sourced 60 second reuse');
+assert.strictEqual(silenceData.levels[13].mp, 69, 'Silence level 14 MP should use sourced initial + consume total');
+const mutedTarget = creature({ id: 1000007, hp: 100, maxHp: 100, level: 20 });
+const silence = skill({ selfId: 1064, name: 'Silence', spell: true, power: 80, level: 1, buff: 120000 });
+const silenceOutcome = SkillEffects.execute(session(), caster, mutedTarget, silence, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(silence.fetchTargetKind(), 'enemy', 'Silence should resolve as an enemy mute debuff');
+assert.strictEqual(silenceOutcome.effect.key, 'silence', 'Silence should apply a structured mute debuff');
+assert(EffectStore.hasDebuff(mutedTarget, 'silence'), 'Silence debuff should be visible through EffectStore');
+
 const shieldTarget = creature({ id: 2000003 });
 const shield = skill({ selfId: 1040, name: 'Shield', spell: true, power: 1, buff: 1200000 });
 const shieldOutcome = SkillEffects.execute(session(), caster, shieldTarget, shield, {

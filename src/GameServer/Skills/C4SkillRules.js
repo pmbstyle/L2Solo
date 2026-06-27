@@ -70,6 +70,7 @@ const RULES = {
         runSpdAdd: [5, 8],
         pEvasionRateAdd: [-2, -4]
     } },
+    1064: { skillType: EFFECT, trait: 'derangement', effect: 'silence', effectType: 'debuff', target: 'enemy', baseLandRate: 80 },
     1069: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', baseLandRate: 80 },
     1077: { skillType: EFFECT, trait: 'buff', effect: 'focus', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritRateAdd: [20, 25, 30] } },
     1085: { skillType: EFFECT, trait: 'buff', effect: 'acumen', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
