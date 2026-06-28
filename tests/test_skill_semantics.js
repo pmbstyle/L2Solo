@@ -267,6 +267,7 @@ assert.strictEqual(
 
 [
     { id: 72, name: 'Iron Will', levels: 3, mp: 50, buff: 1200000, reuse: 6000, effect: 'iron_will', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
+    { id: 75, name: 'Detect Insect Weakness', levels: 1, mp: 14, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-insects', statValue: 1.5, statKind: 'mul', effectTargetKind: 'insect', aggroPoints: 303 },
     { id: 77, name: 'Attack Aura', levels: 2, mp: 25, buff: 1200000, reuse: 6000, effect: 'attack_aura', stat: 'pAtkMul', statValue: 1.12, statKind: 'mul' },
     { id: 78, name: 'War Cry', levels: 2, mp: 19, buff: 60000, reuse: 180000, effect: 'war_cry', stat: 'pAtkMul', statValue: 1.25, statKind: 'mul' },
     { id: 91, name: 'Defence Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul' },
@@ -275,7 +276,7 @@ assert.strictEqual(
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 230, name: 'Sprint', levels: 2, mp: 48, buff: 1200000, reuse: 10000, effect: 'sprint', stat: 'runSpdAdd', statValue: 33, statKind: 'add' }
-].forEach(({ id, name, levels, mp, buff, reuse, effect, stat, statValue, statKind, hpGate }) => {
+].forEach(({ id, name, levels, mp, buff, reuse, effect, stat, statValue, statKind, hpGate, effectTargetKind, aggroPoints }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
     assert(data, `${name} should be present in active skills data`);
     assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
@@ -288,6 +289,12 @@ assert.strictEqual(
     assert.strictEqual(selfBuff.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
     if (id === 72) {
         assert.strictEqual(selfBuff.fetchSemantic().aggroPoints, 523, 'Iron Will should resolve sourced level 3 aggroPoints');
+    }
+    if (effectTargetKind) {
+        assert.strictEqual(selfBuff.fetchSemantic().effectTargetKind, effectTargetKind, `${name} should preserve sourced effect target kind`);
+    }
+    if (aggroPoints) {
+        assert.strictEqual(selfBuff.fetchSemantic().aggroPoints, aggroPoints, `${name} should preserve sourced aggroPoints`);
     }
     if (hpGate) {
         const attack = new Attack();
