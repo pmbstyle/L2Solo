@@ -319,6 +319,7 @@ EffectStore.remove(confusionMobTarget, 'confusion');
     { id: 104, name: 'Detect Plant Weakness', levels: 1, mp: 21, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-plants', statValue: 1.5, statKind: 'mul', effectTargetKind: 'plant', aggroPoints: 438 },
     { id: 110, name: 'Ultimate Defense', levels: 2, mp: 41, buff: 30000, reuse: 1800000, effect: 'ultimate_defense', stat: 'pDefAdd', statValue: 3600, statKind: 'add', extraStats: [{ stat: 'mDefAdd', value: 2700, kind: 'add' }], aggroPoints: 438 },
     { id: 111, name: 'Ultimate Evasion', levels: 2, mp: 50, buff: 30000, reuse: 1800000, effect: 'ultimate_evasion', stat: 'pEvasionRateAdd', statValue: 25, statKind: 'add', aggroPoints: 523 },
+    { id: 112, name: 'Deflect Arrow', levels: 4, mp: 44, buff: 1200000, reuse: 10000, effect: 'deflect_arrow', stat: 'bowWpnVuln', statValue: 0.75, statKind: 'mul', aggroPoints: 40 },
     { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
@@ -382,6 +383,23 @@ EffectStore.remove(confusionMobTarget, 'confusion');
         assert.strictEqual(buffTarget.collectiveMDef, Math.round(Formulas.calcMDef(20, 30, 80)) + 2700, 'Ultimate Defense should add sourced MDef to runtime defense');
     }
 });
+
+const deflectTarget = creature({ pDef: 100 });
+const deflectArrow = skill({ selfId: 112, name: 'Deflect Arrow', spell: false, power: 1, level: 4, distance: -1, buff: 1200000 });
+SkillEffects.execute(session(), deflectTarget, deflectTarget, deflectArrow, {
+    magicSkill: deflectArrow.fetchSpell(),
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+const bowAttacker = creature({ pAtk: 100 });
+bowAttacker.backpack.fetchTotalWeaponKind = () => 'Weapon.Bow';
+const deflectPowerShot = skill({ selfId: 19, name: 'Power Shot', spell: false, power: 100, level: 1 });
+const sourcedBowDamage = new Attack().prepareSkillDamage(bowAttacker, deflectTarget, deflectPowerShot, false, () => 1);
+assert.strictEqual(
+    sourcedBowDamage,
+    Math.round(Formulas.calcPhysicalDamage(100, 0, 100, 100) * 0.75),
+    'Deflect Arrow should apply sourced bowWpnVuln to incoming bow skill damage'
+);
 
 const corpsePlagueData = activeSkills.find((entry) => entry.selfId === 103);
 assert(corpsePlagueData, 'Corpse Plague should be present in active skills data');

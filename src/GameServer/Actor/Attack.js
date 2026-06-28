@@ -285,13 +285,17 @@ class Attack {
 
         const usedSoulshot = !!actor.soulshotLoaded;
         const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
+        const semantic = skill.fetchSemantic?.() || {};
+        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
+            bow: semantic.trait === 'bow' || this.isBowAttack(actor)
+        });
         const damage = Math.round(Formulas.calcPhysicalDamage(
             actor.fetchCollectivePAtk(),
             actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0,
             creature.fetchCollectivePDef() + shieldPDef,
             skill.fetchPower(),
             { soulshot: usedSoulshot }
-        ));
+        ) * weaponModifier);
         this.clearLoadedShot(actor, magicSkill);
         return damage;
     }
@@ -321,13 +325,14 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(actor.fetchCollectiveCritical ? actor.fetchCollectiveCritical() : 0, rng);
+        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, { bow: this.isBowAttack(actor) });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
                 critical,
                 soulshot: usedSoulshot,
                 criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
-            }));
+            }) * weaponModifier);
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -357,12 +362,13 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(src.fetchCollectiveCritical ? src.fetchCollectiveCritical() : 0, rng);
+        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, { bow: this.isBowAttack(src) });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
                 critical,
                 criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul')
-            }));
+            }) * weaponModifier);
         let flags = 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -509,6 +515,11 @@ const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy
 function traitVulnerabilityModifier(target, trait) {
     if (!ELEMENTAL_DAMAGE_TRAITS.has(trait)) return 1;
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
+}
+
+function incomingWeaponVulnerabilityModifier(target, { bow = false } = {}) {
+    if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
+    return 1;
 }
 
 module.exports = Attack;
