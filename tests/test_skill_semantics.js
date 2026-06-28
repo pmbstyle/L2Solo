@@ -1796,6 +1796,36 @@ assert.strictEqual(spoil.fetchSemantic().levelDepend, 1, 'Spoil should preserve 
 assert.strictEqual(spoil.fetchSemantic().castRange, 40, 'Spoil should preserve sourced castRange metadata');
 assert.strictEqual(spoil.fetchSemantic().effectRange, 400, 'Spoil should preserve sourced effectRange metadata');
 
+const powerSmashData = activeSkills.find((entry) => entry.selfId === 255);
+assert(powerSmashData, 'Power Smash should be present in active skills data');
+assert.strictEqual(powerSmashData.template.distance, 40, 'Power Smash should preserve sourced castRange 40');
+assert.strictEqual(powerSmashData.time.hitTime, 1080, 'Power Smash should preserve sourced hitTime 1080');
+assert.strictEqual(powerSmashData.time.reuse, 13000, 'Power Smash should preserve sourced reuseDelay 13000');
+assert.strictEqual(powerSmashData.levels.length, 15, 'Power Smash should preserve sourced 15 base levels');
+assert.strictEqual(powerSmashData.levels[0].power, 90, 'Power Smash level 1 should preserve sourced PDAM power 90');
+assert.strictEqual(powerSmashData.levels[14].power, 326, 'Power Smash level 15 should preserve sourced PDAM power 326');
+assert.strictEqual(powerSmashData.levels[14].mp, 37, 'Power Smash level 15 MP should use sourced mpConsume 37');
+const powerSmashTarget = creature({ id: 1000255, hp: 100, maxHp: 100, level: 20 });
+const powerSmash = skill({ selfId: 255, name: 'Power Smash', spell: false, power: 326, level: 15, distance: 40 });
+const powerSmashOutcome = SkillEffects.execute(session(), caster, powerSmashTarget, powerSmash, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 33
+    }
+});
+assert.strictEqual(powerSmash.fetchSkillType(), C4SkillRules.DAMAGE, 'Power Smash should resolve as sourced PDAM');
+assert.strictEqual(powerSmash.fetchTargetKind(), 'enemy', 'Power Smash should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(powerSmash.fetchSsBoost(), 1, 'Power Smash should preserve sourced physical shot boost semantics');
+assert.strictEqual(powerSmash.fetchSemantic().trait, 'physical', 'Power Smash should preserve physical damage semantics');
+assert.strictEqual(powerSmash.fetchSemantic().overHit, true, 'Power Smash should preserve sourced overHit metadata');
+assert.deepStrictEqual(powerSmash.fetchSemantic().requires, { weaponsAllowed: 18444 }, 'Power Smash should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(powerSmash.fetchSemantic().castRange, 40, 'Power Smash should preserve sourced castRange metadata');
+assert.strictEqual(powerSmash.fetchSemantic().effectRange, 400, 'Power Smash should preserve sourced effectRange metadata');
+assert.strictEqual(powerSmashOutcome.damage, 33, 'Power Smash should keep its physical damage component');
+assert.strictEqual(powerSmashOutcome.effect, null, 'Power Smash should remain a pure damage skill without a debuff');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');

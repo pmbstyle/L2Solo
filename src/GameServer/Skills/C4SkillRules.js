@@ -125,6 +125,7 @@ const RULES = {
     246: { skillType: TAKE_CASTLE, trait: 'siege', target: 'holy', ssBoost: 0, castRange: 85, effectRange: 400, staticReuse: true, staticHitTime: true, mpInitialConsume: 50, condition: { clanLeader: true, siegeAttacker: true } },
     247: { skillType: SIEGE_FLAG, trait: 'siege', target: 'self', ssBoost: 0, itemConsumeId: 2131, itemConsumeCount: 300, npcId: 12024 },
     254: { skillType: SPOIL, trait: 'spoil', target: 'enemy', ssBoost: 0, levelDepend: 1, castRange: 40, effectRange: 400 },
+    255: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 18444 }, castRange: 40, effectRange: 400 },
     230: { skillType: EFFECT, trait: 'buff', effect: 'sprint', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     262: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     260: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 16392 } },
