@@ -95,6 +95,7 @@ const RULES = {
     95: { skillType: EFFECT, trait: 'slow', effect: 'cripple', effectType: 'debuff', target: 'enemy', baseLandRate: 80, levelDepend: 2, requires: { weaponsAllowed: 1024 }, castRange: 40, effectRange: 400, statsByLevel: { runSpdMul: [0.7, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     96: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', baseLandRateByLevel: [3, 4, 5, 6, 7, 8], levelDepend: 2, requires: { weaponsAllowed: 16 }, castRange: 40, effectRange: 400, dot: { count: 4, intervalMs: 5000, damageByLevel: [13, 17, 22, 27, 31, 34] } },
     97: { skillType: EFFECT, trait: 'debuff', effect: 'sanctuary', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, levelDepend: 2, undeadOnly: true, stats: { pAtkMul: 0.77 } },
+    98: { skillType: DAMAGE_EFFECT, trait: 'fear', effect: 'fear', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, baseLandRate: 15 },
     109: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [20] },
     121: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [9.1, 13, 16.6, 20, 23, 25.7] },
     123: { skillType: EFFECT, trait: 'buff', effect: 'spirit_barrier', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },

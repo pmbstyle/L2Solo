@@ -3919,6 +3919,34 @@ const undeadSanctuaryOutcome = SkillEffects.execute(session(), caster, undeadSan
 });
 assert.strictEqual(undeadSanctuaryOutcome.effect.key, 'sanctuary', 'Sanctuary should apply a structured debuff to undead targets');
 assert.strictEqual(EffectStats.multiplier(undeadSanctuaryTarget, 'pAtkMul'), 0.77, 'Sanctuary should use sourced pAtkDown 0.77');
+
+const swordSymphonyData = activeSkills.find((entry) => entry.selfId === 98);
+assert(swordSymphonyData, 'Sword Symphony should be present in active skills data');
+assert.strictEqual(swordSymphonyData.template.distance, -1, 'Sword Symphony should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(swordSymphonyData.time.buff, 30000, 'Sword Symphony should preserve sourced 30 second fear duration');
+assert.strictEqual(swordSymphonyData.levels.length, 5, 'Sword Symphony should preserve sourced 5 base levels');
+assert.strictEqual(swordSymphonyData.levels[0].power, 229, 'Sword Symphony level 1 should preserve sourced PDAM power 229');
+assert.strictEqual(swordSymphonyData.levels[4].power, 432, 'Sword Symphony level 5 should preserve sourced PDAM power 432');
+assert.strictEqual(swordSymphonyData.levels[4].mp, 160, 'Sword Symphony level 5 should preserve sourced mpConsume 160');
+const swordSymphonyTarget = statActor();
+const swordSymphony = skill({ selfId: 98, name: 'Sword Symphony', spell: false, power: 432, level: 5, buff: 30000, distance: -1 });
+const swordSymphonyOutcome = SkillEffects.execute(session(), caster, swordSymphonyTarget, swordSymphony, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 123
+    }
+});
+assert.strictEqual(swordSymphony.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Sword Symphony should resolve as sourced PDAM plus fear');
+assert.strictEqual(swordSymphony.fetchTargetKind(), 'enemy', 'Sword Symphony should resolve as an enemy aura damage-effect');
+assert.strictEqual(swordSymphony.fetchSsBoost(), 1, 'Sword Symphony should preserve sourced physical shot boost semantics');
+assert.strictEqual(swordSymphony.fetchSemantic().sourceTarget, 'aura', 'Sword Symphony should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(swordSymphony.fetchSemantic().radius, 150, 'Sword Symphony should preserve sourced skillRadius 150');
+assert.strictEqual(swordSymphony.fetchSemantic().baseLandRate, 15, 'Sword Symphony should use sourced effectPower 15 as fear land rate');
+assert.strictEqual(swordSymphonyOutcome.damage, 123, 'Sword Symphony should keep its physical damage component');
+assert.strictEqual(swordSymphonyOutcome.effect.key, 'fear', 'Sword Symphony should apply its structured fear effect');
+EffectStore.remove(swordSymphonyTarget, 'fear');
 const cureBleeding = skill({ selfId: 61, name: 'Cure Bleeding', spell: true, power: 7, level: 2 });
 const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cureBleeding, {
     magicSkill: true,
