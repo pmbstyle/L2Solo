@@ -18,6 +18,7 @@ const AGGRO_REMOVE = 'aggroRemove';
 const CANCEL = 'cancel';
 
 const RULES = {
+    1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

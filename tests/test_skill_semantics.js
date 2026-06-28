@@ -895,6 +895,33 @@ assert.strictEqual(hammerCrushOutcome.effect.key, 'stun', 'Hammer Crush should a
 assert.strictEqual(EffectRestrictions.canMove(hammerCrushTarget), false, 'Hammer Crush stun should block movement');
 EffectStore.remove(hammerCrushTarget, 'stun');
 
+const tripleSlashData = activeSkills.find((entry) => entry.selfId === 1);
+assert(tripleSlashData, 'Triple Slash should be present in active skills data');
+assert.strictEqual(tripleSlashData.template.distance, 40, 'Triple Slash should preserve sourced castRange 40');
+assert.strictEqual(tripleSlashData.time.hitTime, 1733, 'Triple Slash should preserve sourced hitTime 1733');
+assert.strictEqual(tripleSlashData.time.reuse, 13000, 'Triple Slash should preserve sourced reuseDelay 13000');
+assert.strictEqual(tripleSlashData.levels.length, 37, 'Triple Slash should preserve sourced 37 base levels');
+assert.strictEqual(tripleSlashData.levels[3].power, 516, 'Triple Slash level 4 should preserve sourced PDAM power 516');
+assert.strictEqual(tripleSlashData.levels[20].power, 1220, 'Triple Slash level 21 should preserve existing sourced PDAM power 1220');
+assert.strictEqual(tripleSlashData.levels[36].power, 2131, 'Triple Slash level 37 should preserve sourced PDAM power 2131');
+assert.strictEqual(tripleSlashData.levels[36].mp, 97, 'Triple Slash level 37 MP should use sourced mpConsume 97');
+const tripleSlashTarget = creature({ id: 1000013, hp: 100, maxHp: 100, level: 20 });
+const tripleSlash = skill({ selfId: 1, name: 'Triple Slash', spell: false, power: 2131, level: 37, distance: 40 });
+const tripleSlashOutcome = SkillEffects.execute(session(), caster, tripleSlashTarget, tripleSlash, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 145
+    }
+});
+assert.strictEqual(tripleSlash.fetchSkillType(), C4SkillRules.DAMAGE, 'Triple Slash should resolve as sourced PDAM');
+assert.strictEqual(tripleSlash.fetchTargetKind(), 'enemy', 'Triple Slash should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(tripleSlash.fetchSsBoost(), 1, 'Triple Slash should preserve sourced physical shot boost semantics');
+assert.deepStrictEqual(tripleSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword' }, 'Triple Slash should preserve sourced dual sword requirement');
+assert.strictEqual(tripleSlashOutcome.damage, 145, 'Triple Slash should keep its physical damage component');
+assert.strictEqual(tripleSlashOutcome.effect, null, 'Triple Slash should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
