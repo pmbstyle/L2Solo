@@ -381,6 +381,7 @@ const RULES = {
     2059: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_shield', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pDefMul: 1.15 } },
     2060: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ skillId: 4082 }] },
     2061: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, blessedSpiritshot: true },
+    3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
     4097: { skillType: HOT, trait: 'buff', effect: 'npc_chant_of_life', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 5, intervalMs: 3000, healByLevel: [7, 12, 18, 27, 37, 46, 55, 23, 32, 42, 51, 58] } },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

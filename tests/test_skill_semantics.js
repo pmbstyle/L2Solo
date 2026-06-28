@@ -4975,6 +4975,27 @@ assert.strictEqual(bleedOutcome.effect.dot.count, 4, 'Bleed should use the sourc
 assert.strictEqual(bleedOutcome.effect.dot.intervalMs, 5000, 'Bleed should tick every sourced 5 seconds');
 assert.strictEqual(bleedOutcome.effect.dot.damage, 27, 'Bleed should use the sourced damage table instead of local flat power');
 
+const itemBleedData = activeSkills.find((entry) => entry.selfId === 3005);
+assert(itemBleedData, 'Item Bleed should be present in active skills data');
+assert.strictEqual(itemBleedData.template.distance, -1, 'Item Bleed should preserve sourced castRange -1');
+assert.strictEqual(itemBleedData.time.buff, 21000, 'Item Bleed should preserve sourced 7x3s duration');
+assert.strictEqual(itemBleedData.levels[0].power, 5, 'Item Bleed should preserve sourced power 5');
+const itemBleed = skill({ selfId: 3005, name: 'Bleed', spell: false, power: 5, level: 1, buff: 21000, distance: -1 });
+const itemBleedTarget = statActor();
+const itemBleedOutcome = SkillEffects.execute(session(), caster, itemBleedTarget, itemBleed, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(itemBleed.fetchSkillType(), C4SkillRules.EFFECT, 'Item Bleed should resolve as sourced BLEED effect semantics');
+assert.strictEqual(itemBleed.fetchTargetKind(), 'enemy', 'Item Bleed should resolve as an enemy debuff');
+assert.strictEqual(itemBleed.fetchSsBoost(), 0, 'Item Bleed should not use shot boost semantics');
+assert.strictEqual(itemBleed.fetchSemantic().baseLandRate, 5, 'Item Bleed should use sourced power 5 as land rate');
+assert.strictEqual(itemBleed.fetchSemantic().levelDepend, 1, 'Item Bleed should preserve sourced lvlDepend metadata');
+assert.strictEqual(itemBleedOutcome.effect.dot.count, 7, 'Item Bleed should use sourced 7 damage ticks');
+assert.strictEqual(itemBleedOutcome.effect.dot.intervalMs, 3000, 'Item Bleed should tick every sourced 3 seconds');
+assert.strictEqual(itemBleedOutcome.effect.dot.damage, 66, 'Item Bleed should use sourced DamOverTime value 66');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
