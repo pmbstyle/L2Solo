@@ -1022,6 +1022,34 @@ assert.deepStrictEqual(focusSonic.fetchSemantic().requires, { weaponsAllowed: 52
 assert.strictEqual(focusSonicOutcome.damage, 0, 'Focus Sonic should not be treated as a damage skill without sourced damage semantics');
 assert.strictEqual(focusSonicOutcome.effect, null, 'Focus Sonic should not invent an effect while charge runtime is not implemented');
 
+const sonicBusterData = activeSkills.find((entry) => entry.selfId === 9);
+assert(sonicBusterData, 'Sonic Buster should be present in active skills data');
+assert.strictEqual(sonicBusterData.template.distance, 40, 'Sonic Buster should preserve sourced castRange 40');
+assert.strictEqual(sonicBusterData.time.hitTime, 720, 'Sonic Buster should preserve sourced hitTime 720');
+assert.strictEqual(sonicBusterData.time.reuse, 10000, 'Sonic Buster should preserve sourced reuseDelay 10000');
+assert.strictEqual(sonicBusterData.levels.length, 34, 'Sonic Buster should preserve sourced 34 base levels');
+assert.strictEqual(sonicBusterData.levels[17].power, 262, 'Sonic Buster level 18 should preserve existing sourced CHARGEDAM power 262');
+assert.strictEqual(sonicBusterData.levels[33].power, 457, 'Sonic Buster level 34 should preserve sourced CHARGEDAM power 457');
+assert.strictEqual(sonicBusterData.levels[33].mp, 100, 'Sonic Buster level 34 MP should use sourced mpConsume 100');
+const sonicBusterTarget = creature({ id: 1000017, hp: 100, maxHp: 100, level: 20 });
+const sonicBuster = skill({ selfId: 9, name: 'Sonic Buster', spell: false, power: 457, level: 34, distance: 40 });
+const sonicBusterOutcome = SkillEffects.execute(session(), caster, sonicBusterTarget, sonicBuster, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 189
+    }
+});
+assert.strictEqual(sonicBuster.fetchSkillType(), C4SkillRules.DAMAGE, 'Sonic Buster should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(sonicBuster.fetchTargetKind(), 'enemy', 'Sonic Buster should remain executable against selected enemies');
+assert.strictEqual(sonicBuster.fetchSsBoost(), 1, 'Sonic Buster should preserve sourced physical shot boost semantics');
+assert.strictEqual(sonicBuster.fetchSemantic().sourceTarget, 'front_area', 'Sonic Buster should preserve sourced TARGET_FRONT_AREA semantics');
+assert.strictEqual(sonicBuster.fetchSemantic().radius, 200, 'Sonic Buster should preserve sourced skillRadius 200');
+assert.deepStrictEqual(sonicBuster.fetchSemantic().requires, { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 }, 'Sonic Buster should preserve sourced weapon and charge requirements');
+assert.strictEqual(sonicBusterOutcome.damage, 189, 'Sonic Buster should keep its physical damage component');
+assert.strictEqual(sonicBusterOutcome.effect, null, 'Sonic Buster should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');

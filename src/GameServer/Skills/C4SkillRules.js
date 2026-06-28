@@ -25,6 +25,7 @@ const RULES = {
     6: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     7: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 205, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     8: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxChargesByLevel: [1, 2, 3, 4, 5, 6, 7], aggroPoints: 200, requires: { weaponsAllowed: 524 } },
+    9: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
