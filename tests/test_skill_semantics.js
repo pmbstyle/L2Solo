@@ -779,6 +779,33 @@ assert.strictEqual(mightyServitor.fetchTargetKind(), 'pet', 'Mighty Servitor sho
 assert.strictEqual(mightyServitorOutcome.effect.key, 'mighty_servitor', 'Mighty Servitor should apply a structured pet buff');
 assert.strictEqual(EffectStats.multiplier(mightyServitorTarget, 'pAtkMul'), 1.12, 'Mighty Servitor level 2 should use sourced pAtk 1.12');
 
+const shieldStunData = activeSkills.find((entry) => entry.selfId === 92);
+assert(shieldStunData, 'Shield Stun should be present in active skills data');
+assert.strictEqual(shieldStunData.template.distance, 40, 'Shield Stun should preserve sourced castRange 40');
+assert.strictEqual(shieldStunData.time.buff, 9000, 'Shield Stun should preserve sourced 9 second stun duration');
+assert.strictEqual(shieldStunData.levels.length, 52, 'Shield Stun should preserve sourced 52 base levels');
+assert.strictEqual(shieldStunData.levels[0].power, 80, 'Shield Stun level 1 should use sourced power 80 as land rate');
+assert.strictEqual(shieldStunData.levels[2].mp, 22, 'Shield Stun level 3 MP should use sourced mpConsume 22');
+assert.strictEqual(shieldStunData.levels[51].mp, 83, 'Shield Stun level 52 MP should use sourced mpConsume 83');
+const shieldStunTarget = creature({ id: 1000005, hp: 100, maxHp: 100, level: 20 });
+const shieldStun = skill({ selfId: 92, name: 'Shield Stun', spell: false, power: 80, level: 52, buff: 9000, distance: 40 });
+const shieldStunOutcome = SkillEffects.execute(session(), caster, shieldStunTarget, shieldStun, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(shieldStun.fetchSkillType(), C4SkillRules.EFFECT, 'Shield Stun should resolve as sourced STUN effect semantics');
+assert.strictEqual(shieldStun.fetchTargetKind(), 'enemy', 'Shield Stun should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(shieldStun.fetchSemantic().baseLandRate, 80, 'Shield Stun should use sourced power 80 as land rate');
+assert.deepStrictEqual(shieldStun.fetchSemantic().requires, { itemKind: 'shield' }, 'Shield Stun should preserve sourced shield-use requirement');
+assert.strictEqual(shieldStunOutcome.damage, 0, 'Shield Stun should not be routed as physical damage');
+assert.strictEqual(shieldStunOutcome.effect.key, 'stun', 'Shield Stun should apply a structured stun debuff');
+assert.strictEqual(EffectStore.hasDebuff(shieldStunTarget, 'stun'), true, 'Shield Stun debuff should be visible through EffectStore');
+assert.strictEqual(EffectRestrictions.canMove(shieldStunTarget), false, 'Shield Stun should block movement through runtime restrictions');
+assert.strictEqual(EffectRestrictions.canAttack(shieldStunTarget), false, 'Shield Stun should block attacks through runtime restrictions');
+assert.strictEqual(EffectRestrictions.canCast(shieldStunTarget), false, 'Shield Stun should block casting through runtime restrictions');
+EffectStore.remove(shieldStunTarget, 'stun');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();

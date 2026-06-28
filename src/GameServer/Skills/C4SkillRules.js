@@ -28,6 +28,7 @@ const RULES = {
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
     67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    92: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { itemKind: 'shield' } },
     100: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     101: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
     102: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', baseLandRate: 80 },
@@ -346,6 +347,7 @@ function resolve(skill = {}) {
         cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null,
         condition: rule.condition || inferred.condition || null,
+        requires: rule.requires || inferred.requires || null,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
