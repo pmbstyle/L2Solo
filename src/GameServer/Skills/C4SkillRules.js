@@ -84,6 +84,7 @@ const RULES = {
     78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [204, 408], statsByLevel: { pAtkMul: [1.20, 1.25] } },
     80: { skillType: EFFECT, trait: 'detect_weakness', effect: 'detect_weakness', effectType: 'buff', target: 'self', effectTargetKind: 'monster', baseLandRate: 100, aggroPoints: 495, stats: { 'pAtk-monsters': 1.5 } },
     81: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, levelDepend: 2, requires: { weaponsAllowed: 1024 }, castRange: 40, effectRange: 400, selfEffect: { effect: 'stun', effectType: 'debuff', trait: 'shock' } },
+    82: { skillType: EFFECT, trait: 'buff', effect: 'majesty', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [204, 379, 549], statsByLevel: { pDefMul: [1.07, 1.11, 1.15], pEvasionRateAdd: [-2, -4, -6] } },
     91: { skillType: EFFECT, trait: 'buff', effect: 'defense_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12] } },
     94: { skillType: EFFECT, trait: 'buff', effect: 'rage', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.45, 1.55], pDefMul: [0.8, 0.8], pEvasionRateAdd: [-3, -3] } },
     95: { skillType: EFFECT, trait: 'slow', effect: 'cripple', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { weaponsAllowed: 1024 }, statsByLevel: { runSpdMul: [0.7, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
