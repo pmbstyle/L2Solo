@@ -3750,6 +3750,20 @@ const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cu
 });
 assert.strictEqual(cureBleedOutcome.cleansed.length, 1, 'Cure Bleeding should remove matching bleed effects');
 assert.strictEqual(EffectStore.hasDebuff(bleedTarget, 'bleed'), false, 'Cure Bleeding should clear bleed debuff state');
+const cureBleedingData = activeSkills.find((entry) => entry.selfId === 61);
+assert(cureBleedingData, 'Cure Bleeding should be present in active skills data');
+assert.strictEqual(cureBleedingData.levels.length, 3, 'Cure Bleeding active data should preserve sourced 3 levels');
+assert.strictEqual(cureBleedingData.levels[2].power, 9, 'Cure Bleeding level 3 active data should preserve sourced negatePower 9');
+assert.strictEqual(cureBleedingData.levels[2].mp, 55, 'Cure Bleeding level 3 active data should combine sourced initial and consume MP');
+const severeBleedTarget = statActor();
+EffectStore.apply(severeBleedTarget, { key: 'severe_bleed', id: 96, level: 9, type: 'debuff', category: 'bleed', durationMs: 30000 });
+const maxCureBleeding = skill({ selfId: 61, name: 'Cure Bleeding', spell: true, power: 9, level: 3 });
+const maxCureBleedOutcome = SkillEffects.execute(session(), caster, severeBleedTarget, maxCureBleeding, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(maxCureBleedOutcome.cleansed.length, 1, 'Cure Bleeding level 3 should cleanse bleed up to sourced negatePower 9');
+assert.strictEqual(EffectStore.hasDebuff(severeBleedTarget, 'severe_bleed'), false, 'Cure Bleeding level 3 should clear high-level bleed within sourced negatePower 9');
 
 const remedyData = activeSkills.find((entry) => entry.selfId === 44);
 assert(remedyData, 'Remedy should be present in active skills data');

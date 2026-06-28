@@ -212,7 +212,7 @@
     "selfId": 61,
     "template": { "name": "Cure Bleeding", "passive": false, "spell": true, "distance": -1 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 3, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 7, "mp": 42, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 3, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 7, "mp": 42, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 9, "mp": 55, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 65,
     "template": { "name": "Horror", "passive": false, "spell": true, "distance": 600 },
