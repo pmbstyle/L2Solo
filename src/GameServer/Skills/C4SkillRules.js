@@ -231,6 +231,7 @@ const RULES = {
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
     1087: { skillType: EFFECT, trait: 'buff', effect: 'agility', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
     1090: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
+    1092: { skillType: EFFECT, trait: 'fear', effect: 'fear', effectType: 'debuff', target: 'enemy', baseLandRate: 40, levelDepend: 1, castRange: 600, effectRange: 1100 },
     1096: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_chaos', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { pAccuracyCombatAdd: [-12, -12, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13] } },
     1097: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', target: 'enemy', baseLandRate: 80 },
     1099: { skillType: EFFECT, trait: 'slow', effect: 'seal_of_slow', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },

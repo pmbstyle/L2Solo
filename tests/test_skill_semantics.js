@@ -3797,6 +3797,32 @@ assert.strictEqual(mobDiscordOutcome.effect.key, 'confusion', 'Curse Discord sho
 assert.strictEqual(EffectStore.impairments(mobDiscordTarget).confused, true, 'Curse Discord confusion should be visible through impairments');
 EffectStore.remove(mobDiscordTarget, 'confusion');
 
+const fearData = activeSkills.find((entry) => entry.selfId === 1092);
+assert(fearData, 'Fear should be present in active skills data');
+assert.strictEqual(fearData.template.distance, 600, 'Fear should preserve sourced castRange 600');
+assert.strictEqual(fearData.time.hitTime, 4000, 'Fear should preserve sourced hitTime 4000');
+assert.strictEqual(fearData.time.reuse, 20000, 'Fear should preserve sourced reuseDelay 20000');
+assert.strictEqual(fearData.time.buff, 30000, 'Fear should preserve sourced 5x6s Fear duration');
+assert.strictEqual(fearData.levels.length, 19, 'Fear should preserve sourced 19 base levels');
+assert.strictEqual(fearData.levels[0].mp, 12, 'Fear level 1 MP should use sourced mpConsume 12');
+assert.strictEqual(fearData.levels[18].mp, 55, 'Fear level 19 MP should use sourced mpConsume 55');
+const fear = skill({ selfId: 1092, name: 'Fear', spell: true, power: 1, level: 19, distance: 600, buff: 30000 });
+const classFearTarget = statActor();
+const classFearOutcome = SkillEffects.execute(session(), caster, classFearTarget, fear, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(fear.fetchSkillType(), C4SkillRules.EFFECT, 'Fear should preserve sourced FEAR effect semantics');
+assert.strictEqual(fear.fetchTargetKind(), 'enemy', 'Fear should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(fear.fetchSemantic().baseLandRate, 40, 'Fear should use Lisvus FEAR fallback value 40 when source effect power is 0');
+assert.strictEqual(fear.fetchSemantic().levelDepend, 1, 'Fear should use Lisvus FEAR fallback lvlDepend 1 when source lvlDepend is not set');
+assert.strictEqual(fear.fetchSemantic().castRange, 600, 'Fear should preserve sourced castRange metadata');
+assert.strictEqual(fear.fetchSemantic().effectRange, 1100, 'Fear should preserve sourced effectRange metadata');
+assert.strictEqual(classFearOutcome.effect.key, 'fear', 'Fear should apply a structured fear debuff');
+assert.strictEqual(EffectStore.hasDebuff(classFearTarget, 'fear'), true, 'Fear should leave a fear debuff');
+EffectStore.remove(classFearTarget, 'fear');
+
 const curseFearData = activeSkills.find((entry) => entry.selfId === 1169);
 assert(curseFearData, 'Curse Fear should be present in active skills data');
 assert.strictEqual(curseFearData.time.reuse, 12000, 'Curse Fear should preserve sourced 12 second reuse');
