@@ -116,6 +116,7 @@ const RULES = {
     139: { skillType: EFFECT, trait: 'buff', effect: 'guts', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pDefMul: [2.0, 2.5, 3.0] }, condition: { actorHpPercentAtMost: 30 } },
     176: { skillType: EFFECT, trait: 'buff', effect: 'frenzy', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [2.0, 2.5, 3.0] }, condition: { actorHpPercentAtMost: 30 } },
     181: { skillType: HEAL_STATIC, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [1685], condition: { actorHpPercentAtMost: 10 } },
+    190: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 18444 }, castRange: 40, effectRange: 400 },
     230: { skillType: EFFECT, trait: 'buff', effect: 'sprint', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     262: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     260: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 16392 } },

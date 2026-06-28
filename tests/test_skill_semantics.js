@@ -1650,6 +1650,36 @@ assert.strictEqual(punchOutcome.selfEffect.key, 'stun', 'Punch of Doom should ap
 assert(EffectStore.hasDebuff(punchCaster, 'stun'), 'Punch of Doom caster should receive the sourced self stun debuff');
 assert.strictEqual(EffectStore.hasDebuff(punchTarget, 'stun'), false, 'Punch of Doom target should not receive StunSelf');
 
+const fatalStrikeData = activeSkills.find((entry) => entry.selfId === 190);
+assert(fatalStrikeData, 'Fatal Strike should be present in active skills data');
+assert.strictEqual(fatalStrikeData.template.distance, 40, 'Fatal Strike should preserve sourced castRange 40');
+assert.strictEqual(fatalStrikeData.time.hitTime, 1080, 'Fatal Strike should preserve sourced hitTime 1080');
+assert.strictEqual(fatalStrikeData.time.reuse, 13000, 'Fatal Strike should preserve sourced reuseDelay 13000');
+assert.strictEqual(fatalStrikeData.levels.length, 37, 'Fatal Strike should preserve sourced 37 base levels');
+assert.strictEqual(fatalStrikeData.levels[0].power, 615, 'Fatal Strike level 1 should preserve sourced PDAM power 615');
+assert.strictEqual(fatalStrikeData.levels[36].power, 3044, 'Fatal Strike level 37 should preserve sourced PDAM power 3044');
+assert.strictEqual(fatalStrikeData.levels[36].mp, 83, 'Fatal Strike level 37 MP should use sourced mpConsume 83');
+const fatalStrikeTarget = creature({ id: 1000190, hp: 100, maxHp: 100, level: 20 });
+const fatalStrike = skill({ selfId: 190, name: 'Fatal Strike', spell: false, power: 3044, level: 37, distance: 40 });
+const fatalStrikeOutcome = SkillEffects.execute(session(), caster, fatalStrikeTarget, fatalStrike, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 304
+    }
+});
+assert.strictEqual(fatalStrike.fetchSkillType(), C4SkillRules.DAMAGE, 'Fatal Strike should resolve as sourced PDAM');
+assert.strictEqual(fatalStrike.fetchTargetKind(), 'enemy', 'Fatal Strike should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(fatalStrike.fetchSsBoost(), 1, 'Fatal Strike should preserve sourced physical shot boost semantics');
+assert.strictEqual(fatalStrike.fetchSemantic().trait, 'physical', 'Fatal Strike should preserve physical damage semantics');
+assert.strictEqual(fatalStrike.fetchSemantic().overHit, true, 'Fatal Strike should preserve sourced overHit metadata');
+assert.deepStrictEqual(fatalStrike.fetchSemantic().requires, { weaponsAllowed: 18444 }, 'Fatal Strike should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(fatalStrike.fetchSemantic().castRange, 40, 'Fatal Strike should preserve sourced castRange metadata');
+assert.strictEqual(fatalStrike.fetchSemantic().effectRange, 400, 'Fatal Strike should preserve sourced effectRange metadata');
+assert.strictEqual(fatalStrikeOutcome.damage, 304, 'Fatal Strike should keep its physical damage component');
+assert.strictEqual(fatalStrikeOutcome.effect, null, 'Fatal Strike should remain a pure damage skill without a debuff');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
