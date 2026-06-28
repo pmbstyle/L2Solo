@@ -77,7 +77,7 @@ const RULES = {
     50: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxChargesByLevel: [1, 2, 3, 4, 5, 6, 7], aggroPoints: 150, requires: { weaponsAllowed: 1024 } },
     51: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', ssBoost: 0, castRange: 400, effectRange: 900 },
     54: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 }, castRange: 600, effectRange: 1100 },
-    72: { skillType: EFFECT, trait: 'buff', effect: 'iron_will', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
+    72: { skillType: EFFECT, trait: 'buff', effect: 'iron_will', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [408, 467, 523], statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
     77: { skillType: EFFECT, trait: 'buff', effect: 'attack_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12] } },
     78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.20, 1.25] } },
     91: { skillType: EFFECT, trait: 'buff', effect: 'defense_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12] } },

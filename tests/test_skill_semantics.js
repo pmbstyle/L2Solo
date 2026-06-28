@@ -286,6 +286,9 @@ assert.strictEqual(
     const selfBuff = skill({ selfId: id, name, spell: data.template.spell, power: 1, level: levels, distance: -1, buff });
     assert.strictEqual(selfBuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve to BUFF effect semantics`);
     assert.strictEqual(selfBuff.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    if (id === 72) {
+        assert.strictEqual(selfBuff.fetchSemantic().aggroPoints, 523, 'Iron Will should resolve sourced level 3 aggroPoints');
+    }
     if (hpGate) {
         const attack = new Attack();
         assert(
