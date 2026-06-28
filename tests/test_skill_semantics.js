@@ -1074,6 +1074,39 @@ assert.strictEqual(trickOutcome.damage, 0, 'Trick should not be routed as damage
 assert.strictEqual(trickOutcome.aggroReduced, true, 'Trick should mark a successful sourced AGGREDUCE_CHAR outcome');
 assert.strictEqual(trickOutcome.aggroRemoved, false, 'Trick should not be conflated with AGGREMOVE');
 
+const switchData = activeSkills.find((entry) => entry.selfId === 12);
+assert(switchData, 'Switch should be present in active skills data');
+assert.strictEqual(switchData.template.distance, 600, 'Switch should preserve sourced castRange 600');
+assert.strictEqual(switchData.time.hitTime, 1200, 'Switch should preserve sourced hitTime 1200');
+assert.strictEqual(switchData.time.reuse, 12000, 'Switch should preserve sourced reuseDelay 12000');
+assert.strictEqual(switchData.time.buff, 30000, 'Switch should preserve sourced Confusion count/time duration');
+assert.strictEqual(switchData.levels.length, 14, 'Switch should preserve sourced 14 base levels');
+assert.strictEqual(switchData.levels[0].power, 80, 'Switch level 1 should preserve sourced CONFUSE_MOB_ONLY power 80');
+assert.strictEqual(switchData.levels[13].mp, 83, 'Switch level 14 MP should use sourced mpConsume 83');
+const switchPlayerTarget = creature({ id: 1000019, hp: 100, maxHp: 100, level: 20 });
+const switchSkill = skill({ selfId: 12, name: 'Switch', spell: false, power: 80, level: 14, distance: 600, buff: 30000 });
+const switchPlayerOutcome = SkillEffects.execute(session(), caster, switchPlayerTarget, switchSkill, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(switchPlayerOutcome.effect, null, 'Switch should not apply CONFUSE_MOB_ONLY to non-attackable targets');
+assert.strictEqual(switchPlayerOutcome.effectResisted, true, 'Switch mob-only rejection should report effect resistance');
+const switchMobTarget = creature({ id: 1000020, hp: 100, maxHp: 100, level: 20 });
+switchMobTarget.fetchAttackable = () => true;
+const switchMobOutcome = SkillEffects.execute(session(), caster, switchMobTarget, switchSkill, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(switchSkill.fetchSkillType(), C4SkillRules.EFFECT, 'Switch should preserve sourced CONFUSE_MOB_ONLY effect semantics');
+assert.strictEqual(switchSkill.fetchTargetKind(), 'enemy', 'Switch should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(switchSkill.fetchSemantic().baseLandRate, 80, 'Switch should use sourced power 80 as land rate');
+assert.strictEqual(switchSkill.fetchSemantic().mobOnly, true, 'Switch should preserve sourced mob-only semantics');
+assert.strictEqual(switchMobOutcome.effect.key, 'confusion', 'Switch should apply a structured confusion debuff to attackable NPCs');
+assert.strictEqual(EffectStore.impairments(switchMobTarget).confused, true, 'Switch confusion should be visible through impairments');
+EffectStore.remove(switchMobTarget, 'confusion');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');

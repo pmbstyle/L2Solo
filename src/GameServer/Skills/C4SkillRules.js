@@ -29,6 +29,7 @@ const RULES = {
     9: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     11: { skillType: AGGRO_REDUCE_CHAR, trait: 'derangement', target: 'enemy', ssBoost: 0, baseLandRate: 50 },
+    12: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 80, mobOnly: true },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
