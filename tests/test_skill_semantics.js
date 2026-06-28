@@ -3823,6 +3823,36 @@ assert.strictEqual(classFearOutcome.effect.key, 'fear', 'Fear should apply a str
 assert.strictEqual(EffectStore.hasDebuff(classFearTarget, 'fear'), true, 'Fear should leave a fear debuff');
 EffectStore.remove(classFearTarget, 'fear');
 
+const venomData = activeSkills.find((entry) => entry.selfId === 1095);
+assert(venomData, 'Venom should be present in active skills data');
+assert.strictEqual(venomData.template.distance, 600, 'Venom should preserve sourced castRange 600');
+assert.strictEqual(venomData.time.hitTime, 4000, 'Venom should preserve sourced hitTime 4000');
+assert.strictEqual(venomData.time.reuse, 12000, 'Venom should preserve sourced reuseDelay 12000');
+assert.strictEqual(venomData.time.buff, 30000, 'Venom should preserve sourced 10x3s poison duration');
+assert.strictEqual(venomData.levels.length, 5, 'Venom should preserve sourced 5 base levels');
+assert.strictEqual(venomData.levels[0].power, 1, 'Venom level 1 should preserve sourced POISON power 1');
+assert.strictEqual(venomData.levels[4].power, 6, 'Venom level 5 should preserve sourced POISON power 6');
+assert.strictEqual(venomData.levels[4].mp, 38, 'Venom level 5 MP should use sourced mpConsume 38');
+const venom = skill({ selfId: 1095, name: 'Venom', spell: true, power: 6, level: 5, distance: 600, buff: 30000 });
+const venomTarget = statActor();
+const venomOutcome = SkillEffects.execute(session(), caster, venomTarget, venom, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(venom.fetchSkillType(), C4SkillRules.EFFECT, 'Venom should preserve sourced POISON effect semantics');
+assert.strictEqual(venom.fetchTargetKind(), 'enemy', 'Venom should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(venom.fetchSemantic().baseLandRate, 6, 'Venom level 5 should use sourced power as land rate');
+assert.strictEqual(venom.fetchSemantic().levelDepend, 1, 'Venom should preserve sourced lvlDepend 1');
+assert.strictEqual(venom.fetchSemantic().castRange, 600, 'Venom should preserve sourced castRange metadata');
+assert.strictEqual(venom.fetchSemantic().effectRange, 1100, 'Venom should preserve sourced effectRange metadata');
+assert.strictEqual(venomOutcome.damage, 0, 'Venom should not be routed as direct magic damage');
+assert.strictEqual(venomOutcome.effect.key, 'poison', 'Venom should apply a structured poison debuff');
+assert.strictEqual(venomOutcome.effect.dot.count, 10, 'Venom should use sourced 10 damage ticks');
+assert.strictEqual(venomOutcome.effect.dot.intervalMs, 3000, 'Venom should tick every sourced 3 seconds');
+assert.strictEqual(venomOutcome.effect.dot.damage, 38, 'Venom level 5 should use sourced DamOverTime value 38');
+EffectStore.remove(venomTarget, 'poison');
+
 const curseFearData = activeSkills.find((entry) => entry.selfId === 1169);
 assert(curseFearData, 'Curse Fear should be present in active skills data');
 assert.strictEqual(curseFearData.time.reuse, 12000, 'Curse Fear should preserve sourced 12 second reuse');
