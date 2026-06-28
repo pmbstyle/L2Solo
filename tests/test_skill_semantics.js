@@ -835,6 +835,37 @@ assert.strictEqual(stunningFistOutcome.effect.key, 'stun', 'Stunning Fist should
 assert.strictEqual(EffectRestrictions.canMove(stunningFistTarget), false, 'Stunning Fist stun should block movement');
 EffectStore.remove(stunningFistTarget, 'stun');
 
+const thunderStormData = activeSkills.find((entry) => entry.selfId === 48);
+assert(thunderStormData, 'Thunder Storm should be present in active skills data');
+assert.strictEqual(thunderStormData.template.distance, -1, 'Thunder Storm should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(thunderStormData.time.buff, 9000, 'Thunder Storm should preserve sourced 9 second stun duration');
+assert.strictEqual(thunderStormData.levels.length, 37, 'Thunder Storm should preserve sourced 37 base levels');
+assert.strictEqual(thunderStormData.levels[20].power, 349, 'Thunder Storm level 21 should preserve existing sourced PDAM power 349');
+assert.strictEqual(thunderStormData.levels[36].power, 609, 'Thunder Storm level 37 should preserve sourced PDAM power 609');
+assert.strictEqual(thunderStormData.levels[36].mp, 83, 'Thunder Storm level 37 MP should use sourced mpConsume 83');
+const thunderStormTarget = creature({ id: 1000007, hp: 100, maxHp: 100, level: 20 });
+const thunderStorm = skill({ selfId: 48, name: 'Thunder Storm', spell: false, power: 609, level: 37, buff: 9000, distance: -1 });
+const thunderStormOutcome = SkillEffects.execute(session(), caster, thunderStormTarget, thunderStorm, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 88
+    }
+});
+assert.strictEqual(thunderStorm.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Thunder Storm should resolve as sourced PDAM plus stun');
+assert.strictEqual(thunderStorm.fetchTargetKind(), 'enemy', 'Thunder Storm should remain executable against selected enemies');
+assert.strictEqual(thunderStorm.fetchSsBoost(), 1, 'Thunder Storm should preserve sourced physical shot boost semantics');
+assert.strictEqual(thunderStorm.fetchSemantic().sourceTarget, 'aura', 'Thunder Storm should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(thunderStorm.fetchSemantic().radius, 150, 'Thunder Storm should preserve sourced skillRadius 150');
+assert.strictEqual(thunderStorm.fetchSemantic().baseLandRate, 50, 'Thunder Storm should use sourced effectPower 50 as stun land rate');
+assert.strictEqual(thunderStorm.fetchSemantic().levelDepend, 1, 'Thunder Storm should preserve sourced lvlDepend 1');
+assert.deepStrictEqual(thunderStorm.fetchSemantic().requires, { weaponsAllowed: 64 }, 'Thunder Storm should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(thunderStormOutcome.damage, 88, 'Thunder Storm should keep its physical damage component');
+assert.strictEqual(thunderStormOutcome.effect.key, 'stun', 'Thunder Storm should apply its structured stun effect');
+assert.strictEqual(EffectRestrictions.canMove(thunderStormTarget), false, 'Thunder Storm stun should block movement');
+EffectStore.remove(thunderStormTarget, 'stun');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
