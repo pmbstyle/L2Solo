@@ -1357,6 +1357,34 @@ assert.strictEqual(lure.fetchSemantic().effectRange, 900, 'Lure should preserve 
 assert.strictEqual(lureOutcome.damage, 0, 'Lure should not be routed as HP damage');
 assert.strictEqual(lureOutcome.aggroDamage, Math.floor((150 * 500) / (20 + 7)), 'Lure should use sourced Lisvus AGGDAMAGE hate formula');
 
+const forceBlasterData = activeSkills.find((entry) => entry.selfId === 54);
+assert(forceBlasterData, 'Force Blaster should be present in active skills data');
+assert.strictEqual(forceBlasterData.template.distance, 600, 'Force Blaster should preserve sourced castRange 600');
+assert.strictEqual(forceBlasterData.time.hitTime, 1900, 'Force Blaster should preserve sourced hitTime 1900');
+assert.strictEqual(forceBlasterData.time.reuse, 15000, 'Force Blaster should preserve sourced reuseDelay 15000');
+assert.strictEqual(forceBlasterData.levels.length, 49, 'Force Blaster should preserve sourced 49 base levels');
+assert.strictEqual(forceBlasterData.levels[32].power, 1220, 'Force Blaster level 33 should preserve existing sourced CHARGEDAM power 1220');
+assert.strictEqual(forceBlasterData.levels[48].power, 2131, 'Force Blaster level 49 should preserve sourced CHARGEDAM power 2131');
+assert.strictEqual(forceBlasterData.levels[48].mp, 68, 'Force Blaster level 49 MP should use sourced mpConsume 68');
+const forceBlasterTarget = creature({ id: 1000054, hp: 100, maxHp: 100, level: 20 });
+const forceBlaster = skill({ selfId: 54, name: 'Force Blaster', spell: false, power: 2131, level: 49, distance: 600 });
+const forceBlasterOutcome = SkillEffects.execute(session(), caster, forceBlasterTarget, forceBlaster, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 254
+    }
+});
+assert.strictEqual(forceBlaster.fetchSkillType(), C4SkillRules.DAMAGE, 'Force Blaster should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(forceBlaster.fetchTargetKind(), 'enemy', 'Force Blaster should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(forceBlaster.fetchSsBoost(), 1, 'Force Blaster should preserve sourced physical shot boost semantics');
+assert.deepStrictEqual(forceBlaster.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 }, 'Force Blaster should preserve sourced fist and charge requirements');
+assert.strictEqual(forceBlaster.fetchSemantic().castRange, 600, 'Force Blaster should preserve sourced castRange metadata');
+assert.strictEqual(forceBlaster.fetchSemantic().effectRange, 1100, 'Force Blaster should preserve sourced effectRange metadata');
+assert.strictEqual(forceBlasterOutcome.damage, 254, 'Force Blaster should keep its physical damage component');
+assert.strictEqual(forceBlasterOutcome.effect, null, 'Force Blaster should remain a pure damage skill without a debuff');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
