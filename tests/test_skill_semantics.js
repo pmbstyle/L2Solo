@@ -1050,6 +1050,30 @@ assert.deepStrictEqual(sonicBuster.fetchSemantic().requires, { weaponsAllowed: 5
 assert.strictEqual(sonicBusterOutcome.damage, 189, 'Sonic Buster should keep its physical damage component');
 assert.strictEqual(sonicBusterOutcome.effect, null, 'Sonic Buster should remain a pure damage skill without a debuff');
 
+const trickData = activeSkills.find((entry) => entry.selfId === 11);
+assert(trickData, 'Trick should be present in active skills data');
+assert.strictEqual(trickData.template.distance, 400, 'Trick should preserve sourced castRange 400');
+assert.strictEqual(trickData.time.hitTime, 1200, 'Trick should preserve sourced hitTime 1200');
+assert.strictEqual(trickData.time.reuse, 20000, 'Trick should preserve sourced reuseDelay 20000');
+assert.strictEqual(trickData.levels.length, 12, 'Trick should preserve sourced 12 base levels');
+assert.strictEqual(trickData.levels[0].power, 50, 'Trick level 1 should preserve sourced AGGREDUCE_CHAR power 50');
+assert.strictEqual(trickData.levels[11].power, 50, 'Trick level 12 should preserve sourced AGGREDUCE_CHAR power 50');
+assert.strictEqual(trickData.levels[11].mp, 83, 'Trick level 12 MP should use sourced mpConsume 83');
+const trickTarget = creature({ id: 1000018, hp: 100, maxHp: 100, level: 20 });
+const trick = skill({ selfId: 11, name: 'Trick', spell: false, power: 50, level: 12, distance: 400 });
+const trickOutcome = SkillEffects.execute(session(), caster, trickTarget, trick, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(trick.fetchSkillType(), C4SkillRules.AGGRO_REDUCE_CHAR, 'Trick should preserve sourced AGGREDUCE_CHAR semantics');
+assert.strictEqual(trick.fetchTargetKind(), 'enemy', 'Trick should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(trick.fetchSemantic().trait, 'derangement', 'Trick should use sourced AGGREDUCE_CHAR derangement vulnerability semantics');
+assert.strictEqual(trick.fetchSemantic().baseLandRate, 50, 'Trick should use sourced power 50 as land rate');
+assert.strictEqual(trickOutcome.damage, 0, 'Trick should not be routed as damage');
+assert.strictEqual(trickOutcome.aggroReduced, true, 'Trick should mark a successful sourced AGGREDUCE_CHAR outcome');
+assert.strictEqual(trickOutcome.aggroRemoved, false, 'Trick should not be conflated with AGGREMOVE');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');

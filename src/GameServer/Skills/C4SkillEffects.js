@@ -21,6 +21,7 @@ function execute(session, actor, target, skill, context = {}) {
         effectResisted: false,
         lethal: false,
         mpRestore: 0,
+        aggroReduced: false,
         aggroRemoved: false,
         cancelled: []
     };
@@ -109,6 +110,16 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = true;
         } else {
             result.aggroRemoved = true;
+        }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR) {
+        if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
+            result.effectResisted = true;
+        } else {
+            result.aggroReduced = true;
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;

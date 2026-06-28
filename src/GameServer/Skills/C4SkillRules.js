@@ -15,6 +15,7 @@ const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
 const AGGRO_REMOVE = 'aggroRemove';
+const AGGRO_REDUCE_CHAR = 'aggroReduceChar';
 const CANCEL = 'cancel';
 const CHARGE = 'charge';
 
@@ -27,6 +28,7 @@ const RULES = {
     8: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxChargesByLevel: [1, 2, 3, 4, 5, 6, 7], aggroPoints: 200, requires: { weaponsAllowed: 524 } },
     9: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    11: { skillType: AGGRO_REDUCE_CHAR, trait: 'derangement', target: 'enemy', ssBoost: 0, baseLandRate: 50 },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -501,6 +503,7 @@ module.exports = {
     MANA_HEAL,
     SUMMON,
     AGGRO_REMOVE,
+    AGGRO_REDUCE_CHAR,
     CANCEL,
     CHARGE,
     resolve,
