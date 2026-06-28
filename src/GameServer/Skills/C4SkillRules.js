@@ -314,6 +314,7 @@ const RULES = {
     1244: { skillType: EFFECT, trait: 'fire', effect: 'freezing_flame', effectType: 'debuff', target: 'enemy', baseLandRate: 70, levelDepend: 1, castRange: 900, effectRange: 1400, dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 94, 108, 118] } },
     1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1254: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_ally', sourceTarget: 'area', radius: 900, ssBoost: 0, mpInitialConsumeByLevel: [49, 54, 66, 72, 76, 89], aggroPointsByLevel: [290, 331, 417, 460, 481, 578] },
+    1255: { skillType: RECALL, trait: 'recall', target: 'party', radius: 1000, ssBoost: 0, hitTimeByLevel: [20000, 3500], mpInitialConsumeByLevel: [52, 61] },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1277: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1278: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

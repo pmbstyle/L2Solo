@@ -317,6 +317,22 @@ assert.strictEqual(returnSkill.fetchSsBoost(), 0, 'Return should not use shot bo
 assert.strictEqual(returnSkill.fetchSemantic().hitTime, 1500, 'Return level 2 should preserve sourced hitTime 1500 metadata');
 assert.strictEqual(returnSkill.fetchSemantic().mpInitialConsume, 31, 'Return level 2 should preserve sourced mpInitialConsume 31');
 
+const partyRecallData = activeSkills.find((entry) => entry.selfId === 1255);
+assert(partyRecallData, 'Party Recall should be present in active skills data');
+assert.strictEqual(partyRecallData.template.distance, -1, 'Party Recall should preserve sourced TARGET_PARTY range semantics');
+assert.strictEqual(partyRecallData.time.hitTime, 20000, 'Party Recall should preserve sourced level 1 hitTime 20000 in active data');
+assert.strictEqual(partyRecallData.time.reuse, 600000, 'Party Recall should preserve sourced reuseDelay 600000');
+assert.strictEqual(partyRecallData.levels.length, 2, 'Party Recall should preserve sourced 2 base levels');
+assert.strictEqual(partyRecallData.levels[0].mp, 205, 'Party Recall level 1 MP should use sourced mpConsume 205');
+assert.strictEqual(partyRecallData.levels[1].mp, 244, 'Party Recall level 2 MP should use sourced mpConsume 244');
+const partyRecall = skill({ selfId: 1255, name: 'Party Recall', spell: true, power: 1, level: 2, distance: -1 });
+assert.strictEqual(partyRecall.fetchSkillType(), C4SkillRules.RECALL, 'Party Recall should resolve as sourced RECALL semantics');
+assert.strictEqual(partyRecall.fetchTargetKind(), 'party', 'Party Recall should preserve sourced TARGET_PARTY semantics');
+assert.strictEqual(partyRecall.fetchSsBoost(), 0, 'Party Recall should not use shot boost semantics');
+assert.strictEqual(partyRecall.fetchSemantic().radius, 1000, 'Party Recall should preserve sourced skillRadius 1000');
+assert.strictEqual(partyRecall.fetchSemantic().hitTime, 3500, 'Party Recall level 2 should preserve sourced hitTime 3500 metadata');
+assert.strictEqual(partyRecall.fetchSemantic().mpInitialConsume, 61, 'Party Recall level 2 should preserve sourced mpInitialConsume 61');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');

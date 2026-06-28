@@ -1384,8 +1384,8 @@
 },{
     "selfId": 1255,
     "template": { "name": "Party Recall", "passive": false, "spell": true, "distance": -1 },
-    "time": { "hitTime": 20000, "reuse": 300000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 257, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 297, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 20000, "reuse": 600000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 205, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 244, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1256,
     "template": { "name": "Heart of Paagrio", "passive": false, "spell": true, "distance": -1 },
