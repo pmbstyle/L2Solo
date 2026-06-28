@@ -309,6 +309,7 @@ const RULES = {
     1235: { skillType: DAMAGE, trait: 'water', target: 'enemy', ssBoost: 1, baseLandRate: 92, castRange: 900, effectRange: 1400 },
     1236: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'frost_bolt', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 60, levelDepend: 1, castRange: 900, effectRange: 1400, stats: { runSpdMul: 0.7 } },
     1237: { skillType: DAMAGE_EFFECT, trait: 'water', effectTrait: 'bleed', effect: 'ice_dagger', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 2, castRange: 900, effectRange: 1400, dot: { count: 4, intervalMs: 5000, damageByLevel: [22, 22, 22, 22, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27] } },
+    1238: { skillType: EFFECT, trait: 'buff', effect: 'freezing_skin', effectType: 'buff', target: 'friendly', baseLandRate: 100, castRange: 400, effectRange: 900, aggroPointsByLevel: [379, 457, 532], statsByLevel: { reflectDam: [10, 15, 20] } },
     1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1277: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

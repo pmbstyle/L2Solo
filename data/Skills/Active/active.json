@@ -1305,7 +1305,7 @@
     "selfId": 1238,
     "template": { "name": "Freezing Skin", "passive": false, "spell": true, "distance": 400 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 1200000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 44, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 52, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 10, "mp": 28, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 15, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 20, "mp": 41, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1239,
     "template": { "name": "Hurricane", "passive": false, "spell": true, "distance": 900 },

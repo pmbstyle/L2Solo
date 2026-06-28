@@ -4439,6 +4439,33 @@ assert.strictEqual(blazingSkinOutcome.effect.key, 'blazing_skin', 'Blazing Skin 
 assert.strictEqual(EffectStats.add(blazingSkinTarget, 'reflectDam'), 20, 'Blazing Skin level 3 should use sourced reflectDam +20');
 EffectStore.remove(blazingSkinTarget, 'blazing_skin');
 
+const freezingSkinData = activeSkills.find((entry) => entry.selfId === 1238);
+assert(freezingSkinData, 'Freezing Skin should be present in active skills data');
+assert.strictEqual(freezingSkinData.template.distance, 400, 'Freezing Skin should preserve sourced castRange 400');
+assert.strictEqual(freezingSkinData.time.hitTime, 4000, 'Freezing Skin should preserve sourced hitTime 4000');
+assert.strictEqual(freezingSkinData.time.reuse, 6000, 'Freezing Skin should preserve sourced reuseDelay 6000');
+assert.strictEqual(freezingSkinData.time.buff, 1200000, 'Freezing Skin should preserve sourced 1200 second duration');
+assert.strictEqual(freezingSkinData.levels.length, 3, 'Freezing Skin should preserve sourced 3 base levels');
+assert.strictEqual(freezingSkinData.levels[0].power, 10, 'Freezing Skin level 1 should preserve sourced reflect power 10');
+assert.strictEqual(freezingSkinData.levels[0].mp, 28, 'Freezing Skin level 1 MP should use sourced mpConsume 28');
+assert.strictEqual(freezingSkinData.levels[2].power, 20, 'Freezing Skin level 3 should preserve sourced reflect power 20');
+assert.strictEqual(freezingSkinData.levels[2].mp, 41, 'Freezing Skin level 3 MP should use sourced mpConsume 41');
+const freezingSkinTarget = statActor();
+const freezingSkin = skill({ selfId: 1238, name: 'Freezing Skin', spell: true, power: 20, level: 3, distance: 400, buff: 1200000 });
+const freezingSkinOutcome = SkillEffects.execute(session(), caster, freezingSkinTarget, freezingSkin, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(freezingSkin.fetchSkillType(), C4SkillRules.EFFECT, 'Freezing Skin should resolve as sourced REFLECT buff semantics');
+assert.strictEqual(freezingSkin.fetchTargetKind(), 'friendly', 'Freezing Skin should preserve sourced friendly TARGET_ONE semantics');
+assert.strictEqual(freezingSkin.fetchSemantic().castRange, 400, 'Freezing Skin should preserve sourced castRange metadata');
+assert.strictEqual(freezingSkin.fetchSemantic().effectRange, 900, 'Freezing Skin should preserve sourced effectRange metadata');
+assert.strictEqual(freezingSkin.fetchSemantic().aggroPoints, 532, 'Freezing Skin level 3 should preserve sourced aggroPoints 532');
+assert.strictEqual(freezingSkinOutcome.effect.key, 'freezing_skin', 'Freezing Skin should apply a structured reflect buff');
+assert.strictEqual(EffectStats.add(freezingSkinTarget, 'reflectDam'), 20, 'Freezing Skin level 3 should use sourced reflectDam +20');
+EffectStore.remove(freezingSkinTarget, 'freezing_skin');
+
 const decayData = activeSkills.find((entry) => entry.selfId === 1233);
 assert(decayData, 'Decay should be present in active skills data');
 assert.strictEqual(decayData.template.distance, 600, 'Decay should preserve sourced castRange 600');
