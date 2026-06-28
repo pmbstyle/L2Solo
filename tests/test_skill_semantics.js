@@ -1747,6 +1747,23 @@ assert.strictEqual(wildSweep.fetchSemantic().effectRange, 400, 'Wild Sweep shoul
 assert.strictEqual(wildSweepOutcome.damage, 33, 'Wild Sweep should keep its physical damage component');
 assert.strictEqual(wildSweepOutcome.effect, null, 'Wild Sweep should remain a pure damage skill without a debuff');
 
+const sealOfRulerData = activeSkills.find((entry) => entry.selfId === 246);
+assert(sealOfRulerData, 'Seal of Ruler should be present in active skills data');
+assert.strictEqual(sealOfRulerData.template.distance, 85, 'Seal of Ruler should preserve sourced castRange 85');
+assert.strictEqual(sealOfRulerData.time.hitTime, 180000, 'Seal of Ruler should preserve sourced static hitTime 180000');
+assert.strictEqual(sealOfRulerData.time.reuse, 5000, 'Seal of Ruler should preserve sourced reuseDelay 5000');
+assert.strictEqual(sealOfRulerData.levels[0].mp, 50, 'Seal of Ruler should preserve sourced mpInitialConsume 50 in current active format');
+const sealOfRuler = skill({ selfId: 246, name: 'Seal of Ruler', spell: false, power: 1, level: 1, distance: 85 });
+assert.strictEqual(sealOfRuler.fetchSkillType(), C4SkillRules.TAKE_CASTLE, 'Seal of Ruler should resolve as sourced TAKECASTLE semantics');
+assert.strictEqual(sealOfRuler.fetchTargetKind(), 'holy', 'Seal of Ruler should preserve sourced TARGET_HOLY semantics');
+assert.strictEqual(sealOfRuler.fetchSsBoost(), 0, 'Seal of Ruler should not use shot boost');
+assert.strictEqual(sealOfRuler.fetchSemantic().castRange, 85, 'Seal of Ruler should preserve sourced castRange metadata');
+assert.strictEqual(sealOfRuler.fetchSemantic().effectRange, 400, 'Seal of Ruler should preserve sourced effectRange metadata');
+assert.strictEqual(sealOfRuler.fetchSemantic().staticHitTime, true, 'Seal of Ruler should preserve sourced staticHitTime metadata');
+assert.strictEqual(sealOfRuler.fetchSemantic().staticReuse, true, 'Seal of Ruler should preserve sourced staticReuse metadata');
+assert.strictEqual(sealOfRuler.fetchSemantic().mpInitialConsume, 50, 'Seal of Ruler should preserve sourced mpInitialConsume metadata');
+assert.deepStrictEqual(sealOfRuler.fetchSemantic().condition, { clanLeader: true, siegeAttacker: true }, 'Seal of Ruler should preserve sourced siege conditions');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');

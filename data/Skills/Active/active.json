@@ -487,7 +487,7 @@
 },{
     "selfId": 246,
     "template": { "name": "Seal of Ruler", "passive": false, "spell": false, "distance": 85 },
-    "time": { "hitTime": 180000, "reuse": 0, "buff": 0 },
+    "time": { "hitTime": 180000, "reuse": 5000, "buff": 0 },
     "levels": [{ "level": 1, "power": 1, "mp": 50, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 247,

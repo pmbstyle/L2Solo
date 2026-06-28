@@ -22,6 +22,7 @@ const CANCEL = 'cancel';
 const CHARGE = 'charge';
 const UNLOCK = 'unlock';
 const SWEEP = 'sweep';
+const TAKE_CASTLE = 'takeCastle';
 
 const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
@@ -119,6 +120,7 @@ const RULES = {
     190: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 18444 }, castRange: 40, effectRange: 400 },
     223: { skillType: DAMAGE_EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 1, overHit: true, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 532 }, castRange: 40, effectRange: 400, dot: { count: 7, intervalMs: 3000, damageByLevel: [13, 13, 13, 13, 13, 13, 17, 17, 17, 17, 17, 17, 17, 17, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 27, 27, 27, 27, 27, 27, 27, 27, 27, 33, 33, 33, 33, 33, 33, 33, 33, 38, 38, 38, 38, 38, 38, 38, 38] } },
     245: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 64 }, castRange: 40, effectRange: 400 },
+    246: { skillType: TAKE_CASTLE, trait: 'siege', target: 'holy', ssBoost: 0, castRange: 85, effectRange: 400, staticReuse: true, staticHitTime: true, mpInitialConsume: 50, condition: { clanLeader: true, siegeAttacker: true } },
     230: { skillType: EFFECT, trait: 'buff', effect: 'sprint', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     262: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     260: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 16392 } },
@@ -425,6 +427,9 @@ function resolve(skill = {}) {
         unlockDoorChance: resolveByLevel(rule.unlockDoorChanceByLevel, skill.level) ?? rule.unlockDoorChance ?? null,
         castRange: resolveByLevel(rule.castRangeByLevel, skill.level) ?? rule.castRange ?? null,
         effectRange: resolveByLevel(rule.effectRangeByLevel, skill.level) ?? rule.effectRange ?? null,
+        staticReuse: rule.staticReuse || false,
+        staticHitTime: rule.staticHitTime || false,
+        mpInitialConsume: rule.mpInitialConsume ?? null,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
@@ -565,6 +570,7 @@ module.exports = {
     CHARGE,
     UNLOCK,
     SWEEP,
+    TAKE_CASTLE,
     resolve,
     normalizeKey
 };
