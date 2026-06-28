@@ -2764,6 +2764,30 @@ assert.strictEqual(cleanseOutcome.cleansed.length, 1, 'Cure Poison level 1 shoul
 assert.strictEqual(EffectStore.hasDebuff(poisoned, 'poison'), false, 'Cure Poison should remove the poison debuff');
 assert.strictEqual(poisoned.effectTimers.poison, undefined, 'Cure Poison should stop the poison DoT ticker');
 
+const poisonRecoveryData = activeSkills.find((entry) => entry.selfId === 21);
+assert(poisonRecoveryData, 'Poison Recovery should be present in active skills data');
+assert.strictEqual(poisonRecoveryData.template.distance, -1, 'Poison Recovery should preserve sourced TARGET_SELF range');
+assert.strictEqual(poisonRecoveryData.time.hitTime, 4000, 'Poison Recovery should preserve sourced hitTime 4000');
+assert.strictEqual(poisonRecoveryData.time.reuse, 6000, 'Poison Recovery should preserve sourced reuseDelay 6000');
+assert.strictEqual(poisonRecoveryData.levels.length, 3, 'Poison Recovery should preserve sourced 3 base levels');
+assert.strictEqual(poisonRecoveryData.levels[2].power, 9, 'Poison Recovery level 3 should preserve sourced negatePower 9');
+assert.strictEqual(poisonRecoveryData.levels[2].mp, 55, 'Poison Recovery level 3 MP should use sourced initial + consume total');
+const poisonRecoveryTarget = statActor();
+EffectStore.apply(poisonRecoveryTarget, { key: 'major_poison', id: 129, level: 9, type: 'debuff', category: 'poison', durationMs: 30000 });
+EffectStore.apply(poisonRecoveryTarget, { key: 'deadly_poison', id: 129, level: 10, type: 'debuff', category: 'poison', durationMs: 30000 });
+const poisonRecovery = skill({ selfId: 21, name: 'Poison Recovery', spell: true, power: 9, level: 3, distance: -1 });
+const poisonRecoveryOutcome = SkillEffects.execute(session(), caster, poisonRecoveryTarget, poisonRecovery, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(poisonRecovery.fetchSkillType(), C4SkillRules.CLEANSE, 'Poison Recovery should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(poisonRecovery.fetchTargetKind(), 'self', 'Poison Recovery should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(poisonRecovery.fetchSemantic().trait, 'poison', 'Poison Recovery should preserve sourced POISON negate semantics');
+assert.strictEqual(poisonRecoveryOutcome.cleansed.length, 1, 'Poison Recovery level 3 should cleanse poison up to sourced negatePower 9');
+assert.strictEqual(EffectStore.hasDebuff(poisonRecoveryTarget, 'major_poison'), false, 'Poison Recovery should remove level 9 poison');
+assert.strictEqual(EffectStore.hasDebuff(poisonRecoveryTarget, 'deadly_poison'), true, 'Poison Recovery should not remove poison above sourced negatePower 9');
+EffectStore.remove(poisonRecoveryTarget, 'deadly_poison');
+
 const antidoteData = activeSkills.find((entry) => entry.selfId === 2042);
 assert(antidoteData, 'Antidote should be present in active skills data');
 assert.strictEqual(antidoteData.levels[0].power, 3, 'Antidote active data should preserve sourced negatePower 3');

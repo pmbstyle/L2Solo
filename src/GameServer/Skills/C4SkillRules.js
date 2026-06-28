@@ -53,7 +53,7 @@ const RULES = {
     120: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 2, requires: { weaponsAllowed: 1024 } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
     127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },
-    21: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7] }] },
+    21: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
     34: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     45: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     58: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
