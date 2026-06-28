@@ -5219,7 +5219,8 @@ assert.strictEqual(EffectStats.multiplier(npcSlowTarget, 'runSpdMul'), 0.5, 'NPC
 
 [
     { id: 4077, name: 'NPC Aura Burn', trait: 'magic', levels: 12, lastPower: 104, lastMp: 78, distance: 150, sourceTarget: null, radius: 0, effectRange: 650 },
-    { id: 4078, name: 'NPC Flamestrike', trait: 'fire', levels: 12, lastPower: 65, lastMp: 117, distance: 500, sourceTarget: 'area', radius: 200, effectRange: 900 }
+    { id: 4078, name: 'NPC Flamestrike', trait: 'fire', levels: 12, lastPower: 65, lastMp: 117, distance: 500, sourceTarget: 'area', radius: 200, effectRange: 900 },
+    { id: 4087, name: 'NPC Blaze', trait: 'fire', levels: 12, lastPower: 129, lastMp: 78, distance: 600, sourceTarget: null, radius: 0, effectRange: 1100 }
 ].forEach(({ id, name, trait, levels, lastPower, lastMp, distance, sourceTarget, radius, effectRange }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
     assert(data, `${name} should be present in active skills data`);
@@ -5249,6 +5250,35 @@ assert.strictEqual(EffectStats.multiplier(npcSlowTarget, 'runSpdMul'), 0.5, 'NPC
     assert.strictEqual(damageSkill.fetchSemantic().effectRange, effectRange, `${name} should preserve sourced effectRange metadata`);
     assert.strictEqual(outcome.damage, 222, `${name} should keep the sourced damage execution path`);
 });
+
+const npcBleedData = activeSkills.find((entry) => entry.selfId === 4088);
+assert(npcBleedData, 'NPC Bleed should be present in active skills data');
+assert.strictEqual(npcBleedData.template.name, 'Bleed', 'NPC Bleed active data should preserve sourced name');
+assert.strictEqual(npcBleedData.template.distance, 40, 'NPC Bleed should preserve sourced castRange 40');
+assert.strictEqual(npcBleedData.time.buff, 30000, 'NPC Bleed should preserve sourced 10x3s duration');
+assert.strictEqual(npcBleedData.levels.length, 12, 'NPC Bleed should preserve sourced 12 levels');
+assert.strictEqual(npcBleedData.levels[11].power, 10, 'NPC Bleed level 12 should preserve sourced power 10');
+assert.strictEqual(npcBleedData.levels[11].mp, 36, 'NPC Bleed level 12 should preserve sourced mpConsume 36');
+const npcBleed = skill({ selfId: 4088, name: 'Bleed', spell: true, power: 10, level: 12, buff: 30000, distance: 40 });
+const npcBleedTarget = statActor();
+const npcBleedOutcome = SkillEffects.execute(session(npcBleedTarget), caster, npcBleedTarget, npcBleed, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcBleed.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Bleed should resolve as sourced BLEED effect semantics');
+assert.strictEqual(npcBleed.fetchTargetKind(), 'enemy', 'NPC Bleed should resolve as an enemy debuff');
+assert.strictEqual(npcBleed.fetchSsBoost(), 1, 'NPC Bleed should preserve magic shot boost semantics');
+assert.strictEqual(npcBleed.fetchSemantic().baseLandRate, 10, 'NPC Bleed level 12 should use sourced power 10 as land rate');
+assert.strictEqual(npcBleed.fetchSemantic().levelDepend, 2, 'NPC Bleed should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcBleed.fetchSemantic().magicLevel, 95, 'NPC Bleed level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcBleed.fetchSemantic().castRange, 40, 'NPC Bleed should preserve sourced castRange metadata');
+assert.strictEqual(npcBleed.fetchSemantic().effectRange, 200, 'NPC Bleed should preserve sourced effectRange metadata');
+assert.strictEqual(npcBleedOutcome.effect.key, 'bleed', 'NPC Bleed should apply a structured bleed debuff');
+assert.strictEqual(npcBleedOutcome.effect.dot.count, 10, 'NPC Bleed should use sourced 10 damage ticks');
+assert.strictEqual(npcBleedOutcome.effect.dot.intervalMs, 3000, 'NPC Bleed should tick every sourced 3 seconds');
+assert.strictEqual(npcBleedOutcome.effect.dot.damage, 15, 'NPC Bleed level 12 should use sourced damage value 15');
+EffectStore.remove(npcBleedTarget, 'bleed');
 
 const siegeHammerData = activeSkills.find((entry) => entry.selfId === 4079);
 assert(siegeHammerData, 'Siege Hammer should be present in active skills data');

@@ -400,6 +400,8 @@ const RULES = {
     4080: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0, levelDepend: 1, magicLevel: 60, castRange: 600, effectRange: 1100, aggroPoints: 100 },
     4082: { skillType: EFFECT, trait: 'poison', effect: 'poison_of_death', effectType: 'debuff', target: 'self', ssBoost: 0, baseLandRate: 100, castRange: 600, effectRange: 1100, dispellable: false, dot: { count: 3600, intervalMs: 1000, damage: 50 } },
     4083: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, castRange: 600, effectRange: 1100 },
+    4087: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
+    4088: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 2, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 40, effectRange: 200, dot: { count: 10, intervalMs: 3000, damageByLevel: [2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15] } },
     4097: { skillType: HOT, trait: 'buff', effect: 'npc_chant_of_life', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 5, intervalMs: 3000, healByLevel: [7, 12, 18, 27, 37, 46, 55, 23, 32, 42, 51, 58] } },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
