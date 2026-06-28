@@ -149,6 +149,7 @@ const RULES = {
     279: { skillType: DAMAGE_EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 40, levelDepend: 1 },
     280: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 1024 } },
     281: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 1024 } },
+    282: { skillType: EFFECT, trait: 'totem', effect: 'totem_spirit_puma', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pDefMul: 0.8, pAtkSpdMul: 1.25, pEvasionRateAdd: 3 } },
     283: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     284: { skillType: DAMAGE, trait: 'wind', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 2, condition: 128, conditionValue: 2 } },
     299: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

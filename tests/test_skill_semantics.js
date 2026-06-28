@@ -325,6 +325,7 @@ EffectStore.remove(confusionMobTarget, 'confusion');
     { id: 131, name: 'Hawk Eye', levels: 3, mp: 27, buff: 300000, reuse: 10000, effect: 'hawk_eye', stat: 'pAccuracyCombatAdd', statValue: 10, statKind: 'add', extraStats: [{ stat: 'pDefMul', value: 0.9, kind: 'mul' }], aggroPoints: 549 },
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
+    { id: 282, name: 'Totem Spirit Puma', levels: 1, mp: 4, buff: 120000, reuse: 120000, effect: 'totem_spirit_puma', stat: 'pAtkSpdMul', statValue: 1.25, statKind: 'mul', extraStats: [{ stat: 'pDefMul', value: 0.8, kind: 'mul' }, { stat: 'pEvasionRateAdd', value: 3, kind: 'add' }] },
     { id: 230, name: 'Sprint', levels: 2, mp: 48, buff: 1200000, reuse: 10000, effect: 'sprint', stat: 'runSpdAdd', statValue: 33, statKind: 'add' }
 ].forEach(({ id, name, levels, mp, buff, reuse, effect, stat, statValue, statKind, hpGate, effectTargetKind, aggroPoints, requires, extraStats = [] }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
