@@ -4274,6 +4274,42 @@ assert.strictEqual(prominence.fetchSemantic().castRange, 900, 'Prominence should
 assert.strictEqual(prominence.fetchSemantic().effectRange, 1400, 'Prominence should preserve sourced effectRange metadata');
 assert.strictEqual(prominenceOutcome.damage, 1230, 'Prominence should execute through damage routing');
 
+const auraFlareData = activeSkills.find((entry) => entry.selfId === 1231);
+assert(auraFlareData, 'Aura Flare should be present in active skills data');
+assert.strictEqual(auraFlareData.template.distance, 150, 'Aura Flare should preserve sourced castRange 150');
+assert.strictEqual(auraFlareData.time.hitTime, 1500, 'Aura Flare should preserve sourced hitTime 1500');
+assert.strictEqual(auraFlareData.time.reuse, 2500, 'Aura Flare should preserve sourced reuseDelay 2500');
+assert.strictEqual(auraFlareData.time.buff, 3000, 'Aura Flare should preserve sourced self-debuff duration');
+assert.strictEqual(auraFlareData.levels.length, 28, 'Aura Flare should preserve sourced 28 base levels');
+assert.strictEqual(auraFlareData.levels[0].power, 39, 'Aura Flare level 1 should preserve sourced power 39');
+assert.strictEqual(auraFlareData.levels[0].mp, 27, 'Aura Flare level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(auraFlareData.levels[27].power, 87, 'Aura Flare level 28 should preserve sourced power 87');
+assert.strictEqual(auraFlareData.levels[27].mp, 55, 'Aura Flare level 28 MP should use sourced mpConsume 55');
+const auraFlareCaster = creature({ id: 2001231 });
+const auraFlare = skill({ selfId: 1231, name: 'Aura Flare', spell: true, power: 87, level: 28, distance: 150, buff: 3000 });
+const auraFlareOutcome = SkillEffects.execute(session(), auraFlareCaster, creature({ id: 2001232 }), auraFlare, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE, 'Aura Flare should route as sourced MDAM damage');
+            return 1231;
+        }
+    }
+});
+assert.strictEqual(auraFlare.fetchSkillType(), C4SkillRules.DAMAGE, 'Aura Flare should resolve as sourced MDAM damage');
+assert.strictEqual(auraFlare.fetchSemantic().trait, 'magic', 'Aura Flare should preserve non-elemental magic damage semantics');
+assert.strictEqual(auraFlare.fetchTargetKind(), 'enemy', 'Aura Flare should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(auraFlare.fetchSemantic().castRange, 150, 'Aura Flare should preserve sourced castRange metadata');
+assert.strictEqual(auraFlare.fetchSemantic().effectRange, 650, 'Aura Flare should preserve sourced effectRange metadata');
+assert.strictEqual(auraFlareOutcome.damage, 1231, 'Aura Flare should execute through damage routing');
+assert.strictEqual(auraFlareOutcome.effect, null, 'Aura Flare should not apply a target debuff');
+assert.strictEqual(auraFlareOutcome.selfEffect.key, 'aura_flare', 'Aura Flare should apply sourced self Debuff effect');
+assert(EffectStore.remainingMs(auraFlareCaster, 'aura_flare') > 0, 'Aura Flare self Debuff should have an active sourced duration');
+assert(EffectStore.remainingMs(auraFlareCaster, 'aura_flare') <= 3000, 'Aura Flare self Debuff should use sourced 3 second duration');
+assert.strictEqual(EffectStats.multiplier(auraFlareCaster, 'pvpMagicalDmg'), 0.5, 'Aura Flare self Debuff should use sourced pvpMagicalDmg 0.5');
+EffectStore.remove(auraFlareCaster, 'aura_flare');
+
 const freezingShackleData = activeSkills.find((entry) => entry.selfId === 1183);
 assert(freezingShackleData, 'Freezing Shackle should be present in active skills data');
 assert.strictEqual(freezingShackleData.levels.length, 4, 'Freezing Shackle should preserve sourced 4 base levels');
