@@ -375,6 +375,38 @@ EffectStore.remove(confusionMobTarget, 'confusion');
     });
 });
 
+const corpsePlagueData = activeSkills.find((entry) => entry.selfId === 103);
+assert(corpsePlagueData, 'Corpse Plague should be present in active skills data');
+assert.strictEqual(corpsePlagueData.template.distance, 400, 'Corpse Plague should preserve sourced castRange 400');
+assert.strictEqual(corpsePlagueData.time.hitTime, 1500, 'Corpse Plague should preserve sourced hitTime 1500');
+assert.strictEqual(corpsePlagueData.time.reuse, 20000, 'Corpse Plague should preserve sourced reuseDelay 20000');
+assert.strictEqual(corpsePlagueData.time.buff, 30000, 'Corpse Plague should preserve sourced poison duration');
+assert.strictEqual(corpsePlagueData.levels.length, 4, 'Corpse Plague should preserve sourced 4 base levels');
+assert.strictEqual(corpsePlagueData.levels[0].power, 5, 'Corpse Plague level 1 should preserve sourced power 5');
+assert.strictEqual(corpsePlagueData.levels[3].power, 8, 'Corpse Plague level 4 should preserve sourced power 8');
+assert.strictEqual(corpsePlagueData.levels[3].mp, 65, 'Corpse Plague level 4 should preserve sourced mpConsume 65');
+const corpsePlagueTarget = creature({ id: 1000103, hp: 0, maxHp: 100, dead: true });
+corpsePlagueTarget.fetchAttackable = () => true;
+const corpsePlague = skill({ selfId: 103, name: 'Corpse Plague', spell: true, power: 8, level: 4, distance: 400, buff: 30000 });
+const corpsePlagueOutcome = SkillEffects.execute(session(), caster, corpsePlagueTarget, corpsePlague, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(corpsePlague.fetchSkillType(), C4SkillRules.EFFECT, 'Corpse Plague should resolve as a sourced poison effect');
+assert.strictEqual(corpsePlague.fetchTargetKind(), 'corpse_mob', 'Corpse Plague should preserve sourced TARGET_AREA_CORPSE_MOB target semantics');
+assert.strictEqual(corpsePlague.fetchSemantic().sourceTarget, 'area', 'Corpse Plague should preserve sourced area corpse semantics');
+assert.strictEqual(corpsePlague.fetchSemantic().radius, 400, 'Corpse Plague should preserve sourced skillRadius 400');
+assert.strictEqual(corpsePlague.fetchSemantic().baseLandRate, 8, 'Corpse Plague level 4 should use sourced power 8 as land rate');
+assert.strictEqual(corpsePlague.fetchSemantic().levelDepend, 1, 'Corpse Plague should preserve sourced lvlDepend metadata');
+assert.strictEqual(corpsePlague.fetchSemantic().castRange, 400, 'Corpse Plague should preserve sourced castRange metadata');
+assert.strictEqual(corpsePlague.fetchSemantic().effectRange, 900, 'Corpse Plague should preserve sourced effectRange metadata');
+assert.strictEqual(corpsePlagueOutcome.effect.key, 'poison', 'Corpse Plague should apply a structured poison effect');
+assert.strictEqual(corpsePlagueOutcome.effect.dot.count, 10, 'Corpse Plague should use sourced 10 damage ticks');
+assert.strictEqual(corpsePlagueOutcome.effect.dot.intervalMs, 3000, 'Corpse Plague should tick every sourced 3 seconds');
+assert.strictEqual(corpsePlagueOutcome.effect.dot.damage, 52, 'Corpse Plague should use sourced poison damage table');
+EffectStore.remove(corpsePlagueTarget, 'poison');
+
 const auraStatsTarget = statActor();
 SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
     selfId: 77,
