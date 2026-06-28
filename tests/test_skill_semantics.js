@@ -269,7 +269,7 @@ assert.strictEqual(
     { id: 72, name: 'Iron Will', levels: 3, mp: 50, buff: 1200000, reuse: 6000, effect: 'iron_will', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 75, name: 'Detect Insect Weakness', levels: 1, mp: 14, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-insects', statValue: 1.5, statKind: 'mul', effectTargetKind: 'insect', aggroPoints: 303 },
     { id: 76, name: 'Totem Spirit Bear', levels: 1, mp: 2, buff: 120000, reuse: 120000, effect: 'totem_spirit_bear', stat: 'pAtkMul', statValue: 1.2, statKind: 'mul', extraStats: [{ stat: 'runSpdMul', value: 0.7, kind: 'mul' }], aggroPoints: 268 },
-    { id: 77, name: 'Attack Aura', levels: 2, mp: 25, buff: 1200000, reuse: 6000, effect: 'attack_aura', stat: 'pAtkMul', statValue: 1.12, statKind: 'mul' },
+    { id: 77, name: 'Attack Aura', levels: 2, mp: 25, buff: 1200000, reuse: 6000, effect: 'attack_aura', stat: 'pAtkMul', statValue: 1.12, statKind: 'mul', aggroPoints: 268 },
     { id: 78, name: 'War Cry', levels: 2, mp: 19, buff: 60000, reuse: 180000, effect: 'war_cry', stat: 'pAtkMul', statValue: 1.25, statKind: 'mul' },
     { id: 91, name: 'Defence Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul' },
     { id: 94, name: 'Rage', levels: 2, mp: 25, buff: 90000, reuse: 300000, effect: 'rage', stat: 'pAtkMul', statValue: 1.55, statKind: 'mul' },
