@@ -1020,6 +1020,32 @@ assert.strictEqual(
     'Power Break level 3 should apply the L2J pAtkDown 0.77 stat multiplier'
 );
 
+const crippleData = activeSkills.find((entry) => entry.selfId === 95);
+assert(crippleData, 'Cripple should be present in active skills data');
+assert.strictEqual(crippleData.template.distance, 40, 'Cripple should preserve sourced castRange 40');
+assert.strictEqual(crippleData.levels.length, 20, 'Cripple should preserve sourced 20 base levels');
+assert.strictEqual(crippleData.levels[0].power, 80, 'Cripple should use sourced power 80 as land rate');
+assert.strictEqual(crippleData.levels[0].mp, 19, 'Cripple level 1 MP should use sourced mpConsume 19');
+assert.strictEqual(crippleData.levels[19].mp, 68, 'Cripple level 20 MP should use sourced mpConsume 68');
+const crippled = statActor();
+const cripple = skill({ selfId: 95, name: 'Cripple', spell: false, power: 80, level: 6, buff: 120000, distance: 40 });
+const crippleOutcome = SkillEffects.execute(session(), caster, crippled, cripple, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(cripple.fetchTargetKind(), 'enemy', 'Cripple should resolve as an enemy debuff');
+assert.strictEqual(cripple.fetchSemantic().baseLandRate, 80, 'Cripple should use sourced power 80 as land rate');
+assert.deepStrictEqual(cripple.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Cripple should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(crippleOutcome.effect.key, 'cripple', 'Cripple should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(crippled, 'runSpdMul'), 0.5, 'Cripple level 6 should use sourced runSpd 0.5');
+calculateStats({}, crippled);
+assert.strictEqual(
+    crippled.collectiveRunSpd,
+    Math.round(Formulas.calcSpeed(30, 120) * 0.5),
+    'Cripple level 6 should apply the sourced run speed multiplier'
+);
+
 const slowData = activeSkills.find((entry) => entry.selfId === 1160);
 assert(slowData, 'Slow should be present in active skills data');
 assert.strictEqual(slowData.levels.length, 15, 'Slow should preserve sourced 15 base levels');
