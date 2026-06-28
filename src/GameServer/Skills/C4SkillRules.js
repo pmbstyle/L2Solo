@@ -69,6 +69,7 @@ const RULES = {
     69: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     70: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.2, baseLandRate: 92 },
     61: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
+    65: { skillType: EFFECT, trait: 'fear', effect: 'fear', effectType: 'debuff', target: 'enemy', baseLandRate: 20, castRange: 600, effectRange: 1100 },
     44: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     46: { skillType: DRAIN, trait: 'magic', target: 'corpse_mob', ssBoost: 1, absorbAbsByLevel: [105, 113, 122, 131, 140, 150, 159, 169, 180, 190, 201, 211, 222, 232, 243] },
     48: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 64 } },

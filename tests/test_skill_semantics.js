@@ -3261,6 +3261,32 @@ assert.strictEqual(fearOutcome.effect.key, 'fear', 'Curse Fear should apply a st
 assert.strictEqual(EffectStore.hasDebuff(fearTarget, 'fear'), true, 'Curse Fear should leave a fear debuff');
 EffectStore.remove(fearTarget, 'fear');
 
+const horrorData = activeSkills.find((entry) => entry.selfId === 65);
+assert(horrorData, 'Horror should be present in active skills data');
+assert.strictEqual(horrorData.template.distance, 600, 'Horror should preserve sourced castRange 600');
+assert.strictEqual(horrorData.time.hitTime, 3000, 'Horror should preserve sourced hitTime 3000');
+assert.strictEqual(horrorData.time.reuse, 120000, 'Horror should preserve sourced 120 second reuse');
+assert.strictEqual(horrorData.time.buff, 30000, 'Horror should preserve sourced 5x6s Fear duration');
+assert.strictEqual(horrorData.levels.length, 13, 'Horror should preserve sourced 13 base levels');
+assert.strictEqual(horrorData.levels[0].power, 20, 'Horror level 1 should preserve sourced power 20');
+assert.strictEqual(horrorData.levels[12].power, 20, 'Horror level 13 should preserve sourced power 20');
+assert.strictEqual(horrorData.levels[12].mp, 35, 'Horror level 13 MP should use sourced initial + consume total');
+const horror = skill({ selfId: 65, name: 'Horror', spell: true, power: 20, level: 13, distance: 600, buff: 30000 });
+const horrorTarget = statActor();
+const horrorOutcome = SkillEffects.execute(session(), caster, horrorTarget, horror, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(horror.fetchSkillType(), C4SkillRules.EFFECT, 'Horror should preserve sourced FEAR effect semantics');
+assert.strictEqual(horror.fetchTargetKind(), 'enemy', 'Horror should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(horror.fetchSemantic().baseLandRate, 20, 'Horror should use sourced power 20 as land rate');
+assert.strictEqual(horror.fetchSemantic().castRange, 600, 'Horror should preserve sourced castRange metadata');
+assert.strictEqual(horror.fetchSemantic().effectRange, 1100, 'Horror should preserve sourced effectRange metadata');
+assert.strictEqual(horrorOutcome.effect.key, 'fear', 'Horror should apply a structured fear debuff');
+assert.strictEqual(EffectStore.hasDebuff(horrorTarget, 'fear'), true, 'Horror should leave a fear debuff');
+EffectStore.remove(horrorTarget, 'fear');
+
 const anchorData = activeSkills.find((entry) => entry.selfId === 1170);
 assert(anchorData, 'Anchor should be present in active skills data');
 assert.strictEqual(anchorData.time.reuse, 150000, 'Anchor should preserve sourced 150 second reuse');
