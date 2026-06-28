@@ -30,6 +30,7 @@ function normalize(effect = {}) {
         stats: effect.stats || {},
         dot: effect.dot || null,
         manaDot: effect.manaDot || null,
+        manaHot: effect.manaHot || null,
         hot: effect.hot || null,
         expiresAt
     };

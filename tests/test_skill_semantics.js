@@ -4779,6 +4779,23 @@ assert.strictEqual(EffectStore.impairments(mobMirageTarget).confused, true, 'Sea
     EffectStore.remove(target, outcome.effect.key);
 });
 
+const manaDrugData = activeSkills.find((entry) => entry.selfId === 2003);
+assert(manaDrugData, 'Mana drug should be present in active skills data');
+assert.strictEqual(manaDrugData.time.buff, 20000, 'Mana drug active data should preserve sourced MPHOT duration');
+assert.strictEqual(manaDrugData.levels[0].power, 1, 'Mana drug active data should preserve sourced power 1');
+const manaDrugTarget = statActor();
+const manaDrug = skill({ selfId: 2003, name: 'Mana drug', spell: false, power: 1, level: 1, distance: -1, buff: 20000 });
+const manaDrugOutcome = SkillEffects.execute(session(), caster, manaDrugTarget, manaDrug, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(manaDrug.fetchSkillType(), C4SkillRules.MANA_HOT, 'Mana drug should resolve to sourced MPHOT semantics');
+assert.strictEqual(manaDrug.fetchTargetKind(), 'self', 'Mana drug should preserve sourced self target semantics');
+assert.deepStrictEqual(manaDrugOutcome.effect.manaHot, { count: 4, intervalMs: 5000, heal: 1.5 }, 'Mana drug should use sourced ManaHealOverTime ticks');
+assert(manaDrugTarget.effectTimers[manaDrugOutcome.effect.key], 'Mana drug should start a runtime mana-over-time ticker');
+EffectStore.remove(manaDrugTarget, manaDrugOutcome.effect.key);
+
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;

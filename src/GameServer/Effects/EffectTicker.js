@@ -88,6 +88,32 @@ function applyManaDot(session, source, target, effect) {
     return true;
 }
 
+function applyManaHot(session, source, target, effect) {
+    const manaHot = effect?.manaHot;
+    if (!target || !effect?.key || !manaHot) return false;
+
+    const heal = Math.max(0, Number(manaHot.heal) || 0);
+    const intervalMs = Math.max(1, Number(manaHot.intervalMs) || 1000);
+    let remaining = Math.max(0, Number(manaHot.count) || 0);
+    if (!heal || !remaining) return false;
+
+    const timers = ensureTimers(target);
+    clear(target, effect.key);
+    timers[effect.key] = setInterval(() => {
+        if (target.state?.fetchDead?.()) {
+            clear(target, effect.key);
+            return;
+        }
+
+        applyManaHeal(target, heal);
+        remaining -= 1;
+        if (remaining <= 0) {
+            clear(target, effect.key);
+        }
+    }, intervalMs);
+    return true;
+}
+
 function applyDamage(session, source, target, damage) {
     if (session && source && target?.fetchId && source !== target) {
         if (target.fetchId() >= 2000000) {
@@ -110,6 +136,15 @@ function applyManaDamage(target, damage) {
     else if (target.broadcastVitals) target.broadcastVitals();
 }
 
+function applyManaHeal(target, heal) {
+    const currentMp = Number(target.fetchMp?.()) || 0;
+    const maxMp = Number(target.fetchMaxMp?.()) || 0;
+    const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + heal) : currentMp + heal;
+    target.setMp(nextMp);
+    if (target.statusUpdateVitals) target.statusUpdateVitals(target);
+    else if (target.broadcastVitals) target.broadcastVitals();
+}
+
 function applyHeal(target, heal) {
     const currentHp = Number(target.fetchHp?.()) || 0;
     const maxHp = Number(target.fetchMaxHp?.()) || 0;
@@ -122,6 +157,7 @@ function applyHeal(target, heal) {
 module.exports = {
     applyDot,
     applyManaDot,
+    applyManaHot,
     applyHot,
     clear
 };

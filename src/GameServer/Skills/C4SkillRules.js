@@ -13,6 +13,7 @@ const CLEANSE = 'cleanse';
 const HEAL_CLEANSE = 'healCleanse';
 const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
+const MANA_HOT = 'manaHot';
 const RESURRECT = 'resurrect';
 const RECALL = 'recall';
 const SUMMON = 'summon';
@@ -343,6 +344,7 @@ const RULES = {
     4115: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     2001: { skillType: HOT, trait: 'buff', effect: 'red_potion', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 3, intervalMs: 5000, heal: 2 } },
     2002: { skillType: HOT, trait: 'buff', effect: 'healing_drug', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 4, intervalMs: 5000, heal: 1.5 } },
+    2003: { skillType: MANA_HOT, trait: 'buff', effect: 'mana_drug', effectType: 'buff', target: 'self', baseLandRate: 100, manaHot: { count: 4, intervalMs: 5000, heal: 1.5 } },
     2005: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [400] },
     2011: { skillType: EFFECT, trait: 'buff', effect: 'quick_step_potion', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { runSpdAdd: 20 } },
     2012: { skillType: EFFECT, trait: 'buff', effect: 'potion_of_alacrity', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pAtkSpdMul: 1.15 } },
@@ -445,6 +447,7 @@ function resolve(skill = {}) {
         absorbAbs: resolveByLevel(rule.absorbAbsByLevel, skill.level) ?? rule.absorbAbs ?? inferred.absorbAbs ?? 0,
         dot: rule.dot || inferred.dot || null,
         manaDot: rule.manaDot || inferred.manaDot || null,
+        manaHot: rule.manaHot || inferred.manaHot || null,
         hot: resolveHot(rule, inferred, skill.level),
         cleanse: resolveCleanse(rule, inferred, skill.level),
         lethal: rule.lethal || inferred.lethal || null,
@@ -594,6 +597,7 @@ module.exports = {
     HEAL_CLEANSE,
     MANA_RECHARGE,
     MANA_HEAL,
+    MANA_HOT,
     RESURRECT,
     RECALL,
     SUMMON,

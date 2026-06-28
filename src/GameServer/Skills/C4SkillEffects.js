@@ -59,6 +59,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.MANA_HOT) {
+        result.effect = applyEffect(session, target, skill, semantic);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.CLEANSE) {
         result.cleansed = applyCleanse(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
@@ -277,6 +283,7 @@ function applyEffect(session, target, skill, semantic) {
         stats: semantic.stats || {},
         dot: dotFromSkill(skill, semantic),
         manaDot: manaDotFromSkill(skill, semantic),
+        manaHot: manaHotFromSkill(skill, semantic),
         hot: hotFromSkill(skill, semantic),
         durationMs
     });
@@ -293,6 +300,10 @@ function applyEffect(session, target, skill, semantic) {
 
     if (effect?.manaDot) {
         EffectTicker.applyManaDot(session, session?.actor, target, effect);
+    }
+
+    if (effect?.manaHot) {
+        EffectTicker.applyManaHot(session, session?.actor, target, effect);
     }
 
     if (effect?.hot) {
@@ -361,6 +372,15 @@ function manaDotFromSkill(skill, semantic) {
         count: semantic.manaDot.count,
         intervalMs: semantic.manaDot.intervalMs,
         damage: semantic.manaDot.damage ?? damageByLevel(skill, semantic.manaDot) ?? skill.fetchPower()
+    };
+}
+
+function manaHotFromSkill(skill, semantic) {
+    if (!semantic.manaHot) return null;
+    return {
+        count: semantic.manaHot.count,
+        intervalMs: semantic.manaHot.intervalMs,
+        heal: semantic.manaHot.heal ?? skill.fetchPower()
     };
 }
 
