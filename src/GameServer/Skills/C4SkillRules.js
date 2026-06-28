@@ -259,6 +259,7 @@ const RULES = {
     1151: { skillType: DRAIN, trait: 'dark', target: 'corpse_mob', ssBoost: 1, absorbAbsByLevel: [260, 299, 347, 384, 426, 467, 509, 541, 570, 592, 625, 647, 673, 701, 729, 758] },
     1154: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     1155: { skillType: DAMAGE, trait: 'magic', target: 'corpse_mob', sourceTarget: 'area', radius: 200, ssBoost: 1, baseLandRate: 92, castRange: 400, effectRange: 900 },
+    1156: { skillType: AGGRO_REDUCE_CHAR, trait: 'derangement', target: 'enemy', ssBoost: 0, baseLandRate: 50, castRange: 400, effectRange: 900 },
     1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
     1159: { skillType: DEATH_LINK, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1160: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },

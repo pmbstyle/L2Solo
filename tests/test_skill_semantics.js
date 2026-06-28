@@ -3988,6 +3988,34 @@ assert.strictEqual(corpseBurst.fetchSemantic().castRange, 400, 'Corpse Burst sho
 assert.strictEqual(corpseBurst.fetchSemantic().effectRange, 900, 'Corpse Burst should preserve sourced effectRange metadata');
 assert.strictEqual(corpseBurstOutcome.damage, 1155, 'Corpse Burst should execute through damage routing');
 
+const forgetData = activeSkills.find((entry) => entry.selfId === 1156);
+assert(forgetData, 'Forget should be present in active skills data');
+assert.strictEqual(forgetData.template.distance, 400, 'Forget should preserve sourced castRange 400');
+assert.strictEqual(forgetData.time.hitTime, 1500, 'Forget should preserve sourced hitTime 1500');
+assert.strictEqual(forgetData.time.reuse, 20000, 'Forget should preserve sourced reuseDelay 20000');
+assert.strictEqual(forgetData.time.buff, 0, 'Forget should not use a debuff duration');
+assert.strictEqual(forgetData.levels.length, 13, 'Forget should preserve sourced 13 base levels');
+assert.strictEqual(forgetData.levels[0].power, 50, 'Forget level 1 should preserve sourced AGGREDUCE_CHAR power 50');
+assert.strictEqual(forgetData.levels[0].mp, 31, 'Forget level 1 MP should use sourced mpConsume 31');
+assert.strictEqual(forgetData.levels[12].power, 50, 'Forget level 13 should preserve sourced AGGREDUCE_CHAR power 50');
+assert.strictEqual(forgetData.levels[12].mp, 55, 'Forget level 13 MP should use sourced mpConsume 55');
+const forgetTarget = creature({ id: 2001156, hp: 100, maxHp: 100, level: 20 });
+const forget = skill({ selfId: 1156, name: 'Forget', spell: true, power: 50, level: 13, distance: 400 });
+const forgetOutcome = SkillEffects.execute(session(), caster, forgetTarget, forget, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(forget.fetchSkillType(), C4SkillRules.AGGRO_REDUCE_CHAR, 'Forget should preserve sourced AGGREDUCE_CHAR semantics');
+assert.strictEqual(forget.fetchTargetKind(), 'enemy', 'Forget should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(forget.fetchSemantic().trait, 'derangement', 'Forget should use sourced AGGREDUCE_CHAR derangement vulnerability semantics');
+assert.strictEqual(forget.fetchSemantic().baseLandRate, 50, 'Forget should use sourced power 50 as land rate');
+assert.strictEqual(forget.fetchSemantic().castRange, 400, 'Forget should preserve sourced castRange metadata');
+assert.strictEqual(forget.fetchSemantic().effectRange, 900, 'Forget should preserve sourced effectRange metadata');
+assert.strictEqual(forgetOutcome.damage, 0, 'Forget should not be routed as damage');
+assert.strictEqual(forgetOutcome.aggroReduced, true, 'Forget should mark a successful sourced AGGREDUCE_CHAR outcome');
+assert.strictEqual(forgetOutcome.aggroRemoved, false, 'Forget should not be conflated with AGGREMOVE');
+
 [
     { id: 46, name: 'Life Scavenge', levels: 15, target: 'corpse_mob', trait: 'magic', lastPower: 243, lastMp: 69, absorbAbs: 243 },
     { id: 70, name: 'Drain Health', levels: 53, target: 'enemy', trait: 'dark', lastPower: 108, lastMp: 52, absorbPart: 0.2 },
