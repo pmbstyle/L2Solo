@@ -1716,6 +1716,37 @@ assert.strictEqual(stingOutcome.effect.dot.count, 7, 'Sting should use the sourc
 assert.strictEqual(stingOutcome.effect.dot.intervalMs, 3000, 'Sting should tick every sourced 3 seconds');
 assert.strictEqual(stingOutcome.effect.dot.damage, 38, 'Sting level 49 should use sourced bleedpower 38');
 
+const wildSweepData = activeSkills.find((entry) => entry.selfId === 245);
+assert(wildSweepData, 'Wild Sweep should be present in active skills data');
+assert.strictEqual(wildSweepData.template.distance, 40, 'Wild Sweep should preserve sourced castRange 40');
+assert.strictEqual(wildSweepData.time.hitTime, 1080, 'Wild Sweep should preserve sourced hitTime 1080');
+assert.strictEqual(wildSweepData.time.reuse, 17000, 'Wild Sweep should preserve sourced reuseDelay 17000');
+assert.strictEqual(wildSweepData.levels.length, 15, 'Wild Sweep should preserve sourced 15 base levels');
+assert.strictEqual(wildSweepData.levels[0].power, 90, 'Wild Sweep level 1 should preserve sourced PDAM power 90');
+assert.strictEqual(wildSweepData.levels[14].power, 326, 'Wild Sweep level 15 should preserve sourced PDAM power 326');
+assert.strictEqual(wildSweepData.levels[14].mp, 37, 'Wild Sweep level 15 MP should use sourced mpConsume 37');
+const wildSweepTarget = creature({ id: 1000245, hp: 100, maxHp: 100, level: 20 });
+const wildSweep = skill({ selfId: 245, name: 'Wild Sweep', spell: false, power: 326, level: 15, distance: 40 });
+const wildSweepOutcome = SkillEffects.execute(session(), caster, wildSweepTarget, wildSweep, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 33
+    }
+});
+assert.strictEqual(wildSweep.fetchSkillType(), C4SkillRules.DAMAGE, 'Wild Sweep should resolve as sourced PDAM');
+assert.strictEqual(wildSweep.fetchTargetKind(), 'enemy', 'Wild Sweep should preserve sourced offensive semantics');
+assert.strictEqual(wildSweep.fetchSsBoost(), 1, 'Wild Sweep should preserve sourced physical shot boost semantics');
+assert.strictEqual(wildSweep.fetchSemantic().sourceTarget, 'area', 'Wild Sweep should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(wildSweep.fetchSemantic().radius, 150, 'Wild Sweep should preserve sourced skillRadius 150');
+assert.strictEqual(wildSweep.fetchSemantic().overHit, true, 'Wild Sweep should preserve sourced overHit metadata');
+assert.deepStrictEqual(wildSweep.fetchSemantic().requires, { weaponsAllowed: 64 }, 'Wild Sweep should preserve sourced pole weapon requirement');
+assert.strictEqual(wildSweep.fetchSemantic().castRange, 40, 'Wild Sweep should preserve sourced castRange metadata');
+assert.strictEqual(wildSweep.fetchSemantic().effectRange, 400, 'Wild Sweep should preserve sourced effectRange metadata');
+assert.strictEqual(wildSweepOutcome.damage, 33, 'Wild Sweep should keep its physical damage component');
+assert.strictEqual(wildSweepOutcome.effect, null, 'Wild Sweep should remain a pure damage skill without a debuff');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
