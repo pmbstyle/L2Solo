@@ -346,6 +346,67 @@ assert.strictEqual(partyRecall.fetchSemantic().radius, 1000, 'Party Recall shoul
 assert.strictEqual(partyRecall.fetchSemantic().hitTime, 3500, 'Party Recall level 2 should preserve sourced hitTime 3500 metadata');
 assert.strictEqual(partyRecall.fetchSemantic().mpInitialConsume, 61, 'Party Recall level 2 should preserve sourced mpInitialConsume 61');
 
+const escapeScrollData = activeSkills.find((entry) => entry.selfId === 2013);
+assert(escapeScrollData, 'Scroll of escape should be present in active skills data');
+assert.strictEqual(escapeScrollData.template.distance, -1, 'Scroll of escape should preserve sourced TARGET_SELF range semantics');
+assert.strictEqual(escapeScrollData.time.hitTime, 20000, 'Scroll of escape should preserve sourced static hitTime 20000');
+const escapeScroll = skill({ selfId: 2013, name: 'Scroll of escape', spell: false, power: 1, level: 1, distance: -1 });
+assert.strictEqual(escapeScroll.fetchSkillType(), C4SkillRules.RECALL, 'Scroll of escape should resolve as sourced TELEPORT semantics');
+assert.strictEqual(escapeScroll.fetchTargetKind(), 'self', 'Scroll of escape should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(escapeScroll.fetchSsBoost(), 0, 'Scroll of escape should not use shot boost semantics');
+assert.strictEqual(escapeScroll.fetchSemantic().hitTime, 20000, 'Scroll of escape should preserve sourced hitTime metadata');
+assert.strictEqual(escapeScroll.fetchSemantic().staticHitTime, true, 'Scroll of escape should preserve sourced staticHitTime metadata');
+
+const resurrectionScrollData = activeSkills.find((entry) => entry.selfId === 2014);
+assert(resurrectionScrollData, 'Scroll of resurrection should be present in active skills data');
+assert.strictEqual(resurrectionScrollData.template.distance, 400, 'Scroll of resurrection should preserve sourced castRange 400');
+assert.strictEqual(resurrectionScrollData.time.hitTime, 15000, 'Scroll of resurrection should preserve sourced static hitTime 15000');
+const resurrectionScroll = skill({ selfId: 2014, name: 'Scroll of resurrection', spell: false, power: 1, level: 1, distance: 400 });
+assert.strictEqual(resurrectionScroll.fetchSkillType(), C4SkillRules.RESURRECT, 'Scroll of resurrection should resolve as sourced RESURRECT semantics');
+assert.strictEqual(resurrectionScroll.fetchTargetKind(), 'corpse_player', 'Scroll of resurrection should preserve sourced TARGET_CORPSE_PLAYER semantics');
+assert.strictEqual(resurrectionScroll.fetchSsBoost(), 0, 'Scroll of resurrection should not use shot boost semantics');
+assert.strictEqual(resurrectionScroll.fetchSemantic().castRange, 400, 'Scroll of resurrection should preserve sourced castRange metadata');
+assert.strictEqual(resurrectionScroll.fetchSemantic().effectRange, 600, 'Scroll of resurrection should preserve sourced effectRange metadata');
+assert.strictEqual(resurrectionScroll.fetchSemantic().itemConsumeId, 737, 'Scroll of resurrection should preserve sourced itemInitialConsume id');
+assert.strictEqual(resurrectionScroll.fetchSemantic().itemConsumeCount, 1, 'Scroll of resurrection should preserve sourced itemInitialConsume count');
+
+const blessedEscapeData = activeSkills.find((entry) => entry.selfId === 2036);
+assert(blessedEscapeData, 'Blessed scroll of escape should be present in active skills data');
+assert.strictEqual(blessedEscapeData.time.hitTime, 200, 'Blessed scroll of escape should preserve sourced static hitTime 200');
+assert.strictEqual(blessedEscapeData.levels.length, 2, 'Blessed scroll of escape should preserve sourced 2 base levels');
+const blessedEscape = skill({ selfId: 2036, name: 'Blessed scroll of escape', spell: false, power: 1, level: 2, distance: -1 });
+assert.strictEqual(blessedEscape.fetchSkillType(), C4SkillRules.RECALL, 'Blessed scroll of escape should resolve as sourced TELEPORT semantics');
+assert.strictEqual(blessedEscape.fetchTargetKind(), 'self', 'Blessed scroll of escape should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(blessedEscape.fetchSemantic().hitTime, 200, 'Blessed scroll of escape should preserve sourced hitTime metadata');
+assert.strictEqual(blessedEscape.fetchSemantic().staticHitTime, true, 'Blessed scroll of escape should preserve sourced staticHitTime metadata');
+
+[
+    { id: 2040, name: 'Scroll of escape to Clan Hall', localName: 'Scroll of escape to agit', where: 'ClanHall' },
+    { id: 2041, name: 'Scroll of escape to Castle', localName: 'Scroll of escape to castle', where: 'Castle' }
+].forEach(({ id, name, localName, where }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.distance, -1, `${name} should preserve sourced TARGET_SELF range semantics`);
+    assert.strictEqual(data.time.hitTime, 20000, `${name} should preserve sourced static hitTime 20000`);
+    const escapeSkill = skill({ selfId: id, name: localName, spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(escapeSkill.fetchSkillType(), C4SkillRules.RECALL, `${name} should resolve as sourced TELEPORT semantics`);
+    assert.strictEqual(escapeSkill.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(escapeSkill.fetchSemantic().teleportWhereType, where, `${name} should preserve sourced teleportWhereType metadata`);
+});
+
+const blessedResurrectionData = activeSkills.find((entry) => entry.selfId === 2049);
+assert(blessedResurrectionData, 'Blessed scroll of resurrection should be present in active skills data');
+assert.strictEqual(blessedResurrectionData.template.distance, 400, 'Blessed scroll of resurrection should preserve sourced castRange 400');
+assert.strictEqual(blessedResurrectionData.time.hitTime, 15000, 'Blessed scroll of resurrection should preserve sourced static hitTime 15000');
+assert.strictEqual(blessedResurrectionData.levels[0].power, 100, 'Blessed scroll of resurrection should preserve sourced power 100');
+const blessedResurrection = skill({ selfId: 2049, name: 'Blessed scroll of resurrection', spell: false, power: 100, level: 1, distance: 400 });
+assert.strictEqual(blessedResurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Blessed scroll of resurrection should resolve as sourced RESURRECT semantics');
+assert.strictEqual(blessedResurrection.fetchTargetKind(), 'corpse_player', 'Blessed scroll of resurrection should preserve sourced TARGET_CORPSE_PLAYER semantics');
+assert.strictEqual(blessedResurrection.fetchSemantic().castRange, 400, 'Blessed scroll of resurrection should preserve sourced castRange metadata');
+assert.strictEqual(blessedResurrection.fetchSemantic().effectRange, 600, 'Blessed scroll of resurrection should preserve sourced effectRange metadata');
+assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeId, 3936, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume id');
+assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeCount, 1, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume count');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');
