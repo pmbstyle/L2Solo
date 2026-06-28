@@ -21,6 +21,7 @@ const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
     5: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 } },
+    6: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
