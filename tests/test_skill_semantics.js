@@ -4310,6 +4310,33 @@ assert(EffectStore.remainingMs(auraFlareCaster, 'aura_flare') <= 3000, 'Aura Fla
 assert.strictEqual(EffectStats.multiplier(auraFlareCaster, 'pvpMagicalDmg'), 0.5, 'Aura Flare self Debuff should use sourced pvpMagicalDmg 0.5');
 EffectStore.remove(auraFlareCaster, 'aura_flare');
 
+const blazingSkinData = activeSkills.find((entry) => entry.selfId === 1232);
+assert(blazingSkinData, 'Blazing Skin should be present in active skills data');
+assert.strictEqual(blazingSkinData.template.distance, 400, 'Blazing Skin should preserve sourced castRange 400');
+assert.strictEqual(blazingSkinData.time.hitTime, 4000, 'Blazing Skin should preserve sourced hitTime 4000');
+assert.strictEqual(blazingSkinData.time.reuse, 6000, 'Blazing Skin should preserve sourced reuseDelay 6000');
+assert.strictEqual(blazingSkinData.time.buff, 1200000, 'Blazing Skin should preserve sourced 1200 second duration');
+assert.strictEqual(blazingSkinData.levels.length, 3, 'Blazing Skin should preserve sourced 3 base levels');
+assert.strictEqual(blazingSkinData.levels[0].power, 10, 'Blazing Skin level 1 should preserve sourced reflect power 10');
+assert.strictEqual(blazingSkinData.levels[0].mp, 28, 'Blazing Skin level 1 MP should use sourced mpConsume 28');
+assert.strictEqual(blazingSkinData.levels[2].power, 20, 'Blazing Skin level 3 should preserve sourced reflect power 20');
+assert.strictEqual(blazingSkinData.levels[2].mp, 41, 'Blazing Skin level 3 MP should use sourced mpConsume 41');
+const blazingSkinTarget = statActor();
+const blazingSkin = skill({ selfId: 1232, name: 'Blazing Skin', spell: true, power: 20, level: 3, distance: 400, buff: 1200000 });
+const blazingSkinOutcome = SkillEffects.execute(session(), caster, blazingSkinTarget, blazingSkin, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blazingSkin.fetchSkillType(), C4SkillRules.EFFECT, 'Blazing Skin should resolve as sourced REFLECT buff semantics');
+assert.strictEqual(blazingSkin.fetchTargetKind(), 'friendly', 'Blazing Skin should preserve sourced friendly TARGET_ONE semantics');
+assert.strictEqual(blazingSkin.fetchSemantic().castRange, 400, 'Blazing Skin should preserve sourced castRange metadata');
+assert.strictEqual(blazingSkin.fetchSemantic().effectRange, 900, 'Blazing Skin should preserve sourced effectRange metadata');
+assert.strictEqual(blazingSkin.fetchSemantic().aggroPoints, 532, 'Blazing Skin level 3 should preserve sourced aggroPoints 532');
+assert.strictEqual(blazingSkinOutcome.effect.key, 'blazing_skin', 'Blazing Skin should apply a structured reflect buff');
+assert.strictEqual(EffectStats.add(blazingSkinTarget, 'reflectDam'), 20, 'Blazing Skin level 3 should use sourced reflectDam +20');
+EffectStore.remove(blazingSkinTarget, 'blazing_skin');
+
 const freezingShackleData = activeSkills.find((entry) => entry.selfId === 1183);
 assert(freezingShackleData, 'Freezing Shackle should be present in active skills data');
 assert.strictEqual(freezingShackleData.levels.length, 4, 'Freezing Shackle should preserve sourced 4 base levels');
