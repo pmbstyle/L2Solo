@@ -4996,6 +4996,55 @@ assert.strictEqual(itemBleedOutcome.effect.dot.count, 7, 'Item Bleed should use 
 assert.strictEqual(itemBleedOutcome.effect.dot.intervalMs, 3000, 'Item Bleed should tick every sourced 3 seconds');
 assert.strictEqual(itemBleedOutcome.effect.dot.damage, 66, 'Item Bleed should use sourced DamOverTime value 66');
 
+const npcPoisonData = activeSkills.find((entry) => entry.selfId === 4052);
+assert(npcPoisonData, 'NPC Poison should be present in active skills data');
+assert.strictEqual(npcPoisonData.template.name, 'Poison', 'NPC Poison active data should preserve sourced name');
+assert.strictEqual(npcPoisonData.time.buff, 30000, 'NPC Poison should preserve sourced 10x3s duration');
+assert.strictEqual(npcPoisonData.levels.length, 6, 'NPC Poison should preserve sourced 6 levels');
+assert.strictEqual(npcPoisonData.levels[5].power, 70, 'NPC Poison should preserve sourced power 70');
+const npcPoison = skill({ selfId: 4052, name: 'Poison', spell: true, power: 70, level: 6, buff: 30000, distance: -1 });
+const npcPoisonTarget = statActor();
+const npcPoisonOutcome = SkillEffects.execute(session(), caster, npcPoisonTarget, npcPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcPoison.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Poison should resolve as sourced POISON effect semantics');
+assert.strictEqual(npcPoison.fetchTargetKind(), 'enemy', 'NPC Poison should resolve as an enemy debuff');
+assert.strictEqual(npcPoison.fetchSemantic().baseLandRate, 70, 'NPC Poison should use sourced power 70 as land rate');
+assert.strictEqual(npcPoison.fetchSemantic().levelDepend, 1, 'NPC Poison should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcPoison.fetchSemantic().magicLevel, 72, 'NPC Poison level 6 should preserve sourced magicLvl 72');
+assert.strictEqual(npcPoisonOutcome.effect.dot.count, 10, 'NPC Poison should use sourced 10 damage ticks');
+assert.strictEqual(npcPoisonOutcome.effect.dot.intervalMs, 3000, 'NPC Poison should tick every sourced 3 seconds');
+assert.strictEqual(npcPoisonOutcome.effect.dot.damage, 48, 'NPC Poison level 6 should use sourced DamOverTime value 48');
+
+[
+    { id: 4053, name: 'Decrease P. Atk.', effect: 'decrease_p_atk', stat: 'pAtkMul' },
+    { id: 4054, name: 'Decrease P. Def.', effect: 'decrease_p_def', stat: 'pDefMul' },
+    { id: 4055, name: 'Decrease Atk. Spd.', effect: 'decrease_atk_spd', stat: 'pAtkSpdMul' }
+].forEach(({ id, name, effect, stat }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} active data should preserve sourced name`);
+    assert.strictEqual(data.time.buff, 120000, `${name} should preserve sourced 120 second duration`);
+    assert.strictEqual(data.levels.length, 8, `${name} should preserve sourced 8 levels`);
+    assert.strictEqual(data.levels[7].power, 80, `${name} should preserve sourced power 80`);
+    const debuff = skill({ selfId: id, name, spell: true, power: 80, level: 8, buff: 120000, distance: -1 });
+    const target = statActor();
+    const outcome = SkillEffects.execute(session(), caster, target, debuff, {
+        magicSkill: true,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(debuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve as sourced DEBUFF effect semantics`);
+    assert.strictEqual(debuff.fetchTargetKind(), 'enemy', `${name} should resolve as an enemy debuff`);
+    assert.strictEqual(debuff.fetchSemantic().baseLandRate, 80, `${name} should use sourced power 80 as land rate`);
+    assert.strictEqual(debuff.fetchSemantic().levelDepend, 2, `${name} should preserve sourced lvlDepend metadata`);
+    assert.strictEqual(debuff.fetchSemantic().magicLevel, 74, `${name} level 8 should preserve sourced magicLvl 74`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply a structured debuff effect`);
+    assert.strictEqual(EffectStats.multiplier(target, stat), 0.77, `${name} should apply sourced ${stat} 0.77 multiplier`);
+});
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
