@@ -142,7 +142,7 @@
     "selfId": 34,
     "template": { "name": "Bandage", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 1500, "reuse": 3000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 20, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 3, "mp": 20, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 7, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 9, "mp": 55, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 35,
     "template": { "name": "Force Storm", "passive": false, "spell": false, "distance": 500 },

@@ -3546,6 +3546,12 @@ assert(remedyData, 'Remedy should be present in active skills data');
 assert.strictEqual(remedyData.levels.length, 3, 'Remedy active data should preserve sourced 3 levels');
 assert.strictEqual(remedyData.levels[2].power, 9, 'Remedy level 3 active data should preserve sourced negatePower 9');
 assert.strictEqual(remedyData.levels[2].mp, 55, 'Remedy level 3 active data should combine sourced initial and consume MP');
+const classBandageData = activeSkills.find((entry) => entry.selfId === 34);
+assert(classBandageData, 'Class Bandage should be present in active skills data');
+assert.strictEqual(classBandageData.levels.length, 3, 'Class Bandage active data should preserve sourced 3 levels');
+assert.strictEqual(classBandageData.levels[0].power, 3, 'Class Bandage level 1 should preserve sourced negatePower 3');
+assert.strictEqual(classBandageData.levels[2].power, 9, 'Class Bandage level 3 should preserve sourced negatePower 9');
+assert.strictEqual(classBandageData.levels[2].mp, 55, 'Class Bandage level 3 MP should use sourced mpConsume 55');
 const bandageData = activeSkills.find((entry) => entry.selfId === 2044);
 assert(bandageData, 'Bandage should be present in active skills data');
 assert.strictEqual(bandageData.levels[0].power, 3, 'Bandage active data should preserve sourced negatePower 3');
@@ -3564,6 +3570,16 @@ assert.strictEqual(bandage.fetchSkillType(), C4SkillRules.CLEANSE, 'Bandage shou
 assert.strictEqual(bandageOutcome.cleansed.length, 1, 'Bandage should cleanse bleed up to sourced negatePower 3 only');
 assert.strictEqual(EffectStore.hasDebuff(bleedCleanseTarget, 'minor_bleed'), false, 'Bandage should remove low-level bleed');
 assert.strictEqual(EffectStore.hasDebuff(bleedCleanseTarget, 'major_bleed'), true, 'Bandage should not remove bleed above sourced negatePower 3');
+const classBandageTarget = statActor();
+EffectStore.apply(classBandageTarget, { key: 'strong_bleed', id: 96, level: 9, type: 'debuff', category: 'bleed', durationMs: 30000 });
+const classBandage = skill({ selfId: 34, name: 'Bandage', spell: false, power: 9, level: 3, distance: -1 });
+const classBandageOutcome = SkillEffects.execute(session(), caster, classBandageTarget, classBandage, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(classBandage.fetchSkillType(), C4SkillRules.CLEANSE, 'Class Bandage should resolve to sourced NEGATE/CLEANSE');
+assert.strictEqual(classBandageOutcome.cleansed.length, 1, 'Class Bandage level 3 should cleanse bleed up to sourced negatePower 9');
+assert.strictEqual(EffectStore.hasDebuff(classBandageTarget, 'strong_bleed'), false, 'Class Bandage level 3 should remove high-level bleed within sourced negatePower 9');
 const remedy = skill({ selfId: 44, name: 'Remedy', spell: true, power: 9, level: 3, distance: -1 });
 const remedyOutcome = SkillEffects.execute(session(), caster, bleedCleanseTarget, remedy, {
     magicSkill: true,
