@@ -27,6 +27,7 @@ const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
     2: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', baseLandRate: 80, mobOnly: true, castRange: 600, effectRange: 1100 },
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
+    4: { skillType: EFFECT, trait: 'buff', effect: 'dash', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [204, 438], statsByLevel: { runSpdAdd: [40, 66] } },
     5: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 } },
     6: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     7: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 205, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },

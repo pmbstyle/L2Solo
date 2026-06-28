@@ -301,6 +301,7 @@ assert.strictEqual(EffectStore.impairments(confusionMobTarget).confused, true, '
 EffectStore.remove(confusionMobTarget, 'confusion');
 
 [
+    { id: 4, name: 'Dash', levels: 2, mp: 41, buff: 15000, reuse: 90000, effect: 'dash', stat: 'runSpdAdd', statValue: 66, statKind: 'add', aggroPoints: 438 },
     { id: 72, name: 'Iron Will', levels: 3, mp: 50, buff: 1200000, reuse: 6000, effect: 'iron_will', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 75, name: 'Detect Insect Weakness', levels: 1, mp: 14, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-insects', statValue: 1.5, statKind: 'mul', effectTargetKind: 'insect', aggroPoints: 303 },
     { id: 76, name: 'Totem Spirit Bear', levels: 1, mp: 2, buff: 120000, reuse: 120000, effect: 'totem_spirit_bear', stat: 'pAtkMul', statValue: 1.2, statKind: 'mul', extraStats: [{ stat: 'runSpdMul', value: 0.7, kind: 'mul' }], aggroPoints: 268 },
