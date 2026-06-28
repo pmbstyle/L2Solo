@@ -3367,6 +3367,13 @@ assert.strictEqual(deathLinkOutcome.damage, 319, 'Curse Death Link should execut
     assert.strictEqual(drainSkill.fetchSemantic().trait, trait, `${name} should preserve sourced trait semantics`);
     assert.strictEqual(drainSkill.fetchSemantic().absorbPart, absorbPart, `${name} should preserve sourced absorbPart`);
     assert.strictEqual(drainSkill.fetchSemantic().absorbAbs, absorbAbs, `${name} should preserve sourced absorbAbs`);
+    if (id === 70) {
+        assert.strictEqual(data.template.distance, 600, 'Drain Health should preserve sourced castRange as skill distance');
+        assert.strictEqual(data.time.hitTime, 3000, 'Drain Health should preserve sourced hitTime');
+        assert.strictEqual(data.time.reuse, 15000, 'Drain Health should preserve sourced reuseDelay');
+        assert.strictEqual(drainSkill.fetchSemantic().castRange, 600, 'Drain Health should preserve sourced castRange metadata');
+        assert.strictEqual(drainSkill.fetchSemantic().effectRange, 1100, 'Drain Health should preserve sourced effectRange metadata');
+    }
 });
 
 const drainCaster = creature({ hp: 100, maxHp: 500, mAtk: 100 });

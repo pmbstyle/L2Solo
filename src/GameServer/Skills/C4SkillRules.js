@@ -67,7 +67,7 @@ const RULES = {
     45: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     58: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     69: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0, castRange: 600, effectRange: 1100, aggroPointsByLevel: [494, 508, 521, 535, 548, 562, 575, 588, 602, 615, 627, 640, 653, 665, 677, 689, 700, 711, 722, 733, 743, 753, 763, 772, 780] },
-    70: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.2, baseLandRate: 92 },
+    70: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.2, baseLandRate: 92, castRange: 600, effectRange: 1100 },
     61: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     65: { skillType: EFFECT, trait: 'fear', effect: 'fear', effectType: 'debuff', target: 'enemy', baseLandRate: 20, castRange: 600, effectRange: 1100 },
     44: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
