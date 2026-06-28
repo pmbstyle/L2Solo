@@ -223,6 +223,7 @@ const RULES = {
     1072: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', target: 'enemy', baseLandRate: 40 },
     1073: { skillType: EFFECT, trait: 'buff', effect: 'kiss_of_eva', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { breath: [5, 7] } },
     1074: { skillType: EFFECT, trait: 'wind', effect: 'surrender_to_wind', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { windVuln: 1.3 } },
+    1075: { skillType: AGGRO_REMOVE, trait: 'derangement', target: 'enemy', ssBoost: 1, baseLandRateByLevel: [30, 33, 37, 40, 43, 47, 50, 53, 57, 60, 63, 67, 70, 75, 80], castRange: 600, effectRange: 1100 },
     1077: { skillType: EFFECT, trait: 'buff', effect: 'focus', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritRateAdd: [20, 25, 30] } },
     1078: { skillType: EFFECT, trait: 'buff', effect: 'concentration', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { cancelAdd: [-18, -25, -36, -42, -48, -53] } },
     1083: { skillType: EFFECT, trait: 'fire', effect: 'surrender_to_fire', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { fireVuln: [1.25, 1.25, 1.25, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] } },

@@ -499,6 +499,32 @@ assert.strictEqual(veilOutcome.damage, 0, 'Veil should not be routed as damage')
 assert.strictEqual(veilOutcome.effect, null, 'Veil should not apply a structured debuff');
 assert.strictEqual(veilOutcome.aggroRemoved, true, 'Veil should mark successful sourced AGGREMOVE');
 
+const peaceData = activeSkills.find((entry) => entry.selfId === 1075);
+assert(peaceData, 'Peace should be present in active skills data');
+assert.strictEqual(peaceData.template.distance, 600, 'Peace should preserve sourced castRange 600');
+assert.strictEqual(peaceData.time.hitTime, 4000, 'Peace should preserve sourced hitTime 4000');
+assert.strictEqual(peaceData.time.reuse, 20000, 'Peace should preserve sourced reuseDelay 20000');
+assert.strictEqual(peaceData.time.buff, 0, 'Peace should not invent a debuff duration for sourced AGGREMOVE');
+assert.strictEqual(peaceData.levels.length, 15, 'Peace should preserve sourced 15 base levels');
+assert.strictEqual(peaceData.levels[0].power, 30, 'Peace level 1 should preserve sourced AGGREMOVE power 30');
+assert.strictEqual(peaceData.levels[14].power, 80, 'Peace level 15 should preserve sourced AGGREMOVE power 80');
+assert.strictEqual(peaceData.levels[14].mp, 55, 'Peace level 15 MP should use sourced mpConsume 55');
+const peace = skill({ selfId: 1075, name: 'Peace', spell: true, power: 80, level: 15, distance: 600 });
+const peaceOutcome = SkillEffects.execute(session(), caster, creature({ id: 1001075, hp: 100, maxHp: 100, level: 20, mDef: 50 }), peace, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(peace.fetchSkillType(), C4SkillRules.AGGRO_REMOVE, 'Peace should resolve as sourced AGGREMOVE');
+assert.strictEqual(peace.fetchTargetKind(), 'enemy', 'Peace should preserve sourced TARGET_ONE semantics');
+assert.strictEqual(peace.fetchSsBoost(), 1, 'Peace should keep offensive magic shot boost semantics');
+assert.strictEqual(peace.fetchSemantic().baseLandRate, 80, 'Peace level 15 should use sourced power as land rate');
+assert.strictEqual(peace.fetchSemantic().castRange, 600, 'Peace should preserve sourced castRange metadata');
+assert.strictEqual(peace.fetchSemantic().effectRange, 1100, 'Peace should preserve sourced effectRange metadata');
+assert.strictEqual(peaceOutcome.damage, 0, 'Peace should not be routed as magic damage');
+assert.strictEqual(peaceOutcome.effect, null, 'Peace should not apply a structured debuff');
+assert.strictEqual(peaceOutcome.aggroRemoved, true, 'Peace should mark successful sourced AGGREMOVE');
+
 const holyAuraData = activeSkills.find((entry) => entry.selfId === 107);
 assert(holyAuraData, 'Holy Aura should be present in active skills data');
 assert.strictEqual(holyAuraData.template.distance, -1, 'Holy Aura should preserve sourced self-centered TARGET_AURA_UNDEAD range');
