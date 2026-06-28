@@ -4496,6 +4496,37 @@ assert.strictEqual(hurricane.fetchSemantic().castRange, 900, 'Hurricane should p
 assert.strictEqual(hurricane.fetchSemantic().effectRange, 1400, 'Hurricane should preserve sourced effectRange metadata');
 assert.strictEqual(hurricaneOutcome.damage, 1239, 'Hurricane should execute through damage routing');
 
+const freezingFlameData = activeSkills.find((entry) => entry.selfId === 1244);
+assert(freezingFlameData, 'Freezing Flame should be present in active skills data');
+assert.strictEqual(freezingFlameData.template.distance, 900, 'Freezing Flame should preserve sourced castRange 900');
+assert.strictEqual(freezingFlameData.time.hitTime, 4000, 'Freezing Flame should preserve sourced hitTime 4000');
+assert.strictEqual(freezingFlameData.time.reuse, 6000, 'Freezing Flame should preserve sourced reuseDelay 6000');
+assert.strictEqual(freezingFlameData.time.buff, 15000, 'Freezing Flame should preserve sourced DOT duration');
+assert.strictEqual(freezingFlameData.levels.length, 4, 'Freezing Flame should preserve sourced 4 base levels');
+assert.strictEqual(freezingFlameData.levels[0].power, 70, 'Freezing Flame level 1 should preserve sourced land rate power 70');
+assert.strictEqual(freezingFlameData.levels[0].mp, 42, 'Freezing Flame level 1 MP should use sourced mpConsume 42');
+assert.strictEqual(freezingFlameData.levels[3].power, 70, 'Freezing Flame level 4 should preserve sourced land rate power 70');
+assert.strictEqual(freezingFlameData.levels[3].mp, 80, 'Freezing Flame level 4 MP should use sourced mpConsume 80');
+const freezingFlameTarget = statActor();
+const freezingFlame = skill({ selfId: 1244, name: 'Freezing Flame', spell: true, power: 70, level: 4, distance: 900, buff: 15000 });
+const freezingFlameOutcome = SkillEffects.execute(session(), caster, freezingFlameTarget, freezingFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(freezingFlame.fetchSkillType(), C4SkillRules.EFFECT, 'Freezing Flame should resolve as sourced DOT effect semantics');
+assert.strictEqual(freezingFlame.fetchTargetKind(), 'enemy', 'Freezing Flame should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(freezingFlame.fetchSemantic().trait, 'fire', 'Freezing Flame should preserve sourced fire element');
+assert.strictEqual(freezingFlame.fetchSemantic().baseLandRate, 70, 'Freezing Flame should use sourced power 70 as DOT land rate');
+assert.strictEqual(freezingFlame.fetchSemantic().levelDepend, 1, 'Freezing Flame should preserve sourced lvlDepend metadata');
+assert.strictEqual(freezingFlame.fetchSemantic().castRange, 900, 'Freezing Flame should preserve sourced castRange metadata');
+assert.strictEqual(freezingFlame.fetchSemantic().effectRange, 1400, 'Freezing Flame should preserve sourced effectRange metadata');
+assert.strictEqual(freezingFlameOutcome.effect.key, 'freezing_flame', 'Freezing Flame should apply a structured fire DOT');
+assert.strictEqual(freezingFlameOutcome.effect.dot.damage, 118, 'Freezing Flame level 4 should use sourced DamOverTime value 118');
+assert.strictEqual(freezingFlameOutcome.effect.dot.count, 15, 'Freezing Flame should use sourced 15 damage ticks');
+assert.strictEqual(freezingFlameOutcome.effect.dot.intervalMs, 1000, 'Freezing Flame should tick every sourced second');
+EffectStore.remove(freezingFlameTarget, 'freezing_flame');
+
 const decayData = activeSkills.find((entry) => entry.selfId === 1233);
 assert(decayData, 'Decay should be present in active skills data');
 assert.strictEqual(decayData.template.distance, 600, 'Decay should preserve sourced castRange 600');

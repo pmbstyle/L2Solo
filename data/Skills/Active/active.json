@@ -1330,7 +1330,7 @@
     "selfId": 1244,
     "template": { "name": "Freezing Flame", "passive": false, "spell": true, "distance": 900 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 15000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 53, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 70, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 70, "mp": 42, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 70, "mp": 56, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 70, "mp": 71, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 70, "mp": 80, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1245,
     "template": { "name": "Steal Essence", "passive": false, "spell": true, "distance": 900 },
