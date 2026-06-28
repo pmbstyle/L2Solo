@@ -283,6 +283,21 @@ assert.strictEqual(resurrection.fetchSemantic().effectRange, 900, 'Resurrection 
 assert.strictEqual(resurrection.fetchSemantic().mpInitialConsume, 48, 'Resurrection level 9 should preserve sourced mpInitialConsume 48');
 assert.strictEqual(resurrection.fetchSemantic().aggroPoints, 624, 'Resurrection level 9 should preserve sourced aggroPoints 624');
 
+const returnData = activeSkills.find((entry) => entry.selfId === 1050);
+assert(returnData, 'Return should be present in active skills data');
+assert.strictEqual(returnData.template.distance, -1, 'Return should preserve sourced TARGET_SELF range semantics');
+assert.strictEqual(returnData.time.hitTime, 20000, 'Return should preserve sourced level 1 hitTime 20000 in active data');
+assert.strictEqual(returnData.time.reuse, 300000, 'Return should preserve sourced reuseDelay 300000');
+assert.strictEqual(returnData.levels.length, 2, 'Return should preserve sourced 2 base levels');
+assert.strictEqual(returnData.levels[0].mp, 84, 'Return level 1 MP should use sourced mpConsume 84');
+assert.strictEqual(returnData.levels[1].mp, 122, 'Return level 2 MP should use sourced mpConsume 122');
+const returnSkill = skill({ selfId: 1050, name: 'Return', spell: true, power: 1, level: 2, distance: -1 });
+assert.strictEqual(returnSkill.fetchSkillType(), C4SkillRules.RECALL, 'Return should resolve as sourced RECALL semantics');
+assert.strictEqual(returnSkill.fetchTargetKind(), 'self', 'Return should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(returnSkill.fetchSsBoost(), 0, 'Return should not use shot boost semantics');
+assert.strictEqual(returnSkill.fetchSemantic().hitTime, 1500, 'Return level 2 should preserve sourced hitTime 1500 metadata');
+assert.strictEqual(returnSkill.fetchSemantic().mpInitialConsume, 31, 'Return level 2 should preserve sourced mpInitialConsume 31');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');

@@ -806,8 +806,8 @@
 },{
     "selfId": 1050,
     "template": { "name": "Return", "passive": false, "spell": true, "distance": -1 },
-    "time": { "hitTime": 20000, "reuse": 120000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 105, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 153, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 20000, "reuse": 300000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 84, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 122, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1056,
     "template": { "name": "Cancel", "passive": false, "spell": true, "distance": 600 },
