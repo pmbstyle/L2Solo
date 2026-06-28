@@ -4274,6 +4274,36 @@ assert.strictEqual(prominence.fetchSemantic().castRange, 900, 'Prominence should
 assert.strictEqual(prominence.fetchSemantic().effectRange, 1400, 'Prominence should preserve sourced effectRange metadata');
 assert.strictEqual(prominenceOutcome.damage, 1230, 'Prominence should execute through damage routing');
 
+const hydroBlastData = activeSkills.find((entry) => entry.selfId === 1235);
+assert(hydroBlastData, 'Hydro Blast should be present in active skills data');
+assert.strictEqual(hydroBlastData.template.distance, 900, 'Hydro Blast should preserve sourced castRange 900');
+assert.strictEqual(hydroBlastData.time.hitTime, 4000, 'Hydro Blast should preserve sourced hitTime 4000');
+assert.strictEqual(hydroBlastData.time.reuse, 6000, 'Hydro Blast should preserve sourced reuseDelay 6000');
+assert.strictEqual(hydroBlastData.time.buff, 0, 'Hydro Blast should not use a debuff duration');
+assert.strictEqual(hydroBlastData.levels.length, 28, 'Hydro Blast should preserve sourced 28 base levels');
+assert.strictEqual(hydroBlastData.levels[0].power, 49, 'Hydro Blast level 1 should preserve sourced power 49');
+assert.strictEqual(hydroBlastData.levels[0].mp, 27, 'Hydro Blast level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(hydroBlastData.levels[27].power, 108, 'Hydro Blast level 28 should preserve sourced power 108');
+assert.strictEqual(hydroBlastData.levels[27].mp, 55, 'Hydro Blast level 28 MP should use sourced mpConsume 55');
+const hydroBlast = skill({ selfId: 1235, name: 'Hydro Blast', spell: true, power: 108, level: 28, distance: 900 });
+const hydroBlastOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001235 }), hydroBlast, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE, 'Hydro Blast should route as sourced MDAM damage');
+            return 1235;
+        }
+    }
+});
+assert.strictEqual(hydroBlast.fetchSkillType(), C4SkillRules.DAMAGE, 'Hydro Blast should resolve as sourced MDAM damage');
+assert.strictEqual(hydroBlast.fetchSemantic().trait, 'water', 'Hydro Blast should preserve sourced water element');
+assert.strictEqual(hydroBlast.fetchTargetKind(), 'enemy', 'Hydro Blast should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(hydroBlast.fetchSemantic().baseLandRate, 92, 'Hydro Blast should use sourced MDAM magic success baseline');
+assert.strictEqual(hydroBlast.fetchSemantic().castRange, 900, 'Hydro Blast should preserve sourced castRange metadata');
+assert.strictEqual(hydroBlast.fetchSemantic().effectRange, 1400, 'Hydro Blast should preserve sourced effectRange metadata');
+assert.strictEqual(hydroBlastOutcome.damage, 1235, 'Hydro Blast should execute through damage routing');
+
 const auraFlareData = activeSkills.find((entry) => entry.selfId === 1231);
 assert(auraFlareData, 'Aura Flare should be present in active skills data');
 assert.strictEqual(auraFlareData.template.distance, 150, 'Aura Flare should preserve sourced castRange 150');
