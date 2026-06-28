@@ -1243,6 +1243,33 @@ assert.strictEqual(aggression.fetchSemantic().effectRange, 1300, 'Aggression lev
 assert.strictEqual(aggressionOutcome.damage, 0, 'Aggression should not be routed as HP damage');
 assert.strictEqual(aggressionOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Aggression should use sourced Lisvus AGGDAMAGE hate formula');
 
+const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
+assert(ironPunchData, 'Iron Punch should be present in active skills data');
+assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
+assert.strictEqual(ironPunchData.time.hitTime, 1604, 'Iron Punch should preserve sourced hitTime 1604');
+assert.strictEqual(ironPunchData.time.reuse, 15000, 'Iron Punch should preserve sourced reuseDelay 15000');
+assert.strictEqual(ironPunchData.levels.length, 24, 'Iron Punch should preserve sourced 24 base levels');
+assert.strictEqual(ironPunchData.levels[23].power, 380, 'Iron Punch level 24 should preserve sourced PDAM power 380');
+assert.strictEqual(ironPunchData.levels[23].mp, 44, 'Iron Punch level 24 MP should use sourced mpConsume 44');
+const ironPunchTarget = creature({ id: 1000029, hp: 100, maxHp: 100, level: 20 });
+const ironPunch = skill({ selfId: 29, name: 'Iron Punch', spell: false, power: 380, level: 24, distance: 40 });
+const ironPunchOutcome = SkillEffects.execute(session(), caster, ironPunchTarget, ironPunch, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 122
+    }
+});
+assert.strictEqual(ironPunch.fetchSkillType(), C4SkillRules.DAMAGE, 'Iron Punch should resolve as sourced PDAM');
+assert.strictEqual(ironPunch.fetchTargetKind(), 'enemy', 'Iron Punch should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(ironPunch.fetchSsBoost(), 1, 'Iron Punch should preserve sourced physical shot boost semantics');
+assert.strictEqual(ironPunch.fetchSemantic().trait, 'physical', 'Iron Punch should preserve physical damage semantics');
+assert.strictEqual(ironPunch.fetchSemantic().overHit, true, 'Iron Punch should preserve sourced overHit metadata');
+assert.deepStrictEqual(ironPunch.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Iron Punch should preserve sourced fist weapon requirement');
+assert.strictEqual(ironPunchOutcome.damage, 122, 'Iron Punch should keep its physical damage component');
+assert.strictEqual(ironPunchOutcome.effect, null, 'Iron Punch should remain a pure damage skill without a debuff');
+
 const doubleShotData = activeSkills.find((entry) => entry.selfId === 19);
 assert(doubleShotData, 'Double Shot should be present in active skills data');
 assert.strictEqual(doubleShotData.template.distance, 900, 'Double Shot should preserve sourced castRange 900');
