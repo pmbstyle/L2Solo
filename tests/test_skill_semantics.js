@@ -974,6 +974,34 @@ assert.deepStrictEqual(sonicBlaster.fetchSemantic().requires, { weaponsAllowed: 
 assert.strictEqual(sonicBlasterOutcome.damage, 167, 'Sonic Blaster should keep its physical damage component');
 assert.strictEqual(sonicBlasterOutcome.effect, null, 'Sonic Blaster should remain a pure damage skill without a debuff');
 
+const sonicStormData = activeSkills.find((entry) => entry.selfId === 7);
+assert(sonicStormData, 'Sonic Storm should be present in active skills data');
+assert.strictEqual(sonicStormData.template.distance, 500, 'Sonic Storm should preserve sourced castRange 500');
+assert.strictEqual(sonicStormData.time.hitTime, 1900, 'Sonic Storm should preserve sourced hitTime 1900');
+assert.strictEqual(sonicStormData.time.reuse, 20000, 'Sonic Storm should preserve sourced reuseDelay 20000');
+assert.strictEqual(sonicStormData.levels.length, 28, 'Sonic Storm should preserve sourced 28 base levels');
+assert.strictEqual(sonicStormData.levels[11].power, 262, 'Sonic Storm level 12 should preserve existing sourced CHARGEDAM power 262');
+assert.strictEqual(sonicStormData.levels[27].power, 457, 'Sonic Storm level 28 should preserve sourced CHARGEDAM power 457');
+assert.strictEqual(sonicStormData.levels[27].mp, 100, 'Sonic Storm level 28 MP should use sourced mpConsume 100');
+const sonicStormTarget = creature({ id: 1000016, hp: 100, maxHp: 100, level: 20 });
+const sonicStorm = skill({ selfId: 7, name: 'Sonic Storm', spell: false, power: 457, level: 28, distance: 500 });
+const sonicStormOutcome = SkillEffects.execute(session(), caster, sonicStormTarget, sonicStorm, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 178
+    }
+});
+assert.strictEqual(sonicStorm.fetchSkillType(), C4SkillRules.DAMAGE, 'Sonic Storm should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(sonicStorm.fetchTargetKind(), 'enemy', 'Sonic Storm should remain executable against selected enemies');
+assert.strictEqual(sonicStorm.fetchSsBoost(), 1, 'Sonic Storm should preserve sourced physical shot boost semantics');
+assert.strictEqual(sonicStorm.fetchSemantic().sourceTarget, 'area', 'Sonic Storm should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(sonicStorm.fetchSemantic().radius, 205, 'Sonic Storm should preserve sourced skillRadius 205');
+assert.deepStrictEqual(sonicStorm.fetchSemantic().requires, { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 }, 'Sonic Storm should preserve sourced weapon and charge requirements');
+assert.strictEqual(sonicStormOutcome.damage, 178, 'Sonic Storm should keep its physical damage component');
+assert.strictEqual(sonicStormOutcome.effect, null, 'Sonic Storm should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
