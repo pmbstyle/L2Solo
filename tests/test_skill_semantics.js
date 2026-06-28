@@ -866,6 +866,35 @@ assert.strictEqual(thunderStormOutcome.effect.key, 'stun', 'Thunder Storm should
 assert.strictEqual(EffectRestrictions.canMove(thunderStormTarget), false, 'Thunder Storm stun should block movement');
 EffectStore.remove(thunderStormTarget, 'stun');
 
+const hammerCrushData = activeSkills.find((entry) => entry.selfId === 260);
+assert(hammerCrushData, 'Hammer Crush should be present in active skills data');
+assert.strictEqual(hammerCrushData.template.distance, 40, 'Hammer Crush should preserve sourced castRange 40');
+assert.strictEqual(hammerCrushData.time.buff, 9000, 'Hammer Crush should preserve sourced 9 second stun duration');
+assert.strictEqual(hammerCrushData.levels.length, 37, 'Hammer Crush should preserve sourced 37 base levels');
+assert.strictEqual(hammerCrushData.levels[20].power, 349, 'Hammer Crush level 21 should preserve existing sourced PDAM power 349');
+assert.strictEqual(hammerCrushData.levels[36].power, 609, 'Hammer Crush level 37 should preserve sourced PDAM power 609');
+assert.strictEqual(hammerCrushData.levels[36].mp, 83, 'Hammer Crush level 37 MP should use sourced mpConsume 83');
+const hammerCrushTarget = creature({ id: 1000008, hp: 100, maxHp: 100, level: 20 });
+const hammerCrush = skill({ selfId: 260, name: 'Hammer Crush', spell: false, power: 609, level: 37, buff: 9000, distance: 40 });
+const hammerCrushOutcome = SkillEffects.execute(session(), caster, hammerCrushTarget, hammerCrush, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 99
+    }
+});
+assert.strictEqual(hammerCrush.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Hammer Crush should resolve as sourced PDAM plus stun');
+assert.strictEqual(hammerCrush.fetchTargetKind(), 'enemy', 'Hammer Crush should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(hammerCrush.fetchSsBoost(), 1, 'Hammer Crush should preserve sourced physical shot boost semantics');
+assert.strictEqual(hammerCrush.fetchSemantic().baseLandRate, 50, 'Hammer Crush should use sourced effectPower 50 as stun land rate');
+assert.strictEqual(hammerCrush.fetchSemantic().levelDepend, 1, 'Hammer Crush should preserve sourced lvlDepend 1');
+assert.deepStrictEqual(hammerCrush.fetchSemantic().requires, { weaponsAllowed: 16392 }, 'Hammer Crush should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(hammerCrushOutcome.damage, 99, 'Hammer Crush should keep its physical damage component');
+assert.strictEqual(hammerCrushOutcome.effect.key, 'stun', 'Hammer Crush should apply its structured stun effect');
+assert.strictEqual(EffectRestrictions.canMove(hammerCrushTarget), false, 'Hammer Crush stun should block movement');
+EffectStore.remove(hammerCrushTarget, 'stun');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
