@@ -1251,6 +1251,20 @@ assert.deepStrictEqual(whirlwind.fetchSemantic().requires, { weaponsAllowed: 64 
 assert.strictEqual(whirlwindOutcome.damage, 242, 'Whirlwind should keep its physical damage component');
 assert.strictEqual(whirlwindOutcome.effect, null, 'Whirlwind should remain a pure damage skill without a debuff');
 
+const sweeperData = activeSkills.find((entry) => entry.selfId === 42);
+assert(sweeperData, 'Sweeper should be present in active skills data');
+assert.strictEqual(sweeperData.template.distance, 20, 'Sweeper should preserve sourced castRange 20');
+assert.strictEqual(sweeperData.time.hitTime, 500, 'Sweeper should preserve sourced hitTime 500');
+assert.strictEqual(sweeperData.time.reuse, 500, 'Sweeper should preserve sourced reuseDelay 500');
+assert.strictEqual(sweeperData.levels.length, 1, 'Sweeper should preserve sourced single base level');
+assert.strictEqual(sweeperData.levels[0].mp, 3, 'Sweeper level 1 MP should use sourced mpConsume 3');
+const sweeper = skill({ selfId: 42, name: 'Sweeper', spell: false, power: 1, level: 1, distance: 20 });
+assert.strictEqual(sweeper.fetchSkillType(), C4SkillRules.SWEEP, 'Sweeper should preserve sourced SWEEP semantics');
+assert.strictEqual(sweeper.fetchTargetKind(), 'corpse_mob', 'Sweeper should preserve sourced TARGET_CORPSE_MOB semantics');
+assert.strictEqual(sweeper.fetchSsBoost(), 0, 'Sweeper should not consume offensive shot boost semantics');
+assert.strictEqual(sweeper.fetchSemantic().castRange, 20, 'Sweeper should preserve sourced castRange metadata');
+assert.strictEqual(sweeper.fetchSemantic().effectRange, 400, 'Sweeper should preserve sourced effectRange metadata');
+
 const hateAuraData = activeSkills.find((entry) => entry.selfId === 18);
 assert(hateAuraData, 'Hate Aura should be present in active skills data');
 assert.strictEqual(hateAuraData.template.distance, -1, 'Hate Aura should preserve sourced TARGET_AURA self-centered range');

@@ -21,6 +21,7 @@ const AGGRO_REDUCE_CHAR = 'aggroReduceChar';
 const CANCEL = 'cancel';
 const CHARGE = 'charge';
 const UNLOCK = 'unlock';
+const SWEEP = 'sweep';
 
 const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
@@ -49,6 +50,7 @@ const RULES = {
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     35: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
     36: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 64 } },
+    42: { skillType: SWEEP, trait: 'spoil', target: 'corpse_mob', ssBoost: 0, castRange: 20, effectRange: 400 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
     67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     92: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { itemKind: 'shield' } },
@@ -527,6 +529,7 @@ module.exports = {
     CANCEL,
     CHARGE,
     UNLOCK,
+    SWEEP,
     resolve,
     normalizeKey
 };
