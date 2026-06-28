@@ -826,7 +826,10 @@ const shieldStunOutcome = SkillEffects.execute(session(), caster, shieldStunTarg
 assert.strictEqual(shieldStun.fetchSkillType(), C4SkillRules.EFFECT, 'Shield Stun should resolve as sourced STUN effect semantics');
 assert.strictEqual(shieldStun.fetchTargetKind(), 'enemy', 'Shield Stun should preserve sourced TARGET_ONE offensive semantics');
 assert.strictEqual(shieldStun.fetchSemantic().baseLandRate, 80, 'Shield Stun should use sourced power 80 as land rate');
-assert.deepStrictEqual(shieldStun.fetchSemantic().requires, { itemKind: 'shield' }, 'Shield Stun should preserve sourced shield-use requirement');
+assert.strictEqual(shieldStun.fetchSemantic().levelDepend, 2, 'Shield Stun should preserve sourced lvlDepend metadata');
+assert.deepStrictEqual(shieldStun.fetchSemantic().requires, { weaponsAllowed: 1048576, itemKind: 'shield' }, 'Shield Stun should preserve sourced shield-use requirement');
+assert.strictEqual(shieldStun.fetchSemantic().castRange, 40, 'Shield Stun should preserve sourced castRange metadata');
+assert.strictEqual(shieldStun.fetchSemantic().effectRange, 400, 'Shield Stun should preserve sourced effectRange metadata');
 assert.strictEqual(shieldStunOutcome.damage, 0, 'Shield Stun should not be routed as physical damage');
 assert.strictEqual(shieldStunOutcome.effect.key, 'stun', 'Shield Stun should apply a structured stun debuff');
 assert.strictEqual(EffectStore.hasDebuff(shieldStunTarget, 'stun'), true, 'Shield Stun debuff should be visible through EffectStore');
