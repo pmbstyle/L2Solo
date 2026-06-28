@@ -80,6 +80,7 @@ const RULES = {
     276: { skillType: EFFECT, trait: 'buff', effect: 'dance_of_concentration', effectType: 'buff', target: 'party', baseLandRate: 100, stats: { castSpdMul: 1.3, cancelAdd: -40 } },
     277: { skillType: EFFECT, trait: 'buff', effect: 'dance_of_light', effectType: 'buff', target: 'party', baseLandRate: 100, stats: { pAtkUndeadMul: 1.3 } },
     278: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    281: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 1024 } },
     283: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     299: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     301: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

@@ -895,6 +895,36 @@ assert.strictEqual(hammerCrushOutcome.effect.key, 'stun', 'Hammer Crush should a
 assert.strictEqual(EffectRestrictions.canMove(hammerCrushTarget), false, 'Hammer Crush stun should block movement');
 EffectStore.remove(hammerCrushTarget, 'stun');
 
+const soulBreakerData = activeSkills.find((entry) => entry.selfId === 281);
+assert(soulBreakerData, 'Soul Breaker should be present in active skills data');
+assert.strictEqual(soulBreakerData.template.distance, 40, 'Soul Breaker should preserve sourced castRange 40');
+assert.strictEqual(soulBreakerData.time.hitTime, 1360, 'Soul Breaker should preserve the sourced initial hitTime 1360');
+assert.strictEqual(soulBreakerData.time.buff, 9000, 'Soul Breaker should preserve sourced 9 second stun duration');
+assert.strictEqual(soulBreakerData.levels.length, 37, 'Soul Breaker should preserve sourced 37 base levels');
+assert.strictEqual(soulBreakerData.levels[20].power, 407, 'Soul Breaker level 21 should preserve existing sourced PDAM power 407');
+assert.strictEqual(soulBreakerData.levels[36].power, 711, 'Soul Breaker level 37 should preserve sourced PDAM power 711');
+assert.strictEqual(soulBreakerData.levels[36].mp, 83, 'Soul Breaker level 37 MP should use sourced mpConsume 83');
+const soulBreakerTarget = creature({ id: 1000009, hp: 100, maxHp: 100, level: 20 });
+const soulBreaker = skill({ selfId: 281, name: 'Soul Breaker', spell: false, power: 711, level: 37, buff: 9000, distance: 40 });
+const soulBreakerOutcome = SkillEffects.execute(session(), caster, soulBreakerTarget, soulBreaker, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 111
+    }
+});
+assert.strictEqual(soulBreaker.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Soul Breaker should resolve as sourced PDAM plus stun');
+assert.strictEqual(soulBreaker.fetchTargetKind(), 'enemy', 'Soul Breaker should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(soulBreaker.fetchSsBoost(), 1, 'Soul Breaker should preserve sourced physical shot boost semantics');
+assert.strictEqual(soulBreaker.fetchSemantic().baseLandRate, 50, 'Soul Breaker should use sourced effectPower 50 as stun land rate');
+assert.strictEqual(soulBreaker.fetchSemantic().levelDepend, 1, 'Soul Breaker should preserve sourced lvlDepend 1');
+assert.deepStrictEqual(soulBreaker.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Soul Breaker should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(soulBreakerOutcome.damage, 111, 'Soul Breaker should keep its physical damage component');
+assert.strictEqual(soulBreakerOutcome.effect.key, 'stun', 'Soul Breaker should apply its structured stun effect');
+assert.strictEqual(EffectRestrictions.canMove(soulBreakerTarget), false, 'Soul Breaker stun should block movement');
+EffectStore.remove(soulBreakerTarget, 'stun');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
