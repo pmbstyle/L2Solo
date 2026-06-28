@@ -38,6 +38,7 @@ const RULES = {
     17: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
     18: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', sourceTarget: 'aura', radius: 200, ssBoost: 0 },
     19: { skillType: DAMAGE, trait: 'bow', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 32 } },
+    24: { skillType: DAMAGE, trait: 'bow', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 32 } },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },

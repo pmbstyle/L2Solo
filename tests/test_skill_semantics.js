@@ -1245,6 +1245,35 @@ assert.deepStrictEqual(doubleShot.fetchSemantic().requires, { weaponsAllowed: 32
 assert.strictEqual(doubleShotOutcome.damage, 333, 'Double Shot should keep its physical damage component');
 assert.strictEqual(doubleShotOutcome.effect, null, 'Double Shot should remain a pure damage skill without a debuff');
 
+const burstShotData = activeSkills.find((entry) => entry.selfId === 24);
+assert(burstShotData, 'Burst Shot should be present in active skills data');
+assert.strictEqual(burstShotData.template.distance, 500, 'Burst Shot should preserve sourced castRange 500');
+assert.strictEqual(burstShotData.time.hitTime, 3200, 'Burst Shot should preserve sourced hitTime 3200');
+assert.strictEqual(burstShotData.time.reuse, 25000, 'Burst Shot should preserve sourced reuseDelay 25000');
+assert.strictEqual(burstShotData.levels.length, 31, 'Burst Shot should preserve sourced 31 base levels');
+assert.strictEqual(burstShotData.levels[14].power, 697, 'Burst Shot level 15 should preserve existing sourced PDAM power 697');
+assert.strictEqual(burstShotData.levels[30].power, 1218, 'Burst Shot level 31 should preserve sourced PDAM power 1218');
+assert.strictEqual(burstShotData.levels[30].mp, 249, 'Burst Shot level 31 MP should use sourced mpConsume 249');
+const burstShotTarget = creature({ id: 1000027, hp: 100, maxHp: 100, level: 20 });
+const burstShot = skill({ selfId: 24, name: 'Burst Shot', spell: false, power: 1218, level: 31, distance: 500 });
+const burstShotOutcome = SkillEffects.execute(session(), caster, burstShotTarget, burstShot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 144
+    }
+});
+assert.strictEqual(burstShot.fetchSkillType(), C4SkillRules.DAMAGE, 'Burst Shot should resolve as sourced PDAM');
+assert.strictEqual(burstShot.fetchTargetKind(), 'enemy', 'Burst Shot should remain executable against selected enemies');
+assert.strictEqual(burstShot.fetchSsBoost(), 1, 'Burst Shot should preserve sourced physical shot boost semantics');
+assert.strictEqual(burstShot.fetchSemantic().sourceTarget, 'area', 'Burst Shot should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(burstShot.fetchSemantic().radius, 150, 'Burst Shot should preserve sourced skillRadius 150');
+assert.strictEqual(burstShot.fetchSemantic().overHit, true, 'Burst Shot should preserve sourced overHit metadata');
+assert.deepStrictEqual(burstShot.fetchSemantic().requires, { weaponsAllowed: 32 }, 'Burst Shot should preserve sourced bow weapon requirement');
+assert.strictEqual(burstShotOutcome.damage, 144, 'Burst Shot should keep its physical damage component');
+assert.strictEqual(burstShotOutcome.effect, null, 'Burst Shot should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
