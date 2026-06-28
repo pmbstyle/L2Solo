@@ -1167,6 +1167,33 @@ assert.deepStrictEqual(mortalBlow.fetchSemantic().requires, { weaponsAllowed: 16
 assert.strictEqual(mortalBlowOutcome.damage, 201, 'Mortal Blow should keep its blow damage component on a successful blow roll');
 assert.strictEqual(mortalBlowOutcome.missed, false, 'Mortal Blow should not miss when the sourced blow roll succeeds');
 
+const forceBusterData = activeSkills.find((entry) => entry.selfId === 17);
+assert(forceBusterData, 'Force Buster should be present in active skills data');
+assert.strictEqual(forceBusterData.template.distance, 40, 'Force Buster should preserve sourced castRange 40');
+assert.strictEqual(forceBusterData.time.hitTime, 783, 'Force Buster should preserve sourced hitTime 783');
+assert.strictEqual(forceBusterData.time.reuse, 10000, 'Force Buster should preserve sourced reuseDelay 10000');
+assert.strictEqual(forceBusterData.levels.length, 34, 'Force Buster should preserve sourced 34 base levels');
+assert.strictEqual(forceBusterData.levels[17].power, 305, 'Force Buster level 18 should preserve existing sourced CHARGEDAM power 305');
+assert.strictEqual(forceBusterData.levels[33].power, 533, 'Force Buster level 34 should preserve sourced CHARGEDAM power 533');
+assert.strictEqual(forceBusterData.levels[33].mp, 116, 'Force Buster level 34 MP should use sourced mpConsume 116');
+const forceBusterTarget = creature({ id: 1000024, hp: 100, maxHp: 100, level: 20 });
+const forceBuster = skill({ selfId: 17, name: 'Force Buster', spell: false, power: 533, level: 34, distance: 40 });
+const forceBusterOutcome = SkillEffects.execute(session(), caster, forceBusterTarget, forceBuster, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 212
+    }
+});
+assert.strictEqual(forceBuster.fetchSkillType(), C4SkillRules.DAMAGE, 'Force Buster should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(forceBuster.fetchTargetKind(), 'enemy', 'Force Buster should remain executable against selected enemies');
+assert.strictEqual(forceBuster.fetchSemantic().sourceTarget, 'front_area', 'Force Buster should preserve sourced TARGET_FRONT_AREA semantics');
+assert.strictEqual(forceBuster.fetchSemantic().radius, 200, 'Force Buster should preserve sourced skillRadius 200');
+assert.deepStrictEqual(forceBuster.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 }, 'Force Buster should preserve sourced fist and charge requirements');
+assert.strictEqual(forceBusterOutcome.damage, 212, 'Force Buster should keep its physical damage component');
+assert.strictEqual(forceBusterOutcome.effect, null, 'Force Buster should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
