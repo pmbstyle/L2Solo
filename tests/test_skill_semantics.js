@@ -432,6 +432,42 @@ assert.strictEqual(veilOutcome.damage, 0, 'Veil should not be routed as damage')
 assert.strictEqual(veilOutcome.effect, null, 'Veil should not apply a structured debuff');
 assert.strictEqual(veilOutcome.aggroRemoved, true, 'Veil should mark successful sourced AGGREMOVE');
 
+const holyAuraData = activeSkills.find((entry) => entry.selfId === 107);
+assert(holyAuraData, 'Holy Aura should be present in active skills data');
+assert.strictEqual(holyAuraData.template.distance, -1, 'Holy Aura should preserve sourced self-centered TARGET_AURA_UNDEAD range');
+assert.strictEqual(holyAuraData.time.hitTime, 2000, 'Holy Aura should preserve sourced hitTime 2000');
+assert.strictEqual(holyAuraData.time.reuse, 40000, 'Holy Aura should preserve sourced reuseDelay 40000');
+assert.strictEqual(holyAuraData.time.buff, 30000, 'Holy Aura should preserve sourced 30 second root duration');
+assert.strictEqual(holyAuraData.levels.length, 9, 'Holy Aura should preserve sourced 9 base levels');
+assert.strictEqual(holyAuraData.levels[0].power, 40, 'Holy Aura level 1 should preserve sourced ROOT power 40');
+assert.strictEqual(holyAuraData.levels[8].mp, 102, 'Holy Aura level 9 should preserve sourced mpConsume 102');
+const holyAura = skill({ selfId: 107, name: 'Holy Aura', spell: false, power: 40, level: 9, distance: -1, buff: 30000 });
+const livingHolyAuraTarget = creature({ id: 1000107, hp: 100, maxHp: 100, level: 20 });
+const livingHolyAuraOutcome = SkillEffects.execute(session(), caster, livingHolyAuraTarget, holyAura, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(holyAura.fetchSkillType(), C4SkillRules.EFFECT, 'Holy Aura should resolve as sourced ROOT effect');
+assert.strictEqual(holyAura.fetchTargetKind(), 'enemy', 'Holy Aura should preserve handled enemy target semantics');
+assert.strictEqual(holyAura.fetchSemantic().sourceTarget, 'aura', 'Holy Aura should preserve sourced TARGET_AURA_UNDEAD aura semantics');
+assert.strictEqual(holyAura.fetchSemantic().radius, 200, 'Holy Aura should preserve sourced skillRadius 200');
+assert.strictEqual(holyAura.fetchSemantic().baseLandRate, 40, 'Holy Aura should use sourced power 40 as land rate');
+assert.strictEqual(holyAura.fetchSemantic().levelDepend, 2, 'Holy Aura should preserve sourced lvlDepend metadata');
+assert.strictEqual(holyAura.fetchSemantic().undeadOnly, true, 'Holy Aura should preserve sourced TARGET_AURA_UNDEAD restriction');
+assert.strictEqual(livingHolyAuraOutcome.effect, null, 'Holy Aura should not affect living targets');
+assert.strictEqual(livingHolyAuraOutcome.effectResisted, true, 'Holy Aura should reject living targets through TARGET_AURA_UNDEAD');
+const undeadHolyAuraTarget = creature({ id: 1000108, hp: 100, maxHp: 100, level: 20 });
+undeadHolyAuraTarget.fetchUndead = () => true;
+const undeadHolyAuraOutcome = SkillEffects.execute(session(), caster, undeadHolyAuraTarget, holyAura, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(undeadHolyAuraOutcome.effect.key, 'root', 'Holy Aura should apply root to undead targets');
+assert.strictEqual(EffectRestrictions.canMove(undeadHolyAuraTarget), false, 'Holy Aura root should block movement through runtime restrictions');
+EffectStore.remove(undeadHolyAuraTarget, 'root');
+
 const auraStatsTarget = statActor();
 SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
     selfId: 77,
