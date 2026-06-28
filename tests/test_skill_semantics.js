@@ -1194,6 +1194,34 @@ assert.deepStrictEqual(forceBuster.fetchSemantic().requires, { weaponsAllowed: 1
 assert.strictEqual(forceBusterOutcome.damage, 212, 'Force Buster should keep its physical damage component');
 assert.strictEqual(forceBusterOutcome.effect, null, 'Force Buster should remain a pure damage skill without a debuff');
 
+const forceStormData = activeSkills.find((entry) => entry.selfId === 35);
+assert(forceStormData, 'Force Storm should be present in active skills data');
+assert.strictEqual(forceStormData.template.distance, 500, 'Force Storm should preserve sourced castRange 500');
+assert.strictEqual(forceStormData.time.hitTime, 2000, 'Force Storm should preserve sourced hitTime 2000');
+assert.strictEqual(forceStormData.time.reuse, 20000, 'Force Storm should preserve sourced reuseDelay 20000');
+assert.strictEqual(forceStormData.levels.length, 28, 'Force Storm should preserve sourced 28 base levels');
+assert.strictEqual(forceStormData.levels[11].power, 305, 'Force Storm level 12 should preserve existing sourced CHARGEDAM power 305');
+assert.strictEqual(forceStormData.levels[27].power, 533, 'Force Storm level 28 should preserve sourced CHARGEDAM power 533');
+assert.strictEqual(forceStormData.levels[27].mp, 116, 'Force Storm level 28 MP should use sourced mpConsume 116');
+const forceStormTarget = creature({ id: 1000032, hp: 100, maxHp: 100, level: 20 });
+const forceStorm = skill({ selfId: 35, name: 'Force Storm', spell: false, power: 533, level: 28, distance: 500 });
+const forceStormOutcome = SkillEffects.execute(session(), caster, forceStormTarget, forceStorm, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 232
+    }
+});
+assert.strictEqual(forceStorm.fetchSkillType(), C4SkillRules.DAMAGE, 'Force Storm should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(forceStorm.fetchTargetKind(), 'enemy', 'Force Storm should remain executable against selected enemies');
+assert.strictEqual(forceStorm.fetchSsBoost(), 1, 'Force Storm should preserve sourced physical shot boost semantics');
+assert.strictEqual(forceStorm.fetchSemantic().sourceTarget, 'area', 'Force Storm should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(forceStorm.fetchSemantic().radius, 150, 'Force Storm should preserve sourced skillRadius 150');
+assert.deepStrictEqual(forceStorm.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 }, 'Force Storm should preserve sourced fist and charge requirements');
+assert.strictEqual(forceStormOutcome.damage, 232, 'Force Storm should keep its physical damage component');
+assert.strictEqual(forceStormOutcome.effect, null, 'Force Storm should remain a pure damage skill without a debuff');
+
 const hateAuraData = activeSkills.find((entry) => entry.selfId === 18);
 assert(hateAuraData, 'Hate Aura should be present in active skills data');
 assert.strictEqual(hateAuraData.template.distance, -1, 'Hate Aura should preserve sourced TARGET_AURA self-centered range');
