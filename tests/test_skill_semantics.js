@@ -2061,6 +2061,44 @@ assert.strictEqual(EffectStats.multiplier(firstFireSurrenderTarget, 'fireVuln'),
     );
 });
 
+const holyStrikeData = activeSkills.find((entry) => entry.selfId === 49);
+assert(holyStrikeData, 'Holy Strike should be present in active skills data');
+assert.strictEqual(holyStrikeData.template.distance, 400, 'Holy Strike should preserve sourced castRange 400');
+assert.strictEqual(holyStrikeData.time.hitTime, 1900, 'Holy Strike should preserve sourced hitTime 1900');
+assert.strictEqual(holyStrikeData.time.reuse, 4000, 'Holy Strike should preserve sourced reuseDelay 4000');
+assert.strictEqual(holyStrikeData.levels.length, 26, 'Holy Strike should preserve sourced 26 base levels');
+assert.strictEqual(holyStrikeData.levels[0].power, 47, 'Holy Strike level 1 should preserve sourced MDAM power 47');
+assert.strictEqual(holyStrikeData.levels[25].power, 87, 'Holy Strike level 26 should preserve sourced MDAM power 87');
+assert.strictEqual(holyStrikeData.levels[25].mp, 35, 'Holy Strike level 26 MP should use sourced initial + consume total 35');
+const holyStrike = skill({ selfId: 49, name: 'Holy Strike', spell: true, power: 87, level: 26, distance: 400 });
+const livingHolyStrikeTarget = creature({ id: 2000049, mDef: 50 });
+const livingHolyStrikeOutcome = SkillEffects.execute(session(), caster, livingHolyStrikeTarget, holyStrike, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 999, clearLoadedShot() {} }
+});
+assert.strictEqual(holyStrike.fetchSkillType(), C4SkillRules.DAMAGE, 'Holy Strike should resolve as sourced MDAM');
+assert.strictEqual(holyStrike.fetchTargetKind(), 'enemy', 'Holy Strike should resolve as an enemy undead-only nuke');
+assert.strictEqual(holyStrike.fetchSemantic().trait, 'holy', 'Holy Strike should preserve sourced holy element semantics');
+assert.strictEqual(holyStrike.fetchSemantic().undeadOnly, true, 'Holy Strike should preserve sourced TARGET_UNDEAD semantics');
+assert.strictEqual(holyStrike.fetchSemantic().castRange, 400, 'Holy Strike should preserve sourced castRange metadata');
+assert.strictEqual(holyStrike.fetchSemantic().effectRange, 900, 'Holy Strike should preserve sourced effectRange metadata');
+assert.strictEqual(holyStrike.fetchSsBoost(), 1, 'Holy Strike should keep offensive magic shot boost semantics');
+assert.strictEqual(livingHolyStrikeOutcome.damage, 0, 'Holy Strike should not damage living targets');
+assert.strictEqual(livingHolyStrikeOutcome.effectResisted, true, 'Holy Strike should reject living targets through TARGET_UNDEAD');
+const undeadHolyStrikeTarget = creature({ id: 2000149, mDef: 50 });
+undeadHolyStrikeTarget.fetchUndead = () => true;
+const undeadHolyStrikeOutcome = SkillEffects.execute(session(), caster, undeadHolyStrikeTarget, holyStrike, {
+    magicSkill: true,
+    rng: () => 0.99,
+    attack: new Attack()
+});
+assert.strictEqual(
+    undeadHolyStrikeOutcome.damage,
+    Math.round(Formulas.calcMagicDamage(100, 87, 50)),
+    'Holy Strike should damage undead targets with sourced holy MDAM power'
+);
+
 const reposeData = activeSkills.find((entry) => entry.selfId === 1034);
 assert(reposeData, 'Repose should be present in active skills data');
 assert.strictEqual(reposeData.template.distance, -1, 'Repose should preserve sourced self-centered TARGET_UNDEAD radius semantics');
