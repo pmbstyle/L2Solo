@@ -37,7 +37,7 @@
     "selfId": 8,
     "template": { "name": "Focus Sonic", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 900, "reuse": 1000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 2, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 3, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 4, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 5, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 6, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 7, "power": 7, "mp": 10, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 9,
     "template": { "name": "Sonic Buster", "passive": false, "spell": false, "distance": 50 },

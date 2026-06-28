@@ -16,6 +16,7 @@ const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
 const AGGRO_REMOVE = 'aggroRemove';
 const CANCEL = 'cancel';
+const CHARGE = 'charge';
 
 const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
@@ -23,6 +24,7 @@ const RULES = {
     5: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 } },
     6: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
     7: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 205, ssBoost: 1, requires: { weaponsAllowed: 524, charges: 1, condition: 128, conditionValue: 1 } },
+    8: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxChargesByLevel: [1, 2, 3, 4, 5, 6, 7], aggroPoints: 200, requires: { weaponsAllowed: 524 } },
     10: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
@@ -363,6 +365,8 @@ function resolve(skill = {}) {
         lethal: rule.lethal || inferred.lethal || null,
         condition: rule.condition || inferred.condition || null,
         requires: rule.requires || inferred.requires || null,
+        maxCharges: resolveByLevel(rule.maxChargesByLevel, skill.level) ?? rule.maxCharges ?? null,
+        aggroPoints: rule.aggroPoints ?? inferred.aggroPoints ?? 0,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
@@ -497,6 +501,7 @@ module.exports = {
     SUMMON,
     AGGRO_REMOVE,
     CANCEL,
+    CHARGE,
     resolve,
     normalizeKey
 };
