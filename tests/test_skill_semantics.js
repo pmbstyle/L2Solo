@@ -922,6 +922,32 @@ assert.deepStrictEqual(tripleSlash.fetchSemantic().requires, { weaponsAllowed: 5
 assert.strictEqual(tripleSlashOutcome.damage, 145, 'Triple Slash should keep its physical damage component');
 assert.strictEqual(tripleSlashOutcome.effect, null, 'Triple Slash should remain a pure damage skill without a debuff');
 
+const doubleSonicSlashData = activeSkills.find((entry) => entry.selfId === 5);
+assert(doubleSonicSlashData, 'Double Sonic Slash should be present in active skills data');
+assert.strictEqual(doubleSonicSlashData.template.distance, 40, 'Double Sonic Slash should preserve sourced castRange 40');
+assert.strictEqual(doubleSonicSlashData.time.hitTime, 1733, 'Double Sonic Slash should preserve sourced hitTime 1733');
+assert.strictEqual(doubleSonicSlashData.time.reuse, 17000, 'Double Sonic Slash should preserve sourced reuseDelay 17000');
+assert.strictEqual(doubleSonicSlashData.levels.length, 31, 'Double Sonic Slash should preserve sourced 31 base levels');
+assert.strictEqual(doubleSonicSlashData.levels[14].power, 1830, 'Double Sonic Slash level 15 should preserve existing sourced CHARGEDAM power 1830');
+assert.strictEqual(doubleSonicSlashData.levels[30].power, 3196, 'Double Sonic Slash level 31 should preserve sourced CHARGEDAM power 3196');
+assert.strictEqual(doubleSonicSlashData.levels[30].mp, 116, 'Double Sonic Slash level 31 MP should use sourced mpConsume 116');
+const doubleSonicSlashTarget = creature({ id: 1000014, hp: 100, maxHp: 100, level: 20 });
+const doubleSonicSlash = skill({ selfId: 5, name: 'Double Sonic Slash', spell: false, power: 3196, level: 31, distance: 40 });
+const doubleSonicSlashOutcome = SkillEffects.execute(session(), caster, doubleSonicSlashTarget, doubleSonicSlash, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 156
+    }
+});
+assert.strictEqual(doubleSonicSlash.fetchSkillType(), C4SkillRules.DAMAGE, 'Double Sonic Slash should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(doubleSonicSlash.fetchTargetKind(), 'enemy', 'Double Sonic Slash should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(doubleSonicSlash.fetchSsBoost(), 1, 'Double Sonic Slash should preserve sourced physical shot boost semantics');
+assert.deepStrictEqual(doubleSonicSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 }, 'Double Sonic Slash should preserve sourced dual sword and charge requirements');
+assert.strictEqual(doubleSonicSlashOutcome.damage, 156, 'Double Sonic Slash should keep its physical damage component');
+assert.strictEqual(doubleSonicSlashOutcome.effect, null, 'Double Sonic Slash should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
