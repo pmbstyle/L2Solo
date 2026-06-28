@@ -386,6 +386,8 @@ const RULES = {
     4053: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_p_atk', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74], stats: { pAtkMul: 0.77 } },
     4054: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_p_def', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74], stats: { pDefMul: 0.77 } },
     4055: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_atk_spd', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74], stats: { pAtkSpdMul: 0.77 } },
+    4063: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 90, levelDepend: 1, magicLevel: 50, castRange: 50, effectRange: 200 },
+    4064: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRate: 30, magicLevel: 50, castRange: 800, effectRange: 1300 },
     4097: { skillType: HOT, trait: 'buff', effect: 'npc_chant_of_life', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 5, intervalMs: 3000, healByLevel: [7, 12, 18, 27, 37, 46, 55, 23, 32, 42, 51, 58] } },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

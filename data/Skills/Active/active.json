@@ -1847,13 +1847,13 @@
 },{
     "selfId": 4063,
     "template": { "name": "Paralysis", "passive": false, "spell": false, "distance": 50 },
-    "time": { "hitTime": 3000, "reuse": 0, "buff": 120000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 3500, "reuse": 0, "buff": 120000 },
+    "levels": [{ "level": 1, "power": 916, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4064,
-    "template": { "name": "Paralysis", "passive": false, "spell": true, "distance": 800 },
-    "time": { "hitTime": 5000, "reuse": 0, "buff": 120000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "template": { "name": "Paralysis", "passive": false, "spell": false, "distance": 800 },
+    "time": { "hitTime": 4000, "reuse": 0, "buff": 120000 },
+    "levels": [{ "level": 1, "power": 30, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4070,
     "template": { "name": "Drop Attack Speed", "passive": false, "spell": false, "distance": -1 },

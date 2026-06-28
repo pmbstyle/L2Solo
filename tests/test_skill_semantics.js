@@ -5045,6 +5045,58 @@ assert.strictEqual(npcPoisonOutcome.effect.dot.damage, 48, 'NPC Poison level 6 s
     assert.strictEqual(EffectStats.multiplier(target, stat), 0.77, `${name} should apply sourced ${stat} 0.77 multiplier`);
 });
 
+const npcMeleeParalysisData = activeSkills.find((entry) => entry.selfId === 4063);
+assert(npcMeleeParalysisData, 'NPC melee Paralysis should be present in active skills data');
+assert.strictEqual(npcMeleeParalysisData.template.spell, false, 'NPC melee Paralysis should preserve sourced non-magic PDAM semantics');
+assert.strictEqual(npcMeleeParalysisData.template.distance, 50, 'NPC melee Paralysis should preserve sourced castRange 50');
+assert.strictEqual(npcMeleeParalysisData.time.hitTime, 3500, 'NPC melee Paralysis should preserve sourced hitTime 3500');
+assert.strictEqual(npcMeleeParalysisData.levels[0].power, 916, 'NPC melee Paralysis should preserve sourced PDAM power 916');
+const npcMeleeParalysis = skill({ selfId: 4063, name: 'Paralysis', spell: false, power: 916, level: 1, buff: 120000, distance: 50 });
+const npcMeleeParalysisTarget = statActor();
+const npcMeleeParalysisOutcome = SkillEffects.execute(session(), caster, npcMeleeParalysisTarget, npcMeleeParalysis, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 123, clearLoadedShot() {} }
+});
+assert.strictEqual(npcMeleeParalysis.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'NPC melee Paralysis should resolve as sourced PDAM plus paralyze');
+assert.strictEqual(npcMeleeParalysis.fetchTargetKind(), 'enemy', 'NPC melee Paralysis should preserve sourced TARGET_ONE semantics');
+assert.strictEqual(npcMeleeParalysis.fetchSsBoost(), 1, 'NPC melee Paralysis should preserve physical shot boost semantics');
+assert.strictEqual(npcMeleeParalysis.fetchSemantic().baseLandRate, 90, 'NPC melee Paralysis should use sourced effectPower 90 as paralyze land rate');
+assert.strictEqual(npcMeleeParalysis.fetchSemantic().levelDepend, 1, 'NPC melee Paralysis should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcMeleeParalysis.fetchSemantic().magicLevel, 50, 'NPC melee Paralysis should preserve sourced magicLvl 50');
+assert.strictEqual(npcMeleeParalysis.fetchSemantic().castRange, 50, 'NPC melee Paralysis should preserve sourced castRange metadata');
+assert.strictEqual(npcMeleeParalysis.fetchSemantic().effectRange, 200, 'NPC melee Paralysis should preserve sourced effectRange metadata');
+assert.strictEqual(npcMeleeParalysisOutcome.damage, 123, 'NPC melee Paralysis should keep the sourced PDAM damage component');
+assert.strictEqual(npcMeleeParalysisOutcome.effect.key, 'paralyze', 'NPC melee Paralysis should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canMove(npcMeleeParalysisTarget), false, 'NPC melee Paralysis should block movement');
+EffectStore.remove(npcMeleeParalysisTarget, 'paralyze');
+
+const npcAreaParalysisData = activeSkills.find((entry) => entry.selfId === 4064);
+assert(npcAreaParalysisData, 'NPC area Paralysis should be present in active skills data');
+assert.strictEqual(npcAreaParalysisData.template.spell, false, 'NPC area Paralysis should preserve sourced isMagic=false');
+assert.strictEqual(npcAreaParalysisData.template.distance, 800, 'NPC area Paralysis should preserve sourced castRange 800');
+assert.strictEqual(npcAreaParalysisData.time.hitTime, 4000, 'NPC area Paralysis should preserve sourced hitTime 4000');
+assert.strictEqual(npcAreaParalysisData.levels[0].power, 30, 'NPC area Paralysis should preserve sourced power 30');
+const npcAreaParalysis = skill({ selfId: 4064, name: 'Paralysis', spell: false, power: 30, level: 1, buff: 120000, distance: 800 });
+const npcAreaParalysisTarget = statActor();
+const npcAreaParalysisOutcome = SkillEffects.execute(session(), caster, npcAreaParalysisTarget, npcAreaParalysis, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcAreaParalysis.fetchSkillType(), C4SkillRules.EFFECT, 'NPC area Paralysis should resolve as sourced PARALYZE effect semantics');
+assert.strictEqual(npcAreaParalysis.fetchTargetKind(), 'enemy', 'NPC area Paralysis should remain executable against selected enemies');
+assert.strictEqual(npcAreaParalysis.fetchSsBoost(), 0, 'NPC area Paralysis should not use physical shot boost semantics');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().sourceTarget, 'area', 'NPC area Paralysis should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().radius, 200, 'NPC area Paralysis should preserve sourced skillRadius 200');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().baseLandRate, 30, 'NPC area Paralysis should use sourced power 30 as land rate');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().magicLevel, 50, 'NPC area Paralysis should preserve sourced magicLvl 50');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().castRange, 800, 'NPC area Paralysis should preserve sourced castRange metadata');
+assert.strictEqual(npcAreaParalysis.fetchSemantic().effectRange, 1300, 'NPC area Paralysis should preserve sourced effectRange metadata');
+assert.strictEqual(npcAreaParalysisOutcome.effect.key, 'paralyze', 'NPC area Paralysis should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canCast(npcAreaParalysisTarget), false, 'NPC area Paralysis should block casting');
+EffectStore.remove(npcAreaParalysisTarget, 'paralyze');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
