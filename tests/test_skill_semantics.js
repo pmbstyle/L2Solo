@@ -1680,6 +1680,42 @@ assert.strictEqual(fatalStrike.fetchSemantic().effectRange, 400, 'Fatal Strike s
 assert.strictEqual(fatalStrikeOutcome.damage, 304, 'Fatal Strike should keep its physical damage component');
 assert.strictEqual(fatalStrikeOutcome.effect, null, 'Fatal Strike should remain a pure damage skill without a debuff');
 
+const stingData = activeSkills.find((entry) => entry.selfId === 223);
+assert(stingData, 'Sting should be present in active skills data');
+assert.strictEqual(stingData.template.distance, 40, 'Sting should preserve sourced castRange 40');
+assert.strictEqual(stingData.time.hitTime, 1080, 'Sting should preserve sourced hitTime 1080');
+assert.strictEqual(stingData.time.reuse, 11000, 'Sting should preserve sourced reuseDelay 11000');
+assert.strictEqual(stingData.time.buff, 21000, 'Sting should preserve sourced 7x3s bleed duration');
+assert.strictEqual(stingData.levels.length, 49, 'Sting should preserve sourced 49 base levels');
+assert.strictEqual(stingData.levels[0].power, 41, 'Sting level 1 should preserve sourced PDAM power 41');
+assert.strictEqual(stingData.levels[48].power, 609, 'Sting level 49 should preserve sourced PDAM power 609');
+assert.strictEqual(stingData.levels[48].mp, 83, 'Sting level 49 MP should use sourced mpConsume 83');
+const stingTarget = creature({ id: 1000223, hp: 100, maxHp: 100, level: 20 });
+const sting = skill({ selfId: 223, name: 'Sting', spell: false, power: 609, level: 49, distance: 40, buff: 21000 });
+const stingOutcome = SkillEffects.execute(session(), caster, stingTarget, sting, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 61
+    }
+});
+assert.strictEqual(sting.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Sting should resolve as sourced PDAM plus bleed');
+assert.strictEqual(sting.fetchTargetKind(), 'enemy', 'Sting should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(sting.fetchSsBoost(), 1, 'Sting should preserve sourced physical shot boost semantics');
+assert.strictEqual(sting.fetchSemantic().trait, 'bleed', 'Sting should preserve sourced bleed effect trait');
+assert.strictEqual(sting.fetchSemantic().baseLandRate, 50, 'Sting should use sourced effectPower 50 as bleed land rate');
+assert.strictEqual(sting.fetchSemantic().levelDepend, 1, 'Sting should preserve sourced lvlDepend metadata');
+assert.strictEqual(sting.fetchSemantic().overHit, true, 'Sting should preserve sourced overHit metadata');
+assert.deepStrictEqual(sting.fetchSemantic().requires, { weaponsAllowed: 532 }, 'Sting should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(sting.fetchSemantic().castRange, 40, 'Sting should preserve sourced castRange metadata');
+assert.strictEqual(sting.fetchSemantic().effectRange, 400, 'Sting should preserve sourced effectRange metadata');
+assert.strictEqual(stingOutcome.damage, 61, 'Sting should keep its physical damage component');
+assert.strictEqual(stingOutcome.effect.key, 'bleed', 'Sting should apply the sourced bleed effect');
+assert.strictEqual(stingOutcome.effect.dot.count, 7, 'Sting should use the sourced 7 bleed ticks');
+assert.strictEqual(stingOutcome.effect.dot.intervalMs, 3000, 'Sting should tick every sourced 3 seconds');
+assert.strictEqual(stingOutcome.effect.dot.damage, 38, 'Sting level 49 should use sourced bleedpower 38');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');

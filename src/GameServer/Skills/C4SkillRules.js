@@ -117,6 +117,7 @@ const RULES = {
     176: { skillType: EFFECT, trait: 'buff', effect: 'frenzy', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [2.0, 2.5, 3.0] }, condition: { actorHpPercentAtMost: 30 } },
     181: { skillType: HEAL_STATIC, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [1685], condition: { actorHpPercentAtMost: 10 } },
     190: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 18444 }, castRange: 40, effectRange: 400 },
+    223: { skillType: DAMAGE_EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 1, overHit: true, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 532 }, castRange: 40, effectRange: 400, dot: { count: 7, intervalMs: 3000, damageByLevel: [13, 13, 13, 13, 13, 13, 17, 17, 17, 17, 17, 17, 17, 17, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 27, 27, 27, 27, 27, 27, 27, 27, 27, 33, 33, 33, 33, 33, 33, 33, 33, 38, 38, 38, 38, 38, 38, 38, 38] } },
     230: { skillType: EFFECT, trait: 'buff', effect: 'sprint', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     262: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
     260: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 16392 } },
