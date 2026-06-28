@@ -4337,6 +4337,37 @@ assert.strictEqual(blazingSkinOutcome.effect.key, 'blazing_skin', 'Blazing Skin 
 assert.strictEqual(EffectStats.add(blazingSkinTarget, 'reflectDam'), 20, 'Blazing Skin level 3 should use sourced reflectDam +20');
 EffectStore.remove(blazingSkinTarget, 'blazing_skin');
 
+const decayData = activeSkills.find((entry) => entry.selfId === 1233);
+assert(decayData, 'Decay should be present in active skills data');
+assert.strictEqual(decayData.template.distance, 600, 'Decay should preserve sourced castRange 600');
+assert.strictEqual(decayData.time.hitTime, 4000, 'Decay should preserve sourced hitTime 4000');
+assert.strictEqual(decayData.time.reuse, 6000, 'Decay should preserve sourced reuseDelay 6000');
+assert.strictEqual(decayData.time.buff, 15000, 'Decay should preserve sourced DOT duration');
+assert.strictEqual(decayData.levels.length, 4, 'Decay should preserve sourced 4 base levels');
+assert.strictEqual(decayData.levels[0].power, 70, 'Decay level 1 should preserve sourced land rate power 70');
+assert.strictEqual(decayData.levels[0].mp, 52, 'Decay level 1 MP should use sourced mpConsume 52');
+assert.strictEqual(decayData.levels[3].power, 70, 'Decay level 4 should preserve sourced land rate power 70');
+assert.strictEqual(decayData.levels[3].mp, 82, 'Decay level 4 MP should use sourced mpConsume 82');
+const decayTarget = statActor();
+const decay = skill({ selfId: 1233, name: 'Decay', spell: true, power: 70, level: 4, distance: 600, buff: 15000 });
+const decayOutcome = SkillEffects.execute(session(), caster, decayTarget, decay, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(decay.fetchSkillType(), C4SkillRules.EFFECT, 'Decay should resolve as sourced DOT effect');
+assert.strictEqual(decay.fetchTargetKind(), 'enemy', 'Decay should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(decay.fetchSemantic().trait, 'earth', 'Decay should preserve sourced earth element');
+assert.strictEqual(decay.fetchSemantic().baseLandRate, 70, 'Decay should use sourced power 70 as land rate');
+assert.strictEqual(decay.fetchSemantic().levelDepend, 1, 'Decay should preserve sourced lvlDepend metadata');
+assert.strictEqual(decay.fetchSemantic().castRange, 600, 'Decay should preserve sourced castRange metadata');
+assert.strictEqual(decay.fetchSemantic().effectRange, 1100, 'Decay should preserve sourced effectRange metadata');
+assert.strictEqual(decayOutcome.effect.key, 'decay', 'Decay should apply a structured earth DOT');
+assert.strictEqual(decayOutcome.effect.dot.damage, 128, 'Decay level 4 should use sourced DamOverTime value 128');
+assert.strictEqual(decayOutcome.effect.dot.count, 15, 'Decay should use sourced 15 damage ticks');
+assert.strictEqual(decayOutcome.effect.dot.intervalMs, 1000, 'Decay should tick every sourced second');
+EffectStore.remove(decayTarget, 'decay');
+
 const freezingShackleData = activeSkills.find((entry) => entry.selfId === 1183);
 assert(freezingShackleData, 'Freezing Shackle should be present in active skills data');
 assert.strictEqual(freezingShackleData.levels.length, 4, 'Freezing Shackle should preserve sourced 4 base levels');

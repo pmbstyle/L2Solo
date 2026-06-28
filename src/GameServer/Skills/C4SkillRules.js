@@ -304,6 +304,7 @@ const RULES = {
     1230: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, baseLandRate: 92, castRange: 900, effectRange: 1400 },
     1231: { skillType: DAMAGE, trait: 'magic', target: 'enemy', ssBoost: 1, baseLandRate: 92, castRange: 150, effectRange: 650, selfEffect: { effect: 'aura_flare', effectType: 'debuff', trait: 'debuff', stats: { pvpMagicalDmg: 0.5 } } },
     1232: { skillType: EFFECT, trait: 'buff', effect: 'blazing_skin', effectType: 'buff', target: 'friendly', baseLandRate: 100, castRange: 400, effectRange: 900, aggroPointsByLevel: [379, 457, 532], statsByLevel: { reflectDam: [10, 15, 20] } },
+    1233: { skillType: EFFECT, trait: 'earth', effect: 'decay', effectType: 'debuff', target: 'enemy', baseLandRate: 70, levelDepend: 1, castRange: 600, effectRange: 1100, dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 94, 111, 128] } },
     1234: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.4, baseLandRate: 92 },
     1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

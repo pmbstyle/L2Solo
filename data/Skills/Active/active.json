@@ -1280,7 +1280,7 @@
     "selfId": 1233,
     "template": { "name": "Decay", "passive": false, "spell": true, "distance": 600 },
     "time": { "hitTime": 4000, "reuse": 6000, "buff": 15000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 65, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 77, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 70, "mp": 52, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 70, "mp": 61, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 70, "mp": 71, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 70, "mp": 82, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1234,
     "template": { "name": "Vampiric Claw", "passive": false, "spell": true, "distance": 900 },
