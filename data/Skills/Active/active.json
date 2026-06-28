@@ -411,7 +411,7 @@
     "levels": [{ "level": 1, "power": 1, "mp": 29, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 120,
-    "template": { "name": "Stunning Fist", "passive": false, "spell": false, "distance": 50 },
+    "template": { "name": "Stunning Fist", "passive": false, "spell": false, "distance": 40 },
     "time": { "hitTime": 1604, "reuse": 13000, "buff": 9000 },
     "levels": [{ "level": 1, "power": 38, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 41, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 44, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 51, "mp": 23, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 55, "mp": 24, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 60, "mp": 25, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 7, "power": 69, "mp": 27, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 8, "power": 74, "mp": 29, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 9, "power": 80, "mp": 30, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 10, "power": 92, "mp": 31, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 11, "power": 98, "mp": 31, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 12, "power": 105, "mp": 33, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 13, "power": 120, "mp": 35, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 14, "power": 128, "mp": 36, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 15, "power": 136, "mp": 37, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{

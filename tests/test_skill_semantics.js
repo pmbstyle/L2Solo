@@ -806,6 +806,35 @@ assert.strictEqual(EffectRestrictions.canAttack(shieldStunTarget), false, 'Shiel
 assert.strictEqual(EffectRestrictions.canCast(shieldStunTarget), false, 'Shield Stun should block casting through runtime restrictions');
 EffectStore.remove(shieldStunTarget, 'stun');
 
+const stunningFistData = activeSkills.find((entry) => entry.selfId === 120);
+assert(stunningFistData, 'Stunning Fist should be present in active skills data');
+assert.strictEqual(stunningFistData.template.distance, 40, 'Stunning Fist should preserve sourced castRange 40');
+assert.strictEqual(stunningFistData.time.buff, 9000, 'Stunning Fist should preserve sourced 9 second stun duration');
+assert.strictEqual(stunningFistData.levels.length, 15, 'Stunning Fist should preserve sourced 15 base levels');
+assert.strictEqual(stunningFistData.levels[0].power, 38, 'Stunning Fist level 1 should preserve sourced PDAM power 38');
+assert.strictEqual(stunningFistData.levels[14].power, 136, 'Stunning Fist level 15 should preserve sourced PDAM power 136');
+assert.strictEqual(stunningFistData.levels[14].mp, 37, 'Stunning Fist level 15 MP should use sourced mpConsume 37');
+const stunningFistTarget = creature({ id: 1000006, hp: 100, maxHp: 100, level: 20 });
+const stunningFist = skill({ selfId: 120, name: 'Stunning Fist', spell: false, power: 136, level: 15, buff: 9000, distance: 40 });
+const stunningFistOutcome = SkillEffects.execute(session(), caster, stunningFistTarget, stunningFist, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 77
+    }
+});
+assert.strictEqual(stunningFist.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Stunning Fist should resolve as sourced PDAM plus stun');
+assert.strictEqual(stunningFist.fetchTargetKind(), 'enemy', 'Stunning Fist should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(stunningFist.fetchSsBoost(), 1, 'Stunning Fist should preserve sourced physical shot boost semantics');
+assert.strictEqual(stunningFist.fetchSemantic().baseLandRate, 50, 'Stunning Fist should use sourced effectPower 50 as stun land rate');
+assert.strictEqual(stunningFist.fetchSemantic().levelDepend, 2, 'Stunning Fist should preserve sourced lvlDepend 2');
+assert.deepStrictEqual(stunningFist.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Stunning Fist should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(stunningFistOutcome.damage, 77, 'Stunning Fist should keep its physical damage component');
+assert.strictEqual(stunningFistOutcome.effect.key, 'stun', 'Stunning Fist should apply its structured stun effect');
+assert.strictEqual(EffectRestrictions.canMove(stunningFistTarget), false, 'Stunning Fist stun should block movement');
+EffectStore.remove(stunningFistTarget, 'stun');
+
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
