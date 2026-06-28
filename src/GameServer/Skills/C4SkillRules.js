@@ -73,6 +73,7 @@ const RULES = {
     46: { skillType: DRAIN, trait: 'magic', target: 'corpse_mob', ssBoost: 1, absorbAbsByLevel: [105, 113, 122, 131, 140, 150, 159, 169, 180, 190, 201, 211, 222, 232, 243] },
     48: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 64 } },
     49: { skillType: DAMAGE, trait: 'holy', target: 'enemy', ssBoost: 1, undeadOnly: true, castRange: 400, effectRange: 900 },
+    50: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxChargesByLevel: [1, 2, 3, 4, 5, 6, 7], aggroPoints: 150, requires: { weaponsAllowed: 1024 } },
     72: { skillType: EFFECT, trait: 'buff', effect: 'iron_will', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
     77: { skillType: EFFECT, trait: 'buff', effect: 'attack_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12] } },
     78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.20, 1.25] } },

@@ -1022,6 +1022,26 @@ assert.deepStrictEqual(focusSonic.fetchSemantic().requires, { weaponsAllowed: 52
 assert.strictEqual(focusSonicOutcome.damage, 0, 'Focus Sonic should not be treated as a damage skill without sourced damage semantics');
 assert.strictEqual(focusSonicOutcome.effect, null, 'Focus Sonic should not invent an effect while charge runtime is not implemented');
 
+const focusForceData = activeSkills.find((entry) => entry.selfId === 50);
+assert(focusForceData, 'Focus Force should be present in active skills data');
+assert.strictEqual(focusForceData.template.distance, -1, 'Focus Force should preserve sourced TARGET_SELF range semantics');
+assert.strictEqual(focusForceData.time.hitTime, 900, 'Focus Force should preserve sourced hitTime 900');
+assert.strictEqual(focusForceData.time.reuse, 1000, 'Focus Force should preserve sourced reuseDelay 1000');
+assert.strictEqual(focusForceData.levels.length, 7, 'Focus Force should preserve sourced 7 base levels');
+assert.strictEqual(focusForceData.levels[0].power, 1, 'Focus Force level 1 should preserve sourced maxCharges 1');
+assert.strictEqual(focusForceData.levels[6].power, 7, 'Focus Force level 7 should preserve sourced maxCharges 7');
+assert.strictEqual(focusForceData.levels[6].mp, 7, 'Focus Force level 7 MP should use sourced mpConsume 7');
+const focusForce = skill({ selfId: 50, name: 'Focus Force', spell: false, power: 7, level: 7, distance: -1 });
+const focusForceOutcome = SkillEffects.execute(session(), caster, caster, focusForce, { magicSkill: false });
+assert.strictEqual(focusForce.fetchSkillType(), C4SkillRules.CHARGE, 'Focus Force should preserve sourced CHARGE semantics');
+assert.strictEqual(focusForce.fetchTargetKind(), 'self', 'Focus Force should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(focusForce.fetchSsBoost(), 0, 'Focus Force should not use shot boost semantics');
+assert.strictEqual(focusForce.fetchSemantic().maxCharges, 7, 'Focus Force level 7 should preserve sourced maxCharges 7');
+assert.strictEqual(focusForce.fetchSemantic().aggroPoints, 150, 'Focus Force should preserve sourced aggroPoints 150 metadata');
+assert.deepStrictEqual(focusForce.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Focus Force should preserve sourced fist weapon requirement');
+assert.strictEqual(focusForceOutcome.damage, 0, 'Focus Force should not be treated as a damage skill without sourced damage semantics');
+assert.strictEqual(focusForceOutcome.effect, null, 'Focus Force should not invent an effect while charge runtime is not implemented');
+
 const sonicBusterData = activeSkills.find((entry) => entry.selfId === 9);
 assert(sonicBusterData, 'Sonic Buster should be present in active skills data');
 assert.strictEqual(sonicBusterData.template.distance, 40, 'Sonic Buster should preserve sourced castRange 40');
