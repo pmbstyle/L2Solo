@@ -300,6 +300,7 @@ function applyEffect(session, target, skill, semantic) {
         name: skill.fetchName(),
         type: semantic.effectType || 'buff',
         category: semantic.effectTrait || semantic.trait || semantic.effect,
+        dispellable: semantic.dispellable,
         stats: semantic.stats || {},
         dot: dotFromSkill(skill, semantic),
         manaDot: manaDotFromSkill(skill, semantic),

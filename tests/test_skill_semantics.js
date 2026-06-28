@@ -5217,6 +5217,104 @@ assert.strictEqual(npcSlow.fetchSemantic().effectRange, 1100, 'NPC Reduction in 
 assert.strictEqual(npcSlowOutcome.effect.key, 'reduction_in_movement_speed', 'NPC Reduction in movement speed should apply a structured debuff effect');
 assert.strictEqual(EffectStats.multiplier(npcSlowTarget, 'runSpdMul'), 0.5, 'NPC Reduction in movement speed level 3 should apply sourced runSpd 0.5 multiplier');
 
+[
+    { id: 4077, name: 'NPC Aura Burn', trait: 'magic', levels: 12, lastPower: 104, lastMp: 78, distance: 150, sourceTarget: null, radius: 0, effectRange: 650 },
+    { id: 4078, name: 'NPC Flamestrike', trait: 'fire', levels: 12, lastPower: 65, lastMp: 117, distance: 500, sourceTarget: 'area', radius: 200, effectRange: 900 }
+].forEach(({ id, name, trait, levels, lastPower, lastMp, distance, sourceTarget, radius, effectRange }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} active data should preserve sourced name`);
+    assert.strictEqual(data.template.distance, distance, `${name} should preserve sourced castRange`);
+    assert.strictEqual(data.time.hitTime, id === 4077 ? 1500 : 4000, `${name} should preserve sourced hitTime`);
+    assert.strictEqual(data.time.reuse, 8000, `${name} should preserve sourced reuseDelay`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced 12 levels`);
+    assert.strictEqual(data.levels[levels - 1].power, lastPower, `${name} should preserve sourced final MDAM power`);
+    assert.strictEqual(data.levels[levels - 1].mp, lastMp, `${name} should preserve sourced final mpConsume`);
+    const damageSkill = skill({ selfId: id, name, spell: true, power: lastPower, level: levels, distance });
+    const target = statActor();
+    const outcome = SkillEffects.execute(session(), caster, target, damageSkill, {
+        magicSkill: true,
+        rng: () => 0,
+        attack: { prepareSkillDamage: () => 222, clearLoadedShot() {} }
+    });
+    assert.strictEqual(damageSkill.fetchSkillType(), C4SkillRules.DAMAGE, `${name} should resolve as sourced MDAM damage`);
+    assert.strictEqual(damageSkill.fetchTargetKind(), 'enemy', `${name} should resolve as an enemy damage skill`);
+    assert.strictEqual(damageSkill.fetchSsBoost(), 1, `${name} should preserve magic shot boost semantics`);
+    assert.strictEqual(damageSkill.fetchSemantic().trait, trait, `${name} should preserve sourced damage trait`);
+    assert.strictEqual(damageSkill.fetchSemantic().levelDepend, 1, `${name} should preserve sourced lvlDepend metadata`);
+    assert.strictEqual(damageSkill.fetchSemantic().magicLevel, 95, `${name} level 12 should preserve sourced magicLvl 95`);
+    assert.strictEqual(damageSkill.fetchSemantic().sourceTarget, sourceTarget, `${name} should preserve sourced target geometry`);
+    assert.strictEqual(damageSkill.fetchSemantic().radius, radius, `${name} should preserve sourced radius metadata`);
+    assert.strictEqual(damageSkill.fetchSemantic().castRange, distance, `${name} should preserve sourced castRange metadata`);
+    assert.strictEqual(damageSkill.fetchSemantic().effectRange, effectRange, `${name} should preserve sourced effectRange metadata`);
+    assert.strictEqual(outcome.damage, 222, `${name} should keep the sourced damage execution path`);
+});
+
+const siegeHammerData = activeSkills.find((entry) => entry.selfId === 4079);
+assert(siegeHammerData, 'Siege Hammer should be present in active skills data');
+assert.strictEqual(siegeHammerData.template.name, 'Siege Hammer', 'Siege Hammer active data should preserve sourced name');
+assert.strictEqual(siegeHammerData.time.hitTime, 4800, 'Siege Hammer should preserve sourced hitTime 4800');
+assert.strictEqual(siegeHammerData.time.reuse, 5000, 'Siege Hammer should preserve sourced reuseDelay 5000');
+assert.strictEqual(siegeHammerData.levels[0].power, 266024, 'Siege Hammer should preserve sourced PDAM power 266024');
+assert.strictEqual(siegeHammerData.levels[0].mp, 150, 'Siege Hammer should preserve sourced mpConsume 150');
+const siegeHammer = skill({ selfId: 4079, name: 'Siege Hammer', spell: false, power: 266024, level: 1, distance: 600 });
+const siegeHammerOutcome = SkillEffects.execute(session(), caster, statActor(), siegeHammer, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 444, clearLoadedShot() {} }
+});
+assert.strictEqual(siegeHammer.fetchSkillType(), C4SkillRules.DAMAGE, 'Siege Hammer should resolve as sourced PDAM damage');
+assert.strictEqual(siegeHammer.fetchTargetKind(), 'enemy', 'Siege Hammer should resolve as an enemy damage skill');
+assert.strictEqual(siegeHammer.fetchSemantic().overHit, true, 'Siege Hammer should preserve sourced overHit metadata');
+assert.strictEqual(siegeHammer.fetchSemantic().magicLevel, 49, 'Siege Hammer should preserve sourced magicLvl 49');
+assert.strictEqual(siegeHammer.fetchSemantic().levelDepend, 1, 'Siege Hammer should preserve sourced lvlDepend metadata');
+assert.strictEqual(siegeHammer.fetchSemantic().castRange, 600, 'Siege Hammer should preserve sourced castRange metadata');
+assert.strictEqual(siegeHammer.fetchSemantic().effectRange, 1100, 'Siege Hammer should preserve sourced effectRange metadata');
+assert.strictEqual(siegeHammerOutcome.damage, 444, 'Siege Hammer should keep the sourced damage execution path');
+
+const poisonOfDeathData = activeSkills.find((entry) => entry.selfId === 4082);
+assert(poisonOfDeathData, 'Poison of Death should be present in active skills data');
+assert.strictEqual(poisonOfDeathData.time.buff, 3600000, 'Poison of Death should preserve sourced 3600x1s duration');
+assert.strictEqual(poisonOfDeathData.levels[0].power, 100, 'Poison of Death should preserve sourced power 100');
+const poisonOfDeath = skill({ selfId: 4082, name: 'Poison of Death', spell: true, power: 100, level: 1, buff: 3600000, distance: 600 });
+const poisonOfDeathTarget = statActor();
+const poisonOfDeathOutcome = SkillEffects.execute(session(poisonOfDeathTarget), poisonOfDeathTarget, poisonOfDeathTarget, poisonOfDeath, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(poisonOfDeath.fetchSkillType(), C4SkillRules.EFFECT, 'Poison of Death should resolve as sourced DEBUFF effect semantics');
+assert.strictEqual(poisonOfDeath.fetchTargetKind(), 'self', 'Poison of Death should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(poisonOfDeath.fetchSsBoost(), 0, 'Poison of Death should not use offensive shot boost semantics');
+assert.strictEqual(poisonOfDeath.fetchSemantic().baseLandRate, 100, 'Poison of Death should preserve sourced power 100 as land rate');
+assert.strictEqual(poisonOfDeath.fetchSemantic().castRange, 600, 'Poison of Death should preserve sourced castRange metadata');
+assert.strictEqual(poisonOfDeath.fetchSemantic().effectRange, 1100, 'Poison of Death should preserve sourced effectRange metadata');
+assert.strictEqual(poisonOfDeathOutcome.effect.key, 'poison_of_death', 'Poison of Death should apply a structured poison debuff');
+assert.strictEqual(poisonOfDeathOutcome.effect.dispellable, false, 'Poison of Death should preserve sourced canBeDispeled=false');
+assert.strictEqual(poisonOfDeathOutcome.effect.dot.count, 3600, 'Poison of Death should preserve sourced 3600 damage ticks');
+assert.strictEqual(poisonOfDeathOutcome.effect.dot.intervalMs, 1000, 'Poison of Death should tick every sourced 1 second');
+assert.strictEqual(poisonOfDeathOutcome.effect.dot.damage, 50, 'Poison of Death should use sourced DeathPoison value 50');
+EffectStore.remove(poisonOfDeathTarget, 'poison_of_death');
+
+const dieYouFoolData = activeSkills.find((entry) => entry.selfId === 4083);
+assert(dieYouFoolData, 'Die! You fool! should be present in active skills data');
+assert.strictEqual(dieYouFoolData.template.spell, true, 'Die! You fool! should preserve sourced isMagic=true flag');
+assert.strictEqual(dieYouFoolData.time.hitTime, 1000, 'Die! You fool! should preserve sourced hitTime 1000');
+assert.strictEqual(dieYouFoolData.levels[0].power, 90000, 'Die! You fool! should preserve sourced PDAM power 90000');
+const dieYouFool = skill({ selfId: 4083, name: 'Die! You fool!', spell: true, power: 90000, level: 1, distance: 600 });
+const dieYouFoolOutcome = SkillEffects.execute(session(), caster, statActor(), dieYouFool, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 999, clearLoadedShot() {} }
+});
+assert.strictEqual(dieYouFool.fetchSkillType(), C4SkillRules.DAMAGE, 'Die! You fool! should resolve as sourced PDAM damage');
+assert.strictEqual(dieYouFool.fetchTargetKind(), 'enemy', 'Die! You fool! should resolve as an enemy damage skill');
+assert.strictEqual(dieYouFool.fetchSemantic().trait, 'physical', 'Die! You fool! should preserve sourced PDAM trait despite isMagic=true');
+assert.strictEqual(dieYouFool.fetchSemantic().overHit, true, 'Die! You fool! should preserve sourced overHit metadata');
+assert.strictEqual(dieYouFool.fetchSemantic().castRange, 600, 'Die! You fool! should preserve sourced castRange metadata');
+assert.strictEqual(dieYouFool.fetchSemantic().effectRange, 1100, 'Die! You fool! should preserve sourced effectRange metadata');
+assert.strictEqual(dieYouFoolOutcome.damage, 999, 'Die! You fool! should keep the sourced damage execution path');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
