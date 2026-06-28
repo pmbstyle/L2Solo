@@ -37,6 +37,7 @@ const RULES = {
     16: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, requires: { weaponsAllowed: 16, condition: 16 } },
     17: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
     18: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', sourceTarget: 'aura', radius: 200, ssBoost: 0 },
+    19: { skillType: DAMAGE, trait: 'bow', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 32 } },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
@@ -376,6 +377,7 @@ function resolve(skill = {}) {
         requires: rule.requires || inferred.requires || null,
         maxCharges: resolveByLevel(rule.maxChargesByLevel, skill.level) ?? rule.maxCharges ?? null,
         aggroPoints: rule.aggroPoints ?? inferred.aggroPoints ?? 0,
+        overHit: rule.overHit || inferred.overHit || false,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled

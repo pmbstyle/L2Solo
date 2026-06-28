@@ -1217,6 +1217,34 @@ assert.strictEqual(hateAura.fetchSemantic().radius, 200, 'Hate Aura should prese
 assert.strictEqual(hateAuraOutcome.damage, 0, 'Hate Aura should not be routed as HP damage');
 assert.strictEqual(hateAuraOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Hate Aura should use sourced Lisvus AGGDAMAGE hate formula');
 
+const doubleShotData = activeSkills.find((entry) => entry.selfId === 19);
+assert(doubleShotData, 'Double Shot should be present in active skills data');
+assert.strictEqual(doubleShotData.template.distance, 900, 'Double Shot should preserve sourced castRange 900');
+assert.strictEqual(doubleShotData.time.hitTime, 3000, 'Double Shot should preserve sourced hitTime 3000');
+assert.strictEqual(doubleShotData.time.reuse, 25000, 'Double Shot should preserve sourced reuseDelay 25000');
+assert.strictEqual(doubleShotData.levels.length, 37, 'Double Shot should preserve sourced 37 base levels');
+assert.strictEqual(doubleShotData.levels[20].power, 2788, 'Double Shot level 21 should preserve existing sourced PDAM power 2788');
+assert.strictEqual(doubleShotData.levels[36].power, 4870, 'Double Shot level 37 should preserve sourced PDAM power 4870');
+assert.strictEqual(doubleShotData.levels[36].mp, 166, 'Double Shot level 37 MP should use sourced mpConsume 166');
+const doubleShotTarget = creature({ id: 1000026, hp: 100, maxHp: 100, level: 20 });
+const doubleShot = skill({ selfId: 19, name: 'Double Shot', spell: false, power: 4870, level: 37, distance: 900 });
+const doubleShotOutcome = SkillEffects.execute(session(), caster, doubleShotTarget, doubleShot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 333
+    }
+});
+assert.strictEqual(doubleShot.fetchSkillType(), C4SkillRules.DAMAGE, 'Double Shot should resolve as sourced PDAM');
+assert.strictEqual(doubleShot.fetchTargetKind(), 'enemy', 'Double Shot should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(doubleShot.fetchSsBoost(), 1, 'Double Shot should preserve sourced physical shot boost semantics');
+assert.strictEqual(doubleShot.fetchSemantic().trait, 'bow', 'Double Shot should preserve sourced bow damage semantics');
+assert.strictEqual(doubleShot.fetchSemantic().overHit, true, 'Double Shot should preserve sourced overHit metadata');
+assert.deepStrictEqual(doubleShot.fetchSemantic().requires, { weaponsAllowed: 32 }, 'Double Shot should preserve sourced bow weapon requirement');
+assert.strictEqual(doubleShotOutcome.damage, 333, 'Double Shot should keep its physical damage component');
+assert.strictEqual(doubleShotOutcome.effect, null, 'Double Shot should remain a pure damage skill without a debuff');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
