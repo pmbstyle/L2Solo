@@ -4466,6 +4466,36 @@ assert.strictEqual(freezingSkinOutcome.effect.key, 'freezing_skin', 'Freezing Sk
 assert.strictEqual(EffectStats.add(freezingSkinTarget, 'reflectDam'), 20, 'Freezing Skin level 3 should use sourced reflectDam +20');
 EffectStore.remove(freezingSkinTarget, 'freezing_skin');
 
+const hurricaneData = activeSkills.find((entry) => entry.selfId === 1239);
+assert(hurricaneData, 'Hurricane should be present in active skills data');
+assert.strictEqual(hurricaneData.template.distance, 900, 'Hurricane should preserve sourced castRange 900');
+assert.strictEqual(hurricaneData.time.hitTime, 4000, 'Hurricane should preserve sourced hitTime 4000');
+assert.strictEqual(hurricaneData.time.reuse, 6000, 'Hurricane should preserve sourced reuseDelay 6000');
+assert.strictEqual(hurricaneData.time.buff, 0, 'Hurricane should not use a debuff duration');
+assert.strictEqual(hurricaneData.levels.length, 28, 'Hurricane should preserve sourced 28 base levels');
+assert.strictEqual(hurricaneData.levels[0].power, 49, 'Hurricane level 1 should preserve sourced power 49');
+assert.strictEqual(hurricaneData.levels[0].mp, 27, 'Hurricane level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(hurricaneData.levels[27].power, 108, 'Hurricane level 28 should preserve sourced power 108');
+assert.strictEqual(hurricaneData.levels[27].mp, 55, 'Hurricane level 28 MP should use sourced mpConsume 55');
+const hurricane = skill({ selfId: 1239, name: 'Hurricane', spell: true, power: 108, level: 28, distance: 900 });
+const hurricaneOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001239 }), hurricane, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE, 'Hurricane should route as sourced MDAM damage');
+            return 1239;
+        }
+    }
+});
+assert.strictEqual(hurricane.fetchSkillType(), C4SkillRules.DAMAGE, 'Hurricane should resolve as sourced MDAM damage');
+assert.strictEqual(hurricane.fetchSemantic().trait, 'wind', 'Hurricane should preserve sourced wind element');
+assert.strictEqual(hurricane.fetchTargetKind(), 'enemy', 'Hurricane should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(hurricane.fetchSemantic().baseLandRate, 92, 'Hurricane should use sourced MDAM magic success baseline');
+assert.strictEqual(hurricane.fetchSemantic().castRange, 900, 'Hurricane should preserve sourced castRange metadata');
+assert.strictEqual(hurricane.fetchSemantic().effectRange, 1400, 'Hurricane should preserve sourced effectRange metadata');
+assert.strictEqual(hurricaneOutcome.damage, 1239, 'Hurricane should execute through damage routing');
+
 const decayData = activeSkills.find((entry) => entry.selfId === 1233);
 assert(decayData, 'Decay should be present in active skills data');
 assert.strictEqual(decayData.template.distance, 600, 'Decay should preserve sourced castRange 600');
