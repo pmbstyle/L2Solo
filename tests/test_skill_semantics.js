@@ -1107,6 +1107,40 @@ assert.strictEqual(switchMobOutcome.effect.key, 'confusion', 'Switch should appl
 assert.strictEqual(EffectStore.impairments(switchMobTarget).confused, true, 'Switch confusion should be visible through impairments');
 EffectStore.remove(switchMobTarget, 'confusion');
 
+const charmData = activeSkills.find((entry) => entry.selfId === 15);
+assert(charmData, 'Charm should be present in active skills data');
+assert.strictEqual(charmData.template.distance, 600, 'Charm should preserve sourced castRange 600');
+assert.strictEqual(charmData.time.hitTime, 1500, 'Charm should preserve sourced hitTime 1500');
+assert.strictEqual(charmData.time.reuse, 60000, 'Charm should preserve sourced reuseDelay 60000');
+assert.strictEqual(charmData.levels.length, 52, 'Charm should preserve sourced 52 base levels');
+assert.strictEqual(charmData.levels[2].power, 143, 'Charm level 3 should preserve sourced AGGREDUCE power 143');
+assert.strictEqual(charmData.levels[35].power, 385, 'Charm level 36 should preserve existing sourced AGGREDUCE power 385');
+assert.strictEqual(charmData.levels[51].power, 458, 'Charm level 52 should preserve sourced AGGREDUCE power 458');
+assert.strictEqual(charmData.levels[51].mp, 137, 'Charm level 52 MP should use sourced initial + consume total');
+const charmPlayerTarget = creature({ id: 1000021, hp: 100, maxHp: 100, level: 20 });
+const charm = skill({ selfId: 15, name: 'Charm', spell: true, power: 458, level: 52, distance: 600 });
+const charmPlayerOutcome = SkillEffects.execute(session(), caster, charmPlayerTarget, charm, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(charmPlayerOutcome.aggroReduced, false, 'Charm should not apply AGGREDUCE to non-attackable targets');
+assert.strictEqual(charmPlayerOutcome.effectResisted, true, 'Charm mob-only rejection should report effect resistance');
+const charmMobTarget = creature({ id: 1000022, hp: 100, maxHp: 100, level: 20 });
+charmMobTarget.fetchAttackable = () => true;
+const charmMobOutcome = SkillEffects.execute(session(), caster, charmMobTarget, charm, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(charm.fetchSkillType(), C4SkillRules.AGGRO_REDUCE, 'Charm should preserve sourced AGGREDUCE semantics');
+assert.strictEqual(charm.fetchTargetKind(), 'enemy', 'Charm should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(charm.fetchSemantic().trait, 'derangement', 'Charm should preserve sourced AGGREDUCE derangement semantics');
+assert.strictEqual(charm.fetchSemantic().mobOnly, true, 'Charm should preserve sourced monster-only AGGREDUCE handler semantics');
+assert.strictEqual(charmMobOutcome.damage, 0, 'Charm should not be routed as damage');
+assert.strictEqual(charmMobOutcome.aggroReduced, true, 'Charm should mark a successful sourced AGGREDUCE outcome');
+assert.strictEqual(charmMobOutcome.aggroReduction, 458, 'Charm should preserve sourced AGGREDUCE power as hate reduction amount');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');

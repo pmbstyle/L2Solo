@@ -15,6 +15,7 @@ const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
 const AGGRO_REMOVE = 'aggroRemove';
+const AGGRO_REDUCE = 'aggroReduce';
 const AGGRO_REDUCE_CHAR = 'aggroReduceChar';
 const CANCEL = 'cancel';
 const CHARGE = 'charge';
@@ -31,6 +32,7 @@ const RULES = {
     11: { skillType: AGGRO_REDUCE_CHAR, trait: 'derangement', target: 'enemy', ssBoost: 0, baseLandRate: 50 },
     12: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 80, mobOnly: true },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    15: { skillType: AGGRO_REDUCE, trait: 'derangement', target: 'enemy', ssBoost: 1, mobOnly: true },
     16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -504,6 +506,7 @@ module.exports = {
     MANA_HEAL,
     SUMMON,
     AGGRO_REMOVE,
+    AGGRO_REDUCE,
     AGGRO_REDUCE_CHAR,
     CANCEL,
     CHARGE,

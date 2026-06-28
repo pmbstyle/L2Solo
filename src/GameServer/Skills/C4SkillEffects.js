@@ -22,6 +22,7 @@ function execute(session, actor, target, skill, context = {}) {
         lethal: false,
         mpRestore: 0,
         aggroReduced: false,
+        aggroReduction: 0,
         aggroRemoved: false,
         cancelled: []
     };
@@ -111,6 +112,13 @@ function execute(session, actor, target, skill, context = {}) {
         } else {
             result.aggroRemoved = true;
         }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.AGGRO_REDUCE) {
+        result.aggroReduced = true;
+        result.aggroReduction = Math.max(0, Number(skill.fetchPower?.()) || 0);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
