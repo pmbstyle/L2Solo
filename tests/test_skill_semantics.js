@@ -3886,6 +3886,39 @@ assert.deepStrictEqual(bleed.fetchSemantic().requires, { weaponsAllowed: 16 }, '
 assert.strictEqual(bleedOutcome.effect.dot.count, 4, 'Bleed should use the sourced 4 tick duration');
 assert.strictEqual(bleedOutcome.effect.dot.intervalMs, 5000, 'Bleed should tick every sourced 5 seconds');
 assert.strictEqual(bleedOutcome.effect.dot.damage, 27, 'Bleed should use the sourced damage table instead of local flat power');
+
+const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
+assert(sanctuaryData, 'Sanctuary should be present in active skills data');
+assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
+assert.strictEqual(sanctuaryData.time.reuse, 8000, 'Sanctuary should preserve sourced 8000ms reuse');
+assert.strictEqual(sanctuaryData.time.buff, 60000, 'Sanctuary should preserve sourced 60 second debuff duration');
+assert.strictEqual(sanctuaryData.levels.length, 11, 'Sanctuary should preserve sourced 11 base levels');
+assert.strictEqual(sanctuaryData.levels[0].power, 40, 'Sanctuary should use sourced power 40 as land rate');
+assert.strictEqual(sanctuaryData.levels[10].mp, 102, 'Sanctuary level 11 should preserve sourced mpConsume 102');
+const sanctuary = skill({ selfId: 97, name: 'Sanctuary', spell: false, power: 40, level: 11, buff: 60000, distance: -1 });
+const livingSanctuaryTarget = statActor();
+const livingSanctuaryOutcome = SkillEffects.execute(session(), caster, livingSanctuaryTarget, sanctuary, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(sanctuary.fetchTargetKind(), 'enemy', 'Sanctuary should resolve as an enemy debuff');
+assert.strictEqual(sanctuary.fetchSemantic().sourceTarget, 'aura', 'Sanctuary should preserve sourced TARGET_AURA_UNDEAD aura semantics');
+assert.strictEqual(sanctuary.fetchSemantic().radius, 200, 'Sanctuary should preserve sourced skillRadius 200');
+assert.strictEqual(sanctuary.fetchSemantic().baseLandRate, 40, 'Sanctuary should use sourced power 40 as land rate');
+assert.strictEqual(sanctuary.fetchSemantic().levelDepend, 2, 'Sanctuary should preserve sourced lvlDepend metadata');
+assert.strictEqual(sanctuary.fetchSemantic().undeadOnly, true, 'Sanctuary should preserve sourced TARGET_AURA_UNDEAD restriction');
+assert.strictEqual(livingSanctuaryOutcome.effect, null, 'Sanctuary should not affect living targets');
+assert.strictEqual(livingSanctuaryOutcome.effectResisted, true, 'Sanctuary should reject living targets through TARGET_AURA_UNDEAD');
+const undeadSanctuaryTarget = statActor();
+undeadSanctuaryTarget.fetchUndead = () => true;
+const undeadSanctuaryOutcome = SkillEffects.execute(session(), caster, undeadSanctuaryTarget, sanctuary, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(undeadSanctuaryOutcome.effect.key, 'sanctuary', 'Sanctuary should apply a structured debuff to undead targets');
+assert.strictEqual(EffectStats.multiplier(undeadSanctuaryTarget, 'pAtkMul'), 0.77, 'Sanctuary should use sourced pAtkDown 0.77');
 const cureBleeding = skill({ selfId: 61, name: 'Cure Bleeding', spell: true, power: 7, level: 2 });
 const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cureBleeding, {
     magicSkill: true,
