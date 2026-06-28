@@ -247,8 +247,8 @@
 },{
     "selfId": 76,
     "template": { "name": "Totem Spirit Bear", "passive": false, "spell": false, "distance": -1 },
-    "time": { "hitTime": 1500, "reuse": 600000, "buff": 600000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 13, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 1500, "reuse": 120000, "buff": 120000 },
+    "levels": [{ "level": 1, "power": 1, "mp": 2, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 77,
     "template": { "name": "Attack Aura", "passive": false, "spell": true, "distance": -1 },
