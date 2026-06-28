@@ -48,6 +48,7 @@ const RULES = {
     30: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 }, requires: { weaponsAllowed: 16, condition: 8 } },
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     35: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
+    36: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 64 } },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
     67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     92: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { itemKind: 'shield' } },

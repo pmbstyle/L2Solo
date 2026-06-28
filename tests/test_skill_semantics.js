@@ -1222,6 +1222,35 @@ assert.deepStrictEqual(forceStorm.fetchSemantic().requires, { weaponsAllowed: 10
 assert.strictEqual(forceStormOutcome.damage, 232, 'Force Storm should keep its physical damage component');
 assert.strictEqual(forceStormOutcome.effect, null, 'Force Storm should remain a pure damage skill without a debuff');
 
+const whirlwindData = activeSkills.find((entry) => entry.selfId === 36);
+assert(whirlwindData, 'Whirlwind should be present in active skills data');
+assert.strictEqual(whirlwindData.template.distance, -1, 'Whirlwind should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(whirlwindData.time.hitTime, 1067, 'Whirlwind should preserve sourced hitTime 1067');
+assert.strictEqual(whirlwindData.time.reuse, 17000, 'Whirlwind should preserve sourced reuseDelay 17000');
+assert.strictEqual(whirlwindData.levels.length, 37, 'Whirlwind should preserve sourced 37 base levels');
+assert.strictEqual(whirlwindData.levels[20].power, 1046, 'Whirlwind level 21 should preserve existing sourced PDAM power 1046');
+assert.strictEqual(whirlwindData.levels[36].power, 1827, 'Whirlwind level 37 should preserve sourced PDAM power 1827');
+assert.strictEqual(whirlwindData.levels[36].mp, 83, 'Whirlwind level 37 MP should use sourced mpConsume 83');
+const whirlwindTarget = creature({ id: 1000033, hp: 100, maxHp: 100, level: 20 });
+const whirlwind = skill({ selfId: 36, name: 'Whirlwind', spell: false, power: 1827, level: 37, distance: -1 });
+const whirlwindOutcome = SkillEffects.execute(session(), caster, whirlwindTarget, whirlwind, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 242
+    }
+});
+assert.strictEqual(whirlwind.fetchSkillType(), C4SkillRules.DAMAGE, 'Whirlwind should resolve as sourced PDAM');
+assert.strictEqual(whirlwind.fetchTargetKind(), 'enemy', 'Whirlwind should remain executable against enemies in the sourced aura');
+assert.strictEqual(whirlwind.fetchSsBoost(), 1, 'Whirlwind should preserve sourced physical shot boost semantics');
+assert.strictEqual(whirlwind.fetchSemantic().sourceTarget, 'aura', 'Whirlwind should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(whirlwind.fetchSemantic().radius, 150, 'Whirlwind should preserve sourced skillRadius 150');
+assert.strictEqual(whirlwind.fetchSemantic().overHit, true, 'Whirlwind should preserve sourced overHit metadata');
+assert.deepStrictEqual(whirlwind.fetchSemantic().requires, { weaponsAllowed: 64 }, 'Whirlwind should preserve sourced pole weapon requirement');
+assert.strictEqual(whirlwindOutcome.damage, 242, 'Whirlwind should keep its physical damage component');
+assert.strictEqual(whirlwindOutcome.effect, null, 'Whirlwind should remain a pure damage skill without a debuff');
+
 const hateAuraData = activeSkills.find((entry) => entry.selfId === 18);
 assert(hateAuraData, 'Hate Aura should be present in active skills data');
 assert.strictEqual(hateAuraData.template.distance, -1, 'Hate Aura should preserve sourced TARGET_AURA self-centered range');
