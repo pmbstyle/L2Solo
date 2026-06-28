@@ -121,6 +121,11 @@ assert.strictEqual(healOutcome.damage, 0, 'Heal should not be routed as damage')
     assert.strictEqual(healSkill.fetchTargetKind(), target, `${name} should preserve sourced target semantics`);
     assert.strictEqual(healSkill.fetchSsBoost(), 0, `${name} should not consume offensive shot boost semantics`);
     assert.strictEqual(outcome.heal, Math.min(lastPower, 1900), `${name} should heal by sourced power`);
+    if (id === 69) {
+        assert.strictEqual(healSkill.fetchSemantic().castRange, 600, 'Sacrifice should preserve sourced castRange');
+        assert.strictEqual(healSkill.fetchSemantic().effectRange, 1100, 'Sacrifice should preserve sourced effectRange');
+        assert.strictEqual(healSkill.fetchSemantic().aggroPoints, 780, 'Sacrifice should resolve sourced level 25 aggroPoints');
+    }
 });
 
 const greaterHealData = activeSkills.find((entry) => entry.selfId === 1217);
