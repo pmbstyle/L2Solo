@@ -129,8 +129,9 @@ class Attack {
 
     remoteHit(session, creature, skill) {
         const actor = session.actor;
+        const corpseTarget = skill.fetchTargetKind?.() === 'corpse_mob';
 
-        if (this.checkParticipants(actor, creature)) {
+        if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             return;
         }
 
@@ -155,7 +156,7 @@ class Attack {
         actor.state.setCasts(true);
 
         this.queueTimer(() => {
-            if (this.checkParticipants(actor, creature)) {
+            if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
                 return;
             }
 
@@ -456,13 +457,13 @@ class Attack {
         };
     }
 
-    checkParticipants(src, dst) {
+    checkParticipants(src, dst, { allowDeadTarget = false } = {}) {
         if (!src || !dst || !src.state || !dst.state) {
             this.resetQueuedEvent();
             return true;
         }
 
-        if (src.state.fetchDead() || dst.state.fetchDead()) {
+        if (src.state.fetchDead() || (!allowDeadTarget && dst.state.fetchDead())) {
             this.resetQueuedEvent();
             src.state.setHits (false);
             src.state.setCasts(false);

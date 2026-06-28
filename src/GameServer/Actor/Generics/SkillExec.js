@@ -22,7 +22,10 @@ function skillExec(session, actor, data) {
                 return;
             }
 
-            if (skill.fetchTargetKind() === 'enemy' && (npc.fetchAttackable() || data.ctrl)) {
+            if (skill.fetchTargetKind() === 'corpse_mob' && npc.fetchAttackable?.() && npc.isDead?.()) {
+                actor.attack.remoteHit(session, npc, skill);
+            }
+            else if (skill.fetchTargetKind() === 'enemy' && (npc.fetchAttackable() || data.ctrl)) {
                 actor.attack.remoteHit(session, npc, skill);
             }
         });

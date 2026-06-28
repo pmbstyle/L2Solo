@@ -1,6 +1,7 @@
 const DAMAGE = 'damage';
 const DAMAGE_EFFECT = 'damageEffect';
 const DEATH_LINK = 'deathLink';
+const DRAIN = 'drain';
 const HEAL = 'heal';
 const HEAL_PERCENT = 'healPercent';
 const HEAL_HOT = 'healHot';
@@ -39,8 +40,10 @@ const RULES = {
     45: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     58: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },
     69: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    70: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.2, baseLandRate: 92 },
     61: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     44: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
+    46: { skillType: DRAIN, trait: 'magic', target: 'corpse_mob', ssBoost: 1, absorbAbsByLevel: [105, 113, 122, 131, 140, 150, 159, 169, 180, 190, 201, 211, 222, 232, 243] },
     72: { skillType: EFFECT, trait: 'buff', effect: 'iron_will', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { mDefMul: [1.15, 1.23, 1.3] } },
     77: { skillType: EFFECT, trait: 'buff', effect: 'attack_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12] } },
     78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.20, 1.25] } },
@@ -146,6 +149,7 @@ const RULES = {
     1085: { skillType: EFFECT, trait: 'buff', effect: 'acumen', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { castSpdMul: [1.15, 1.23, 1.3] } },
     1086: { skillType: EFFECT, trait: 'buff', effect: 'haste', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
     1087: { skillType: EFFECT, trait: 'buff', effect: 'agility', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
+    1090: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1096: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_chaos', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { pAccuracyCombatAdd: [-12, -12, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13, -13] } },
     1097: { skillType: EFFECT, trait: 'sleep', effect: 'sleep', effectType: 'debuff', target: 'enemy', baseLandRate: 80 },
     1099: { skillType: EFFECT, trait: 'slow', effect: 'seal_of_slow', effectType: 'debuff', target: 'enemy', baseLandRate: 40, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
@@ -167,7 +171,9 @@ const RULES = {
     1144: { skillType: EFFECT, trait: 'buff', effect: 'servitor_wind_walk', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
     1145: { skillType: EFFECT, trait: 'buff', effect: 'bright_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { mAtkMul: [1.55, 1.65, 1.75] } },
     1146: { skillType: EFFECT, trait: 'buff', effect: 'mighty_servitor', effectType: 'buff', target: 'pet', baseLandRate: 100, statsByLevel: { pAtkMul: [1.08, 1.12, 1.15] } },
+    1147: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.4, baseLandRate: 92 },
     1148: { skillType: DAMAGE, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
+    1151: { skillType: DRAIN, trait: 'dark', target: 'corpse_mob', ssBoost: 1, absorbAbsByLevel: [260, 299, 347, 384, 426, 467, 509, 541, 570, 592, 625, 647, 673, 701, 729, 758] },
     1154: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
     1159: { skillType: DEATH_LINK, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
@@ -210,6 +216,8 @@ const RULES = {
     1226: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1227: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1228: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    1234: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.4, baseLandRate: 92 },
+    1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1277: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1278: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -330,6 +338,8 @@ function resolve(skill = {}) {
         blowChance: rule.blowChance ?? inferred.blowChance,
         healPower: resolveByLevel(rule.healPowerByLevel, skill.level),
         manaPower: resolveByLevel(rule.manaPowerByLevel, skill.level),
+        absorbPart: resolveByLevel(rule.absorbPartByLevel, skill.level) ?? rule.absorbPart ?? inferred.absorbPart ?? 0,
+        absorbAbs: resolveByLevel(rule.absorbAbsByLevel, skill.level) ?? rule.absorbAbs ?? inferred.absorbAbs ?? 0,
         dot: rule.dot || inferred.dot || null,
         manaDot: rule.manaDot || inferred.manaDot || null,
         hot: resolveHot(rule, inferred, skill.level),
@@ -455,6 +465,7 @@ module.exports = {
     DAMAGE,
     DAMAGE_EFFECT,
     DEATH_LINK,
+    DRAIN,
     HEAL,
     HEAL_PERCENT,
     HEAL_HOT,

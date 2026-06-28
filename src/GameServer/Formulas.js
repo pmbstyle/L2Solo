@@ -248,6 +248,11 @@ const Formulas = {
         return (Number(power) || 0) * Math.pow(1.7165 - hpRatio, 2) * 0.577;
     },
 
+    calcDrainHeal({ damage = 0, targetHp = 0, absorbPart = 0, absorbAbs = 0 } = {}) {
+        const drainableDamage = Math.min(Math.max(0, Number(damage) || 0), Math.max(0, Number(targetHp) || 0));
+        return Math.max(0, (Number(absorbAbs) || 0) + ((Number(absorbPart) || 0) * drainableDamage));
+    },
+
     // L2J-style Heal handler baseline: power with shot multipliers; stat bonuses need real effect stats first.
     calcHealAmount(power, { spiritshot = false, blessedSpiritshot = false } = {}) {
         let amount = Number(power) || 0;

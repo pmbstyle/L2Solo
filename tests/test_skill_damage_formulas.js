@@ -97,6 +97,16 @@ assert.strictEqual(
     Math.round(Formulas.calcMagicDamage(100, lowHpDeathLinkPower, 50)),
     'Curse Death Link should scale magic damage with sourced caster-HP power modifier'
 );
+assert.strictEqual(
+    Formulas.calcDrainHeal({ damage: 300, targetHp: 100, absorbPart: 0.8 }),
+    80,
+    'Drain should absorb from actual HP damage instead of overkill damage'
+);
+assert.strictEqual(
+    Formulas.calcDrainHeal({ damage: 0, targetHp: 0, absorbAbs: 243 }),
+    243,
+    'Corpse drain should restore sourced absolute HP without damage'
+);
 
 const poisonVulnerableTarget = target();
 EffectStore.apply(poisonVulnerableTarget, {

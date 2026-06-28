@@ -48,8 +48,11 @@ function creature(overrides = {}) {
             fetchTotalWeaponPAtkRnd: () => 0
         },
         state: {
-            fetchDead: () => false
-        }
+            fetchDead: () => overrides.dead ?? false,
+            setHits() {},
+            setCasts() {}
+        },
+        isDead() { return this.state.fetchDead(); }
     };
 }
 
@@ -2331,6 +2334,74 @@ assert.strictEqual(deathLink.fetchSkillType(), C4SkillRules.DEATH_LINK, 'Curse D
 assert.strictEqual(deathLink.fetchSemantic().trait, 'dark', 'Curse Death Link should preserve sourced dark element');
 assert.strictEqual(deathLink.fetchTargetKind(), 'enemy', 'Curse Death Link should resolve as an enemy nuke');
 assert.strictEqual(deathLinkOutcome.damage, 319, 'Curse Death Link should execute through damage routing');
+
+[
+    { id: 46, name: 'Life Scavenge', levels: 15, target: 'corpse_mob', trait: 'magic', lastPower: 243, lastMp: 69, absorbAbs: 243 },
+    { id: 70, name: 'Drain Health', levels: 53, target: 'enemy', trait: 'dark', lastPower: 108, lastMp: 52, absorbPart: 0.2 },
+    { id: 1090, name: 'Life Drain', levels: 6, target: 'enemy', trait: 'dark', lastPower: 44, lastMp: 60, absorbPart: 0.8 },
+    { id: 1147, name: 'Vampiric Touch', levels: 6, target: 'enemy', trait: 'dark', lastPower: 32, lastMp: 34, absorbPart: 0.4 },
+    { id: 1151, name: 'Corpse Life Drain', levels: 16, target: 'corpse_mob', trait: 'dark', lastPower: 758, lastMp: 35, absorbAbs: 758 },
+    { id: 1234, name: 'Vampiric Claw', levels: 28, target: 'enemy', trait: 'dark', lastPower: 108, lastMp: 103, absorbPart: 0.4 },
+    { id: 1245, name: 'Steal Essence', levels: 14, target: 'enemy', trait: 'magic', lastPower: 108, lastMp: 137, absorbPart: 0.8 }
+].forEach(({ id, name, levels, target, trait, lastPower, lastMp, absorbPart = 0, absorbAbs = 0 }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} should preserve sourced name`);
+    assert.strictEqual(data.levels.length, levels, `${name} should preserve sourced base level count`);
+    assert.strictEqual(data.levels[levels - 1].power, lastPower, `${name} should preserve sourced final power`);
+    assert.strictEqual(data.levels[levels - 1].mp, lastMp, `${name} should preserve sourced final MP cost`);
+    const drainSkill = skill({ selfId: id, name, spell: true, power: lastPower, level: levels, distance: target === 'corpse_mob' ? 400 : 900 });
+    assert.strictEqual(drainSkill.fetchSkillType(), C4SkillRules.DRAIN, `${name} should resolve as sourced DRAIN`);
+    assert.strictEqual(drainSkill.fetchTargetKind(), target, `${name} should preserve sourced target semantics`);
+    assert.strictEqual(drainSkill.fetchSemantic().trait, trait, `${name} should preserve sourced trait semantics`);
+    assert.strictEqual(drainSkill.fetchSemantic().absorbPart, absorbPart, `${name} should preserve sourced absorbPart`);
+    assert.strictEqual(drainSkill.fetchSemantic().absorbAbs, absorbAbs, `${name} should preserve sourced absorbAbs`);
+});
+
+const drainCaster = creature({ hp: 100, maxHp: 500, mAtk: 100 });
+const drainTarget = creature({ id: 2000320, hp: 1000, maxHp: 1000, mDef: 100 });
+const vampiricTouch = skill({ selfId: 1147, name: 'Vampiric Touch', spell: true, power: 32, level: 6, distance: 600 });
+const drainOutcome = SkillEffects.execute(session(), drainCaster, drainTarget, vampiricTouch, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: new Attack()
+});
+const expectedDrainDamage = Math.round(Formulas.calcMagicDamage(100, 32, 100));
+const expectedDrainHeal = Formulas.calcDrainHeal({ damage: expectedDrainDamage, targetHp: 1000, absorbPart: 0.4 });
+assert.strictEqual(drainOutcome.damage, expectedDrainDamage, 'Vampiric Touch should deal sourced magic drain damage');
+assert.strictEqual(drainOutcome.heal, expectedDrainHeal, 'Vampiric Touch should restore sourced absorbPart of dealt HP damage');
+assert.strictEqual(drainCaster.fetchHp(), 100 + expectedDrainHeal, 'Vampiric Touch should restore caster HP immediately');
+
+const corpseCaster = creature({ hp: 100, maxHp: 500 });
+corpseCaster.spiritshotLoaded = true;
+let corpseDrainClearedShot = false;
+const corpseLifeDrain = skill({ selfId: 1151, name: 'Corpse Life Drain', spell: true, power: 758, level: 16, distance: 400 });
+const corpseDrainOutcome = SkillEffects.execute(session(), corpseCaster, creature({ id: 2000321, hp: 0, maxHp: 1000, dead: true }), corpseLifeDrain, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot(actor, magic) {
+            corpseDrainClearedShot = magic;
+            actor.spiritshotLoaded = false;
+        }
+    }
+});
+assert.strictEqual(corpseDrainOutcome.damage, 0, 'Corpse Life Drain should not damage corpse targets');
+assert.strictEqual(corpseDrainOutcome.heal, 400, 'Corpse Life Drain should restore sourced absolute HP clamped at max HP');
+assert.strictEqual(corpseCaster.fetchHp(), 500, 'Corpse Life Drain should clamp caster HP at max HP');
+assert.strictEqual(corpseDrainClearedShot, true, 'Corpse Life Drain should clear magic shot state after cast');
+
+const corpseTargetGuard = new Attack();
+assert.strictEqual(
+    corpseTargetGuard.checkParticipants(creature({ hp: 100, maxHp: 100 }), creature({ dead: true })),
+    true,
+    'normal skills should still reject dead targets'
+);
+assert.strictEqual(
+    corpseTargetGuard.checkParticipants(creature({ hp: 100, maxHp: 100 }), creature({ dead: true }), { allowDeadTarget: true }),
+    false,
+    'corpse-target skills should be allowed to run against dead targets'
+);
 
 const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
 assert(chillFlameData, 'Chill Flame should be present in active skills data');

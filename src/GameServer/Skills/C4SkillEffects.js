@@ -124,6 +124,13 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.DRAIN) {
+        const drain = applyDrain(session, actor, target, skill, semantic, magicSkill, context.attack, rng);
+        result.damage = drain.damage;
+        result.heal = drain.heal;
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
     }
@@ -193,6 +200,29 @@ function applyManaHeal(session, actor, target, skill, semantic, magicSkill, atta
     refreshVitals(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextMp - currentMp);
+}
+
+function applyDrain(session, actor, target, skill, semantic, magicSkill, attack, rng) {
+    let damage = 0;
+
+    if (semantic.target === 'corpse_mob') {
+        clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    } else {
+        damage = attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
+    }
+
+    const amount = Formulas.calcDrainHeal({
+        damage,
+        targetHp: target.fetchHp?.(),
+        absorbPart: semantic.absorbPart,
+        absorbAbs: semantic.absorbAbs
+    });
+    const maxHp = Number(actor.fetchMaxHp?.()) || 0;
+    const currentHp = Number(actor.fetchHp?.()) || 0;
+    const nextHp = maxHp > 0 ? Math.min(maxHp, currentHp + amount) : currentHp + amount;
+    actor.setHp(nextHp);
+    refreshVitals(session, actor, actor);
+    return { damage, heal: Math.max(0, nextHp - currentHp) };
 }
 
 function applyEffect(session, target, skill, semantic) {
