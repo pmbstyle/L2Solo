@@ -3241,6 +3241,31 @@ assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison_of_death'), fal
 assert.strictEqual(EffectStore.hasDebuff(medicineTarget, 'poison'), true, 'Healing Medicine should not remove unrelated poison effects');
 EffectStore.remove(medicineTarget, 'poison');
 
+const poisonBladeDanceData = activeSkills.find((entry) => entry.selfId === 84);
+assert(poisonBladeDanceData, 'Poison Blade Dance should be present in active skills data');
+assert.strictEqual(poisonBladeDanceData.levels.length, 3, 'Poison Blade Dance should preserve sourced 3 base levels');
+assert.strictEqual(poisonBladeDanceData.levels[2].power, 8, 'Poison Blade Dance level 3 should preserve sourced poison power 8');
+assert.strictEqual(poisonBladeDanceData.levels[2].mp, 133, 'Poison Blade Dance level 3 MP should use sourced mpConsume 133');
+assert.strictEqual(poisonBladeDanceData.time.hitTime, 1833, 'Poison Blade Dance should preserve sourced hitTime 1833');
+assert.strictEqual(poisonBladeDanceData.time.reuse, 60000, 'Poison Blade Dance should preserve sourced reuseDelay 60000');
+const poisonBladeDance = skill({ selfId: 84, name: 'Poison Blade Dance', spell: false, power: 8, level: 3, distance: -1, buff: 30000 });
+const poisonBladeTarget = statActor();
+const poisonBladeOutcome = SkillEffects.execute(session(), caster, poisonBladeTarget, poisonBladeDance, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(poisonBladeDance.fetchTargetKind(), 'enemy', 'Poison Blade Dance should resolve as an enemy aura poison');
+assert.strictEqual(poisonBladeDance.fetchSemantic().sourceTarget, 'aura', 'Poison Blade Dance should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(poisonBladeDance.fetchSemantic().radius, 150, 'Poison Blade Dance should preserve sourced skillRadius 150');
+assert.deepStrictEqual(poisonBladeDance.fetchSemantic().requires, { weaponsAllowed: 512 }, 'Poison Blade Dance should preserve sourced dual weapon requirement');
+assert.strictEqual(poisonBladeDance.fetchSemantic().baseLandRate, 8, 'Poison Blade Dance should use sourced level 3 power as land rate');
+assert.strictEqual(poisonBladeOutcome.effect.key, 'poison', 'Poison Blade Dance should apply the structured poison effect');
+assert.strictEqual(poisonBladeOutcome.effect.dot.damage, 48, 'Poison Blade Dance level 3 should use sourced DamOverTime value 48');
+assert.strictEqual(poisonBladeOutcome.effect.dot.count, 10, 'Poison Blade Dance should use sourced 10 damage ticks');
+assert.strictEqual(poisonBladeOutcome.effect.dot.intervalMs, 3000, 'Poison Blade Dance should tick every sourced 3 seconds');
+EffectStore.remove(poisonBladeTarget, 'poison');
+
 const poisonCloudData = activeSkills.find((entry) => entry.selfId === 1167);
 assert(poisonCloudData, 'Poisonous Cloud should be present in active skills data');
 assert.strictEqual(poisonCloudData.levels.length, 6, 'Poisonous Cloud should preserve sourced 6 base levels');

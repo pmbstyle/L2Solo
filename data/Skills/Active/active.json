@@ -283,7 +283,7 @@
     "selfId": 84,
     "template": { "name": "Poison Blade Dance", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 1833, "reuse": 60000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 105, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 6, "mp": 100, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 7, "mp": 110, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 8, "mp": 133, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 86,
     "template": { "name": "Reflect Damage", "passive": false, "spell": true, "distance": -1 },
