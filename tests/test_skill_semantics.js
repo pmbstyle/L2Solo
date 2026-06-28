@@ -1764,6 +1764,22 @@ assert.strictEqual(sealOfRuler.fetchSemantic().staticReuse, true, 'Seal of Ruler
 assert.strictEqual(sealOfRuler.fetchSemantic().mpInitialConsume, 50, 'Seal of Ruler should preserve sourced mpInitialConsume metadata');
 assert.deepStrictEqual(sealOfRuler.fetchSemantic().condition, { clanLeader: true, siegeAttacker: true }, 'Seal of Ruler should preserve sourced siege conditions');
 
+const buildHeadquartersData = activeSkills.find((entry) => entry.selfId === 247);
+assert(buildHeadquartersData, 'Build Headquarters should be present in active skills data');
+assert.strictEqual(buildHeadquartersData.template.distance, -1, 'Build Headquarters should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(buildHeadquartersData.time.hitTime, 4000, 'Build Headquarters should preserve sourced hitTime 4000');
+assert.strictEqual(buildHeadquartersData.time.reuse, 1800000, 'Build Headquarters should preserve sourced reuseDelay 1800000');
+assert.strictEqual(buildHeadquartersData.levels[0].mp, 30, 'Build Headquarters should preserve sourced mpInitialConsume 30 in current active format');
+assert.strictEqual(buildHeadquartersData.levels[0].itemId, 2131, 'Build Headquarters should preserve sourced itemConsumeId 2131');
+assert.strictEqual(buildHeadquartersData.levels[0].itemCount, 300, 'Build Headquarters should preserve sourced itemConsumeCount 300');
+const buildHeadquarters = skill({ selfId: 247, name: 'Build Headquarters', spell: false, power: 1, level: 1, distance: -1 });
+assert.strictEqual(buildHeadquarters.fetchSkillType(), C4SkillRules.SIEGE_FLAG, 'Build Headquarters should resolve as sourced SIEGEFLAG semantics');
+assert.strictEqual(buildHeadquarters.fetchTargetKind(), 'self', 'Build Headquarters should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(buildHeadquarters.fetchSsBoost(), 0, 'Build Headquarters should not use shot boost');
+assert.strictEqual(buildHeadquarters.fetchSemantic().itemConsumeId, 2131, 'Build Headquarters should preserve sourced itemConsumeId metadata');
+assert.strictEqual(buildHeadquarters.fetchSemantic().itemConsumeCount, 300, 'Build Headquarters should preserve sourced itemConsumeCount metadata');
+assert.strictEqual(buildHeadquarters.fetchSemantic().npcId, 12024, 'Build Headquarters should preserve sourced headquarters npcId metadata');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');

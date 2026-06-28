@@ -492,8 +492,8 @@
 },{
     "selfId": 247,
     "template": { "name": "Build Headquarters", "passive": false, "spell": false, "distance": -1 },
-    "time": { "hitTime": 30000, "reuse": 35000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 30, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "time": { "hitTime": 4000, "reuse": 1800000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 30, "hp": 0, "itemId": 2131, "itemCount": 300 }]
 },{
     "selfId": 254,
     "template": { "name": "Spoil", "passive": false, "spell": false, "distance": 50 },
