@@ -265,6 +265,41 @@ assert.strictEqual(
     'Revival should be allowed at the sourced 10% HP threshold'
 );
 
+const confusionData = activeSkills.find((entry) => entry.selfId === 2);
+assert(confusionData, 'Confusion should be present in active skills data');
+assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');
+assert.strictEqual(confusionData.time.hitTime, 1500, 'Confusion should preserve sourced hitTime 1500');
+assert.strictEqual(confusionData.time.reuse, 20000, 'Confusion should preserve sourced reuseDelay 20000');
+assert.strictEqual(confusionData.time.buff, 30000, 'Confusion should preserve sourced Confusion count/time duration');
+assert.strictEqual(confusionData.levels.length, 19, 'Confusion should preserve sourced 19 base levels');
+assert.strictEqual(confusionData.levels[0].power, 80, 'Confusion level 1 should preserve sourced CONFUSE_MOB_ONLY power 80');
+assert.strictEqual(confusionData.levels[18].mp, 69, 'Confusion level 19 MP should use sourced initial + consume total');
+const confusionPlayerTarget = creature({ id: 1000002, hp: 100, maxHp: 100, level: 20 });
+const confusion = skill({ selfId: 2, name: 'Confusion', spell: true, power: 80, level: 19, distance: 600, buff: 30000 });
+const confusionPlayerOutcome = SkillEffects.execute(session(), caster, confusionPlayerTarget, confusion, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(confusionPlayerOutcome.effect, null, 'Confusion should not apply CONFUSE_MOB_ONLY to non-attackable targets');
+assert.strictEqual(confusionPlayerOutcome.effectResisted, true, 'Confusion mob-only rejection should report effect resistance');
+const confusionMobTarget = creature({ id: 1000003, hp: 100, maxHp: 100, level: 20 });
+confusionMobTarget.fetchAttackable = () => true;
+const confusionMobOutcome = SkillEffects.execute(session(), caster, confusionMobTarget, confusion, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(confusion.fetchSkillType(), C4SkillRules.EFFECT, 'Confusion should preserve sourced CONFUSE_MOB_ONLY effect semantics');
+assert.strictEqual(confusion.fetchTargetKind(), 'enemy', 'Confusion should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(confusion.fetchSemantic().baseLandRate, 80, 'Confusion should use sourced power 80 as land rate');
+assert.strictEqual(confusion.fetchSemantic().castRange, 600, 'Confusion should preserve sourced castRange metadata');
+assert.strictEqual(confusion.fetchSemantic().effectRange, 1100, 'Confusion should preserve sourced effectRange metadata');
+assert.strictEqual(confusion.fetchSemantic().mobOnly, true, 'Confusion should preserve sourced mob-only semantics');
+assert.strictEqual(confusionMobOutcome.effect.key, 'confusion', 'Confusion should apply a structured confusion debuff to attackable NPCs');
+assert.strictEqual(EffectStore.impairments(confusionMobTarget).confused, true, 'Confusion should be visible through impairments');
+EffectStore.remove(confusionMobTarget, 'confusion');
+
 [
     { id: 72, name: 'Iron Will', levels: 3, mp: 50, buff: 1200000, reuse: 6000, effect: 'iron_will', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 75, name: 'Detect Insect Weakness', levels: 1, mp: 14, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-insects', statValue: 1.5, statKind: 'mul', effectTargetKind: 'insect', aggroPoints: 303 },
