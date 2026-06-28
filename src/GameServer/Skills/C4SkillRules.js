@@ -20,6 +20,7 @@ const AGGRO_REDUCE = 'aggroReduce';
 const AGGRO_REDUCE_CHAR = 'aggroReduceChar';
 const CANCEL = 'cancel';
 const CHARGE = 'charge';
+const UNLOCK = 'unlock';
 
 const RULES = {
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
@@ -41,6 +42,7 @@ const RULES = {
     24: { skillType: DAMAGE, trait: 'bow', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 32 } },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    27: { skillType: UNLOCK, trait: 'unlock', target: 'unlockable', ssBoost: 0, unlockDoorChanceByLevel: [30, 50, 75, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
@@ -379,6 +381,7 @@ function resolve(skill = {}) {
         maxCharges: resolveByLevel(rule.maxChargesByLevel, skill.level) ?? rule.maxCharges ?? null,
         aggroPoints: rule.aggroPoints ?? inferred.aggroPoints ?? 0,
         overHit: rule.overHit || inferred.overHit || false,
+        unlockDoorChance: resolveByLevel(rule.unlockDoorChanceByLevel, skill.level) ?? rule.unlockDoorChance ?? null,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
@@ -517,6 +520,7 @@ module.exports = {
     AGGRO_REDUCE_CHAR,
     CANCEL,
     CHARGE,
+    UNLOCK,
     resolve,
     normalizeKey
 };

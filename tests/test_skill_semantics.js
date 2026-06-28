@@ -2090,6 +2090,22 @@ assert.strictEqual(summonMechanicGolem.fetchSkillType(), C4SkillRules.SUMMON, 'S
 assert.strictEqual(summonMechanicGolem.fetchTargetKind(), 'self', 'Summon Mechanic Golem should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(summonMechanicGolem.fetchSsBoost(), 0, 'Summon Mechanic Golem should not consume offensive shot boost semantics');
 
+const unlockData = activeSkills.find((entry) => entry.selfId === 27);
+assert(unlockData, 'Unlock should be present in active skills data');
+assert.strictEqual(unlockData.template.distance, 40, 'Unlock should preserve sourced castRange 40');
+assert.strictEqual(unlockData.time.hitTime, 2500, 'Unlock should preserve sourced hitTime 2500');
+assert.strictEqual(unlockData.time.reuse, 120000, 'Unlock should preserve sourced reuseDelay 120000');
+assert.strictEqual(unlockData.levels.length, 14, 'Unlock should preserve sourced 14 base levels');
+assert.strictEqual(unlockData.levels[0].itemId, 1661, 'Unlock should preserve sourced key item id');
+assert.strictEqual(unlockData.levels[0].itemCount, 2, 'Unlock level 1 should preserve sourced key item count');
+assert.strictEqual(unlockData.levels[13].mp, 67, 'Unlock level 14 should preserve sourced mpConsume 67');
+assert.strictEqual(unlockData.levels[13].itemCount, 17, 'Unlock level 14 should preserve sourced key item count');
+const unlock = skill({ selfId: 27, name: 'Unlock', spell: false, power: 1, level: 14, distance: 40 });
+assert.strictEqual(unlock.fetchSkillType(), C4SkillRules.UNLOCK, 'Unlock should preserve sourced UNLOCK skill type');
+assert.strictEqual(unlock.fetchTargetKind(), 'unlockable', 'Unlock should preserve sourced TARGET_UNLOCKABLE semantics');
+assert.strictEqual(unlock.fetchSsBoost(), 0, 'Unlock should not consume offensive shot boost semantics');
+assert.strictEqual(unlock.fetchSemantic().unlockDoorChance, 100, 'Unlock level 14 should preserve sourced L2J door unlock chance');
+
 const summonPhantomCubicData = activeSkills.find((entry) => entry.selfId === 33);
 assert(summonPhantomCubicData, 'Summon Phantom Cubic should be present in active skills data');
 assert.strictEqual(summonPhantomCubicData.template.name, 'Summon Phantom Cubic', 'Summon Phantom Cubic should preserve sourced skill name');
