@@ -3863,16 +3863,29 @@ assert.strictEqual(npcChantLifeOutcome.effect.hot.intervalMs, 3000, 'NPC Chant o
 assert(npcChantLifeTarget.effectTimers.npc_chant_of_life, 'NPC Chant of Life should start a runtime heal-over-time ticker');
 EffectStore.remove(npcChantLifeTarget, 'npc_chant_of_life');
 
-const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 1, level: 4, buff: 20000 });
+const bleedData = activeSkills.find((entry) => entry.selfId === 96);
+assert(bleedData, 'Bleed should be present in active skills data');
+assert.strictEqual(bleedData.template.distance, 40, 'Bleed should preserve sourced castRange 40');
+assert.strictEqual(bleedData.levels.length, 6, 'Bleed should preserve sourced 6 base levels');
+assert.strictEqual(bleedData.levels[0].power, 3, 'Bleed level 1 should preserve sourced power 3');
+assert.strictEqual(bleedData.levels[5].power, 8, 'Bleed level 6 should preserve sourced power 8');
+assert.strictEqual(bleedData.levels[5].mp, 99, 'Bleed level 6 should preserve sourced mpConsume 99');
+const bleed = skill({ selfId: 96, name: 'Bleed', spell: false, power: 6, level: 4, buff: 20000, distance: 40 });
 const bleedTarget = statActor();
 const bleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, bleed, {
     magicSkill: false,
     rng: () => 0,
     attack: { clearLoadedShot() {} }
 });
-assert.strictEqual(bleedOutcome.effect.dot.count, 7, 'Bleed should use the sourced 7 tick duration');
-assert.strictEqual(bleedOutcome.effect.dot.intervalMs, 3000, 'Bleed should tick every 3 seconds');
-assert.strictEqual(bleedOutcome.effect.dot.damage, 81, 'Bleed should use the sourced damage table instead of local flat power');
+assert.strictEqual(bleed.fetchTargetKind(), 'enemy', 'Bleed should resolve as an enemy debuff');
+assert.strictEqual(bleed.fetchSemantic().baseLandRate, 6, 'Bleed level 4 should use sourced power 6 as land rate');
+assert.strictEqual(bleed.fetchSemantic().levelDepend, 2, 'Bleed should preserve sourced lvlDepend metadata');
+assert.strictEqual(bleed.fetchSemantic().castRange, 40, 'Bleed should preserve sourced castRange metadata');
+assert.strictEqual(bleed.fetchSemantic().effectRange, 400, 'Bleed should preserve sourced effectRange metadata');
+assert.deepStrictEqual(bleed.fetchSemantic().requires, { weaponsAllowed: 16 }, 'Bleed should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(bleedOutcome.effect.dot.count, 4, 'Bleed should use the sourced 4 tick duration');
+assert.strictEqual(bleedOutcome.effect.dot.intervalMs, 5000, 'Bleed should tick every sourced 5 seconds');
+assert.strictEqual(bleedOutcome.effect.dot.damage, 27, 'Bleed should use the sourced damage table instead of local flat power');
 const cureBleeding = skill({ selfId: 61, name: 'Cure Bleeding', spell: true, power: 7, level: 2 });
 const cureBleedOutcome = SkillEffects.execute(session(), caster, bleedTarget, cureBleeding, {
     magicSkill: true,
