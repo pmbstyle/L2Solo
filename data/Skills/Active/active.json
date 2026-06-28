@@ -712,7 +712,7 @@
     "selfId": 1016,
     "template": { "name": "Resurrection", "passive": false, "spell": true, "distance": 400 },
     "time": { "hitTime": 6000, "reuse": 120000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 59, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 88, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 122, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 1, "mp": 152, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 1, "mp": 180, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 0, "mp": 47, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 20, "mp": 70, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 30, "mp": 97, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 4, "power": 40, "mp": 121, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 5, "power": 50, "mp": 144, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 6, "power": 55, "mp": 156, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 7, "power": 60, "mp": 165, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 8, "power": 65, "mp": 182, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 9, "power": 70, "mp": 191, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 1018,
     "template": { "name": "Purify", "passive": false, "spell": true, "distance": 600 },

@@ -265,6 +265,24 @@ assert.strictEqual(
     'Revival should be allowed at the sourced 10% HP threshold'
 );
 
+const resurrectionData = activeSkills.find((entry) => entry.selfId === 1016);
+assert(resurrectionData, 'Resurrection should be present in active skills data');
+assert.strictEqual(resurrectionData.template.distance, 400, 'Resurrection should preserve sourced castRange 400');
+assert.strictEqual(resurrectionData.time.hitTime, 6000, 'Resurrection should preserve sourced hitTime 6000');
+assert.strictEqual(resurrectionData.time.reuse, 120000, 'Resurrection should preserve sourced reuseDelay 120000');
+assert.strictEqual(resurrectionData.levels.length, 9, 'Resurrection should preserve sourced 9 base levels');
+assert.strictEqual(resurrectionData.levels[0].power, 0, 'Resurrection level 1 should preserve sourced resurrect power 0');
+assert.strictEqual(resurrectionData.levels[8].power, 70, 'Resurrection level 9 should preserve sourced resurrect power 70');
+assert.strictEqual(resurrectionData.levels[8].mp, 191, 'Resurrection level 9 MP should use sourced mpConsume 191');
+const resurrection = skill({ selfId: 1016, name: 'Resurrection', spell: true, power: 70, level: 9, distance: 400 });
+assert.strictEqual(resurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Resurrection should resolve as sourced RESURRECT semantics');
+assert.strictEqual(resurrection.fetchTargetKind(), 'corpse_player', 'Resurrection should preserve sourced TARGET_CORPSE_PLAYER semantics');
+assert.strictEqual(resurrection.fetchSsBoost(), 0, 'Resurrection should not use shot boost semantics');
+assert.strictEqual(resurrection.fetchSemantic().castRange, 400, 'Resurrection should preserve sourced castRange metadata');
+assert.strictEqual(resurrection.fetchSemantic().effectRange, 900, 'Resurrection should preserve sourced effectRange metadata');
+assert.strictEqual(resurrection.fetchSemantic().mpInitialConsume, 48, 'Resurrection level 9 should preserve sourced mpInitialConsume 48');
+assert.strictEqual(resurrection.fetchSemantic().aggroPoints, 624, 'Resurrection level 9 should preserve sourced aggroPoints 624');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');

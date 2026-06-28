@@ -13,6 +13,7 @@ const CLEANSE = 'cleanse';
 const HEAL_CLEANSE = 'healCleanse';
 const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
+const RESURRECT = 'resurrect';
 const SUMMON = 'summon';
 const AGGRO_DAMAGE = 'aggroDamage';
 const AGGRO_REMOVE = 'aggroRemove';
@@ -161,6 +162,7 @@ const RULES = {
     1012: { skillType: CLEANSE, trait: 'poison', target: 'friendly', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
     1013: { skillType: MANA_RECHARGE, trait: 'mana', target: 'friendly', ssBoost: 0 },
     1015: { skillType: HEAL, trait: 'heal', target: 'friendly', ssBoost: 0 },
+    1016: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_player', ssBoost: 0, castRange: 400, effectRange: 900, mpInitialConsumeByLevel: [12, 18, 25, 31, 36, 39, 42, 46, 48], aggroPointsByLevel: [121, 196, 290, 374, 460, 502, 542, 595, 624] },
     1018: { skillType: CLEANSE, trait: 'purify', target: 'friendly', cleanse: [
         { category: 'poison', maxLevelByLevel: [3, 7, 9] },
         { category: 'bleed', maxLevelByLevel: [3, 7, 9] },
@@ -436,7 +438,7 @@ function resolve(skill = {}) {
         effectRange: resolveByLevel(rule.effectRangeByLevel, skill.level) ?? rule.effectRange ?? null,
         staticReuse: rule.staticReuse || false,
         staticHitTime: rule.staticHitTime || false,
-        mpInitialConsume: rule.mpInitialConsume ?? null,
+        mpInitialConsume: resolveByLevel(rule.mpInitialConsumeByLevel, skill.level) ?? rule.mpInitialConsume ?? null,
         itemConsumeId: rule.itemConsumeId ?? null,
         itemConsumeCount: rule.itemConsumeCount ?? null,
         npcId: rule.npcId ?? null,
@@ -571,6 +573,7 @@ module.exports = {
     HEAL_CLEANSE,
     MANA_RECHARGE,
     MANA_HEAL,
+    RESURRECT,
     SUMMON,
     AGGRO_DAMAGE,
     AGGRO_REMOVE,
