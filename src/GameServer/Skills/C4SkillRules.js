@@ -301,6 +301,7 @@ const RULES = {
     1226: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1227: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1228: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    1230: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, baseLandRate: 92, castRange: 900, effectRange: 1400 },
     1234: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.4, baseLandRate: 92 },
     1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

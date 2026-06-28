@@ -4244,6 +4244,36 @@ assert.strictEqual(flameStrike.fetchSkillType(), C4SkillRules.DAMAGE, 'Flame Str
 assert.strictEqual(flameStrike.fetchSemantic().trait, 'fire', 'Flame Strike should preserve sourced fire element');
 assert.strictEqual(flameStrike.fetchTargetKind(), 'enemy', 'Flame Strike should resolve as an enemy nuke');
 
+const prominenceData = activeSkills.find((entry) => entry.selfId === 1230);
+assert(prominenceData, 'Prominence should be present in active skills data');
+assert.strictEqual(prominenceData.template.distance, 900, 'Prominence should preserve sourced castRange 900');
+assert.strictEqual(prominenceData.time.hitTime, 4000, 'Prominence should preserve sourced hitTime 4000');
+assert.strictEqual(prominenceData.time.reuse, 6000, 'Prominence should preserve sourced reuseDelay 6000');
+assert.strictEqual(prominenceData.time.buff, 0, 'Prominence should not use a debuff duration');
+assert.strictEqual(prominenceData.levels.length, 28, 'Prominence should preserve sourced 28 base levels');
+assert.strictEqual(prominenceData.levels[0].power, 49, 'Prominence level 1 should preserve sourced power 49');
+assert.strictEqual(prominenceData.levels[0].mp, 27, 'Prominence level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(prominenceData.levels[27].power, 108, 'Prominence level 28 should preserve sourced power 108');
+assert.strictEqual(prominenceData.levels[27].mp, 55, 'Prominence level 28 MP should use sourced mpConsume 55');
+const prominence = skill({ selfId: 1230, name: 'Prominence', spell: true, power: 108, level: 28, distance: 900 });
+const prominenceOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001230 }), prominence, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE, 'Prominence should route as sourced MDAM damage');
+            return 1230;
+        }
+    }
+});
+assert.strictEqual(prominence.fetchSkillType(), C4SkillRules.DAMAGE, 'Prominence should resolve as sourced MDAM damage');
+assert.strictEqual(prominence.fetchSemantic().trait, 'fire', 'Prominence should preserve sourced fire element');
+assert.strictEqual(prominence.fetchTargetKind(), 'enemy', 'Prominence should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(prominence.fetchSemantic().baseLandRate, 92, 'Prominence should use sourced MDAM magic success baseline');
+assert.strictEqual(prominence.fetchSemantic().castRange, 900, 'Prominence should preserve sourced castRange metadata');
+assert.strictEqual(prominence.fetchSemantic().effectRange, 1400, 'Prominence should preserve sourced effectRange metadata');
+assert.strictEqual(prominenceOutcome.damage, 1230, 'Prominence should execute through damage routing');
+
 const freezingShackleData = activeSkills.find((entry) => entry.selfId === 1183);
 assert(freezingShackleData, 'Freezing Shackle should be present in active skills data');
 assert.strictEqual(freezingShackleData.levels.length, 4, 'Freezing Shackle should preserve sourced 4 base levels');
