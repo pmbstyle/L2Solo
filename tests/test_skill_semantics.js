@@ -283,6 +283,25 @@ assert.strictEqual(resurrection.fetchSemantic().effectRange, 900, 'Resurrection 
 assert.strictEqual(resurrection.fetchSemantic().mpInitialConsume, 48, 'Resurrection level 9 should preserve sourced mpInitialConsume 48');
 assert.strictEqual(resurrection.fetchSemantic().aggroPoints, 624, 'Resurrection level 9 should preserve sourced aggroPoints 624');
 
+const massResurrectionData = activeSkills.find((entry) => entry.selfId === 1254);
+assert(massResurrectionData, 'Mass Resurrection should be present in active skills data');
+assert.strictEqual(massResurrectionData.template.distance, -1, 'Mass Resurrection should preserve sourced no-castRange target semantics');
+assert.strictEqual(massResurrectionData.time.hitTime, 10000, 'Mass Resurrection should preserve sourced hitTime 10000');
+assert.strictEqual(massResurrectionData.time.reuse, 600000, 'Mass Resurrection should preserve sourced reuseDelay 600000');
+assert.strictEqual(massResurrectionData.levels.length, 6, 'Mass Resurrection should preserve sourced 6 base levels');
+assert.strictEqual(massResurrectionData.levels[0].power, 0, 'Mass Resurrection level 1 should preserve sourced resurrect power 0');
+assert.strictEqual(massResurrectionData.levels[0].mp, 194, 'Mass Resurrection level 1 MP should use sourced mpConsume 194');
+assert.strictEqual(massResurrectionData.levels[5].power, 55, 'Mass Resurrection level 6 should preserve sourced resurrect power 55');
+assert.strictEqual(massResurrectionData.levels[5].mp, 353, 'Mass Resurrection level 6 MP should use sourced mpConsume 353');
+const massResurrection = skill({ selfId: 1254, name: 'Mass Resurrection', spell: true, power: 55, level: 6, distance: -1 });
+assert.strictEqual(massResurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Mass Resurrection should resolve as sourced RESURRECT semantics');
+assert.strictEqual(massResurrection.fetchTargetKind(), 'corpse_ally', 'Mass Resurrection should preserve sourced TARGET_CORPSE_ALLY semantics');
+assert.strictEqual(massResurrection.fetchSsBoost(), 0, 'Mass Resurrection should not use shot boost semantics');
+assert.strictEqual(massResurrection.fetchSemantic().sourceTarget, 'area', 'Mass Resurrection should preserve sourced area target semantics');
+assert.strictEqual(massResurrection.fetchSemantic().radius, 900, 'Mass Resurrection should preserve sourced skillRadius 900');
+assert.strictEqual(massResurrection.fetchSemantic().mpInitialConsume, 89, 'Mass Resurrection level 6 should preserve sourced mpInitialConsume 89');
+assert.strictEqual(massResurrection.fetchSemantic().aggroPoints, 578, 'Mass Resurrection level 6 should preserve sourced aggroPoints 578');
+
 const returnData = activeSkills.find((entry) => entry.selfId === 1050);
 assert(returnData, 'Return should be present in active skills data');
 assert.strictEqual(returnData.template.distance, -1, 'Return should preserve sourced TARGET_SELF range semantics');
