@@ -922,6 +922,33 @@ assert.deepStrictEqual(burningFist.fetchSemantic().requires, { weaponsAllowed: 1
 assert.strictEqual(burningFistOutcome.damage, 123, 'Burning Fist should keep its physical damage component');
 assert.strictEqual(burningFistOutcome.effect, null, 'Burning Fist should remain a pure damage skill without a debuff');
 
+const hurricaneAssaultData = activeSkills.find((entry) => entry.selfId === 284);
+assert(hurricaneAssaultData, 'Hurricane Assault should be present in active skills data');
+assert.strictEqual(hurricaneAssaultData.template.distance, 40, 'Hurricane Assault should preserve sourced castRange 40');
+assert.strictEqual(hurricaneAssaultData.time.hitTime, 1360, 'Hurricane Assault should preserve sourced hitTime 1360');
+assert.strictEqual(hurricaneAssaultData.time.reuse, 17000, 'Hurricane Assault should preserve sourced reuseDelay 17000');
+assert.strictEqual(hurricaneAssaultData.levels.length, 40, 'Hurricane Assault should preserve sourced 40 base levels');
+assert.strictEqual(hurricaneAssaultData.levels[23].power, 1830, 'Hurricane Assault level 24 should preserve existing sourced CHARGEDAM power 1830');
+assert.strictEqual(hurricaneAssaultData.levels[39].power, 3196, 'Hurricane Assault level 40 should preserve sourced CHARGEDAM power 3196');
+assert.strictEqual(hurricaneAssaultData.levels[39].mp, 116, 'Hurricane Assault level 40 MP should use sourced mpConsume 116');
+const hurricaneAssaultTarget = creature({ id: 1000011, hp: 100, maxHp: 100, level: 20 });
+const hurricaneAssault = skill({ selfId: 284, name: 'Hurricane Assault', spell: false, power: 3196, level: 40, distance: 40 });
+const hurricaneAssaultOutcome = SkillEffects.execute(session(), caster, hurricaneAssaultTarget, hurricaneAssault, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 134
+    }
+});
+assert.strictEqual(hurricaneAssault.fetchSkillType(), C4SkillRules.DAMAGE, 'Hurricane Assault should execute as damage while preserving sourced CHARGEDAM metadata');
+assert.strictEqual(hurricaneAssault.fetchTargetKind(), 'enemy', 'Hurricane Assault should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(hurricaneAssault.fetchSsBoost(), 1, 'Hurricane Assault should preserve sourced physical shot boost semantics');
+assert.strictEqual(hurricaneAssault.fetchSemantic().trait, 'wind', 'Hurricane Assault should preserve sourced wind element semantics');
+assert.deepStrictEqual(hurricaneAssault.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 2, condition: 128, conditionValue: 2 }, 'Hurricane Assault should preserve sourced fist and charge requirements');
+assert.strictEqual(hurricaneAssaultOutcome.damage, 134, 'Hurricane Assault should keep its physical damage component');
+assert.strictEqual(hurricaneAssaultOutcome.effect, null, 'Hurricane Assault should remain a pure damage skill without a debuff');
+
 const soulBreakerData = activeSkills.find((entry) => entry.selfId === 281);
 assert(soulBreakerData, 'Soul Breaker should be present in active skills data');
 assert.strictEqual(soulBreakerData.template.distance, 40, 'Soul Breaker should preserve sourced castRange 40');

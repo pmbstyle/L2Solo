@@ -83,6 +83,7 @@ const RULES = {
     280: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 1024 } },
     281: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 1, requires: { weaponsAllowed: 1024 } },
     283: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
+    284: { skillType: DAMAGE, trait: 'wind', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 2, condition: 128, conditionValue: 2 } },
     299: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     301: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1010: { skillType: EFFECT, trait: 'buff', effect: 'soul_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
