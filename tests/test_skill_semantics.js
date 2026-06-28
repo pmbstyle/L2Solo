@@ -1780,6 +1780,22 @@ assert.strictEqual(buildHeadquarters.fetchSemantic().itemConsumeId, 2131, 'Build
 assert.strictEqual(buildHeadquarters.fetchSemantic().itemConsumeCount, 300, 'Build Headquarters should preserve sourced itemConsumeCount metadata');
 assert.strictEqual(buildHeadquarters.fetchSemantic().npcId, 12024, 'Build Headquarters should preserve sourced headquarters npcId metadata');
 
+const spoilData = activeSkills.find((entry) => entry.selfId === 254);
+assert(spoilData, 'Spoil should be present in active skills data');
+assert.strictEqual(spoilData.template.distance, 40, 'Spoil should preserve sourced castRange 40');
+assert.strictEqual(spoilData.time.hitTime, 1800, 'Spoil should preserve sourced hitTime 1800');
+assert.strictEqual(spoilData.time.reuse, 10000, 'Spoil should preserve sourced reuseDelay 10000');
+assert.strictEqual(spoilData.levels.length, 11, 'Spoil should preserve sourced 11 base levels');
+assert.strictEqual(spoilData.levels[0].mp, 12, 'Spoil level 1 MP should use sourced mpConsume 12');
+assert.strictEqual(spoilData.levels[10].mp, 67, 'Spoil level 11 MP should use sourced mpConsume 67');
+const spoil = skill({ selfId: 254, name: 'Spoil', spell: false, power: 1, level: 11, distance: 40 });
+assert.strictEqual(spoil.fetchSkillType(), C4SkillRules.SPOIL, 'Spoil should resolve as sourced SPOIL semantics');
+assert.strictEqual(spoil.fetchTargetKind(), 'enemy', 'Spoil should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(spoil.fetchSsBoost(), 0, 'Spoil should not use shot boost');
+assert.strictEqual(spoil.fetchSemantic().levelDepend, 1, 'Spoil should preserve sourced lvlDepend metadata');
+assert.strictEqual(spoil.fetchSemantic().castRange, 40, 'Spoil should preserve sourced castRange metadata');
+assert.strictEqual(spoil.fetchSemantic().effectRange, 400, 'Spoil should preserve sourced effectRange metadata');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
