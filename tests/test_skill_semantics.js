@@ -316,6 +316,7 @@ EffectStore.remove(confusionMobTarget, 'confusion');
     { id: 91, name: 'Defense Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul', aggroPoints: 204 },
     { id: 94, name: 'Rage', levels: 2, mp: 25, buff: 90000, reuse: 300000, effect: 'rage', stat: 'pAtkMul', statValue: 1.55, statKind: 'mul', extraStats: [{ stat: 'pDefMul', value: 0.8, kind: 'mul' }, { stat: 'pEvasionRateAdd', value: -3, kind: 'add' }], aggroPoints: 523 },
     { id: 99, name: 'Rapid Shot', levels: 2, mp: 50, buff: 1200000, reuse: 10000, effect: 'rapid_shot', stat: 'pAtkSpdMul', statValue: 1.12, statKind: 'mul', aggroPoints: 549, requires: { weaponsAllowed: 32 } },
+    { id: 104, name: 'Detect Plant Weakness', levels: 1, mp: 21, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-plants', statValue: 1.5, statKind: 'mul', effectTargetKind: 'plant', aggroPoints: 438 },
     { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },

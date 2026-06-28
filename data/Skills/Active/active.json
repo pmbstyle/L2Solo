@@ -363,7 +363,7 @@
     "selfId": 104,
     "template": { "name": "Detect Plant Weakness", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 1500, "reuse": 10000, "buff": 600000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 22, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 21, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 105,
     "template": { "name": "Freezing Strike", "passive": false, "spell": true, "distance": 600 },
