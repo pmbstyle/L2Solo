@@ -407,6 +407,45 @@ assert.strictEqual(blessedResurrection.fetchSemantic().effectRange, 600, 'Blesse
 assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeId, 3936, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume id');
 assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeCount, 1, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume count');
 
+const soulshot = skill({ selfId: 2039, name: 'Soulshot', spell: false, power: 1, level: 1, distance: -1 });
+const soulshotCaster = statActor();
+const soulshotOutcome = SkillEffects.execute(session(), soulshotCaster, soulshotCaster, soulshot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(soulshot.fetchSkillType(), C4SkillRules.SOULSHOT, 'Soulshot should resolve as sourced SOULSHOT semantics');
+assert.strictEqual(soulshot.fetchTargetKind(), 'self', 'Soulshot should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(soulshotOutcome.shotLoaded, 'soulshot', 'Soulshot should report the loaded shot kind');
+assert.strictEqual(soulshotCaster.soulshotLoaded, true, 'Soulshot should load physical shot state on the caster');
+
+const magicShot = skill({ selfId: 2047, name: 'Magic shot', spell: false, power: 1, level: 1, distance: -1 });
+const magicShotCaster = statActor();
+const magicShotOutcome = SkillEffects.execute(session(), magicShotCaster, magicShotCaster, magicShot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(magicShot.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Magic shot should resolve as sourced SPIRITSHOT semantics');
+assert.strictEqual(magicShot.fetchTargetKind(), 'self', 'Magic shot should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(magicShotOutcome.shotLoaded, 'spiritshot', 'Magic shot should report ordinary spiritshot load');
+assert.strictEqual(magicShotCaster.spiritshotLoaded, true, 'Magic shot should load magic shot state on the caster');
+assert.strictEqual(magicShotCaster.blessedSpiritshotLoaded, false, 'Magic shot should not load blessed spiritshot state');
+
+const blessedSpiritshot = skill({ selfId: 2061, name: 'Blessed Spiritshot', spell: false, power: 1, level: 1, distance: -1 });
+const blessedSpiritshotCaster = statActor();
+const blessedSpiritshotOutcome = SkillEffects.execute(session(), blessedSpiritshotCaster, blessedSpiritshotCaster, blessedSpiritshot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessedSpiritshot.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Blessed Spiritshot should resolve as sourced SPIRITSHOT semantics');
+assert.strictEqual(blessedSpiritshot.fetchTargetKind(), 'self', 'Blessed Spiritshot should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(blessedSpiritshot.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot should preserve blessed shot metadata');
+assert.strictEqual(blessedSpiritshotOutcome.shotLoaded, 'blessedSpiritshot', 'Blessed Spiritshot should report blessed spiritshot load');
+assert.strictEqual(blessedSpiritshotCaster.spiritshotLoaded, true, 'Blessed Spiritshot should load magic shot state on the caster');
+assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Blessed Spiritshot should load blessed magic shot state on the caster');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');

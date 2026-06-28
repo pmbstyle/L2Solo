@@ -32,6 +32,11 @@ function execute(session, actor, target, skill, context = {}) {
         cancelled: []
     };
 
+    if (semantic.skillType === C4SkillRules.SOULSHOT || semantic.skillType === C4SkillRules.SPIRITSHOT) {
+        result.shotLoaded = applyShot(actor, semantic);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.HEAL) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
@@ -193,9 +198,13 @@ function execute(session, actor, target, skill, context = {}) {
 
 function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) {
     const usedSpiritshot = !!actor.spiritshotLoaded;
+    const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
     const amount = Math.round(Formulas.calcHealAmount(
         semantic.healPower ?? skill.fetchPower(),
-        { spiritshot: usedSpiritshot && skill.fetchSsBoost() > 0 }
+        {
+            spiritshot: usedSpiritshot && skill.fetchSsBoost() > 0,
+            blessedSpiritshot: usedBlessedSpiritshot && skill.fetchSsBoost() > 0
+        }
     ));
 
     const maxHp = Number(target.fetchMaxHp?.()) || 0;
@@ -205,6 +214,17 @@ function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) 
     refreshVitals(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextHp - currentHp);
+}
+
+function applyShot(actor, semantic) {
+    if (semantic.skillType === C4SkillRules.SOULSHOT) {
+        actor.soulshotLoaded = true;
+        return 'soulshot';
+    }
+
+    actor.spiritshotLoaded = true;
+    actor.blessedSpiritshotLoaded = !!semantic.blessedSpiritshot;
+    return actor.blessedSpiritshotLoaded ? 'blessedSpiritshot' : 'spiritshot';
 }
 
 function applyHealPercent(session, actor, target, skill, semantic, magicSkill, attack) {
@@ -486,7 +506,10 @@ function isUndead(target) {
 
 function clearLoadedShot(attack, actor, magicSkill) {
     if (attack?.clearLoadedShot) attack.clearLoadedShot(actor, magicSkill);
-    else if (magicSkill) actor.spiritshotLoaded = false;
+    else if (magicSkill) {
+        actor.spiritshotLoaded = false;
+        actor.blessedSpiritshotLoaded = false;
+    }
     else actor.soulshotLoaded = false;
 }
 

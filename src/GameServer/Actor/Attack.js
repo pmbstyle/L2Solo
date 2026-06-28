@@ -267,6 +267,7 @@ class Attack {
 
         if (magicSkill) {
             const usedSpiritshot = !!actor.spiritshotLoaded;
+            const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
             const shieldMDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
@@ -277,7 +278,7 @@ class Attack {
                 actor.fetchCollectiveMAtk(),
                 power,
                 creature.fetchCollectiveMDef() + shieldMDef,
-                { spiritshot: usedSpiritshot }
+                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot }
             ) * vulnModifier);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
@@ -301,7 +302,10 @@ class Attack {
     }
 
     clearLoadedShot(actor, magicSkill) {
-        if (magicSkill) actor.spiritshotLoaded = false;
+        if (magicSkill) {
+            actor.spiritshotLoaded = false;
+            actor.blessedSpiritshotLoaded = false;
+        }
         else actor.soulshotLoaded = false;
     }
 

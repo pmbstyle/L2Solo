@@ -68,6 +68,14 @@ const castDamage = attack.prepareSkillDamage(magicActor, target(), skill({ spell
 assert.strictEqual(castDamage, 257, 'magic skill damage should follow C4 magic formula with spiritshot');
 assert.strictEqual(magicActor.spiritshotLoaded, false, 'magic skill should clear used spiritshot charge');
 
+const blessedMagicActor = actor();
+blessedMagicActor.spiritshotLoaded = true;
+blessedMagicActor.blessedSpiritshotLoaded = true;
+const blessedCastDamage = attack.prepareSkillDamage(blessedMagicActor, target(), skill({ spell: true, power: 10 }), true, () => 0.99);
+assert.strictEqual(blessedCastDamage, Math.round(Formulas.calcMagicDamage(100, 10, 50, { blessedSpiritshot: true })), 'magic skill damage should use blessed spiritshot MAtk boost');
+assert.strictEqual(blessedMagicActor.spiritshotLoaded, false, 'magic skill should clear used blessed spiritshot charge');
+assert.strictEqual(blessedMagicActor.blessedSpiritshotLoaded, false, 'magic skill should clear blessed spiritshot marker');
+
 const surrenderedTarget = target();
 EffectStore.apply(surrenderedTarget, {
     key: 'surrender_to_earth',

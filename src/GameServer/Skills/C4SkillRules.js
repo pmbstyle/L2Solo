@@ -16,6 +16,8 @@ const MANA_HEAL = 'manaHeal';
 const MANA_HOT = 'manaHot';
 const RESURRECT = 'resurrect';
 const RECALL = 'recall';
+const SOULSHOT = 'soulshot';
+const SPIRITSHOT = 'spiritshot';
 const SUMMON = 'summon';
 const AGGRO_DAMAGE = 'aggroDamage';
 const AGGRO_REMOVE = 'aggroRemove';
@@ -358,12 +360,14 @@ const RULES = {
     2036: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 200, staticHitTime: true },
     2037: { skillType: HOT, trait: 'buff', effect: 'greater_healing_potion', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 7, intervalMs: 2000, heal: 100 } },
     2038: { skillType: HEAL_STATIC, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [435] },
+    2039: { skillType: SOULSHOT, trait: 'shot', target: 'self', ssBoost: 0 },
     2040: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true, teleportWhereType: 'ClanHall' },
     2041: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true, teleportWhereType: 'Castle' },
     2042: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevel: 3 }] },
     2043: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevel: 7 }] },
     2044: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevel: 3 }] },
     2045: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevel: 7 }] },
+    2047: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0 },
     2049: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_player', ssBoost: 0, hitTime: 15000, staticHitTime: true, castRange: 400, effectRange: 600, itemConsumeId: 3936, itemConsumeCount: 1 },
     2050: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_guidance', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pAccuracyCombatAdd: 4 } },
     2051: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_death_whisper', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pCritDamageMul: 1.5 } },
@@ -376,6 +380,7 @@ const RULES = {
     2058: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_wind_walk', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { runSpdAdd: 33 } },
     2059: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_shield', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pDefMul: 1.15 } },
     2060: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ skillId: 4082 }] },
+    2061: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, blessedSpiritshot: true },
     4097: { skillType: HOT, trait: 'buff', effect: 'npc_chant_of_life', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 5, intervalMs: 3000, healByLevel: [7, 12, 18, 27, 37, 46, 55, 23, 32, 42, 51, 58] } },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
@@ -473,6 +478,7 @@ function resolve(skill = {}) {
         itemConsumeCount: rule.itemConsumeCount ?? null,
         npcId: rule.npcId ?? null,
         teleportWhereType: rule.teleportWhereType ?? null,
+        blessedSpiritshot: rule.blessedSpiritshot || false,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
@@ -607,6 +613,8 @@ module.exports = {
     MANA_HOT,
     RESURRECT,
     RECALL,
+    SOULSHOT,
+    SPIRITSHOT,
     SUMMON,
     AGGRO_DAMAGE,
     AGGRO_REMOVE,
