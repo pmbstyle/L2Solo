@@ -4339,6 +4339,43 @@ assert.strictEqual(frostBoltOutcome.effect.key, 'frost_bolt', 'Frost Bolt should
 assert.strictEqual(EffectStats.multiplier(frostBoltTarget, 'runSpdMul'), 0.7, 'Frost Bolt should apply sourced RunSpeedDown 0.7 multiplier');
 EffectStore.remove(frostBoltTarget, 'frost_bolt');
 
+const iceDaggerData = activeSkills.find((entry) => entry.selfId === 1237);
+assert(iceDaggerData, 'Ice Dagger should be present in active skills data');
+assert.strictEqual(iceDaggerData.template.distance, 900, 'Ice Dagger should preserve sourced castRange 900');
+assert.strictEqual(iceDaggerData.time.hitTime, 2500, 'Ice Dagger should preserve sourced hitTime 2500');
+assert.strictEqual(iceDaggerData.time.reuse, 8000, 'Ice Dagger should preserve sourced reuseDelay 8000');
+assert.strictEqual(iceDaggerData.time.buff, 20000, 'Ice Dagger should preserve sourced 4x5s bleed duration');
+assert.strictEqual(iceDaggerData.levels.length, 17, 'Ice Dagger should preserve sourced 17 base levels');
+assert.strictEqual(iceDaggerData.levels[0].power, 28, 'Ice Dagger level 1 should preserve sourced MDAM power 28');
+assert.strictEqual(iceDaggerData.levels[0].mp, 30, 'Ice Dagger level 1 MP should use sourced mpConsume 30');
+assert.strictEqual(iceDaggerData.levels[16].power, 54, 'Ice Dagger level 17 should preserve sourced MDAM power 54');
+assert.strictEqual(iceDaggerData.levels[16].mp, 57, 'Ice Dagger level 17 MP should use sourced mpConsume 57');
+const iceDaggerTarget = statActor();
+const iceDagger = skill({ selfId: 1237, name: 'Ice Dagger', spell: true, power: 54, level: 17, distance: 900, buff: 20000 });
+const iceDaggerOutcome = SkillEffects.execute(session(), caster, iceDaggerTarget, iceDagger, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Ice Dagger should route as sourced MDAM plus bleed');
+            return 1237;
+        }
+    }
+});
+assert.strictEqual(iceDagger.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Ice Dagger should resolve as sourced MDAM with additional bleed');
+assert.strictEqual(iceDagger.fetchTargetKind(), 'enemy', 'Ice Dagger should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(iceDagger.fetchSemantic().trait, 'water', 'Ice Dagger should preserve sourced water damage element');
+assert.strictEqual(iceDagger.fetchSemantic().effectTrait, 'bleed', 'Ice Dagger should preserve sourced BLEED effect trait separately');
+assert.strictEqual(iceDagger.fetchSemantic().baseLandRate, 50, 'Ice Dagger should use sourced effectPower 50 as bleed land rate');
+assert.strictEqual(iceDagger.fetchSemantic().levelDepend, 2, 'Ice Dagger should preserve sourced lvlDepend metadata');
+assert.strictEqual(iceDagger.fetchSemantic().castRange, 900, 'Ice Dagger should preserve sourced castRange metadata');
+assert.strictEqual(iceDagger.fetchSemantic().effectRange, 1400, 'Ice Dagger should preserve sourced effectRange metadata');
+assert.strictEqual(iceDaggerOutcome.damage, 1237, 'Ice Dagger should still deal direct MDAM damage');
+assert.strictEqual(iceDaggerOutcome.effect.key, 'ice_dagger', 'Ice Dagger should apply a structured bleed debuff');
+assert.strictEqual(iceDaggerOutcome.effect.category, 'bleed', 'Ice Dagger bleed should use sourced BLEED category');
+assert.deepStrictEqual(iceDaggerOutcome.effect.dot, { count: 4, intervalMs: 5000, damage: 27 }, 'Ice Dagger should apply sourced level 17 bleed ticks');
+EffectStore.remove(iceDaggerTarget, 'ice_dagger');
+
 const auraFlareData = activeSkills.find((entry) => entry.selfId === 1231);
 assert(auraFlareData, 'Aura Flare should be present in active skills data');
 assert.strictEqual(auraFlareData.template.distance, 150, 'Aura Flare should preserve sourced castRange 150');

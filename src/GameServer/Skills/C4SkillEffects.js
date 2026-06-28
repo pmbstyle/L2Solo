@@ -273,7 +273,7 @@ function applyEffect(session, target, skill, semantic) {
         level: skill.fetchLevel(),
         name: skill.fetchName(),
         type: semantic.effectType || 'buff',
-        category: semantic.trait || semantic.effect,
+        category: semantic.effectTrait || semantic.trait || semantic.effect,
         stats: semantic.stats || {},
         dot: dotFromSkill(skill, semantic),
         manaDot: manaDotFromSkill(skill, semantic),
@@ -415,7 +415,7 @@ function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
         targetLevel: target.fetchLevel?.(),
         magicLevel: semantic.magicLevel,
         levelDepend: semantic.levelDepend,
-        resistModifier: traitResistModifier(target, semantic.trait)
+        resistModifier: traitResistModifier(target, semantic.effectTrait || semantic.trait)
     });
     return !(chance >= rng() * 100);
 }
