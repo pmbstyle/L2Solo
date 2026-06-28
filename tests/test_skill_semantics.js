@@ -1217,6 +1217,32 @@ assert.strictEqual(hateAura.fetchSemantic().radius, 200, 'Hate Aura should prese
 assert.strictEqual(hateAuraOutcome.damage, 0, 'Hate Aura should not be routed as HP damage');
 assert.strictEqual(hateAuraOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Hate Aura should use sourced Lisvus AGGDAMAGE hate formula');
 
+const aggressionData = activeSkills.find((entry) => entry.selfId === 28);
+assert(aggressionData, 'Aggression should be present in active skills data');
+assert.strictEqual(aggressionData.template.name, 'Aggression', 'Aggression should preserve sourced skill name');
+assert.strictEqual(aggressionData.template.distance, 400, 'Aggression should preserve sourced level 1 castRange 400 in current active format');
+assert.strictEqual(aggressionData.time.hitTime, 1000, 'Aggression should preserve sourced hitTime 1000');
+assert.strictEqual(aggressionData.time.reuse, 3000, 'Aggression should preserve sourced reuseDelay 3000');
+assert.strictEqual(aggressionData.levels.length, 49, 'Aggression should preserve sourced 49 base levels');
+assert.strictEqual(aggressionData.levels[1].power, 679, 'Aggression level 2 should preserve sourced AGGDAMAGE power 679');
+assert.strictEqual(aggressionData.levels[32].power, 1647, 'Aggression level 33 should preserve existing sourced AGGDAMAGE power 1647');
+assert.strictEqual(aggressionData.levels[48].power, 1963, 'Aggression level 49 should preserve sourced AGGDAMAGE power 1963');
+assert.strictEqual(aggressionData.levels[48].mp, 68, 'Aggression level 49 MP should use sourced mpConsume 68');
+const aggressionTarget = creature({ id: 1000028, hp: 100, maxHp: 100, level: 20 });
+aggressionTarget.fetchAttackable = () => true;
+const aggression = skill({ selfId: 28, name: 'Aggression', spell: false, power: 1963, level: 49, distance: 400 });
+const aggressionOutcome = SkillEffects.execute(session(), caster, aggressionTarget, aggression, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(aggression.fetchSkillType(), C4SkillRules.AGGRO_DAMAGE, 'Aggression should preserve sourced AGGDAMAGE semantics');
+assert.strictEqual(aggression.fetchTargetKind(), 'enemy', 'Aggression should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(aggression.fetchSsBoost(), 0, 'Aggression should not consume offensive shot boost semantics');
+assert.strictEqual(aggression.fetchSemantic().castRange, 800, 'Aggression level 49 should preserve sourced castRange table metadata');
+assert.strictEqual(aggression.fetchSemantic().effectRange, 1300, 'Aggression level 49 should preserve sourced effectRange table metadata');
+assert.strictEqual(aggressionOutcome.damage, 0, 'Aggression should not be routed as HP damage');
+assert.strictEqual(aggressionOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Aggression should use sourced Lisvus AGGDAMAGE hate formula');
+
 const doubleShotData = activeSkills.find((entry) => entry.selfId === 19);
 assert(doubleShotData, 'Double Shot should be present in active skills data');
 assert.strictEqual(doubleShotData.template.distance, 900, 'Double Shot should preserve sourced castRange 900');

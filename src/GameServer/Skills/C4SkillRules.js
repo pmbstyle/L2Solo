@@ -43,6 +43,7 @@ const RULES = {
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     27: { skillType: UNLOCK, trait: 'unlock', target: 'unlockable', ssBoost: 0, unlockDoorChanceByLevel: [30, 50, 75, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] },
+    28: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', ssBoost: 0, castRangeByLevel: [400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800], effectRangeByLevel: [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300] },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
@@ -382,6 +383,8 @@ function resolve(skill = {}) {
         aggroPoints: rule.aggroPoints ?? inferred.aggroPoints ?? 0,
         overHit: rule.overHit || inferred.overHit || false,
         unlockDoorChance: resolveByLevel(rule.unlockDoorChanceByLevel, skill.level) ?? rule.unlockDoorChance ?? null,
+        castRange: resolveByLevel(rule.castRangeByLevel, skill.level) ?? rule.castRange ?? null,
+        effectRange: resolveByLevel(rule.effectRangeByLevel, skill.level) ?? rule.effectRange ?? null,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
