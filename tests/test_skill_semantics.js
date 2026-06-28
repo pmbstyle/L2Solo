@@ -895,6 +895,33 @@ assert.strictEqual(hammerCrushOutcome.effect.key, 'stun', 'Hammer Crush should a
 assert.strictEqual(EffectRestrictions.canMove(hammerCrushTarget), false, 'Hammer Crush stun should block movement');
 EffectStore.remove(hammerCrushTarget, 'stun');
 
+const burningFistData = activeSkills.find((entry) => entry.selfId === 280);
+assert(burningFistData, 'Burning Fist should be present in active skills data');
+assert.strictEqual(burningFistData.template.distance, 40, 'Burning Fist should preserve sourced castRange 40');
+assert.strictEqual(burningFistData.time.hitTime, 1900, 'Burning Fist should preserve sourced hitTime 1900');
+assert.strictEqual(burningFistData.time.reuse, 15000, 'Burning Fist should preserve sourced reuseDelay 15000');
+assert.strictEqual(burningFistData.levels.length, 37, 'Burning Fist should preserve sourced 37 base levels');
+assert.strictEqual(burningFistData.levels[20].power, 1220, 'Burning Fist level 21 should preserve existing sourced PDAM power 1220');
+assert.strictEqual(burningFistData.levels[36].power, 2131, 'Burning Fist level 37 should preserve sourced PDAM power 2131');
+assert.strictEqual(burningFistData.levels[36].mp, 97, 'Burning Fist level 37 MP should use sourced mpConsume 97');
+const burningFistTarget = creature({ id: 1000010, hp: 100, maxHp: 100, level: 20 });
+const burningFist = skill({ selfId: 280, name: 'Burning Fist', spell: false, power: 2131, level: 37, distance: 40 });
+const burningFistOutcome = SkillEffects.execute(session(), caster, burningFistTarget, burningFist, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 123
+    }
+});
+assert.strictEqual(burningFist.fetchSkillType(), C4SkillRules.DAMAGE, 'Burning Fist should resolve as sourced PDAM');
+assert.strictEqual(burningFist.fetchTargetKind(), 'enemy', 'Burning Fist should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(burningFist.fetchSsBoost(), 1, 'Burning Fist should preserve sourced physical shot boost semantics');
+assert.strictEqual(burningFist.fetchSemantic().trait, 'fire', 'Burning Fist should preserve sourced fire element semantics');
+assert.deepStrictEqual(burningFist.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Burning Fist should preserve sourced weaponsAllowed requirement');
+assert.strictEqual(burningFistOutcome.damage, 123, 'Burning Fist should keep its physical damage component');
+assert.strictEqual(burningFistOutcome.effect, null, 'Burning Fist should remain a pure damage skill without a debuff');
+
 const soulBreakerData = activeSkills.find((entry) => entry.selfId === 281);
 assert(soulBreakerData, 'Soul Breaker should be present in active skills data');
 assert.strictEqual(soulBreakerData.template.distance, 40, 'Soul Breaker should preserve sourced castRange 40');
