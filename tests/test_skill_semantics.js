@@ -277,7 +277,7 @@ assert.strictEqual(
     { id: 86, name: 'Reflect Damage', levels: 3, mp: 48, buff: 1200000, reuse: 6000, effect: 'reflect_damage', stat: 'reflectDam', statValue: 20, statKind: 'add', aggroPoints: 495 },
     { id: 87, name: 'Detect Animal Weakness', levels: 1, mp: 18, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-animals', statValue: 1.5, statKind: 'mul', effectTargetKind: 'animal', aggroPoints: 379 },
     { id: 88, name: 'Detect Dragon Weakness', levels: 1, mp: 27, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-dragons', statValue: 1.5, statKind: 'mul', effectTargetKind: 'dragon', aggroPoints: 549 },
-    { id: 91, name: 'Defence Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul' },
+    { id: 91, name: 'Defense Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul', aggroPoints: 204 },
     { id: 94, name: 'Rage', levels: 2, mp: 25, buff: 90000, reuse: 300000, effect: 'rage', stat: 'pAtkMul', statValue: 1.55, statKind: 'mul' },
     { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
@@ -351,7 +351,7 @@ SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
 });
 SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
     selfId: 91,
-    name: 'Defence Aura',
+    name: 'Defense Aura',
     spell: true,
     power: 1,
     level: 2,
