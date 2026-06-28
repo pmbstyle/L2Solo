@@ -1954,6 +1954,9 @@ const crippleOutcome = SkillEffects.execute(session(), caster, crippled, cripple
 });
 assert.strictEqual(cripple.fetchTargetKind(), 'enemy', 'Cripple should resolve as an enemy debuff');
 assert.strictEqual(cripple.fetchSemantic().baseLandRate, 80, 'Cripple should use sourced power 80 as land rate');
+assert.strictEqual(cripple.fetchSemantic().levelDepend, 2, 'Cripple should preserve sourced lvlDepend metadata');
+assert.strictEqual(cripple.fetchSemantic().castRange, 40, 'Cripple should preserve sourced castRange metadata');
+assert.strictEqual(cripple.fetchSemantic().effectRange, 400, 'Cripple should preserve sourced effectRange metadata');
 assert.deepStrictEqual(cripple.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Cripple should preserve sourced weaponsAllowed requirement');
 assert.strictEqual(crippleOutcome.effect.key, 'cripple', 'Cripple should apply a structured debuff effect');
 assert.strictEqual(EffectStats.multiplier(crippled, 'runSpdMul'), 0.5, 'Cripple level 6 should use sourced runSpd 0.5');

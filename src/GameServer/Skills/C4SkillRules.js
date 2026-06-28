@@ -92,7 +92,7 @@ const RULES = {
     88: { skillType: EFFECT, trait: 'detect_weakness', effect: 'detect_weakness', effectType: 'buff', target: 'self', effectTargetKind: 'dragon', baseLandRate: 100, aggroPoints: 549, stats: { 'pAtk-dragons': 1.5 } },
     91: { skillType: EFFECT, trait: 'buff', effect: 'defense_aura', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [111, 204], statsByLevel: { pDefMul: [1.08, 1.12] } },
     94: { skillType: EFFECT, trait: 'buff', effect: 'rage', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [235, 523], statsByLevel: { pAtkMul: [1.45, 1.55], pDefMul: [0.8, 0.8], pEvasionRateAdd: [-3, -3] } },
-    95: { skillType: EFFECT, trait: 'slow', effect: 'cripple', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { weaponsAllowed: 1024 }, statsByLevel: { runSpdMul: [0.7, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
+    95: { skillType: EFFECT, trait: 'slow', effect: 'cripple', effectType: 'debuff', target: 'enemy', baseLandRate: 80, levelDepend: 2, requires: { weaponsAllowed: 1024 }, castRange: 40, effectRange: 400, statsByLevel: { runSpdMul: [0.7, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     96: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', baseLandRate: 100, dot: { count: 7, intervalMs: 3000, damageByLevel: [39, 51, 66, 81, 93, 102] } },
     109: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [20] },
     121: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [9.1, 13, 16.6, 20, 23, 25.7] },
