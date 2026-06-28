@@ -275,6 +275,7 @@ assert.strictEqual(
     { id: 82, name: 'Majesty', levels: 3, mp: 27, buff: 300000, reuse: 10000, effect: 'majesty', stat: 'pDefMul', statValue: 1.15, statKind: 'mul', extraStats: [{ stat: 'pEvasionRateAdd', value: -6, kind: 'add' }], aggroPoints: 549 },
     { id: 83, name: 'Totem Spirit Wolf', levels: 1, mp: 2, buff: 120000, reuse: 120000, effect: 'totem_spirit_wolf', stat: 'runSpdMul', statValue: 1.15, statKind: 'mul', aggroPoints: 204 },
     { id: 86, name: 'Reflect Damage', levels: 3, mp: 48, buff: 1200000, reuse: 6000, effect: 'reflect_damage', stat: 'reflectDam', statValue: 20, statKind: 'add', aggroPoints: 495 },
+    { id: 87, name: 'Detect Animal Weakness', levels: 1, mp: 18, buff: 600000, reuse: 10000, effect: 'detect_weakness', stat: 'pAtk-animals', statValue: 1.5, statKind: 'mul', effectTargetKind: 'animal', aggroPoints: 379 },
     { id: 91, name: 'Defence Aura', levels: 2, mp: 20, buff: 1200000, reuse: 6000, effect: 'defense_aura', stat: 'pDefMul', statValue: 1.12, statKind: 'mul' },
     { id: 94, name: 'Rage', levels: 2, mp: 25, buff: 90000, reuse: 300000, effect: 'rage', stat: 'pAtkMul', statValue: 1.55, statKind: 'mul' },
     { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
