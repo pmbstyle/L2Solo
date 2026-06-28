@@ -266,9 +266,9 @@
     "levels": [{ "level": 1, "power": 1, "mp": 24, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 81,
-    "template": { "name": "Deadly Blow", "passive": false, "spell": false, "distance": 50 },
+    "template": { "name": "Punch of Doom", "passive": false, "spell": false, "distance": 40 },
     "time": { "hitTime": 1360, "reuse": 120000, "buff": 9000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 399, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 4580, "mp": 0, "hp": 399, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 6332, "mp": 0, "hp": 455, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 9132, "mp": 0, "hp": 499, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 82,
     "template": { "name": "Majesty", "passive": false, "spell": false, "distance": -1 },

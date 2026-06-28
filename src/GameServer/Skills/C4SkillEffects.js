@@ -28,6 +28,7 @@ function execute(session, actor, target, skill, context = {}) {
         aggroReduced: false,
         aggroReduction: 0,
         aggroRemoved: false,
+        selfEffect: null,
         cancelled: []
     };
 
@@ -171,6 +172,14 @@ function execute(session, actor, target, skill, context = {}) {
         } else {
             result.effect = applyEffect(session, target, skill, semantic);
         }
+    }
+
+    if (semantic.selfEffect) {
+        result.selfEffect = applyEffect(session, actor, skill, {
+            ...semantic,
+            ...semantic.selfEffect,
+            stats: semantic.selfEffect.stats || {}
+        });
     }
 
     return result;

@@ -69,7 +69,7 @@ function skill(data) {
         level: data.level ?? 1,
         power: data.power ?? 1,
         mp: 0,
-        hp: 0,
+        hp: data.hp ?? 0,
         itemId: 0,
         itemCount: 0
     });
@@ -1438,6 +1438,43 @@ assert.strictEqual(powerShot.fetchSemantic().castRange, 700, 'Power Shot should 
 assert.strictEqual(powerShot.fetchSemantic().effectRange, 1200, 'Power Shot should preserve sourced effectRange metadata');
 assert.strictEqual(powerShotOutcome.damage, 265, 'Power Shot should keep its physical damage component');
 assert.strictEqual(powerShotOutcome.effect, null, 'Power Shot should remain a pure damage skill without a debuff');
+
+const punchOfDoomData = activeSkills.find((entry) => entry.selfId === 81);
+assert(punchOfDoomData, 'Punch of Doom should be present in active skills data');
+assert.strictEqual(punchOfDoomData.template.name, 'Punch of Doom', 'Punch of Doom should preserve sourced name for skill id 81');
+assert.strictEqual(punchOfDoomData.template.distance, 40, 'Punch of Doom should preserve sourced castRange 40');
+assert.strictEqual(punchOfDoomData.time.hitTime, 1360, 'Punch of Doom should preserve sourced hitTime 1360');
+assert.strictEqual(punchOfDoomData.time.reuse, 120000, 'Punch of Doom should preserve sourced reuseDelay 120000');
+assert.strictEqual(punchOfDoomData.time.buff, 9000, 'Punch of Doom should preserve sourced StunSelf duration 9000ms');
+assert.strictEqual(punchOfDoomData.levels.length, 3, 'Punch of Doom should preserve sourced 3 base levels');
+assert.strictEqual(punchOfDoomData.levels[0].power, 4580, 'Punch of Doom level 1 should preserve sourced PDAM power 4580');
+assert.strictEqual(punchOfDoomData.levels[2].power, 9132, 'Punch of Doom level 3 should preserve sourced PDAM power 9132');
+assert.strictEqual(punchOfDoomData.levels[2].hp, 499, 'Punch of Doom level 3 should preserve sourced HP consume 499');
+const punchCaster = creature({ id: 1000081, hp: 1000, maxHp: 1000 });
+const punchTarget = creature({ id: 1000082, hp: 1000, maxHp: 1000 });
+const punchOfDoom = skill({ selfId: 81, name: 'Punch of Doom', spell: false, power: 9132, level: 3, distance: 40, buff: 9000, hp: 499 });
+const punchOutcome = SkillEffects.execute(session(), punchCaster, punchTarget, punchOfDoom, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 913
+    }
+});
+assert.strictEqual(punchOfDoom.fetchSkillType(), C4SkillRules.DAMAGE, 'Punch of Doom should resolve as sourced PDAM');
+assert.strictEqual(punchOfDoom.fetchTargetKind(), 'enemy', 'Punch of Doom should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(punchOfDoom.fetchSsBoost(), 1, 'Punch of Doom should preserve sourced physical shot boost semantics');
+assert.strictEqual(punchOfDoom.fetchConsumedHp(), 499, 'Punch of Doom should preserve sourced HP consume on the skill model');
+assert.strictEqual(punchOfDoom.fetchSemantic().levelDepend, 2, 'Punch of Doom should preserve sourced lvlDepend metadata');
+assert.strictEqual(punchOfDoom.fetchSemantic().overHit, true, 'Punch of Doom should preserve sourced overHit metadata');
+assert.deepStrictEqual(punchOfDoom.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Punch of Doom should preserve sourced fist weapon requirement');
+assert.strictEqual(punchOfDoom.fetchSemantic().castRange, 40, 'Punch of Doom should preserve sourced castRange metadata');
+assert.strictEqual(punchOfDoom.fetchSemantic().effectRange, 400, 'Punch of Doom should preserve sourced effectRange metadata');
+assert.strictEqual(punchOutcome.damage, 913, 'Punch of Doom should keep its physical damage component');
+assert.strictEqual(punchOutcome.effect, null, 'Punch of Doom should not stun the target');
+assert.strictEqual(punchOutcome.selfEffect.key, 'stun', 'Punch of Doom should apply sourced StunSelf to caster');
+assert(EffectStore.hasDebuff(punchCaster, 'stun'), 'Punch of Doom caster should receive the sourced self stun debuff');
+assert.strictEqual(EffectStore.hasDebuff(punchTarget, 'stun'), false, 'Punch of Doom target should not receive StunSelf');
 
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
