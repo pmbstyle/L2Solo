@@ -1,5 +1,6 @@
 const DAMAGE = 'damage';
 const DAMAGE_EFFECT = 'damageEffect';
+const DEATH_LINK = 'deathLink';
 const HEAL = 'heal';
 const HEAL_PERCENT = 'healPercent';
 const HEAL_HOT = 'healHot';
@@ -169,6 +170,7 @@ const RULES = {
     1148: { skillType: DAMAGE, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1154: { skillType: SUMMON, trait: 'summon', target: 'corpse_mob', ssBoost: 0 },
     1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
+    1159: { skillType: DEATH_LINK, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1160: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     1163: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', baseLandRate: 80, mobOnly: true },
     1164: { skillType: EFFECT, trait: 'debuff', effect: 'curse_weakness', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAtkMul: [0.83, 0.8, 0.8, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77] } },
@@ -452,6 +454,7 @@ function normalizeKey(name) {
 module.exports = {
     DAMAGE,
     DAMAGE_EFFECT,
+    DEATH_LINK,
     HEAL,
     HEAL_PERCENT,
     HEAL_HOT,

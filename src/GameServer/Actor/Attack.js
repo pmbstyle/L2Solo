@@ -3,6 +3,7 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const Formulas       = invoke('GameServer/Formulas');
 const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
+const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 
 class Attack {
@@ -268,9 +269,12 @@ class Attack {
             const shieldMDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
+            const power = semantic.skillType === C4SkillRules.DEATH_LINK
+                ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
+                : skill.fetchPower();
             const damage = Math.round(Formulas.calcMagicDamage(
                 actor.fetchCollectiveMAtk(),
-                skill.fetchPower(),
+                power,
                 creature.fetchCollectiveMDef() + shieldMDef,
                 { spiritshot: usedSpiritshot }
             ) * vulnModifier);

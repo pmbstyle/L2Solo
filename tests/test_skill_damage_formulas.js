@@ -14,6 +14,8 @@ function actor() {
         fetchLocX: () => 1,
         fetchLocY: () => 2,
         fetchLocZ: () => 3,
+        fetchHp: () => 1000,
+        fetchMaxHp: () => 1000,
         fetchCollectivePAtk: () => 100,
         fetchCollectiveMAtk: () => 100,
         fetchCollectiveAtkSpd: () => 333,
@@ -37,11 +39,14 @@ function target() {
     };
 }
 
-function skill({ spell, power, trait }) {
+function skill({ spell, power, trait, skillType }) {
     return {
         fetchSpell: () => spell,
         fetchPower: () => power,
-        fetchSemantic: () => trait ? { trait } : {}
+        fetchSemantic: () => ({
+            ...(trait ? { trait } : {}),
+            ...(skillType ? { skillType } : {})
+        })
     };
 }
 
@@ -77,6 +82,20 @@ assert.strictEqual(
     earthDamage,
     Math.round(Formulas.calcMagicDamage(100, 10, 50) * 1.3),
     'magic skill damage should apply sourced elemental vulnerability multipliers by trait'
+);
+
+const fullHpDeathLinkPower = Formulas.calcDeathLinkPower(108, 1000, 1000);
+const lowHpDeathLinkPower = Formulas.calcDeathLinkPower(108, 250, 1000);
+assert(Math.abs(fullHpDeathLinkPower - (108 * Math.pow(1.7165 - 1, 2) * 0.577)) < 1e-9, 'Death Link power should follow sourced full-HP L2J formula');
+assert(lowHpDeathLinkPower > fullHpDeathLinkPower, 'Death Link power should increase as caster HP drops');
+const deathLinkActor = actor();
+deathLinkActor.fetchHp = () => 250;
+deathLinkActor.fetchMaxHp = () => 1000;
+const deathLinkDamage = attack.prepareSkillDamage(deathLinkActor, target(), skill({ spell: true, power: 108, trait: 'dark', skillType: 'deathLink' }), true, () => 0.99);
+assert.strictEqual(
+    deathLinkDamage,
+    Math.round(Formulas.calcMagicDamage(100, lowHpDeathLinkPower, 50)),
+    'Curse Death Link should scale magic damage with sourced caster-HP power modifier'
 );
 
 const poisonVulnerableTarget = target();

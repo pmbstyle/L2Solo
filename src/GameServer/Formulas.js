@@ -240,6 +240,14 @@ const Formulas = {
         return damage;
     },
 
+    // Lisvus/L2J DEATHLINK: L2Skill.getPower scales skill power by caster HP ratio.
+    calcDeathLinkPower(power, currentHp, maxHp) {
+        const max = Number(maxHp) || 0;
+        const current = Number(currentHp) || 0;
+        const hpRatio = max > 0 ? current / max : 1;
+        return (Number(power) || 0) * Math.pow(1.7165 - hpRatio, 2) * 0.577;
+    },
+
     // L2J-style Heal handler baseline: power with shot multipliers; stat bonuses need real effect stats first.
     calcHealAmount(power, { spiritshot = false, blessedSpiritshot = false } = {}) {
         let amount = Number(power) || 0;

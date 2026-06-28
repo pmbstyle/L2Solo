@@ -124,7 +124,7 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
-    if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT) {
+    if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
     }
 

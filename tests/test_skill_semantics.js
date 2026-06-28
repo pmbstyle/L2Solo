@@ -2310,6 +2310,28 @@ assert.strictEqual(deathSpike.fetchSkillType(), C4SkillRules.DAMAGE, 'Death Spik
 assert.strictEqual(deathSpike.fetchSemantic().trait, 'dark', 'Death Spike should preserve sourced dark element');
 assert.strictEqual(deathSpike.fetchTargetKind(), 'enemy', 'Death Spike should resolve as an enemy nuke');
 
+const deathLinkData = activeSkills.find((entry) => entry.selfId === 1159);
+assert(deathLinkData, 'Curse Death Link should be present in active skills data');
+assert.strictEqual(deathLinkData.levels.length, 22, 'Curse Death Link should preserve sourced 22 base levels');
+assert.strictEqual(deathLinkData.levels[0].power, 68, 'Curse Death Link level 1 should preserve sourced power 68');
+assert.strictEqual(deathLinkData.levels[21].power, 108, 'Curse Death Link level 22 should preserve sourced power 108');
+assert.strictEqual(deathLinkData.levels[21].mp, 69, 'Curse Death Link level 22 MP should use sourced initial + consume total');
+const deathLink = skill({ selfId: 1159, name: 'Curse Death Link', spell: true, power: 108, level: 22, distance: 900 });
+const deathLinkOutcome = SkillEffects.execute(session(), caster, creature({ id: 2000319 }), deathLink, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DEATH_LINK, 'Curse Death Link should route as sourced DEATHLINK damage');
+            return 319;
+        }
+    }
+});
+assert.strictEqual(deathLink.fetchSkillType(), C4SkillRules.DEATH_LINK, 'Curse Death Link should resolve as sourced DEATHLINK damage');
+assert.strictEqual(deathLink.fetchSemantic().trait, 'dark', 'Curse Death Link should preserve sourced dark element');
+assert.strictEqual(deathLink.fetchTargetKind(), 'enemy', 'Curse Death Link should resolve as an enemy nuke');
+assert.strictEqual(deathLinkOutcome.damage, 319, 'Curse Death Link should execute through damage routing');
+
 const chillFlameData = activeSkills.find((entry) => entry.selfId === 1100);
 assert(chillFlameData, 'Chill Flame should be present in active skills data');
 assert.strictEqual(chillFlameData.levels.length, 2, 'Chill Flame should preserve sourced 2 base levels');
