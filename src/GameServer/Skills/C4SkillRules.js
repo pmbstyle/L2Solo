@@ -307,6 +307,7 @@ const RULES = {
     1233: { skillType: EFFECT, trait: 'earth', effect: 'decay', effectType: 'debuff', target: 'enemy', baseLandRate: 70, levelDepend: 1, castRange: 600, effectRange: 1100, dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 94, 111, 128] } },
     1234: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.4, baseLandRate: 92 },
     1235: { skillType: DAMAGE, trait: 'water', target: 'enemy', ssBoost: 1, baseLandRate: 92, castRange: 900, effectRange: 1400 },
+    1236: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'frost_bolt', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 60, levelDepend: 1, castRange: 900, effectRange: 1400, stats: { runSpdMul: 0.7 } },
     1245: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 0.8, baseLandRate: 92 },
     1276: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     1277: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

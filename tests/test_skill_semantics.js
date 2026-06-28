@@ -4304,6 +4304,41 @@ assert.strictEqual(hydroBlast.fetchSemantic().castRange, 900, 'Hydro Blast shoul
 assert.strictEqual(hydroBlast.fetchSemantic().effectRange, 1400, 'Hydro Blast should preserve sourced effectRange metadata');
 assert.strictEqual(hydroBlastOutcome.damage, 1235, 'Hydro Blast should execute through damage routing');
 
+const frostBoltData = activeSkills.find((entry) => entry.selfId === 1236);
+assert(frostBoltData, 'Frost Bolt should be present in active skills data');
+assert.strictEqual(frostBoltData.template.distance, 900, 'Frost Bolt should preserve sourced castRange 900');
+assert.strictEqual(frostBoltData.time.hitTime, 3100, 'Frost Bolt should preserve sourced hitTime 3100');
+assert.strictEqual(frostBoltData.time.reuse, 8000, 'Frost Bolt should preserve sourced reuseDelay 8000');
+assert.strictEqual(frostBoltData.time.buff, 120000, 'Frost Bolt should preserve sourced 120 second RunSpeedDown duration');
+assert.strictEqual(frostBoltData.levels.length, 19, 'Frost Bolt should preserve sourced 19 base levels');
+assert.strictEqual(frostBoltData.levels[0].power, 30, 'Frost Bolt level 1 should preserve sourced MDAM power 30');
+assert.strictEqual(frostBoltData.levels[0].mp, 27, 'Frost Bolt level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(frostBoltData.levels[18].power, 65, 'Frost Bolt level 19 should preserve sourced MDAM power 65');
+assert.strictEqual(frostBoltData.levels[18].mp, 55, 'Frost Bolt level 19 MP should use sourced mpConsume 55');
+const frostBoltTarget = statActor();
+const frostBolt = skill({ selfId: 1236, name: 'Frost Bolt', spell: true, power: 65, level: 19, distance: 900, buff: 120000 });
+const frostBoltOutcome = SkillEffects.execute(session(), caster, frostBoltTarget, frostBolt, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Frost Bolt should route as sourced MDAM plus debuff');
+            return 1236;
+        }
+    }
+});
+assert.strictEqual(frostBolt.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Frost Bolt should resolve as sourced MDAM with additional debuff');
+assert.strictEqual(frostBolt.fetchTargetKind(), 'enemy', 'Frost Bolt should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(frostBolt.fetchSemantic().trait, 'water', 'Frost Bolt should preserve sourced water element');
+assert.strictEqual(frostBolt.fetchSemantic().baseLandRate, 60, 'Frost Bolt should use sourced effectPower 60 as debuff land rate');
+assert.strictEqual(frostBolt.fetchSemantic().levelDepend, 1, 'Frost Bolt should preserve sourced lvlDepend metadata');
+assert.strictEqual(frostBolt.fetchSemantic().castRange, 900, 'Frost Bolt should preserve sourced castRange metadata');
+assert.strictEqual(frostBolt.fetchSemantic().effectRange, 1400, 'Frost Bolt should preserve sourced effectRange metadata');
+assert.strictEqual(frostBoltOutcome.damage, 1236, 'Frost Bolt should still deal direct MDAM damage');
+assert.strictEqual(frostBoltOutcome.effect.key, 'frost_bolt', 'Frost Bolt should apply a structured slow debuff');
+assert.strictEqual(EffectStats.multiplier(frostBoltTarget, 'runSpdMul'), 0.7, 'Frost Bolt should apply sourced RunSpeedDown 0.7 multiplier');
+EffectStore.remove(frostBoltTarget, 'frost_bolt');
+
 const auraFlareData = activeSkills.find((entry) => entry.selfId === 1231);
 assert(auraFlareData, 'Aura Flare should be present in active skills data');
 assert.strictEqual(auraFlareData.template.distance, 150, 'Aura Flare should preserve sourced castRange 150');
