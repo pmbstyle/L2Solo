@@ -51,6 +51,7 @@ function setCollectiveTotalPDef(actor) {
     let base = Formulas.calcPDef(actor.fetchLevel(), pDef);
     base = Math.round(base * legacyBuffMultiplier(actor, 'shield', 'pDefMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pDefMul'));
+    base += EffectStats.add(actor, 'pDefAdd');
     actor.setCollectivePDef(base);
 }
 
@@ -58,6 +59,7 @@ function setCollectiveTotalMDef(actor) {
     const mDef = actor.backpack.fetchTotalArmorMDef() ?? actor.fetchMDef();
     let base = Formulas.calcMDef(actor.fetchLevel(), actor.fetchMen(), mDef);
     base = Math.round(base * EffectStats.multiplier(actor, 'mDefMul'));
+    base += EffectStats.add(actor, 'mDefAdd');
     actor.setCollectiveMDef(base);
 }
 

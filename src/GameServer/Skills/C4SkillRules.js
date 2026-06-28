@@ -64,6 +64,7 @@ const RULES = {
     105: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'freezing_strike', effectType: 'debuff', baseLandRate: 60, stats: { runSpdMul: 0.7 } },
     106: { skillType: AGGRO_REMOVE, trait: 'derangement', target: 'enemy', ssBoost: 0, baseLandRate: 70, castRange: 500, effectRange: 900 },
     107: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, levelDepend: 2, undeadOnly: true },
+    110: { skillType: EFFECT, trait: 'buff', effect: 'ultimate_defense', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [204, 438], statsByLevel: { pDefAdd: [1800, 3600], mDefAdd: [1350, 2700] } },
     115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
     120: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 2, requires: { weaponsAllowed: 1024 } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },

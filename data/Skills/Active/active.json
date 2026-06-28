@@ -386,9 +386,9 @@
     "levels": [{"level": 1, "power": 20, "mp": 5, "hp": 0, "itemId": 0, "itemCount": 0}]
 },{
     "selfId": 110,
-    "template": { "name": "Ultimate Defence", "passive": false, "spell": false, "distance": -1 },
+    "template": { "name": "Ultimate Defense", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 1000, "reuse": 1800000, "buff": 30000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 20, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 42, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 1, "mp": 19, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 41, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 111,
     "template": { "name": "Ultimate Evasion", "passive": false, "spell": false, "distance": -1 },
