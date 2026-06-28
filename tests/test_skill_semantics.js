@@ -3953,6 +3953,41 @@ assert.strictEqual(deathLink.fetchSemantic().trait, 'dark', 'Curse Death Link sh
 assert.strictEqual(deathLink.fetchTargetKind(), 'enemy', 'Curse Death Link should resolve as an enemy nuke');
 assert.strictEqual(deathLinkOutcome.damage, 319, 'Curse Death Link should execute through damage routing');
 
+const corpseBurstData = activeSkills.find((entry) => entry.selfId === 1155);
+assert(corpseBurstData, 'Corpse Burst should be present in active skills data');
+assert.strictEqual(corpseBurstData.template.distance, 400, 'Corpse Burst should preserve sourced castRange 400');
+assert.strictEqual(corpseBurstData.time.hitTime, 1500, 'Corpse Burst should preserve sourced hitTime 1500');
+assert.strictEqual(corpseBurstData.time.reuse, 20000, 'Corpse Burst should preserve sourced reuseDelay 20000');
+assert.strictEqual(corpseBurstData.time.buff, 0, 'Corpse Burst should not use a debuff duration');
+assert.strictEqual(corpseBurstData.levels.length, 15, 'Corpse Burst should preserve sourced 15 base levels');
+assert.strictEqual(corpseBurstData.levels[0].power, 31, 'Corpse Burst level 1 should preserve sourced power 31');
+assert.strictEqual(corpseBurstData.levels[0].mp, 33, 'Corpse Burst level 1 MP should use sourced mpConsume 33');
+assert.strictEqual(corpseBurstData.levels[14].power, 54, 'Corpse Burst level 15 should preserve sourced power 54');
+assert.strictEqual(corpseBurstData.levels[14].mp, 55, 'Corpse Burst level 15 MP should use sourced mpConsume 55');
+const corpseBurstTarget = creature({ id: 2001155, hp: 0, maxHp: 100, dead: true });
+corpseBurstTarget.fetchAttackable = () => true;
+const corpseBurst = skill({ selfId: 1155, name: 'Corpse Burst', spell: true, power: 54, level: 15, distance: 400 });
+const corpseBurstOutcome = SkillEffects.execute(session(), caster, corpseBurstTarget, corpseBurst, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        prepareSkillDamage(actor, target, castSkill) {
+            assert.strictEqual(castSkill.fetchSkillType(), C4SkillRules.DAMAGE, 'Corpse Burst should route as sourced MDAM damage');
+            assert.strictEqual(target, corpseBurstTarget, 'Corpse Burst should keep the corpse mob target as the damage anchor');
+            return 1155;
+        }
+    }
+});
+assert.strictEqual(corpseBurst.fetchSkillType(), C4SkillRules.DAMAGE, 'Corpse Burst should resolve as sourced MDAM damage');
+assert.strictEqual(corpseBurst.fetchTargetKind(), 'corpse_mob', 'Corpse Burst should preserve sourced TARGET_AREA_CORPSE_MOB target semantics');
+assert.strictEqual(corpseBurst.fetchSemantic().sourceTarget, 'area', 'Corpse Burst should preserve sourced area corpse semantics');
+assert.strictEqual(corpseBurst.fetchSemantic().radius, 200, 'Corpse Burst should preserve sourced skillRadius 200');
+assert.strictEqual(corpseBurst.fetchSemantic().trait, 'magic', 'Corpse Burst should preserve non-elemental magic damage semantics');
+assert.strictEqual(corpseBurst.fetchSemantic().ssBoost, 1, 'Corpse Burst should preserve sourced magic damage shot boost semantics');
+assert.strictEqual(corpseBurst.fetchSemantic().castRange, 400, 'Corpse Burst should preserve sourced castRange metadata');
+assert.strictEqual(corpseBurst.fetchSemantic().effectRange, 900, 'Corpse Burst should preserve sourced effectRange metadata');
+assert.strictEqual(corpseBurstOutcome.damage, 1155, 'Corpse Burst should execute through damage routing');
+
 [
     { id: 46, name: 'Life Scavenge', levels: 15, target: 'corpse_mob', trait: 'magic', lastPower: 243, lastMp: 69, absorbAbs: 243 },
     { id: 70, name: 'Drain Health', levels: 53, target: 'enemy', trait: 'dark', lastPower: 108, lastMp: 52, absorbPart: 0.2 },
