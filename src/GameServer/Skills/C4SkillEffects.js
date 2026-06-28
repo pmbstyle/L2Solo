@@ -21,6 +21,7 @@ function execute(session, actor, target, skill, context = {}) {
         effectResisted: false,
         lethal: false,
         mpRestore: 0,
+        aggroDamage: 0,
         aggroReduced: false,
         aggroReduction: 0,
         aggroRemoved: false,
@@ -112,6 +113,12 @@ function execute(session, actor, target, skill, context = {}) {
         } else {
             result.aggroRemoved = true;
         }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.AGGRO_DAMAGE) {
+        result.aggroDamage = calcAggroDamage(skill, target);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
@@ -350,6 +357,12 @@ function damageByLevel(skill, dot) {
     const values = dot.damageByLevel;
     const index = Math.max(0, Math.min(values.length - 1, (Number(skill.fetchLevel()) || 1) - 1));
     return values[index];
+}
+
+function calcAggroDamage(skill, target) {
+    const power = Math.max(0, Number(skill.fetchPower?.()) || 0);
+    const level = Math.max(1, Number(target.fetchLevel?.()) || 1);
+    return Math.floor((150 * power) / (level + 7));
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {

@@ -14,6 +14,7 @@ const HEAL_CLEANSE = 'healCleanse';
 const MANA_RECHARGE = 'manaRecharge';
 const MANA_HEAL = 'manaHeal';
 const SUMMON = 'summon';
+const AGGRO_DAMAGE = 'aggroDamage';
 const AGGRO_REMOVE = 'aggroRemove';
 const AGGRO_REDUCE = 'aggroReduce';
 const AGGRO_REDUCE_CHAR = 'aggroReduceChar';
@@ -35,6 +36,7 @@ const RULES = {
     15: { skillType: AGGRO_REDUCE, trait: 'derangement', target: 'enemy', ssBoost: 1, mobOnly: true },
     16: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, requires: { weaponsAllowed: 16, condition: 16 } },
     17: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'front_area', radius: 200, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
+    18: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', sourceTarget: 'aura', radius: 200, ssBoost: 0 },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
@@ -506,6 +508,7 @@ module.exports = {
     MANA_RECHARGE,
     MANA_HEAL,
     SUMMON,
+    AGGRO_DAMAGE,
     AGGRO_REMOVE,
     AGGRO_REDUCE,
     AGGRO_REDUCE_CHAR,

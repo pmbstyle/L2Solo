@@ -1194,6 +1194,29 @@ assert.deepStrictEqual(forceBuster.fetchSemantic().requires, { weaponsAllowed: 1
 assert.strictEqual(forceBusterOutcome.damage, 212, 'Force Buster should keep its physical damage component');
 assert.strictEqual(forceBusterOutcome.effect, null, 'Force Buster should remain a pure damage skill without a debuff');
 
+const hateAuraData = activeSkills.find((entry) => entry.selfId === 18);
+assert(hateAuraData, 'Hate Aura should be present in active skills data');
+assert.strictEqual(hateAuraData.template.distance, -1, 'Hate Aura should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(hateAuraData.time.hitTime, 1200, 'Hate Aura should preserve sourced hitTime 1200');
+assert.strictEqual(hateAuraData.time.reuse, 3000, 'Hate Aura should preserve sourced reuseDelay 3000');
+assert.strictEqual(hateAuraData.levels.length, 37, 'Hate Aura should preserve sourced 37 base levels');
+assert.strictEqual(hateAuraData.levels[20].power, 1647, 'Hate Aura level 21 should preserve existing sourced AGGDAMAGE power 1647');
+assert.strictEqual(hateAuraData.levels[36].power, 1963, 'Hate Aura level 37 should preserve sourced AGGDAMAGE power 1963');
+assert.strictEqual(hateAuraData.levels[36].mp, 102, 'Hate Aura level 37 MP should use sourced mpConsume 102');
+const hateAuraTarget = creature({ id: 1000025, hp: 100, maxHp: 100, level: 20 });
+hateAuraTarget.fetchAttackable = () => true;
+const hateAura = skill({ selfId: 18, name: 'Hate Aura', spell: false, power: 1963, level: 37, distance: -1 });
+const hateAuraOutcome = SkillEffects.execute(session(), caster, hateAuraTarget, hateAura, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(hateAura.fetchSkillType(), C4SkillRules.AGGRO_DAMAGE, 'Hate Aura should preserve sourced AGGDAMAGE semantics');
+assert.strictEqual(hateAura.fetchTargetKind(), 'enemy', 'Hate Aura should remain executable against enemies in its aura');
+assert.strictEqual(hateAura.fetchSemantic().sourceTarget, 'aura', 'Hate Aura should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(hateAura.fetchSemantic().radius, 200, 'Hate Aura should preserve sourced skillRadius 200');
+assert.strictEqual(hateAuraOutcome.damage, 0, 'Hate Aura should not be routed as HP damage');
+assert.strictEqual(hateAuraOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Hate Aura should use sourced Lisvus AGGDAMAGE hate formula');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
