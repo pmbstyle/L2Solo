@@ -1385,6 +1385,36 @@ assert.strictEqual(forceBlaster.fetchSemantic().effectRange, 1100, 'Force Blaste
 assert.strictEqual(forceBlasterOutcome.damage, 254, 'Force Blaster should keep its physical damage component');
 assert.strictEqual(forceBlasterOutcome.effect, null, 'Force Blaster should remain a pure damage skill without a debuff');
 
+const powerShotData = activeSkills.find((entry) => entry.selfId === 56);
+assert(powerShotData, 'Power Shot should be present in active skills data');
+assert.strictEqual(powerShotData.template.distance, 700, 'Power Shot should preserve sourced castRange 700');
+assert.strictEqual(powerShotData.time.hitTime, 3200, 'Power Shot should preserve sourced hitTime 3200');
+assert.strictEqual(powerShotData.time.reuse, 25000, 'Power Shot should preserve sourced reuseDelay 25000');
+assert.strictEqual(powerShotData.levels.length, 24, 'Power Shot should preserve sourced 24 base levels');
+assert.strictEqual(powerShotData.levels[0].power, 65, 'Power Shot level 1 should preserve sourced PDAM power 65');
+assert.strictEqual(powerShotData.levels[23].power, 865, 'Power Shot level 24 should preserve sourced PDAM power 865');
+assert.strictEqual(powerShotData.levels[23].mp, 74, 'Power Shot level 24 MP should use sourced mpConsume 74');
+const powerShotTarget = creature({ id: 1000056, hp: 100, maxHp: 100, level: 20 });
+const powerShot = skill({ selfId: 56, name: 'Power Shot', spell: false, power: 865, level: 24, distance: 700 });
+const powerShotOutcome = SkillEffects.execute(session(), caster, powerShotTarget, powerShot, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 265
+    }
+});
+assert.strictEqual(powerShot.fetchSkillType(), C4SkillRules.DAMAGE, 'Power Shot should resolve as sourced PDAM');
+assert.strictEqual(powerShot.fetchTargetKind(), 'enemy', 'Power Shot should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(powerShot.fetchSsBoost(), 1, 'Power Shot should preserve sourced physical shot boost semantics');
+assert.strictEqual(powerShot.fetchSemantic().trait, 'bow', 'Power Shot should preserve sourced bow damage semantics');
+assert.strictEqual(powerShot.fetchSemantic().overHit, true, 'Power Shot should preserve sourced overHit metadata');
+assert.deepStrictEqual(powerShot.fetchSemantic().requires, { weaponsAllowed: 32 }, 'Power Shot should preserve sourced bow weapon requirement');
+assert.strictEqual(powerShot.fetchSemantic().castRange, 700, 'Power Shot should preserve sourced castRange metadata');
+assert.strictEqual(powerShot.fetchSemantic().effectRange, 1200, 'Power Shot should preserve sourced effectRange metadata');
+assert.strictEqual(powerShotOutcome.damage, 265, 'Power Shot should keep its physical damage component');
+assert.strictEqual(powerShotOutcome.effect, null, 'Power Shot should remain a pure damage skill without a debuff');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');

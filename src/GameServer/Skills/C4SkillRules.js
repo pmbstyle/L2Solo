@@ -51,7 +51,7 @@ const RULES = {
     35: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, requires: { weaponsAllowed: 1024, charges: 1, condition: 128, conditionValue: 1 } },
     36: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, overHit: true, requires: { weaponsAllowed: 64 } },
     42: { skillType: SWEEP, trait: 'spoil', target: 'corpse_mob', ssBoost: 0, castRange: 20, effectRange: 400 },
-    56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
+    56: { skillType: DAMAGE, trait: 'bow', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 32 }, castRange: 700, effectRange: 1200 },
     67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     92: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { itemKind: 'shield' } },
     100: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', baseLandRate: 50 },
