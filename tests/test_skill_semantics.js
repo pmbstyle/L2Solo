@@ -1334,6 +1334,29 @@ assert.strictEqual(aggression.fetchSemantic().effectRange, 1300, 'Aggression lev
 assert.strictEqual(aggressionOutcome.damage, 0, 'Aggression should not be routed as HP damage');
 assert.strictEqual(aggressionOutcome.aggroDamage, Math.floor((150 * 1963) / (20 + 7)), 'Aggression should use sourced Lisvus AGGDAMAGE hate formula');
 
+const lureData = activeSkills.find((entry) => entry.selfId === 51);
+assert(lureData, 'Lure should be present in active skills data');
+assert.strictEqual(lureData.template.distance, 400, 'Lure should preserve sourced castRange 400');
+assert.strictEqual(lureData.time.hitTime, 1500, 'Lure should preserve sourced hitTime 1500');
+assert.strictEqual(lureData.time.reuse, 10000, 'Lure should preserve sourced reuseDelay 10000');
+assert.strictEqual(lureData.levels.length, 1, 'Lure should preserve sourced single base level');
+assert.strictEqual(lureData.levels[0].power, 500, 'Lure level 1 should preserve sourced AGGDAMAGE power 500');
+assert.strictEqual(lureData.levels[0].mp, 44, 'Lure level 1 MP should use sourced mpConsume 44');
+const lureTarget = creature({ id: 1000051, hp: 100, maxHp: 100, level: 20 });
+lureTarget.fetchAttackable = () => true;
+const lure = skill({ selfId: 51, name: 'Lure', spell: false, power: 500, level: 1, distance: 400 });
+const lureOutcome = SkillEffects.execute(session(), caster, lureTarget, lure, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(lure.fetchSkillType(), C4SkillRules.AGGRO_DAMAGE, 'Lure should preserve sourced AGGDAMAGE semantics');
+assert.strictEqual(lure.fetchTargetKind(), 'enemy', 'Lure should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(lure.fetchSsBoost(), 0, 'Lure should not consume offensive shot boost semantics');
+assert.strictEqual(lure.fetchSemantic().castRange, 400, 'Lure should preserve sourced castRange metadata');
+assert.strictEqual(lure.fetchSemantic().effectRange, 900, 'Lure should preserve sourced effectRange metadata');
+assert.strictEqual(lureOutcome.damage, 0, 'Lure should not be routed as HP damage');
+assert.strictEqual(lureOutcome.aggroDamage, Math.floor((150 * 500) / (20 + 7)), 'Lure should use sourced Lisvus AGGDAMAGE hate formula');
+
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
 assert(ironPunchData, 'Iron Punch should be present in active skills data');
 assert.strictEqual(ironPunchData.template.distance, 40, 'Iron Punch should preserve sourced castRange 40');
