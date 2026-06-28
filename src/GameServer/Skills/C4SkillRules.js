@@ -81,7 +81,7 @@ const RULES = {
     75: { skillType: EFFECT, trait: 'detect_weakness', effect: 'detect_weakness', effectType: 'buff', target: 'self', effectTargetKind: 'insect', baseLandRate: 100, aggroPoints: 303, stats: { 'pAtk-insects': 1.5 } },
     76: { skillType: EFFECT, trait: 'totem', effect: 'totem_spirit_bear', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPoints: 268, stats: { runSpdMul: 0.7, pAtkMul: 1.2 } },
     77: { skillType: EFFECT, trait: 'buff', effect: 'attack_aura', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [138, 268], statsByLevel: { pAtkMul: [1.08, 1.12] } },
-    78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.20, 1.25] } },
+    78: { skillType: EFFECT, trait: 'buff', effect: 'war_cry', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [204, 408], statsByLevel: { pAtkMul: [1.20, 1.25] } },
     91: { skillType: EFFECT, trait: 'buff', effect: 'defense_aura', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12] } },
     94: { skillType: EFFECT, trait: 'buff', effect: 'rage', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.45, 1.55], pDefMul: [0.8, 0.8], pEvasionRateAdd: [-3, -3] } },
     95: { skillType: EFFECT, trait: 'slow', effect: 'cripple', effectType: 'debuff', target: 'enemy', baseLandRate: 80, requires: { weaponsAllowed: 1024 }, statsByLevel: { runSpdMul: [0.7, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
