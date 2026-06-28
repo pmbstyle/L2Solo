@@ -5097,6 +5097,126 @@ assert.strictEqual(npcAreaParalysisOutcome.effect.key, 'paralyze', 'NPC area Par
 assert.strictEqual(EffectRestrictions.canCast(npcAreaParalysisTarget), false, 'NPC area Paralysis should block casting');
 EffectStore.remove(npcAreaParalysisTarget, 'paralyze');
 
+const npcAtkSpeedDownData = activeSkills.find((entry) => entry.selfId === 4070);
+assert(npcAtkSpeedDownData, 'NPC Decrease Atk. Spd. should be present in active skills data');
+assert.strictEqual(npcAtkSpeedDownData.template.name, 'Decrease Atk. Spd.', 'NPC Decrease Atk. Spd. should preserve sourced name');
+assert.strictEqual(npcAtkSpeedDownData.time.buff, 120000, 'NPC Decrease Atk. Spd. should preserve sourced 120 second duration');
+assert.strictEqual(npcAtkSpeedDownData.levels[0].power, 10, 'NPC Decrease Atk. Spd. should preserve sourced power 10');
+const npcAtkSpeedDown = skill({ selfId: 4070, name: 'Decrease Atk. Spd.', spell: false, power: 10, level: 1, buff: 120000, distance: -1 });
+const npcAtkSpeedDownTarget = statActor();
+const npcAtkSpeedDownOutcome = SkillEffects.execute(session(), caster, npcAtkSpeedDownTarget, npcAtkSpeedDown, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcAtkSpeedDown.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Decrease Atk. Spd. should resolve as sourced DEBUFF effect semantics');
+assert.strictEqual(npcAtkSpeedDown.fetchTargetKind(), 'enemy', 'NPC Decrease Atk. Spd. should resolve as an enemy debuff');
+assert.strictEqual(npcAtkSpeedDown.fetchSsBoost(), 0, 'NPC Decrease Atk. Spd. should not use shot boost semantics');
+assert.strictEqual(npcAtkSpeedDown.fetchSemantic().baseLandRate, 10, 'NPC Decrease Atk. Spd. should use sourced power 10 as land rate');
+assert.strictEqual(npcAtkSpeedDown.fetchSemantic().levelDepend, 1, 'NPC Decrease Atk. Spd. should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcAtkSpeedDownOutcome.effect.key, 'decrease_atk_spd', 'NPC Decrease Atk. Spd. should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(npcAtkSpeedDownTarget, 'pAtkSpdMul'), 0.77, 'NPC Decrease Atk. Spd. should apply sourced pAtkSpd 0.77 multiplier');
+
+[
+    { id: 4072, sourceTarget: 'aura', radius: 150, baseLandRate: 30, castRange: null },
+    { id: 4073, sourceTarget: null, radius: 0, baseLandRate: 50, castRange: 40 }
+].forEach(({ id, sourceTarget, radius, baseLandRate, castRange }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `NPC Shock ${id} should be present in active skills data`);
+    assert.strictEqual(data.levels.length, 12, `NPC Shock ${id} should preserve sourced 12 levels`);
+    assert.strictEqual(data.levels[11].power, 873, `NPC Shock ${id} level 12 should preserve sourced PDAM power 873`);
+    assert.strictEqual(data.levels[11].mp, 95, `NPC Shock ${id} level 12 should preserve sourced mpConsume 95`);
+    if (castRange !== null) {
+        assert.strictEqual(data.template.distance, castRange, `NPC Shock ${id} should preserve sourced castRange ${castRange}`);
+    }
+    const shock = skill({ selfId: id, name: 'Shock', spell: false, power: 873, level: 12, buff: 9000, distance: castRange ?? -1 });
+    const target = statActor();
+    const outcome = SkillEffects.execute(session(), caster, target, shock, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { prepareSkillDamage: () => 321, clearLoadedShot() {} }
+    });
+    assert.strictEqual(shock.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, `NPC Shock ${id} should resolve as sourced PDAM plus stun`);
+    assert.strictEqual(shock.fetchTargetKind(), 'enemy', `NPC Shock ${id} should resolve as an enemy skill`);
+    assert.strictEqual(shock.fetchSsBoost(), 1, `NPC Shock ${id} should preserve physical shot boost semantics`);
+    assert.strictEqual(shock.fetchSemantic().overHit, true, `NPC Shock ${id} should preserve sourced overHit metadata`);
+    assert.strictEqual(shock.fetchSemantic().sourceTarget, sourceTarget, `NPC Shock ${id} should preserve sourced target geometry`);
+    assert.strictEqual(shock.fetchSemantic().radius, radius, `NPC Shock ${id} should preserve sourced radius metadata`);
+    assert.strictEqual(shock.fetchSemantic().baseLandRate, baseLandRate, `NPC Shock ${id} should use sourced effectPower as stun land rate`);
+    assert.strictEqual(shock.fetchSemantic().levelDepend, 1, `NPC Shock ${id} should preserve sourced lvlDepend metadata`);
+    assert.strictEqual(shock.fetchSemantic().magicLevel, 95, `NPC Shock ${id} level 12 should preserve sourced magicLvl 95`);
+    assert.strictEqual(shock.fetchSemantic().castRange, castRange, `NPC Shock ${id} should preserve sourced castRange metadata`);
+    assert.strictEqual(outcome.damage, 321, `NPC Shock ${id} should keep the sourced PDAM damage component`);
+    assert.strictEqual(outcome.effect.key, 'stun', `NPC Shock ${id} should apply sourced Stun`);
+    assert.strictEqual(EffectRestrictions.canAttack(target), false, `NPC Shock ${id} should disable attacks while stunned`);
+    EffectStore.remove(target, 'stun');
+});
+
+const npcHasteData = activeSkills.find((entry) => entry.selfId === 4074);
+assert(npcHasteData, 'NPC Haste should be present in active skills data');
+assert.strictEqual(npcHasteData.time.hitTime, 2000, 'NPC Haste should preserve sourced hitTime 2000');
+assert.strictEqual(npcHasteData.time.buff, 1200000, 'NPC Haste should preserve sourced 1200 second duration');
+assert.strictEqual(npcHasteData.levels.length, 2, 'NPC Haste should preserve sourced 2 levels');
+assert.strictEqual(npcHasteData.levels[1].mp, 33, 'NPC Haste level 2 should preserve sourced mpConsume 33');
+const npcHaste = skill({ selfId: 4074, name: 'NPC Haste', spell: true, power: 1, level: 2, buff: 1200000, distance: 400 });
+const npcHasteOutcome = SkillEffects.execute(session(), caster, caster, npcHaste, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcHaste.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Haste should resolve as sourced BUFF effect semantics');
+assert.strictEqual(npcHaste.fetchTargetKind(), 'self', 'NPC Haste should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(npcHaste.fetchSemantic().castRange, 400, 'NPC Haste should preserve sourced castRange metadata');
+assert.strictEqual(npcHaste.fetchSemantic().effectRange, 900, 'NPC Haste should preserve sourced effectRange metadata');
+assert.strictEqual(npcHaste.fetchSemantic().aggroPoints, 100, 'NPC Haste should preserve sourced aggroPoints 100');
+assert.strictEqual(npcHasteOutcome.effect.key, 'npc_haste', 'NPC Haste should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(caster, 'pAtkSpdMul'), 1.33, 'NPC Haste level 2 should apply sourced pAtkSpd 1.33 multiplier');
+EffectStore.remove(caster, 'npc_haste');
+
+const npcEffectShockData = activeSkills.find((entry) => entry.selfId === 4075);
+assert(npcEffectShockData, 'NPC effect Shock should be present in active skills data');
+assert.strictEqual(npcEffectShockData.template.distance, 40, 'NPC effect Shock should preserve sourced castRange 40');
+assert.strictEqual(npcEffectShockData.levels.length, 12, 'NPC effect Shock should preserve sourced 12 levels');
+assert.strictEqual(npcEffectShockData.levels[11].power, 80, 'NPC effect Shock should preserve sourced power 80');
+const npcEffectShock = skill({ selfId: 4075, name: 'Shock', spell: false, power: 80, level: 12, buff: 9000, distance: 40 });
+const npcEffectShockTarget = statActor();
+const npcEffectShockOutcome = SkillEffects.execute(session(), caster, npcEffectShockTarget, npcEffectShock, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcEffectShock.fetchSkillType(), C4SkillRules.EFFECT, 'NPC effect Shock should resolve as sourced STUN effect semantics');
+assert.strictEqual(npcEffectShock.fetchTargetKind(), 'enemy', 'NPC effect Shock should resolve as an enemy debuff');
+assert.strictEqual(npcEffectShock.fetchSemantic().baseLandRate, 80, 'NPC effect Shock should use sourced power 80 as land rate');
+assert.strictEqual(npcEffectShock.fetchSemantic().levelDepend, 2, 'NPC effect Shock should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcEffectShock.fetchSemantic().magicLevel, 95, 'NPC effect Shock level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcEffectShockOutcome.effect.key, 'stun', 'NPC effect Shock should apply sourced Stun');
+assert.strictEqual(EffectRestrictions.canMove(npcEffectShockTarget), false, 'NPC effect Shock should block movement while stunned');
+EffectStore.remove(npcEffectShockTarget, 'stun');
+
+const npcSlowData = activeSkills.find((entry) => entry.selfId === 4076);
+assert(npcSlowData, 'NPC Reduction in movement speed should be present in active skills data');
+assert.strictEqual(npcSlowData.levels.length, 3, 'NPC Reduction in movement speed should preserve sourced 3 levels');
+assert.strictEqual(npcSlowData.levels[2].power, 80, 'NPC Reduction in movement speed should preserve sourced power 80');
+assert.strictEqual(npcSlowData.levels[2].mp, 65, 'NPC Reduction in movement speed level 3 should preserve sourced mpConsume 65');
+const npcSlow = skill({ selfId: 4076, name: 'Reduction in movement speed', spell: true, power: 80, level: 3, buff: 120000, distance: 600 });
+const npcSlowTarget = statActor();
+const npcSlowOutcome = SkillEffects.execute(session(), caster, npcSlowTarget, npcSlow, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcSlow.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Reduction in movement speed should resolve as sourced DEBUFF effect semantics');
+assert.strictEqual(npcSlow.fetchTargetKind(), 'enemy', 'NPC Reduction in movement speed should resolve as an enemy debuff');
+assert.strictEqual(npcSlow.fetchSsBoost(), 1, 'NPC Reduction in movement speed should preserve magic shot boost semantics');
+assert.strictEqual(npcSlow.fetchSemantic().baseLandRate, 80, 'NPC Reduction in movement speed should use sourced power 80 as land rate');
+assert.strictEqual(npcSlow.fetchSemantic().levelDepend, 2, 'NPC Reduction in movement speed should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcSlow.fetchSemantic().magicLevel, 70, 'NPC Reduction in movement speed level 3 should preserve sourced magicLvl 70');
+assert.strictEqual(npcSlow.fetchSemantic().castRange, 600, 'NPC Reduction in movement speed should preserve sourced castRange metadata');
+assert.strictEqual(npcSlow.fetchSemantic().effectRange, 1100, 'NPC Reduction in movement speed should preserve sourced effectRange metadata');
+assert.strictEqual(npcSlowOutcome.effect.key, 'reduction_in_movement_speed', 'NPC Reduction in movement speed should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(npcSlowTarget, 'runSpdMul'), 0.5, 'NPC Reduction in movement speed level 3 should apply sourced runSpd 0.5 multiplier');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
