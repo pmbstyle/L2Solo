@@ -73,6 +73,7 @@ const RULES = {
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
     127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },
     130: { skillType: EFFECT, trait: 'buff', effect: 'thrill_fight', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [438, 523], statsByLevel: { pAtkSpdMul: [1.05, 1.1] }, stats: { runSpdMul: 0.8 } },
+    131: { skillType: EFFECT, trait: 'buff', effect: 'hawk_eye', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [379, 467, 549], statsByLevel: { pAccuracyCombatAdd: [6, 8, 10], pDefMul: [0.9, 0.9, 0.9] } },
     21: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevelByLevel: [3, 7, 9] }] },
     34: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevelByLevel: [3, 7, 9] }] },
     45: { skillType: HEAL, trait: 'heal', target: 'self', ssBoost: 0 },

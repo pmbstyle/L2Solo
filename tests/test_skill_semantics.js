@@ -322,6 +322,7 @@ EffectStore.remove(confusionMobTarget, 'confusion');
     { id: 112, name: 'Deflect Arrow', levels: 4, mp: 44, buff: 1200000, reuse: 10000, effect: 'deflect_arrow', stat: 'bowWpnVuln', statValue: 0.75, statKind: 'mul', aggroPoints: 40 },
     { id: 123, name: 'Spirit Barrier', levels: 3, mp: 54, buff: 1200000, reuse: 6000, effect: 'spirit_barrier', stat: 'mDefMul', statValue: 1.3, statKind: 'mul' },
     { id: 130, name: 'Thrill Fight', levels: 2, mp: 25, buff: 300000, reuse: 10000, effect: 'thrill_fight', stat: 'pAtkSpdMul', statValue: 1.1, statKind: 'mul', extraStats: [{ stat: 'runSpdMul', value: 0.8, kind: 'mul' }], aggroPoints: 523 },
+    { id: 131, name: 'Hawk Eye', levels: 3, mp: 27, buff: 300000, reuse: 10000, effect: 'hawk_eye', stat: 'pAccuracyCombatAdd', statValue: 10, statKind: 'add', extraStats: [{ stat: 'pDefMul', value: 0.9, kind: 'mul' }], aggroPoints: 549 },
     { id: 139, name: 'Guts', levels: 3, mp: 24, buff: 90000, reuse: 600000, effect: 'guts', stat: 'pDefMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 176, name: 'Frenzy', levels: 3, mp: 25, buff: 90000, reuse: 600000, effect: 'frenzy', stat: 'pAtkMul', statValue: 3.0, statKind: 'mul', hpGate: 30 },
     { id: 230, name: 'Sprint', levels: 2, mp: 48, buff: 1200000, reuse: 10000, effect: 'sprint', stat: 'runSpdAdd', statValue: 33, statKind: 'add' }
@@ -404,6 +405,9 @@ assert.strictEqual(
 
 const thrillFightData = activeSkills.find((entry) => entry.selfId === 130);
 assert.strictEqual(thrillFightData.levels[0].mp, 21, 'Thrill Fight level 1 MP should use sourced mpConsume 21');
+
+const hawkEyeData = activeSkills.find((entry) => entry.selfId === 131);
+assert.strictEqual(hawkEyeData.levels[1].mp, 22, 'Hawk Eye level 2 MP should use sourced mpConsume 22');
 
 const corpsePlagueData = activeSkills.find((entry) => entry.selfId === 103);
 assert(corpsePlagueData, 'Corpse Plague should be present in active skills data');
