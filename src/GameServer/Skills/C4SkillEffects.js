@@ -486,7 +486,7 @@ function refreshEffects(session, target) {
     const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
     if (target?.session?.dataSendToMe) {
         target.session.dataSendToMe(packet);
-    } else if (session?.dataSendToMe) {
+    } else if (target === session?.actor && session?.dataSendToMe) {
         session.dataSendToMe(packet);
     }
 

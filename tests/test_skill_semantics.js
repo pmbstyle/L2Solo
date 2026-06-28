@@ -36,6 +36,8 @@ function creature(overrides = {}) {
         fetchCollectivePAtk: () => overrides.pAtk ?? 100,
         fetchCollectivePDef: () => overrides.pDef ?? 100,
         fetchCollectiveMDef: () => overrides.mDef ?? 100,
+        fetchCollectiveAtkSpd: () => overrides.atkSpd ?? 500,
+        fetchCollectiveCastSpd: () => overrides.castSpd ?? 333,
         fetchDex: () => 30,
         fetchLocX: () => overrides.x ?? 0,
         fetchLocY: () => overrides.y ?? 0,
@@ -75,13 +77,24 @@ function skill(data) {
     });
 }
 
-function session() {
+function session(actor = null) {
     return {
+        actor,
         packets: [],
         dataSendToMe(packet) {
             this.packets.push(packet);
+        },
+        dataSendToMeAndOthers(packet) {
+            this.packets.push(packet);
+        },
+        dataSendToOthers(packet) {
+            this.packets.push(packet);
         }
     };
+}
+
+function hasOpcode(testSession, opcode) {
+    return testSession.packets.some((packet) => packet?.[0] === opcode);
 }
 
 const caster = creature({ hp: 100, maxHp: 100 });
@@ -1079,7 +1092,8 @@ assert.strictEqual(shieldStunData.levels[2].mp, 22, 'Shield Stun level 3 MP shou
 assert.strictEqual(shieldStunData.levels[51].mp, 83, 'Shield Stun level 52 MP should use sourced mpConsume 83');
 const shieldStunTarget = creature({ id: 1000005, hp: 100, maxHp: 100, level: 20 });
 const shieldStun = skill({ selfId: 92, name: 'Shield Stun', spell: false, power: 80, level: 52, buff: 9000, distance: 40 });
-const shieldStunOutcome = SkillEffects.execute(session(), caster, shieldStunTarget, shieldStun, {
+const shieldStunSession = session();
+const shieldStunOutcome = SkillEffects.execute(shieldStunSession, caster, shieldStunTarget, shieldStun, {
     magicSkill: false,
     rng: () => 0,
     attack: { clearLoadedShot() {} }
@@ -1097,7 +1111,31 @@ assert.strictEqual(EffectStore.hasDebuff(shieldStunTarget, 'stun'), true, 'Shiel
 assert.strictEqual(EffectRestrictions.canMove(shieldStunTarget), false, 'Shield Stun should block movement through runtime restrictions');
 assert.strictEqual(EffectRestrictions.canAttack(shieldStunTarget), false, 'Shield Stun should block attacks through runtime restrictions');
 assert.strictEqual(EffectRestrictions.canCast(shieldStunTarget), false, 'Shield Stun should block casting through runtime restrictions');
+assert.strictEqual(EffectStore.hasDebuff(caster, 'stun'), false, 'Shield Stun should not apply stun to the caster');
+assert.strictEqual(hasOpcode(shieldStunSession, 0x7f), false, 'Shield Stun on an NPC target should not send target abnormal status as the caster own-status packet');
 EffectStore.remove(shieldStunTarget, 'stun');
+
+const runtimeShieldCaster = creature({ id: 2000092, hp: 100, maxHp: 100, level: 20 });
+const runtimeShieldTarget = creature({ id: 1000092, hp: 100, maxHp: 100, level: 20 });
+const runtimeShieldSession = session(runtimeShieldCaster);
+runtimeShieldCaster.session = runtimeShieldSession;
+runtimeShieldCaster.automation = { replenishVitals() {} };
+const runtimeShieldAttack = new Attack();
+runtimeShieldAttack.queueTimer = (callback) => {
+    callback();
+    return null;
+};
+const originalRandomForShieldStun = Math.random;
+Math.random = () => 0;
+try {
+    runtimeShieldAttack.remoteHit(runtimeShieldSession, runtimeShieldTarget, shieldStun);
+} finally {
+    Math.random = originalRandomForShieldStun;
+}
+assert.strictEqual(EffectStore.hasDebuff(runtimeShieldTarget, 'stun'), true, 'Shield Stun runtime cast should apply stun to the selected target');
+assert.strictEqual(EffectStore.hasDebuff(runtimeShieldCaster, 'stun'), false, 'Shield Stun runtime cast should not apply stun to the caster');
+assert.strictEqual(hasOpcode(runtimeShieldSession, 0x7f), false, 'Shield Stun runtime cast on an NPC target should not refresh caster abnormal icons');
+EffectStore.remove(runtimeShieldTarget, 'stun');
 
 const stunningFistData = activeSkills.find((entry) => entry.selfId === 120);
 assert(stunningFistData, 'Stunning Fist should be present in active skills data');
@@ -2192,6 +2230,8 @@ EffectStore.remove(soulBreakerTarget, 'stun');
 const sleepyTarget = creature({ id: 1000001, hp: 100, maxHp: 100, level: 20 });
 const sleep = skill({ selfId: 1069, name: 'Sleep', spell: true, power: 1, buff: 30000 });
 const sleepSession = session();
+const sleepyTargetSession = session(sleepyTarget);
+sleepyTarget.session = sleepyTargetSession;
 const sleepOutcome = SkillEffects.execute(sleepSession, caster, sleepyTarget, sleep, {
     magicSkill: true,
     rng: () => 0,
@@ -2199,7 +2239,8 @@ const sleepOutcome = SkillEffects.execute(sleepSession, caster, sleepyTarget, sl
 });
 assert.strictEqual(sleepOutcome.effect.key, 'sleep', 'Sleep should apply a structured sleep debuff');
 assert(EffectStore.hasDebuff(sleepyTarget, 'sleep'), 'Sleep debuff should be visible through EffectStore');
-assert.strictEqual(sleepSession.packets[0][0], 0x7f, 'Debuff application should refresh abnormal status icons');
+assert.strictEqual(hasOpcode(sleepyTargetSession, 0x7f), true, 'Debuff application should refresh target abnormal status icons when the target has a session');
+assert.strictEqual(hasOpcode(sleepSession, 0x7f), false, 'Debuff application should not refresh caster abnormal icons for a different target');
 
 const sleepingCloudData = activeSkills.find((entry) => entry.selfId === 1072);
 assert(sleepingCloudData, 'Sleeping Cloud should be present in active skills data');
@@ -2856,6 +2897,8 @@ EffectStore.apply(cancelTarget, { key: 'hex', id: 122, level: 1, type: 'debuff',
 const cancel = skill({ selfId: 1056, name: 'Cancel', spell: true, power: 25, level: 12, distance: 600 });
 const cancelRolls = [0, 0, 0.5, 0.5];
 const cancelSession = session();
+const cancelTargetSession = session(cancelTarget);
+cancelTarget.session = cancelTargetSession;
 const cancelOutcome = SkillEffects.execute(cancelSession, caster, cancelTarget, cancel, {
     magicSkill: true,
     rng: () => cancelRolls.shift() ?? 0,
@@ -2873,7 +2916,8 @@ assert.strictEqual(remainingCancelEffects.includes('shield'), false, 'Cancel sho
 assert.strictEqual(remainingCancelEffects.includes('might'), true, 'Cancel should leave buffs whose per-effect cancel roll fails');
 assert.strictEqual(remainingCancelEffects.includes('protected_buff'), true, 'Cancel should not remove non-dispellable buffs');
 assert.strictEqual(remainingCancelEffects.includes('hex'), true, 'Cancel should not cleanse debuffs');
-assert.strictEqual(cancelSession.packets[0][0], 0x7f, 'Cancel should refresh abnormal status icons after removing a buff');
+assert.strictEqual(hasOpcode(cancelTargetSession, 0x7f), true, 'Cancel should refresh target abnormal status icons after removing a buff');
+assert.strictEqual(hasOpcode(cancelSession, 0x7f), false, 'Cancel should not refresh caster abnormal icons for a different target');
 
 const summonStormCubicData = activeSkills.find((entry) => entry.selfId === 10);
 assert(summonStormCubicData, 'Summon Storm Cubic should be present in active skills data');
