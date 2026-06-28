@@ -895,6 +895,38 @@ assert.strictEqual(hammerCrushOutcome.effect.key, 'stun', 'Hammer Crush should a
 assert.strictEqual(EffectRestrictions.canMove(hammerCrushTarget), false, 'Hammer Crush stun should block movement');
 EffectStore.remove(hammerCrushTarget, 'stun');
 
+const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
+assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
+assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
+assert.strictEqual(lightningStrikeData.template.distance, 400, 'Lightning Strike should preserve sourced castRange 400');
+assert.strictEqual(lightningStrikeData.time.hitTime, 3000, 'Lightning Strike should preserve sourced hitTime 3000');
+assert.strictEqual(lightningStrikeData.time.reuse, 120000, 'Lightning Strike should preserve sourced reuseDelay 120000');
+assert.strictEqual(lightningStrikeData.time.buff, 120000, 'Lightning Strike should preserve sourced 120 second paralyze duration');
+assert.strictEqual(lightningStrikeData.levels.length, 5, 'Lightning Strike should preserve sourced 5 base levels');
+assert.strictEqual(lightningStrikeData.levels[0].power, 82, 'Lightning Strike level 1 should preserve sourced MDAM power 82');
+assert.strictEqual(lightningStrikeData.levels[4].power, 108, 'Lightning Strike level 5 should preserve sourced MDAM power 108');
+assert.strictEqual(lightningStrikeData.levels[4].mp, 69, 'Lightning Strike level 5 MP should use sourced initial + consume total');
+const lightningStrikeTarget = creature({ id: 1000012, hp: 100, maxHp: 100, level: 20 });
+const lightningStrike = skill({ selfId: 279, name: 'Lightning Strike', spell: true, power: 108, level: 5, buff: 120000, distance: 400 });
+const lightningStrikeOutcome = SkillEffects.execute(session(), caster, lightningStrikeTarget, lightningStrike, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 77
+    }
+});
+assert.strictEqual(lightningStrike.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Lightning Strike should resolve as sourced MDAM plus Paralyze');
+assert.strictEqual(lightningStrike.fetchTargetKind(), 'enemy', 'Lightning Strike should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(lightningStrike.fetchSsBoost(), 1, 'Lightning Strike should preserve sourced magic shot boost semantics');
+assert.strictEqual(lightningStrike.fetchSemantic().baseLandRate, 40, 'Lightning Strike should use sourced effectPower 40 as paralyze land rate');
+assert.strictEqual(lightningStrike.fetchSemantic().levelDepend, 1, 'Lightning Strike should preserve sourced lvlDepend 1');
+assert.strictEqual(lightningStrikeOutcome.damage, 77, 'Lightning Strike should keep its magic damage component');
+assert.strictEqual(lightningStrikeOutcome.effect.key, 'paralyze', 'Lightning Strike should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canMove(lightningStrikeTarget), false, 'Lightning Strike paralyze should block movement');
+assert.strictEqual(EffectRestrictions.canCast(lightningStrikeTarget), false, 'Lightning Strike paralyze should block casting');
+EffectStore.remove(lightningStrikeTarget, 'paralyze');
+
 const burningFistData = activeSkills.find((entry) => entry.selfId === 280);
 assert(burningFistData, 'Burning Fist should be present in active skills data');
 assert.strictEqual(burningFistData.template.distance, 40, 'Burning Fist should preserve sourced castRange 40');
