@@ -408,6 +408,30 @@ assert.strictEqual(corpsePlagueOutcome.effect.dot.intervalMs, 3000, 'Corpse Plag
 assert.strictEqual(corpsePlagueOutcome.effect.dot.damage, 52, 'Corpse Plague should use sourced poison damage table');
 EffectStore.remove(corpsePlagueTarget, 'poison');
 
+const veilData = activeSkills.find((entry) => entry.selfId === 106);
+assert(veilData, 'Veil should be present in active skills data');
+assert.strictEqual(veilData.template.distance, 500, 'Veil should preserve sourced castRange 500');
+assert.strictEqual(veilData.time.hitTime, 1200, 'Veil should preserve sourced hitTime 1200');
+assert.strictEqual(veilData.time.reuse, 20000, 'Veil should preserve sourced reuseDelay 20000');
+assert.strictEqual(veilData.time.buff, 0, 'Veil should not use debuff duration for sourced AGGREMOVE');
+assert.strictEqual(veilData.levels.length, 14, 'Veil should preserve sourced 14 base levels');
+assert.strictEqual(veilData.levels[0].power, 70, 'Veil level 1 should preserve sourced AGGREMOVE power 70');
+assert.strictEqual(veilData.levels[13].mp, 83, 'Veil level 14 should preserve sourced mpConsume 83');
+const veil = skill({ selfId: 106, name: 'Veil', spell: false, power: 70, level: 14, distance: 500 });
+const veilOutcome = SkillEffects.execute(session(), caster, creature({ id: 1000106, hp: 100, maxHp: 100, level: 20 }), veil, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(veil.fetchSkillType(), C4SkillRules.AGGRO_REMOVE, 'Veil should resolve as sourced AGGREMOVE');
+assert.strictEqual(veil.fetchTargetKind(), 'enemy', 'Veil should preserve sourced TARGET_ONE semantics');
+assert.strictEqual(veil.fetchSemantic().baseLandRate, 70, 'Veil should use sourced power 70 as land rate');
+assert.strictEqual(veil.fetchSemantic().castRange, 500, 'Veil should preserve sourced castRange metadata');
+assert.strictEqual(veil.fetchSemantic().effectRange, 900, 'Veil should preserve sourced effectRange metadata');
+assert.strictEqual(veilOutcome.damage, 0, 'Veil should not be routed as damage');
+assert.strictEqual(veilOutcome.effect, null, 'Veil should not apply a structured debuff');
+assert.strictEqual(veilOutcome.aggroRemoved, true, 'Veil should mark successful sourced AGGREMOVE');
+
 const auraStatsTarget = statActor();
 SkillEffects.execute(session(), auraStatsTarget, auraStatsTarget, skill({
     selfId: 77,
