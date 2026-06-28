@@ -1270,6 +1270,46 @@ assert.deepStrictEqual(ironPunch.fetchSemantic().requires, { weaponsAllowed: 102
 assert.strictEqual(ironPunchOutcome.damage, 122, 'Iron Punch should keep its physical damage component');
 assert.strictEqual(ironPunchOutcome.effect, null, 'Iron Punch should remain a pure damage skill without a debuff');
 
+const backstabData = activeSkills.find((entry) => entry.selfId === 30);
+assert(backstabData, 'Backstab should be present in active skills data');
+assert.strictEqual(backstabData.template.distance, 40, 'Backstab should preserve sourced castRange 40');
+assert.strictEqual(backstabData.time.hitTime, 1080, 'Backstab should preserve sourced hitTime 1080');
+assert.strictEqual(backstabData.time.reuse, 11000, 'Backstab should preserve sourced reuseDelay 11000');
+assert.strictEqual(backstabData.levels.length, 37, 'Backstab should preserve sourced 37 base levels');
+assert.strictEqual(backstabData.levels[20].power, 3136, 'Backstab level 21 should preserve existing sourced BLOW power 3136');
+assert.strictEqual(backstabData.levels[36].power, 5479, 'Backstab level 37 should preserve sourced BLOW power 5479');
+assert.strictEqual(backstabData.levels[36].mp, 111, 'Backstab level 37 MP should use sourced mpConsume 111');
+const backstabTarget = creature({ id: 1000030, hp: 1000, maxHp: 1000, level: 20 });
+const backstab = skill({ selfId: 30, name: 'Backstab', spell: false, power: 5479, level: 37, distance: 40 });
+const backstabOutcome = SkillEffects.execute(session(), caster, backstabTarget, backstab, {
+    magicSkill: false,
+    rng: () => 0.99,
+    attack: {
+        clearLoadedShot() {},
+        isBehindTarget: () => true,
+        prepareSkillDamage: () => 444
+    }
+});
+assert.strictEqual(backstab.fetchSkillType(), C4SkillRules.BLOW, 'Backstab should preserve sourced BLOW semantics');
+assert.strictEqual(backstab.fetchTargetKind(), 'enemy', 'Backstab should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(backstab.fetchSsBoost(), 1, 'Backstab should preserve sourced physical shot boost semantics');
+assert.strictEqual(backstab.fetchSemantic().blowChance, 70, 'Backstab should preserve sourced Lisvus behind chance metadata');
+assert.deepStrictEqual(backstab.fetchSemantic().requires, { weaponsAllowed: 16, condition: 8 }, 'Backstab should preserve sourced dagger and behind-only requirement');
+assert.strictEqual(backstabOutcome.damage, 444, 'Backstab should land from behind without an extra COND_CRIT roll');
+assert.strictEqual(backstabOutcome.missed, false, 'Backstab should not miss when the sourced behind-only condition is satisfied');
+const frontBackstabTarget = creature({ id: 1000031, hp: 1000, maxHp: 1000, level: 20 });
+const frontBackstabOutcome = SkillEffects.execute(session(), caster, frontBackstabTarget, backstab, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        isBehindTarget: () => false,
+        prepareSkillDamage: () => 555
+    }
+});
+assert.strictEqual(frontBackstabOutcome.damage, 0, 'Backstab should not deal damage outside sourced behind-only condition');
+assert.strictEqual(frontBackstabOutcome.missed, true, 'Backstab should miss when the sourced behind-only condition is not satisfied');
+
 const doubleShotData = activeSkills.find((entry) => entry.selfId === 19);
 assert(doubleShotData, 'Double Shot should be present in active skills data');
 assert.strictEqual(doubleShotData.template.distance, 900, 'Double Shot should preserve sourced castRange 900');

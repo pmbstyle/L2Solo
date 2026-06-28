@@ -45,7 +45,7 @@ const RULES = {
     27: { skillType: UNLOCK, trait: 'unlock', target: 'unlockable', ssBoost: 0, unlockDoorChanceByLevel: [30, 50, 75, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100] },
     28: { skillType: AGGRO_DAMAGE, trait: 'derangement', target: 'enemy', ssBoost: 0, castRangeByLevel: [400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 600, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800, 800], effectRangeByLevel: [900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 900, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1100, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300, 1300] },
     29: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, overHit: true, requires: { weaponsAllowed: 1024 } },
-    30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },
+    30: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 }, requires: { weaponsAllowed: 16, condition: 8 } },
     33: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     56: { skillType: DAMAGE, trait: 'bow', ssBoost: 1 },
     67: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

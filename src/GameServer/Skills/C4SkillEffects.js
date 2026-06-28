@@ -7,6 +7,9 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const Formulas = invoke('GameServer/Formulas');
 const ServerResponse = invoke('GameServer/Network/Response');
 
+const COND_BEHIND = 0x0008;
+const COND_CRIT = 0x0010;
+
 function execute(session, actor, target, skill, context = {}) {
     const semantic = skill.fetchSemantic();
     const magicSkill = context.magicSkill ?? skill.fetchSpell();
@@ -366,6 +369,15 @@ function calcAggroDamage(skill, target) {
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {
+    const condition = Number(semantic.requires?.condition) || 0;
+    if ((condition & COND_BEHIND) !== 0 && !attack?.isBehindTarget?.(actor, target)) {
+        return false;
+    }
+
+    if (condition !== 0 && (condition & COND_CRIT) === 0) {
+        return true;
+    }
+
     let chance = Number(semantic.blowChance) || 50;
     if (attack?.isBehindTarget?.(actor, target)) chance += 20;
     else if (attack?.isFacing?.(target, actor, 120)) chance -= 20;
