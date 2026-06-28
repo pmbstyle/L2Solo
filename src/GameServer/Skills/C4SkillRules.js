@@ -68,6 +68,7 @@ const RULES = {
     111: { skillType: EFFECT, trait: 'buff', effect: 'ultimate_evasion', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [268, 523], statsByLevel: { pEvasionRateAdd: [20, 25] } },
     112: { skillType: EFFECT, trait: 'buff', effect: 'deflect_arrow', effectType: 'buff', target: 'self', baseLandRate: 100, aggroPointsByLevel: [10, 20, 30, 40], statsByLevel: { bowWpnVuln: [0.84, 0.81, 0.78, 0.75] } },
     115: { skillType: EFFECT, trait: 'debuff', effect: 'power_break', effectType: 'debuff', baseLandRate: 80, statsByLevel: { pAtkMul: [0.8, 0.8, 0.77] } },
+    116: { skillType: EFFECT, trait: 'debuff', effect: 'howl', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, levelDepend: 2, stats: { pAtkMul: 0.77 } },
     120: { skillType: DAMAGE_EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 50, levelDepend: 2, requires: { weaponsAllowed: 1024 } },
     122: { skillType: EFFECT, trait: 'debuff', effect: 'hex', effectType: 'debuff', baseLandRate: 80, stats: { pDefMul: 0.77 } },
     127: { skillType: EFFECT, trait: 'slow', effect: 'hamstring', effectType: 'debuff', baseLandRate: 80, stats: { runSpdMul: 0.7 } },

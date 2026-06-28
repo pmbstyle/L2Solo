@@ -2096,6 +2096,35 @@ assert.strictEqual(
     'Power Break level 3 should apply the L2J pAtkDown 0.77 stat multiplier'
 );
 
+const howlData = activeSkills.find((entry) => entry.selfId === 116);
+assert(howlData, 'Howl should be present in active skills data');
+assert.strictEqual(howlData.template.distance, -1, 'Howl should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(howlData.time.hitTime, 1200, 'Howl should preserve sourced hitTime 1200');
+assert.strictEqual(howlData.time.reuse, 8000, 'Howl should preserve sourced reuseDelay 8000');
+assert.strictEqual(howlData.time.buff, 15000, 'Howl should preserve sourced debuff duration');
+assert.strictEqual(howlData.levels.length, 14, 'Howl should preserve sourced 14 base levels');
+assert.strictEqual(howlData.levels[0].power, 40, 'Howl should use sourced power 40 as land rate');
+assert.strictEqual(howlData.levels[13].mp, 53, 'Howl level 14 MP should use sourced mpConsume 53');
+const howled = statActor();
+const howl = skill({ selfId: 116, name: 'Howl', spell: false, power: 40, level: 14, buff: 15000, distance: -1 });
+const howlOutcome = SkillEffects.execute(session(), caster, howled, howl, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(howl.fetchTargetKind(), 'enemy', 'Howl should resolve as an enemy debuff');
+assert.strictEqual(howl.fetchSemantic().sourceTarget, 'aura', 'Howl should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(howl.fetchSemantic().radius, 200, 'Howl should preserve sourced skillRadius 200');
+assert.strictEqual(howl.fetchSemantic().baseLandRate, 40, 'Howl should use sourced power 40 as land rate');
+assert.strictEqual(howl.fetchSemantic().levelDepend, 2, 'Howl should preserve sourced lvlDepend metadata');
+assert.strictEqual(howlOutcome.effect.key, 'howl', 'Howl should apply a structured debuff effect');
+calculateStats({}, howled);
+assert.strictEqual(
+    howled.collectivePAtk,
+    Math.round(Formulas.calcPAtk(20, 30, 100) * 0.77),
+    'Howl should apply the sourced pAtkDown 0.77 stat multiplier'
+);
+
 const crippleData = activeSkills.find((entry) => entry.selfId === 95);
 assert(crippleData, 'Cripple should be present in active skills data');
 assert.strictEqual(crippleData.template.distance, 40, 'Cripple should preserve sourced castRange 40');
