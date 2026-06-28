@@ -403,6 +403,8 @@ const RULES = {
     4087: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4088: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 2, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 40, effectRange: 200, dot: { count: 10, intervalMs: 3000, damageByLevel: [2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15] } },
     4097: { skillType: HOT, trait: 'buff', effect: 'npc_chant_of_life', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 5, intervalMs: 3000, healByLevel: [7, 12, 18, 27, 37, 46, 55, 23, 32, 42, 51, 58] } },
+    4098: { skillType: EFFECT, trait: 'derangement', effect: 'silence', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
+    4099: { skillType: EFFECT, trait: 'buff', effect: 'npc_berserk', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, castRange: 400, effectRange: 900, aggroPoints: 100, statsByLevel: { pAtkMul: [1.05, 1.08], mAtkMul: [1.1, 1.16], pDefMul: [0.95, 0.92], mDefMul: [0.90, 0.84], pAtkSpdMul: [1.05, 1.08], castSpdMul: [1.05, 1.08], runSpdAdd: [5, 8] } },
     4338: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7031: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },

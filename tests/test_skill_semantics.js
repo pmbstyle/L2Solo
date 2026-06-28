@@ -5345,6 +5345,65 @@ assert.strictEqual(dieYouFool.fetchSemantic().castRange, 600, 'Die! You fool! sh
 assert.strictEqual(dieYouFool.fetchSemantic().effectRange, 1100, 'Die! You fool! should preserve sourced effectRange metadata');
 assert.strictEqual(dieYouFoolOutcome.damage, 999, 'Die! You fool! should keep the sourced damage execution path');
 
+const magicSkillBlockData = activeSkills.find((entry) => entry.selfId === 4098);
+assert(magicSkillBlockData, 'Magic Skill Block should be present in active skills data');
+assert.strictEqual(magicSkillBlockData.template.name, 'Magic Skill Block', 'Magic Skill Block active data should preserve sourced name');
+assert.strictEqual(magicSkillBlockData.time.hitTime, 2000, 'Magic Skill Block should preserve sourced hitTime 2000');
+assert.strictEqual(magicSkillBlockData.time.reuse, 8000, 'Magic Skill Block should preserve sourced reuseDelay 8000');
+assert.strictEqual(magicSkillBlockData.time.buff, 120000, 'Magic Skill Block should preserve sourced 120 second duration');
+assert.strictEqual(magicSkillBlockData.levels.length, 12, 'Magic Skill Block should preserve sourced 12 levels');
+assert.strictEqual(magicSkillBlockData.levels[11].power, 80, 'Magic Skill Block should preserve sourced power 80');
+assert.strictEqual(magicSkillBlockData.levels[11].mp, 78, 'Magic Skill Block level 12 should preserve sourced mpConsume 78');
+const magicSkillBlock = skill({ selfId: 4098, name: 'Magic Skill Block', spell: true, power: 80, level: 12, buff: 120000, distance: 600 });
+const magicSkillBlockTarget = statActor();
+const magicSkillBlockOutcome = SkillEffects.execute(session(), caster, magicSkillBlockTarget, magicSkillBlock, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(magicSkillBlock.fetchSkillType(), C4SkillRules.EFFECT, 'Magic Skill Block should resolve as sourced MUTE effect semantics');
+assert.strictEqual(magicSkillBlock.fetchTargetKind(), 'enemy', 'Magic Skill Block should resolve as an enemy debuff');
+assert.strictEqual(magicSkillBlock.fetchSsBoost(), 1, 'Magic Skill Block should preserve magic shot boost semantics');
+assert.strictEqual(magicSkillBlock.fetchSemantic().baseLandRate, 80, 'Magic Skill Block should use sourced power 80 as land rate');
+assert.strictEqual(magicSkillBlock.fetchSemantic().levelDepend, 2, 'Magic Skill Block should preserve sourced lvlDepend metadata');
+assert.strictEqual(magicSkillBlock.fetchSemantic().magicLevel, 95, 'Magic Skill Block level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(magicSkillBlock.fetchSemantic().castRange, 600, 'Magic Skill Block should preserve sourced castRange metadata');
+assert.strictEqual(magicSkillBlock.fetchSemantic().effectRange, 1100, 'Magic Skill Block should preserve sourced effectRange metadata');
+assert.strictEqual(magicSkillBlockOutcome.effect.key, 'silence', 'Magic Skill Block should apply sourced Mute as silence');
+assert.strictEqual(EffectRestrictions.canCast(magicSkillBlockTarget), false, 'Magic Skill Block should block casting while active');
+EffectStore.remove(magicSkillBlockTarget, 'silence');
+
+const npcBerserkData = activeSkills.find((entry) => entry.selfId === 4099);
+assert(npcBerserkData, 'NPC Berserk should be present in active skills data');
+assert.strictEqual(npcBerserkData.template.name, 'NPC Berserk', 'NPC Berserk active data should preserve sourced name');
+assert.strictEqual(npcBerserkData.time.hitTime, 4000, 'NPC Berserk should preserve sourced hitTime 4000');
+assert.strictEqual(npcBerserkData.time.reuse, 80000, 'NPC Berserk should preserve sourced reuseDelay 80000');
+assert.strictEqual(npcBerserkData.time.buff, 1200000, 'NPC Berserk should preserve sourced 1200 second duration');
+assert.strictEqual(npcBerserkData.levels.length, 2, 'NPC Berserk should preserve sourced 2 levels');
+assert.strictEqual(npcBerserkData.levels[1].mp, 33, 'NPC Berserk level 2 should preserve sourced mpConsume 33');
+const npcBerserk = skill({ selfId: 4099, name: 'NPC Berserk', spell: true, power: 1, level: 2, buff: 1200000, distance: 400 });
+const npcBerserkTarget = statActor();
+const npcBerserkOutcome = SkillEffects.execute(session(), npcBerserkTarget, npcBerserkTarget, npcBerserk, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcBerserk.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Berserk should resolve as sourced BUFF effect semantics');
+assert.strictEqual(npcBerserk.fetchTargetKind(), 'self', 'NPC Berserk should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(npcBerserk.fetchSsBoost(), 0, 'NPC Berserk should not use offensive shot boost semantics');
+assert.strictEqual(npcBerserk.fetchSemantic().castRange, 400, 'NPC Berserk should preserve sourced castRange metadata');
+assert.strictEqual(npcBerserk.fetchSemantic().effectRange, 900, 'NPC Berserk should preserve sourced effectRange metadata');
+assert.strictEqual(npcBerserk.fetchSemantic().aggroPoints, 100, 'NPC Berserk should preserve sourced aggroPoints 100');
+assert.strictEqual(npcBerserkOutcome.effect.key, 'npc_berserk', 'NPC Berserk should apply a structured buff effect');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'pAtkMul'), 1.08, 'NPC Berserk level 2 should apply sourced pAtk 1.08 multiplier');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'mAtkMul'), 1.16, 'NPC Berserk level 2 should apply sourced mAtk 1.16 multiplier');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'pDefMul'), 0.92, 'NPC Berserk level 2 should apply sourced pDef 0.92 multiplier');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'mDefMul'), 0.84, 'NPC Berserk level 2 should apply sourced mDef 0.84 multiplier');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'pAtkSpdMul'), 1.08, 'NPC Berserk level 2 should apply sourced pAtkSpd 1.08 multiplier');
+assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'castSpdMul'), 1.08, 'NPC Berserk level 2 should apply sourced mAtkSpd 1.08 as cast speed multiplier');
+assert.strictEqual(EffectStats.add(npcBerserkTarget, 'runSpdAdd'), 8, 'NPC Berserk level 2 should apply sourced runSpd +8');
+EffectStore.remove(npcBerserkTarget, 'npc_berserk');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
