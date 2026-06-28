@@ -33,7 +33,7 @@ const RULES = {
     12: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 80, mobOnly: true },
     13: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     15: { skillType: AGGRO_REDUCE, trait: 'derangement', target: 'enemy', ssBoost: 1, mobOnly: true },
-    16: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 50 },
+    16: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, requires: { weaponsAllowed: 16, condition: 16 } },
     22: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     25: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     30: { skillType: BLOW, trait: 'dagger', ssBoost: 1, blowChance: 70, lethal: { halfKillChance: 5 } },

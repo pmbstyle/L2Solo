@@ -1141,6 +1141,32 @@ assert.strictEqual(charmMobOutcome.damage, 0, 'Charm should not be routed as dam
 assert.strictEqual(charmMobOutcome.aggroReduced, true, 'Charm should mark a successful sourced AGGREDUCE outcome');
 assert.strictEqual(charmMobOutcome.aggroReduction, 458, 'Charm should preserve sourced AGGREDUCE power as hate reduction amount');
 
+const mortalBlowData = activeSkills.find((entry) => entry.selfId === 16);
+assert(mortalBlowData, 'Mortal Blow should be present in active skills data');
+assert.strictEqual(mortalBlowData.template.distance, 40, 'Mortal Blow should preserve sourced castRange 40');
+assert.strictEqual(mortalBlowData.time.hitTime, 1080, 'Mortal Blow should preserve sourced hitTime 1080');
+assert.strictEqual(mortalBlowData.time.reuse, 11000, 'Mortal Blow should preserve sourced reuseDelay 11000');
+assert.strictEqual(mortalBlowData.levels.length, 24, 'Mortal Blow should preserve sourced 24 base levels');
+assert.strictEqual(mortalBlowData.levels[0].mp, 9, 'Mortal Blow level 1 MP should use sourced mpConsume 9');
+assert.strictEqual(mortalBlowData.levels[23].power, 977, 'Mortal Blow level 24 should preserve sourced BLOW power 977');
+assert.strictEqual(mortalBlowData.levels[23].mp, 34, 'Mortal Blow level 24 MP should use sourced mpConsume 34');
+const mortalBlowTarget = creature({ id: 1000023, hp: 100, maxHp: 100, level: 20 });
+const mortalBlow = skill({ selfId: 16, name: 'Mortal Blow', spell: false, power: 977, level: 24, distance: 40 });
+const mortalBlowOutcome = SkillEffects.execute(session(), caster, mortalBlowTarget, mortalBlow, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 201
+    }
+});
+assert.strictEqual(mortalBlow.fetchSkillType(), C4SkillRules.BLOW, 'Mortal Blow should preserve sourced BLOW semantics');
+assert.strictEqual(mortalBlow.fetchTargetKind(), 'enemy', 'Mortal Blow should preserve sourced TARGET_ONE offensive semantics');
+assert.strictEqual(mortalBlow.fetchSemantic().blowChance, 50, 'Mortal Blow should preserve sourced/default 50 blow chance semantics');
+assert.deepStrictEqual(mortalBlow.fetchSemantic().requires, { weaponsAllowed: 16, condition: 16 }, 'Mortal Blow should preserve sourced dagger and positional requirements');
+assert.strictEqual(mortalBlowOutcome.damage, 201, 'Mortal Blow should keep its blow damage component on a successful blow roll');
+assert.strictEqual(mortalBlowOutcome.missed, false, 'Mortal Blow should not miss when the sourced blow roll succeeds');
+
 const lightningStrikeData = activeSkills.find((entry) => entry.selfId === 279);
 assert(lightningStrikeData, 'Lightning Strike should be present in active skills data');
 assert.strictEqual(lightningStrikeData.template.name, 'Lightning Strike', 'Lightning Strike should preserve sourced skill name');
