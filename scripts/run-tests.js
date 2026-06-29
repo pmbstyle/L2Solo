@@ -13,6 +13,7 @@ const tests = [
     'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
     'tests/test_geodata_regions.js',
+    'tests/test_item_skill_use.js',
     'tests/test_party_companion_rest_follow.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',

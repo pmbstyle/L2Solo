@@ -7,6 +7,8 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const World          = invoke('GameServer/World/World');
 const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
+const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
+const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
 
 class Backpack extends BackpackModel {
     constructor(data) {
@@ -174,43 +176,92 @@ class Backpack extends BackpackModel {
                     );
                     return;
                 }
-                else
-                if (item.fetchSelfId() === 1061) {
-                    const details = utils.crushOb(DataCache.skills.find((ob) => ob.selfId === 2032) ?? {});
-                    session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), new SkillModel(details)), session.actor);
-                    return;
-                }
-                else
-                if (item.fetchSelfId() === 736) {
-                    const details = utils.crushOb(DataCache.skills.find((ob) => ob.selfId === 2013) ?? {});
-                    const skill = new SkillModel(details);
-                    const castTime = skill.fetchHitTime() || 20000;
 
-                    if (session.actor.state.fetchCasts()) {
-                        return;
-                    }
-
-                    session.actor.state.setCasts(true);
-                    session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
-                    session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
-
-                    setTimeout(() => {
-                        session.actor.state.setCasts(false);
-                        if (session.actor.isDead()) {
-                            return;
-                        }
-
-                        const coords = { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
-                        this.deleteItem(session, id, 1, () => {
-                            const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-                            TeleportTo(session, session.actor, coords);
-                        });
-                    }, castTime);
+                const itemSkill = C4ItemSkills.resolve(item.fetchSelfId());
+                if (itemSkill && this.useSkillItem(session, id, itemSkill)) {
                     return;
                 }
 
                 utils.infoWarn('GameServer', 'unhandled item action');
             }
+        });
+    }
+
+    useSkillItem(session, id, itemSkill) {
+        const skill = this.buildItemSkill(itemSkill);
+        if (!skill) {
+            return false;
+        }
+
+        if (skill.fetchTargetKind() !== 'self') {
+            return false;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const castTime = skill.fetchHitTime() || 0;
+        session.actor.state.setCasts(true);
+        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
+        if (castTime > 0) {
+            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        }
+
+        const apply = () => {
+            session.actor.state.setCasts(false);
+            if (session.actor.isDead()) {
+                return;
+            }
+
+            if (itemSkill.teleport === 'town') {
+                const coords = { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
+                this.deleteItem(session, id, 1, () => {
+                    const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+                    TeleportTo(session, session.actor, coords);
+                });
+                return;
+            }
+
+            if (itemSkill.consume) {
+                this.deleteItem(session, id, 1, () => {
+                    this.applySelfItemSkill(session, skill);
+                });
+                return;
+            }
+
+            this.applySelfItemSkill(session, skill);
+        };
+
+        if (castTime > 0) {
+            setTimeout(apply, castTime);
+        } else {
+            apply();
+        }
+
+        return true;
+    }
+
+    buildItemSkill(itemSkill) {
+        const skillData = DataCache.skills.find((ob) => ob.selfId === itemSkill.skillId);
+        if (!skillData) {
+            return null;
+        }
+
+        const level = Number(itemSkill.level) || 1;
+        const levelData = skillData.levels?.find((entry) => entry.level === level) || {};
+        return new SkillModel({
+            ...utils.crushOb(skillData),
+            ...levelData,
+            level
+        });
+    }
+
+    applySelfItemSkill(session, skill) {
+        SkillEffects.execute(session, session.actor, session.actor, skill, {
+            magicSkill: skill.fetchSpell(),
+            rng: () => Math.random(),
+            attack: { clearLoadedShot() {} }
         });
     }
 
