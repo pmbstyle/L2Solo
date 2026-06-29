@@ -407,6 +407,27 @@ assert.strictEqual(blessedResurrection.fetchSemantic().effectRange, 600, 'Blesse
 assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeId, 3936, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume id');
 assert.strictEqual(blessedResurrection.fetchSemantic().itemConsumeCount, 1, 'Blessed scroll of resurrection should preserve sourced itemInitialConsume count');
 
+const l2DayBlessedResurrectionData = activeSkills.find((entry) => entry.selfId === 2062);
+assert(l2DayBlessedResurrectionData, 'L2Day blessed scroll of resurrection should be present in active skills data');
+assert.strictEqual(l2DayBlessedResurrectionData.template.distance, 400, 'L2Day blessed scroll of resurrection should preserve sourced castRange 400');
+assert.strictEqual(l2DayBlessedResurrectionData.time.hitTime, 15000, 'L2Day blessed scroll of resurrection should preserve sourced static hitTime 15000');
+assert.strictEqual(l2DayBlessedResurrectionData.levels[0].power, 100, 'L2Day blessed scroll of resurrection should preserve sourced power 100');
+assert.strictEqual(l2DayBlessedResurrectionData.levels[0].itemId, 3959, 'L2Day blessed scroll of resurrection should preserve sourced item id 3959');
+const l2DayBlessedResurrection = skill({ selfId: 2062, name: 'L2Day - Blessed Scroll of Resurrection', spell: false, power: 100, level: 1, distance: 400 });
+assert.strictEqual(l2DayBlessedResurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'L2Day blessed scroll should resolve as sourced RESURRECT semantics');
+assert.strictEqual(l2DayBlessedResurrection.fetchTargetKind(), 'corpse_player', 'L2Day blessed scroll should preserve sourced TARGET_CORPSE_PLAYER semantics');
+assert.strictEqual(l2DayBlessedResurrection.fetchSemantic().itemConsumeId, 3959, 'L2Day blessed scroll should preserve sourced itemInitialConsume id');
+assert.strictEqual(l2DayBlessedResurrection.fetchSemantic().itemConsumeCount, 1, 'L2Day blessed scroll should preserve sourced itemInitialConsume count');
+
+const fiveMinuteEscapeData = activeSkills.find((entry) => entry.selfId === 2099);
+assert(fiveMinuteEscapeData, 'Escape: 5 minutes should be present in active skills data');
+assert.strictEqual(fiveMinuteEscapeData.time.hitTime, 300000, 'Escape: 5 minutes should preserve sourced static hitTime 300000');
+const fiveMinuteEscape = skill({ selfId: 2099, name: 'Escape: 5 minutes', spell: false, power: 1, level: 1, distance: -1 });
+assert.strictEqual(fiveMinuteEscape.fetchSkillType(), C4SkillRules.RECALL, 'Escape: 5 minutes should resolve as sourced TELEPORT semantics');
+assert.strictEqual(fiveMinuteEscape.fetchTargetKind(), 'self', 'Escape: 5 minutes should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(fiveMinuteEscape.fetchSemantic().hitTime, 300000, 'Escape: 5 minutes should preserve sourced hitTime metadata');
+assert.strictEqual(fiveMinuteEscape.fetchSemantic().staticHitTime, true, 'Escape: 5 minutes should preserve sourced staticHitTime metadata');
+
 const soulshot = skill({ selfId: 2039, name: 'Soulshot', spell: false, power: 1, level: 1, distance: -1 });
 const soulshotCaster = statActor();
 const soulshotOutcome = SkillEffects.execute(session(), soulshotCaster, soulshotCaster, soulshot, {
@@ -471,7 +492,9 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
     { id: 2027, target: 'item', isPotion: false },
     { id: 2028, target: 'item', isPotion: false },
     { id: 2029, target: 'item', isPotion: false },
-    { id: 2030, target: 'item', isPotion: false }
+    { id: 2030, target: 'item', isPotion: false },
+    { id: 2075, target: 'none', isPotion: false },
+    { id: 2077, target: 'none', isPotion: false }
 ].forEach(({ id, target, isPotion }) => {
     const notDone = skill({ selfId: id, name: 'Not done item skill', spell: false, power: 1, level: 1, distance: -1 });
     const outcome = SkillEffects.execute(session(), caster, caster, notDone, {
@@ -513,6 +536,80 @@ assert.strictEqual(wolvesNecklace.fetchSemantic().staticHitTime, true, "Wolves' 
     assert.strictEqual(food.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
     assert.strictEqual(food.fetchSemantic().feed, 150, `${name} should preserve sourced feed 150 metadata`);
 });
+
+const boxKeyData = activeSkills.find((entry) => entry.selfId === 2065);
+assert(boxKeyData, 'Box Key should be present in active skills data');
+assert.strictEqual(boxKeyData.template.distance, 40, 'Box Key should preserve sourced castRange 40');
+assert.strictEqual(boxKeyData.time.hitTime, 500, 'Box Key should preserve sourced hitTime 500');
+assert.strictEqual(boxKeyData.levels.length, 8, 'Box Key should preserve sourced 8 base levels');
+const boxKey = skill({ selfId: 2065, name: 'Box Key', spell: false, power: 1, level: 8, distance: 40 });
+assert.strictEqual(boxKey.fetchSkillType(), C4SkillRules.UNLOCK, 'Box Key should preserve sourced UNLOCK skill type');
+assert.strictEqual(boxKey.fetchTargetKind(), 'unlockable', 'Box Key should preserve sourced TARGET_UNLOCKABLE semantics');
+assert.strictEqual(boxKey.fetchSemantic().hitTime, 500, 'Box Key should preserve sourced hitTime metadata');
+assert.strictEqual(boxKey.fetchSemantic().staticHitTime, true, 'Box Key should preserve sourced staticHitTime metadata');
+assert.strictEqual(boxKey.fetchSemantic().castRange, 40, 'Box Key should preserve sourced castRange metadata');
+assert.strictEqual(boxKey.fetchSemantic().effectRange, 400, 'Box Key should preserve sourced effectRange metadata');
+
+const scrollManaRegenerationData = activeSkills.find((entry) => entry.selfId === 2064);
+assert(scrollManaRegenerationData, 'Scroll of Mana Regeneration should be present in active skills data');
+assert.strictEqual(scrollManaRegenerationData.time.hitTime, 4000, 'Scroll of Mana Regeneration should preserve sourced hitTime 4000');
+assert.strictEqual(scrollManaRegenerationData.time.buff, 3600000, 'Scroll of Mana Regeneration should preserve sourced 3600 second duration');
+const scrollManaRegenTarget = statActor();
+const scrollManaRegeneration = skill({ selfId: 2064, name: 'Scroll of Mana Regeneration', spell: false, power: 1, level: 1, distance: -1, buff: 3600000 });
+const scrollManaRegenOutcome = SkillEffects.execute(session(), caster, scrollManaRegenTarget, scrollManaRegeneration, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(scrollManaRegeneration.fetchSkillType(), C4SkillRules.EFFECT, 'Scroll of Mana Regeneration should resolve as a sourced BUFF');
+assert.strictEqual(scrollManaRegeneration.fetchSemantic().hitTime, 4000, 'Scroll of Mana Regeneration should preserve sourced hitTime metadata');
+assert.strictEqual(scrollManaRegeneration.fetchSemantic().staticHitTime, true, 'Scroll of Mana Regeneration should preserve sourced staticHitTime metadata');
+assert.strictEqual(scrollManaRegenOutcome.effect.key, 'scroll_of_mana_regeneration', 'Scroll of Mana Regeneration should apply a structured MP regen buff');
+assert.strictEqual(EffectStats.add(scrollManaRegenTarget, 'regMp'), 1.82, 'Scroll of Mana Regeneration should apply sourced regMp +1.82');
+
+const blessEvaData = activeSkills.find((entry) => entry.selfId === 2076);
+assert(blessEvaData, 'Bless of Eva should be present in active skills data');
+assert.strictEqual(blessEvaData.time.buff, 400000, 'Bless of Eva should preserve sourced 400 second duration');
+const blessEvaTarget = statActor();
+const blessEva = skill({ selfId: 2076, name: 'Bless of Eva', spell: false, power: 1, level: 1, distance: -1, buff: 400000 });
+const blessEvaOutcome = SkillEffects.execute(session(), caster, blessEvaTarget, blessEva, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessEva.fetchSkillType(), C4SkillRules.EFFECT, 'Bless of Eva should resolve as a sourced BUFF');
+assert.strictEqual(blessEvaOutcome.effect.key, 'bless_of_eva', 'Bless of Eva should apply a structured breath buff');
+assert.strictEqual(EffectStats.multiplier(blessEvaTarget, 'breath'), 5, 'Bless of Eva should apply sourced breath x5');
+
+const criticalEscapeData = activeSkills.find((entry) => entry.selfId === 2074);
+assert(criticalEscapeData, 'Potion of Critical Escape should be present in active skills data');
+assert.strictEqual(criticalEscapeData.template.distance, 600, 'Potion of Critical Escape should preserve sourced castRange 600');
+assert.strictEqual(criticalEscapeData.time.buff, 30000, 'Potion of Critical Escape should preserve sourced Confusion duration 30000');
+assert.strictEqual(criticalEscapeData.levels[0].power, 100, 'Potion of Critical Escape should preserve sourced Confusion val 100');
+const criticalEscape = skill({ selfId: 2074, name: 'Potion of Critical Escape', spell: true, power: 100, level: 1, distance: 600, buff: 30000 });
+const criticalEscapePlayerTarget = creature({ id: 1000004, hp: 100, maxHp: 100, level: 20 });
+const criticalEscapePlayerOutcome = SkillEffects.execute(session(), caster, criticalEscapePlayerTarget, criticalEscape, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(criticalEscapePlayerOutcome.effect, null, 'Potion of Critical Escape should not apply CONFUSE_MOB_ONLY to non-attackable targets');
+assert.strictEqual(criticalEscapePlayerOutcome.effectResisted, true, 'Potion of Critical Escape mob-only rejection should report effect resistance');
+const criticalEscapeMobTarget = creature({ id: 1000005, hp: 100, maxHp: 100, level: 20 });
+criticalEscapeMobTarget.fetchAttackable = () => true;
+const criticalEscapeMobOutcome = SkillEffects.execute(session(), caster, criticalEscapeMobTarget, criticalEscape, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(criticalEscape.fetchSkillType(), C4SkillRules.EFFECT, 'Potion of Critical Escape should preserve sourced CONFUSE_MOB_ONLY effect semantics');
+assert.strictEqual(criticalEscape.fetchTargetKind(), 'enemy', 'Potion of Critical Escape should target mobs as enemy effect semantics');
+assert.strictEqual(criticalEscape.fetchSemantic().mobOnly, true, 'Potion of Critical Escape should preserve sourced mob-only metadata');
+assert.strictEqual(criticalEscape.fetchSemantic().baseLandRate, 100, 'Potion of Critical Escape should preserve sourced Confusion val 100 as land rate');
+assert.strictEqual(criticalEscape.fetchSemantic().castRange, 600, 'Potion of Critical Escape should preserve sourced castRange metadata');
+assert.strictEqual(criticalEscape.fetchSemantic().effectRange, 800, 'Potion of Critical Escape should preserve sourced effectRange metadata');
+assert.strictEqual(criticalEscapeMobOutcome.effect.key, 'potion_of_critical_escape', 'Potion of Critical Escape should apply a structured confusion debuff to mobs');
+assert.strictEqual(EffectStats.multiplier(criticalEscapeMobTarget, 'pAtkSpdMul'), 0.7, 'Potion of Critical Escape should apply sourced pAtkSpd 0.7 multiplier');
 
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
