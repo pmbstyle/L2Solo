@@ -9,6 +9,7 @@ const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
+const SpeckMath      = invoke('GameServer/SpeckMath');
 
 class Backpack extends BackpackModel {
     constructor(data) {
@@ -193,6 +194,10 @@ class Backpack extends BackpackModel {
             return false;
         }
 
+        if (skill.fetchTargetKind() === 'corpse_player') {
+            return this.useResurrectionItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchTargetKind() !== 'self') {
             return false;
         }
@@ -242,6 +247,52 @@ class Backpack extends BackpackModel {
         return true;
     }
 
+    useResurrectionItem(session, id, itemSkill, skill) {
+        const target = this.fetchSelectedPlayableTarget(session);
+        if (!this.canResurrectTarget(session.actor, target, skill)) {
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const startCast = () => {
+            const castTime = skill.fetchHitTime() || 0;
+            session.actor.state.setCasts(true);
+            session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
+            if (castTime > 0) {
+                session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+            }
+
+            const apply = () => {
+                session.actor.state.setCasts(false);
+                if (session.actor.isDead()) {
+                    return;
+                }
+                if (!this.canResurrectTarget(session.actor, target, skill)) {
+                    return;
+                }
+                this.applyResurrection(target);
+            };
+
+            if (castTime > 0) {
+                setTimeout(apply, castTime);
+            } else {
+                apply();
+            }
+        };
+
+        if (itemSkill.consumeAtStart) {
+            const consumeCount = skill.fetchSemantic().itemConsumeCount || itemSkill.consumeCount || 1;
+            this.deleteItem(session, id, consumeCount, startCast);
+        } else {
+            startCast();
+        }
+
+        return true;
+    }
+
     buildItemSkill(itemSkill) {
         const skillData = DataCache.skills.find((ob) => ob.selfId === itemSkill.skillId);
         if (!skillData) {
@@ -263,6 +314,50 @@ class Backpack extends BackpackModel {
             rng: () => Math.random(),
             attack: { clearLoadedShot() {} }
         });
+    }
+
+    fetchSelectedPlayableTarget(session) {
+        const targetId = session.actor.fetchDestId?.();
+        if (targetId === undefined || targetId === null) {
+            return null;
+        }
+
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const botSession = BotManager.findSessionById(Number(targetId));
+        if (botSession?.actor) {
+            return botSession.actor;
+        }
+
+        const userSession = (World.user?.sessions || []).find((ob) => Number(ob.actor?.fetchId?.()) === Number(targetId));
+        return userSession?.actor || null;
+    }
+
+    canResurrectTarget(actor, target, skill) {
+        if (!target || target === actor) {
+            return false;
+        }
+
+        if (target.state?.fetchDead?.() !== true) {
+            return false;
+        }
+
+        const distance = new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()).distance(
+            new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
+        );
+        const range = Number(skill.fetchSemantic().castRange ?? skill.fetchDistance()) || 0;
+        return range <= 0 || distance <= range;
+    }
+
+    applyResurrection(target) {
+        if (typeof target.revive === 'function') {
+            target.revive();
+            return;
+        }
+
+        const targetSession = target.session;
+        if (targetSession) {
+            invoke(path.actor).revive(targetSession, target);
+        }
     }
 
     fetchShotCost(kind) {

@@ -24,7 +24,7 @@ function item(id, data) {
     });
 }
 
-function sessionFor(backpack) {
+function sessionFor(backpack, options = {}) {
     let casts = false;
     const actor = {
         backpack,
@@ -35,6 +35,7 @@ function sessionFor(backpack) {
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
+        fetchDestId: () => options.destId,
         fetchHead: () => 0,
         isDead: () => false,
         statusUpdateVitals() {},
@@ -52,6 +53,26 @@ function sessionFor(backpack) {
         dataSendToMeAndOthers(packet) {
             this.packets.push(packet);
         }
+    };
+}
+
+function resurrectionTarget(options = {}) {
+    let dead = options.dead ?? true;
+    let revived = false;
+    return {
+        fetchId: () => options.id ?? 2000002,
+        fetchName: () => options.name || 'Fallen',
+        fetchLocX: () => options.locX ?? 100,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        revive() {
+            revived = true;
+            dead = false;
+        },
+        state: {
+            fetchDead: () => dead
+        },
+        wasRevived: () => revived
     };
 }
 
@@ -77,5 +98,47 @@ assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');
 assert.strictEqual(blessedEscape.fetchSelfId(), 2036, 'L2Day Blessed Escape should use sourced skill 2036');
 assert.strictEqual(blessedEscape.fetchLevel(), 2, 'L2Day Blessed Escape should preserve sourced item_skill level 2');
 assert.strictEqual(blessedEscape.fetchHitTime(), 200, 'L2Day Blessed Escape should preserve sourced skill hitTime');
+
+const l2DayResurrection = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3959));
+assert(l2DayResurrection, 'L2Day Blessed Scroll of Resurrection should resolve to an item skill');
+assert.strictEqual(l2DayResurrection.fetchSelfId(), 2062, 'L2Day Blessed Scroll of Resurrection should use sourced skill 2062');
+assert.strictEqual(l2DayResurrection.fetchPower(), 100, 'L2Day Blessed Scroll of Resurrection should preserve sourced power 100');
+assert.strictEqual(l2DayResurrection.fetchHitTime(), 15000, 'L2Day Blessed Scroll of Resurrection should preserve sourced 15000ms hitTime');
+
+const World = invoke('GameServer/World/World');
+World.user = { sessions: [] };
+
+const originalSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const resTarget = resurrectionTarget();
+    World.user.sessions.push({ actor: resTarget });
+    const resBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    resBackpack.items = [
+        item(2, { selfId: 737, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const resSession = sessionFor(resBackpack, { destId: resTarget.fetchId() });
+    resBackpack.useItem(resSession, 2);
+    assert.strictEqual(resBackpack.fetchItemFromSelfId(737), undefined, 'Scroll of Resurrection should consume sourced item 737 on valid cast start');
+    assert.strictEqual(resTarget.wasRevived(), true, 'Scroll of Resurrection should revive the selected dead player target after cast');
+    assert(resSession.packets.length > 0, 'Scroll of Resurrection should emit skill/item packets when used');
+
+    const livingTarget = resurrectionTarget({ id: 2000003, dead: false });
+    World.user.sessions = [{ actor: livingTarget }];
+    const invalidBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    invalidBackpack.items = [
+        item(3, { selfId: 3936, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const invalidSession = sessionFor(invalidBackpack, { destId: livingTarget.fetchId() });
+    invalidBackpack.useItem(invalidSession, 3);
+    assert.strictEqual(invalidBackpack.fetchItemFromSelfId(3936).fetchAmount(), 1, 'Blessed Scroll of Resurrection should not consume on living target');
+    assert.strictEqual(livingTarget.wasRevived(), false, 'Blessed Scroll of Resurrection should not revive a living target');
+} finally {
+    global.setTimeout = originalSetTimeout;
+}
 
 console.log('Item skill use checks passed');
