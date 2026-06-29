@@ -5220,7 +5220,9 @@ assert.strictEqual(EffectStats.multiplier(npcSlowTarget, 'runSpdMul'), 0.5, 'NPC
 [
     { id: 4077, name: 'NPC Aura Burn', trait: 'magic', levels: 12, lastPower: 104, lastMp: 78, distance: 150, sourceTarget: null, radius: 0, effectRange: 650 },
     { id: 4078, name: 'NPC Flamestrike', trait: 'fire', levels: 12, lastPower: 65, lastMp: 117, distance: 500, sourceTarget: 'area', radius: 200, effectRange: 900 },
-    { id: 4087, name: 'NPC Blaze', trait: 'fire', levels: 12, lastPower: 129, lastMp: 78, distance: 600, sourceTarget: null, radius: 0, effectRange: 1100 }
+    { id: 4087, name: 'NPC Blaze', trait: 'fire', levels: 12, lastPower: 129, lastMp: 78, distance: 600, sourceTarget: null, radius: 0, effectRange: 1100 },
+    { id: 4100, name: 'NPC Prominence', trait: 'fire', levels: 12, lastPower: 129, lastMp: 78, distance: 600, sourceTarget: null, radius: 0, effectRange: 1100 },
+    { id: 4105, name: 'NPC Straight Beam Cannon', trait: 'magic', levels: 12, lastPower: 129, lastMp: 78, distance: 600, sourceTarget: null, radius: 0, effectRange: 1100 }
 ].forEach(({ id, name, trait, levels, lastPower, lastMp, distance, sourceTarget, radius, effectRange }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
     assert(data, `${name} should be present in active skills data`);
@@ -5403,6 +5405,100 @@ assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'pAtkSpdMul'), 1.08,
 assert.strictEqual(EffectStats.multiplier(npcBerserkTarget, 'castSpdMul'), 1.08, 'NPC Berserk level 2 should apply sourced mAtkSpd 1.08 as cast speed multiplier');
 assert.strictEqual(EffectStats.add(npcBerserkTarget, 'runSpdAdd'), 8, 'NPC Berserk level 2 should apply sourced runSpd +8');
 EffectStore.remove(npcBerserkTarget, 'npc_berserk');
+
+const npcSpinningSlasherData = activeSkills.find((entry) => entry.selfId === 4101);
+assert(npcSpinningSlasherData, 'NPC Spinning Slasher should be present in active skills data');
+assert.strictEqual(npcSpinningSlasherData.template.name, 'NPC Spinning Slasher', 'NPC Spinning Slasher active data should preserve sourced name');
+assert.strictEqual(npcSpinningSlasherData.template.distance, -1, 'NPC Spinning Slasher should preserve sourced TARGET_AURA self-centered range');
+assert.strictEqual(npcSpinningSlasherData.time.hitTime, 1000, 'NPC Spinning Slasher should preserve sourced hitTime 1000');
+assert.strictEqual(npcSpinningSlasherData.time.reuse, 6000, 'NPC Spinning Slasher should preserve sourced reuseDelay 6000');
+assert.strictEqual(npcSpinningSlasherData.levels.length, 12, 'NPC Spinning Slasher should preserve sourced 12 levels');
+assert.strictEqual(npcSpinningSlasherData.levels[11].power, 2617, 'NPC Spinning Slasher level 12 should preserve sourced PDAM power 2617');
+assert.strictEqual(npcSpinningSlasherData.levels[11].mp, 95, 'NPC Spinning Slasher level 12 should preserve sourced mpConsume 95');
+const npcSpinningSlasher = skill({ selfId: 4101, name: 'NPC Spinning Slasher', spell: false, power: 2617, level: 12, distance: -1 });
+const npcSpinningSlasherOutcome = SkillEffects.execute(session(), caster, statActor(), npcSpinningSlasher, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 555, clearLoadedShot() {} }
+});
+assert.strictEqual(npcSpinningSlasher.fetchSkillType(), C4SkillRules.DAMAGE, 'NPC Spinning Slasher should resolve as sourced PDAM damage');
+assert.strictEqual(npcSpinningSlasher.fetchTargetKind(), 'enemy', 'NPC Spinning Slasher should resolve as an enemy damage skill');
+assert.strictEqual(npcSpinningSlasher.fetchSsBoost(), 1, 'NPC Spinning Slasher should preserve physical shot boost semantics');
+assert.strictEqual(npcSpinningSlasher.fetchSemantic().sourceTarget, 'aura', 'NPC Spinning Slasher should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(npcSpinningSlasher.fetchSemantic().radius, 150, 'NPC Spinning Slasher should preserve sourced skillRadius 150');
+assert.strictEqual(npcSpinningSlasher.fetchSemantic().levelDepend, 1, 'NPC Spinning Slasher should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcSpinningSlasher.fetchSemantic().magicLevel, 95, 'NPC Spinning Slasher level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcSpinningSlasherOutcome.damage, 555, 'NPC Spinning Slasher should keep the sourced damage execution path');
+
+const npcFireWeaknessData = activeSkills.find((entry) => entry.selfId === 4102);
+assert(npcFireWeaknessData, 'NPC fire weakness should be present in active skills data');
+assert.strictEqual(npcFireWeaknessData.template.name, 'Become weak against line of fire', 'NPC fire weakness active data should preserve sourced name');
+assert.strictEqual(npcFireWeaknessData.time.buff, 120000, 'NPC fire weakness should preserve sourced 120 second duration');
+assert.strictEqual(npcFireWeaknessData.levels.length, 2, 'NPC fire weakness should preserve sourced 2 levels');
+assert.strictEqual(npcFireWeaknessData.levels[1].mp, 65, 'NPC fire weakness level 2 should preserve sourced mpConsume 65');
+const npcFireWeakness = skill({ selfId: 4102, name: 'Become weak against line of fire', spell: true, power: 1, level: 2, buff: 120000, distance: 600 });
+const npcFireWeaknessTarget = statActor();
+const npcFireWeaknessOutcome = SkillEffects.execute(session(), caster, npcFireWeaknessTarget, npcFireWeakness, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcFireWeakness.fetchSkillType(), C4SkillRules.EFFECT, 'NPC fire weakness should resolve as sourced WEAKNESS effect semantics');
+assert.strictEqual(npcFireWeakness.fetchTargetKind(), 'enemy', 'NPC fire weakness should resolve as an enemy debuff');
+assert.strictEqual(npcFireWeakness.fetchSsBoost(), 1, 'NPC fire weakness should preserve magic shot boost semantics');
+assert.strictEqual(npcFireWeakness.fetchSemantic().levelDepend, 1, 'NPC fire weakness should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcFireWeakness.fetchSemantic().magicLevel, 70, 'NPC fire weakness level 2 should preserve sourced magicLvl 70');
+assert.strictEqual(npcFireWeakness.fetchSemantic().castRange, 600, 'NPC fire weakness should preserve sourced castRange metadata');
+assert.strictEqual(npcFireWeakness.fetchSemantic().effectRange, 1100, 'NPC fire weakness should preserve sourced effectRange metadata');
+assert.strictEqual(npcFireWeaknessOutcome.effect.key, 'npc_fire_weakness', 'NPC fire weakness should apply a structured debuff effect');
+assert.strictEqual(EffectStats.multiplier(npcFireWeaknessTarget, 'fireVuln'), 1.2, 'NPC fire weakness level 2 should apply sourced fireVuln 1.20 multiplier');
+
+const npcUltimateEvasionData = activeSkills.find((entry) => entry.selfId === 4103);
+assert(npcUltimateEvasionData, 'NPC Ultimate Evasion should be present in active skills data');
+assert.strictEqual(npcUltimateEvasionData.time.buff, 30000, 'NPC Ultimate Evasion should preserve sourced 30 second duration');
+assert.strictEqual(npcUltimateEvasionData.levels.length, 2, 'NPC Ultimate Evasion should preserve sourced 2 levels');
+assert.strictEqual(npcUltimateEvasionData.levels[1].mp, 65, 'NPC Ultimate Evasion level 2 should preserve sourced mpConsume 65');
+const npcUltimateEvasion = skill({ selfId: 4103, name: 'NPC Ultimate Evasion', spell: false, power: 1, level: 2, buff: 30000, distance: -1 });
+const npcUltimateEvasionTarget = statActor();
+const npcUltimateEvasionOutcome = SkillEffects.execute(session(), npcUltimateEvasionTarget, npcUltimateEvasionTarget, npcUltimateEvasion, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcUltimateEvasion.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Ultimate Evasion should resolve as sourced BUFF effect semantics');
+assert.strictEqual(npcUltimateEvasion.fetchTargetKind(), 'self', 'NPC Ultimate Evasion should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(npcUltimateEvasion.fetchSsBoost(), 0, 'NPC Ultimate Evasion should not use offensive shot boost semantics');
+assert.strictEqual(npcUltimateEvasion.fetchSemantic().aggroPoints, 100, 'NPC Ultimate Evasion should preserve sourced aggroPoints 100');
+assert.strictEqual(npcUltimateEvasionOutcome.effect.key, 'npc_ultimate_evasion', 'NPC Ultimate Evasion should apply a structured buff effect');
+assert.strictEqual(EffectStats.add(npcUltimateEvasionTarget, 'pEvasionRateAdd'), 25, 'NPC Ultimate Evasion level 2 should apply sourced rEvas +25');
+EffectStore.remove(npcUltimateEvasionTarget, 'npc_ultimate_evasion');
+
+const npcFlameData = activeSkills.find((entry) => entry.selfId === 4104);
+assert(npcFlameData, 'NPC Flame should be present in active skills data');
+assert.strictEqual(npcFlameData.time.buff, 90000, 'NPC Flame should preserve sourced 30x3s duration');
+assert.strictEqual(npcFlameData.levels.length, 12, 'NPC Flame should preserve sourced 12 levels');
+assert.strictEqual(npcFlameData.levels[11].power, 10, 'NPC Flame level 12 should preserve sourced power 10');
+assert.strictEqual(npcFlameData.levels[11].mp, 139, 'NPC Flame level 12 should preserve sourced mpConsume 139');
+const npcFlame = skill({ selfId: 4104, name: 'Flame', spell: true, power: 10, level: 12, buff: 90000, distance: 600 });
+const npcFlameTarget = statActor();
+const npcFlameOutcome = SkillEffects.execute(session(npcFlameTarget), caster, npcFlameTarget, npcFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcFlame.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Flame should resolve as sourced DOT effect semantics');
+assert.strictEqual(npcFlame.fetchTargetKind(), 'enemy', 'NPC Flame should resolve as an enemy debuff');
+assert.strictEqual(npcFlame.fetchSsBoost(), 1, 'NPC Flame should preserve magic shot boost semantics');
+assert.strictEqual(npcFlame.fetchSemantic().baseLandRate, 10, 'NPC Flame level 12 should use sourced power 10 as land rate');
+assert.strictEqual(npcFlame.fetchSemantic().levelDepend, 1, 'NPC Flame should preserve sourced lvlDepend metadata');
+assert.strictEqual(npcFlame.fetchSemantic().magicLevel, 95, 'NPC Flame level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcFlame.fetchSemantic().castRange, 600, 'NPC Flame should preserve sourced castRange metadata');
+assert.strictEqual(npcFlame.fetchSemantic().effectRange, 1100, 'NPC Flame should preserve sourced effectRange metadata');
+assert.strictEqual(npcFlameOutcome.effect.key, 'flame', 'NPC Flame should apply a structured fire DOT effect');
+assert.strictEqual(npcFlameOutcome.effect.dot.count, 30, 'NPC Flame should use sourced 30 damage ticks');
+assert.strictEqual(npcFlameOutcome.effect.dot.intervalMs, 3000, 'NPC Flame should tick every sourced 3 seconds');
+assert.strictEqual(npcFlameOutcome.effect.dot.damage, 81, 'NPC Flame level 12 should use sourced damage value 81');
+EffectStore.remove(npcFlameTarget, 'flame');
 
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
