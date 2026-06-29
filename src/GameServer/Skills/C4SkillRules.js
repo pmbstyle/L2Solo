@@ -34,6 +34,9 @@ const CHARGE = 'charge';
 const UNLOCK = 'unlock';
 const SWEEP = 'sweep';
 const SPOIL = 'spoil';
+const DRAIN_SOUL = 'drainSoul';
+const SOW = 'sow';
+const HARVEST = 'harvest';
 const TAKE_CASTLE = 'takeCastle';
 const SIEGE_FLAG = 'siegeFlag';
 
@@ -446,6 +449,9 @@ const RULES = {
     2093: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     2094: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     2095: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
+    2096: { skillType: DRAIN_SOUL, trait: 'soul_crystal', target: 'enemy', ssBoost: 0, hitTime: 1200, staticHitTime: true, castRange: 300, effectRange: 500 },
+    2097: { skillType: SOW, trait: 'manor', target: 'enemy', ssBoost: 0, hitTime: 1800, staticHitTime: true, castRange: 150, effectRange: 350, nextActionAttack: true },
+    2098: { skillType: HARVEST, trait: 'manor', target: 'corpse_mob', ssBoost: 0, hitTime: 500, staticHitTime: true, castRange: 20, effectRange: 100 },
     2099: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 300000, staticHitTime: true },
     3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
     4052: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 70, levelDepend: 1, magicLevelByLevel: [49, 55, 60, 64, 68, 72], dot: { count: 10, intervalMs: 3000, damageByLevel: [31, 38, 44, 44, 44, 48] } },
@@ -605,6 +611,7 @@ function resolve(skill = {}) {
         negatePower: rule.negatePower ?? null,
         notUsedInC4: rule.notUsedInC4 || false,
         dispellable: rule.dispellable,
+        nextActionAttack: rule.nextActionAttack || false,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
@@ -757,6 +764,9 @@ module.exports = {
     UNLOCK,
     SWEEP,
     SPOIL,
+    DRAIN_SOUL,
+    SOW,
+    HARVEST,
     TAKE_CASTLE,
     SIEGE_FLAG,
     resolve,

@@ -1985,6 +1985,21 @@
     "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
     "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
+    "selfId": 2096,
+    "template": { "name": "Soul Crystal", "passive": false, "spell": false, "distance": 300 },
+    "time": { "hitTime": 1200, "reuse": 1300, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 26, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2097,
+    "template": { "name": "Sowing", "passive": false, "spell": false, "distance": 150 },
+    "time": { "hitTime": 1800, "reuse": 8000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 4, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 2, "power": 1, "mp": 6, "hp": 0, "itemId": 0, "itemCount": 0 }, { "level": 3, "power": 1, "mp": 8, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2098,
+    "template": { "name": "Harvesting", "passive": false, "spell": false, "distance": 20 },
+    "time": { "hitTime": 500, "reuse": 8000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 3, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
     "selfId": 2099,
     "template": { "name": "Escape: 5 minutes", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 300000, "reuse": 0, "buff": 0 },

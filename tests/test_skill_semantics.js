@@ -638,6 +638,51 @@ assert.strictEqual(criticalEscape.fetchSemantic().effectRange, 800, 'Potion of C
 assert.strictEqual(criticalEscapeMobOutcome.effect.key, 'potion_of_critical_escape', 'Potion of Critical Escape should apply a structured confusion debuff to mobs');
 assert.strictEqual(EffectStats.multiplier(criticalEscapeMobTarget, 'pAtkSpdMul'), 0.7, 'Potion of Critical Escape should apply sourced pAtkSpd 0.7 multiplier');
 
+const soulCrystalData = activeSkills.find((entry) => entry.selfId === 2096);
+assert(soulCrystalData, 'Soul Crystal should be present in active skills data');
+assert.strictEqual(soulCrystalData.template.distance, 300, 'Soul Crystal should preserve sourced castRange 300');
+assert.strictEqual(soulCrystalData.time.hitTime, 1200, 'Soul Crystal should preserve sourced hitTime 1200');
+assert.strictEqual(soulCrystalData.time.reuse, 1300, 'Soul Crystal should preserve sourced reuseDelay 1300');
+assert.strictEqual(soulCrystalData.levels[0].mp, 26, 'Soul Crystal should preserve sourced mpConsume 26');
+const soulCrystal = skill({ selfId: 2096, name: 'Soul Crystal', spell: false, power: 1, level: 1, distance: 300 });
+assert.strictEqual(soulCrystal.fetchSkillType(), C4SkillRules.DRAIN_SOUL, 'Soul Crystal should preserve sourced DRAIN_SOUL skill type');
+assert.strictEqual(soulCrystal.fetchTargetKind(), 'enemy', 'Soul Crystal should preserve sourced TARGET_ONE semantics');
+assert.strictEqual(soulCrystal.fetchSemantic().hitTime, 1200, 'Soul Crystal should preserve sourced hitTime metadata');
+assert.strictEqual(soulCrystal.fetchSemantic().staticHitTime, true, 'Soul Crystal should preserve sourced staticHitTime metadata');
+assert.strictEqual(soulCrystal.fetchSemantic().castRange, 300, 'Soul Crystal should preserve sourced castRange metadata');
+assert.strictEqual(soulCrystal.fetchSemantic().effectRange, 500, 'Soul Crystal should preserve sourced effectRange metadata');
+
+const sowingData = activeSkills.find((entry) => entry.selfId === 2097);
+assert(sowingData, 'Sowing should be present in active skills data');
+assert.strictEqual(sowingData.template.distance, 150, 'Sowing should preserve sourced castRange 150');
+assert.strictEqual(sowingData.time.hitTime, 1800, 'Sowing should preserve sourced hitTime 1800');
+assert.strictEqual(sowingData.time.reuse, 8000, 'Sowing should preserve sourced reuseDelay 8000');
+assert.strictEqual(sowingData.levels.length, 3, 'Sowing should preserve sourced 3 base levels');
+assert.strictEqual(sowingData.levels[0].mp, 4, 'Sowing level 1 should preserve sourced mpConsume 4');
+assert.strictEqual(sowingData.levels[2].mp, 8, 'Sowing level 3 should preserve sourced mpConsume 8');
+const sowing = skill({ selfId: 2097, name: 'Sowing', spell: false, power: 1, level: 3, distance: 150 });
+assert.strictEqual(sowing.fetchSkillType(), C4SkillRules.SOW, 'Sowing should preserve sourced SOW skill type');
+assert.strictEqual(sowing.fetchTargetKind(), 'enemy', 'Sowing should preserve sourced TARGET_ONE semantics');
+assert.strictEqual(sowing.fetchSemantic().hitTime, 1800, 'Sowing should preserve sourced hitTime metadata');
+assert.strictEqual(sowing.fetchSemantic().staticHitTime, true, 'Sowing should preserve sourced staticHitTime metadata');
+assert.strictEqual(sowing.fetchSemantic().castRange, 150, 'Sowing should preserve sourced castRange metadata');
+assert.strictEqual(sowing.fetchSemantic().effectRange, 350, 'Sowing should preserve sourced effectRange metadata');
+assert.strictEqual(sowing.fetchSemantic().nextActionAttack, true, 'Sowing should preserve sourced nextActionAttack metadata');
+
+const harvestingData = activeSkills.find((entry) => entry.selfId === 2098);
+assert(harvestingData, 'Harvesting should be present in active skills data');
+assert.strictEqual(harvestingData.template.distance, 20, 'Harvesting should preserve sourced castRange 20');
+assert.strictEqual(harvestingData.time.hitTime, 500, 'Harvesting should preserve sourced hitTime 500');
+assert.strictEqual(harvestingData.time.reuse, 8000, 'Harvesting should preserve sourced reuseDelay 8000');
+assert.strictEqual(harvestingData.levels[0].mp, 3, 'Harvesting should preserve sourced mpConsume 3');
+const harvesting = skill({ selfId: 2098, name: 'Harvesting', spell: false, power: 1, level: 1, distance: 20 });
+assert.strictEqual(harvesting.fetchSkillType(), C4SkillRules.HARVEST, 'Harvesting should preserve sourced HARVEST skill type');
+assert.strictEqual(harvesting.fetchTargetKind(), 'corpse_mob', 'Harvesting should preserve sourced TARGET_CORPSE_MOB semantics');
+assert.strictEqual(harvesting.fetchSemantic().hitTime, 500, 'Harvesting should preserve sourced hitTime metadata');
+assert.strictEqual(harvesting.fetchSemantic().staticHitTime, true, 'Harvesting should preserve sourced staticHitTime metadata');
+assert.strictEqual(harvesting.fetchSemantic().castRange, 20, 'Harvesting should preserve sourced castRange metadata');
+assert.strictEqual(harvesting.fetchSemantic().effectRange, 100, 'Harvesting should preserve sourced effectRange metadata');
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');
