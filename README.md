@@ -8,7 +8,7 @@ Old-school Lineage 2 solo play, locally in a live world with over 1500 populatio
 
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and SimPlayers with AI that make the server feel alive.
 
-🏗️ **Work in progress. Playable.**
+<p align="center">🏗️ Work in progress. Playable.</p>
 
 ## Game Checklist
 
