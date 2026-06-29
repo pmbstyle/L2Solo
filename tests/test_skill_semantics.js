@@ -494,7 +494,25 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
     { id: 2029, target: 'item', isPotion: false },
     { id: 2030, target: 'item', isPotion: false },
     { id: 2075, target: 'none', isPotion: false },
-    { id: 2077, target: 'none', isPotion: false }
+    { id: 2077, target: 'none', isPotion: false },
+    { id: 2078, target: 'none', isPotion: false },
+    { id: 2079, target: 'none', isPotion: false },
+    { id: 2080, target: 'none', isPotion: false },
+    { id: 2081, target: 'none', isPotion: false },
+    { id: 2082, target: 'none', isPotion: false },
+    { id: 2083, target: 'none', isPotion: false },
+    { id: 2084, target: 'none', isPotion: false },
+    { id: 2085, target: 'none', isPotion: false },
+    { id: 2086, target: 'none', isPotion: false },
+    { id: 2087, target: 'none', isPotion: false },
+    { id: 2088, target: 'none', isPotion: false },
+    { id: 2089, target: 'none', isPotion: false },
+    { id: 2090, target: 'none', isPotion: false },
+    { id: 2091, target: 'none', isPotion: false },
+    { id: 2092, target: 'none', isPotion: false },
+    { id: 2093, target: 'none', isPotion: false },
+    { id: 2094, target: 'none', isPotion: false },
+    { id: 2095, target: 'none', isPotion: false }
 ].forEach(({ id, target, isPotion }) => {
     const notDone = skill({ selfId: id, name: 'Not done item skill', spell: false, power: 1, level: 1, distance: -1 });
     const outcome = SkillEffects.execute(session(), caster, caster, notDone, {
@@ -511,7 +529,15 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
 [
     { id: 2023, name: 'Fairy Firecracker' },
     { id: 2024, name: 'Firecracker' },
-    { id: 2025, name: 'Large Firecracker' }
+    { id: 2025, name: 'Large Firecracker' },
+    { id: 2066, name: 'Echo Crystal', isPotion: true },
+    { id: 2067, name: 'Echo Crystal', isPotion: true },
+    { id: 2068, name: 'Echo Crystal', isPotion: true },
+    { id: 2069, name: 'Echo Crystal', isPotion: true },
+    { id: 2070, name: 'Echo Crystal', isPotion: true },
+    { id: 2071, name: 'Echo Crystal', isPotion: true },
+    { id: 2072, name: 'Echo Crystal', isPotion: true },
+    { id: 2073, name: 'Echo Crystal', isPotion: true }
 ].forEach(({ id, name }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
     assert(data, `${name} should be present in active skills data`);
@@ -519,6 +545,7 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
     const dummy = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
     assert.strictEqual(dummy.fetchSkillType(), C4SkillRules.DUMMY, `${name} should preserve sourced DUMMY type`);
     assert.strictEqual(dummy.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(dummy.fetchSemantic().isPotion || false, id >= 2066, `${name} ${id} should preserve sourced potion metadata`);
 });
 
 const wolvesNecklace = skill({ selfId: 2046, name: "Wolves' necklace", spell: true, power: 1, level: 1, distance: -1 });
