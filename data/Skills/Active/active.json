@@ -2008,47 +2008,47 @@
     "selfId": 4106,
     "template": { "name": "Shock", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 6000, "reuse": 0, "buff": 9000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 11000, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4107,
     "template": { "name": "Shock", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 3000, "reuse": 0, "buff": 9000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 11000, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4108,
-    "template": { "name": "Fear", "passive": false, "spell": false, "distance": 600 },
+    "template": { "name": "Terror", "passive": false, "spell": false, "distance": 600 },
     "time": { "hitTime": 2300, "reuse": 0, "buff": 30000 },
     "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4109,
     "template": { "name": "Curse of Antharas", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 2800, "reuse": 0, "buff": 120000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 90, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4110,
-    "template": { "name": "Mouth Odor Attack", "passive": false, "spell": false, "distance": 500 },
+    "template": { "name": "Mouth Odor Attack", "passive": false, "spell": true, "distance": 500 },
     "time": { "hitTime": 2300, "reuse": 0, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 250, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4111,
     "template": { "name": "Fossilization", "passive": false, "spell": false, "distance": 1000 },
     "time": { "hitTime": 3200, "reuse": 0, "buff": 120000 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 10, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4112,
     "template": { "name": "Ordinary Attack", "passive": false, "spell": false, "distance": 50 },
     "time": { "hitTime": 2200, "reuse": 0, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 22000, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4113,
     "template": { "name": "Animal doing ordinary attack", "passive": false, "spell": false, "distance": 50 },
     "time": { "hitTime": 2200, "reuse": 0, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 22000, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4114,
     "template": { "name": "Aden Flame", "passive": false, "spell": true, "distance": 1100 },
     "time": { "hitTime": 4000, "reuse": 15000, "buff": 0 },
-    "levels": [{ "level": 1, "power": 1, "mp": 90, "hp": 0, "itemId": 0, "itemCount": 0 }]
+    "levels": [{ "level": 1, "power": 47, "mp": 90, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
     "selfId": 4115,
     "template": {"name": "Aden Heal", "passive": false, "spell": true, "distance": 600},

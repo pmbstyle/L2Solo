@@ -5500,6 +5500,174 @@ assert.strictEqual(npcFlameOutcome.effect.dot.intervalMs, 3000, 'NPC Flame shoul
 assert.strictEqual(npcFlameOutcome.effect.dot.damage, 81, 'NPC Flame level 12 should use sourced damage value 81');
 EffectStore.remove(npcFlameTarget, 'flame');
 
+[
+    { id: 4106, hitTime: 6000, coolTime: 2000 },
+    { id: 4107, hitTime: 3000, coolTime: 3000 }
+].forEach(({ id, hitTime, coolTime }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `Antharas Shock ${id} should be present in active skills data`);
+    assert.strictEqual(data.time.hitTime, hitTime, `Antharas Shock ${id} should preserve sourced hitTime`);
+    assert.strictEqual(data.time.buff, 9000, `Antharas Shock ${id} should preserve sourced 9 second stun duration`);
+    assert.strictEqual(data.levels[0].power, 11000, `Antharas Shock ${id} should preserve sourced PDAM power 11000`);
+    const shock = skill({ selfId: id, name: 'Shock', spell: false, power: 11000, level: 1, buff: 9000, distance: -1 });
+    const target = statActor();
+    const outcome = SkillEffects.execute(session(), caster, target, shock, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { prepareSkillDamage: () => 777, clearLoadedShot() {} }
+    });
+    assert.strictEqual(shock.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, `Antharas Shock ${id} should resolve as sourced PDAM plus stun`);
+    assert.strictEqual(shock.fetchTargetKind(), 'enemy', `Antharas Shock ${id} should resolve as an enemy skill`);
+    assert.strictEqual(shock.fetchSemantic().sourceTarget, 'aura', `Antharas Shock ${id} should preserve sourced TARGET_AURA semantics`);
+    assert.strictEqual(shock.fetchSemantic().radius, 1100, `Antharas Shock ${id} should preserve sourced skillRadius 1100`);
+    assert.strictEqual(shock.fetchSemantic().baseLandRate, 80, `Antharas Shock ${id} should use sourced effectPower 80 as stun land rate`);
+    assert.strictEqual(shock.fetchSemantic().magicLevel, 70, `Antharas Shock ${id} should preserve sourced magicLvl 70`);
+    assert.strictEqual(shock.fetchSemantic().coolTime, coolTime, `Antharas Shock ${id} should preserve sourced coolTime metadata`);
+    assert.strictEqual(outcome.damage, 777, `Antharas Shock ${id} should keep the sourced PDAM damage path`);
+    assert.strictEqual(outcome.effect.key, 'stun', `Antharas Shock ${id} should apply sourced Stun`);
+    assert.strictEqual(EffectRestrictions.canAttack(target), false, `Antharas Shock ${id} should disable attacks while stunned`);
+    EffectStore.remove(target, 'stun');
+});
+
+const terrorData = activeSkills.find((entry) => entry.selfId === 4108);
+assert(terrorData, 'Terror should be present in active skills data');
+assert.strictEqual(terrorData.template.name, 'Terror', 'Terror active data should preserve sourced name');
+assert.strictEqual(terrorData.template.distance, 600, 'Terror should preserve sourced castRange 600');
+assert.strictEqual(terrorData.time.hitTime, 2300, 'Terror should preserve sourced hitTime 2300');
+assert.strictEqual(terrorData.time.buff, 30000, 'Terror should preserve current 30 second fear duration');
+const terror = skill({ selfId: 4108, name: 'Terror', spell: false, power: 1, level: 1, buff: 30000, distance: 600 });
+const terrorTarget = statActor();
+const terrorOutcome = SkillEffects.execute(session(), caster, terrorTarget, terror, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(terror.fetchSkillType(), C4SkillRules.EFFECT, 'Terror should resolve as sourced FEAR effect semantics');
+assert.strictEqual(terror.fetchTargetKind(), 'enemy', 'Terror should resolve as an enemy debuff');
+assert.strictEqual(terror.fetchSemantic().sourceTarget, 'area', 'Terror should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(terror.fetchSemantic().radius, 400, 'Terror should preserve sourced skillRadius 400');
+assert.strictEqual(terror.fetchSemantic().baseLandRate, 40, 'Terror should use sourced FEAR fallback land rate 40');
+assert.strictEqual(terror.fetchSemantic().magicLevel, 70, 'Terror should preserve sourced magicLvl 70');
+assert.strictEqual(terror.fetchSemantic().coolTime, 2700, 'Terror should preserve sourced coolTime 2700');
+assert.strictEqual(terror.fetchSemantic().castRange, 600, 'Terror should preserve sourced castRange metadata');
+assert.strictEqual(terror.fetchSemantic().effectRange, 1100, 'Terror should preserve sourced effectRange metadata');
+assert.strictEqual(terrorOutcome.effect.key, 'fear', 'Terror should apply sourced Fear');
+EffectStore.remove(terrorTarget, 'fear');
+
+const curseAntharasData = activeSkills.find((entry) => entry.selfId === 4109);
+assert(curseAntharasData, 'Curse of Antharas should be present in active skills data');
+assert.strictEqual(curseAntharasData.time.buff, 120000, 'Curse of Antharas should preserve sourced 120 second duration');
+assert.strictEqual(curseAntharasData.levels[0].power, 90, 'Curse of Antharas should preserve sourced power 90');
+const curseAntharas = skill({ selfId: 4109, name: 'Curse of Antharas', spell: false, power: 90, level: 1, buff: 120000, distance: -1 });
+const curseAntharasTarget = statActor();
+const curseAntharasOutcome = SkillEffects.execute(session(), caster, curseAntharasTarget, curseAntharas, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(curseAntharas.fetchSkillType(), C4SkillRules.EFFECT, 'Curse of Antharas should resolve as sourced DEBUFF effect semantics');
+assert.strictEqual(curseAntharas.fetchTargetKind(), 'enemy', 'Curse of Antharas should resolve as an enemy debuff');
+assert.strictEqual(curseAntharas.fetchSemantic().sourceTarget, 'aura', 'Curse of Antharas should preserve sourced TARGET_AURA semantics');
+assert.strictEqual(curseAntharas.fetchSemantic().radius, 850, 'Curse of Antharas should preserve sourced skillRadius 850');
+assert.strictEqual(curseAntharas.fetchSemantic().baseLandRate, 90, 'Curse of Antharas should use sourced power 90 as land rate');
+assert.strictEqual(curseAntharas.fetchSemantic().magicLevel, 70, 'Curse of Antharas should preserve sourced magicLvl 70');
+assert.strictEqual(curseAntharas.fetchSemantic().coolTime, 1200, 'Curse of Antharas should preserve sourced coolTime 1200');
+assert.strictEqual(curseAntharasOutcome.effect.key, 'curse_of_antharas', 'Curse of Antharas should apply a structured debuff effect');
+assert.strictEqual(EffectStats.add(curseAntharasTarget, 'pAccuracyCombatAdd'), -19, 'Curse of Antharas should apply sourced accCombat -19');
+assert.strictEqual(EffectStats.add(curseAntharasTarget, 'pEvasionRateAdd'), -19, 'Curse of Antharas should apply sourced rEvas -19');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'mAtkMul'), 0.85, 'Curse of Antharas should apply sourced mAtk 0.85 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'mDefMul'), 0.6, 'Curse of Antharas should apply sourced mDef 0.6 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'pAtkMul'), 0.85, 'Curse of Antharas should apply sourced pAtk 0.85 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'pDefMul'), 0.6, 'Curse of Antharas should apply sourced pDef 0.6 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'pAtkSpdMul'), 0.75, 'Curse of Antharas should apply sourced pAtkSpd 0.75 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'castSpdMul'), 0.75, 'Curse of Antharas should apply sourced mAtkSpd 0.75 as cast speed multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'runSpdMul'), 0.5, 'Curse of Antharas should apply sourced runSpd 0.5 multiplier');
+assert.strictEqual(EffectStats.multiplier(curseAntharasTarget, 'pCritRateMul'), -0.9, 'Curse of Antharas should preserve sourced rCrit -0.9 multiplier');
+
+const mouthOdorData = activeSkills.find((entry) => entry.selfId === 4110);
+assert(mouthOdorData, 'Mouth Odor Attack should be present in active skills data');
+assert.strictEqual(mouthOdorData.template.spell, true, 'Mouth Odor Attack should resolve active data as MDAM spell semantics');
+assert.strictEqual(mouthOdorData.levels[0].power, 250, 'Mouth Odor Attack should preserve sourced MDAM power 250');
+const mouthOdor = skill({ selfId: 4110, name: 'Mouth Odor Attack', spell: true, power: 250, level: 1, distance: 500 });
+const mouthOdorOutcome = SkillEffects.execute(session(), caster, statActor(), mouthOdor, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 888, clearLoadedShot() {} }
+});
+assert.strictEqual(mouthOdor.fetchSkillType(), C4SkillRules.DAMAGE, 'Mouth Odor Attack should resolve as sourced MDAM damage');
+assert.strictEqual(mouthOdor.fetchSemantic().trait, 'fire', 'Mouth Odor Attack should preserve sourced fire element');
+assert.strictEqual(mouthOdor.fetchSemantic().magicLevel, 70, 'Mouth Odor Attack should preserve sourced magicLvl 70');
+assert.strictEqual(mouthOdor.fetchSemantic().coolTime, 2700, 'Mouth Odor Attack should preserve sourced coolTime 2700');
+assert.strictEqual(mouthOdor.fetchSemantic().castRange, 500, 'Mouth Odor Attack should preserve sourced castRange metadata');
+assert.strictEqual(mouthOdor.fetchSemantic().effectRange, 1000, 'Mouth Odor Attack should preserve sourced effectRange metadata');
+assert.strictEqual(mouthOdorOutcome.damage, 888, 'Mouth Odor Attack should keep the sourced damage execution path');
+
+const fossilizationData = activeSkills.find((entry) => entry.selfId === 4111);
+assert(fossilizationData, 'Fossilization should be present in active skills data');
+assert.strictEqual(fossilizationData.time.buff, 120000, 'Fossilization should preserve sourced 120 second duration');
+assert.strictEqual(fossilizationData.levels[0].power, 10, 'Fossilization should preserve sourced power 10');
+const fossilization = skill({ selfId: 4111, name: 'Fossilization', spell: false, power: 10, level: 1, buff: 120000, distance: 1000 });
+const fossilizationTarget = statActor();
+const fossilizationOutcome = SkillEffects.execute(session(), caster, fossilizationTarget, fossilization, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(fossilization.fetchSkillType(), C4SkillRules.EFFECT, 'Fossilization should resolve as sourced PARALYZE effect semantics');
+assert.strictEqual(fossilization.fetchTargetKind(), 'enemy', 'Fossilization should resolve as an enemy debuff');
+assert.strictEqual(fossilization.fetchSemantic().sourceTarget, 'area', 'Fossilization should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(fossilization.fetchSemantic().radius, 700, 'Fossilization should preserve sourced skillRadius 700');
+assert.strictEqual(fossilization.fetchSemantic().baseLandRate, 10, 'Fossilization should use sourced power 10 as land rate');
+assert.strictEqual(fossilization.fetchSemantic().coolTime, 1800, 'Fossilization should preserve sourced coolTime 1800');
+assert.strictEqual(fossilization.fetchSemantic().castRange, 1000, 'Fossilization should preserve sourced castRange metadata');
+assert.strictEqual(fossilization.fetchSemantic().effectRange, 1500, 'Fossilization should preserve sourced effectRange metadata');
+assert.strictEqual(fossilizationOutcome.effect.key, 'paralyze', 'Fossilization should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canMove(fossilizationTarget), false, 'Fossilization should block movement');
+EffectStore.remove(fossilizationTarget, 'paralyze');
+
+[
+    { id: 4112, name: 'Ordinary Attack' },
+    { id: 4113, name: 'Animal doing ordinary attack' }
+].forEach(({ id, name }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.levels[0].power, 22000, `${name} should preserve sourced PDAM power 22000`);
+    const ordinary = skill({ selfId: id, name, spell: false, power: 22000, level: 1, distance: 50 });
+    const outcome = SkillEffects.execute(session(), caster, statActor(), ordinary, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { prepareSkillDamage: () => 999, clearLoadedShot() {} }
+    });
+    assert.strictEqual(ordinary.fetchSkillType(), C4SkillRules.DAMAGE, `${name} should resolve as sourced PDAM damage`);
+    assert.strictEqual(ordinary.fetchSemantic().sourceTarget, 'area', `${name} should preserve sourced TARGET_AREA semantics`);
+    assert.strictEqual(ordinary.fetchSemantic().radius, 100, `${name} should preserve sourced skillRadius 100`);
+    assert.strictEqual(ordinary.fetchSemantic().overHit, true, `${name} should preserve sourced overHit metadata`);
+    assert.strictEqual(ordinary.fetchSemantic().coolTime, 800, `${name} should preserve sourced coolTime 800`);
+    assert.strictEqual(ordinary.fetchSemantic().castRange, 50, `${name} should preserve sourced castRange metadata`);
+    assert.strictEqual(ordinary.fetchSemantic().effectRange, 400, `${name} should preserve sourced effectRange metadata`);
+    assert.strictEqual(outcome.damage, 999, `${name} should keep the sourced damage execution path`);
+});
+
+const adenFlameData = activeSkills.find((entry) => entry.selfId === 4114);
+assert(adenFlameData, 'Aden Flame should be present in active skills data');
+assert.strictEqual(adenFlameData.levels[0].power, 47, 'Aden Flame should preserve sourced MDAM power 47');
+assert.strictEqual(adenFlameData.levels[0].mp, 90, 'Aden Flame active MP should preserve sourced initial+consume total 90');
+const adenFlame = skill({ selfId: 4114, name: 'Aden Flame', spell: true, power: 47, level: 1, distance: 1100 });
+const adenFlameOutcome = SkillEffects.execute(session(), caster, statActor(), adenFlame, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 444, clearLoadedShot() {} }
+});
+assert.strictEqual(adenFlame.fetchSkillType(), C4SkillRules.DAMAGE, 'Aden Flame should resolve as sourced MDAM damage');
+assert.strictEqual(adenFlame.fetchSemantic().trait, 'fire', 'Aden Flame should preserve sourced fire element');
+assert.strictEqual(adenFlame.fetchSemantic().sourceTarget, 'area', 'Aden Flame should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(adenFlame.fetchSemantic().radius, 200, 'Aden Flame should preserve sourced skillRadius 200');
+assert.strictEqual(adenFlame.fetchSemantic().magicLevel, 65, 'Aden Flame should preserve sourced magicLvl 65');
+assert.strictEqual(adenFlame.fetchSemantic().mpInitialConsume, 18, 'Aden Flame should preserve sourced mpInitialConsume 18 metadata');
+assert.strictEqual(adenFlame.fetchSemantic().castRange, 1100, 'Aden Flame should preserve sourced castRange metadata');
+assert.strictEqual(adenFlame.fetchSemantic().effectRange, 1600, 'Aden Flame should preserve sourced effectRange metadata');
+assert.strictEqual(adenFlameOutcome.damage, 444, 'Aden Flame should keep the sourced damage execution path');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
