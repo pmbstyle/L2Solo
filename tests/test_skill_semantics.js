@@ -5668,6 +5668,132 @@ assert.strictEqual(adenFlame.fetchSemantic().castRange, 1100, 'Aden Flame should
 assert.strictEqual(adenFlame.fetchSemantic().effectRange, 1600, 'Aden Flame should preserve sourced effectRange metadata');
 assert.strictEqual(adenFlameOutcome.damage, 444, 'Aden Flame should keep the sourced damage execution path');
 
+const npcParalysisData = activeSkills.find((entry) => entry.selfId === 4117);
+assert(npcParalysisData, 'NPC Paralysis should be present in active skills data');
+assert.strictEqual(npcParalysisData.levels.length, 12, 'NPC Paralysis should preserve sourced 12 levels');
+assert.strictEqual(npcParalysisData.levels[0].power, 50, 'NPC Paralysis level 1 should preserve sourced power 50');
+assert.strictEqual(npcParalysisData.levels[11].mp, 78, 'NPC Paralysis level 12 should preserve sourced mpConsume 78');
+const npcParalysis = skill({ selfId: 4117, name: 'Paralysis', spell: true, power: 50, level: 12, buff: 120000, distance: 400 });
+const npcParalysisTarget = statActor();
+const npcParalysisOutcome = SkillEffects.execute(session(), caster, npcParalysisTarget, npcParalysis, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcParalysis.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Paralysis should resolve as sourced PARALYZE effect semantics');
+assert.strictEqual(npcParalysis.fetchTargetKind(), 'enemy', 'NPC Paralysis should resolve as an enemy effect');
+assert.strictEqual(npcParalysis.fetchSemantic().baseLandRate, 50, 'NPC Paralysis should use sourced power 50 as land rate');
+assert.strictEqual(npcParalysis.fetchSemantic().magicLevel, 95, 'NPC Paralysis level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcParalysis.fetchSemantic().castRange, 400, 'NPC Paralysis should preserve sourced castRange metadata');
+assert.strictEqual(npcParalysis.fetchSemantic().effectRange, 900, 'NPC Paralysis should preserve sourced effectRange metadata');
+assert.strictEqual(npcParalysisOutcome.effect.key, 'paralyze', 'NPC Paralysis should apply sourced Paralyze');
+assert.strictEqual(EffectRestrictions.canMove(npcParalysisTarget), false, 'NPC Paralysis should block movement');
+EffectStore.remove(npcParalysisTarget, 'paralyze');
+
+const areaParalysisData = activeSkills.find((entry) => entry.selfId === 4118);
+assert(areaParalysisData, 'Area Paralysis should be present in active skills data');
+assert.strictEqual(areaParalysisData.levels.length, 7, 'Area Paralysis should follow sourced levels=7 declaration');
+assert.strictEqual(areaParalysisData.levels[6].power, 25, 'Area Paralysis level 7 should preserve sourced power 25');
+assert.strictEqual(areaParalysisData.levels[6].mp, 98, 'Area Paralysis level 7 should preserve sourced mpConsume 98');
+const areaParalysis = skill({ selfId: 4118, name: 'Paralysis', spell: true, power: 25, level: 7, buff: 120000, distance: 300 });
+const areaParalysisTarget = statActor();
+const areaParalysisOutcome = SkillEffects.execute(session(), caster, areaParalysisTarget, areaParalysis, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(areaParalysis.fetchSkillType(), C4SkillRules.EFFECT, 'Area Paralysis should resolve as sourced PARALYZE effect semantics');
+assert.strictEqual(areaParalysis.fetchSemantic().sourceTarget, 'area', 'Area Paralysis should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(areaParalysis.fetchSemantic().radius, 200, 'Area Paralysis should preserve sourced skillRadius 200');
+assert.strictEqual(areaParalysis.fetchSemantic().baseLandRate, 25, 'Area Paralysis should use sourced power 25 as land rate');
+assert.strictEqual(areaParalysis.fetchSemantic().magicLevel, 70, 'Area Paralysis level 7 should preserve sourced magicLvl 70');
+assert.strictEqual(areaParalysis.fetchSemantic().castRange, 300, 'Area Paralysis should preserve sourced castRange metadata');
+assert.strictEqual(areaParalysis.fetchSemantic().effectRange, 800, 'Area Paralysis should preserve sourced effectRange metadata');
+assert.strictEqual(areaParalysisOutcome.effect.key, 'paralyze', 'Area Paralysis should apply sourced Paralyze');
+EffectStore.remove(areaParalysisTarget, 'paralyze');
+
+const accuracyDownData = activeSkills.find((entry) => entry.selfId === 4119);
+assert(accuracyDownData, 'Fall in accuracy should be present in active skills data');
+assert.strictEqual(accuracyDownData.levels.length, 3, 'Fall in accuracy should preserve sourced 3 levels');
+assert.strictEqual(accuracyDownData.levels[2].power, 80, 'Fall in accuracy level 3 should preserve sourced power 80');
+assert.strictEqual(accuracyDownData.levels[2].mp, 65, 'Fall in accuracy level 3 should preserve sourced mpConsume 65');
+const accuracyDown = skill({ selfId: 4119, name: 'Fall in accuracy', spell: true, power: 80, level: 3, buff: 120000, distance: 600 });
+const accuracyDownTarget = statActor();
+const accuracyDownOutcome = SkillEffects.execute(session(), caster, accuracyDownTarget, accuracyDown, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(accuracyDown.fetchSkillType(), C4SkillRules.EFFECT, 'Fall in accuracy should resolve as sourced DEBUFF semantics');
+assert.strictEqual(accuracyDown.fetchSemantic().baseLandRate, 80, 'Fall in accuracy should use sourced power 80 as land rate');
+assert.strictEqual(accuracyDown.fetchSemantic().levelDepend, 2, 'Fall in accuracy should preserve sourced lvlDepend 2 metadata');
+assert.strictEqual(accuracyDown.fetchSemantic().magicLevel, 70, 'Fall in accuracy level 3 should preserve sourced magicLvl 70');
+assert.strictEqual(accuracyDown.fetchSemantic().castRange, 600, 'Fall in accuracy should preserve sourced castRange metadata');
+assert.strictEqual(accuracyDown.fetchSemantic().effectRange, 1100, 'Fall in accuracy should preserve sourced effectRange metadata');
+assert.strictEqual(accuracyDownOutcome.effect.key, 'accuracy_down', 'Fall in accuracy should apply a structured accuracy debuff');
+assert.strictEqual(EffectStats.add(accuracyDownTarget, 'pAccuracyCombatAdd'), -13, 'Fall in accuracy level 3 should apply sourced accCombat -13');
+
+const npcShockData = activeSkills.find((entry) => entry.selfId === 4120);
+assert(npcShockData, 'NPC Shock should be present in active skills data');
+assert.strictEqual(npcShockData.levels.length, 12, 'NPC Shock should preserve sourced 12 levels');
+assert.strictEqual(npcShockData.levels[0].power, 46, 'NPC Shock level 1 should preserve sourced power 46');
+assert.strictEqual(npcShockData.levels[11].power, 2617, 'NPC Shock level 12 should preserve sourced power 2617');
+assert.strictEqual(npcShockData.levels[11].mp, 189, 'NPC Shock level 12 should preserve sourced mpConsume 189');
+const npcShock = skill({ selfId: 4120, name: 'Shock', spell: false, power: 2617, level: 12, buff: 9000, distance: 700 });
+const npcShockTarget = statActor();
+const npcShockOutcome = SkillEffects.execute(session(), caster, npcShockTarget, npcShock, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 555, clearLoadedShot() {} }
+});
+assert.strictEqual(npcShock.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'NPC Shock should resolve as sourced PDAM plus stun');
+assert.strictEqual(npcShock.fetchSemantic().baseLandRate, 50, 'NPC Shock should use sourced effectPower 50 as stun land rate');
+assert.strictEqual(npcShock.fetchSemantic().overHit, true, 'NPC Shock should preserve sourced overHit metadata');
+assert.strictEqual(npcShock.fetchSemantic().magicLevel, 95, 'NPC Shock level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcShock.fetchSemantic().castRange, 700, 'NPC Shock should preserve sourced castRange metadata');
+assert.strictEqual(npcShock.fetchSemantic().effectRange, 1200, 'NPC Shock should preserve sourced effectRange metadata');
+assert.strictEqual(npcShockOutcome.damage, 555, 'NPC Shock should keep the sourced PDAM damage path');
+assert.strictEqual(npcShockOutcome.effect.key, 'stun', 'NPC Shock should apply sourced Stun');
+EffectStore.remove(npcShockTarget, 'stun');
+
+const hostileFeelingData = activeSkills.find((entry) => entry.selfId === 4123);
+assert(hostileFeelingData, 'Hostile Feeling should be present in active skills data');
+assert.strictEqual(hostileFeelingData.template.name, 'Hostile Feeling', 'Hostile Feeling active data should preserve sourced name');
+assert.strictEqual(hostileFeelingData.levels.length, 12, 'Hostile Feeling should preserve sourced 12 levels');
+assert.strictEqual(hostileFeelingData.levels[0].power, 1078, 'Hostile Feeling level 1 should preserve sourced AGGDAMAGE power 1078');
+assert.strictEqual(hostileFeelingData.levels[11].power, 1400, 'Hostile Feeling level 12 should preserve sourced AGGDAMAGE power 1400');
+assert.strictEqual(hostileFeelingData.levels[11].mp, 95, 'Hostile Feeling level 12 should preserve sourced mpConsume 95');
+const hostileFeeling = skill({ selfId: 4123, name: 'Hostile Feeling', spell: false, power: 1400, level: 12, distance: 400 });
+const hostileFeelingOutcome = SkillEffects.execute(session(), caster, statActor(), hostileFeeling, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(hostileFeeling.fetchSkillType(), C4SkillRules.AGGRO_DAMAGE, 'Hostile Feeling should resolve as sourced AGGDAMAGE semantics');
+assert.strictEqual(hostileFeeling.fetchSemantic().magicLevel, 95, 'Hostile Feeling level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(hostileFeeling.fetchSemantic().castRange, 400, 'Hostile Feeling should preserve sourced castRange metadata');
+assert.strictEqual(hostileFeeling.fetchSemantic().effectRange, 900, 'Hostile Feeling should preserve sourced effectRange metadata');
+assert.strictEqual(hostileFeelingOutcome.aggroDamage, Math.floor((150 * 1400) / (20 + 7)), 'Hostile Feeling should use sourced Lisvus AGGDAMAGE hate formula');
+
+const npcSpearData = activeSkills.find((entry) => entry.selfId === 4124);
+assert(npcSpearData, 'NPC Spear Attack should be present in active skills data');
+assert.strictEqual(npcSpearData.template.name, 'NPC Spear Attack', 'NPC Spear Attack active data should preserve sourced name');
+assert.strictEqual(npcSpearData.levels.length, 12, 'NPC Spear Attack should preserve sourced 12 levels');
+assert.strictEqual(npcSpearData.levels[0].power, 122, 'NPC Spear Attack level 1 should preserve sourced power 122');
+assert.strictEqual(npcSpearData.levels[11].power, 6978, 'NPC Spear Attack level 12 should preserve sourced power 6978');
+assert.strictEqual(npcSpearData.levels[11].mp, 189, 'NPC Spear Attack level 12 should preserve sourced mpConsume 189');
+const npcSpear = skill({ selfId: 4124, name: 'NPC Spear Attack', spell: false, power: 6978, level: 12, distance: 700 });
+const npcSpearOutcome = SkillEffects.execute(session(), caster, statActor(), npcSpear, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { prepareSkillDamage: () => 666, clearLoadedShot() {} }
+});
+assert.strictEqual(npcSpear.fetchSkillType(), C4SkillRules.DAMAGE, 'NPC Spear Attack should resolve as sourced PDAM damage');
+assert.strictEqual(npcSpear.fetchSemantic().magicLevel, 95, 'NPC Spear Attack level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcSpear.fetchSemantic().castRange, 700, 'NPC Spear Attack should preserve sourced castRange metadata');
+assert.strictEqual(npcSpear.fetchSemantic().effectRange, 1200, 'NPC Spear Attack should preserve sourced effectRange metadata');
+assert.strictEqual(npcSpearOutcome.damage, 666, 'NPC Spear Attack should keep the sourced damage execution path');
+
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
 assert.strictEqual(sanctuaryData.time.hitTime, 1500, 'Sanctuary should preserve sourced 1500ms hit time');
