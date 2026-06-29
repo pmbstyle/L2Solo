@@ -19,6 +19,12 @@ const RECALL = 'recall';
 const SOULSHOT = 'soulshot';
 const SPIRITSHOT = 'spiritshot';
 const SUMMON = 'summon';
+const SUMMON_PET = 'summonPet';
+const FEED_PET = 'feedPet';
+const ENCHANT_WEAPON = 'enchantWeapon';
+const ENCHANT_ARMOR = 'enchantArmor';
+const DUMMY = 'dummy';
+const NOT_DONE = 'notDone';
 const AGGRO_DAMAGE = 'aggroDamage';
 const AGGRO_REMOVE = 'aggroRemove';
 const AGGRO_REDUCE = 'aggroReduce';
@@ -347,11 +353,33 @@ const RULES = {
     2001: { skillType: HOT, trait: 'buff', effect: 'red_potion', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 3, intervalMs: 5000, heal: 2 } },
     2002: { skillType: HOT, trait: 'buff', effect: 'healing_drug', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 4, intervalMs: 5000, heal: 1.5 } },
     2003: { skillType: MANA_HOT, trait: 'buff', effect: 'mana_drug', effectType: 'buff', target: 'self', baseLandRate: 100, manaHot: { count: 4, intervalMs: 5000, heal: 1.5 } },
+    2004: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     2005: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [400] },
+    2006: { skillType: ENCHANT_WEAPON, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2007: { skillType: ENCHANT_ARMOR, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2008: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2009: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2010: { skillType: NOT_DONE, trait: 'not_done', target: 'self', ssBoost: 0, isPotion: true },
     2011: { skillType: EFFECT, trait: 'buff', effect: 'quick_step_potion', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { runSpdAdd: 20 } },
     2012: { skillType: EFFECT, trait: 'buff', effect: 'potion_of_alacrity', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pAtkSpdMul: 1.15 } },
     2013: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true },
     2014: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_player', ssBoost: 0, hitTime: 15000, staticHitTime: true, castRange: 400, effectRange: 600, itemConsumeId: 737, itemConsumeCount: 1 },
+    2015: { skillType: ENCHANT_WEAPON, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2016: { skillType: ENCHANT_ARMOR, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2017: { skillType: ENCHANT_WEAPON, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2018: { skillType: ENCHANT_ARMOR, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2019: { skillType: ENCHANT_WEAPON, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2020: { skillType: ENCHANT_ARMOR, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2021: { skillType: ENCHANT_WEAPON, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2022: { skillType: ENCHANT_ARMOR, trait: 'enchant', target: 'item', ssBoost: 0 },
+    2023: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0 },
+    2024: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0 },
+    2025: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0 },
+    2026: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2027: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2028: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2029: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
+    2030: { skillType: NOT_DONE, trait: 'not_done', target: 'item', ssBoost: 0 },
     2031: { skillType: HOT, trait: 'buff', effect: 'lesser_healing_potion', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 7, intervalMs: 2000, heal: 16 } },
     2032: { skillType: HOT, trait: 'buff', effect: 'healing_potion', effectType: 'buff', target: 'self', baseLandRate: 100, hot: { count: 7, intervalMs: 2000, heal: 48 } },
     2033: { skillType: EFFECT, trait: 'buff', effect: 'haste_potion', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { runSpdAdd: 33 } },
@@ -367,7 +395,9 @@ const RULES = {
     2043: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ category: 'poison', maxLevel: 7 }] },
     2044: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevel: 3 }] },
     2045: { skillType: CLEANSE, trait: 'bleed', target: 'self', cleanse: [{ category: 'bleed', maxLevel: 7 }] },
+    2046: { skillType: SUMMON_PET, trait: 'summon_pet', target: 'self', ssBoost: 0, hitTime: 5000, staticHitTime: true },
     2047: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0 },
+    2048: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 150 },
     2049: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_player', ssBoost: 0, hitTime: 15000, staticHitTime: true, castRange: 400, effectRange: 600, itemConsumeId: 3936, itemConsumeCount: 1 },
     2050: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_guidance', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pAccuracyCombatAdd: 4 } },
     2051: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_death_whisper', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pCritDamageMul: 1.5 } },
@@ -381,6 +411,7 @@ const RULES = {
     2059: { skillType: EFFECT, trait: 'buff', effect: 'scroll_of_shield', effectType: 'buff', target: 'self', baseLandRate: 100, stats: { pDefMul: 1.15 } },
     2060: { skillType: CLEANSE, trait: 'poison', target: 'self', cleanse: [{ skillId: 4082 }] },
     2061: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, blessedSpiritshot: true },
+    2063: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 150 },
     3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
     4052: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 70, levelDepend: 1, magicLevelByLevel: [49, 55, 60, 64, 68, 72], dot: { count: 10, intervalMs: 3000, damageByLevel: [31, 38, 44, 44, 44, 48] } },
     4053: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_p_atk', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74], stats: { pAtkMul: 0.77 } },
@@ -525,6 +556,8 @@ function resolve(skill = {}) {
         npcId: rule.npcId ?? null,
         teleportWhereType: rule.teleportWhereType ?? null,
         blessedSpiritshot: rule.blessedSpiritshot || false,
+        isPotion: rule.isPotion || false,
+        feed: rule.feed ?? null,
         dispellable: rule.dispellable,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
@@ -663,6 +696,12 @@ module.exports = {
     SOULSHOT,
     SPIRITSHOT,
     SUMMON,
+    SUMMON_PET,
+    FEED_PET,
+    ENCHANT_WEAPON,
+    ENCHANT_ARMOR,
+    DUMMY,
+    NOT_DONE,
     AGGRO_DAMAGE,
     AGGRO_REMOVE,
     AGGRO_REDUCE,

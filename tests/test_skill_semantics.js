@@ -446,6 +446,74 @@ assert.strictEqual(blessedSpiritshotOutcome.shotLoaded, 'blessedSpiritshot', 'Bl
 assert.strictEqual(blessedSpiritshotCaster.spiritshotLoaded, true, 'Blessed Spiritshot should load magic shot state on the caster');
 assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Blessed Spiritshot should load blessed magic shot state on the caster');
 
+[
+    2006, 2015, 2017, 2019, 2021
+].forEach((id) => {
+    const enchant = skill({ selfId: id, name: 'Scroll of enchant weapon', spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(enchant.fetchSkillType(), C4SkillRules.ENCHANT_WEAPON, `Enchant weapon scroll ${id} should preserve sourced ENCHANT_WEAPON type`);
+    assert.strictEqual(enchant.fetchTargetKind(), 'item', `Enchant weapon scroll ${id} should preserve sourced TARGET_ITEM semantics`);
+});
+
+[
+    2007, 2016, 2018, 2020, 2022
+].forEach((id) => {
+    const enchant = skill({ selfId: id, name: 'Scroll of enchant armor', spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(enchant.fetchSkillType(), C4SkillRules.ENCHANT_ARMOR, `Enchant armor scroll ${id} should preserve sourced ENCHANT_ARMOR type`);
+    assert.strictEqual(enchant.fetchTargetKind(), 'item', `Enchant armor scroll ${id} should preserve sourced TARGET_ITEM semantics`);
+});
+
+[
+    { id: 2004, target: 'none', isPotion: false },
+    { id: 2008, target: 'item', isPotion: false },
+    { id: 2009, target: 'item', isPotion: false },
+    { id: 2010, target: 'self', isPotion: true },
+    { id: 2026, target: 'item', isPotion: false },
+    { id: 2027, target: 'item', isPotion: false },
+    { id: 2028, target: 'item', isPotion: false },
+    { id: 2029, target: 'item', isPotion: false },
+    { id: 2030, target: 'item', isPotion: false }
+].forEach(({ id, target, isPotion }) => {
+    const notDone = skill({ selfId: id, name: 'Not done item skill', spell: false, power: 1, level: 1, distance: -1 });
+    const outcome = SkillEffects.execute(session(), caster, caster, notDone, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(notDone.fetchSkillType(), C4SkillRules.NOT_DONE, `Item skill ${id} should preserve sourced NOTDONE type`);
+    assert.strictEqual(notDone.fetchTargetKind(), target, `Item skill ${id} should preserve sourced target semantics`);
+    assert.strictEqual(notDone.fetchSemantic().isPotion || false, isPotion, `Item skill ${id} should preserve sourced potion metadata`);
+    assert.strictEqual(outcome.skillType, C4SkillRules.NOT_DONE, `Item skill ${id} should execute as a no-op NOTDONE semantic`);
+});
+
+[
+    { id: 2023, name: 'Fairy Firecracker' },
+    { id: 2024, name: 'Firecracker' },
+    { id: 2025, name: 'Large Firecracker' }
+].forEach(({ id, name }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} active data should preserve sourced firecracker name`);
+    const dummy = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(dummy.fetchSkillType(), C4SkillRules.DUMMY, `${name} should preserve sourced DUMMY type`);
+    assert.strictEqual(dummy.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+});
+
+const wolvesNecklace = skill({ selfId: 2046, name: "Wolves' necklace", spell: true, power: 1, level: 1, distance: -1 });
+assert.strictEqual(wolvesNecklace.fetchSkillType(), C4SkillRules.SUMMON_PET, "Wolves' necklace should preserve sourced SUMMON_PET type");
+assert.strictEqual(wolvesNecklace.fetchTargetKind(), 'self', "Wolves' necklace should preserve sourced TARGET_SELF semantics");
+assert.strictEqual(wolvesNecklace.fetchSemantic().hitTime, 5000, "Wolves' necklace should preserve sourced hitTime 5000 metadata");
+assert.strictEqual(wolvesNecklace.fetchSemantic().staticHitTime, true, "Wolves' necklace should preserve sourced staticHitTime metadata");
+
+[
+    { id: 2048, name: "Wolves' food" },
+    { id: 2063, name: 'Hatchling Food' }
+].forEach(({ id, name }) => {
+    const food = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(food.fetchSkillType(), C4SkillRules.FEED_PET, `${name} should preserve sourced FEED_PET type`);
+    assert.strictEqual(food.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(food.fetchSemantic().feed, 150, `${name} should preserve sourced feed 150 metadata`);
+});
+
 const confusionData = activeSkills.find((entry) => entry.selfId === 2);
 assert(confusionData, 'Confusion should be present in active skills data');
 assert.strictEqual(confusionData.template.distance, 600, 'Confusion should preserve sourced castRange 600');
