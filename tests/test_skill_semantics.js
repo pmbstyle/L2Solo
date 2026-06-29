@@ -4998,6 +4998,91 @@ assert.strictEqual(heartOutcome.effect.hot.heal, 43, "Heart of Pa'agrio level 4 
 assert(heartTarget.effectTimers.heart_of_paagrio, "Heart of Pa'agrio should start a runtime heal-over-time ticker");
 EffectStore.remove(heartTarget, 'heart_of_paagrio');
 
+const pretendingSteal = skill({ selfId: 4081, name: 'Pretending to steal', spell: true, power: 1, level: 1, distance: 600 });
+const pretendingStealOutcome = SkillEffects.execute(session(), caster, statActor(), pretendingSteal, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(pretendingSteal.fetchSkillType(), C4SkillRules.NOT_DONE, 'Pretending to steal should preserve sourced NOTDONE type');
+assert.strictEqual(pretendingSteal.fetchTargetKind(), 'enemy', 'Pretending to steal should preserve sourced TARGET_ONE enemy semantics');
+assert.strictEqual(pretendingSteal.fetchSemantic().hitTime, 4000, 'Pretending to steal should preserve sourced hitTime metadata');
+assert.strictEqual(pretendingSteal.fetchSemantic().castRange, 600, 'Pretending to steal should preserve sourced castRange metadata');
+assert.strictEqual(pretendingSteal.fetchSemantic().effectRange, 1100, 'Pretending to steal should preserve sourced effectRange metadata');
+assert.strictEqual(pretendingStealOutcome.skillType, C4SkillRules.NOT_DONE, 'Pretending to steal should execute as a no-op NOTDONE semantic');
+
+[
+    { id: 4089, name: 'NPC Bear Stun', effect: 'npc_bear_stun', stats: { runSpdMul: 0.85, pAtkMul: 1.15 } },
+    { id: 4090, name: 'NPC Wolf Stun', effect: 'npc_wolf_stun', stats: { runSpdMul: 1.4 } },
+    { id: 4092, name: 'NPC Puma Stun', effect: 'npc_puma_stun', stats: { pDefMul: 0.8, pAtkSpdMul: 1.3 }, adds: { pEvasionRateAdd: 4 } }
+].forEach(({ id, name, effect, stats, adds = {} }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.time.buff, 600000, `${name} should preserve sourced 600 second duration`);
+    const target = statActor();
+    const npcSelfBuff = skill({ selfId: id, name, spell: false, power: 1, level: 1, buff: 600000, distance: -1 });
+    const outcome = SkillEffects.execute(session(), caster, target, npcSelfBuff, {
+        magicSkill: false,
+        rng: () => 0,
+        attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(npcSelfBuff.fetchSkillType(), C4SkillRules.EFFECT, `${name} should resolve as sourced self stat effect`);
+    assert.strictEqual(npcSelfBuff.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(outcome.effect.key, effect, `${name} should apply a structured sourced effect`);
+    Object.entries(stats).forEach(([stat, value]) => {
+        assert.strictEqual(EffectStats.multiplier(target, stat), value, `${name} should apply sourced ${stat} multiplier`);
+    });
+    Object.entries(adds).forEach(([stat, value]) => {
+        assert.strictEqual(EffectStats.add(target, stat), value, `${name} should apply sourced ${stat} add`);
+    });
+    EffectStore.remove(target, effect);
+});
+
+const npcCancelData = activeSkills.find((entry) => entry.selfId === 4094);
+assert(npcCancelData, 'NPC Cancel Magic should be present in active skills data');
+assert.strictEqual(npcCancelData.template.name, 'NPC Cancel Magic', 'NPC Cancel Magic active data should preserve sourced name');
+assert.strictEqual(npcCancelData.time.reuse, 300000, 'NPC Cancel Magic should preserve sourced reuseDelay 300000');
+assert.strictEqual(npcCancelData.levels.length, 12, 'NPC Cancel Magic should preserve sourced 12 levels');
+assert.strictEqual(npcCancelData.levels[11].power, 20, 'NPC Cancel Magic level 12 should preserve sourced power 20');
+assert.strictEqual(npcCancelData.levels[11].mp, 78, 'NPC Cancel Magic level 12 should preserve sourced mpConsume 78');
+const npcCancelTarget = statActor();
+EffectStore.apply(npcCancelTarget, { key: 'shield', id: 1040, type: 'buff', category: 'buff', level: 1, durationMs: 300000 });
+const npcCancel = skill({ selfId: 4094, name: 'NPC Cancel Magic', spell: true, power: 20, level: 12, distance: 600 });
+const npcCancelSession = session();
+const npcCancelTargetSession = session(npcCancelTarget);
+npcCancelTarget.session = npcCancelTargetSession;
+const npcCancelRolls = [0, 0];
+const npcCancelOutcome = SkillEffects.execute(npcCancelSession, caster, npcCancelTarget, npcCancel, {
+    magicSkill: true,
+    rng: () => npcCancelRolls.shift() ?? 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcCancel.fetchSkillType(), C4SkillRules.CANCEL, 'NPC Cancel Magic should resolve as sourced cancel semantics');
+assert.strictEqual(npcCancel.fetchSemantic().baseLandRate, 20, 'NPC Cancel Magic should use sourced power 20 as land rate');
+assert.strictEqual(npcCancel.fetchSemantic().magicLevel, 95, 'NPC Cancel Magic level 12 should preserve sourced magicLvl 95');
+assert.strictEqual(npcCancel.fetchSemantic().negatePower, 9, 'NPC Cancel Magic should preserve sourced negatePower 9 metadata');
+assert.deepStrictEqual(npcCancel.fetchSemantic().negateStats, ['STUN', 'SLEEP', 'MUTE', 'FEAR', 'CONFUSION', 'POISON', 'BLEED', 'BUFF', 'DEBUFF'], 'NPC Cancel Magic should preserve sourced negateStats metadata');
+assert.strictEqual(npcCancelOutcome.cancelled.length, 1, 'NPC Cancel Magic should cancel dispellable buffs through the runtime cancel path');
+
+const npcHawkeyeData = activeSkills.find((entry) => entry.selfId === 4096);
+assert(npcHawkeyeData, 'NPC Hawkeye should be present in active skills data');
+assert.strictEqual(npcHawkeyeData.levels.length, 3, 'NPC Hawkeye should preserve sourced 3 levels');
+assert.strictEqual(npcHawkeyeData.levels[2].mp, 33, 'NPC Hawkeye level 3 should preserve sourced mpConsume 33');
+const npcHawkeyeTarget = statActor();
+const npcHawkeye = skill({ selfId: 4096, name: 'NPC Hawkeye', spell: false, power: 1, level: 3, buff: 300000, distance: -1 });
+const npcHawkeyeOutcome = SkillEffects.execute(session(), caster, npcHawkeyeTarget, npcHawkeye, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcHawkeye.fetchSkillType(), C4SkillRules.EFFECT, 'NPC Hawkeye should resolve as sourced self stat effect');
+assert.strictEqual(npcHawkeye.fetchTargetKind(), 'self', 'NPC Hawkeye should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(npcHawkeye.fetchSemantic().aggroPoints, 100, 'NPC Hawkeye should preserve sourced aggroPoints 100');
+assert.strictEqual(npcHawkeyeOutcome.effect.key, 'npc_hawkeye', 'NPC Hawkeye should apply a structured sourced effect');
+assert.strictEqual(EffectStats.add(npcHawkeyeTarget, 'pAccuracyCombatAdd'), 10, 'NPC Hawkeye level 3 should apply sourced accCombat +10');
+assert.strictEqual(EffectStats.multiplier(npcHawkeyeTarget, 'pDefMul'), 0.9, 'NPC Hawkeye level 3 should apply sourced pDef 0.9 multiplier');
+EffectStore.remove(npcHawkeyeTarget, 'npc_hawkeye');
+
 const npcChantLifeData = activeSkills.find((entry) => entry.selfId === 4097);
 assert(npcChantLifeData, 'NPC Chant of Life should be present in active skills data');
 assert.strictEqual(npcChantLifeData.template.name, 'NPC Chant of Life', 'NPC Chant of Life active data should preserve sourced name');
@@ -5861,6 +5946,32 @@ assert.strictEqual(npcSpear.fetchSemantic().magicLevel, 95, 'NPC Spear Attack le
 assert.strictEqual(npcSpear.fetchSemantic().castRange, 700, 'NPC Spear Attack should preserve sourced castRange metadata');
 assert.strictEqual(npcSpear.fetchSemantic().effectRange, 1200, 'NPC Spear Attack should preserve sourced effectRange metadata');
 assert.strictEqual(npcSpearOutcome.damage, 666, 'NPC Spear Attack should keep the sourced damage execution path');
+
+const antharasRegen = skill({ selfId: 4125, name: 'Antharas Regeneration', spell: false, power: 1, level: 1, buff: 1800000, distance: -1 });
+assert.strictEqual(antharasRegen.fetchSkillType(), C4SkillRules.NOT_DONE, 'Antharas Regeneration should be explicitly marked as not used in C4');
+assert.strictEqual(antharasRegen.fetchTargetKind(), 'self', 'Antharas Regeneration should preserve sourced TARGET_SELF metadata');
+assert.strictEqual(antharasRegen.fetchSemantic().notUsedInC4, true, 'Antharas Regeneration should preserve sourced NOT USED IN C4 marker');
+
+const superHasteData = activeSkills.find((entry) => entry.selfId === 7029);
+assert(superHasteData, 'Super Haste should be present in active skills data');
+assert.strictEqual(superHasteData.levels.length, 4, 'Super Haste should preserve sourced 4 levels');
+const superHasteTarget = statActor();
+const superHaste = skill({ selfId: 7029, name: 'Super Haste', spell: false, power: 1, level: 4, buff: 1200000, distance: -1 });
+const superHasteOutcome = SkillEffects.execute(session(), caster, superHasteTarget, superHaste, {
+    magicSkill: false,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(superHaste.fetchSkillType(), C4SkillRules.EFFECT, 'Super Haste should resolve as sourced continuous buff semantics');
+assert.strictEqual(superHaste.fetchTargetKind(), 'self', 'Super Haste should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(superHaste.fetchSemantic().operateType, 'toggle', 'Super Haste should preserve sourced OP_TOGGLE metadata');
+assert.strictEqual(superHasteOutcome.effect.key, 'super_haste', 'Super Haste should apply a structured sourced effect');
+assert.strictEqual(EffectStats.multiplier(superHasteTarget, 'runSpdMul'), 4, 'Super Haste level 4 should apply sourced runSpd x4');
+assert.strictEqual(EffectStats.multiplier(superHasteTarget, 'pAtkSpdMul'), 3, 'Super Haste level 4 should apply sourced pAtkSpd x3');
+assert.strictEqual(EffectStats.multiplier(superHasteTarget, 'castSpdMul'), 4, 'Super Haste level 4 should apply sourced mAtkSpd x4 as cast speed');
+assert.strictEqual(EffectStats.multiplier(superHasteTarget, 'pReuseDiv'), 30, 'Super Haste level 4 should preserve sourced pReuse divisor 30');
+assert.strictEqual(EffectStats.multiplier(superHasteTarget, 'mReuseDiv'), 30, 'Super Haste level 4 should preserve sourced mReuse divisor 30');
+EffectStore.remove(superHasteTarget, 'super_haste');
 
 const sanctuaryData = activeSkills.find((entry) => entry.selfId === 97);
 assert(sanctuaryData, 'Sanctuary should be present in active skills data');
