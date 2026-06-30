@@ -582,13 +582,34 @@ assert.strictEqual(wolvesNecklace.fetchSemantic().staticHitTime, true, "Wolves' 
 
 [
     { id: 2048, name: "Wolves' food" },
-    { id: 2063, name: 'Hatchling Food' }
-].forEach(({ id, name }) => {
+    { id: 2063, name: 'Hatchling Food' },
+    { id: 2101, name: 'Feed: General Strider', feed: 200 },
+    { id: 2102, name: 'Feed: Clan Hall Strider', feed: 450 },
+    { id: 2180, name: 'Food for Wyverns', feed: 450 }
+].forEach(({ id, name, feed = 150 }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
     const food = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
     assert.strictEqual(food.fetchSkillType(), C4SkillRules.FEED_PET, `${name} should preserve sourced FEED_PET type`);
     assert.strictEqual(food.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
-    assert.strictEqual(food.fetchSemantic().feed, 150, `${name} should preserve sourced feed 150 metadata`);
+    assert.strictEqual(food.fetchSemantic().feed, feed, `${name} should preserve sourced feed ${feed} metadata`);
 });
+
+const petResurrectionData = activeSkills.find((entry) => entry.selfId === 2179);
+assert(petResurrectionData, 'Blessed Scroll of Resurrection: For Pets should be present in active skills data');
+assert.strictEqual(petResurrectionData.template.distance, 400, 'Pet resurrection scroll should preserve sourced castRange 400');
+assert.strictEqual(petResurrectionData.time.hitTime, 15000, 'Pet resurrection scroll should preserve sourced static hitTime 15000');
+assert.strictEqual(petResurrectionData.levels[0].power, 100, 'Pet resurrection scroll should preserve sourced power 100');
+assert.strictEqual(petResurrectionData.levels[0].itemId, 6387, 'Pet resurrection scroll should preserve sourced itemInitialConsume id');
+const petResurrection = skill({ selfId: 2179, name: 'Blessed Scroll of Resurrection: For Pets', spell: false, power: 100, level: 1, distance: 400 });
+assert.strictEqual(petResurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Pet resurrection scroll should preserve sourced RESURRECT skill type');
+assert.strictEqual(petResurrection.fetchTargetKind(), 'corpse_pet', 'Pet resurrection scroll should preserve sourced TARGET_CORPSE_PET semantics');
+assert.strictEqual(petResurrection.fetchSemantic().hitTime, 15000, 'Pet resurrection scroll should preserve sourced hitTime metadata');
+assert.strictEqual(petResurrection.fetchSemantic().staticHitTime, true, 'Pet resurrection scroll should preserve sourced staticHitTime metadata');
+assert.strictEqual(petResurrection.fetchSemantic().castRange, 400, 'Pet resurrection scroll should preserve sourced castRange metadata');
+assert.strictEqual(petResurrection.fetchSemantic().effectRange, 600, 'Pet resurrection scroll should preserve sourced effectRange metadata');
+assert.strictEqual(petResurrection.fetchSemantic().itemConsumeId, 6387, 'Pet resurrection scroll should preserve sourced itemInitialConsume id');
+assert.strictEqual(petResurrection.fetchSemantic().itemConsumeCount, 1, 'Pet resurrection scroll should preserve sourced itemInitialConsume count');
 
 const boxKeyData = activeSkills.find((entry) => entry.selfId === 2065);
 assert(boxKeyData, 'Box Key should be present in active skills data');
