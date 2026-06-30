@@ -624,6 +624,25 @@ assert.strictEqual(boxKey.fetchSemantic().staticHitTime, true, 'Box Key should p
 assert.strictEqual(boxKey.fetchSemantic().castRange, 40, 'Box Key should preserve sourced castRange metadata');
 assert.strictEqual(boxKey.fetchSemantic().effectRange, 400, 'Box Key should preserve sourced effectRange metadata');
 
+const treasureChestKeyData = activeSkills.find((entry) => entry.selfId === 2229);
+assert(treasureChestKeyData, 'Treasure Chest Key should be present in active skills data');
+assert.strictEqual(treasureChestKeyData.template.distance, 40, 'Treasure Chest Key should preserve sourced castRange 40');
+assert.strictEqual(treasureChestKeyData.time.hitTime, 500, 'Treasure Chest Key should preserve sourced hitTime 500');
+assert.strictEqual(treasureChestKeyData.time.reuse, 8000, 'Treasure Chest Key should preserve sourced reuseDelay 8000');
+assert.strictEqual(treasureChestKeyData.levels.length, 8, 'Treasure Chest Key should preserve sourced 8 levels');
+assert.strictEqual(treasureChestKeyData.levels[0].itemId, 6665, 'Treasure Chest Key level 1 should consume sourced grade 1 key item');
+assert.strictEqual(treasureChestKeyData.levels[7].itemId, 6672, 'Treasure Chest Key level 8 should consume sourced grade 8 key item');
+const treasureChestKey = skill({ selfId: 2229, name: 'Treasure Chest Key', spell: false, power: 0, level: 8, distance: 40 });
+assert.strictEqual(treasureChestKey.fetchSkillType(), C4SkillRules.UNLOCK, 'Treasure Chest Key should preserve sourced unlock semantics');
+assert.strictEqual(treasureChestKey.fetchTargetKind(), 'unlockable', 'Treasure Chest Key should resolve as an unlockable target in runtime semantics');
+assert.strictEqual(treasureChestKey.fetchSemantic().trait, 'deluxe_key_unlock', 'Treasure Chest Key should preserve DELUXE_KEY_UNLOCK identity');
+assert.strictEqual(treasureChestKey.fetchSemantic().hitTime, 500, 'Treasure Chest Key should preserve sourced hitTime metadata');
+assert.strictEqual(treasureChestKey.fetchSemantic().staticHitTime, true, 'Treasure Chest Key should preserve sourced staticHitTime metadata');
+assert.strictEqual(treasureChestKey.fetchSemantic().castRange, 40, 'Treasure Chest Key should preserve sourced castRange metadata');
+assert.strictEqual(treasureChestKey.fetchSemantic().effectRange, 400, 'Treasure Chest Key should preserve sourced effectRange metadata');
+assert.strictEqual(treasureChestKey.fetchSemantic().itemConsumeId, 6672, 'Treasure Chest Key should resolve sourced level-specific item consume id');
+assert.strictEqual(treasureChestKey.fetchSemantic().itemConsumeCount, 1, 'Treasure Chest Key should preserve sourced item consume count');
+
 const scrollManaRegenerationData = activeSkills.find((entry) => entry.selfId === 2064);
 assert(scrollManaRegenerationData, 'Scroll of Mana Regeneration should be present in active skills data');
 assert.strictEqual(scrollManaRegenerationData.time.hitTime, 4000, 'Scroll of Mana Regeneration should preserve sourced hitTime 4000');
