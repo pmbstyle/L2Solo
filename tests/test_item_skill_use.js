@@ -143,6 +143,30 @@ assert(blessedNoGradeSpiritshot, 'Blessed Spiritshot: No Grade should resolve to
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSelfId(), 2061, 'Blessed Spiritshot: No Grade should use sourced skill 2061');
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: No Grade should preserve blessed spiritshot metadata');
 
+const facePotionC = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5237));
+assert(facePotionC, 'Facelifting Potion - C should resolve to an item skill');
+assert.strictEqual(facePotionC.fetchSelfId(), 2124, 'Facelifting Potion - C should use sourced skill 2124');
+assert.strictEqual(facePotionC.fetchPower(), 2, 'Facelifting Potion - C should preserve sourced cosmetic power 2');
+assert.strictEqual(facePotionC.fetchHitTime(), 500, 'Facelifting Potion - C should preserve sourced 500ms hitTime');
+assert.strictEqual(facePotionC.fetchSkillType(), C4SkillRules.COSMETIC_FACE_LIFT, 'Facelifting Potion - C should preserve sourced FACE_LIFT semantics');
+assert.strictEqual(facePotionC.fetchTargetKind(), 'self', 'Facelifting Potion - C should preserve sourced self target');
+assert.strictEqual(facePotionC.fetchSemantic().cosmeticValue, 2, 'Facelifting Potion - C should preserve sourced cosmetic index');
+assert.strictEqual(facePotionC.fetchSemantic().isPotion, true, 'Facelifting Potion - C should preserve sourced potion metadata');
+
+const dyePotionD = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5241));
+assert(dyePotionD, 'Dye Potion - D should resolve to an item skill');
+assert.strictEqual(dyePotionD.fetchSelfId(), 2128, 'Dye Potion - D should use sourced skill 2128');
+assert.strictEqual(dyePotionD.fetchPower(), 3, 'Dye Potion - D should preserve sourced cosmetic power 3');
+assert.strictEqual(dyePotionD.fetchSkillType(), C4SkillRules.COSMETIC_HAIR_COLOR, 'Dye Potion - D should preserve sourced HAIR_COLOR semantics');
+assert.strictEqual(dyePotionD.fetchSemantic().cosmeticValue, 3, 'Dye Potion - D should preserve sourced cosmetic index');
+
+const hairPotionG = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5248));
+assert(hairPotionG, 'Hair Style Change Potion - G should resolve to an item skill');
+assert.strictEqual(hairPotionG.fetchSelfId(), 2135, 'Hair Style Change Potion - G should use sourced skill 2135');
+assert.strictEqual(hairPotionG.fetchPower(), 6, 'Hair Style Change Potion - G should preserve sourced cosmetic power 6');
+assert.strictEqual(hairPotionG.fetchSkillType(), C4SkillRules.COSMETIC_HAIR_STYLE, 'Hair Style Change Potion - G should preserve sourced HAIR_STYLE semantics');
+assert.strictEqual(hairPotionG.fetchSemantic().cosmeticValue, 6, 'Hair Style Change Potion - G should preserve sourced cosmetic index');
+
 const firstCarolCrystal = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5562));
 assert(firstCarolCrystal, 'Echo Crystal - 1st Carol should resolve to an item skill');
 assert.strictEqual(firstCarolCrystal.fetchSelfId(), 2140, 'Echo Crystal - 1st Carol should use sourced skill 2140');

@@ -23,6 +23,9 @@ const SUMMON_PET = 'summonPet';
 const FEED_PET = 'feedPet';
 const ENCHANT_WEAPON = 'enchantWeapon';
 const ENCHANT_ARMOR = 'enchantArmor';
+const COSMETIC_FACE_LIFT = 'cosmeticFaceLift';
+const COSMETIC_HAIR_COLOR = 'cosmeticHairColor';
+const COSMETIC_HAIR_STYLE = 'cosmeticHairStyle';
 const DUMMY = 'dummy';
 const NOT_DONE = 'notDone';
 const AGGRO_DAMAGE = 'aggroDamage';
@@ -455,6 +458,20 @@ const RULES = {
     2099: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 300000, staticHitTime: true },
     2101: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 200 },
     2102: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 450 },
+    2122: { skillType: COSMETIC_FACE_LIFT, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 0, isPotion: true },
+    2123: { skillType: COSMETIC_FACE_LIFT, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 1, isPotion: true },
+    2124: { skillType: COSMETIC_FACE_LIFT, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 2, isPotion: true },
+    2125: { skillType: COSMETIC_HAIR_COLOR, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 0, isPotion: true },
+    2126: { skillType: COSMETIC_HAIR_COLOR, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 1, isPotion: true },
+    2127: { skillType: COSMETIC_HAIR_COLOR, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 2, isPotion: true },
+    2128: { skillType: COSMETIC_HAIR_COLOR, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 3, isPotion: true },
+    2129: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 0, isPotion: true },
+    2130: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 1, isPotion: true },
+    2131: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 2, isPotion: true },
+    2132: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 3, isPotion: true },
+    2133: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 4, isPotion: true },
+    2134: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 5, isPotion: true },
+    2135: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 6, isPotion: true },
     2140: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
     2141: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
     2142: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
@@ -642,6 +659,7 @@ function resolve(skill = {}) {
         multiplier: rule.multiplier ?? null,
         isPotion: rule.isPotion || false,
         feed: rule.feed ?? null,
+        cosmeticValue: rule.cosmeticValue ?? null,
         operateType: rule.operateType ?? null,
         negateStats: rule.negateStats || null,
         negatePower: rule.negatePower ?? null,
@@ -789,6 +807,9 @@ module.exports = {
     FEED_PET,
     ENCHANT_WEAPON,
     ENCHANT_ARMOR,
+    COSMETIC_FACE_LIFT,
+    COSMETIC_HAIR_COLOR,
+    COSMETIC_HAIR_STYLE,
     DUMMY,
     NOT_DONE,
     AGGRO_DAMAGE,

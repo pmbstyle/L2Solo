@@ -580,6 +580,38 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
 });
 
 [
+    { id: 2122, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 0 },
+    { id: 2123, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 1 },
+    { id: 2124, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 2 },
+    { id: 2125, name: 'Dye Potion', type: C4SkillRules.COSMETIC_HAIR_COLOR, power: 0 },
+    { id: 2126, name: 'Dye Potion', type: C4SkillRules.COSMETIC_HAIR_COLOR, power: 1 },
+    { id: 2127, name: 'Dye Potion', type: C4SkillRules.COSMETIC_HAIR_COLOR, power: 2 },
+    { id: 2128, name: 'Dye Potion', type: C4SkillRules.COSMETIC_HAIR_COLOR, power: 3 },
+    { id: 2129, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 0 },
+    { id: 2130, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 1 },
+    { id: 2131, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 2 },
+    { id: 2132, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 3 },
+    { id: 2133, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 4 },
+    { id: 2134, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 5 },
+    { id: 2135, name: 'Hair Style Change Potion', type: C4SkillRules.COSMETIC_HAIR_STYLE, power: 6 }
+].forEach(({ id, name, type, power }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} ${id} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} ${id} active data should preserve sourced skill name`);
+    assert.strictEqual(data.template.distance, -1, `${name} ${id} should preserve sourced TARGET_SELF active data`);
+    assert.strictEqual(data.time.hitTime, 500, `${name} ${id} active data should preserve sourced static hitTime`);
+    assert.strictEqual(data.levels[0].power, power, `${name} ${id} active data should preserve sourced cosmetic power`);
+    const cosmetic = skill({ selfId: id, name, spell: false, power, level: 1, distance: -1 });
+    assert.strictEqual(cosmetic.fetchSkillType(), type, `${name} ${id} should preserve sourced cosmetic skill type`);
+    assert.strictEqual(cosmetic.fetchTargetKind(), 'self', `${name} ${id} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(cosmetic.fetchSsBoost(), 0, `${name} ${id} should not preserve offensive shot semantics`);
+    assert.strictEqual(cosmetic.fetchSemantic().hitTime, 500, `${name} ${id} should preserve sourced hitTime metadata`);
+    assert.strictEqual(cosmetic.fetchSemantic().staticHitTime, true, `${name} ${id} should preserve sourced staticHitTime metadata`);
+    assert.strictEqual(cosmetic.fetchSemantic().cosmeticValue, power, `${name} ${id} should preserve sourced cosmetic index metadata`);
+    assert.strictEqual(cosmetic.fetchSemantic().isPotion, true, `${name} ${id} should preserve sourced potion metadata`);
+});
+
+[
     { id: 2023, name: 'Fairy Firecracker' },
     { id: 2024, name: 'Firecracker' },
     { id: 2025, name: 'Large Firecracker' },
