@@ -380,6 +380,32 @@ assert.strictEqual(blessedEscape.fetchTargetKind(), 'self', 'Blessed scroll of e
 assert.strictEqual(blessedEscape.fetchSemantic().hitTime, 200, 'Blessed scroll of escape should preserve sourced hitTime metadata');
 assert.strictEqual(blessedEscape.fetchSemantic().staticHitTime, true, 'Blessed scroll of escape should preserve sourced staticHitTime metadata');
 
+const escapeToTownData = activeSkills.find((entry) => entry.selfId === 2213);
+assert(escapeToTownData, 'Escape - to X Town should be present in active skills data');
+assert.strictEqual(escapeToTownData.time.hitTime, 20000, 'Escape - to X Town should preserve sourced static hitTime 20000');
+assert.strictEqual(escapeToTownData.levels.length, 21, 'Escape - to X Town should preserve sourced 21 destination levels');
+assert.deepStrictEqual(
+    { locX: escapeToTownData.levels[9].locX, locY: escapeToTownData.levels[9].locY, locZ: escapeToTownData.levels[9].locZ },
+    { locX: 83400, locY: 147943, locZ: -3404 },
+    'Escape - to X Town level 10 should preserve sourced Giran coordinates'
+);
+const escapeToTown = skill({ selfId: 2213, name: 'Escape - to X Town', spell: false, power: 1, level: 10, distance: -1 });
+assert.strictEqual(escapeToTown.fetchSkillType(), C4SkillRules.RECALL, 'Escape - to X Town should resolve as sourced TELEPORT semantics');
+assert.strictEqual(escapeToTown.fetchTargetKind(), 'self', 'Escape - to X Town should preserve sourced TARGET_SELF semantics');
+assert.strictEqual(escapeToTown.fetchSemantic().hitTime, 20000, 'Escape - to X Town should preserve sourced hitTime metadata');
+
+const escapeToTalkingIslandData = activeSkills.find((entry) => entry.selfId === 2214);
+assert(escapeToTalkingIslandData, 'Scroll of Escape to Talking Island should be present in active skills data');
+assert.strictEqual(escapeToTalkingIslandData.levels.length, 10, 'Scroll of Escape to Talking Island should preserve sourced 10 destination levels');
+assert.deepStrictEqual(
+    { locX: escapeToTalkingIslandData.levels[4].locX, locY: escapeToTalkingIslandData.levels[4].locY, locZ: escapeToTalkingIslandData.levels[4].locZ },
+    { locX: 115113, locY: -178212, locZ: -901 },
+    'Scroll of Escape to Talking Island level 5 should preserve sourced Dwarven Village coordinates'
+);
+const escapeToTalkingIsland = skill({ selfId: 2214, name: 'Scroll of Escape to Talking Island', spell: false, power: 1, level: 5, distance: -1 });
+assert.strictEqual(escapeToTalkingIsland.fetchSkillType(), C4SkillRules.RECALL, 'Scroll of Escape to Talking Island should resolve as sourced TELEPORT semantics');
+assert.strictEqual(escapeToTalkingIsland.fetchTargetKind(), 'self', 'Scroll of Escape to Talking Island should preserve sourced TARGET_SELF semantics');
+
 [
     { id: 2040, name: 'Scroll of escape to Clan Hall', localName: 'Scroll of escape to agit', where: 'ClanHall' },
     { id: 2041, name: 'Scroll of escape to Castle', localName: 'Scroll of escape to castle', where: 'Castle' }

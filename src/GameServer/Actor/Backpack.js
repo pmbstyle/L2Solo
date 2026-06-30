@@ -219,8 +219,8 @@ class Backpack extends BackpackModel {
                 return;
             }
 
-            if (itemSkill.teleport === 'town') {
-                const coords = { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
+            if (itemSkill.teleport === 'town' || itemSkill.teleport === 'skillCoords') {
+                const coords = skill.fetchTeleportCoords?.() || { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
                 this.deleteItem(session, id, 1, () => {
                     const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
                     TeleportTo(session, session.actor, coords);

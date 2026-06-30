@@ -453,6 +453,8 @@ const RULES = {
     2097: { skillType: SOW, trait: 'manor', target: 'enemy', ssBoost: 0, hitTime: 1800, staticHitTime: true, castRange: 150, effectRange: 350, nextActionAttack: true },
     2098: { skillType: HARVEST, trait: 'manor', target: 'corpse_mob', ssBoost: 0, hitTime: 500, staticHitTime: true, castRange: 20, effectRange: 100 },
     2099: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 300000, staticHitTime: true },
+    2213: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true },
+    2214: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true },
     3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
     4052: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 70, levelDepend: 1, magicLevelByLevel: [49, 55, 60, 64, 68, 72], dot: { count: 10, intervalMs: 3000, damageByLevel: [31, 38, 44, 44, 44, 48] } },
     4053: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_p_atk', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74], stats: { pAtkMul: 0.77 } },

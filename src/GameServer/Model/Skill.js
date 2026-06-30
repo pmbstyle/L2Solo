@@ -60,6 +60,21 @@ class SkillModel {
         return this.model.power;
     }
 
+    fetchTeleportCoords() {
+        if (
+            Number.isFinite(Number(this.model.locX)) &&
+            Number.isFinite(Number(this.model.locY)) &&
+            Number.isFinite(Number(this.model.locZ))
+        ) {
+            return {
+                locX: Number(this.model.locX),
+                locY: Number(this.model.locY),
+                locZ: Number(this.model.locZ)
+            };
+        }
+        return null;
+    }
+
     fetchBuffTime() {
         return this.model.buff;
     }
