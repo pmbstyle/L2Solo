@@ -143,6 +143,27 @@ assert(blessedNoGradeSpiritshot, 'Blessed Spiritshot: No Grade should resolve to
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSelfId(), 2061, 'Blessed Spiritshot: No Grade should use sourced skill 2061');
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: No Grade should preserve blessed spiritshot metadata');
 
+const firstCarolCrystal = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5562));
+assert(firstCarolCrystal, 'Echo Crystal - 1st Carol should resolve to an item skill');
+assert.strictEqual(firstCarolCrystal.fetchSelfId(), 2140, 'Echo Crystal - 1st Carol should use sourced skill 2140');
+assert.strictEqual(firstCarolCrystal.fetchSkillType(), C4SkillRules.DUMMY, 'Echo Crystal - 1st Carol should preserve sourced DUMMY semantics');
+assert.strictEqual(firstCarolCrystal.fetchTargetKind(), 'self', 'Echo Crystal - 1st Carol should preserve sourced self target');
+assert.strictEqual(firstCarolCrystal.fetchSemantic().isPotion, true, 'Echo Crystal - 1st Carol should preserve sourced potion metadata');
+
+const tenthCarolCrystal = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5587));
+assert(tenthCarolCrystal, 'Echo Crystal - 10th Carol should resolve to an item skill');
+assert.strictEqual(tenthCarolCrystal.fetchSelfId(), 2149, 'Echo Crystal - 10th Carol should use sourced skill 2149');
+
+const musicBox = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6903));
+assert(musicBox, 'Music Box M should resolve to an item skill');
+assert.strictEqual(musicBox.fetchSelfId(), 2187, 'Music Box M should use sourced skill 2187');
+assert.strictEqual(musicBox.fetchSkillType(), C4SkillRules.DUMMY, 'Music Box M should preserve sourced DUMMY semantics');
+
+const weddingThemeCrystal = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(7062));
+assert(weddingThemeCrystal, 'Echo Crystal - Theme of Wedding should resolve to an item skill');
+assert.strictEqual(weddingThemeCrystal.fetchSelfId(), 2230, 'Echo Crystal - Theme of Wedding should use sourced skill 2230');
+assert.strictEqual(weddingThemeCrystal.fetchTargetKind(), 'self', 'Echo Crystal - Theme of Wedding should preserve sourced self target');
+
 const giranEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(7126));
 assert(giranEscape, 'Scroll of Escape: Giran Castle Town should resolve to an item skill');
 assert.strictEqual(giranEscape.fetchSelfId(), 2213, 'Scroll of Escape: Giran Castle Town should use sourced skill 2213');

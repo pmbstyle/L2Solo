@@ -590,14 +590,26 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
     { id: 2070, name: 'Echo Crystal', isPotion: true },
     { id: 2071, name: 'Echo Crystal', isPotion: true },
     { id: 2072, name: 'Echo Crystal', isPotion: true },
-    { id: 2073, name: 'Echo Crystal', isPotion: true }
+    { id: 2073, name: 'Echo Crystal', isPotion: true },
+    { id: 2140, name: 'Carol Crystal', isPotion: true },
+    { id: 2141, name: 'Carol Crystal', isPotion: true },
+    { id: 2142, name: 'Carol Crystal', isPotion: true },
+    { id: 2143, name: 'Carol Crystal', isPotion: true },
+    { id: 2144, name: 'Carol Crystal', isPotion: true },
+    { id: 2145, name: 'Carol Crystal', isPotion: true },
+    { id: 2146, name: 'Carol Crystal', isPotion: true },
+    { id: 2147, name: 'Carol Crystal', isPotion: true },
+    { id: 2148, name: 'Carol Crystal', isPotion: true },
+    { id: 2149, name: 'Carol Crystal', isPotion: true },
+    { id: 2187, name: 'Item - Special Sound Crystal', isPotion: true },
+    { id: 2230, name: 'Item - Theme Sound Crystal', isPotion: true }
 ].forEach(({ id, name }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
-    assert(data, `${name} should be present in active skills data`);
-    assert.strictEqual(data.template.name, name, `${name} active data should preserve sourced firecracker name`);
+    assert(data, `${name} ${id} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} ${id} active data should preserve sourced dummy name`);
     const dummy = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
-    assert.strictEqual(dummy.fetchSkillType(), C4SkillRules.DUMMY, `${name} should preserve sourced DUMMY type`);
-    assert.strictEqual(dummy.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(dummy.fetchSkillType(), C4SkillRules.DUMMY, `${name} ${id} should preserve sourced DUMMY type`);
+    assert.strictEqual(dummy.fetchTargetKind(), 'self', `${name} ${id} should preserve sourced TARGET_SELF semantics`);
     assert.strictEqual(dummy.fetchSemantic().isPotion || false, id >= 2066, `${name} ${id} should preserve sourced potion metadata`);
 });
 
