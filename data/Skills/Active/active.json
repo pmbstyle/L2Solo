@@ -2015,6 +2015,81 @@
     "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
     "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
+    "selfId": 2150,
+    "template": { "name": "Soulshot: D Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2151,
+    "template": { "name": "Soulshot: C Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2152,
+    "template": { "name": "Soulshot: B Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2153,
+    "template": { "name": "Soulshot: A Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2154,
+    "template": { "name": "Soulshot: S Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2155,
+    "template": { "name": "Spiritshot: D Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2156,
+    "template": { "name": "Spiritshot: C Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2157,
+    "template": { "name": "Spiritshot: B Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2158,
+    "template": { "name": "Spiritshot: A Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2159,
+    "template": { "name": "Spiritshot: S Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2160,
+    "template": { "name": "Blessed Spiritshot: D Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2161,
+    "template": { "name": "Blessed Spiritshot: C Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2162,
+    "template": { "name": "Blessed Spiritshot: B Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2163,
+    "template": { "name": "Blessed Spiritshot: A Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2164,
+    "template": { "name": "Blessed Spiritshot: S Grade", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 1, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
     "selfId": 2179,
     "template": { "name": "Blessed Scroll of Resurrection: For Pets", "passive": false, "spell": false, "distance": 400 },
     "time": { "hitTime": 15000, "reuse": 0, "buff": 0 },

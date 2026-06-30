@@ -494,6 +494,33 @@ assert.strictEqual(blessedSpiritshotCaster.spiritshotLoaded, true, 'Blessed Spir
 assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Blessed Spiritshot should load blessed magic shot state on the caster');
 
 [
+    { id: 2150, name: 'Soulshot: D Grade', type: C4SkillRules.SOULSHOT, element: 1, multiplier: 2.0 },
+    { id: 2151, name: 'Soulshot: C Grade', type: C4SkillRules.SOULSHOT, element: 2, multiplier: 2.0 },
+    { id: 2152, name: 'Soulshot: B Grade', type: C4SkillRules.SOULSHOT, element: 3, multiplier: 2.0 },
+    { id: 2153, name: 'Soulshot: A Grade', type: C4SkillRules.SOULSHOT, element: 4, multiplier: 2.0 },
+    { id: 2154, name: 'Soulshot: S Grade', type: C4SkillRules.SOULSHOT, element: 5, multiplier: 2.0 },
+    { id: 2155, name: 'Spiritshot: D Grade', type: C4SkillRules.SPIRITSHOT, element: 1, multiplier: 1.5 },
+    { id: 2156, name: 'Spiritshot: C Grade', type: C4SkillRules.SPIRITSHOT, element: 2, multiplier: 1.5 },
+    { id: 2157, name: 'Spiritshot: B Grade', type: C4SkillRules.SPIRITSHOT, element: 3, multiplier: 1.5 },
+    { id: 2158, name: 'Spiritshot: A Grade', type: C4SkillRules.SPIRITSHOT, element: 4, multiplier: 1.5 },
+    { id: 2159, name: 'Spiritshot: S Grade', type: C4SkillRules.SPIRITSHOT, element: 5, multiplier: 1.5 },
+    { id: 2160, name: 'Blessed Spiritshot: D Grade', type: C4SkillRules.SPIRITSHOT, element: 1, multiplier: 2.0, blessed: true },
+    { id: 2161, name: 'Blessed Spiritshot: C Grade', type: C4SkillRules.SPIRITSHOT, element: 2, multiplier: 2.0, blessed: true },
+    { id: 2162, name: 'Blessed Spiritshot: B Grade', type: C4SkillRules.SPIRITSHOT, element: 3, multiplier: 2.0, blessed: true },
+    { id: 2163, name: 'Blessed Spiritshot: A Grade', type: C4SkillRules.SPIRITSHOT, element: 4, multiplier: 2.0, blessed: true },
+    { id: 2164, name: 'Blessed Spiritshot: S Grade', type: C4SkillRules.SPIRITSHOT, element: 5, multiplier: 2.0, blessed: true }
+].forEach(({ id, name, type, element, multiplier, blessed = false }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    const shot = skill({ selfId: id, name, spell: false, power: 1, level: 1, distance: -1 });
+    assert.strictEqual(shot.fetchSkillType(), type, `${name} should preserve sourced shot semantics`);
+    assert.strictEqual(shot.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
+    assert.strictEqual(shot.fetchSemantic().element, element, `${name} should preserve sourced element grade`);
+    assert.strictEqual(shot.fetchSemantic().multiplier, multiplier, `${name} should preserve sourced multiplier metadata`);
+    assert.strictEqual(shot.fetchSemantic().blessedSpiritshot, blessed, `${name} should preserve blessed spiritshot metadata`);
+});
+
+[
     2006, 2015, 2017, 2019, 2021
 ].forEach((id) => {
     const enchant = skill({ selfId: id, name: 'Scroll of enchant weapon', spell: false, power: 1, level: 1, distance: -1 });

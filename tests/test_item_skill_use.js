@@ -10,6 +10,7 @@ const Item = invoke('GameServer/Item/Item');
 const Database = invoke('Database');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 Database.updateItemAmount = () => Promise.resolve();
 Database.deleteItem = () => Promise.resolve();
@@ -104,6 +105,24 @@ assert(l2DayResurrection, 'L2Day Blessed Scroll of Resurrection should resolve t
 assert.strictEqual(l2DayResurrection.fetchSelfId(), 2062, 'L2Day Blessed Scroll of Resurrection should use sourced skill 2062');
 assert.strictEqual(l2DayResurrection.fetchPower(), 100, 'L2Day Blessed Scroll of Resurrection should preserve sourced power 100');
 assert.strictEqual(l2DayResurrection.fetchHitTime(), 15000, 'L2Day Blessed Scroll of Resurrection should preserve sourced 15000ms hitTime');
+
+const soulshotA = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1466));
+assert(soulshotA, 'Soulshot: A-grade should resolve to an item skill');
+assert.strictEqual(soulshotA.fetchSelfId(), 2153, 'Soulshot: A-grade should use sourced skill 2153');
+assert.strictEqual(soulshotA.fetchSkillType(), C4SkillRules.SOULSHOT, 'Soulshot: A-grade should preserve sourced SOULSHOT semantics');
+assert.strictEqual(soulshotA.fetchSemantic().element, 4, 'Soulshot: A-grade should preserve sourced element grade 4');
+
+const spiritshotB = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(2512));
+assert(spiritshotB, 'Spiritshot: B-grade should resolve to an item skill');
+assert.strictEqual(spiritshotB.fetchSelfId(), 2157, 'Spiritshot: B-grade should use sourced skill 2157');
+assert.strictEqual(spiritshotB.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Spiritshot: B-grade should preserve magic-shot runtime semantics');
+assert.strictEqual(spiritshotB.fetchSemantic().multiplier, 1.5, 'Spiritshot: B-grade should preserve sourced multiplier 1.5');
+
+const blessedSpiritshotS = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3952));
+assert(blessedSpiritshotS, 'Blessed Spiritshot: S Grade should resolve to an item skill');
+assert.strictEqual(blessedSpiritshotS.fetchSelfId(), 2164, 'Blessed Spiritshot: S Grade should use sourced skill 2164');
+assert.strictEqual(blessedSpiritshotS.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Blessed Spiritshot: S Grade should preserve magic-shot runtime semantics');
+assert.strictEqual(blessedSpiritshotS.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: S Grade should preserve blessed spiritshot metadata');
 
 const giranEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(7126));
 assert(giranEscape, 'Scroll of Escape: Giran Castle Town should resolve to an item skill');
