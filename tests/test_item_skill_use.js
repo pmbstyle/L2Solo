@@ -124,6 +124,25 @@ assert.strictEqual(blessedSpiritshotS.fetchSelfId(), 2164, 'Blessed Spiritshot: 
 assert.strictEqual(blessedSpiritshotS.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Blessed Spiritshot: S Grade should preserve magic-shot runtime semantics');
 assert.strictEqual(blessedSpiritshotS.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: S Grade should preserve blessed spiritshot metadata');
 
+const noGradeSoulshot = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1835));
+assert(noGradeSoulshot, 'Soulshot: No Grade should resolve to an item skill');
+assert.strictEqual(noGradeSoulshot.fetchSelfId(), 2039, 'Soulshot: No Grade should use sourced skill 2039');
+assert.strictEqual(noGradeSoulshot.fetchSkillType(), C4SkillRules.SOULSHOT, 'Soulshot: No Grade should preserve sourced SOULSHOT semantics');
+
+const beginnerSoulshot = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5789));
+assert(beginnerSoulshot, 'Soulshot: No Grade for Beginners should resolve to an item skill');
+assert.strictEqual(beginnerSoulshot.fetchSelfId(), 2039, 'Soulshot: No Grade for Beginners should use sourced skill 2039');
+
+const beginnerSpiritshot = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5790));
+assert(beginnerSpiritshot, 'Spiritshot: No Grade for Beginners should resolve to an item skill');
+assert.strictEqual(beginnerSpiritshot.fetchSelfId(), 2047, 'Spiritshot: No Grade for Beginners should use sourced skill 2047');
+assert.strictEqual(beginnerSpiritshot.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Spiritshot: No Grade for Beginners should preserve sourced SPIRITSHOT semantics');
+
+const blessedNoGradeSpiritshot = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3947));
+assert(blessedNoGradeSpiritshot, 'Blessed Spiritshot: No Grade should resolve to an item skill');
+assert.strictEqual(blessedNoGradeSpiritshot.fetchSelfId(), 2061, 'Blessed Spiritshot: No Grade should use sourced skill 2061');
+assert.strictEqual(blessedNoGradeSpiritshot.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: No Grade should preserve blessed spiritshot metadata');
+
 const giranEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(7126));
 assert(giranEscape, 'Scroll of Escape: Giran Castle Town should resolve to an item skill');
 assert.strictEqual(giranEscape.fetchSelfId(), 2213, 'Scroll of Escape: Giran Castle Town should use sourced skill 2213');
