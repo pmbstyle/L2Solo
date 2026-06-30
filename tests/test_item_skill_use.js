@@ -155,6 +155,17 @@ assert.strictEqual(deluxeChestKey.fetchLevel(), 8, 'Deluxe Chest Key - Grade 8 s
 assert.strictEqual(deluxeChestKey.fetchHitTime(), 500, 'Deluxe Chest Key - Grade 8 should preserve sourced 500ms hitTime');
 assert.strictEqual(deluxeChestKey.fetchSemantic().itemConsumeId, 6672, 'Deluxe Chest Key - Grade 8 should preserve sourced level-specific consume id');
 
+const chestKeyGrade8 = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5197));
+assert(chestKeyGrade8, 'Chest Key - Grade 8 should resolve to an item skill');
+assert.strictEqual(chestKeyGrade8.fetchSelfId(), 2065, 'Chest Key - Grade 8 should use sourced skill 2065');
+assert.strictEqual(chestKeyGrade8.fetchLevel(), 1, 'Chest Key - Grade 8 should preserve sourced item_skill level 1');
+assert.strictEqual(chestKeyGrade8.fetchHitTime(), 500, 'Chest Key - Grade 8 should preserve sourced 500ms hitTime');
+
+const chestKeyGrade1 = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5204));
+assert(chestKeyGrade1, 'Chest Key - Grade 1 should resolve to an item skill');
+assert.strictEqual(chestKeyGrade1.fetchSelfId(), 2065, 'Chest Key - Grade 1 should use sourced skill 2065');
+assert.strictEqual(chestKeyGrade1.fetchLevel(), 8, 'Chest Key - Grade 1 should preserve sourced item_skill level 8');
+
 const World = invoke('GameServer/World/World');
 World.user = { sessions: [] };
 
