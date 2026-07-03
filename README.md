@@ -16,21 +16,21 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 ✅ Authentication (C4 client, protocol 656)
 
-✅ Create and persist characters, inventory, skills, shortcuts, position, and progression
+✅ Player character, inventory, skills, shortcuts, position, and progression
 
-✅ Move through the world, target NPCs, fight monsters, take damage, die, revive, and continue playing
+✅ Mob fight, damage, death, respawn
 
-✅ Pick up drops, use items, equip and unequip gear, use soulshots, and heal potions, etc
+✅ All C4 skills, including mob skills, potions, scrolls, spoil, SA, manor, etc
+
+✅ Drop pickup, item use, equip and unequip gear, soulshots, heal potions, etc
 
 ✅ Buy and sell through NPC shops with city and NPC-specific assortments, prices, and Giran luxury exchanges
 
-✅ Explore the world populated with SimPlayers
+✅ SimPlayers population that hunts, rests, flees, revives, shops, restocks, loots, chatters, and reacts to nearby player chat
 
 ✅ Trade with buing/selling Simplayers
 
-✅ Meet SimPlayers that hunt, rest, flee, revive, shop, restock, loot, chatter, and react to nearby player chat
-
-✅ Find available SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel
+✅ Find SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel
 
 ✅ Inspect companion, social memory, and bot state through `.botstatus`
 
@@ -38,23 +38,18 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 ✅ See companion bots ask for useful non-junk drops, then satisfy the request by handing the item over through the real trade flow
 
-✅ Use dwarf Spoil/Sweeper mechanics: spoil a living monster, kill it, then sweep the marked corpse for spoil-table rewards
+✅ SimPlayers role-aware in party: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range
 
-✅ Run with role-aware companions: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range
-
-✅ Inspect role decisions, buff timers, and pending loot requests through bot status surfaces
-
-✅ See early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions
+✅ Early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions
 
 ✅ Early SimPlayer social memory: bots remember invite/group/dismiss interactions and expose relationship/trust in status surfaces
 
-✅ First loot-etiquette loop: companions can request useful drops, fulfilled trades update social memory, and ignored active requests are remembered lightly
+✅ First loot-etiquette loop: party members can request useful drops, fulfilled trades update social memory, and ignored active requests are remembered lightly
 
-✅ Use local admin tools for teleporting, item grants, random teleport, and Adena
+✅ Local admin tools for teleporting, item grants, random teleport, and Adena
 
 ✅ Optional AI bot brain is available for player-visible moments, but still needs more personality tuning
 
-✅ All C4 skills, including mob skills, potions, scrolls, etc
 
 ### In Progress
 
