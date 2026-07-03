@@ -14,6 +14,7 @@ const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
+const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -104,8 +105,8 @@ function sessionFor(backpack, options = {}) {
         fetchHairColor: () => 0,
         fetchFace: () => 0,
         fetchIsGM: () => 0,
-        fetchPrivateStoreType: () => 0,
-        fetchIsCrafter: () => 0,
+        fetchPrivateStoreType: () => options.privateStoreType ?? 0,
+        fetchIsCrafter: () => options.isCrafter ? 1 : 0,
         fetchPk: () => 0,
         fetchPvp: () => 0,
         fetchRecRemain: () => 0,
@@ -117,6 +118,13 @@ function sessionFor(backpack, options = {}) {
             setCasts(value) { casts = value; }
         }
     };
+    if (options.createItemLevel) {
+        actor.skillset = {
+            fetchSkill: (selfId) => Number(selfId) === 172 ? {
+                fetchLevel: () => options.createItemLevel
+            } : null
+        };
+    }
     return {
         actor,
         packets: [],
@@ -354,6 +362,51 @@ xmasBackpack.useItem(xmasSession, 16);
 assert.strictEqual(xmasSession.packets[0][0], 0xf2, 'Token of Love should emit C4 ShowXMasSeal packet');
 assert.strictEqual(xmasSession.packets[0].readInt32LE(1), 5555, 'ShowXMasSeal packet should include sourced Token of Love item id');
 assert(xmasBackpack.fetchItemFromSelfId(5555), 'Token of Love should not be consumed by its utility handler');
+
+const woodenArrowRecipe = C4RecipeItems.resolve(1666);
+assert(woodenArrowRecipe, 'Recipe: Wooden Arrow should resolve from sourced recipes.csv');
+assert.strictEqual(woodenArrowRecipe.type, 'dwarven', 'Recipe: Wooden Arrow should preserve sourced dwarven recipe type');
+assert.strictEqual(woodenArrowRecipe.recipeId, 1, 'Recipe: Wooden Arrow should preserve sourced recipe book id 1');
+assert.strictEqual(woodenArrowRecipe.level, 1, 'Recipe: Wooden Arrow should preserve sourced craft level 1');
+assert.strictEqual(woodenArrowRecipe.productId, 17, 'Recipe: Wooden Arrow should preserve sourced product id 17');
+
+const nonCrafterRecipes = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+nonCrafterRecipes.items = [
+    item(18, { selfId: 1666, kind: 'Other.Recipe', amount: 1 })
+];
+nonCrafterRecipes.useItem(sessionFor(nonCrafterRecipes), 18);
+assert(nonCrafterRecipes.fetchItemFromSelfId(1666), 'Dwarven recipe should not be consumed without craft ability');
+
+const crafterRecipes = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+crafterRecipes.items = [
+    item(19, { selfId: 1666, kind: 'Other.Recipe', amount: 1 }),
+    item(20, { selfId: 1666, kind: 'Other.Recipe', amount: 1 })
+];
+const crafterSession = sessionFor(crafterRecipes, { isCrafter: true, createItemLevel: 1 });
+crafterRecipes.useItem(crafterSession, 19);
+assert.strictEqual(crafterRecipes.fetchItemRaw(19), undefined, 'Dwarven recipe should be consumed after successful registration');
+assert.strictEqual(crafterSession.actor.dwarvenRecipes.length, 1, 'Dwarven recipe should register in actor recipe book');
+assert.strictEqual(crafterSession.actor.dwarvenRecipes[0].recipeId, 1, 'Registered recipe should preserve sourced recipe book id');
+crafterRecipes.useItem(crafterSession, 20);
+assert(crafterRecipes.fetchItemRaw(20), 'Duplicate recipe should not be consumed');
+assert.strictEqual(crafterSession.actor.dwarvenRecipes.length, 1, 'Duplicate recipe should not be registered twice');
+
+const commonFishOilRecipe = C4RecipeItems.resolve(6920);
+assert(commonFishOilRecipe, 'Common Fish Oil recipe should resolve from sourced recipes.csv');
+assert.strictEqual(commonFishOilRecipe.type, 'common', 'Common Fish Oil recipe should preserve sourced common recipe type');
+const lowLevelCommonRecipes = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+lowLevelCommonRecipes.items = [
+    item(21, { selfId: 6920, kind: 'Other.Recipe', amount: 1 })
+];
+lowLevelCommonRecipes.useItem(sessionFor(lowLevelCommonRecipes, { level: 10 }), 21);
+assert(lowLevelCommonRecipes.fetchItemRaw(21), 'Common recipe above common craft level should not be consumed');
+
+const manufactureRecipes = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+manufactureRecipes.items = [
+    item(22, { selfId: 1666, kind: 'Other.Recipe', amount: 1 })
+];
+manufactureRecipes.useItem(sessionFor(manufactureRecipes, { isCrafter: true, createItemLevel: 1, privateStoreType: 5 }), 22);
+assert(manufactureRecipes.fetchItemRaw(22), 'Recipe should not be consumed while actor is in manufacture store mode');
 
 const christmasTreeSkill = C4ItemSkills.resolve(5560);
 assert(christmasTreeSkill, 'Christmas Tree should resolve to a sourced SummonItems item skill');

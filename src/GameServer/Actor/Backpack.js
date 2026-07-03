@@ -14,6 +14,7 @@ const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
+const C4RecipeItems  = invoke('GameServer/Items/C4RecipeItems');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -27,6 +28,9 @@ const FISHING_ROD_GRADES = {
     6534: 'S',
     7560: 'none'
 };
+
+const COMMON_CRAFT_LEVELS = [5, 20, 28, 36, 43, 49, 55, 62, 70];
+const MANUFACTURE_STORE_TYPES = [5, 6];
 
 class Backpack extends BackpackModel {
     constructor(data) {
@@ -192,6 +196,11 @@ class Backpack extends BackpackModel {
                     return;
                 }
 
+                const recipeItem = C4RecipeItems.resolve(item.fetchSelfId());
+                if (recipeItem && this.useRecipeItem(session, id, recipeItem)) {
+                    return;
+                }
+
                 const extractableItem = C4ExtractableItems.resolve(item.fetchSelfId());
                 if (extractableItem && this.useExtractableItem(session, id, extractableItem)) {
                     return;
@@ -210,6 +219,75 @@ class Backpack extends BackpackModel {
                 utils.infoWarn('GameServer', 'unhandled item action');
             }
         });
+    }
+
+    useRecipeItem(session, id, recipeItem) {
+        if (MANUFACTURE_STORE_TYPES.includes(Number(session.actor.fetchPrivateStoreType?.() || 0))) {
+            return true;
+        }
+
+        if (this.hasRecipe(session.actor, recipeItem.recipeId)) {
+            return true;
+        }
+
+        const craftLevel = recipeItem.type === 'dwarven'
+            ? this.fetchDwarvenCraftLevel(session.actor)
+            : this.fetchCommonCraftLevel(session.actor);
+
+        if (craftLevel < recipeItem.level) {
+            return true;
+        }
+
+        this.deleteItem(session, id, 1, () => {
+            this.registerRecipe(session.actor, recipeItem);
+        });
+        return true;
+    }
+
+    fetchRecipeBook(actor, type) {
+        const property = type === 'dwarven' ? 'dwarvenRecipes' : 'commonRecipes';
+        const store = actor.model || actor;
+        if (!Array.isArray(store[property])) {
+            store[property] = [];
+        }
+        return store[property];
+    }
+
+    hasRecipe(actor, recipeId) {
+        return ['dwarven', 'common'].some((type) => (
+            this.fetchRecipeBook(actor, type).some((recipe) => Number(recipe.recipeId) === Number(recipeId))
+        ));
+    }
+
+    registerRecipe(actor, recipeItem) {
+        this.fetchRecipeBook(actor, recipeItem.type).push({
+            recipeId: recipeItem.recipeId,
+            recipeItemId: recipeItem.recipeItemId,
+            level: recipeItem.level,
+            productId: recipeItem.productId,
+            productCount: recipeItem.productCount,
+            successRate: recipeItem.successRate,
+            mpCost: recipeItem.mpCost
+        });
+    }
+
+    fetchDwarvenCraftLevel(actor) {
+        const createItem = actor.skillset?.fetchSkill?.(172);
+        if (createItem?.fetchLevel) {
+            return createItem.fetchLevel();
+        }
+        if (typeof actor.fetchDwarvenCraftLevel === 'function') {
+            return Number(actor.fetchDwarvenCraftLevel()) || 0;
+        }
+        return actor.fetchIsCrafter?.() ? 1 : 0;
+    }
+
+    fetchCommonCraftLevel(actor) {
+        if (typeof actor.fetchCommonCraftLevel === 'function') {
+            return Number(actor.fetchCommonCraftLevel()) || 0;
+        }
+        const level = Number(actor.fetchLevel?.() || 0);
+        return COMMON_CRAFT_LEVELS.filter((requiredLevel) => level >= requiredLevel).length;
     }
 
     useExtractableItem(session, id, extractableItem) {
