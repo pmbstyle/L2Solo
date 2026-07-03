@@ -92,6 +92,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.DRAIN_SOUL) {
+        result.absorbedSoul = applyDrainSoul(actor, target);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.BLOW) {
         if (!rollBlow(actor, target, semantic, context.attack, rng)) {
             clearLoadedShot(context.attack, actor, magicSkill);
@@ -264,6 +270,18 @@ function applyManaHeal(session, actor, target, skill, semantic, magicSkill, atta
     refreshVitals(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextMp - currentMp);
+}
+
+function applyDrainSoul(actor, target) {
+    if (target?.fetchAttackable?.() !== true) return false;
+    if (target?.isDead?.() || target?.state?.fetchDead?.() === true) return false;
+
+    if (typeof target.addAbsorber === 'function') {
+        target.addAbsorber(actor);
+        return true;
+    }
+
+    return false;
 }
 
 function applyDrain(session, actor, target, skill, semantic, magicSkill, attack, rng) {

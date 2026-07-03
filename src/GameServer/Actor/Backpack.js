@@ -9,6 +9,7 @@ const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
+const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 
 class Backpack extends BackpackModel {
@@ -198,6 +199,10 @@ class Backpack extends BackpackModel {
             return this.useResurrectionItem(session, id, itemSkill, skill);
         }
 
+        if (skill.fetchSkillType() === C4SkillRules.DRAIN_SOUL) {
+            return this.useDrainSoulItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchTargetKind() !== 'self') {
             return false;
         }
@@ -236,6 +241,57 @@ class Backpack extends BackpackModel {
             }
 
             this.applySelfItemSkill(session, skill);
+        };
+
+        if (castTime > 0) {
+            setTimeout(apply, castTime);
+        } else {
+            apply();
+        }
+
+        return true;
+    }
+
+    useDrainSoulItem(session, id, itemSkill, skill) {
+        const target = this.fetchSelectedNpcTarget(session);
+        if (!this.canDrainSoulTarget(session.actor, target, skill)) {
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const mpCost = Number(skill.fetchConsumedMp()) || 0;
+        if (typeof session.actor.fetchMp === 'function' && session.actor.fetchMp() < mpCost) {
+            return true;
+        }
+
+        const castTime = skill.fetchHitTime() || 0;
+        session.actor.state.setCasts(true);
+        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
+        if (castTime > 0) {
+            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        }
+
+        const apply = () => {
+            session.actor.state.setCasts(false);
+            if (session.actor.isDead()) {
+                return;
+            }
+            if (!this.canDrainSoulTarget(session.actor, target, skill)) {
+                return;
+            }
+
+            if (mpCost > 0 && typeof session.actor.fetchMp === 'function' && typeof session.actor.setMp === 'function') {
+                session.actor.setMp(Math.max(0, session.actor.fetchMp() - mpCost));
+                session.actor.statusUpdateVitals?.(session.actor);
+            }
+
+            SkillEffects.execute(session, session.actor, target, skill, {
+                magicSkill: skill.fetchSpell(),
+                attack: { clearLoadedShot() {} }
+            });
         };
 
         if (castTime > 0) {
@@ -330,6 +386,52 @@ class Backpack extends BackpackModel {
 
         const userSession = (World.user?.sessions || []).find((ob) => Number(ob.actor?.fetchId?.()) === Number(targetId));
         return userSession?.actor || null;
+    }
+
+    fetchSelectedNpcTarget(session) {
+        const targetId = session.actor.fetchDestId?.();
+        if (targetId === undefined || targetId === null) {
+            return null;
+        }
+
+        return (World.npc?.spawns || []).find((npc) => Number(npc.fetchId?.()) === Number(targetId)) || null;
+    }
+
+    canDrainSoulTarget(actor, target, skill) {
+        if (!target || target === actor) {
+            return false;
+        }
+        if (target.fetchAttackable?.() !== true) {
+            return false;
+        }
+        if (target.isDead?.() || target.state?.fetchDead?.() === true) {
+            return false;
+        }
+
+        const maxHp = Number(target.fetchMaxHp?.()) || 0;
+        const hp = Number(target.fetchHp?.()) || 0;
+        if (maxHp > 0 && hp > maxHp / 2) {
+            return false;
+        }
+
+        if (
+            typeof actor.fetchLocX === 'function' &&
+            typeof actor.fetchLocY === 'function' &&
+            typeof actor.fetchLocZ === 'function' &&
+            typeof target.fetchLocX === 'function' &&
+            typeof target.fetchLocY === 'function' &&
+            typeof target.fetchLocZ === 'function'
+        ) {
+            const distance = new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()).distance(
+                new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
+            );
+            const range = Number(skill.fetchSemantic().castRange ?? skill.fetchDistance()) || 0;
+            if (range > 0 && distance > range) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     canResurrectTarget(actor, target, skill) {

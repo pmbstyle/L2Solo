@@ -11,6 +11,7 @@ const Database = invoke('Database');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const World = invoke('GameServer/World/World');
 
 Database.updateItemAmount = () => Promise.resolve();
 Database.deleteItem = () => Promise.resolve();
@@ -27,6 +28,7 @@ function item(id, data) {
 
 function sessionFor(backpack, options = {}) {
     let casts = false;
+    let mp = options.mp ?? 100;
     const actor = {
         backpack,
         effects: {},
@@ -38,6 +40,8 @@ function sessionFor(backpack, options = {}) {
         fetchLocZ: () => 0,
         fetchDestId: () => options.destId,
         fetchHead: () => 0,
+        fetchMp: () => mp,
+        setMp(value) { mp = value; },
         isDead: () => false,
         statusUpdateVitals() {},
         state: {
@@ -74,6 +78,28 @@ function resurrectionTarget(options = {}) {
             fetchDead: () => dead
         },
         wasRevived: () => revived
+    };
+}
+
+function attackableNpc(options = {}) {
+    const absorbed = [];
+    return {
+        fetchId: () => options.id ?? 3000001,
+        fetchName: () => options.name || 'Soul Target',
+        fetchLocX: () => options.locX ?? 100,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        fetchHp: () => options.hp ?? 40,
+        fetchMaxHp: () => options.maxHp ?? 100,
+        fetchAttackable: () => options.attackable ?? true,
+        isDead: () => options.dead ?? false,
+        state: {
+            fetchDead: () => options.dead ?? false
+        },
+        addAbsorber(actor) {
+            absorbed.push({ id: actor.fetchId(), absorbedHp: this.fetchHp() });
+        },
+        absorbed
     };
 }
 
@@ -181,6 +207,42 @@ assert.strictEqual(blessedNoGradeSpiritshot.fetchSemantic().blessedSpiritshot, t
     assert.strictEqual(soulCrystal.fetchSemantic().effectRange, 500, `Soul Crystal item ${itemId} should preserve sourced effectRange`);
 });
 
+const originalSoulCrystalSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const drainTarget = attackableNpc({ id: 3000101, hp: 50, maxHp: 100 });
+    World.npc = { spawns: [drainTarget] };
+    const soulCrystalBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    soulCrystalBackpack.items = [
+        item(20, { selfId: 4630, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const drainSession = sessionFor(soulCrystalBackpack, { destId: drainTarget.fetchId(), mp: 50 });
+    soulCrystalBackpack.useItem(drainSession, 20);
+    assert.strictEqual(soulCrystalBackpack.fetchItemFromSelfId(4630).fetchAmount(), 1, 'Soul Crystal should not be consumed when Drain Soul is cast');
+    assert.strictEqual(drainSession.actor.fetchMp(), 24, 'Soul Crystal should consume sourced mpConsume 26 on successful Drain Soul cast');
+    assert.deepStrictEqual(drainTarget.absorbed, [{ id: drainSession.actor.fetchId(), absorbedHp: 50 }], 'Drain Soul should mark the selected low-HP monster as absorbed');
+    assert(drainSession.packets.length > 0, 'Drain Soul item use should emit cast packets');
+
+    const healthyTarget = attackableNpc({ id: 3000102, hp: 51, maxHp: 100 });
+    World.npc = { spawns: [healthyTarget] };
+    const rejectedBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    rejectedBackpack.items = [
+        item(21, { selfId: 4631, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const rejectedSession = sessionFor(rejectedBackpack, { destId: healthyTarget.fetchId(), mp: 50 });
+    rejectedBackpack.useItem(rejectedSession, 21);
+    assert.strictEqual(rejectedBackpack.fetchItemFromSelfId(4631).fetchAmount(), 1, 'Soul Crystal should not be consumed when target HP is above 50%');
+    assert.strictEqual(rejectedSession.actor.fetchMp(), 50, 'Soul Crystal should not consume MP when target HP is above 50%');
+    assert.deepStrictEqual(healthyTarget.absorbed, [], 'Soul Crystal should not mark a monster above the sourced 50% HP threshold');
+    assert.strictEqual(rejectedSession.packets.length, 0, 'Soul Crystal should not start a cast when target HP is above 50%');
+} finally {
+    global.setTimeout = originalSoulCrystalSetTimeout;
+}
+
 const facePotionC = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5237));
 assert(facePotionC, 'Facelifting Potion - C should resolve to an item skill');
 assert.strictEqual(facePotionC.fetchSelfId(), 2124, 'Facelifting Potion - C should use sourced skill 2124');
@@ -287,7 +349,6 @@ assert(chestKeyGrade1, 'Chest Key - Grade 1 should resolve to an item skill');
 assert.strictEqual(chestKeyGrade1.fetchSelfId(), 2065, 'Chest Key - Grade 1 should use sourced skill 2065');
 assert.strictEqual(chestKeyGrade1.fetchLevel(), 8, 'Chest Key - Grade 1 should preserve sourced item_skill level 8');
 
-const World = invoke('GameServer/World/World');
 World.user = { sessions: [] };
 
 const originalSetTimeout = global.setTimeout;

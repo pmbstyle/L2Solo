@@ -185,6 +185,42 @@ class Npc extends NpcModel {
     broadcastVitals() {
         invoke(path.npc).broadcastVitals(this);
     }
+
+    addAbsorber(actor) {
+        if (!actor?.fetchId) {
+            return;
+        }
+
+        if (!this.soulCrystalAbsorbers) {
+            this.soulCrystalAbsorbers = new Map();
+        }
+
+        const absorberId = Number(actor.fetchId());
+        this.soulCrystalAbsorbers.set(absorberId, {
+            actor,
+            absorberId,
+            absorbedHp: this.fetchHp()
+        });
+        this.soulCrystalAbsorbed = true;
+    }
+
+    isAbsorbed() {
+        return this.soulCrystalAbsorbed === true;
+    }
+
+    fetchSoulCrystalAbsorber(actorOrId) {
+        const absorberId = Number(
+            typeof actorOrId?.fetchId === 'function'
+                ? actorOrId.fetchId()
+                : actorOrId
+        );
+        return this.soulCrystalAbsorbers?.get(absorberId) || null;
+    }
+
+    resetSoulCrystalAbsorbers() {
+        this.soulCrystalAbsorbers?.clear();
+        this.soulCrystalAbsorbed = false;
+    }
 }
 
 module.exports = Npc;
