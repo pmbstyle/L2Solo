@@ -8,6 +8,7 @@ DataCache.init();
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Database = invoke('Database');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
@@ -134,6 +135,32 @@ function resurrectionTarget(options = {}) {
         },
         wasRevived: () => revived
     };
+}
+
+function playableTarget(options = {}) {
+    let dead = options.dead ?? false;
+    const target = {
+        effects: {},
+        fetchId: () => options.id ?? 2000004,
+        fetchName: () => options.name || 'Target',
+        fetchLocX: () => options.locX ?? 100,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        isDead: () => dead,
+        setDead(value) { dead = value; },
+        statusUpdateVitals() {},
+        state: {
+            fetchDead: () => dead
+        }
+    };
+    target.session = {
+        actor: target,
+        packets: [],
+        dataSendToMe(packet) {
+            this.packets.push(packet);
+        }
+    };
+    return target;
 }
 
 function attackableNpc(options = {}) {
@@ -598,6 +625,17 @@ assert(greaterMagicHastePotion, 'Greater Magic Haste Potion should resolve to an
 assert.strictEqual(greaterMagicHastePotion.fetchLevel(), 2, 'Greater Magic Haste Potion should preserve sourced item_skill level 2');
 assert.strictEqual(greaterMagicHastePotion.fetchSemantic().stats.castSpdMul, 1.3, 'Greater Magic Haste Potion should preserve sourced mAtkSpd 1.3 as cast speed multiplier');
 
+const wakingScroll = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6037));
+assert(wakingScroll, 'Waking Scroll should resolve to an item skill');
+assert.strictEqual(wakingScroll.fetchSelfId(), 2170, 'Waking Scroll should use sourced skill 2170');
+assert.strictEqual(wakingScroll.fetchPower(), 9, 'Waking Scroll should preserve sourced negatePower 9');
+assert.strictEqual(wakingScroll.fetchSkillType(), C4SkillRules.CLEANSE, 'Waking Scroll should preserve sourced NEGATE/CLEANSE semantics');
+assert.strictEqual(wakingScroll.fetchTargetKind(), 'friendly', 'Waking Scroll should preserve sourced TARGET_ONE as targeted playable cleanse');
+assert.strictEqual(wakingScroll.fetchSemantic().castRange, 400, 'Waking Scroll should preserve sourced castRange 400');
+assert.strictEqual(wakingScroll.fetchSemantic().effectRange, 600, 'Waking Scroll should preserve sourced effectRange 600');
+assert.deepStrictEqual(wakingScroll.fetchSemantic().negateStats, ['SLEEP'], 'Waking Scroll should preserve sourced negateStats SLEEP metadata');
+assert.strictEqual(wakingScroll.fetchSemantic().negatePower, 9, 'Waking Scroll should preserve sourced negatePower metadata');
+
 const cpPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5591));
 assert(cpPotion, 'CP Potion should resolve to an item skill');
 assert.strictEqual(cpPotion.fetchSelfId(), 2166, 'CP Potion should use sourced skill 2166');
@@ -627,6 +665,42 @@ const magicHasteSession = sessionFor(magicHasteBackpack);
 magicHasteBackpack.useItem(magicHasteSession, 42);
 assert.strictEqual(magicHasteBackpack.fetchItemFromSelfId(6036).fetchAmount(), 1, 'Greater Magic Haste Potion should consume one item on successful use');
 assert.strictEqual(EffectStats.multiplier(magicHasteSession.actor, 'castSpdMul'), 1.3, 'Greater Magic Haste Potion should apply sourced cast speed multiplier');
+
+const savedWorldUsersForWaking = World.user;
+try {
+    const wakingTarget = playableTarget({ id: 2000010, locX: 100 });
+    EffectStore.apply(wakingTarget, {
+        key: 'sleep',
+        id: 1069,
+        level: 9,
+        type: 'debuff',
+        category: 'sleep',
+        durationMs: 30000
+    });
+    EffectStore.apply(wakingTarget, {
+        key: 'deep_sleep',
+        id: 1072,
+        level: 10,
+        type: 'debuff',
+        category: 'sleep',
+        durationMs: 30000
+    });
+    World.user = { sessions: [wakingTarget.session] };
+
+    const wakingBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    wakingBackpack.items = [
+        item(48, { selfId: 6037, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const wakingSession = sessionFor(wakingBackpack, { destId: wakingTarget.fetchId() });
+    wakingBackpack.useItem(wakingSession, 48);
+    assert.strictEqual(wakingBackpack.fetchItemFromSelfId(6037), undefined, 'Waking Scroll should consume one scroll on valid targeted cleanse');
+    assert.strictEqual(EffectStore.hasDebuff(wakingTarget, 'sleep'), true, 'Waking Scroll should leave sleep above sourced negatePower 9');
+    assert.strictEqual(wakingTarget.effects.sleep, undefined, 'Waking Scroll should remove sleep up to sourced negatePower 9');
+    assert.strictEqual(wakingTarget.effects.deep_sleep.level, 10, 'Waking Scroll should not remove level 10 sleep above sourced negatePower');
+    assert(wakingTarget.session.packets.some((packet) => packet[0] === 0x7f), 'Waking Scroll should refresh target abnormal status');
+} finally {
+    World.user = savedWorldUsersForWaking;
+}
 
 const cpBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 cpBackpack.items = [

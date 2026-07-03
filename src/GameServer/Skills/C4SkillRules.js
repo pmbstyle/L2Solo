@@ -505,6 +505,7 @@ const RULES = {
     2167: { skillType: GIVE_SP, trait: 'sp', target: 'self', ssBoost: 0, hitTime: 200, staticHitTime: true, magicLevel: 1 },
     2168: { skillType: EFFECT, trait: 'lucky_charm', effect: 'charm_of_luck', effectType: 'buff', target: 'self', ssBoost: 0, hitTime: 2000, staticHitTime: true, magicLevel: 1, baseLandRate: 100 },
     2169: { skillType: EFFECT, trait: 'buff', effect: 'magic_haste_potion', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { castSpdMul: [1.23, 1.3] } },
+    2170: { skillType: CLEANSE, trait: 'sleep', target: 'friendly', ssBoost: 0, castRange: 400, effectRange: 600, cleanse: [{ category: 'sleep', maxLevel: 9 }], negateStats: ['SLEEP'], negatePower: 9 },
     2179: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_pet', ssBoost: 0, hitTime: 15000, staticHitTime: true, castRange: 400, effectRange: 600, itemConsumeId: 6387, itemConsumeCount: 1 },
     2180: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 450 },
     2187: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },

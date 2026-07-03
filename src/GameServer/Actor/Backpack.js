@@ -249,6 +249,10 @@ class Backpack extends BackpackModel {
             return this.useHarvestingItem(session, id, itemSkill, skill);
         }
 
+        if (skill.fetchSkillType() === C4SkillRules.CLEANSE && skill.fetchTargetKind() !== 'self') {
+            return this.useTargetedCleanseItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchTargetKind() !== 'self') {
             return false;
         }
@@ -374,6 +378,32 @@ class Backpack extends BackpackModel {
         });
     }
 
+    useTargetedCleanseItem(session, id, itemSkill, skill) {
+        const target = this.fetchSelectedPlayableTarget(session);
+        if (!this.canCleanseTarget(session.actor, target, skill)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        return this.castTargetedItemSkill(session, target, skill, () => {
+            if (session.actor.isDead() || !this.canCleanseTarget(session.actor, target, skill)) {
+                return;
+            }
+
+            this.deleteItem(session, id, 1, () => {
+                SkillEffects.execute(session, session.actor, target, skill, {
+                    magicSkill: skill.fetchSpell(),
+                    rng: () => Math.random(),
+                    attack: { clearLoadedShot() {} }
+                });
+            });
+        });
+    }
+
     castTargetedItemSkill(session, target, skill, apply) {
         const castTime = skill.fetchHitTime() || 0;
         session.actor.state.setCasts(true);
@@ -427,6 +457,13 @@ class Backpack extends BackpackModel {
         }
         const seederId = this.fetchManorSeederId(target);
         if (seederId && seederId !== Number(actor.fetchId?.())) {
+            return false;
+        }
+        return this.isInSkillRange(actor, target, skill);
+    }
+
+    canCleanseTarget(actor, target, skill) {
+        if (!target || target.state?.fetchDead?.() === true || target.isDead?.()) {
             return false;
         }
         return this.isInSkillRange(actor, target, skill);
