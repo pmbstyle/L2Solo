@@ -35,6 +35,10 @@ function item(id, data) {
     });
 }
 
+function readPacketString(packet, offset) {
+    return packet.toString('ucs2', offset).split('\u0000')[0];
+}
+
 function sessionFor(backpack, options = {}) {
     let casts = false;
     let mp = options.mp ?? 100;
@@ -288,6 +292,30 @@ try {
 } finally {
     Math.random = savedDiceRandom;
 }
+
+[
+    5588, 6317, 7063, 7064, 7065, 7066, 7082, 7083, 7084, 7085, 7086,
+    7087, 7088, 7089, 7090, 7091, 7092, 7093, 7094, 7095, 7096, 7097,
+    7098, 7099, 7100, 7101, 7102, 7103, 7104, 7105, 7106, 7107, 7108,
+    7109, 7110, 7111, 7112, 7561
+].forEach((itemId) => {
+    const bookItem = C4UtilityItems.resolve(itemId);
+    assert(bookItem, `Book item ${itemId} should resolve to a sourced utility item handler`);
+    assert.strictEqual(bookItem.handler, 'Book', `Book item ${itemId} should preserve sourced Book handler`);
+});
+
+const bookBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+bookBackpack.items = [
+    item(14, { selfId: 7561, kind: 'Other.None', consumable: false })
+];
+const bookSession = sessionFor(bookBackpack);
+bookBackpack.useItem(bookSession, 14);
+assert.strictEqual(bookSession.packets[0][0], 0x0f, 'Book should emit C4 NpcHtml packet');
+assert.strictEqual(bookSession.packets[0].readInt32LE(1), 0, 'Book NpcHtml packet should use sourced npc id 0');
+assert(readPacketString(bookSession.packets[0], 5).includes('Fishing Manual'), 'Book should render sourced help HTML content');
+assert(readPacketString(bookSession.packets[0], 5).includes('Using Fishing Shot'), 'Fishing Manual should include sourced fishing-shot help link');
+assert.strictEqual(bookSession.packets[1][0], 0x25, 'Book should finish with ActionFailed like Lisvus');
+assert(bookBackpack.fetchItemFromSelfId(7561), 'Book should not be consumed by its utility handler');
 
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));

@@ -249,6 +249,10 @@ class Backpack extends BackpackModel {
                     session.actor
                 );
                 return true;
+            case 'Book':
+                session.dataSendToMe(ServerResponse.npcHtml(0, this.fetchBookHtml(item.fetchSelfId())));
+                session.dataSendToMe(ServerResponse.actionFailed());
+                return true;
             default:
                 return false;
         }
@@ -256,6 +260,24 @@ class Backpack extends BackpackModel {
 
     rollDiceNumber() {
         return Math.floor(Math.random() * 6) + 1;
+    }
+
+    fetchBookHtml(selfId) {
+        const filename = `data/html/help/${selfId}.htm`;
+        const htmlPath = this.fetchBookHelpPath(selfId);
+        if (!htmlPath) {
+            return `<html><body>My Text is missing:<br>${filename}</body></html>`;
+        }
+        return utils.parseRawFile(htmlPath);
+    }
+
+    fetchBookHelpPath(selfId) {
+        const candidates = [
+            `data/html/help/${selfId}.htm`,
+            `data/Html/help/${selfId}.htm`,
+            `tmp/vendor/l2j-lisvus/datapack/data/html/help/${selfId}.htm`
+        ];
+        return candidates.find((filename) => utils.fileExists(filename));
     }
 
     useSkillItem(session, id, itemSkill) {
