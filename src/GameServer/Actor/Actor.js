@@ -111,6 +111,10 @@ class Actor extends ActorModel {
     }
 
     statusUpdateVitals(creature) {
+        if (creature === this) {
+            invoke(path.actor).calculateStats(this.session, this);
+        }
+
         this.session.dataSendToMe(
             ServerResponse.statusUpdate(creature.fetchId(), [
                 { id: 0x9, value: creature.fetchHp   () },

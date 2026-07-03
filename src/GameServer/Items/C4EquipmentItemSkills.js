@@ -2729,31 +2729,205 @@ const SKILLS = {
     }
 };
 
+const CONDITIONAL_SKILL_STATS = {
+    "3018": {
+        "1": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.71 } }],
+        "2": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.67 } }],
+        "3": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.63 } }],
+        "4": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.6 } }],
+        "5": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.56 } }],
+        "6": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.53 } }]
+    },
+    "3019": {
+        "1": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.5 } }],
+        "2": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.47 } }],
+        "3": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.45 } }],
+        "4": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.42 } }],
+        "5": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.4 } }],
+        "6": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.37 } }]
+    },
+    "3027": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 138.7 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 130.9 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 123.1 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 115.4 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 107.7 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 99.9 } }]
+    },
+    "3028": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.63 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.29 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.95 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.6 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.24 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 5.87 } }]
+    },
+    "3030": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.63 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.29 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.95 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.6 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.24 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 5.87 } }]
+    },
+    "3031": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.63 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 7.29 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.95 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.6 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.24 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 5.87 } }]
+    },
+    "3032": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.13 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.1 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.09 } }]
+    },
+    "3033": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.13 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.1 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.09 } }]
+    },
+    "3034": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.13 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.12 } }],
+        "4": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }],
+        "5": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.1 } }],
+        "6": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.09 } }]
+    },
+    "3056": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }],
+        "3": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pAtkSpdMul: 1.11 } }]
+    },
+    "3063": {
+        "1": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.37 } }],
+        "2": [{ condition: { behindTarget: true }, stats: { pCritRateMul: 1.37 } }]
+    },
+    "3069": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pEvasionRateAdd: 6.8 } }]
+    },
+    "3071": {
+        "1": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 130 } }],
+        "2": [{ condition: { actorHpPercentAtMost: 60 }, stats: { pCritRateAdd: 130 } }]
+    },
+    "3589": {
+        "1": [{ condition: { behindTarget: true }, stats: { pCritRateAdd: 220 } }]
+    }
+};
+
+const MULTIPLIER_STATS = new Set([
+    'absorbDamMul',
+    'blowRateMul',
+    'castSpdMul',
+    'mAtkMul',
+    'mDefMul',
+    'magicalMpConsumeRateMul',
+    'maxCpMul',
+    'maxHpMul',
+    'maxMpMul',
+    'pAtkMul',
+    'pAtkSpdMul',
+    'pCritDamageMul',
+    'pCritRateMul',
+    'physicalMpConsumeRateMul',
+    'pReuseMul',
+    'mReuseMul',
+    'pvpMagicalDmg',
+    'pvpPhysDmg',
+    'pvpPhysSkillsDmg',
+    'rShldMul',
+    'runSpdMul',
+    'sDefMul',
+    'bleedVuln',
+    'darkVuln',
+    'derangementVuln',
+    'earthVuln',
+    'fireVuln',
+    'holyVuln',
+    'mentalVuln',
+    'paralyzeVuln',
+    'poisonVuln',
+    'rootVuln',
+    'sleepVuln',
+    'stunVuln',
+    'waterVuln',
+    'windVuln'
+]);
+
+function mergeStats(target, stats = {}) {
+    Object.entries(stats).forEach(([stat, value]) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return;
+        if (MULTIPLIER_STATS.has(stat)) {
+            target[stat] = Number(((target[stat] ?? 1) * numeric).toFixed(6));
+        } else {
+            target[stat] = Number(((target[stat] ?? 0) + numeric).toFixed(6));
+        }
+    });
+    return target;
+}
+
+function hpPercentAtMost(actor, threshold) {
+    const maxHp = Number(actor?.fetchMaxHp?.()) || 0;
+    const hp = Number(actor?.fetchHp?.()) || 0;
+    return maxHp > 0 && hp * 100 / maxHp <= Number(threshold);
+}
+
+function conditionMatches(condition = {}, context = {}) {
+    if (condition.actorHpPercentAtMost !== undefined && !hpPercentAtMost(context.actor, condition.actorHpPercentAtMost)) {
+        return false;
+    }
+    if (condition.behindTarget !== undefined && context.behindTarget !== condition.behindTarget) {
+        return false;
+    }
+    return true;
+}
+
 function resolveItem(itemSelfId) {
     return ITEM_SKILLS[String(Number(itemSelfId))] || null;
 }
 
-function statsFor(skillId, level = 1) {
+function conditionalStatsFor(skillId, level = 1, context = {}) {
+    const bySkill = CONDITIONAL_SKILL_STATS[String(Number(skillId))];
+    if (!bySkill) return {};
+    const levelKey = String(Number(level) || 1);
+    const entries = bySkill[levelKey] || bySkill[String(Object.keys(bySkill).length)] || [];
+    return entries
+        .filter((entry) => conditionMatches(entry.condition, context))
+        .reduce((stats, entry) => mergeStats(stats, entry.stats), {});
+}
+
+function statsFor(skillId, level = 1, context = {}) {
     const skill = SKILLS[String(Number(skillId))];
     if (!skill) return null;
     const wantedLevel = String(Number(level) || 1);
-    const stats = skill.levels[wantedLevel] || skill.levels[String(Object.keys(skill.levels).length)] || {};
+    const stats = { ...(skill.levels[wantedLevel] || skill.levels[String(Object.keys(skill.levels).length)] || {}) };
+    mergeStats(stats, conditionalStatsFor(skillId, level, context));
     return {
         skillId: Number(skillId),
         level: Number(wantedLevel),
         name: skill.name,
         source: skill.source,
         conditional: skill.conditional || [],
+        conditionalStats: CONDITIONAL_SKILL_STATS[String(Number(skillId))] || {},
         stats: { ...stats }
     };
 }
 
-function effectForItem(item) {
+function effectForItem(item, context = {}) {
     const itemSelfId = Number(item?.fetchSelfId?.());
     const itemId = Number(item?.fetchId?.()) || itemSelfId;
     const itemSkill = resolveItem(itemSelfId);
     if (!itemSkill) return null;
-    const skill = statsFor(itemSkill.skillId, itemSkill.level);
+    const skill = statsFor(itemSkill.skillId, itemSkill.level, context);
     if (!skill || Object.keys(skill.stats).length === 0) return null;
 
     return {
@@ -2775,7 +2949,7 @@ function sync(actor, items = []) {
     items
         .filter((item) => item?.fetchEquipped?.() === true)
         .forEach((item) => {
-            const effect = effectForItem(item);
+            const effect = effectForItem(item, { actor });
             if (effect) {
                 applied.push(EffectStore.apply(actor, effect));
             }
@@ -2783,12 +2957,26 @@ function sync(actor, items = []) {
     return applied.filter(Boolean);
 }
 
+function situationalStats(actor, context = {}) {
+    return actor?.backpack?.fetchItems?.()
+        .filter((item) => item?.fetchEquipped?.() === true)
+        .map((item) => {
+            const itemSkill = resolveItem(item.fetchSelfId?.());
+            if (!itemSkill) return {};
+            return conditionalStatsFor(itemSkill.skillId, itemSkill.level, context);
+        })
+        .reduce((stats, entry) => mergeStats(stats, entry), {}) || {};
+}
+
 module.exports = {
     CATEGORY,
     ITEM_SKILLS,
     SKILLS,
+    CONDITIONAL_SKILL_STATS,
     resolveItem,
     statsFor,
+    conditionalStatsFor,
     effectForItem,
-    sync
+    sync,
+    situationalStats
 };

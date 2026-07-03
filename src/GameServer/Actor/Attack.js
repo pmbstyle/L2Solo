@@ -5,6 +5,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 
 class Attack {
     constructor() {
@@ -328,7 +329,7 @@ class Attack {
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
-        const critical = Formulas.rollCritical(actor.fetchCollectiveCritical ? actor.fetchCollectiveCritical() : 0, rng);
+        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, { bow: this.isBowAttack(actor) });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
@@ -366,7 +367,7 @@ class Attack {
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
-        const critical = Formulas.rollCritical(src.fetchCollectiveCritical ? src.fetchCollectiveCritical() : 0, rng);
+        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(src, dst), rng);
         const weaponModifier = incomingWeaponVulnerabilityModifier(dst, { bow: this.isBowAttack(src) });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
@@ -404,6 +405,14 @@ class Attack {
         }
 
         return Math.max(0, (Number(shieldRate) || 0) * rateMultiplier);
+    }
+
+    fetchSituationalCriticalRate(attacker, target) {
+        const base = Number(attacker?.fetchCollectiveCritical?.()) || 0;
+        const stats = C4EquipmentItemSkills.situationalStats(attacker, {
+            behindTarget: this.isBehindTarget(attacker, target)
+        });
+        return (base * (Number(stats.pCritRateMul) || 1)) + (Number(stats.pCritRateAdd) || 0);
     }
 
     isBowAttack(creature) {
