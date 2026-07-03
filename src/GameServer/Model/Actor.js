@@ -12,6 +12,10 @@ class ActorModel extends CreatureModel {
         this.model.sp = data;
     }
 
+    setCp(data) {
+        this.model.cp = data;
+    }
+
     setPvp(data) {
         this.model.pvp = data;
     }

@@ -24,6 +24,8 @@ function execute(session, actor, target, skill, context = {}) {
         effectResisted: false,
         lethal: false,
         mpRestore: 0,
+        cpRestore: 0,
+        spReward: 0,
         aggroDamage: 0,
         aggroReduced: false,
         aggroReduction: 0,
@@ -89,6 +91,16 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.MANA_HEAL) {
         result.mpRestore = applyManaHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.COMBAT_POINT_HEAL) {
+        result.cpRestore = applyCombatPointHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.GIVE_SP) {
+        result.spReward = applyGiveSp(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
     }
 
@@ -270,6 +282,30 @@ function applyManaHeal(session, actor, target, skill, semantic, magicSkill, atta
     refreshVitals(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextMp - currentMp);
+}
+
+function applyCombatPointHeal(session, actor, target, skill, semantic, magicSkill, attack) {
+    const amount = Math.round(Number(skill.fetchPower?.()) || 0);
+    const maxCp = Number(target.fetchMaxCp?.()) || 0;
+    const currentCp = Number(target.fetchCp?.()) || 0;
+    const nextCp = maxCp > 0 ? Math.min(maxCp, currentCp + amount) : currentCp + amount;
+    if (typeof target.setCp === 'function') {
+        target.setCp(nextCp);
+    }
+    refreshCp(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return Math.max(0, nextCp - currentCp);
+}
+
+function applyGiveSp(session, actor, target, skill, semantic, magicSkill, attack) {
+    const amount = Math.round(Number(skill.fetchPower?.()) || 0);
+    const currentSp = Number(target.fetchSp?.()) || 0;
+    if (typeof target.setSp === 'function') {
+        target.setSp(currentSp + amount);
+    }
+    refreshUserInfo(session, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return amount;
 }
 
 function applyDrainSoul(actor, target) {
@@ -541,6 +577,28 @@ function refreshVitals(session, actor, target) {
 
     if (target?.session && target.session !== session && target.session.actor?.statusUpdateVitals) {
         target.session.actor.statusUpdateVitals(target);
+    }
+}
+
+function refreshCp(session, actor, target) {
+    const packet = ServerResponse.statusUpdate(target.fetchId(), [
+        { id: 0x21, value: Math.round(Number(target.fetchCp?.()) || 0) }
+    ]);
+    if (target?.session?.dataSendToMe) {
+        target.session.dataSendToMe(packet);
+    } else if (target === session?.actor && session?.dataSendToMe) {
+        session.dataSendToMe(packet);
+    } else if (actor?.statusUpdateVitals) {
+        actor.statusUpdateVitals(target);
+    }
+}
+
+function refreshUserInfo(session, target) {
+    const packet = ServerResponse.userInfo(target);
+    if (target?.session?.dataSendToMe) {
+        target.session.dataSendToMe(packet);
+    } else if (target === session?.actor && session?.dataSendToMe) {
+        session.dataSendToMe(packet);
     }
 }
 

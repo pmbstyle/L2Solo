@@ -32,20 +32,69 @@ function item(id, data) {
 function sessionFor(backpack, options = {}) {
     let casts = false;
     let mp = options.mp ?? 100;
+    let cp = options.cp ?? 0;
+    let sp = options.sp ?? 0;
     const actor = {
         backpack,
         effects: {},
         activeBuffs: {},
         fetchId: () => 2000001,
         fetchName: () => 'Tester',
+        fetchTitle: () => '',
+        fetchRace: () => 0,
+        fetchSex: () => 0,
+        fetchClassId: () => 0,
         fetchLevel: () => options.level ?? 10,
+        fetchExp: () => 0,
+        fetchSp: () => sp,
+        setSp(value) { sp = value; },
+        fetchStr: () => 40,
+        fetchDex: () => 30,
+        fetchCon: () => 43,
+        fetchInt: () => 21,
+        fetchWit: () => 11,
+        fetchMen: () => 25,
+        fetchHp: () => options.hp ?? 100,
+        fetchMaxHp: () => options.maxHp ?? 100,
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
         fetchDestId: () => options.destId,
         fetchHead: () => 0,
         fetchMp: () => mp,
+        fetchMaxMp: () => options.maxMp ?? 100,
         setMp(value) { mp = value; },
+        fetchCp: () => cp,
+        fetchMaxCp: () => options.maxCp ?? 0,
+        setCp(value) { cp = value; },
+        fetchMaxLoad: () => 1000,
+        fetchCollectivePAtk: () => 1,
+        fetchCollectiveAtkSpd: () => 1,
+        fetchCollectivePDef: () => 1,
+        fetchCollectiveEvasion: () => 1,
+        fetchCollectiveAccur: () => 1,
+        fetchCollectiveCritical: () => 1,
+        fetchCollectiveMAtk: () => 1,
+        fetchCollectiveCastSpd: () => 1,
+        fetchCollectiveMDef: () => 1,
+        fetchPvpFlag: () => 0,
+        fetchKarma: () => 0,
+        fetchCollectiveRunSpd: () => 1,
+        fetchCollectiveWalkSpd: () => 1,
+        fetchSwim: () => 0,
+        fetchAtkSpdMultiplier: () => 1,
+        fetchRadius: () => 1,
+        fetchSize: () => 1,
+        fetchHair: () => 0,
+        fetchHairColor: () => 0,
+        fetchFace: () => 0,
+        fetchIsGM: () => 0,
+        fetchPrivateStoreType: () => 0,
+        fetchIsCrafter: () => 0,
+        fetchPk: () => 0,
+        fetchPvp: () => 0,
+        fetchRecRemain: () => 0,
+        fetchEvalScore: () => 0,
         isDead: () => false,
         statusUpdateVitals() {},
         state: {
@@ -484,6 +533,27 @@ assert(greaterMagicHastePotion, 'Greater Magic Haste Potion should resolve to an
 assert.strictEqual(greaterMagicHastePotion.fetchLevel(), 2, 'Greater Magic Haste Potion should preserve sourced item_skill level 2');
 assert.strictEqual(greaterMagicHastePotion.fetchSemantic().stats.castSpdMul, 1.3, 'Greater Magic Haste Potion should preserve sourced mAtkSpd 1.3 as cast speed multiplier');
 
+const cpPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5591));
+assert(cpPotion, 'CP Potion should resolve to an item skill');
+assert.strictEqual(cpPotion.fetchSelfId(), 2166, 'CP Potion should use sourced skill 2166');
+assert.strictEqual(cpPotion.fetchPower(), 50, 'CP Potion should preserve sourced CP power 50');
+assert.strictEqual(cpPotion.fetchSkillType(), C4SkillRules.COMBAT_POINT_HEAL, 'CP Potion should preserve sourced COMBATPOINTHEAL semantics');
+assert.strictEqual(cpPotion.fetchSemantic().isPotion, true, 'CP Potion should preserve sourced potion metadata');
+
+const greaterCpPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5592));
+assert(greaterCpPotion, 'Greater CP Potion should resolve to an item skill');
+assert.strictEqual(greaterCpPotion.fetchLevel(), 2, 'Greater CP Potion should preserve sourced item_skill level 2');
+assert.strictEqual(greaterCpPotion.fetchPower(), 200, 'Greater CP Potion should preserve sourced CP power 200');
+
+const highSpScroll = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5595));
+assert(highSpScroll, 'SP Scroll: High Grade should resolve to an item skill');
+assert.strictEqual(highSpScroll.fetchSelfId(), 2167, 'SP Scroll should use sourced skill 2167');
+assert.strictEqual(highSpScroll.fetchLevel(), 3, 'SP Scroll: High Grade should preserve sourced item_skill level 3');
+assert.strictEqual(highSpScroll.fetchPower(), 100000, 'SP Scroll: High Grade should preserve sourced SP reward 100000');
+assert.strictEqual(highSpScroll.fetchHitTime(), 200, 'SP Scroll should preserve sourced 200ms static hitTime');
+assert.strictEqual(highSpScroll.fetchReuseTime(), 3000, 'SP Scroll should preserve sourced 3000ms reuse');
+assert.strictEqual(highSpScroll.fetchSkillType(), C4SkillRules.GIVE_SP, 'SP Scroll should preserve sourced GIVE_SP semantics');
+
 const magicHasteBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 magicHasteBackpack.items = [
     item(42, { selfId: 6036, kind: 'Other.Potion', amount: 2 })
@@ -492,6 +562,36 @@ const magicHasteSession = sessionFor(magicHasteBackpack);
 magicHasteBackpack.useItem(magicHasteSession, 42);
 assert.strictEqual(magicHasteBackpack.fetchItemFromSelfId(6036).fetchAmount(), 1, 'Greater Magic Haste Potion should consume one item on successful use');
 assert.strictEqual(EffectStats.multiplier(magicHasteSession.actor, 'castSpdMul'), 1.3, 'Greater Magic Haste Potion should apply sourced cast speed multiplier');
+
+const cpBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+cpBackpack.items = [
+    item(43, { selfId: 5592, kind: 'Other.Potion', amount: 2 })
+];
+const cpSession = sessionFor(cpBackpack, { cp: 850, maxCp: 1000 });
+cpBackpack.useItem(cpSession, 43);
+assert.strictEqual(cpBackpack.fetchItemFromSelfId(5592).fetchAmount(), 1, 'Greater CP Potion should consume one item on successful use');
+assert.strictEqual(cpSession.actor.fetchCp(), 1000, 'Greater CP Potion should add sourced CP power and clamp to max CP');
+assert(cpSession.packets.some((packet) => packet[0] === 0x0e && packet.readInt32LE(1) === cpSession.actor.fetchId()), 'Greater CP Potion should emit a CP status update');
+
+const savedSpScrollSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const spBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    spBackpack.items = [
+        item(44, { selfId: 5595, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const spSession = sessionFor(spBackpack, { sp: 10, maxCp: 100 });
+    spBackpack.useItem(spSession, 44);
+    assert.strictEqual(spBackpack.fetchItemFromSelfId(5595), undefined, 'SP Scroll should consume one scroll on successful use');
+    assert.strictEqual(spSession.actor.fetchSp(), 100010, 'SP Scroll should add sourced SP reward without exp');
+    assert(spSession.packets.some((packet) => packet[0] === 0x04), 'SP Scroll should refresh UserInfo after SP changes');
+} finally {
+    global.setTimeout = savedSpScrollSetTimeout;
+}
 
 const deluxeChestKey = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6672));
 assert(deluxeChestKey, 'Deluxe Chest Key - Grade 8 should resolve to an item skill');
