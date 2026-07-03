@@ -497,6 +497,7 @@ const RULES = {
     2162: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 3, multiplier: 2.0, blessedSpiritshot: true },
     2163: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 4, multiplier: 2.0, blessedSpiritshot: true },
     2164: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 5, multiplier: 2.0, blessedSpiritshot: true },
+    2169: { skillType: EFFECT, trait: 'buff', effect: 'magic_haste_potion', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { castSpdMul: [1.23, 1.3] } },
     2179: { skillType: RESURRECT, trait: 'resurrect', target: 'corpse_pet', ssBoost: 0, hitTime: 15000, staticHitTime: true, castRange: 400, effectRange: 600, itemConsumeId: 6387, itemConsumeCount: 1 },
     2180: { skillType: FEED_PET, trait: 'feed_pet', target: 'self', ssBoost: 0, feed: 450 },
     2187: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },

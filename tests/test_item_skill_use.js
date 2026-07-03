@@ -472,6 +472,27 @@ assert.strictEqual(petResurrection.fetchSelfId(), 2179, 'Blessed Scroll of Resur
 assert.strictEqual(petResurrection.fetchPower(), 100, 'Blessed Scroll of Resurrection for Pets should preserve sourced power 100');
 assert.strictEqual(petResurrection.fetchSemantic().itemConsumeId, 6387, 'Blessed Scroll of Resurrection for Pets should preserve sourced item consume id');
 
+const magicHastePotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6035));
+assert(magicHastePotion, 'Magic Haste Potion should resolve to an item skill');
+assert.strictEqual(magicHastePotion.fetchSelfId(), 2169, 'Magic Haste Potion should use sourced skill 2169');
+assert.strictEqual(magicHastePotion.fetchLevel(), 1, 'Magic Haste Potion should preserve sourced item_skill level 1');
+assert.strictEqual(magicHastePotion.fetchSkillType(), C4SkillRules.EFFECT, 'Magic Haste Potion should preserve sourced BUFF semantics');
+assert.strictEqual(magicHastePotion.fetchSemantic().stats.castSpdMul, 1.23, 'Magic Haste Potion should preserve sourced mAtkSpd 1.23 as cast speed multiplier');
+
+const greaterMagicHastePotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6036));
+assert(greaterMagicHastePotion, 'Greater Magic Haste Potion should resolve to an item skill');
+assert.strictEqual(greaterMagicHastePotion.fetchLevel(), 2, 'Greater Magic Haste Potion should preserve sourced item_skill level 2');
+assert.strictEqual(greaterMagicHastePotion.fetchSemantic().stats.castSpdMul, 1.3, 'Greater Magic Haste Potion should preserve sourced mAtkSpd 1.3 as cast speed multiplier');
+
+const magicHasteBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+magicHasteBackpack.items = [
+    item(42, { selfId: 6036, kind: 'Other.Potion', amount: 2 })
+];
+const magicHasteSession = sessionFor(magicHasteBackpack);
+magicHasteBackpack.useItem(magicHasteSession, 42);
+assert.strictEqual(magicHasteBackpack.fetchItemFromSelfId(6036).fetchAmount(), 1, 'Greater Magic Haste Potion should consume one item on successful use');
+assert.strictEqual(EffectStats.multiplier(magicHasteSession.actor, 'castSpdMul'), 1.3, 'Greater Magic Haste Potion should apply sourced cast speed multiplier');
+
 const deluxeChestKey = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6672));
 assert(deluxeChestKey, 'Deluxe Chest Key - Grade 8 should resolve to an item skill');
 assert.strictEqual(deluxeChestKey.fetchSelfId(), 2229, 'Deluxe Chest Key - Grade 8 should use sourced skill 2229');
