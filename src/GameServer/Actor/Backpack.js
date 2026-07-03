@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BackpackModel  = invoke('GameServer/Model/Backpack');
 const SkillModel     = invoke('GameServer/Model/Skill');
 const Item           = invoke('GameServer/Item/Item');
+const Npc            = invoke('GameServer/Npc/Npc');
 const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const World          = invoke('GameServer/World/World');
@@ -300,6 +301,10 @@ class Backpack extends BackpackModel {
             return this.useFishShotItem(session, id, itemSkill, skill);
         }
 
+        if (itemSkill.handler === 'SummonItems') {
+            return this.useSummonItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchSkillType() === C4SkillRules.DRAIN_SOUL) {
             return this.useDrainSoulItem(session, id, itemSkill, skill);
         }
@@ -386,6 +391,34 @@ class Backpack extends BackpackModel {
             weapon.chargedFishShot = true;
             session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
         });
+        return true;
+    }
+
+    useSummonItem(session, id, itemSkill, skill) {
+        if (Number(itemSkill.summonType) !== 0 || !itemSkill.npcId) {
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        DataCache.fetchNpcFromSelfId(itemSkill.npcId, (npcData) => {
+            const npc = new Npc(World.npc.nextId++, {
+                ...utils.crushOb(npcData),
+                locX: session.actor.fetchLocX(),
+                locY: session.actor.fetchLocY(),
+                locZ: session.actor.fetchLocZ(),
+                head: session.actor.fetchHead?.() || 0
+            });
+
+            World.npc.spawns.push(npc);
+            World.indexSpawnsInGrid?.();
+            this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
+                session.dataSendToMeAndOthers(ServerResponse.npcInfo(npc), npc);
+            });
+        });
+
         return true;
     }
 

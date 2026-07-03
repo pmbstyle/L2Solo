@@ -24451,4 +24451,26 @@
     "equipment": { "weapon": 0, "shield": 0, "reuseTime": 0 },
     "clan": { "clanName": "", "helpRadius": 300 },
     "rewards": { "exp": 0.1, "sp": 10 }
+},{
+    "selfId": 12619,
+    "template": { "kind": "Citizen", "name": "Christmas Tree", "title": "", "level": 40, "hostile": false },
+    "base": { "str": 40, "dex": 30, "con": 43, "int": 21, "wit": 20, "men": 10 },
+    "stats": { "pAtk": 1335, "pAtkRnd": 30, "pDef": 470, "mAtk": 780, "mDef": 382, "accur": 4.75, "atkSpd": 278, "castSpd": 253, "atkRadius": 40 },
+    "speed": { "walk": 33, "run": 132 },
+    "vitals": { "maxHp": 3862, "maxMp": 1493, "revHp": 11.85, "revMp": 2.78, "corpseTime": 7000 },
+    "collision": { "radius": 0, "size": 0 },
+    "equipment": { "weapon": 0, "shield": 0, "reuseTime": 0 },
+    "clan": { "clanName": "", "helpRadius": 0 },
+    "rewards": { "exp": 490, "sp": 10 }
+},{
+    "selfId": 12620,
+    "template": { "kind": "Citizen", "name": "Special Christmas Tree", "title": "", "level": 40, "hostile": false },
+    "base": { "str": 40, "dex": 30, "con": 43, "int": 21, "wit": 20, "men": 10 },
+    "stats": { "pAtk": 1335, "pAtkRnd": 30, "pDef": 470, "mAtk": 780, "mDef": 382, "accur": 4.75, "atkSpd": 278, "castSpd": 253, "atkRadius": 40 },
+    "speed": { "walk": 33, "run": 132 },
+    "vitals": { "maxHp": 3862, "maxMp": 1493, "revHp": 11.85, "revMp": 2.78, "corpseTime": 7000 },
+    "collision": { "radius": 0, "size": 0 },
+    "equipment": { "weapon": 0, "shield": 0, "reuseTime": 0 },
+    "clan": { "clanName": "", "helpRadius": 0 },
+    "rewards": { "exp": 490, "sp": 10 }
 }]

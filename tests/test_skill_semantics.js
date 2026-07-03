@@ -585,6 +585,22 @@ assert.strictEqual(blessedSpiritshotCaster.blessedSpiritshotLoaded, true, 'Bless
 });
 
 [
+    { id: 2137, name: 'Summon Regular Tree' },
+    { id: 2138, name: 'Summon Special Tree' }
+].forEach(({ id, name }) => {
+    const data = activeSkills.find((entry) => entry.selfId === id);
+    assert(data, `${name} should be present in active skills data`);
+    assert.strictEqual(data.template.name, name, `${name} active data should preserve sourced skill name`);
+    assert.strictEqual(data.template.distance, -1, `${name} should preserve sourced TARGET_NONE range semantics`);
+    assert.strictEqual(data.time.hitTime, 0, `${name} should preserve sourced zero hitTime`);
+    const summonItem = skill({ selfId: id, name, spell: false, power: 0, level: 1, distance: -1 });
+    assert.strictEqual(summonItem.fetchSkillType(), C4SkillRules.NOT_DONE, `${name} should preserve sourced NOTDONE marker type`);
+    assert.strictEqual(summonItem.fetchTargetKind(), 'none', `${name} should preserve sourced TARGET_NONE semantics`);
+    assert.strictEqual(summonItem.fetchSemantic().trait, 'summon_item', `${name} should preserve summon item marker trait`);
+    assert.strictEqual(summonItem.fetchSemantic().operateType, 'active', `${name} should preserve sourced active operate type`);
+});
+
+[
     { id: 2122, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 0 },
     { id: 2123, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 1 },
     { id: 2124, name: 'Facelifting Potion', type: C4SkillRules.COSMETIC_FACE_LIFT, power: 2 },

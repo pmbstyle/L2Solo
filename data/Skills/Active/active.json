@@ -2095,6 +2095,16 @@
     "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
     "levels": [{ "level": 1, "power": 3, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
 },{
+    "selfId": 2137,
+    "template": { "name": "Summon Regular Tree", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 0, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
+    "selfId": 2138,
+    "template": { "name": "Summon Special Tree", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 0, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 0, "mp": 0, "hp": 0, "itemId": 0, "itemCount": 0 }]
+},{
     "selfId": 2140,
     "template": { "name": "Carol Crystal", "passive": false, "spell": false, "distance": -1 },
     "time": { "hitTime": 0, "reuse": 0, "buff": 0 },

@@ -476,6 +476,8 @@ const RULES = {
     2134: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 5, isPotion: true },
     2135: { skillType: COSMETIC_HAIR_STYLE, trait: 'cosmetic', target: 'self', ssBoost: 0, hitTime: 500, staticHitTime: true, cosmeticValue: 6, isPotion: true },
     2136: { skillType: HEAL_PERCENT, trait: 'heal', target: 'self', ssBoost: 0, healPowerByLevel: [3], manaHealPercent: 1, isPotion: true, magicLevel: 1 },
+    2137: { skillType: NOT_DONE, trait: 'summon_item', target: 'none', ssBoost: 0, staticHitTime: true, operateType: 'active' },
+    2138: { skillType: NOT_DONE, trait: 'summon_item', target: 'none', ssBoost: 0, staticHitTime: true, operateType: 'active' },
     2140: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
     2141: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
     2142: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },

@@ -355,6 +355,31 @@ assert.strictEqual(xmasSession.packets[0][0], 0xf2, 'Token of Love should emit C
 assert.strictEqual(xmasSession.packets[0].readInt32LE(1), 5555, 'ShowXMasSeal packet should include sourced Token of Love item id');
 assert(xmasBackpack.fetchItemFromSelfId(5555), 'Token of Love should not be consumed by its utility handler');
 
+const christmasTreeSkill = C4ItemSkills.resolve(5560);
+assert(christmasTreeSkill, 'Christmas Tree should resolve to a sourced SummonItems item skill');
+assert.strictEqual(christmasTreeSkill.handler, 'SummonItems', 'Christmas Tree should preserve sourced SummonItems handler');
+assert.strictEqual(christmasTreeSkill.npcId, 12619, 'Christmas Tree should preserve sourced static summon npcId 12619');
+const christmasTree = xmasBackpack.buildItemSkill(christmasTreeSkill);
+assert(christmasTree, 'Christmas Tree should build sourced summon marker skill');
+assert.strictEqual(christmasTree.fetchSelfId(), 2137, 'Christmas Tree should use sourced skill 2137');
+assert.strictEqual(christmasTree.fetchSkillType(), C4SkillRules.NOT_DONE, 'Christmas Tree skill should preserve sourced NOTDONE marker semantics');
+assert.strictEqual(christmasTree.fetchTargetKind(), 'none', 'Christmas Tree skill should preserve sourced TARGET_NONE semantics');
+
+const treeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+treeBackpack.items = [
+    item(17, { selfId: 5561, kind: 'Other.Potion', amount: 1 })
+];
+World.npc = { spawns: [], grid: {}, nextId: 9000000 };
+const treeSession = sessionFor(treeBackpack, { locX: 111, locY: 222, locZ: -333 });
+treeBackpack.useItem(treeSession, 17);
+assert.strictEqual(World.npc.spawns.length, 1, 'Special Christmas Tree should spawn one static NPC');
+assert.strictEqual(World.npc.spawns[0].fetchSelfId(), 12620, 'Special Christmas Tree should spawn sourced npcId 12620');
+assert.strictEqual(World.npc.spawns[0].fetchLocX(), 111, 'Special Christmas Tree should spawn at actor X');
+assert.strictEqual(World.npc.spawns[0].fetchLocY(), 222, 'Special Christmas Tree should spawn at actor Y');
+assert.strictEqual(World.npc.spawns[0].fetchLocZ(), -333, 'Special Christmas Tree should spawn at actor Z');
+assert.strictEqual(treeBackpack.fetchItemFromSelfId(5561), undefined, 'Special Christmas Tree item should be consumed after static summon');
+assert(treeSession.packets.some((packet) => packet[0] === 0x16), 'Special Christmas Tree should emit NPCInfo for the spawned tree');
+
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));
 assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');

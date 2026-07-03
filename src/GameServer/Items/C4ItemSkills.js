@@ -187,6 +187,8 @@ const ITEM_SKILLS = {
     5247: { skillId: 2134, level: 1, consume: true },
     5248: { skillId: 2135, level: 1, consume: true },
     5283: { skillId: 2136, level: 1, consume: true },
+    5560: { skillId: 2137, level: 1, consume: true, handler: 'SummonItems', summonType: 0, npcId: 12619 },
+    5561: { skillId: 2138, level: 1, consume: true, handler: 'SummonItems', summonType: 0, npcId: 12620 },
     5562: { skillId: 2140, level: 1, consume: true },
     5563: { skillId: 2141, level: 1, consume: true },
     5564: { skillId: 2142, level: 1, consume: true },
