@@ -176,6 +176,10 @@ assert.ok(mapPacket, 'show map request should send a response packet');
 assert.strictEqual(mapPacket[0], 0x9d, 'C4 ShowMap response opcode should be 0x9d');
 assert.strictEqual(mapPacket.readInt32LE(1), 1665, 'default world map id should be sent');
 
+const chooseInventoryItem = ServerResponse.chooseInventoryItem(731);
+assert.strictEqual(chooseInventoryItem[0], 0x6f, 'C4 ChooseInventoryItem response opcode should be 0x6f');
+assert.strictEqual(chooseInventoryItem.readInt32LE(1), 731, 'C4 ChooseInventoryItem should send the selected scroll item id');
+
 const actor = fakeActor();
 const userInfo = ServerResponse.userInfo(actor);
 assert.strictEqual(userInfo[0], 0x04);

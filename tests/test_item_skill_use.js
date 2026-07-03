@@ -11,6 +11,7 @@ const Database = invoke('Database');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
+const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -516,6 +517,22 @@ try {
 } finally {
     World.purchaseItem = savedExtractWorldPurchaseItem;
 }
+
+const crystalEnchantWeaponA = C4EnchantScrolls.resolve(731);
+assert.deepStrictEqual(crystalEnchantWeaponA, { grade: 'A', target: 'weapon', scrollType: 'crystal' }, 'Crystal Scroll: Enchant Weapon (A) should preserve sourced enchant handler metadata');
+const blessedEnchantArmorS = C4EnchantScrolls.resolve(6578);
+assert.deepStrictEqual(blessedEnchantArmorS, { grade: 'S', target: 'armor', scrollType: 'blessed' }, 'Blessed Scroll: Enchant Armor (S) should preserve sourced enchant handler metadata');
+
+const enchantBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+enchantBackpack.items = [
+    item(41, { selfId: 731, kind: 'Other.Scroll', amount: 1 })
+];
+const enchantSession = sessionFor(enchantBackpack);
+enchantBackpack.useItem(enchantSession, 41);
+assert.strictEqual(enchantBackpack.fetchItemFromSelfId(731).fetchAmount(), 1, 'Enchant scroll use should not consume the scroll before RequestEnchantItem');
+assert.deepStrictEqual(enchantSession.activeEnchantItem, { itemId: 41, selfId: 731, enchantScroll: crystalEnchantWeaponA }, 'Enchant scroll use should set active enchant item state');
+assert.strictEqual(enchantSession.packets[0][0], 0x6f, 'Enchant scroll use should send C4 ChooseInventoryItem packet');
+assert.strictEqual(enchantSession.packets[0].readInt32LE(1), 731, 'ChooseInventoryItem should include sourced scroll item id');
 
 World.user = { sessions: [] };
 

@@ -12,6 +12,7 @@ module.exports = {
          charSelectInfo: require('./CharSelectInfo'),
           charTemplates: require('./CharTemplates'),
              cipherInit: require('./CipherInit'),
+    chooseInventoryItem: require('./ChooseInventoryItem'),
             consoleText: require('./ConsoleText'),
                deleteOb: require('./DeleteOb'),
          destDeselected: require('./DestDeselected'),

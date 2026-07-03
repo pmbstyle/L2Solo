@@ -10,6 +10,7 @@ const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
+const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
@@ -187,6 +188,11 @@ class Backpack extends BackpackModel {
                     return;
                 }
 
+                const enchantScroll = C4EnchantScrolls.resolve(item.fetchSelfId());
+                if (enchantScroll && this.useEnchantScrollItem(session, item, enchantScroll)) {
+                    return;
+                }
+
                 const itemSkill = C4ItemSkills.resolve(item.fetchSelfId());
                 if (itemSkill && this.useSkillItem(session, id, itemSkill)) {
                     return;
@@ -204,6 +210,20 @@ class Backpack extends BackpackModel {
                 World.purchaseItem(session, item.selfId, item.amount);
             });
         });
+        return true;
+    }
+
+    useEnchantScrollItem(session, item, enchantScroll) {
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        session.activeEnchantItem = {
+            itemId: item.fetchId(),
+            selfId: item.fetchSelfId(),
+            enchantScroll
+        };
+        session.dataSendToMe(ServerResponse.chooseInventoryItem(item.fetchSelfId()));
         return true;
     }
 
