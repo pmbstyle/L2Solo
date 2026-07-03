@@ -523,6 +523,10 @@ class Backpack extends BackpackModel {
             return this.useSummonItem(session, id, itemSkill, skill);
         }
 
+        if (itemSkill.handler === 'PetFood' || skill.fetchSkillType() === C4SkillRules.FEED_PET) {
+            return this.usePetFoodItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchSkillType() === C4SkillRules.DRAIN_SOUL) {
             return this.useDrainSoulItem(session, id, itemSkill, skill);
         }
@@ -586,6 +590,67 @@ class Backpack extends BackpackModel {
         }
 
         return true;
+    }
+
+    usePetFoodItem(session, id, itemSkill, skill) {
+        const eater = this.fetchPetFoodEater(session);
+        if (!eater || !this.canEatPetFood(eater, itemSkill)) {
+            return true;
+        }
+
+        const feed = Number(skill.fetchSemantic().feed) || 0;
+        this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
+            this.applyPetFood(eater, feed);
+            session.dataSendToMeAndOthers(ServerResponse.skillStarted(eater, eater.fetchId(), skill), eater);
+        });
+        return true;
+    }
+
+    fetchPetFoodEater(session) {
+        const actor = session.actor;
+        if (actor.isPet?.() === true || actor.fetchIsPet?.() === true || actor.petInstance === true) {
+            return actor;
+        }
+
+        if (actor.isMounted?.() === true || actor.fetchMounted?.() === true || actor.mounted === true) {
+            return actor;
+        }
+
+        return null;
+    }
+
+    canEatPetFood(eater, itemSkill) {
+        if (typeof eater.canEatPetFood === 'function') {
+            return eater.canEatPetFood(itemSkill);
+        }
+
+        const allowed = itemSkill.foodFor || [];
+        const categories = this.fetchPetFoodCategories(eater);
+        return allowed.some((category) => categories.includes(category));
+    }
+
+    fetchPetFoodCategories(eater) {
+        if (Array.isArray(eater.petFoodCategories)) {
+            return eater.petFoodCategories;
+        }
+        if (typeof eater.fetchPetFoodCategories === 'function') {
+            return eater.fetchPetFoodCategories() || [];
+        }
+
+        const category = eater.fetchPetFoodCategory?.() || eater.petFoodCategory || eater.mountType || eater.kind;
+        return category ? [String(category)] : [];
+    }
+
+    applyPetFood(eater, feed) {
+        if (typeof eater.setCurrentFeed === 'function' && typeof eater.fetchCurrentFeed === 'function') {
+            eater.setCurrentFeed(eater.fetchCurrentFeed() + feed);
+        } else if (typeof eater.setCurrentFed === 'function' && typeof eater.fetchCurrentFed === 'function') {
+            eater.setCurrentFed(eater.fetchCurrentFed() + feed);
+        } else {
+            eater.currentFeed = (Number(eater.currentFeed) || 0) + feed;
+        }
+        eater.broadcastStatusUpdate?.();
+        eater.statusUpdateVitals?.(eater);
     }
 
     useFishShotItem(session, id, itemSkill, skill) {

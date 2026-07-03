@@ -1081,6 +1081,7 @@ const striderFood = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(51
 assert(striderFood, 'Food for Strider should resolve to an item skill');
 assert.strictEqual(striderFood.fetchSelfId(), 2101, 'Food for Strider should use sourced skill 2101');
 assert.strictEqual(striderFood.fetchSemantic().feed, 200, 'Food for Strider should preserve sourced feed 200 metadata');
+assert.deepStrictEqual(C4ItemSkills.resolve(5168).foodFor, ['strider'], 'Food for Strider should preserve sourced strider-only food category');
 
 const deluxeStriderFood = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5169));
 assert(deluxeStriderFood, 'Deluxe Food for Strider should resolve to an item skill');
@@ -1091,6 +1092,26 @@ const wyvernFood = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(631
 assert(wyvernFood, 'Food for Wyvern should resolve to an item skill');
 assert.strictEqual(wyvernFood.fetchSelfId(), 2180, 'Food for Wyvern should use sourced skill 2180');
 assert.strictEqual(wyvernFood.fetchSemantic().feed, 450, 'Food for Wyvern should preserve sourced feed 450 metadata');
+
+const unmountedPetFoodBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+unmountedPetFoodBackpack.items = [
+    item(28, { selfId: 5168, kind: 'Other.PetFood', amount: 1 })
+];
+unmountedPetFoodBackpack.useItem(sessionFor(unmountedPetFoodBackpack), 28);
+assert(unmountedPetFoodBackpack.fetchItemRaw(28), 'PetFood should not consume when player is not mounted or a pet');
+
+const mountedPetFoodBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+mountedPetFoodBackpack.items = [
+    item(29, { selfId: 5168, kind: 'Other.PetFood', amount: 1 })
+];
+const mountedPetFoodSession = sessionFor(mountedPetFoodBackpack);
+mountedPetFoodSession.actor.mounted = true;
+mountedPetFoodSession.actor.petFoodCategories = ['strider'];
+mountedPetFoodSession.actor.currentFeed = 100;
+mountedPetFoodBackpack.useItem(mountedPetFoodSession, 29);
+assert.strictEqual(mountedPetFoodBackpack.fetchItemRaw(29), undefined, 'PetFood should consume one item when mounted eater category matches');
+assert.strictEqual(mountedPetFoodSession.actor.currentFeed, 300, 'Food for Strider should add sourced feed 200 to mounted eater');
+assert(mountedPetFoodSession.packets.some((packet) => packet[0] === 0x48), 'PetFood should emit sourced food skill packet on success');
 
 const mysteryPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5234));
 assert(mysteryPotion, 'Mystery Potion should resolve to an item skill');
