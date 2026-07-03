@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 const TABLE = 'bot_life_state';
+const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -183,6 +184,7 @@ function recordFromSession(session, phase, reason = '') {
         role: session.botStatus?.role || null,
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         route: currentSpot?.route || null,
+        build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason

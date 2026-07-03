@@ -5,6 +5,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const CLASS_POOL = [
@@ -262,6 +263,7 @@ function stateFor(character, index, seedMeta = {}) {
             role: base.role,
             classId,
             route: spot?.route || null,
+            build: GearSkillHints.forCharacter({ classId, level }, { role: base.role }),
             generatedCold: true,
             generatedIndex: index,
             levelBand: profileForIndex(index).band

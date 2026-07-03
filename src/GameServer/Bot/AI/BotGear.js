@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 
 const ARMOR_SLOTS = {
     earringRight: 1,
@@ -308,6 +309,7 @@ function planFor(character) {
         rank,
         role,
         style,
+        hint: GearSkillHints.forCharacter({ classId, level }, { role }),
         items: plan.filter(Boolean)
     };
 }

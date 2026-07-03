@@ -6,6 +6,7 @@ const tests = [
     'tests/test_bot_ai_visibility.js',
     'tests/test_bot_chat_text.js',
     'tests/test_bot_gear.js',
+    'tests/test_bot_gear_skill_hints.js',
     'tests/test_bot_hunting_self_defense.js',
     'tests/test_bot_leveling_routes.js',
     'tests/test_c4_buff_modifiers.js',
