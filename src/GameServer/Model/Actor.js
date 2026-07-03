@@ -16,6 +16,10 @@ class ActorModel extends CreatureModel {
         this.model.cp = data;
     }
 
+    setCharges(data) {
+        this.model.charges = data;
+    }
+
     setPvp(data) {
         this.model.pvp = data;
     }
@@ -124,6 +128,10 @@ class ActorModel extends CreatureModel {
 
     fetchMaxCp() {
         return this.model.maxCp || 0;
+    }
+
+    fetchCharges() {
+        return this.model.charges || 0;
     }
 
     fetchSwim() {

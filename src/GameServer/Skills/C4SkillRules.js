@@ -501,6 +501,7 @@ const RULES = {
     2162: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 3, multiplier: 2.0, blessedSpiritshot: true },
     2163: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 4, multiplier: 2.0, blessedSpiritshot: true },
     2164: { skillType: SPIRITSHOT, trait: 'shot', target: 'self', ssBoost: 0, element: 5, multiplier: 2.0, blessedSpiritshot: true },
+    2165: { skillType: CHARGE, trait: 'charge', target: 'self', ssBoost: 0, maxCharges: 2 },
     2166: { skillType: COMBAT_POINT_HEAL, trait: 'cp', target: 'self', ssBoost: 0, isPotion: true },
     2167: { skillType: GIVE_SP, trait: 'sp', target: 'self', ssBoost: 0, hitTime: 200, staticHitTime: true, magicLevel: 1 },
     2168: { skillType: EFFECT, trait: 'lucky_charm', effect: 'charm_of_luck', effectType: 'buff', target: 'self', ssBoost: 0, hitTime: 2000, staticHitTime: true, magicLevel: 1, baseLandRate: 100 },

@@ -21,6 +21,7 @@ function creature(overrides = {}) {
         maxHp: overrides.maxHp ?? 100,
         mp: overrides.mp ?? 100,
         maxMp: overrides.maxMp ?? 100,
+        charges: overrides.charges ?? 0,
         level: overrides.level ?? 20,
         effects: {},
         soulshotLoaded: false,
@@ -32,6 +33,7 @@ function creature(overrides = {}) {
         fetchMaxHp() { return this.maxHp; },
         fetchMp() { return this.mp; },
         fetchMaxMp() { return this.maxMp; },
+        fetchCharges() { return this.charges; },
         fetchCollectiveMAtk: () => overrides.mAtk ?? 100,
         fetchCollectivePAtk: () => overrides.pAtk ?? 100,
         fetchCollectivePDef: () => overrides.pDef ?? 100,
@@ -45,6 +47,7 @@ function creature(overrides = {}) {
         fetchHead: () => overrides.head ?? 0,
         setHp(value) { this.hp = value; },
         setMp(value) { this.mp = value; },
+        setCharges(value) { this.charges = value; },
         statusUpdateVitals() {},
         backpack: {
             fetchTotalWeaponPAtkRnd: () => 0
@@ -1816,8 +1819,10 @@ assert.strictEqual(focusSonicData.levels.length, 7, 'Focus Sonic should preserve
 assert.strictEqual(focusSonicData.levels[0].power, 1, 'Focus Sonic level 1 should preserve sourced maxCharges 1');
 assert.strictEqual(focusSonicData.levels[6].power, 7, 'Focus Sonic level 7 should preserve sourced maxCharges 7');
 assert.strictEqual(focusSonicData.levels[6].mp, 10, 'Focus Sonic level 7 MP should use sourced mpConsume 10');
+const focusSonicActor = creature({ charges: 0 });
+const focusSonicSession = session(focusSonicActor);
 const focusSonic = skill({ selfId: 8, name: 'Focus Sonic', spell: false, power: 7, level: 7, distance: -1 });
-const focusSonicOutcome = SkillEffects.execute(session(), caster, caster, focusSonic, { magicSkill: false });
+const focusSonicOutcome = SkillEffects.execute(focusSonicSession, focusSonicActor, focusSonicActor, focusSonic, { magicSkill: false });
 assert.strictEqual(focusSonic.fetchSkillType(), C4SkillRules.CHARGE, 'Focus Sonic should preserve sourced CHARGE semantics');
 assert.strictEqual(focusSonic.fetchTargetKind(), 'self', 'Focus Sonic should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(focusSonic.fetchSsBoost(), 0, 'Focus Sonic should not use shot boost semantics');
@@ -1825,7 +1830,10 @@ assert.strictEqual(focusSonic.fetchSemantic().maxCharges, 7, 'Focus Sonic level 
 assert.strictEqual(focusSonic.fetchSemantic().aggroPoints, 200, 'Focus Sonic should preserve sourced aggroPoints 200 metadata');
 assert.deepStrictEqual(focusSonic.fetchSemantic().requires, { weaponsAllowed: 524 }, 'Focus Sonic should preserve sourced weapon requirement');
 assert.strictEqual(focusSonicOutcome.damage, 0, 'Focus Sonic should not be treated as a damage skill without sourced damage semantics');
-assert.strictEqual(focusSonicOutcome.effect, null, 'Focus Sonic should not invent an effect while charge runtime is not implemented');
+assert.strictEqual(focusSonicOutcome.effect, null, 'Focus Sonic should not invent an EffectStore buff for sourced CHARGE semantics');
+assert.strictEqual(focusSonicOutcome.charges, 1, 'Focus Sonic should increase charges by one using sourced CHARGE semantics');
+assert.strictEqual(focusSonicActor.fetchCharges(), 1, 'Focus Sonic should store the increased charge count on the actor');
+assert(focusSonicSession.packets.some((packet) => packet[0] === 0xf3 && packet.readInt32LE(1) === 1), 'Focus Sonic should refresh C4 EtcStatusUpdate charges');
 
 const focusForceData = activeSkills.find((entry) => entry.selfId === 50);
 assert(focusForceData, 'Focus Force should be present in active skills data');
@@ -1836,8 +1844,9 @@ assert.strictEqual(focusForceData.levels.length, 7, 'Focus Force should preserve
 assert.strictEqual(focusForceData.levels[0].power, 1, 'Focus Force level 1 should preserve sourced maxCharges 1');
 assert.strictEqual(focusForceData.levels[6].power, 7, 'Focus Force level 7 should preserve sourced maxCharges 7');
 assert.strictEqual(focusForceData.levels[6].mp, 7, 'Focus Force level 7 MP should use sourced mpConsume 7');
+const focusForceActor = creature({ charges: 7 });
 const focusForce = skill({ selfId: 50, name: 'Focus Force', spell: false, power: 7, level: 7, distance: -1 });
-const focusForceOutcome = SkillEffects.execute(session(), caster, caster, focusForce, { magicSkill: false });
+const focusForceOutcome = SkillEffects.execute(session(focusForceActor), focusForceActor, focusForceActor, focusForce, { magicSkill: false });
 assert.strictEqual(focusForce.fetchSkillType(), C4SkillRules.CHARGE, 'Focus Force should preserve sourced CHARGE semantics');
 assert.strictEqual(focusForce.fetchTargetKind(), 'self', 'Focus Force should preserve sourced TARGET_SELF semantics');
 assert.strictEqual(focusForce.fetchSsBoost(), 0, 'Focus Force should not use shot boost semantics');
@@ -1845,7 +1854,9 @@ assert.strictEqual(focusForce.fetchSemantic().maxCharges, 7, 'Focus Force level 
 assert.strictEqual(focusForce.fetchSemantic().aggroPoints, 150, 'Focus Force should preserve sourced aggroPoints 150 metadata');
 assert.deepStrictEqual(focusForce.fetchSemantic().requires, { weaponsAllowed: 1024 }, 'Focus Force should preserve sourced fist weapon requirement');
 assert.strictEqual(focusForceOutcome.damage, 0, 'Focus Force should not be treated as a damage skill without sourced damage semantics');
-assert.strictEqual(focusForceOutcome.effect, null, 'Focus Force should not invent an effect while charge runtime is not implemented');
+assert.strictEqual(focusForceOutcome.effect, null, 'Focus Force should not invent an EffectStore buff for sourced CHARGE semantics');
+assert.strictEqual(focusForceOutcome.charges, 7, 'Focus Force should keep charges capped at sourced maxCharges 7');
+assert.strictEqual(focusForceActor.fetchCharges(), 7, 'Focus Force should not exceed sourced maxCharges');
 
 const sonicBusterData = activeSkills.find((entry) => entry.selfId === 9);
 assert(sonicBusterData, 'Sonic Buster should be present in active skills data');

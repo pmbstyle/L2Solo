@@ -36,6 +36,7 @@ function sessionFor(backpack, options = {}) {
     let hp = options.hp ?? 100;
     let cp = options.cp ?? 0;
     let sp = options.sp ?? 0;
+    let charges = options.charges ?? 0;
     const actor = {
         backpack,
         effects: {},
@@ -70,6 +71,8 @@ function sessionFor(backpack, options = {}) {
         fetchCp: () => cp,
         fetchMaxCp: () => options.maxCp ?? 0,
         setCp(value) { cp = value; },
+        fetchCharges: () => charges,
+        setCharges(value) { charges = value; },
         fetchMaxLoad: () => 1000,
         fetchCollectivePAtk: () => 1,
         fetchCollectiveAtkSpd: () => 1,
@@ -625,6 +628,13 @@ assert(greaterMagicHastePotion, 'Greater Magic Haste Potion should resolve to an
 assert.strictEqual(greaterMagicHastePotion.fetchLevel(), 2, 'Greater Magic Haste Potion should preserve sourced item_skill level 2');
 assert.strictEqual(greaterMagicHastePotion.fetchSemantic().stats.castSpdMul, 1.3, 'Greater Magic Haste Potion should preserve sourced mAtkSpd 1.3 as cast speed multiplier');
 
+const energyStone = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5589));
+assert(energyStone, 'Energy Stone should resolve to an item skill');
+assert.strictEqual(energyStone.fetchSelfId(), 2165, 'Energy Stone should use sourced skill 2165');
+assert.strictEqual(energyStone.fetchPower(), 2, 'Energy Stone should preserve sourced maxCharges 2');
+assert.strictEqual(energyStone.fetchSkillType(), C4SkillRules.CHARGE, 'Energy Stone should preserve sourced CHARGE semantics');
+assert.strictEqual(energyStone.fetchSemantic().maxCharges, 2, 'Energy Stone should preserve sourced maxCharges metadata');
+
 const wakingScroll = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6037));
 assert(wakingScroll, 'Waking Scroll should resolve to an item skill');
 assert.strictEqual(wakingScroll.fetchSelfId(), 2170, 'Waking Scroll should use sourced skill 2170');
@@ -665,6 +675,16 @@ const magicHasteSession = sessionFor(magicHasteBackpack);
 magicHasteBackpack.useItem(magicHasteSession, 42);
 assert.strictEqual(magicHasteBackpack.fetchItemFromSelfId(6036).fetchAmount(), 1, 'Greater Magic Haste Potion should consume one item on successful use');
 assert.strictEqual(EffectStats.multiplier(magicHasteSession.actor, 'castSpdMul'), 1.3, 'Greater Magic Haste Potion should apply sourced cast speed multiplier');
+
+const energyBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+energyBackpack.items = [
+    item(49, { selfId: 5589, kind: 'Other.Potion', amount: 2 })
+];
+const energySession = sessionFor(energyBackpack, { charges: 1 });
+energyBackpack.useItem(energySession, 49);
+assert.strictEqual(energyBackpack.fetchItemFromSelfId(5589).fetchAmount(), 1, 'Energy Stone should consume one item on successful use');
+assert.strictEqual(energySession.actor.fetchCharges(), 2, 'Energy Stone should increase charges up to sourced maxCharges 2');
+assert(energySession.packets.some((packet) => packet[0] === 0xf3 && packet.readInt32LE(1) === 2), 'Energy Stone should emit C4 EtcStatusUpdate with current charges');
 
 const savedWorldUsersForWaking = World.user;
 try {

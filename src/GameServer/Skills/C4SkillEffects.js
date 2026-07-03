@@ -26,6 +26,7 @@ function execute(session, actor, target, skill, context = {}) {
         mpRestore: 0,
         cpRestore: 0,
         spReward: 0,
+        charges: null,
         aggroDamage: 0,
         aggroReduced: false,
         aggroReduction: 0,
@@ -104,6 +105,11 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.GIVE_SP) {
         result.spReward = applyGiveSp(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.CHARGE) {
+        result.charges = applyCharge(session, actor, skill, semantic, magicSkill, context.attack);
         return result;
     }
 
@@ -321,6 +327,20 @@ function applyGiveSp(session, actor, target, skill, semantic, magicSkill, attack
     refreshUserInfo(session, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return amount;
+}
+
+function applyCharge(session, actor, skill, semantic, magicSkill, attack) {
+    const maxCharges = Math.max(0, Number(semantic.maxCharges ?? skill.fetchPower?.()) || 0);
+    const current = Math.max(0, Number(actor.fetchCharges?.() ?? actor.charges ?? 0) || 0);
+    const next = maxCharges > 0 ? Math.min(maxCharges, current + 1) : current + 1;
+    if (typeof actor.setCharges === 'function') {
+        actor.setCharges(next);
+    } else {
+        actor.charges = next;
+    }
+    refreshEtcStatus(session, actor);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return next;
 }
 
 function applyDrainSoul(actor, target) {
@@ -613,6 +633,15 @@ function refreshUserInfo(session, target) {
     if (target?.session?.dataSendToMe) {
         target.session.dataSendToMe(packet);
     } else if (target === session?.actor && session?.dataSendToMe) {
+        session.dataSendToMe(packet);
+    }
+}
+
+function refreshEtcStatus(session, actor) {
+    const packet = ServerResponse.etcStatusUpdate(actor);
+    if (actor?.session?.dataSendToMe) {
+        actor.session.dataSendToMe(packet);
+    } else if (actor === session?.actor && session?.dataSendToMe) {
         session.dataSendToMe(packet);
     }
 }

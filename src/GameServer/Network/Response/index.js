@@ -18,6 +18,7 @@ module.exports = {
          destDeselected: require('./DestDeselected'),
            destSelected: require('./DestSelected'),
                     die: require('./Die'),
+        etcStatusUpdate: require('./EtcStatusUpdate'),
               itemsList: require('./ItemsList'),
           logoutSuccess: require('./LogoutSuccess'),
          moveToLocation: require('./MoveToLocation'),

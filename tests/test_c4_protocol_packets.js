@@ -86,6 +86,7 @@ function fakeActor(paperdoll = fakePaperdoll()) {
         fetchEvalScore: () => 2,
         fetchMaxCp: () => 111,
         fetchCp: () => 77,
+        fetchCharges: () => 3,
         state: {
             fetchSeated: () => false
         }
@@ -181,6 +182,11 @@ assert.strictEqual(chooseInventoryItem[0], 0x6f, 'C4 ChooseInventoryItem respons
 assert.strictEqual(chooseInventoryItem.readInt32LE(1), 731, 'C4 ChooseInventoryItem should send the selected scroll item id');
 
 const actor = fakeActor();
+const etcStatusUpdate = ServerResponse.etcStatusUpdate(actor);
+assert.strictEqual(etcStatusUpdate[0], 0xf3, 'C4 EtcStatusUpdate response opcode should be 0xf3');
+assert.strictEqual(etcStatusUpdate.readInt32LE(1), 3, 'C4 EtcStatusUpdate should send current charges first');
+assert.strictEqual(etcStatusUpdate.readInt32LE(5), 0, 'C4 EtcStatusUpdate should default weight penalty to zero');
+
 const userInfo = ServerResponse.userInfo(actor);
 assert.strictEqual(userInfo[0], 0x04);
 assert.deepStrictEqual(actor.paperdollIdSlots, Array.from({ length: 16 }, (_, i) => i));
