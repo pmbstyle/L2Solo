@@ -335,7 +335,8 @@ class Attack {
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
                 critical,
                 soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul'),
+                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
             }) * weaponModifier);
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
@@ -371,7 +372,8 @@ class Attack {
             ? 1
             : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
                 critical,
-                criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul')
+                criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
+                criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
             }) * weaponModifier);
         let flags = 0;
 

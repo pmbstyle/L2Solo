@@ -3,8 +3,15 @@ const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 
+function effectiveBaseStat(actor, stat, fallback) {
+    const base = Number(fallback()) || 0;
+    const added = base + EffectStats.add(actor, stat);
+    return Math.max(1, Math.round(added * EffectStats.multiplier(actor, `${stat}Mul`)));
+}
+
 function setCollectiveTotalHp(actor) {
-    const base = Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), actor.fetchCon()) * EffectStats.multiplier(actor, 'maxHpMul');
+    const con = effectiveBaseStat(actor, 'CON', () => actor.fetchCon());
+    const base = (Formulas.calcHp(actor.fetchLevel(), actor.fetchClassId(), con) * EffectStats.multiplier(actor, 'maxHpMul')) + EffectStats.add(actor, 'maxHpAdd');
     actor.setMaxHp(base);
     actor.setHp(Math.min(actor.fetchHp(), actor.fetchMaxHp()));
 }
@@ -19,30 +26,36 @@ function getClassTransfer(classId) {
 
 function setCollectiveTotalMp(actor) {
     const transfer = getClassTransfer(actor.fetchClassId());
-    const base  = Formulas.calcMp(actor.fetchLevel(), actor.isSpellcaster(), transfer, actor.fetchMen());
+    const men = effectiveBaseStat(actor, 'MEN', () => actor.fetchMen());
+    const base  = Formulas.calcMp(actor.fetchLevel(), actor.isSpellcaster(), transfer, men);
     const bonus = actor.backpack.fetchTotalArmorBonusMp();
-    actor.setMaxMp((base + bonus) * EffectStats.multiplier(actor, 'maxMpMul'));
+    actor.setMaxMp(((base + bonus) * EffectStats.multiplier(actor, 'maxMpMul')) + EffectStats.add(actor, 'maxMpAdd'));
     actor.setMp(Math.min(actor.fetchMp(), actor.fetchMaxMp()));
 }
 
 function setCollectiveTotalLoad(actor) {
-    const base = Formulas.calcMaxLoad(actor.fetchCon()) + EffectStats.add(actor, 'maxLoad');
+    const con = effectiveBaseStat(actor, 'CON', () => actor.fetchCon());
+    const base = Formulas.calcMaxLoad(con) + EffectStats.add(actor, 'maxLoad');
     actor.setMaxLoad(base);
     actor.setLoad(actor.backpack.fetchTotalLoad());
 }
 
 function setCollectiveTotalPAtk(actor) {
     const pAtk = actor.backpack.fetchTotalWeaponPAtk() ?? actor.fetchPAtk();
-    let base = Formulas.calcPAtk(actor.fetchLevel(), actor.fetchStr(), pAtk);
+    const str = effectiveBaseStat(actor, 'STR', () => actor.fetchStr());
+    let base = Formulas.calcPAtk(actor.fetchLevel(), str, pAtk);
     base = Math.round(base * legacyBuffMultiplier(actor, 'might', 'pAtkMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pAtkMul'));
+    base += EffectStats.add(actor, 'pAtkAdd');
     actor.setCollectivePAtk(base);
 }
 
 function setCollectiveTotalMAtk(actor) {
     const mAtk = actor.backpack.fetchTotalWeaponMAtk() ?? actor.fetchMAtk();
-    let base = Formulas.calcMAtk(actor.fetchLevel(), actor.fetchInt(), mAtk);
+    const int = effectiveBaseStat(actor, 'INT', () => actor.fetchInt());
+    let base = Formulas.calcMAtk(actor.fetchLevel(), int, mAtk);
     base = Math.round(base * EffectStats.multiplier(actor, 'mAtkMul'));
+    base += EffectStats.add(actor, 'mAtkAdd');
     actor.setCollectiveMAtk(base);
 }
 
@@ -57,7 +70,8 @@ function setCollectiveTotalPDef(actor) {
 
 function setCollectiveTotalMDef(actor) {
     const mDef = actor.backpack.fetchTotalArmorMDef() ?? actor.fetchMDef();
-    let base = Formulas.calcMDef(actor.fetchLevel(), actor.fetchMen(), mDef);
+    const men = effectiveBaseStat(actor, 'MEN', () => actor.fetchMen());
+    let base = Formulas.calcMDef(actor.fetchLevel(), men, mDef);
     base = Math.round(base * EffectStats.multiplier(actor, 'mDefMul'));
     base += EffectStats.add(actor, 'mDefAdd');
     actor.setCollectiveMDef(base);
@@ -65,43 +79,50 @@ function setCollectiveTotalMDef(actor) {
 
 function setCollectiveTotalAccur(actor) {
     const accur = actor.backpack.fetchTotalWeaponAccur() ?? actor.fetchAccur();
-    const base  = Formulas.calcAccur(actor.fetchLevel(), actor.fetchDex(), accur) + EffectStats.add(actor, 'pAccuracyCombatAdd');
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    const base  = Formulas.calcAccur(actor.fetchLevel(), dex, accur) + EffectStats.add(actor, 'pAccuracyCombatAdd');
     actor.setCollectiveAccur(base);
 }
 
 function setCollectiveTotalEvasion(actor) {
     const evasion = actor.backpack.fetchTotalArmorEvasion() ?? actor.fetchEvasion();
-    const base    = Formulas.calcEvasion(actor.fetchLevel(), actor.fetchDex(), evasion) + EffectStats.add(actor, 'pEvasionRateAdd');
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    const base    = Formulas.calcEvasion(actor.fetchLevel(), dex, evasion) + EffectStats.add(actor, 'pEvasionRateAdd');
     actor.setCollectiveEvasion(base);
 }
 
 function setCollectiveTotalCritical(actor) {
     const critical = actor.backpack.fetchTotalWeaponCritical() ?? actor.fetchCritical();
-    const base    = (Formulas.calcCritical(actor.fetchDex(), critical) * EffectStats.multiplier(actor, 'pCritRateMul')) + EffectStats.add(actor, 'pCritRateAdd');
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    const base    = (Formulas.calcCritical(dex, critical) * EffectStats.multiplier(actor, 'pCritRateMul')) + EffectStats.add(actor, 'pCritRateAdd');
     actor.setCollectiveCritical(base);
 }
 
 function setCollectiveTotalAtkSpd(actor) {
     const atkSpd = actor.backpack.fetchTotalWeaponAtkSpd() ?? actor.fetchAtkSpd();
-    let base   = Formulas.calcAtkSpd(actor.fetchDex(), atkSpd);
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    let base   = Formulas.calcAtkSpd(dex, atkSpd);
     base = Math.round(base * legacyBuffMultiplier(actor, 'haste', 'pAtkSpdMul'));
     base = Math.round(base * EffectStats.multiplier(actor, 'pAtkSpdMul'));
     actor.setCollectiveAtkSpd(base);
 }
 
 function setCollectiveTotalCastSpd(actor) {
-    let base = Formulas.calcCastSpd(actor.fetchWit());
+    const wit = effectiveBaseStat(actor, 'WIT', () => actor.fetchWit());
+    let base = Formulas.calcCastSpd(wit);
     base = Math.round(base * EffectStats.multiplier(actor, 'castSpdMul'));
     actor.setCollectiveCastSpd(base);
 }
 
 function setCollectiveTotalWalkSpd(actor) {
-    const base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchWalkSpd());
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    const base = Formulas.calcSpeed(dex, actor.fetchWalkSpd());
     actor.setCollectiveWalkSpd(base);
 }
 
 function setCollectiveTotalRunSpd(actor) {
-    let base = Formulas.calcSpeed(actor.fetchDex(), actor.fetchRunSpd());
+    const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
+    let base = Formulas.calcSpeed(dex, actor.fetchRunSpd());
     base += legacyBuffAdd(actor, 'windwalk', 'runSpdAdd');
     base += EffectStats.add(actor, 'runSpdAdd');
     const effectMultiplier = EffectStats.multiplier(actor, 'runSpdMul');
@@ -130,6 +151,7 @@ function legacyBuffAdd(actor, typeOrKey, stat, fallback = 0) {
 }
 
 function calculateStats(session, actor) {
+    actor.backpack?.syncEquipmentItemSkills?.(actor);
     setCollectiveTotalHp      (actor);
     setCollectiveTotalMp      (actor);
     setCollectiveTotalLoad    (actor);

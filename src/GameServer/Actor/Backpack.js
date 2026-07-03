@@ -9,6 +9,7 @@ const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
+const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -710,6 +711,10 @@ class Backpack extends BackpackModel {
             ? weapon?.fetchSpiritshot?.()
             : weapon?.fetchSoulshot?.();
         return Math.max(0, Number(cost) || 0);
+    }
+
+    syncEquipmentItemSkills(actor) {
+        return C4EquipmentItemSkills.sync(actor, this.fetchItems());
     }
 
     equipGear(session, item) {
