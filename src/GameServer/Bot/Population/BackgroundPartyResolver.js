@@ -151,6 +151,7 @@ const BackgroundPartyResolver = {
                         wins,
                         losses,
                         spotId: spot.id,
+                        route: spot.route || null,
                         aggregate: true
                     }
                 }
@@ -185,7 +186,7 @@ const BackgroundPartyResolver = {
                 }
             },
             nextResolveAt: Date.now() + 45000 + Math.round(rng() * 90000),
-            debug: { fights, wins, losses, deaths, resting, spotId: spot.id }
+            debug: { fights, wins, losses, deaths, resting, spotId: spot.id, route: spot.route || null }
         };
     }
 };

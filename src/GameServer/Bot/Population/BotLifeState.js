@@ -181,6 +181,8 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
+        classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
+        route: currentSpot?.route || null,
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
@@ -674,6 +676,7 @@ const BotLifeState = {
             expEarned: Number(state.stats?.expEarned || 0) + Number(result.materialize?.exp || 0),
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
+            route: result.debug?.route || state.stats?.route || null,
             lastResolveDebug: result.debug || null
         };
         const inventory = { ...(state.inventory || {}) };

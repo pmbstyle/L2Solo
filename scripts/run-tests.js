@@ -7,6 +7,7 @@ const tests = [
     'tests/test_bot_chat_text.js',
     'tests/test_bot_gear.js',
     'tests/test_bot_hunting_self_defense.js',
+    'tests/test_bot_leveling_routes.js',
     'tests/test_c4_buff_modifiers.js',
     'tests/test_c4_protocol_packets.js',
     'tests/test_change_class.js',

@@ -340,13 +340,26 @@ const PopulationService = {
                     if (members.length < Config.partyMinSize) return null;
 
                     const leader = chooseLeader(members);
+                    const partySpot = SpotProfiles.findForState({
+                        ...leader,
+                        spotId: null,
+                        party: {
+                            ...(leader.party || {}),
+                            partyId: 'forming',
+                            role: roleForState(leader)
+                        },
+                        stats: {
+                            ...(leader.stats || {}),
+                            routeMode: 'party'
+                        }
+                    }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
                     const partyId = `bgp_${Date.now().toString(36)}_${leader.characterId}`;
                     const nextResolveAt = Date.now() + 45000 + Math.round(Math.random() * 90000);
                     const party = {
                         partyId,
                         leaderId: leader.characterId,
                         memberIds: members.map((state) => state.characterId),
-                        spotId: leader.spotId,
+                        spotId: partySpot?.id || leader.spotId,
                         startedAt: Date.now(),
                         nextResolveAt,
                         cohesion: 0.55 + Math.random() * 0.25,
@@ -354,7 +367,8 @@ const PopulationService = {
                         roleCoverage: roleCoverage(members),
                         stats: {
                             formedAt: Date.now(),
-                            memberNames: members.map((state) => state.name)
+                            memberNames: members.map((state) => state.name),
+                            route: partySpot?.route || null
                         }
                     };
 
@@ -368,10 +382,11 @@ const PopulationService = {
                                 roleForState(member),
                                 savedParty.leaderId
                             ))
-                        ), Promise.resolve()).then(() => LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${leader.spotId}`, {
+                        ), Promise.resolve()).then(() => LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${party.spotId}`, {
                             partyId: savedParty.partyId,
                             spotId: savedParty.spotId,
-                            memberIds: savedParty.memberIds
+                            memberIds: savedParty.memberIds,
+                            route: party.stats.route
                         }, 2)).then(() => {
                             Metrics.recordPartyFormation();
                             created.push(savedParty);
@@ -461,7 +476,19 @@ const PopulationService = {
             }
 
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
-            const spot = SpotProfiles.findById(party.spotId) || SpotProfiles.findForState(leader);
+            const spot = SpotProfiles.findForState({
+                ...leader,
+                spotId: party.spotId,
+                party: {
+                    ...(leader.party || {}),
+                    partyId: party.partyId,
+                    role: roleForState(leader)
+                },
+                stats: {
+                    ...(leader.stats || {}),
+                    routeMode: 'party'
+                }
+            }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findForState(leader);
             if (!spot) {
                 Metrics.recordSkippedResolve();
                 return { ok: false, reason: 'missing_spot', party };
@@ -487,7 +514,8 @@ const PopulationService = {
                 roleCoverage: roleCoverage(members),
                 stats: {
                     ...(party.stats || {}),
-                    ...(result.partyPatch.stats || {})
+                    ...(result.partyPatch.stats || {}),
+                    route: spot.route || party.stats?.route || null
                 }
             })).then((updatedParty) => {
                 Metrics.recordPartyResolve();

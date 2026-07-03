@@ -224,7 +224,8 @@ const BackgroundResolver = {
                 fights,
                 wins,
                 died,
-                spotId: spot.id
+                spotId: spot.id,
+                route: spot.route || null
             }
         };
     }

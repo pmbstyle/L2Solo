@@ -1,5 +1,6 @@
 const GRID_SIZE = 6000;
 const DEFAULT_LEVEL_RANGE = 3;
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 
 function distance2d(a, b) {
     if (!a || !b) return 0;
@@ -140,6 +141,26 @@ const SpotService = {
                     levelGap
                 };
             })
+            .map((candidate) => {
+                const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, {
+                    level: targetLevel,
+                    stats: {
+                        role: status.role,
+                        classId: status.classId
+                    }
+                }, {
+                    mode: options.mode || 'solo',
+                    role: options.role || status.role
+                });
+                const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
+                return {
+                    ...candidate,
+                    spot: decoratedSpot,
+                    score: candidate.score + routeMatch.routeScore,
+                    route: decoratedSpot.route || null,
+                    routeScore: routeMatch.routeScore
+                };
+            })
             .sort((a, b) => b.score - a.score);
 
         return candidates[0] || null;
@@ -155,7 +176,8 @@ const SpotService = {
             maxLevel: spot.maxLevel,
             avgLevel: spot.avgLevel,
             density: spot.density,
-            npcNames: [...spot.npcNames]
+            npcNames: [...spot.npcNames],
+            route: spot.route || null
         };
         return session.currentSpot;
     },

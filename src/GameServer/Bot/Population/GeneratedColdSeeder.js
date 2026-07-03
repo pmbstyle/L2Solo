@@ -4,6 +4,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const CLASS_POOL = [
@@ -74,16 +75,29 @@ function randomNear(loc, index, radius = 900) {
     };
 }
 
-function targetSpot(level, index) {
+function targetSpot(level, index, base = {}) {
+    const state = {
+        level,
+        levelBand: `${Math.max(1, level - 2)}-${level + 2}`,
+        stats: {
+            role: base.role || 'dps',
+            classId: base.classId || null
+        }
+    };
     const profiles = SpotProfiles.ensure()
-        .filter((spot) => spot.minLevel <= level + 3 && spot.maxLevel >= level - 3)
+        .filter((spot) => spot.minLevel <= level + 3 && spot.maxLevel >= level - 3);
+    const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo' });
+    if (guided.length > 0) {
+        return guided[index % Math.min(4, guided.length)].spot;
+    }
+
+    return profiles
         .sort((a, b) => {
             const aGap = Math.abs(a.avgLevel - level);
             const bGap = Math.abs(b.avgLevel - level);
             if (aGap !== bGap) return aGap - bGap;
             return b.density - a.density;
-        });
-    return profiles[index % Math.max(1, profiles.length)] || SpotProfiles.ensure()[0] || null;
+        })[index % Math.max(1, profiles.length)] || SpotProfiles.ensure()[0] || null;
 }
 
 function usernameFor(index) {
@@ -179,7 +193,7 @@ function ensureCharacter(username, index) {
         const template = classInfo(base.classId);
         const levelProfile = profileForIndex(index);
         const level = levelProfile.level;
-        const spot = targetSpot(level, index);
+        const spot = targetSpot(level, index, base);
         const loc = randomNear(spot?.center || { locX: 0, locY: 0, locZ: 0 }, index);
         const vitals = vitalsFor(template, level);
         const charData = {
@@ -209,8 +223,9 @@ function ensureCharacter(username, index) {
 
 function stateFor(character, index, seedMeta = {}) {
     const base = seedMeta.base || pick(index, CLASS_POOL);
+    const classId = Number(character.classId || base.classId);
     const level = Number(character.level || profileForIndex(index).level);
-    const spot = seedMeta.spot || targetSpot(level, index);
+    const spot = seedMeta.spot || targetSpot(level, index, { ...base, classId });
     const loc = seedMeta.loc || randomNear(spot?.center || {
         locX: character.locX,
         locY: character.locY,
@@ -218,7 +233,7 @@ function stateFor(character, index, seedMeta = {}) {
     }, index);
     const vitals = seedMeta.vitals || vitalsFor(classInfo(base.classId), level);
     const now = Date.now();
-    const shotPlan = ShotStock.planFor({ classId: base.classId, rank: 'none' });
+    const shotPlan = ShotStock.planFor({ classId, rank: 'none' });
 
     return {
         characterId: Number(character.id),
@@ -245,6 +260,8 @@ function stateFor(character, index, seedMeta = {}) {
         party: { partyId: null, role: base.role, leaderId: null },
         stats: {
             role: base.role,
+            classId,
+            route: spot?.route || null,
             generatedCold: true,
             generatedIndex: index,
             levelBand: profileForIndex(index).band

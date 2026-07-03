@@ -1,4 +1,5 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 
 function rewardForLevel(level) {
     const value = Math.max(1, Number(level || 1));
@@ -31,6 +32,7 @@ function profileFromSpot(spot) {
         avgLevel,
         density: spot.density,
         npcNames: [...(spot.npcNames || [])],
+        route: spot.route || null,
         rewards: rewardForLevel(avgLevel),
         mob: combatForLevel(avgLevel),
         risk: Math.max(0, avgLevel - spot.minLevel) + Math.max(0, 5 - Math.min(5, spot.density))
@@ -54,21 +56,28 @@ const SpotProfiles = {
         return this.ensure().find((profile) => profile.id === id) || null;
     },
 
-    findForState(state) {
+    findForState(state, options = {}) {
         if (state?.spotId) {
             const existing = this.findById(state.spotId);
-            if (existing) return existing;
+            if (existing) {
+                const match = LevelingRoutes.scoreSpot(existing, state, options);
+                return LevelingRoutes.decorateSpot(existing, match);
+            }
         }
 
-        const targetLevel = Number(String(state?.levelBand || '1').split('-')[0]) || 1;
-        return this.ensure()
-            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4)
-            .sort((a, b) => {
-                const aGap = Math.abs(a.avgLevel - targetLevel);
-                const bGap = Math.abs(b.avgLevel - targetLevel);
-                if (aGap !== bGap) return aGap - bGap;
-                return b.density - a.density;
-            })[0] || this.ensure()[0] || null;
+        const targetLevel = LevelingRoutes.targetLevelForState(state);
+        const profiles = this.ensure()
+            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+        const guided = LevelingRoutes.bestSpot(profiles, state, options);
+
+        if (guided?.spot) return guided.spot;
+
+        return profiles.sort((a, b) => {
+            const aGap = Math.abs(a.avgLevel - targetLevel);
+            const bGap = Math.abs(b.avgLevel - targetLevel);
+            if (aGap !== bGap) return aGap - bGap;
+            return b.density - a.density;
+        })[0] || this.ensure()[0] || null;
     }
 };
 
