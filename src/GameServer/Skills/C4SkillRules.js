@@ -23,6 +23,7 @@ const SPIRITSHOT = 'spiritshot';
 const SUMMON = 'summon';
 const SUMMON_PET = 'summonPet';
 const FEED_PET = 'feedPet';
+const BEAST_FEED = 'beastFeed';
 const ENCHANT_WEAPON = 'enchantWeapon';
 const ENCHANT_ARMOR = 'enchantArmor';
 const COSMETIC_FACE_LIFT = 'cosmeticFaceLift';
@@ -520,6 +521,8 @@ const RULES = {
     2185: { skillType: NOT_DONE, trait: 'fishshot', target: 'none', ssBoost: 0, operateType: 'active' },
     2186: { skillType: NOT_DONE, trait: 'fishshot', target: 'none', ssBoost: 0, operateType: 'active' },
     2187: { skillType: DUMMY, trait: 'dummy', target: 'self', ssBoost: 0, isPotion: true },
+    2188: { skillType: BEAST_FEED, trait: 'beast_feed', target: 'enemy', ssBoost: 0, hitTime: 1000, staticHitTime: true, castRange: 40, effectRange: 400, itemConsumeId: 6643, itemConsumeCount: 1, operateType: 'active' },
+    2189: { skillType: BEAST_FEED, trait: 'beast_feed', target: 'enemy', ssBoost: 0, hitTime: 1000, staticHitTime: true, castRange: 40, effectRange: 400, itemConsumeId: 6644, itemConsumeCount: 1, operateType: 'active' },
     2213: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true },
     2214: { skillType: RECALL, trait: 'recall', target: 'self', ssBoost: 0, hitTime: 20000, staticHitTime: true },
     2229: { skillType: UNLOCK, trait: 'deluxe_key_unlock', target: 'unlockable', ssBoost: 0, hitTime: 500, staticHitTime: true, castRange: 40, effectRange: 400, itemConsumeIdByLevel: [6665, 6666, 6667, 6668, 6669, 6670, 6671, 6672], itemConsumeCount: 1 },
@@ -832,6 +835,7 @@ module.exports = {
     SUMMON,
     SUMMON_PET,
     FEED_PET,
+    BEAST_FEED,
     ENCHANT_WEAPON,
     ENCHANT_ARMOR,
     COSMETIC_FACE_LIFT,

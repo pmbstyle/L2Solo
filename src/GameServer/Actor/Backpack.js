@@ -16,6 +16,7 @@ const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4RecipeItems  = invoke('GameServer/Items/C4RecipeItems');
 const C4MercTickets  = invoke('GameServer/Items/C4MercTickets');
+const C4BeastItems   = invoke('GameServer/Items/C4BeastItems');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -192,6 +193,12 @@ class Backpack extends BackpackModel {
                     });
                     return;
                 }
+
+                const beastItem = C4BeastItems.resolve(item.fetchSelfId());
+                if (beastItem && this.useBeastItem(session, item, beastItem)) {
+                    return;
+                }
+
                 const utilityItem = C4UtilityItems.resolve(item.fetchSelfId());
                 if (utilityItem && this.useUtilityItem(session, item, utilityItem)) {
                     return;
@@ -248,6 +255,119 @@ class Backpack extends BackpackModel {
             this.registerRecipe(session.actor, recipeItem);
         });
         return true;
+    }
+
+    useBeastItem(session, item, beastItem) {
+        if (beastItem.handler === 'BeastSpice') {
+            return this.useBeastSpiceItem(session, item, beastItem);
+        }
+
+        if (beastItem.handler === 'BeastSoulShot' || beastItem.handler === 'BeastSpiritShot') {
+            return this.useBeastShotItem(session, item, beastItem);
+        }
+
+        return false;
+    }
+
+    useBeastSpiceItem(session, item, beastItem) {
+        const skill = this.buildItemSkill(beastItem);
+        const target = this.fetchSelectedNpcTarget(session);
+        if (!skill || !this.canFeedBeastTarget(session.actor, target, skill)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        return this.castTargetedItemSkill(session, target, skill, () => {
+            if (session.actor.isDead() || !this.canFeedBeastTarget(session.actor, target, skill)) {
+                return;
+            }
+
+            this.deleteItem(session, item.fetchId(), beastItem.consumeCount || 1, () => {
+                target.feedBeast?.(session.actor, item.fetchSelfId());
+            });
+        });
+    }
+
+    useBeastShotItem(session, item, beastItem) {
+        const pet = this.fetchActivePet(session);
+        if (!pet || this.isPetDead(pet)) {
+            return true;
+        }
+
+        if (beastItem.handler === 'BeastSoulShot' && this.fetchPetShotCharge(pet, 'soulshot')) {
+            return true;
+        }
+
+        if (beastItem.blessed && session.actor.isInOlympiadMode?.()) {
+            return true;
+        }
+
+        const cost = this.fetchPetShotCost(pet, beastItem.charge);
+        if (cost <= 0 || item.fetchAmount() < cost) {
+            return true;
+        }
+
+        const skill = this.buildItemSkill(beastItem);
+        this.deleteItem(session, item.fetchId(), cost, () => {
+            this.setPetShotCharge(pet, beastItem.charge, beastItem.blessed);
+            if (skill) {
+                session.dataSendToMeAndOthers(ServerResponse.skillStarted(pet, pet.fetchId(), skill), pet);
+            }
+        });
+        return true;
+    }
+
+    fetchActivePet(session) {
+        return session.actor.fetchPet?.()
+            || session.actor.getPet?.()
+            || session.actor.pet
+            || session.actor.summon
+            || session.pet
+            || session.summon
+            || null;
+    }
+
+    isPetDead(pet) {
+        return pet.isDead?.() === true || pet.state?.fetchDead?.() === true;
+    }
+
+    fetchPetShotCost(pet, charge) {
+        const value = charge === 'spiritshot'
+            ? pet.fetchSpiritShotsPerHit?.() ?? pet.getSpiritShotsPerHit?.() ?? pet.spiritShotsPerHit
+            : pet.fetchSoulShotsPerHit?.() ?? pet.getSoulShotsPerHit?.() ?? pet.soulShotsPerHit;
+        return Math.max(1, Number(value) || 1);
+    }
+
+    fetchPetShotCharge(pet, charge) {
+        const value = charge === 'spiritshot'
+            ? pet.fetchChargedSpiritShot?.() ?? pet.getChargedSpiritShot?.() ?? pet.chargedSpiritShot
+            : pet.fetchChargedSoulShot?.() ?? pet.getChargedSoulShot?.() ?? pet.chargedSoulShot;
+        return !!value;
+    }
+
+    setPetShotCharge(pet, charge, blessed = false) {
+        if (charge === 'spiritshot') {
+            pet.setChargedSpiritShot?.(blessed ? 'blessed' : true);
+            pet.chargedSpiritShot = blessed ? 'blessed' : true;
+            return;
+        }
+
+        pet.setChargedSoulShot?.(true);
+        pet.chargedSoulShot = true;
+    }
+
+    canFeedBeastTarget(actor, target, skill) {
+        if (!target || target === actor) {
+            return false;
+        }
+        if (target.isFeedableBeast?.() !== true && target.fetchFeedableBeast?.() !== true && target.feedableBeast !== true) {
+            return false;
+        }
+        return this.isInSkillRange(actor, target, skill);
     }
 
     useMercTicketItem(session, id, mercTicket) {

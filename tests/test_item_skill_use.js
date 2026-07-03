@@ -16,6 +16,7 @@ const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4MercTickets = invoke('GameServer/Items/C4MercTickets');
+const C4BeastItems = invoke('GameServer/Items/C4BeastItems');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -226,6 +227,41 @@ function manorNpc(options = {}) {
     };
 }
 
+function pet(options = {}) {
+    let chargedSoulShot = options.chargedSoulShot ?? false;
+    let chargedSpiritShot = options.chargedSpiritShot ?? false;
+    return {
+        fetchId: () => options.id ?? 3000005,
+        fetchName: () => options.name || 'Pet',
+        fetchLocX: () => options.locX ?? 100,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        fetchSoulShotsPerHit: () => options.soulShotsPerHit ?? 2,
+        fetchSpiritShotsPerHit: () => options.spiritShotsPerHit ?? 3,
+        fetchChargedSoulShot: () => chargedSoulShot,
+        fetchChargedSpiritShot: () => chargedSpiritShot,
+        setChargedSoulShot(value) { chargedSoulShot = value; },
+        setChargedSpiritShot(value) { chargedSpiritShot = value; },
+        isDead: () => options.dead ?? false
+    };
+}
+
+function feedableBeast(options = {}) {
+    const fed = [];
+    return {
+        fetchId: () => options.id ?? 3000006,
+        fetchName: () => options.name || 'Feedable Beast',
+        fetchLocX: () => options.locX ?? 20,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        isFeedableBeast: () => options.feedable ?? true,
+        feedBeast(actor, itemId) {
+            fed.push({ actorId: actor.fetchId(), itemId });
+        },
+        fed
+    };
+}
+
 const hasteBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 hasteBackpack.items = [
     item(1, { selfId: 1062, amount: 2 })
@@ -430,6 +466,75 @@ mercBackpack.items = [
 ];
 mercBackpack.useItem(sessionFor(mercBackpack), 23);
 assert(mercBackpack.fetchItemRaw(23), 'MercTicket should not be consumed without sourced castle placement context');
+
+const goldenSpice = C4BeastItems.resolve(6643);
+assert(goldenSpice, 'Golden Spice should resolve to sourced BeastSpice metadata');
+assert.strictEqual(goldenSpice.skillId, 2188, 'Golden Spice should use sourced skill 2188');
+const beastItemBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+const goldenSpiceSkill = beastItemBackpack.buildItemSkill(goldenSpice);
+assert(goldenSpiceSkill, 'Golden Spice should build sourced BEAST_FEED skill');
+assert.strictEqual(goldenSpiceSkill.fetchSkillType(), C4SkillRules.BEAST_FEED, 'Golden Spice should preserve sourced BEAST_FEED semantics');
+assert.strictEqual(goldenSpiceSkill.fetchHitTime(), 1000, 'Golden Spice should preserve sourced 1000ms hit time');
+assert.strictEqual(goldenSpiceSkill.fetchSemantic().itemConsumeId, 6643, 'Golden Spice should preserve sourced consume item id');
+
+const savedSpiceSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const spiceBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    spiceBackpack.items = [
+        item(24, { selfId: 6643, kind: 'Other.None', amount: 1 })
+    ];
+    World.npc = { spawns: [feedableBeast({ id: 3000006 })], grid: {}, nextId: 9000001 };
+    const spiceSession = sessionFor(spiceBackpack, { destId: 3000006 });
+    spiceBackpack.useItem(spiceSession, 24);
+    assert.strictEqual(spiceSession.packets[0][0], 0x48, 'Golden Spice should start a targeted skill cast on a feedable beast');
+    assert.strictEqual(spiceBackpack.fetchItemFromSelfId(6643), undefined, 'Golden Spice should consume one item after valid feedable-beast cast');
+    assert.deepStrictEqual(World.npc.spawns[0].fed, [{ actorId: spiceSession.actor.fetchId(), itemId: 6643 }], 'Golden Spice should hand off to feedable beast hook');
+} finally {
+    global.setTimeout = savedSpiceSetTimeout;
+}
+
+const rejectedSpiceBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+rejectedSpiceBackpack.items = [
+    item(25, { selfId: 6644, kind: 'Other.None', amount: 1 })
+];
+World.npc = { spawns: [attackableNpc({ id: 3000007 })], grid: {}, nextId: 9000002 };
+rejectedSpiceBackpack.useItem(sessionFor(rejectedSpiceBackpack, { destId: 3000007 }), 25);
+assert(rejectedSpiceBackpack.fetchItemRaw(25), 'Crystal Spice should not consume on non-feedable target');
+
+const beastSoulshot = C4BeastItems.resolve(6645);
+assert(beastSoulshot, 'Beast Soulshot should resolve to sourced BeastSoulShot metadata');
+assert.strictEqual(beastSoulshot.skillId, 2033, 'Beast Soulshot should preserve sourced skill 2033');
+const petSoulshotBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+petSoulshotBackpack.items = [
+    item(26, { selfId: 6645, kind: 'Other.Shot', amount: 5 })
+];
+const soulPet = pet({ id: 3000008, soulShotsPerHit: 2 });
+const petSoulshotSession = sessionFor(petSoulshotBackpack, { pet: soulPet });
+petSoulshotSession.actor.fetchPet = () => soulPet;
+petSoulshotBackpack.useItem(petSoulshotSession, 26);
+assert.strictEqual(petSoulshotBackpack.fetchItemFromSelfId(6645).fetchAmount(), 3, 'Beast Soulshot should consume pet soulShotsPerHit');
+assert.strictEqual(soulPet.fetchChargedSoulShot(), true, 'Beast Soulshot should charge the active pet');
+assert(petSoulshotSession.packets.some((packet) => packet[0] === 0x48), 'Beast Soulshot should emit pet MagicSkillUse packet');
+
+const blessedBeastSpiritshot = C4BeastItems.resolve(6647);
+assert(blessedBeastSpiritshot, 'Blessed Beast Spiritshot should resolve to sourced BeastSpiritShot metadata');
+assert.strictEqual(blessedBeastSpiritshot.skillId, 2009, 'Blessed Beast Spiritshot should preserve sourced skill 2009');
+assert.strictEqual(blessedBeastSpiritshot.blessed, true, 'Blessed Beast Spiritshot should preserve blessed flag');
+const petSpiritshotBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+petSpiritshotBackpack.items = [
+    item(27, { selfId: 6647, kind: 'Other.Shot', amount: 5 })
+];
+const spiritPet = pet({ id: 3000009, spiritShotsPerHit: 3 });
+const petSpiritshotSession = sessionFor(petSpiritshotBackpack, { pet: spiritPet });
+petSpiritshotSession.actor.fetchPet = () => spiritPet;
+petSpiritshotBackpack.useItem(petSpiritshotSession, 27);
+assert.strictEqual(petSpiritshotBackpack.fetchItemFromSelfId(6647).fetchAmount(), 2, 'Blessed Beast Spiritshot should consume pet spiritShotsPerHit');
+assert.strictEqual(spiritPet.fetchChargedSpiritShot(), 'blessed', 'Blessed Beast Spiritshot should charge the active pet as blessed');
 
 const christmasTreeSkill = C4ItemSkills.resolve(5560);
 assert(christmasTreeSkill, 'Christmas Tree should resolve to a sourced SummonItems item skill');
