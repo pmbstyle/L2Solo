@@ -1174,10 +1174,25 @@ const noGradeCompressedSoulshots = C4ExtractableItems.resolve(5134);
 assert(noGradeCompressedSoulshots, 'Compressed Package of Soulshots: No Grade should resolve to extractable data');
 assert.deepStrictEqual(noGradeCompressedSoulshots.products, [{ selfId: 1835, amount: 300, chance: 100 }], 'Compressed Package of Soulshots: No Grade should preserve sourced extractable product');
 assert.deepStrictEqual(C4ExtractableItems.rollProducts(noGradeCompressedSoulshots, () => 0), [{ selfId: 1835, amount: 300 }], 'Compressed Package of Soulshots: No Grade should roll sourced product');
+assert.strictEqual(Object.keys(C4ExtractableItems.loadExtractableItems()).length, 246, 'Extractable item table should load all sourced Lisvus rows');
 
 const sGradeCompressedBlessedSpiritshots = C4ExtractableItems.resolve(5151);
 assert(sGradeCompressedBlessedSpiritshots, 'Compressed Package of Blessed Spiritshots: S-grade should resolve to extractable data');
 assert.deepStrictEqual(sGradeCompressedBlessedSpiritshots.products, [{ selfId: 3952, amount: 300, chance: 100 }], 'Compressed Package of Blessed Spiritshots: S-grade should preserve sourced extractable product');
+
+const greaterCompressedSoulshots = C4ExtractableItems.resolve(5250);
+assert(greaterCompressedSoulshots, 'Greater Compressed Package of Soulshots: No-grade should resolve to sourced extractable data');
+assert.deepStrictEqual(greaterCompressedSoulshots.products, [{ selfId: 1835, amount: 1000, chance: 100 }], 'Greater compressed package should preserve sourced amount 1000');
+
+const whiteCargoBox = C4ExtractableItems.resolve(7629);
+assert(whiteCargoBox, 'Looted Goods - White Cargo box should resolve from sourced extractable data');
+assert.strictEqual(whiteCargoBox.products.length, 11, 'White Cargo box should preserve all sourced chance groups');
+assert.deepStrictEqual(C4ExtractableItems.rollProducts(whiteCargoBox, () => 0.09), [{ selfId: 6688, amount: 1 }], 'White Cargo box should preserve Lisvus inclusive chance boundary');
+assert.deepStrictEqual(C4ExtractableItems.rollProducts(whiteCargoBox, () => 0.10), [{ selfId: 6689, amount: 1 }], 'White Cargo box should advance to the next sourced chance group after boundary');
+
+const fishOil = C4ExtractableItems.resolve(6411);
+assert(fishOil, 'Fish Oil should resolve from sourced extractable data');
+assert.deepStrictEqual(C4ExtractableItems.rollProducts(fishOil, () => 0.99), [], 'Extractable empty product marker should roll no reward');
 
 const savedExtractWorldPurchaseItem = World.purchaseItem;
 try {

@@ -1,26 +1,99 @@
-const EXTRACTABLE_ITEMS = {
-    5134: { products: [{ selfId: 1835, amount: 300, chance: 100 }] },
-    5135: { products: [{ selfId: 1463, amount: 300, chance: 100 }] },
-    5136: { products: [{ selfId: 1464, amount: 300, chance: 100 }] },
-    5137: { products: [{ selfId: 1465, amount: 300, chance: 100 }] },
-    5138: { products: [{ selfId: 1466, amount: 300, chance: 100 }] },
-    5139: { products: [{ selfId: 1467, amount: 300, chance: 100 }] },
-    5140: { products: [{ selfId: 2509, amount: 300, chance: 100 }] },
-    5141: { products: [{ selfId: 2510, amount: 300, chance: 100 }] },
-    5142: { products: [{ selfId: 2511, amount: 300, chance: 100 }] },
-    5143: { products: [{ selfId: 2512, amount: 300, chance: 100 }] },
-    5144: { products: [{ selfId: 2513, amount: 300, chance: 100 }] },
-    5145: { products: [{ selfId: 2514, amount: 300, chance: 100 }] },
-    5146: { products: [{ selfId: 3947, amount: 300, chance: 100 }] },
-    5147: { products: [{ selfId: 3948, amount: 300, chance: 100 }] },
-    5148: { products: [{ selfId: 3949, amount: 300, chance: 100 }] },
-    5149: { products: [{ selfId: 3950, amount: 300, chance: 100 }] },
-    5150: { products: [{ selfId: 3951, amount: 300, chance: 100 }] },
-    5151: { products: [{ selfId: 3952, amount: 300, chance: 100 }] }
-};
+const fs = require('fs');
+
+const EXTRACTABLE_DATA_PATH = 'data/ExtractableItems/extractable_items.csv';
+
+let extractableItems = null;
+
+function parseProductGroup(value) {
+    const parts = String(value || '').split(',').map((part) => Number(part));
+    if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) {
+        return null;
+    }
+
+    const chance = parts[parts.length - 1];
+    const itemParts = parts.slice(0, -1);
+    const items = [];
+    for (let index = 0; index < itemParts.length; index += 2) {
+        items.push({
+            selfId: itemParts[index],
+            amount: itemParts[index + 1]
+        });
+    }
+
+    if (items.length === 1) {
+        return {
+            selfId: items[0].selfId,
+            amount: items[0].amount,
+            chance
+        };
+    }
+
+    return { items, chance };
+}
+
+function parseLine(line) {
+    const clean = String(line || '').trim();
+    if (!clean || clean.startsWith('#')) {
+        return null;
+    }
+
+    const parts = clean.split(';');
+    const selfId = Number(parts.shift());
+    if (!Number.isFinite(selfId)) {
+        return null;
+    }
+
+    const products = parts.map(parseProductGroup).filter(Boolean);
+    const fullChance = products.reduce((total, product) => total + (Number(product.chance) || 0), 0);
+    if (fullChance > 100) {
+        return null;
+    }
+
+    return { selfId, products };
+}
+
+function loadExtractableItems() {
+    if (extractableItems) {
+        return extractableItems;
+    }
+
+    extractableItems = {};
+    if (!fs.existsSync(EXTRACTABLE_DATA_PATH)) {
+        return extractableItems;
+    }
+
+    fs.readFileSync(EXTRACTABLE_DATA_PATH, 'utf8')
+        .split(/\r?\n/)
+        .map(parseLine)
+        .filter(Boolean)
+        .forEach((extractableItem) => {
+            extractableItems[extractableItem.selfId] = {
+                products: extractableItem.products
+            };
+        });
+
+    return extractableItems;
+}
 
 function resolve(selfId) {
-    return EXTRACTABLE_ITEMS[Number(selfId)] || null;
+    return loadExtractableItems()[Number(selfId)] || null;
+}
+
+function normalizeProductGroup(productGroup) {
+    if (Array.isArray(productGroup.items)) {
+        return productGroup.items
+            .filter((product) => Number(product.selfId) > 0 && Number(product.amount) > 0)
+            .map((product) => ({
+                selfId: product.selfId,
+                amount: product.amount
+            }));
+    }
+
+    if (Number(productGroup.selfId) <= 0 || Number(productGroup.amount) <= 0) {
+        return [];
+    }
+
+    return [{ selfId: productGroup.selfId, amount: productGroup.amount }];
 }
 
 function rollProducts(extractableItem, rng = Math.random) {
@@ -32,11 +105,8 @@ function rollProducts(extractableItem, rng = Math.random) {
     let chanceFrom = 0;
     for (const productGroup of extractableItem.products) {
         const chance = Number(productGroup.chance) || 0;
-        if (roll >= chanceFrom && roll < chanceFrom + chance) {
-            return [productGroup].map((product) => ({
-                selfId: product.selfId,
-                amount: product.amount
-            }));
+        if (roll >= chanceFrom && roll <= chanceFrom + chance) {
+            return normalizeProductGroup(productGroup);
         }
         chanceFrom += chance;
     }
@@ -45,7 +115,8 @@ function rollProducts(extractableItem, rng = Math.random) {
 }
 
 module.exports = {
-    EXTRACTABLE_ITEMS,
+    EXTRACTABLE_DATA_PATH,
+    loadExtractableItems,
     resolve,
     rollProducts
 };
