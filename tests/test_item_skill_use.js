@@ -11,6 +11,7 @@ const Database = invoke('Database');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
 
 Database.updateItemAmount = () => Promise.resolve();
@@ -35,6 +36,7 @@ function sessionFor(backpack, options = {}) {
         activeBuffs: {},
         fetchId: () => 2000001,
         fetchName: () => 'Tester',
+        fetchLevel: () => options.level ?? 10,
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
@@ -100,6 +102,26 @@ function attackableNpc(options = {}) {
             absorbed.push({ id: actor.fetchId(), absorbedHp: this.fetchHp() });
         },
         absorbed
+    };
+}
+
+function manorNpc(options = {}) {
+    let dead = options.dead ?? false;
+    return {
+        model: {},
+        fetchId: () => options.id ?? 3000201,
+        fetchName: () => options.name || 'Manor Target',
+        fetchLevel: () => options.level ?? 10,
+        fetchKind: () => options.kind || 'Monster',
+        fetchLocX: () => options.locX ?? 100,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
+        fetchAttackable: () => options.attackable ?? true,
+        isDead: () => dead,
+        setDead(value) { dead = value; },
+        state: {
+            fetchDead: () => dead
+        }
     };
 }
 
@@ -301,6 +323,64 @@ assert.strictEqual(harvesting.fetchReuseTime(), 8000, 'Harvester should preserve
 assert.strictEqual(harvesting.fetchConsumedMp(), 3, 'Harvester should preserve sourced mpConsume 3');
 assert.strictEqual(harvesting.fetchSemantic().castRange, 20, 'Harvester should preserve sourced castRange');
 assert.strictEqual(harvesting.fetchSemantic().effectRange, 100, 'Harvester should preserve sourced effectRange');
+
+assert.strictEqual(ManorData.sowSuccessChance(5016, 10, 10), 90, 'Dark Coda should use sourced normal 90% sow base chance');
+assert.strictEqual(ManorData.sowSuccessChance(5650, 10, 10), 20, 'Alternative Dark Coda should use sourced 20% sow base chance');
+assert.strictEqual(ManorData.harvestSuccessChance(10, 10), 100, 'Harvest should use sourced 100% base chance near target level');
+
+const originalManorSetTimeout = global.setTimeout;
+const originalManorRandom = Math.random;
+const originalWorldPurchaseItem = World.purchaseItem;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+Math.random = () => 0;
+
+try {
+    const manorTarget = manorNpc({ id: 3000201, level: 10, locX: 10 });
+    const manorBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    manorBackpack.items = [
+        item(30, { selfId: 5016, kind: 'Other.Seed', amount: 2 }),
+        item(31, { selfId: 5125, kind: 'Other.Tool', amount: 1 })
+    ];
+    const awarded = [];
+    World.npc = { spawns: [manorTarget] };
+    World.purchaseItem = (session, selfId, amount) => {
+        awarded.push({ selfId, amount });
+    };
+
+    const manorSession = sessionFor(manorBackpack, { destId: manorTarget.fetchId(), level: 10, mp: 20 });
+    manorBackpack.useItem(manorSession, 30);
+    assert.strictEqual(manorBackpack.fetchItemFromSelfId(5016).fetchAmount(), 1, 'Sowing should consume one seed after a valid sourced cast');
+    assert.strictEqual(manorSession.actor.fetchMp(), 16, 'Sowing should consume sourced mpConsume 4');
+    assert.strictEqual(manorTarget.model.manor.seeded, true, 'Sowing should mark the monster as seeded on sourced success');
+    assert.strictEqual(manorTarget.model.manor.seedId, 5016, 'Sowing should remember the sourced seed item id');
+    assert.deepStrictEqual(manorTarget.model.manor.harvestItems, [{ selfId: 5073, amount: 6 }], 'Sowing should prepare sourced crop harvest count');
+
+    manorTarget.setDead(true);
+    manorBackpack.useItem(manorSession, 31);
+    assert.strictEqual(manorSession.actor.fetchMp(), 13, 'Harvesting should consume sourced mpConsume 3');
+    assert.strictEqual(manorBackpack.fetchItemFromSelfId(5125).fetchAmount(), 1, 'Harvester should not be consumed');
+    assert.deepStrictEqual(awarded, [{ selfId: 5073, amount: 6 }], 'Harvesting should award the crop prepared from sourced seed data');
+    assert.deepStrictEqual(manorTarget.model.manor.harvestItems, [], 'Harvesting should clear harvested crop rewards');
+
+    const missingSeedDataTarget = manorNpc({ id: 3000202, level: 70, locX: 100 });
+    World.npc = { spawns: [missingSeedDataTarget] };
+    const missingSeedBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    missingSeedBackpack.items = [
+        item(32, { selfId: 6734, kind: 'Other.Seed', amount: 1 })
+    ];
+    const missingSeedSession = sessionFor(missingSeedBackpack, { destId: missingSeedDataTarget.fetchId(), level: 70, mp: 20 });
+    missingSeedBackpack.useItem(missingSeedSession, 32);
+    assert.strictEqual(missingSeedBackpack.fetchItemFromSelfId(6734).fetchAmount(), 1, 'Sowing should not consume seed items without sourced seed metadata');
+    assert.strictEqual(missingSeedSession.actor.fetchMp(), 20, 'Sowing should not consume MP when sourced seed metadata is missing');
+    assert.strictEqual(missingSeedDataTarget.model.manor, undefined, 'Sowing should not create manor state without sourced seed metadata');
+} finally {
+    global.setTimeout = originalManorSetTimeout;
+    Math.random = originalManorRandom;
+    World.purchaseItem = originalWorldPurchaseItem;
+}
 
 const facePotionC = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5237));
 assert(facePotionC, 'Facelifting Potion - C should resolve to an item skill');

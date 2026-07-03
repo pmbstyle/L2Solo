@@ -10,6 +10,7 @@ const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
+const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 
 class Backpack extends BackpackModel {
@@ -203,6 +204,14 @@ class Backpack extends BackpackModel {
             return this.useDrainSoulItem(session, id, itemSkill, skill);
         }
 
+        if (skill.fetchSkillType() === C4SkillRules.SOW) {
+            return this.useSowingItem(session, id, itemSkill, skill);
+        }
+
+        if (skill.fetchSkillType() === C4SkillRules.HARVEST) {
+            return this.useHarvestingItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchTargetKind() !== 'self') {
             return false;
         }
@@ -250,6 +259,239 @@ class Backpack extends BackpackModel {
         }
 
         return true;
+    }
+
+    useSowingItem(session, id, itemSkill, skill) {
+        const item = this.fetchItemRaw(id);
+        const seedId = item?.fetchSelfId?.();
+        const target = this.fetchSelectedNpcTarget(session);
+        if (!seedId || !this.canSowTarget(session.actor, target, skill, seedId)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const mpCost = Number(skill.fetchConsumedMp()) || 0;
+        if (!this.canSpendSkillMp(session.actor, mpCost)) {
+            return true;
+        }
+
+        this.setManorSeedPending(target, seedId, session.actor);
+        return this.castTargetedItemSkill(session, target, skill, () => {
+            if (session.actor.isDead()) {
+                this.clearManorSeedPending(target, session.actor, seedId);
+                return;
+            }
+            if (!this.canSowTarget(session.actor, target, skill, seedId, { allowPending: true })) {
+                this.clearManorSeedPending(target, session.actor, seedId);
+                return;
+            }
+            if (!this.spendSkillMp(session.actor, mpCost)) {
+                this.clearManorSeedPending(target, session.actor, seedId);
+                return;
+            }
+
+            this.deleteItem(session, id, 1, () => {
+                if (ManorData.sowSuccessChance(seedId, session.actor.fetchLevel?.(), target.fetchLevel?.()) >= Math.random() * 99) {
+                    this.setManorSeeded(target);
+                } else {
+                    this.clearManorSeedPending(target, session.actor, seedId);
+                }
+            });
+        });
+    }
+
+    useHarvestingItem(session, id, itemSkill, skill) {
+        const target = this.fetchSelectedNpcTarget(session);
+        if (!this.canHarvestTarget(session.actor, target, skill)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const mpCost = Number(skill.fetchConsumedMp()) || 0;
+        if (!this.canSpendSkillMp(session.actor, mpCost)) {
+            return true;
+        }
+
+        return this.castTargetedItemSkill(session, target, skill, () => {
+            if (session.actor.isDead() || !this.canHarvestTarget(session.actor, target, skill)) {
+                return;
+            }
+            if (!this.spendSkillMp(session.actor, mpCost)) {
+                return;
+            }
+            if (ManorData.harvestSuccessChance(session.actor.fetchLevel?.(), target.fetchLevel?.()) < Math.random() * 99) {
+                return;
+            }
+
+            this.takeManorHarvest(target).forEach((item) => {
+                World.purchaseItem(session, item.selfId, item.amount);
+            });
+        });
+    }
+
+    castTargetedItemSkill(session, target, skill, apply) {
+        const castTime = skill.fetchHitTime() || 0;
+        session.actor.state.setCasts(true);
+        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
+        if (castTime > 0) {
+            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        }
+
+        const finish = () => {
+            session.actor.state.setCasts(false);
+            apply();
+        };
+
+        if (castTime > 0) {
+            setTimeout(finish, castTime);
+        } else {
+            finish();
+        }
+
+        return true;
+    }
+
+    canSowTarget(actor, target, skill, seedId, options = {}) {
+        if (!ManorData.seedById(seedId)) {
+            return false;
+        }
+        if (!target || target === actor || target.fetchAttackable?.() !== true || target.isDead?.() || target.state?.fetchDead?.() === true) {
+            return false;
+        }
+        if (target.fetchKind?.() === 'Boss') {
+            return false;
+        }
+        if (this.isManorSeeded(target)) {
+            return false;
+        }
+        if (!options.allowPending && this.fetchManorSeedId(target)) {
+            return false;
+        }
+        if (options.allowPending && !this.isOwnPendingManorSeed(actor, target, seedId)) {
+            return false;
+        }
+        return this.isInSkillRange(actor, target, skill);
+    }
+
+    canHarvestTarget(actor, target, skill) {
+        if (!target || target === actor || target.fetchAttackable?.() !== true || !target.isDead?.()) {
+            return false;
+        }
+        if (!this.isManorSeeded(target)) {
+            return false;
+        }
+        const seederId = this.fetchManorSeederId(target);
+        if (seederId && seederId !== Number(actor.fetchId?.())) {
+            return false;
+        }
+        return this.isInSkillRange(actor, target, skill);
+    }
+
+    isInSkillRange(actor, target, skill) {
+        if (
+            typeof actor.fetchLocX !== 'function' ||
+            typeof actor.fetchLocY !== 'function' ||
+            typeof actor.fetchLocZ !== 'function' ||
+            typeof target.fetchLocX !== 'function' ||
+            typeof target.fetchLocY !== 'function' ||
+            typeof target.fetchLocZ !== 'function'
+        ) {
+            return true;
+        }
+
+        const distance = new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()).distance(
+            new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
+        );
+        const range = Number(skill.fetchSemantic().castRange ?? skill.fetchDistance()) || 0;
+        return range <= 0 || distance <= range;
+    }
+
+    canSpendSkillMp(actor, mpCost) {
+        return mpCost <= 0 || typeof actor.fetchMp !== 'function' || actor.fetchMp() >= mpCost;
+    }
+
+    spendSkillMp(actor, mpCost) {
+        if (!this.canSpendSkillMp(actor, mpCost)) {
+            return false;
+        }
+        if (mpCost > 0 && typeof actor.fetchMp === 'function' && typeof actor.setMp === 'function') {
+            actor.setMp(Math.max(0, actor.fetchMp() - mpCost));
+            actor.statusUpdateVitals?.(actor);
+        }
+        return true;
+    }
+
+    setManorSeedPending(target, seedId, actor) {
+        if (typeof target.setManorSeedPending === 'function') {
+            return target.setManorSeedPending(seedId, actor);
+        }
+        target.model = target.model || {};
+        target.model.manor = {
+            seedId,
+            seeder: actor,
+            seederId: Number(actor?.fetchId?.()) || 0,
+            seeded: false,
+            harvestItems: []
+        };
+        return true;
+    }
+
+    clearManorSeedPending(target, actor, seedId) {
+        if (typeof target.clearManorSeedPending === 'function') {
+            return target.clearManorSeedPending(seedId, actor);
+        }
+        if (this.isOwnPendingManorSeed(actor, target, seedId)) {
+            target.model.manor = undefined;
+        }
+    }
+
+    setManorSeeded(target) {
+        if (typeof target.setManorSeeded === 'function') {
+            return target.setManorSeeded();
+        }
+        target.model = target.model || {};
+        if (!target.model.manor?.seedId) {
+            return false;
+        }
+        target.model.manor.seeded = true;
+        target.model.manor.harvestItems = ManorData.harvestItems(target.model.manor.seedId, target.fetchLevel?.(), target);
+        return true;
+    }
+
+    isManorSeeded(target) {
+        return target.isManorSeeded?.() === true || target.model?.manor?.seeded === true;
+    }
+
+    fetchManorSeedId(target) {
+        return Number(target.fetchManorSeedId?.() || target.model?.manor?.seedId) || 0;
+    }
+
+    fetchManorSeederId(target) {
+        return Number(target.fetchManorSeederId?.() || target.model?.manor?.seederId) || 0;
+    }
+
+    isOwnPendingManorSeed(actor, target, seedId) {
+        const manor = target.model?.manor;
+        return !!manor && manor.seeded !== true && Number(manor.seedId) === Number(seedId) && Number(manor.seederId) === Number(actor.fetchId?.());
+    }
+
+    takeManorHarvest(target) {
+        if (typeof target.takeManorHarvest === 'function') {
+            return target.takeManorHarvest();
+        }
+        const items = target.model?.manor?.harvestItems || [];
+        if (target.model?.manor) {
+            target.model.manor.harvestItems = [];
+        }
+        return items;
     }
 
     useDrainSoulItem(session, id, itemSkill, skill) {

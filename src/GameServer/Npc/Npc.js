@@ -6,6 +6,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const Formulas       = invoke('GameServer/Formulas');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const Attack         = invoke('GameServer/Actor/Attack');
+const ManorData      = invoke('GameServer/Manor/ManorData');
 const AttackHelper   = new Attack();
 
 class Npc extends NpcModel {
@@ -220,6 +221,69 @@ class Npc extends NpcModel {
     resetSoulCrystalAbsorbers() {
         this.soulCrystalAbsorbers?.clear();
         this.soulCrystalAbsorbed = false;
+    }
+
+    setManorSeedPending(seedId, seeder) {
+        if (this.model.manor?.seeded) {
+            return false;
+        }
+
+        this.model.manor = {
+            seedId,
+            seeder,
+            seederId: Number(seeder?.fetchId?.()) || 0,
+            seeded: false,
+            harvestItems: []
+        };
+        return true;
+    }
+
+    clearManorSeedPending(seedId, seeder) {
+        if (this.model.manor?.seeded) {
+            return;
+        }
+        if (seedId && Number(this.model.manor?.seedId) !== Number(seedId)) {
+            return;
+        }
+        if (seeder && Number(this.model.manor?.seederId) !== Number(seeder.fetchId?.())) {
+            return;
+        }
+        this.model.manor = undefined;
+    }
+
+    setManorSeeded() {
+        const manor = this.model.manor;
+        if (!manor?.seedId || !manor?.seeder) {
+            return false;
+        }
+
+        manor.seeded = true;
+        manor.harvestItems = ManorData.harvestItems(manor.seedId, this.fetchLevel(), this);
+        return true;
+    }
+
+    isManorSeeded() {
+        return this.model.manor?.seeded === true;
+    }
+
+    fetchManorSeeder() {
+        return this.model.manor?.seeder || null;
+    }
+
+    fetchManorSeederId() {
+        return Number(this.model.manor?.seederId) || 0;
+    }
+
+    fetchManorSeedId() {
+        return Number(this.model.manor?.seedId) || 0;
+    }
+
+    takeManorHarvest() {
+        const items = this.model.manor?.harvestItems || [];
+        if (this.model.manor) {
+            this.model.manor.harvestItems = [];
+        }
+        return items;
     }
 }
 
