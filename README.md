@@ -54,10 +54,10 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 ✅ Optional AI bot brain is available for player-visible moments, but still needs more personality tuning
 
+✅ All C4 skills, including mob skills, potions, scrolls, etc
 
 ### In Progress
 
-✴️ All C4 skills, including mob skills, potions, scrolls, etc
 
 ✴️ More natural long-term SimPlayer memory: level history, wipes, insults, deeper relationships, and personal routines should persist instead of feeling reset between sessions
 
