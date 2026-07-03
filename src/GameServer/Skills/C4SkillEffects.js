@@ -46,6 +46,9 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.HEAL_PERCENT) {
         result.heal = applyHealPercent(session, actor, target, skill, semantic, magicSkill, context.attack);
+        if (semantic.manaHealPercent) {
+            result.mpRestore = applyManaHealPercent(session, actor, target, skill, semantic, magicSkill, context.attack);
+        }
         return result;
     }
 
@@ -277,6 +280,18 @@ function applyManaHeal(session, actor, target, skill, semantic, magicSkill, atta
     const amount = Math.round(Number(semantic.manaPower ?? skill.fetchPower()) || 0);
     const maxMp = Number(target.fetchMaxMp?.()) || 0;
     const currentMp = Number(target.fetchMp?.()) || 0;
+    const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + amount) : currentMp + amount;
+    target.setMp(nextMp);
+    refreshVitals(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return Math.max(0, nextMp - currentMp);
+}
+
+function applyManaHealPercent(session, actor, target, skill, semantic, magicSkill, attack) {
+    const power = Number(semantic.manaHealPercent) || 0;
+    const maxMp = Number(target.fetchMaxMp?.()) || 0;
+    const currentMp = Number(target.fetchMp?.()) || 0;
+    const amount = Math.round(maxMp * power / 100);
     const nextMp = maxMp > 0 ? Math.min(maxMp, currentMp + amount) : currentMp + amount;
     target.setMp(nextMp);
     refreshVitals(session, actor, target);

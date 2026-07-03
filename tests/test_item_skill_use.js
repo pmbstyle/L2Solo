@@ -32,6 +32,7 @@ function item(id, data) {
 function sessionFor(backpack, options = {}) {
     let casts = false;
     let mp = options.mp ?? 100;
+    let hp = options.hp ?? 100;
     let cp = options.cp ?? 0;
     let sp = options.sp ?? 0;
     const actor = {
@@ -54,8 +55,9 @@ function sessionFor(backpack, options = {}) {
         fetchInt: () => 21,
         fetchWit: () => 11,
         fetchMen: () => 25,
-        fetchHp: () => options.hp ?? 100,
+        fetchHp: () => hp,
         fetchMaxHp: () => options.maxHp ?? 100,
+        setHp(value) { hp = value; },
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
@@ -456,6 +458,23 @@ assert.strictEqual(hairPotionG.fetchSelfId(), 2135, 'Hair Style Change Potion - 
 assert.strictEqual(hairPotionG.fetchPower(), 6, 'Hair Style Change Potion - G should preserve sourced cosmetic power 6');
 assert.strictEqual(hairPotionG.fetchSkillType(), C4SkillRules.COSMETIC_HAIR_STYLE, 'Hair Style Change Potion - G should preserve sourced HAIR_STYLE semantics');
 assert.strictEqual(hairPotionG.fetchSemantic().cosmeticValue, 6, 'Hair Style Change Potion - G should preserve sourced cosmetic index');
+
+const riceCake = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5283));
+assert(riceCake, 'Rice Cake should resolve to an item skill');
+assert.strictEqual(riceCake.fetchSelfId(), 2136, 'Rice Cake should use sourced skill 2136');
+assert.strictEqual(riceCake.fetchPower(), 3, 'Rice Cake should preserve sourced HEAL_PERCENT power 3');
+assert.strictEqual(riceCake.fetchSkillType(), C4SkillRules.HEAL_PERCENT, 'Rice Cake should preserve sourced HEAL_PERCENT semantics');
+assert.strictEqual(riceCake.fetchSemantic().manaHealPercent, 1, 'Rice Cake should preserve sourced MP 1% core-support behavior');
+
+const riceBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+riceBackpack.items = [
+    item(47, { selfId: 5283, kind: 'Other.Potion', amount: 1 })
+];
+const riceSession = sessionFor(riceBackpack, { hp: 50, maxHp: 100, mp: 10, maxMp: 200 });
+riceBackpack.useItem(riceSession, 47);
+assert.strictEqual(riceBackpack.fetchItemFromSelfId(5283), undefined, 'Rice Cake should consume one item on successful use');
+assert.strictEqual(riceSession.actor.fetchHp(), 53, 'Rice Cake should restore sourced 3% HP');
+assert.strictEqual(riceSession.actor.fetchMp(), 12, 'Rice Cake should restore sourced 1% MP');
 
 const firstCarolCrystal = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5562));
 assert(firstCarolCrystal, 'Echo Crystal - 1st Carol should resolve to an item skill');
