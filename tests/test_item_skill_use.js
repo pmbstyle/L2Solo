@@ -26,7 +26,11 @@ function item(id, data) {
         kind: data.kind || 'Other.Potion',
         amount: data.amount ?? 1,
         stackable: data.stackable ?? true,
-        consumable: data.consumable ?? true
+        consumable: data.consumable ?? true,
+        rank: data.rank,
+        slot: data.slot,
+        equipped: data.equipped,
+        name: data.name
     });
 }
 
@@ -269,6 +273,119 @@ assert(blessedSpiritshotS, 'Blessed Spiritshot: S Grade should resolve to an ite
 assert.strictEqual(blessedSpiritshotS.fetchSelfId(), 2164, 'Blessed Spiritshot: S Grade should use sourced skill 2164');
 assert.strictEqual(blessedSpiritshotS.fetchSkillType(), C4SkillRules.SPIRITSHOT, 'Blessed Spiritshot: S Grade should preserve magic-shot runtime semantics');
 assert.strictEqual(blessedSpiritshotS.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: S Grade should preserve blessed spiritshot metadata');
+
+const fishingShots = [
+    [6535, 2181, 'none'],
+    [6536, 2182, 'D'],
+    [6537, 2183, 'C'],
+    [6538, 2184, 'B'],
+    [6539, 2185, 'A'],
+    [6540, 2186, 'S']
+];
+fishingShots.forEach(([itemId, skillId, grade]) => {
+    const itemSkill = C4ItemSkills.resolve(itemId);
+    assert(itemSkill, `Fishing Shot item ${itemId} should resolve to sourced FishShots handler data`);
+    assert.strictEqual(itemSkill.skillId, skillId, `Fishing Shot item ${itemId} should use sourced skill ${skillId}`);
+    assert.strictEqual(itemSkill.handler, 'FishShots', `Fishing Shot item ${itemId} should preserve sourced FishShots handler`);
+    assert.strictEqual(itemSkill.grade, grade, `Fishing Shot item ${itemId} should preserve sourced crystal grade`);
+    const fishingShot = blessedEscapeBackpack.buildItemSkill(itemSkill);
+    assert(fishingShot, `Fishing Shot item ${itemId} should build sourced skill ${skillId}`);
+    assert.strictEqual(fishingShot.fetchSkillType(), C4SkillRules.NOT_DONE, `Fishing Shot skill ${skillId} should preserve sourced NOTDONE type`);
+    assert.strictEqual(fishingShot.fetchTargetKind(), 'none', `Fishing Shot skill ${skillId} should preserve sourced TARGET_NONE`);
+});
+
+{
+    const fishingBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    const fishingRod = item(60, {
+        selfId: 6530,
+        kind: 'Weapon.FishingRod',
+        rank: 'D',
+        slot: 7,
+        equipped: true,
+        stackable: false,
+        consumable: false
+    });
+    fishingBackpack.items = [
+        fishingRod,
+        item(61, { selfId: 6536, amount: 2 })
+    ];
+    const fishingSession = sessionFor(fishingBackpack);
+    fishingBackpack.useItem(fishingSession, 61);
+
+    const fishingShotCast = fishingSession.packets.find((packet) => packet[0] === 0x48);
+    assert(fishingShotCast, 'Fishing Shot should emit MagicSkillUse when it charges a matching fishing rod');
+    assert.strictEqual(fishingShotCast.readInt32LE(9), 2182, 'D-grade Fishing Shot should emit sourced skill 2182');
+    assert.strictEqual(fishingBackpack.fetchItemRaw(61).fetchAmount(), 1, 'Fishing Shot should consume one item after a successful charge');
+    assert.strictEqual(fishingRod.model.chargedFishShot, true, 'Fishing Shot should mark the equipped fishing rod as charged');
+    assert.strictEqual(fishingRod.chargedFishShot, true, 'Fishing Shot should expose charged state on the item instance');
+}
+
+{
+    const mismatchBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    const mismatchRod = item(62, {
+        selfId: 6530,
+        kind: 'Weapon.FishingRod',
+        rank: 'D',
+        slot: 7,
+        equipped: true,
+        stackable: false,
+        consumable: false
+    });
+    mismatchBackpack.items = [
+        mismatchRod,
+        item(63, { selfId: 6537, amount: 2 })
+    ];
+    const mismatchSession = sessionFor(mismatchBackpack);
+    mismatchBackpack.useItem(mismatchSession, 63);
+
+    assert.strictEqual(mismatchBackpack.fetchItemRaw(63).fetchAmount(), 2, 'Fishing Shot should not consume on crystal grade mismatch');
+    assert.strictEqual(Boolean(mismatchRod.model.chargedFishShot), false, 'Fishing Shot should not charge a rod on grade mismatch');
+    assert.strictEqual(mismatchSession.packets.some((packet) => packet[0] === 0x48), false, 'Fishing Shot should not emit MagicSkillUse on grade mismatch');
+}
+
+{
+    const chargedBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    const chargedRod = item(64, {
+        selfId: 6530,
+        kind: 'Weapon.FishingRod',
+        rank: 'D',
+        slot: 7,
+        equipped: true,
+        stackable: false,
+        consumable: false
+    });
+    chargedRod.model.chargedFishShot = true;
+    chargedBackpack.items = [
+        chargedRod,
+        item(65, { selfId: 6536, amount: 2 })
+    ];
+    const chargedSession = sessionFor(chargedBackpack);
+    chargedBackpack.useItem(chargedSession, 65);
+
+    assert.strictEqual(chargedBackpack.fetchItemRaw(65).fetchAmount(), 2, 'Fishing Shot should not consume when the fishing rod is already charged');
+    assert.strictEqual(chargedSession.packets.some((packet) => packet[0] === 0x48), false, 'Fishing Shot should not emit MagicSkillUse when already charged');
+}
+
+{
+    const weaponBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    weaponBackpack.items = [
+        item(66, {
+            selfId: 1,
+            kind: 'Weapon.Sword',
+            rank: 'D',
+            slot: 7,
+            equipped: true,
+            stackable: false,
+            consumable: false
+        }),
+        item(67, { selfId: 6536, amount: 2 })
+    ];
+    const weaponSession = sessionFor(weaponBackpack);
+    weaponBackpack.useItem(weaponSession, 67);
+
+    assert.strictEqual(weaponBackpack.fetchItemRaw(67).fetchAmount(), 2, 'Fishing Shot should not consume without an equipped fishing rod');
+    assert.strictEqual(weaponSession.packets.some((packet) => packet[0] === 0x48), false, 'Fishing Shot should not emit MagicSkillUse without an equipped fishing rod');
+}
 
 const noGradeSoulshot = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1835));
 assert(noGradeSoulshot, 'Soulshot: No Grade should resolve to an item skill');

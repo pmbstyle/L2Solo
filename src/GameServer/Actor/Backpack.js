@@ -16,6 +16,16 @@ const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 
+const FISHING_ROD_GRADES = {
+    6529: 'none',
+    6530: 'D',
+    6531: 'C',
+    6532: 'B',
+    6533: 'A',
+    6534: 'S',
+    7560: 'none'
+};
+
 class Backpack extends BackpackModel {
     constructor(data) {
         // Parent inheritance
@@ -237,6 +247,10 @@ class Backpack extends BackpackModel {
             return this.useResurrectionItem(session, id, itemSkill, skill);
         }
 
+        if (itemSkill.handler === 'FishShots') {
+            return this.useFishShotItem(session, id, itemSkill, skill);
+        }
+
         if (skill.fetchSkillType() === C4SkillRules.DRAIN_SOUL) {
             return this.useDrainSoulItem(session, id, itemSkill, skill);
         }
@@ -300,6 +314,52 @@ class Backpack extends BackpackModel {
         }
 
         return true;
+    }
+
+    useFishShotItem(session, id, itemSkill, skill) {
+        const weapon = this.fetchEquippedWeapon();
+        if (!this.isFishingRod(weapon)) {
+            return true;
+        }
+
+        if (weapon.model?.chargedFishShot || weapon.chargedFishShot) {
+            return true;
+        }
+
+        if (this.normalizeGrade(this.fetchFishingRodGrade(weapon)) !== this.normalizeGrade(itemSkill.grade)) {
+            return true;
+        }
+
+        this.deleteItem(session, id, 1, () => {
+            if (weapon.model) {
+                weapon.model.chargedFishShot = true;
+            }
+            weapon.chargedFishShot = true;
+            session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
+        });
+        return true;
+    }
+
+    isFishingRod(item) {
+        if (!item) {
+            return false;
+        }
+        if (FISHING_ROD_GRADES[Number(item.fetchSelfId?.())]) {
+            return true;
+        }
+        return String(item.fetchKind?.() || '').toLowerCase().includes('fishingrod');
+    }
+
+    fetchFishingRodGrade(item) {
+        return FISHING_ROD_GRADES[Number(item.fetchSelfId?.())] || item.fetchRank?.() || 'none';
+    }
+
+    normalizeGrade(grade) {
+        const value = String(grade || 'none').trim();
+        if (!value || value === '0' || value.toLowerCase() === 'none') {
+            return 'none';
+        }
+        return value.toUpperCase();
     }
 
     useSowingItem(session, id, itemSkill, skill) {
