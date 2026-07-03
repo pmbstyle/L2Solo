@@ -158,6 +158,29 @@ assert(blessedNoGradeSpiritshot, 'Blessed Spiritshot: No Grade should resolve to
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSelfId(), 2061, 'Blessed Spiritshot: No Grade should use sourced skill 2061');
 assert.strictEqual(blessedNoGradeSpiritshot.fetchSemantic().blessedSpiritshot, true, 'Blessed Spiritshot: No Grade should preserve blessed spiritshot metadata');
 
+[
+    4629, 4630, 4631, 4632, 4633, 4634, 4635, 4636, 4637, 4638, 4639,
+    4640, 4641, 4642, 4643, 4644, 4645, 4646, 4647, 4648, 4649, 4650,
+    4651, 4652, 4653, 4654, 4655, 4656, 4657, 4658, 4659, 4660, 4661,
+    5577, 5578, 5579, 5580, 5581, 5582, 5908, 5911, 5914
+].forEach((itemId) => {
+    const itemSkill = C4ItemSkills.resolve(itemId);
+    assert(itemSkill, `Soul Crystal item ${itemId} should resolve to an item skill`);
+    assert.strictEqual(itemSkill.skillId, 2096, `Soul Crystal item ${itemId} should use sourced skill 2096`);
+    assert.strictEqual(itemSkill.level, 1, `Soul Crystal item ${itemId} should preserve sourced item_skill level 1`);
+    assert.strictEqual(itemSkill.consume, false, `Soul Crystal item ${itemId} should not be consumed as a simple item skill`);
+    const soulCrystal = blessedEscapeBackpack.buildItemSkill(itemSkill);
+    assert(soulCrystal, `Soul Crystal item ${itemId} should build skill 2096`);
+    assert.strictEqual(soulCrystal.fetchSelfId(), 2096, `Soul Crystal item ${itemId} should build sourced Soul Crystal skill`);
+    assert.strictEqual(soulCrystal.fetchSkillType(), C4SkillRules.DRAIN_SOUL, `Soul Crystal item ${itemId} should preserve DRAIN_SOUL semantics`);
+    assert.strictEqual(soulCrystal.fetchTargetKind(), 'enemy', `Soul Crystal item ${itemId} should preserve sourced TARGET_ONE semantics`);
+    assert.strictEqual(soulCrystal.fetchHitTime(), 1200, `Soul Crystal item ${itemId} should preserve sourced 1200ms hitTime`);
+    assert.strictEqual(soulCrystal.fetchReuseTime(), 1300, `Soul Crystal item ${itemId} should preserve sourced 1300ms reuse`);
+    assert.strictEqual(soulCrystal.fetchConsumedMp(), 26, `Soul Crystal item ${itemId} should preserve sourced mpConsume 26`);
+    assert.strictEqual(soulCrystal.fetchSemantic().castRange, 300, `Soul Crystal item ${itemId} should preserve sourced castRange`);
+    assert.strictEqual(soulCrystal.fetchSemantic().effectRange, 500, `Soul Crystal item ${itemId} should preserve sourced effectRange`);
+});
+
 const facePotionC = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5237));
 assert(facePotionC, 'Facelifting Potion - C should resolve to an item skill');
 assert.strictEqual(facePotionC.fetchSelfId(), 2124, 'Facelifting Potion - C should use sourced skill 2124');
