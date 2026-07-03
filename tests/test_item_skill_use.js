@@ -515,6 +515,52 @@ assert(wyvernFood, 'Food for Wyvern should resolve to an item skill');
 assert.strictEqual(wyvernFood.fetchSelfId(), 2180, 'Food for Wyvern should use sourced skill 2180');
 assert.strictEqual(wyvernFood.fetchSemantic().feed, 450, 'Food for Wyvern should preserve sourced feed 450 metadata');
 
+const mysteryPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5234));
+assert(mysteryPotion, 'Mystery Potion should resolve to an item skill');
+assert.strictEqual(mysteryPotion.fetchSelfId(), 2103, 'Mystery Potion should use sourced skill 2103');
+assert.strictEqual(mysteryPotion.fetchBuffTime(), 1200000, 'Mystery Potion should preserve sourced BigHead 1200s duration');
+assert.strictEqual(mysteryPotion.fetchSkillType(), C4SkillRules.EFFECT, 'Mystery Potion should preserve sourced BUFF semantics');
+assert.strictEqual(mysteryPotion.fetchSemantic().effect, 'big_head', 'Mystery Potion should preserve sourced BigHead effect metadata');
+
+const luckyCharmS = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5807));
+assert(luckyCharmS, 'Lucky Charm: S Grade should resolve to an item skill');
+assert.strictEqual(luckyCharmS.fetchSelfId(), 2168, 'Lucky Charm should use sourced Raid Blessing skill 2168');
+assert.strictEqual(luckyCharmS.fetchLevel(), 6, 'Lucky Charm: S Grade should preserve sourced item_skill level 6');
+assert.strictEqual(luckyCharmS.fetchHitTime(), 2000, 'Lucky Charm should preserve sourced 2000ms static hitTime');
+assert.strictEqual(luckyCharmS.fetchBuffTime(), 3600000, 'Lucky Charm should preserve sourced CharmOfLuck 3600s duration');
+assert.strictEqual(luckyCharmS.fetchSkillType(), C4SkillRules.EFFECT, 'Lucky Charm should preserve sourced BUFF semantics');
+assert.strictEqual(luckyCharmS.fetchSemantic().effect, 'charm_of_luck', 'Lucky Charm should preserve sourced CharmOfLuck effect metadata');
+
+const mysteryBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+mysteryBackpack.items = [
+    item(45, { selfId: 5234, kind: 'Other.Potion', amount: 1 })
+];
+const mysterySession = sessionFor(mysteryBackpack);
+mysteryBackpack.useItem(mysterySession, 45);
+assert.strictEqual(mysteryBackpack.fetchItemFromSelfId(5234), undefined, 'Mystery Potion should consume one item on successful use');
+assert.strictEqual(mysterySession.actor.effects.big_head.id, 2103, 'Mystery Potion should apply sourced BigHead effect');
+assert.strictEqual(mysterySession.actor.effects.big_head.level, 1, 'Mystery Potion should apply sourced effect level 1');
+
+const savedLuckyCharmSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const luckyBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    luckyBackpack.items = [
+        item(46, { selfId: 5807, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const luckySession = sessionFor(luckyBackpack);
+    luckyBackpack.useItem(luckySession, 46);
+    assert.strictEqual(luckyBackpack.fetchItemFromSelfId(5807), undefined, 'Lucky Charm should consume one item on successful use');
+    assert.strictEqual(luckySession.actor.effects.charm_of_luck.id, 2168, 'Lucky Charm should apply sourced CharmOfLuck effect');
+    assert.strictEqual(luckySession.actor.effects.charm_of_luck.level, 6, 'Lucky Charm should apply sourced item_skill level');
+} finally {
+    global.setTimeout = savedLuckyCharmSetTimeout;
+}
+
 const petResurrection = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6387));
 assert(petResurrection, 'Blessed Scroll of Resurrection for Pets should resolve to an item skill');
 assert.strictEqual(petResurrection.fetchSelfId(), 2179, 'Blessed Scroll of Resurrection for Pets should use sourced skill 2179');
