@@ -678,6 +678,10 @@ class Backpack extends BackpackModel {
     }
 
     useSummonItem(session, id, itemSkill, skill) {
+        if (Number(itemSkill.summonType) === 1) {
+            return this.usePetSummonItem(session, id, itemSkill, skill);
+        }
+
         if (Number(itemSkill.summonType) !== 0 || !itemSkill.npcId) {
             return true;
         }
@@ -701,6 +705,59 @@ class Backpack extends BackpackModel {
                 session.dataSendToMeAndOthers(ServerResponse.npcInfo(npc), npc);
             });
         });
+
+        return true;
+    }
+
+    usePetSummonItem(session, id, itemSkill, skill) {
+        if (!itemSkill.npcId || this.fetchActivePet(session) || session.actor.isMounted?.() || session.actor.mounted) {
+            return true;
+        }
+
+        if (
+            session.actor.isSitting?.() ||
+            session.actor.inObserverMode?.() ||
+            session.actor.isInOlympiadMode?.() ||
+            session.actor.isAttackingNow?.() ||
+            session.actor.isRooted?.()
+        ) {
+            return true;
+        }
+
+        const summonPet = session.summonPetFromItem || session.actor.summonPetFromItem;
+        if (typeof summonPet !== 'function') {
+            return true;
+        }
+
+        if (session.actor.state.fetchCasts()) {
+            return true;
+        }
+
+        const castTime = skill.fetchHitTime() || 0;
+        session.actor.state.setCasts(true);
+        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
+        if (castTime > 0) {
+            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        }
+
+        const apply = () => {
+            session.actor.state.setCasts(false);
+            if (session.actor.isDead()) {
+                return;
+            }
+            summonPet.call(session.actor, session, {
+                itemObjectId: id,
+                itemSkill,
+                npcId: itemSkill.npcId,
+                skill
+            });
+        };
+
+        if (castTime > 0) {
+            setTimeout(apply, castTime);
+        } else {
+            apply();
+        }
 
         return true;
     }

@@ -1074,8 +1074,46 @@ assert.deepStrictEqual(dwarvenVillageEscape.fetchTeleportCoords(), { locX: 11511
 
 const wolfCollar = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(2375));
 assert(wolfCollar, 'Wolf Collar should resolve to an item skill');
+assert.strictEqual(C4ItemSkills.resolve(2375).handler, 'SummonItems', 'Wolf Collar should preserve sourced SummonItems handler');
+assert.strictEqual(C4ItemSkills.resolve(2375).summonType, 1, 'Wolf Collar should preserve sourced pet summon type 1');
+assert.strictEqual(C4ItemSkills.resolve(2375).npcId, 12077, 'Wolf Collar should preserve sourced wolf npcId 12077');
+assert.strictEqual(C4ItemSkills.resolve(6649).npcId, 12782, 'Baby Cougar Chime should preserve sourced baby cougar npcId 12782');
 assert.strictEqual(wolfCollar.fetchSelfId(), 2046, 'Wolf Collar should use sourced skill 2046');
 assert.strictEqual(wolfCollar.fetchHitTime(), 5000, 'Wolf Collar should preserve sourced 5000ms summon hitTime');
+
+const noHookPetSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+noHookPetSummonBackpack.items = [
+    item(33, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })
+];
+const noHookPetSummonSession = sessionFor(noHookPetSummonBackpack);
+noHookPetSummonBackpack.useItem(noHookPetSummonSession, 33);
+assert(noHookPetSummonBackpack.fetchItemRaw(33), 'Pet summon control item should not be consumed without summon hook');
+assert.strictEqual(noHookPetSummonSession.packets.length, 0, 'Pet summon should safe-fail before cast when no summon hook exists');
+
+const savedPetSummonSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const petSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    petSummonBackpack.items = [
+        item(34, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })
+    ];
+    const petSummonSession = sessionFor(petSummonBackpack);
+    const summonedPets = [];
+    petSummonSession.summonPetFromItem = (session, payload) => {
+        summonedPets.push(payload);
+    };
+    petSummonBackpack.useItem(petSummonSession, 34);
+    assert(petSummonBackpack.fetchItemRaw(34), 'Pet summon control item should remain after successful summon cast');
+    assert(petSummonSession.packets.some((packet) => packet[0] === 0x48), 'Pet summon should emit sourced summon skill packet');
+    assert.strictEqual(summonedPets[0].npcId, 12077, 'Pet summon hook should receive sourced npcId');
+    assert.strictEqual(summonedPets[0].itemObjectId, 34, 'Pet summon hook should receive control item object id');
+} finally {
+    global.setTimeout = savedPetSummonSetTimeout;
+}
 
 const striderFood = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5168));
 assert(striderFood, 'Food for Strider should resolve to an item skill');
