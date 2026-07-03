@@ -12,6 +12,7 @@ const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -185,11 +186,8 @@ class Backpack extends BackpackModel {
                     });
                     return;
                 }
-                else
-                if ([1665, 1863].includes(item.fetchSelfId())) { // TODO: This needs to be out of here...
-                    session.dataSendToMe(
-                        ServerResponse.showMap(item.fetchSelfId())
-                    );
+                const utilityItem = C4UtilityItems.resolve(item.fetchSelfId());
+                if (utilityItem && this.useUtilityItem(session, item, utilityItem)) {
                     return;
                 }
 
@@ -235,6 +233,19 @@ class Backpack extends BackpackModel {
         };
         session.dataSendToMe(ServerResponse.chooseInventoryItem(item.fetchSelfId()));
         return true;
+    }
+
+    useUtilityItem(session, item, utilityItem) {
+        switch (utilityItem.handler) {
+            case 'WorldMap':
+                session.dataSendToMe(ServerResponse.showMap(item.fetchSelfId()));
+                return true;
+            case 'Calculator':
+                session.dataSendToMe(ServerResponse.showCalculator(item.fetchSelfId()));
+                return true;
+            default:
+                return false;
+        }
     }
 
     useSkillItem(session, id, itemSkill) {

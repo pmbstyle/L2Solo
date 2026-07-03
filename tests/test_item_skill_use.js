@@ -13,6 +13,7 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
+const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -227,6 +228,38 @@ const guidance = guidanceBackpack.buildItemSkill(C4ItemSkills.resolve(3926));
 assert(guidance, 'L2Day Guidance scroll should resolve to an item skill');
 assert.strictEqual(guidance.fetchSelfId(), 2050, 'L2Day Guidance scroll should use sourced skill 2050');
 assert.strictEqual(guidance.fetchHitTime(), 4000, 'L2Day Guidance scroll should preserve sourced 4000ms cast time');
+
+const worldMapItem = C4UtilityItems.resolve(1665);
+assert(worldMapItem, 'World Map should resolve to a sourced utility item handler');
+assert.strictEqual(worldMapItem.handler, 'WorldMap', 'World Map should preserve sourced WorldMap handler');
+
+const elmoreMapItem = C4UtilityItems.resolve(1863);
+assert(elmoreMapItem, 'Map: Elmore should resolve to a sourced utility item handler');
+assert.strictEqual(elmoreMapItem.handler, 'WorldMap', 'Map: Elmore should preserve sourced WorldMap handler');
+
+const calculatorItem = C4UtilityItems.resolve(4393);
+assert(calculatorItem, 'Calculator should resolve to a sourced utility item handler');
+assert.strictEqual(calculatorItem.handler, 'Calculator', 'Calculator should preserve sourced Calculator handler');
+
+const mapBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+mapBackpack.items = [
+    item(11, { selfId: 1665, kind: 'Other.None', consumable: false })
+];
+const mapSession = sessionFor(mapBackpack);
+mapBackpack.useItem(mapSession, 11);
+assert.strictEqual(mapSession.packets[0][0], 0x9d, 'World Map should emit C4 ShowMiniMap packet');
+assert.strictEqual(mapSession.packets[0].readInt32LE(1), 1665, 'World Map packet should include sourced item id 1665');
+assert(mapBackpack.fetchItemFromSelfId(1665), 'World Map should not be consumed by its utility handler');
+
+const calculatorBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+calculatorBackpack.items = [
+    item(12, { selfId: 4393, kind: 'Other.None', consumable: false })
+];
+const calculatorSession = sessionFor(calculatorBackpack);
+calculatorBackpack.useItem(calculatorSession, 12);
+assert.strictEqual(calculatorSession.packets[0][0], 0xdc, 'Calculator should emit C4 ShowCalculator packet');
+assert.strictEqual(calculatorSession.packets[0].readInt32LE(1), 4393, 'Calculator packet should include sourced item id 4393');
+assert(calculatorBackpack.fetchItemFromSelfId(4393), 'Calculator should not be consumed by its utility handler');
 
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));
