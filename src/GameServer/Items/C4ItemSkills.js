@@ -270,6 +270,8 @@ const ITEM_SKILLS = {
     5805: { skillId: 2168, level: 4, consume: true },
     5806: { skillId: 2168, level: 5, consume: true },
     5807: { skillId: 2168, level: 6, consume: true },
+    5858: { skillId: 2177, level: 1, consume: true },
+    5859: { skillId: 2178, level: 1, consume: true },
     5908: { skillId: 2096, level: 1, consume: false },
     5911: { skillId: 2096, level: 1, consume: false },
     5914: { skillId: 2096, level: 1, consume: false },

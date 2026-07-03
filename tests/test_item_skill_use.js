@@ -383,6 +383,22 @@ assert.strictEqual(castleEscape.fetchHitTime(), 20000, 'Scroll of Escape: Castle
 assert.strictEqual(castleEscape.fetchSkillType(), C4SkillRules.RECALL, 'Scroll of Escape: Castle should preserve sourced TELEPORT semantics');
 assert.strictEqual(castleEscape.fetchSemantic().teleportWhereType, 'Castle', 'Scroll of Escape: Castle should preserve sourced teleportWhereType');
 
+const blessedClanHallEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5858));
+assert(blessedClanHallEscape, 'Blessed Scroll of Escape: Clan Hall should resolve to an item skill');
+assert.strictEqual(blessedClanHallEscape.fetchSelfId(), 2177, 'Blessed Scroll of Escape: Clan Hall should use sourced skill 2177');
+assert.strictEqual(blessedClanHallEscape.fetchHitTime(), 200, 'Blessed Scroll of Escape: Clan Hall should preserve sourced 200ms hitTime');
+assert.strictEqual(blessedClanHallEscape.fetchSkillType(), C4SkillRules.RECALL, 'Blessed Scroll of Escape: Clan Hall should preserve sourced TELEPORT semantics');
+assert.strictEqual(blessedClanHallEscape.fetchTargetKind(), 'self', 'Blessed Scroll of Escape: Clan Hall should preserve sourced self target');
+assert.strictEqual(blessedClanHallEscape.fetchSemantic().teleportWhereType, 'ClanHall', 'Blessed Scroll of Escape: Clan Hall should preserve sourced teleportWhereType');
+
+const blessedCastleEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5859));
+assert(blessedCastleEscape, 'Blessed Scroll of Escape: Castle should resolve to an item skill');
+assert.strictEqual(blessedCastleEscape.fetchSelfId(), 2178, 'Blessed Scroll of Escape: Castle should use sourced skill 2178');
+assert.strictEqual(blessedCastleEscape.fetchHitTime(), 200, 'Blessed Scroll of Escape: Castle should preserve sourced 200ms hitTime');
+assert.strictEqual(blessedCastleEscape.fetchSkillType(), C4SkillRules.RECALL, 'Blessed Scroll of Escape: Castle should preserve sourced TELEPORT semantics');
+assert.strictEqual(blessedCastleEscape.fetchTargetKind(), 'self', 'Blessed Scroll of Escape: Castle should preserve sourced self target');
+assert.strictEqual(blessedCastleEscape.fetchSemantic().teleportWhereType, 'Castle', 'Blessed Scroll of Escape: Castle should preserve sourced teleportWhereType');
+
 const soulshotA = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1466));
 assert(soulshotA, 'Soulshot: A-grade should resolve to an item skill');
 assert.strictEqual(soulshotA.fetchSelfId(), 2153, 'Soulshot: A-grade should use sourced skill 2153');

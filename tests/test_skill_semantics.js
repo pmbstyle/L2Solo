@@ -411,12 +411,14 @@ assert.strictEqual(escapeToTalkingIsland.fetchTargetKind(), 'self', 'Scroll of E
 
 [
     { id: 2040, name: 'Scroll of escape to Clan Hall', localName: 'Scroll of escape to agit', where: 'ClanHall' },
-    { id: 2041, name: 'Scroll of escape to Castle', localName: 'Scroll of escape to castle', where: 'Castle' }
-].forEach(({ id, name, localName, where }) => {
+    { id: 2041, name: 'Scroll of escape to Castle', localName: 'Scroll of escape to castle', where: 'Castle' },
+    { id: 2177, name: 'Blessed Scroll of Escape: Clan Hall', localName: 'Blessed scroll of escape to clan hall', where: 'ClanHall', hitTime: 200 },
+    { id: 2178, name: 'Blessed Scroll of Escape: Castle', localName: 'Blessed scroll of escape to castle', where: 'Castle', hitTime: 200 }
+].forEach(({ id, name, localName, where, hitTime = 20000 }) => {
     const data = activeSkills.find((entry) => entry.selfId === id);
     assert(data, `${name} should be present in active skills data`);
     assert.strictEqual(data.template.distance, -1, `${name} should preserve sourced TARGET_SELF range semantics`);
-    assert.strictEqual(data.time.hitTime, 20000, `${name} should preserve sourced static hitTime 20000`);
+    assert.strictEqual(data.time.hitTime, hitTime, `${name} should preserve sourced static hitTime ${hitTime}`);
     const escapeSkill = skill({ selfId: id, name: localName, spell: false, power: 1, level: 1, distance: -1 });
     assert.strictEqual(escapeSkill.fetchSkillType(), C4SkillRules.RECALL, `${name} should resolve as sourced TELEPORT semantics`);
     assert.strictEqual(escapeSkill.fetchTargetKind(), 'self', `${name} should preserve sourced TARGET_SELF semantics`);
