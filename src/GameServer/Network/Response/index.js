@@ -40,6 +40,7 @@ module.exports = {
             sitAndStand: require('./SitAndStand'),
        skillDurationBar: require('./SkillDurationBar'),
              skillsList: require('./SkillsList'),
+          showXMasSeal: require('./ShowXMasSeal'),
            skillStarted: require('./SkillStarted'),
            socialAction: require('./SocialAction'),
                spawnItem: require('./SpawnItem'),

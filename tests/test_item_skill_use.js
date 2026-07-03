@@ -341,6 +341,20 @@ assert.strictEqual(sevenSignsSession.packets[0].readUInt8(37), 0, 'SSQStatus sho
 assert.strictEqual(sevenSignsSession.packets[0].readUInt8(50), 0, 'SSQStatus should default Dawn percent to 0 without Seven Signs state');
 assert(sevenSignsBackpack.fetchItemFromSelfId(5707), 'Record of Seven Signs should not be consumed by its utility handler');
 
+const tokenOfLove = C4UtilityItems.resolve(5555);
+assert(tokenOfLove, 'Token of Love should resolve to a sourced utility item handler');
+assert.strictEqual(tokenOfLove.handler, 'SpecialXMas', 'Token of Love should preserve sourced SpecialXMas handler');
+
+const xmasBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+xmasBackpack.items = [
+    item(16, { selfId: 5555, kind: 'Other.None', consumable: false })
+];
+const xmasSession = sessionFor(xmasBackpack);
+xmasBackpack.useItem(xmasSession, 16);
+assert.strictEqual(xmasSession.packets[0][0], 0xf2, 'Token of Love should emit C4 ShowXMasSeal packet');
+assert.strictEqual(xmasSession.packets[0].readInt32LE(1), 5555, 'ShowXMasSeal packet should include sourced Token of Love item id');
+assert(xmasBackpack.fetchItemFromSelfId(5555), 'Token of Love should not be consumed by its utility handler');
+
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));
 assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');

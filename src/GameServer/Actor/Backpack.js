@@ -256,6 +256,9 @@ class Backpack extends BackpackModel {
             case 'SevenSignsRecord':
                 session.dataSendToMe(ServerResponse.ssqStatus());
                 return true;
+            case 'SpecialXMas':
+                session.dataSendToMe(ServerResponse.showXMasSeal(item.fetchSelfId()));
+                return true;
             default:
                 return false;
         }
