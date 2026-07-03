@@ -527,6 +527,68 @@ assert(weddingThemeCrystal, 'Echo Crystal - Theme of Wedding should resolve to a
 assert.strictEqual(weddingThemeCrystal.fetchSelfId(), 2230, 'Echo Crystal - Theme of Wedding should use sourced skill 2230');
 assert.strictEqual(weddingThemeCrystal.fetchTargetKind(), 'self', 'Echo Crystal - Theme of Wedding should preserve sourced self target');
 
+const protectionOfValakas = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6652));
+assert(protectionOfValakas, 'Amulet: Protection of Valakas should resolve to an item skill');
+assert.strictEqual(protectionOfValakas.fetchSelfId(), 2231, 'Amulet: Protection of Valakas should use sourced skill 2231');
+assert.strictEqual(protectionOfValakas.fetchHitTime(), 1000, 'Amulet: Protection of Valakas should preserve sourced 1000ms hitTime');
+assert.strictEqual(protectionOfValakas.fetchBuffTime(), 1200000, 'Amulet: Protection of Valakas should preserve sourced 1200s duration');
+assert.strictEqual(protectionOfValakas.fetchSemantic().stats.valakasVuln, 0.89, 'Amulet: Protection of Valakas should preserve sourced valakasVuln 0.89');
+
+const slayValakas = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6655));
+assert(slayValakas, 'Amulet: Slay Valakas should resolve to an item skill');
+assert.strictEqual(slayValakas.fetchSelfId(), 2232, 'Amulet: Slay Valakas should use sourced skill 2232');
+assert.strictEqual(slayValakas.fetchSemantic().stats.valakasPhysDmg, 1.11, 'Amulet: Slay Valakas should preserve sourced valakasPhysDmg 1.11');
+
+const flamesOfValakas = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(6654));
+assert(flamesOfValakas, 'Amulet: Flames of Valakas should resolve to an item skill');
+assert.strictEqual(flamesOfValakas.fetchSelfId(), 2233, 'Amulet: Flames of Valakas should use sourced skill 2233');
+assert.strictEqual(flamesOfValakas.fetchHitTime(), 1000, 'Amulet: Flames of Valakas should preserve sourced 1000ms hitTime');
+assert.strictEqual(flamesOfValakas.fetchReuseTime(), 10000, 'Amulet: Flames of Valakas should preserve sourced 10000ms reuse');
+assert.strictEqual(flamesOfValakas.fetchSkillType(), C4SkillRules.CLEANSE, 'Amulet: Flames of Valakas should preserve sourced NEGATE/CLEANSE semantics');
+assert.deepStrictEqual(flamesOfValakas.fetchSemantic().negateId, [4683, 4684], 'Amulet: Flames of Valakas should preserve sourced negateId metadata');
+
+const savedValakasSetTimeout = global.setTimeout;
+global.setTimeout = (callback) => {
+    callback();
+    return 0;
+};
+
+try {
+    const protectionBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    protectionBackpack.items = [
+        item(50, { selfId: 6652, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const protectionSession = sessionFor(protectionBackpack);
+    protectionBackpack.useItem(protectionSession, 50);
+    assert.strictEqual(protectionBackpack.fetchItemFromSelfId(6652), undefined, 'Amulet: Protection of Valakas should consume one item');
+    assert.strictEqual(EffectStats.multiplier(protectionSession.actor, 'valakasVuln'), 0.89, 'Amulet: Protection of Valakas should apply sourced valakasVuln multiplier');
+
+    const slayBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    slayBackpack.items = [
+        item(51, { selfId: 6655, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const slaySession = sessionFor(slayBackpack);
+    slayBackpack.useItem(slaySession, 51);
+    assert.strictEqual(slayBackpack.fetchItemFromSelfId(6655), undefined, 'Amulet: Slay Valakas should consume one item');
+    assert.strictEqual(EffectStats.multiplier(slaySession.actor, 'valakasPhysDmg'), 1.11, 'Amulet: Slay Valakas should apply sourced valakasPhysDmg multiplier');
+
+    const flamesBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    flamesBackpack.items = [
+        item(52, { selfId: 6654, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const flamesSession = sessionFor(flamesBackpack);
+    EffectStore.apply(flamesSession.actor, { key: 'flames_4683', id: 4683, level: 1, type: 'debuff', category: 'valakas_flames', durationMs: 30000 });
+    EffectStore.apply(flamesSession.actor, { key: 'flames_4684', id: 4684, level: 1, type: 'debuff', category: 'valakas_flames', durationMs: 30000 });
+    EffectStore.apply(flamesSession.actor, { key: 'flames_4685', id: 4685, level: 1, type: 'debuff', category: 'valakas_flames', durationMs: 30000 });
+    flamesBackpack.useItem(flamesSession, 52);
+    assert.strictEqual(flamesBackpack.fetchItemFromSelfId(6654), undefined, 'Amulet: Flames of Valakas should consume one item');
+    assert.strictEqual(flamesSession.actor.effects.flames_4683, undefined, 'Amulet: Flames of Valakas should remove sourced negateId 4683');
+    assert.strictEqual(flamesSession.actor.effects.flames_4684, undefined, 'Amulet: Flames of Valakas should remove sourced negateId 4684');
+    assert.strictEqual(flamesSession.actor.effects.flames_4685.id, 4685, 'Amulet: Flames of Valakas should leave other effects intact');
+} finally {
+    global.setTimeout = savedValakasSetTimeout;
+}
+
 const giranEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(7126));
 assert(giranEscape, 'Scroll of Escape: Giran Castle Town should resolve to an item skill');
 assert.strictEqual(giranEscape.fetchSelfId(), 2213, 'Scroll of Escape: Giran Castle Town should use sourced skill 2213');
