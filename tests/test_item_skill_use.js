@@ -243,6 +243,65 @@ try {
     global.setTimeout = originalSoulCrystalSetTimeout;
 }
 
+const manorSeedItemsByLevel = {
+    1: [
+        5016, 5017, 5018, 5019, 5020, 5021, 5022, 5024, 5025, 5026, 5027, 5042, 5043, 5044, 5650,
+        5651, 5652, 5653, 5654, 5655, 5656, 5658, 5659, 5660, 5661, 5676, 5677, 5678, 7020, 7026,
+        7034, 7040
+    ],
+    2: [
+        5023, 5028, 5029, 5030, 5031, 5032, 5033, 5034, 5035, 5036, 5037, 5038, 5045, 5046, 5047,
+        5048, 5053, 5054, 5055, 5221, 5222, 5223, 5224, 5225, 5657, 5662, 5663, 5664, 5665, 5666,
+        5667, 5668, 5669, 5670, 5671, 5672, 5679, 5680, 5681, 5682, 5687, 5688, 5689, 5696, 5697,
+        5698, 5699, 5700, 7016, 7019, 7025, 7027, 7030, 7033, 7039, 7041, 7044, 7051
+    ],
+    3: [
+        5039, 5040, 5041, 5049, 5050, 5051, 5052, 5056, 5057, 5058, 5059, 5060, 5061, 5226, 5227,
+        5673, 5674, 5675, 5683, 5684, 5685, 5686, 5690, 5691, 5692, 5693, 5694, 5695, 5701, 5702,
+        6727, 6728, 6729, 6730, 6731, 6732, 6733, 6734, 6735, 6736, 6737, 6738, 6739, 6740, 6741,
+        6742, 6743, 6744, 6745, 6746, 6747, 6748, 6749, 6750, 6751, 6752, 6753, 6754, 6755, 6756,
+        6757, 6758, 6759, 6760, 6761, 6762, 6763, 6764, 6765, 6766, 6767, 6768, 6769, 6770, 6771,
+        6772, 6773, 6774, 6775, 6776, 6777, 6778, 7017, 7018, 7021, 7022, 7023, 7024, 7028, 7029,
+        7031, 7032, 7035, 7036, 7037, 7038, 7042, 7043, 7045, 7046, 7047, 7048, 7049, 7050, 7052,
+        7053, 7054, 7055, 7056, 7057
+    ]
+};
+
+Object.entries(manorSeedItemsByLevel).forEach(([level, itemIds]) => {
+    itemIds.forEach((itemId) => {
+        const itemSkill = C4ItemSkills.resolve(itemId);
+        assert(itemSkill, `Manor seed item ${itemId} should resolve to an item skill`);
+        assert.strictEqual(itemSkill.skillId, 2097, `Manor seed item ${itemId} should use sourced Sowing skill`);
+        assert.strictEqual(itemSkill.level, Number(level), `Manor seed item ${itemId} should preserve sourced item_skill level`);
+        assert.strictEqual(itemSkill.consume, false, `Manor seed item ${itemId} should be consumed by Sowing logic, not generic item use`);
+        const sowing = blessedEscapeBackpack.buildItemSkill(itemSkill);
+        assert(sowing, `Manor seed item ${itemId} should build Sowing skill`);
+        assert.strictEqual(sowing.fetchSkillType(), C4SkillRules.SOW, `Manor seed item ${itemId} should preserve SOW semantics`);
+        assert.strictEqual(sowing.fetchTargetKind(), 'enemy', `Manor seed item ${itemId} should preserve TARGET_ONE semantics`);
+        assert.strictEqual(sowing.fetchHitTime(), 1800, `Manor seed item ${itemId} should preserve sourced 1800ms hitTime`);
+        assert.strictEqual(sowing.fetchReuseTime(), 8000, `Manor seed item ${itemId} should preserve sourced 8000ms reuse`);
+        assert.strictEqual(sowing.fetchConsumedMp(), { 1: 4, 2: 6, 3: 8 }[level], `Manor seed item ${itemId} should preserve sourced mpConsume`);
+        assert.strictEqual(sowing.fetchSemantic().castRange, 150, `Manor seed item ${itemId} should preserve sourced castRange`);
+        assert.strictEqual(sowing.fetchSemantic().effectRange, 350, `Manor seed item ${itemId} should preserve sourced effectRange`);
+        assert.strictEqual(sowing.fetchSemantic().nextActionAttack, true, `Manor seed item ${itemId} should preserve sourced nextActionAttack`);
+    });
+});
+
+const harvesterItemSkill = C4ItemSkills.resolve(5125);
+assert(harvesterItemSkill, 'Harvester should resolve to an item skill');
+assert.strictEqual(harvesterItemSkill.skillId, 2098, 'Harvester should use sourced Harvesting skill');
+assert.strictEqual(harvesterItemSkill.level, 1, 'Harvester should preserve sourced item_skill level 1');
+assert.strictEqual(harvesterItemSkill.consume, false, 'Harvester should not be consumed as a simple item skill');
+const harvesting = blessedEscapeBackpack.buildItemSkill(harvesterItemSkill);
+assert(harvesting, 'Harvester should build Harvesting skill');
+assert.strictEqual(harvesting.fetchSkillType(), C4SkillRules.HARVEST, 'Harvester should preserve HARVEST semantics');
+assert.strictEqual(harvesting.fetchTargetKind(), 'corpse_mob', 'Harvester should preserve TARGET_CORPSE_MOB semantics');
+assert.strictEqual(harvesting.fetchHitTime(), 500, 'Harvester should preserve sourced 500ms hitTime');
+assert.strictEqual(harvesting.fetchReuseTime(), 8000, 'Harvester should preserve sourced 8000ms reuse');
+assert.strictEqual(harvesting.fetchConsumedMp(), 3, 'Harvester should preserve sourced mpConsume 3');
+assert.strictEqual(harvesting.fetchSemantic().castRange, 20, 'Harvester should preserve sourced castRange');
+assert.strictEqual(harvesting.fetchSemantic().effectRange, 100, 'Harvester should preserve sourced effectRange');
+
 const facePotionC = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5237));
 assert(facePotionC, 'Facelifting Potion - C should resolve to an item skill');
 assert.strictEqual(facePotionC.fetchSelfId(), 2124, 'Facelifting Potion - C should use sourced skill 2124');
