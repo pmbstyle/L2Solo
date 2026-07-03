@@ -317,6 +317,30 @@ assert(readPacketString(bookSession.packets[0], 5).includes('Using Fishing Shot'
 assert.strictEqual(bookSession.packets[1][0], 0x25, 'Book should finish with ActionFailed like Lisvus');
 assert(bookBackpack.fetchItemFromSelfId(7561), 'Book should not be consumed by its utility handler');
 
+const sevenSignsRecord = C4UtilityItems.resolve(5707);
+assert(sevenSignsRecord, 'Record of Seven Signs should resolve to a sourced utility item handler');
+assert.strictEqual(sevenSignsRecord.handler, 'SevenSignsRecord', 'Record of Seven Signs should preserve sourced SevenSignsRecord handler');
+
+const sevenSignsBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+sevenSignsBackpack.items = [
+    item(15, { selfId: 5707, kind: 'Other.None', consumable: false })
+];
+const sevenSignsSession = sessionFor(sevenSignsBackpack);
+sevenSignsBackpack.useItem(sevenSignsSession, 15);
+assert.strictEqual(sevenSignsSession.packets[0][0], 0xf5, 'Record of Seven Signs should emit C4 SSQStatus packet');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(1), 1, 'Record of Seven Signs should open sourced SSQ page 1');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(2), 0, 'SSQStatus should preserve sourced initial period id when no Seven Signs state exists');
+assert.strictEqual(sevenSignsSession.packets[0].readInt32LE(3), 0, 'SSQStatus should default current cycle to 0 without Seven Signs state');
+assert.strictEqual(sevenSignsSession.packets[0].readInt32LE(7), 1183, 'SSQStatus should use sourced INITIAL_PERIOD system message id');
+assert.strictEqual(sevenSignsSession.packets[0].readInt32LE(11), 1287, 'SSQStatus should use sourced UNTIL_TODAY_6PM system message id');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(15), 0, 'SSQStatus should default player cabal to CABAL_NULL');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(16), 0, 'SSQStatus should default player seal to SEAL_NULL');
+assert.strictEqual(sevenSignsSession.packets[0].readInt32LE(17), 0, 'SSQStatus should default contributed seal stones to 0');
+assert.strictEqual(sevenSignsSession.packets[0].readInt32LE(21), 0, 'SSQStatus should default collectable ancient adena to 0');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(37), 0, 'SSQStatus should default Dusk percent to 0 without Seven Signs state');
+assert.strictEqual(sevenSignsSession.packets[0].readUInt8(50), 0, 'SSQStatus should default Dawn percent to 0 without Seven Signs state');
+assert(sevenSignsBackpack.fetchItemFromSelfId(5707), 'Record of Seven Signs should not be consumed by its utility handler');
+
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));
 assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');

@@ -253,6 +253,9 @@ class Backpack extends BackpackModel {
                 session.dataSendToMe(ServerResponse.npcHtml(0, this.fetchBookHtml(item.fetchSelfId())));
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return true;
+            case 'SevenSignsRecord':
+                session.dataSendToMe(ServerResponse.ssqStatus());
+                return true;
             default:
                 return false;
         }

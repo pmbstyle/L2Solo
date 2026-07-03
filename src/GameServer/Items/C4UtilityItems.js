@@ -6,6 +6,7 @@ const UTILITY_ITEMS = {
     4626: { handler: 'RollingDice' },
     4627: { handler: 'RollingDice' },
     4628: { handler: 'RollingDice' },
+    5707: { handler: 'SevenSignsRecord' },
     5588: { handler: 'Book' },
     6317: { handler: 'Book' },
     7063: { handler: 'Book' },
