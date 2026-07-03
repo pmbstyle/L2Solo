@@ -106,6 +106,21 @@ assert.strictEqual(l2DayResurrection.fetchSelfId(), 2062, 'L2Day Blessed Scroll 
 assert.strictEqual(l2DayResurrection.fetchPower(), 100, 'L2Day Blessed Scroll of Resurrection should preserve sourced power 100');
 assert.strictEqual(l2DayResurrection.fetchHitTime(), 15000, 'L2Day Blessed Scroll of Resurrection should preserve sourced 15000ms hitTime');
 
+const clanHallEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1829));
+assert(clanHallEscape, 'Scroll of Escape: Clan Hall should resolve to an item skill');
+assert.strictEqual(clanHallEscape.fetchSelfId(), 2040, 'Scroll of Escape: Clan Hall should use sourced skill 2040');
+assert.strictEqual(clanHallEscape.fetchHitTime(), 20000, 'Scroll of Escape: Clan Hall should preserve sourced 20000ms hitTime');
+assert.strictEqual(clanHallEscape.fetchSkillType(), C4SkillRules.RECALL, 'Scroll of Escape: Clan Hall should preserve sourced TELEPORT semantics');
+assert.strictEqual(clanHallEscape.fetchTargetKind(), 'self', 'Scroll of Escape: Clan Hall should preserve sourced self target');
+assert.strictEqual(clanHallEscape.fetchSemantic().teleportWhereType, 'ClanHall', 'Scroll of Escape: Clan Hall should preserve sourced teleportWhereType');
+
+const castleEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1830));
+assert(castleEscape, 'Scroll of Escape: Castle should resolve to an item skill');
+assert.strictEqual(castleEscape.fetchSelfId(), 2041, 'Scroll of Escape: Castle should use sourced skill 2041');
+assert.strictEqual(castleEscape.fetchHitTime(), 20000, 'Scroll of Escape: Castle should preserve sourced 20000ms hitTime');
+assert.strictEqual(castleEscape.fetchSkillType(), C4SkillRules.RECALL, 'Scroll of Escape: Castle should preserve sourced TELEPORT semantics');
+assert.strictEqual(castleEscape.fetchSemantic().teleportWhereType, 'Castle', 'Scroll of Escape: Castle should preserve sourced teleportWhereType');
+
 const soulshotA = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(1466));
 assert(soulshotA, 'Soulshot: A-grade should resolve to an item skill');
 assert.strictEqual(soulshotA.fetchSelfId(), 2153, 'Soulshot: A-grade should use sourced skill 2153');
