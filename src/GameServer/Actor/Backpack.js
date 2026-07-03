@@ -9,6 +9,7 @@ const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
+const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
@@ -181,6 +182,11 @@ class Backpack extends BackpackModel {
                     return;
                 }
 
+                const extractableItem = C4ExtractableItems.resolve(item.fetchSelfId());
+                if (extractableItem && this.useExtractableItem(session, id, extractableItem)) {
+                    return;
+                }
+
                 const itemSkill = C4ItemSkills.resolve(item.fetchSelfId());
                 if (itemSkill && this.useSkillItem(session, id, itemSkill)) {
                     return;
@@ -189,6 +195,16 @@ class Backpack extends BackpackModel {
                 utils.infoWarn('GameServer', 'unhandled item action');
             }
         });
+    }
+
+    useExtractableItem(session, id, extractableItem) {
+        const products = C4ExtractableItems.rollProducts(extractableItem);
+        this.deleteItem(session, id, 1, () => {
+            products.forEach((item) => {
+                World.purchaseItem(session, item.selfId, item.amount);
+            });
+        });
+        return true;
     }
 
     useSkillItem(session, id, itemSkill) {

@@ -10,6 +10,7 @@ const Item = invoke('GameServer/Item/Item');
 const Database = invoke('Database');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
+const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -487,6 +488,34 @@ const chestKeyGrade1 = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve
 assert(chestKeyGrade1, 'Chest Key - Grade 1 should resolve to an item skill');
 assert.strictEqual(chestKeyGrade1.fetchSelfId(), 2065, 'Chest Key - Grade 1 should use sourced skill 2065');
 assert.strictEqual(chestKeyGrade1.fetchLevel(), 8, 'Chest Key - Grade 1 should preserve sourced item_skill level 8');
+
+const noGradeCompressedSoulshots = C4ExtractableItems.resolve(5134);
+assert(noGradeCompressedSoulshots, 'Compressed Package of Soulshots: No Grade should resolve to extractable data');
+assert.deepStrictEqual(noGradeCompressedSoulshots.products, [{ selfId: 1835, amount: 300, chance: 100 }], 'Compressed Package of Soulshots: No Grade should preserve sourced extractable product');
+assert.deepStrictEqual(C4ExtractableItems.rollProducts(noGradeCompressedSoulshots, () => 0), [{ selfId: 1835, amount: 300 }], 'Compressed Package of Soulshots: No Grade should roll sourced product');
+
+const sGradeCompressedBlessedSpiritshots = C4ExtractableItems.resolve(5151);
+assert(sGradeCompressedBlessedSpiritshots, 'Compressed Package of Blessed Spiritshots: S-grade should resolve to extractable data');
+assert.deepStrictEqual(sGradeCompressedBlessedSpiritshots.products, [{ selfId: 3952, amount: 300, chance: 100 }], 'Compressed Package of Blessed Spiritshots: S-grade should preserve sourced extractable product');
+
+const savedExtractWorldPurchaseItem = World.purchaseItem;
+try {
+    const extractedItems = [];
+    World.purchaseItem = (session, selfId, amount) => {
+        extractedItems.push({ selfId, amount });
+    };
+
+    const extractBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    extractBackpack.items = [
+        item(40, { selfId: 5134, kind: 'Other.ShotPack', amount: 1 })
+    ];
+    const extractSession = sessionFor(extractBackpack);
+    extractBackpack.useItem(extractSession, 40);
+    assert.strictEqual(extractBackpack.fetchItemFromSelfId(5134), undefined, 'Extractable compressed shot package should consume one source item');
+    assert.deepStrictEqual(extractedItems, [{ selfId: 1835, amount: 300 }], 'Extractable compressed shot package should award sourced shot stack');
+} finally {
+    World.purchaseItem = savedExtractWorldPurchaseItem;
+}
 
 World.user = { sessions: [] };
 
