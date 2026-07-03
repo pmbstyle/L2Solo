@@ -15,6 +15,7 @@ const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4RecipeItems  = invoke('GameServer/Items/C4RecipeItems');
+const C4MercTickets  = invoke('GameServer/Items/C4MercTickets');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -201,6 +202,11 @@ class Backpack extends BackpackModel {
                     return;
                 }
 
+                const mercTicket = C4MercTickets.resolve(item.fetchSelfId());
+                if (mercTicket && this.useMercTicketItem(session, id, mercTicket)) {
+                    return;
+                }
+
                 const extractableItem = C4ExtractableItems.resolve(item.fetchSelfId());
                 if (extractableItem && this.useExtractableItem(session, id, extractableItem)) {
                     return;
@@ -241,6 +247,20 @@ class Backpack extends BackpackModel {
         this.deleteItem(session, id, 1, () => {
             this.registerRecipe(session.actor, recipeItem);
         });
+        return true;
+    }
+
+    useMercTicketItem(session, id, mercTicket) {
+        const placeTicket = session.tryPlaceMercTicket || session.mercTicketManager?.tryPlaceTicket;
+        if (typeof placeTicket !== 'function') {
+            return true;
+        }
+
+        if (!placeTicket.call(session.mercTicketManager || session, session, mercTicket)) {
+            return true;
+        }
+
+        this.deleteItem(session, id, 1);
         return true;
     }
 

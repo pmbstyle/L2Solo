@@ -15,6 +15,7 @@ const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const C4MercTickets = invoke('GameServer/Items/C4MercTickets');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ManorData = invoke('GameServer/Manor/ManorData');
 const World = invoke('GameServer/World/World');
@@ -407,6 +408,28 @@ manufactureRecipes.items = [
 ];
 manufactureRecipes.useItem(sessionFor(manufactureRecipes, { isCrafter: true, createItemLevel: 1, privateStoreType: 5 }), 22);
 assert(manufactureRecipes.fetchItemRaw(22), 'Recipe should not be consumed while actor is in manufacture store mode');
+
+assert.strictEqual(Object.keys(C4MercTickets.MERC_TICKETS).length, 70, 'C4 MercTicket table should preserve Lisvus 70 castle tickets');
+const gludioMercTicket = C4MercTickets.resolve(3960);
+assert(gludioMercTicket, 'Gludio mercenary ticket should resolve to sourced MercTicket metadata');
+assert.strictEqual(gludioMercTicket.castleId, 1, 'Gludio mercenary ticket should map to castle id 1');
+assert.strictEqual(gludioMercTicket.npcId, 12301, 'Gludio first mercenary ticket should map to NPC 12301');
+assert.strictEqual(gludioMercTicket.typeLimit, 10, 'Gludio mercenary ticket should preserve sourced per-type limit 10');
+assert.strictEqual(gludioMercTicket.castleLimit, 50, 'Gludio mercenary ticket should preserve sourced castle limit 50');
+assert.strictEqual(gludioMercTicket.messages[1], 'I am ready to serve you my lord when the time comes.', 'MercTicket should preserve sourced summon messages');
+assert.strictEqual(C4MercTickets.resolve(3973).castleId, 2, 'Dion mercenary tickets should map to castle id 2');
+assert.strictEqual(C4MercTickets.resolve(3973).typeLimit, 15, 'Dion mercenary tickets should preserve sourced per-type limit 15');
+assert.strictEqual(C4MercTickets.resolve(4012).castleId, 5, 'Aden mercenary tickets should map to castle id 5');
+assert.strictEqual(C4MercTickets.resolve(5205).castleId, 6, 'Heine mercenary tickets should map to castle id 6');
+assert.strictEqual(C4MercTickets.resolve(6779).castleId, 7, 'Goddard mercenary tickets should map to castle id 7');
+assert.strictEqual(C4MercTickets.resolve(3970), null, 'Teleporter tickets adjacent to MercTicket ids should not resolve as mercenary tickets');
+
+const mercBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+mercBackpack.items = [
+    item(23, { selfId: 3960, kind: 'Other.CastleGuard', amount: 1 })
+];
+mercBackpack.useItem(sessionFor(mercBackpack), 23);
+assert(mercBackpack.fetchItemRaw(23), 'MercTicket should not be consumed without sourced castle placement context');
 
 const christmasTreeSkill = C4ItemSkills.resolve(5560);
 assert(christmasTreeSkill, 'Christmas Tree should resolve to a sourced SummonItems item skill');
