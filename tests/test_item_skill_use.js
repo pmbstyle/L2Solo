@@ -65,9 +65,9 @@ function sessionFor(backpack, options = {}) {
         fetchHp: () => hp,
         fetchMaxHp: () => options.maxHp ?? 100,
         setHp(value) { hp = value; },
-        fetchLocX: () => 0,
-        fetchLocY: () => 0,
-        fetchLocZ: () => 0,
+        fetchLocX: () => options.locX ?? 0,
+        fetchLocY: () => options.locY ?? 0,
+        fetchLocZ: () => options.locZ ?? 0,
         fetchDestId: () => options.destId,
         fetchHead: () => 0,
         fetchMp: () => mp,
@@ -260,6 +260,34 @@ calculatorBackpack.useItem(calculatorSession, 12);
 assert.strictEqual(calculatorSession.packets[0][0], 0xdc, 'Calculator should emit C4 ShowCalculator packet');
 assert.strictEqual(calculatorSession.packets[0].readInt32LE(1), 4393, 'Calculator packet should include sourced item id 4393');
 assert(calculatorBackpack.fetchItemFromSelfId(4393), 'Calculator should not be consumed by its utility handler');
+
+[4625, 4626, 4627, 4628].forEach((itemId) => {
+    const diceItem = C4UtilityItems.resolve(itemId);
+    assert(diceItem, `Dice item ${itemId} should resolve to a sourced utility item handler`);
+    assert.strictEqual(diceItem.handler, 'RollingDice', `Dice item ${itemId} should preserve sourced RollingDice handler`);
+});
+
+const savedDiceRandom = Math.random;
+Math.random = () => 0.5;
+try {
+    const diceBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    diceBackpack.items = [
+        item(13, { selfId: 4626, kind: 'Other.None', consumable: false })
+    ];
+    const diceSession = sessionFor(diceBackpack, { locX: 100, locY: 200, locZ: -50 });
+    diceBackpack.useItem(diceSession, 13);
+
+    assert.strictEqual(diceSession.packets[0][0], 0xd4, 'Dice should emit C4 Dice packet');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(1), diceSession.actor.fetchId(), 'Dice packet should include caster object id');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(5), 4626, 'Dice packet should include sourced dice item id');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(9), 4, 'Dice packet should include a sourced 1..6 roll');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(13), 70, 'Dice packet should offset X by -30 like Lisvus');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(17), 170, 'Dice packet should offset Y by -30 like Lisvus');
+    assert.strictEqual(diceSession.packets[0].readInt32LE(21), -50, 'Dice packet should preserve actor Z');
+    assert(diceBackpack.fetchItemFromSelfId(4626), 'Dice should not be consumed by its utility handler');
+} finally {
+    Math.random = savedDiceRandom;
+}
 
 const blessedEscapeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 const blessedEscape = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3958));

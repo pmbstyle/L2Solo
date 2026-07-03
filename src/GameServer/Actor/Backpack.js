@@ -243,9 +243,19 @@ class Backpack extends BackpackModel {
             case 'Calculator':
                 session.dataSendToMe(ServerResponse.showCalculator(item.fetchSelfId()));
                 return true;
+            case 'RollingDice':
+                session.dataSendToMeAndOthers(
+                    ServerResponse.dice(session.actor, item.fetchSelfId(), this.rollDiceNumber()),
+                    session.actor
+                );
+                return true;
             default:
                 return false;
         }
+    }
+
+    rollDiceNumber() {
+        return Math.floor(Math.random() * 6) + 1;
     }
 
     useSkillItem(session, id, itemSkill) {
