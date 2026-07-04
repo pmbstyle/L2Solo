@@ -123,6 +123,19 @@ function fakeNpc() {
     };
 }
 
+function fakeItem(overrides = {}) {
+    return {
+        fetchClass1: () => overrides.class1 ?? 4,
+        fetchClass2: () => overrides.class2 ?? 5,
+        fetchId: () => overrides.id ?? 1000001,
+        fetchSelfId: () => overrides.selfId ?? 1835,
+        fetchAmount: () => overrides.amount ?? 1,
+        fetchSlot: () => overrides.slot ?? 0,
+        fetchPrice: () => overrides.price ?? 7,
+        isWearable: () => overrides.wearable === true
+    };
+}
+
 function findUtf16Terminator(buffer, offset) {
     for (let i = offset; i + 1 < buffer.length; i += 2) {
         if (buffer[i] === 0x00 && buffer[i + 1] === 0x00) {
@@ -242,6 +255,23 @@ assert.strictEqual(partySpelled.readInt32LE(9), 1, 'PartySpelled should include 
 assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should include effect skill id');
 assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
 assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
+
+const shopShot = fakeItem({ class1: 4, class2: 5, id: 500001, selfId: 1835, amount: 1, price: 7 });
+const shopWand = fakeItem({ class1: 0, class2: 0, id: 500002, selfId: 6, amount: 1, price: 138, slot: 7, wearable: true });
+const purchaseList = ServerResponse.purchaseList([shopShot, shopWand], 1000);
+assert.strictEqual(purchaseList[0], 0x11, 'C4 BuyList opcode should be 0x11');
+assert.strictEqual(purchaseList.readInt16LE(9), 2, 'BuyList should include item count');
+assert.strictEqual(purchaseList.readInt32LE(29), 0, 'BuyList non-wearable rows should still include empty body part');
+assert.strictEqual(purchaseList.readInt32LE(39), 7, 'BuyList non-wearable price should follow the full C4 item tuple');
+assert.strictEqual(purchaseList.readInt32LE(49), 6, 'BuyList second row should not be shifted after a non-wearable item');
+assert.strictEqual(purchaseList.readInt32LE(61), 2 ** 7, 'BuyList wearable body part should use the paperdoll bitmask');
+assert.strictEqual(purchaseList.readInt32LE(71), 138, 'BuyList wearable price should follow body part/enchant fields');
+
+const sellList = ServerResponse.sellList([{ item: shopShot, amount: 3, price: 10 }], 1000);
+assert.strictEqual(sellList[0], 0x10, 'C4 SellList opcode should be 0x10');
+assert.strictEqual(sellList.readInt32LE(21), 3, 'SellList should include sellable amount');
+assert.strictEqual(sellList.readInt32LE(29), 0, 'SellList non-wearable rows should still include empty body part');
+assert.strictEqual(sellList.readInt32LE(39), 10, 'SellList non-wearable price should follow the full C4 item tuple');
 
 const attack = ServerResponse.attack(actor, 3000001, {
     damage: 123,

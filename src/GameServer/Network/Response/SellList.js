@@ -1,5 +1,9 @@
 const SendPacket = invoke('Packet/Send');
 
+function bodyPart(item) {
+    return item.isWearable() ? 2 ** item.fetchSlot() : 0;
+}
+
 function sellList(rows, adena) {
     const packet = new SendPacket(0x10);
 
@@ -17,17 +21,12 @@ function sellList(rows, adena) {
             .writeD(item.fetchSelfId())
             .writeD(row.amount)
             .writeH(item.fetchClass2())
-            .writeH(0x00);
-
-        if (item.isWearable()) {
-            packet
-                .writeD(item.fetchSlot())
-                .writeH(0x00)
-                .writeH(0x00)
-                .writeH(0x00);
-        }
-
-        packet.writeD(row.price);
+            .writeH(0x00)
+            .writeD(bodyPart(item))
+            .writeH(0x00)
+            .writeH(0x00)
+            .writeH(0x00)
+            .writeD(row.price);
     });
 
     return packet.fetchBuffer();
