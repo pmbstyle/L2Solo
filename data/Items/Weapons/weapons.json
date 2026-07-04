@@ -37,7 +37,7 @@
     "selfId": 8,
     "template": { "kind": "Weapon.Blunt", "name": "Willow Staff", "class1": 0, "class2": 0, "mass": 1080, "price": 12500 },
     "stats": { "pAtk": 11, "pAtkRnd": 20, "mAtk": 12, "atkSpd": 325, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 9,
     "template": { "kind": "Weapon.Blunt", "name": "Cedar Staff", "class1": 0, "class2": 0, "mass": 1090, "price": 54100 },
@@ -1407,7 +1407,7 @@
     "selfId": 744,
     "template": { "kind": "Weapon.Blunt", "name": "Staff of Sentinel", "class1": 0, "class2": 0, "mass": 1800, "price": 33600 },
     "stats": { "pAtk": 13, "pAtkRnd": 20, "mAtk": 14, "atkSpd": 325, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 747,
     "template": { "kind": "Weapon.Blunt", "name": "Wand of Adept", "class1": 0, "class2": 0, "mass": 1300, "price": 25500 },
@@ -1417,7 +1417,7 @@
     "selfId": 748,
     "template": { "kind": "Weapon.Blunt", "name": "Gallint's Oak Wand", "class1": 0, "class2": 0, "mass": 1350, "price": 0 },
     "stats": { "pAtk": 10, "pAtkRnd": 20, "mAtk": 10, "atkSpd": 325, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 749,
     "template": { "kind": "Weapon.Blunt", "name": "0", "class1": 0, "class2": 0, "mass": 100, "price": 35800 },
@@ -1427,7 +1427,7 @@
     "selfId": 754,
     "template": { "kind": "Weapon.Blunt", "name": "Red Sunset Staff", "class1": 0, "class2": 0, "mass": 1700, "price": 25500 },
     "stats": { "pAtk": 13, "pAtkRnd": 20, "mAtk": 13, "atkSpd": 325, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 946,
     "template": { "kind": "Weapon.Knife", "name": "Skeleton Dagger", "class1": 0, "class2": 0, "mass": 1100, "price": 66600 },
@@ -1597,7 +1597,7 @@
     "selfId": 2373,
     "template": { "kind": "Weapon.Blunt", "name": "Eldritch Staff", "class1": 0, "class2": 0, "mass": 1050, "price": 25500 },
     "stats": { "pAtk": 13, "pAtkRnd": 20, "mAtk": 13, "atkSpd": 325, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 2374,
     "template": { "kind": "Weapon.Knife", "name": "Red Sunset Dagger", "class1": 0, "class2": 0, "mass": 1100, "price": 25500 },

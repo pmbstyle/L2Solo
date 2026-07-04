@@ -89,8 +89,10 @@ assert.strictEqual(spiritBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 's
 
 const apprenticeWandTemplate = DataCache.items.find((entry) => entry.selfId === 6);
 const apprenticeRodTemplate = DataCache.items.find((entry) => entry.selfId === 7);
+const willowStaffTemplate = DataCache.items.find((entry) => entry.selfId === 8);
 assert.strictEqual(apprenticeWandTemplate.etc.spiritshot, 1, 'Apprentice Wand should preserve Lisvus spiritshot cost');
 assert.strictEqual(apprenticeRodTemplate.etc.spiritshot, 1, 'Apprentice Rod should preserve Lisvus spiritshot cost');
+assert.strictEqual(willowStaffTemplate.etc.spiritshot, 1, 'Willow Staff should preserve Lisvus spiritshot cost');
 
 const starterMageBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 starterMageBackpack.items = [
@@ -103,13 +105,24 @@ assert.strictEqual(starterMageSession.actor.spiritshotLoaded, true, 'starter mag
 assert.strictEqual(starterMageBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'starter mage spiritshot use should consume Lisvus weapon cost');
 assert(starterMageSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2047), 'starter mage spiritshot use should broadcast no-grade charge animation');
 
+const magaBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+magaBackpack.items = [
+    new Item(13, { ...utils.crushOb(willowStaffTemplate), equipped: true }),
+    item(14, { selfId: 2509, kind: 'Other.Shot', amount: 1000 })
+];
+const magaSession = sessionFor(magaBackpack, 26);
+magaBackpack.useItem(magaSession, 14);
+assert.strictEqual(magaSession.actor.spiritshotLoaded, true, 'Maga Willow Staff should manually load no-grade spiritshot');
+assert.strictEqual(magaBackpack.fetchItemFromSelfId(2509).fetchAmount(), 999, 'Maga Willow Staff should consume one no-grade spiritshot');
+assert(magaSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2047), 'Maga Willow Staff should broadcast no-grade spiritshot charge animation');
+
 const bGradeSpiritBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 bGradeSpiritBackpack.items = [
-    item(11, { selfId: 238, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1, rank: 'b' }),
-    item(12, { selfId: 2512, kind: 'Other.Shot', amount: 2 })
+    item(15, { selfId: 238, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1, rank: 'b' }),
+    item(16, { selfId: 2512, kind: 'Other.Shot', amount: 2 })
 ];
 const bGradeSpiritSession = sessionFor(bGradeSpiritBackpack, 0);
-bGradeSpiritBackpack.useItem(bGradeSpiritSession, 12);
+bGradeSpiritBackpack.useItem(bGradeSpiritSession, 16);
 assert.strictEqual(bGradeSpiritSession.actor.spiritshotLoaded, true, 'B-grade spiritshot should manually load on a matching weapon');
 assert.strictEqual(bGradeSpiritBackpack.fetchItemFromSelfId(2512).fetchAmount(), 1, 'B-grade spiritshot use should consume weapon shot cost');
 assert(bGradeSpiritSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2157), 'B-grade spiritshot use should broadcast sourced charge animation');
