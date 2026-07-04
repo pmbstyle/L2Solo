@@ -60,6 +60,24 @@ class Attack {
         this.timers.clear();
     }
 
+    abortCast(session, actor) {
+        if (!actor?.state?.fetchCasts?.()) {
+            return false;
+        }
+
+        this.clearTimers();
+        this.resetQueuedEvent();
+        actor.state.setCasts(false);
+        actor.storedSpell = undefined;
+
+        session?.dataSendToMeAndOthers?.(
+            ServerResponse.magicSkillCanceld(actor.fetchId()),
+            actor
+        );
+        session?.dataSendToMe?.(ServerResponse.actionFailed());
+        return true;
+    }
+
     meleeHit(session, creature) {
         const actor = session.actor;
 

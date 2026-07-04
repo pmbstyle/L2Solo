@@ -21,6 +21,7 @@ module.exports = {
                    dice: require('./Dice'),
         etcStatusUpdate: require('./EtcStatusUpdate'),
               itemsList: require('./ItemsList'),
+      magicSkillCanceld: require('./MagicSkillCanceld'),
           logoutSuccess: require('./LogoutSuccess'),
          moveToLocation: require('./MoveToLocation'),
              moveToPawn: require('./MoveToPawn'),

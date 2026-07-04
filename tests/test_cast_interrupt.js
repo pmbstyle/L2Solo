@@ -1,0 +1,113 @@
+const assert = require('assert');
+
+require('../src/Global');
+
+const Attack = invoke('GameServer/Actor/Attack');
+const State = invoke('GameServer/Model/State');
+const destCancel = invoke('GameServer/Network/Request/DestCancel');
+
+function actor(overrides = {}) {
+    const state = new State();
+    return {
+        state,
+        attack: null,
+        storedSpell: { selfId: 1 },
+        fetchId: () => overrides.id ?? 2000001,
+        fetchMp: () => overrides.mp ?? 50,
+        setMp(value) { this.mp = value; },
+        fetchHp: () => overrides.hp ?? 100,
+        setHp(value) { this.hp = value; },
+        fetchCollectiveCastSpd: () => 333,
+        fetchCollectiveAtkSpd: () => 333,
+        fetchCollectiveMAtk: () => 100,
+        fetchCollectivePAtk: () => 100,
+        fetchLocX: () => 100,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -300,
+        fetchHead: () => 0,
+        fetchMaxHp: () => 100,
+        statusUpdateVitals() {},
+        automation: { replenishVitals() {} },
+        backpack: {
+            consumeSpiritshot(session, callback) { callback(false); },
+            consumeSoulshot(session, callback) { callback(false); },
+            fetchTotalWeaponPAtkRnd: () => 0
+        },
+        isDead: () => false
+    };
+}
+
+function target() {
+    return {
+        state: new State(),
+        fetchId: () => 3000001,
+        fetchCollectiveMDef: () => 100,
+        fetchCollectivePDef: () => 100,
+        fetchShieldRate: () => 0,
+        fetchLocX: () => 140,
+        fetchLocY: () => 220,
+        fetchLocZ: () => -300,
+        fetchHead: () => 0,
+        isDead: () => false
+    };
+}
+
+function skill() {
+    return {
+        fetchConsumedMp: () => 10,
+        fetchConsumedHp: () => 0,
+        fetchSpell: () => true,
+        fetchHitTime: () => 5000,
+        fetchReuseTime: () => 1000,
+        fetchCalculatedHitTime() { return this.calculatedHitTime; },
+        setCalculatedHitTime(value) { this.calculatedHitTime = value; },
+        fetchSelfId: () => 1011,
+        fetchPower: () => 10,
+        fetchSemantic: () => ({ skillType: 'damage', trait: 'wind' }),
+        fetchSsBoost: () => 1
+    };
+}
+
+const savedSetTimeout = global.setTimeout;
+const savedClearTimeout = global.clearTimeout;
+const timers = [];
+global.setTimeout = (callback, delay) => {
+    const timer = { callback, delay, canceled: false };
+    timers.push(timer);
+    return timer;
+};
+global.clearTimeout = (timer) => {
+    timer.canceled = true;
+};
+
+try {
+    const attack = new Attack();
+    const caster = actor();
+    caster.attack = attack;
+    const victim = target();
+    const packets = [];
+    const session = {
+        actor: caster,
+        dataSendToMe(packet) { packets.push(packet); },
+        dataSendToMeAndOthers(packet) { packets.push(packet); }
+    };
+
+    attack.remoteHit(session, victim, skill());
+    assert.strictEqual(caster.state.fetchCasts(), true, 'remote skill should mark actor as casting before hit time');
+    assert.strictEqual(timers.length, 2, 'remote skill should schedule hit and reuse timers');
+
+    destCancel(session, Buffer.from([0x37, 0x00, 0x00]));
+    assert.strictEqual(caster.state.fetchCasts(), false, 'ESC target cancel should clear casting state');
+    assert.strictEqual(caster.storedSpell, undefined, 'ESC target cancel should clear stored spell');
+    assert(timers.every((timer) => timer.canceled), 'ESC target cancel should clear pending skill timers');
+    assert(packets.some((packet) => packet[0] === 0x49), 'ESC target cancel should broadcast MagicSkillCanceld');
+    assert(packets.some((packet) => packet[0] === 0x25), 'ESC target cancel should send ActionFailed');
+
+    timers.filter((timer) => !timer.canceled).forEach((timer) => timer.callback());
+    assert.strictEqual(caster.mp, undefined, 'aborted cast should not consume MP');
+} finally {
+    global.setTimeout = savedSetTimeout;
+    global.clearTimeout = savedClearTimeout;
+}
+
+console.log('Cast interrupt checks passed');

@@ -11,6 +11,7 @@ const tests = [
     'tests/test_bot_leveling_routes.js',
     'tests/test_c4_buff_modifiers.js',
     'tests/test_c4_protocol_packets.js',
+    'tests/test_cast_interrupt.js',
     'tests/test_change_class.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
