@@ -27,12 +27,12 @@
     "selfId": 6,
     "template": { "kind": "Weapon.Blunt", "name": "Apprentice's Wand", "class1": 0, "class2": 0, "mass": 1350, "price": 138 },
     "stats": { "pAtk": 5, "pAtkRnd": 20, "mAtk": 7, "atkSpd": 379, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 7, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 7,
     "template": { "kind": "Weapon.Blunt", "name": "Apprentice's Rod", "class1": 0, "class2": 0, "mass": 1330, "price": 768 },
     "stats": { "pAtk": 6, "pAtkRnd": 20, "mAtk": 8, "atkSpd": 379, "crit": 40, "accur": 4.75 },
-    "etc": { "slot": 7, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
+    "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "none", "cristals": 0 }
 },{
     "selfId": 8,
     "template": { "kind": "Weapon.Blunt", "name": "Willow Staff", "class1": 0, "class2": 0, "mass": 1080, "price": 12500 },

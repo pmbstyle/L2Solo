@@ -30,6 +30,9 @@ function sessionFor(backpack, classId = 0) {
         backpack,
         fetchId: () => 2000001,
         fetchClassId: () => classId,
+        fetchLocX: () => 100,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -300,
         isDead: () => false
     };
     return {
@@ -82,5 +85,20 @@ consumed = false;
 spiritBackpack.consumeSpiritshot(sessionFor(spiritBackpack, 10), (ok) => { consumed = ok; });
 assert.strictEqual(consumed, true, 'spiritshot should consume for caster classes');
 assert.strictEqual(spiritBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'spiritshot consume should use weapon shot cost');
+
+const apprenticeWandTemplate = DataCache.items.find((entry) => entry.selfId === 6);
+const apprenticeRodTemplate = DataCache.items.find((entry) => entry.selfId === 7);
+assert.strictEqual(apprenticeWandTemplate.etc.spiritshot, 1, 'Apprentice Wand should preserve Lisvus spiritshot cost');
+assert.strictEqual(apprenticeRodTemplate.etc.spiritshot, 1, 'Apprentice Rod should preserve Lisvus spiritshot cost');
+
+const starterMageBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+starterMageBackpack.items = [
+    new Item(9, { ...utils.crushOb(apprenticeWandTemplate), equipped: true }),
+    item(10, { selfId: 2509, kind: 'Other.Shot', amount: 3 })
+];
+const starterMageSession = sessionFor(starterMageBackpack, 10);
+starterMageBackpack.useItem(starterMageSession, 10);
+assert.strictEqual(starterMageSession.actor.spiritshotLoaded, true, 'starter mage weapon should manually load spiritshot');
+assert.strictEqual(starterMageBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'starter mage spiritshot use should consume Lisvus weapon cost');
 
 console.log('Shot consumption checks passed');
