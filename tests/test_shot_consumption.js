@@ -37,8 +37,9 @@ function sessionFor(backpack, classId = 0) {
     };
     return {
         actor,
-        dataSendToMe() {},
-        dataSendToMeAndOthers() {}
+        packets: [],
+        dataSendToMe(packet) { this.packets.push(packet); },
+        dataSendToMeAndOthers(packet) { this.packets.push(packet); }
     };
 }
 
@@ -82,8 +83,8 @@ spiritBackpack.items = [
     item(6, { selfId: 2509, kind: 'Other.Shot', amount: 4 })
 ];
 consumed = false;
-spiritBackpack.consumeSpiritshot(sessionFor(spiritBackpack, 10), (ok) => { consumed = ok; });
-assert.strictEqual(consumed, true, 'spiritshot should consume for caster classes');
+spiritBackpack.consumeSpiritshot(sessionFor(spiritBackpack, 0), (ok) => { consumed = ok; });
+assert.strictEqual(consumed, true, 'spiritshot should consume for magic skills even when class role is not caster');
 assert.strictEqual(spiritBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'spiritshot consume should use weapon shot cost');
 
 const apprenticeWandTemplate = DataCache.items.find((entry) => entry.selfId === 6);
@@ -100,5 +101,17 @@ const starterMageSession = sessionFor(starterMageBackpack, 10);
 starterMageBackpack.useItem(starterMageSession, 10);
 assert.strictEqual(starterMageSession.actor.spiritshotLoaded, true, 'starter mage weapon should manually load spiritshot');
 assert.strictEqual(starterMageBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'starter mage spiritshot use should consume Lisvus weapon cost');
+assert(starterMageSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2047), 'starter mage spiritshot use should broadcast no-grade charge animation');
+
+const bGradeSpiritBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+bGradeSpiritBackpack.items = [
+    item(11, { selfId: 238, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1, rank: 'b' }),
+    item(12, { selfId: 2512, kind: 'Other.Shot', amount: 2 })
+];
+const bGradeSpiritSession = sessionFor(bGradeSpiritBackpack, 0);
+bGradeSpiritBackpack.useItem(bGradeSpiritSession, 12);
+assert.strictEqual(bGradeSpiritSession.actor.spiritshotLoaded, true, 'B-grade spiritshot should manually load on a matching weapon');
+assert.strictEqual(bGradeSpiritBackpack.fetchItemFromSelfId(2512).fetchAmount(), 1, 'B-grade spiritshot use should consume weapon shot cost');
+assert(bGradeSpiritSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2157), 'B-grade spiritshot use should broadcast sourced charge animation');
 
 console.log('Shot consumption checks passed');

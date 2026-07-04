@@ -179,6 +179,10 @@ class Attack {
                 return;
             }
 
+            if (magicSkill) {
+                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, [creature]), actor);
+            }
+
             actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
             if (skill.fetchConsumedHp() > 0) {
                 actor.setHp(Math.max(1, actor.fetchHp() - skill.fetchConsumedHp()));
@@ -216,10 +220,10 @@ class Attack {
     chargeShotForSkill(session, actor, magicSkill) {
         if (magicSkill) {
             if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
-                actor.backpack.consumeSpiritshot(session, (success) => {
+                actor.backpack.consumeSpiritshot(session, (success, shot = {}) => {
                     if (success) {
                         actor.spiritshotLoaded = true;
-                        this.broadcastShotCharge(session, actor, 2047);
+                        this.broadcastShotCharge(session, actor, shot.skillId || 2047);
                     }
                 });
             }
@@ -227,10 +231,10 @@ class Attack {
         }
 
         if (!actor.soulshotLoaded && actor.backpack && typeof actor.backpack.consumeSoulshot === 'function') {
-            actor.backpack.consumeSoulshot(session, (success) => {
+            actor.backpack.consumeSoulshot(session, (success, shot = {}) => {
                 if (success) {
                     actor.soulshotLoaded = true;
-                    this.broadcastShotCharge(session, actor, 2039);
+                    this.broadcastShotCharge(session, actor, shot.skillId || 2039);
                 }
             });
         }

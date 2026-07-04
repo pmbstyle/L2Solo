@@ -52,7 +52,7 @@ function target() {
     };
 }
 
-function skill() {
+function skill(overrides = {}) {
     return {
         fetchConsumedMp: () => 10,
         fetchConsumedHp: () => 0,
@@ -62,7 +62,8 @@ function skill() {
         fetchCalculatedHitTime() { return this.calculatedHitTime; },
         setCalculatedHitTime(value) { this.calculatedHitTime = value; },
         fetchSelfId: () => 1011,
-        fetchPower: () => 10,
+        fetchLevel: () => 1,
+        fetchPower: () => overrides.power ?? 10,
         fetchSemantic: () => ({ skillType: 'damage', trait: 'wind' }),
         fetchSsBoost: () => 1
     };
@@ -105,6 +106,20 @@ try {
 
     timers.filter((timer) => !timer.canceled).forEach((timer) => timer.callback());
     assert.strictEqual(caster.mp, undefined, 'aborted cast should not consume MP');
+
+    timers.length = 0;
+    packets.length = 0;
+    const landingAttack = new Attack();
+    const landingCaster = actor({ id: 2000002 });
+    landingCaster.attack = landingAttack;
+    const landingSession = {
+        actor: landingCaster,
+        dataSendToMe(packet) { packets.push(packet); },
+        dataSendToMeAndOthers(packet) { packets.push(packet); }
+    };
+    landingAttack.remoteHit(landingSession, victim, skill({ power: 0 }));
+    timers.find((timer) => !timer.canceled && timer.delay > 0).callback();
+    assert(packets.some((packet) => packet[0] === 0x76 && packet.readInt32LE(5) === 1011), 'completed magic cast should broadcast MagicSkillLaunched on landing');
 } finally {
     global.setTimeout = savedSetTimeout;
     global.clearTimeout = savedClearTimeout;

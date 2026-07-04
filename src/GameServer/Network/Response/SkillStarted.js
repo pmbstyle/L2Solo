@@ -13,7 +13,7 @@ function skillStarted(actor, npcId, skill) {
         .writeD(actor.fetchLocX())
         .writeD(actor.fetchLocY())
         .writeD(actor.fetchLocZ())
-        .writeH(0x00);
+        .writeD(0x00);
 
     return packet.fetchBuffer();
 }

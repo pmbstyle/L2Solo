@@ -79,12 +79,18 @@ function weaponRankFromRows(rows = []) {
 function planFor({ classId, rank = 'none' } = {}) {
     const normalizedRank = normalizeRank(rank);
     const kind = classWantsSpiritshots(classId) ? 'spiritshot' : 'soulshot';
-    const selfId = kind === 'spiritshot'
+    return planForKind(kind, normalizedRank);
+}
+
+function planForKind(kind, rank = 'none') {
+    const normalizedRank = normalizeRank(rank);
+    const normalizedKind = kind === 'spiritshot' ? 'spiritshot' : 'soulshot';
+    const selfId = normalizedKind === 'spiritshot'
         ? SPIRITSHOT_BY_RANK[normalizedRank]
         : SOULSHOT_BY_RANK[normalizedRank];
 
     return {
-        kind,
+        kind: normalizedKind,
         rank: normalizedRank,
         selfId,
         name: itemName(selfId),
@@ -97,6 +103,10 @@ function planForActor(actor) {
         classId: actorClassId(actor),
         rank: weaponRankFromActor(actor)
     });
+}
+
+function planForActorKind(kind, actor) {
+    return planForKind(kind, weaponRankFromActor(actor));
 }
 
 function planForRows(rows, classId) {
@@ -232,7 +242,9 @@ module.exports = {
     SPIRITSHOT_IDS,
     SHOT_IDS,
     planFor,
+    planForKind,
     planForActor,
+    planForActorKind,
     planForRows,
     shotAmount,
     ensureActorStock,

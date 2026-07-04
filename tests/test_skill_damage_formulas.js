@@ -160,20 +160,22 @@ assert.strictEqual(physicalChargeActor.soulshotLoaded, true, 'physical skill sho
 const magicChargeActor = actor();
 soulshotConsumed = false;
 spiritshotConsumed = false;
+const chargePackets = [];
 magicChargeActor.backpack.consumeSoulshot = (session, callback) => {
     soulshotConsumed = true;
     callback(true);
 };
 magicChargeActor.backpack.consumeSpiritshot = (session, callback) => {
     spiritshotConsumed = true;
-    callback(true);
+    callback(true, { skillId: 2157 });
 };
 attack.chargeShotForSkill({
     actor: magicChargeActor,
-    dataSendToMeAndOthers() {}
+    dataSendToMeAndOthers(packet) { chargePackets.push(packet); }
 }, magicChargeActor, true);
 assert.strictEqual(soulshotConsumed, false, 'magic skill should not try to charge soulshot');
 assert.strictEqual(spiritshotConsumed, true, 'magic skill should try to charge spiritshot');
 assert.strictEqual(magicChargeActor.spiritshotLoaded, true, 'magic skill should load spiritshot on successful consume');
+assert(chargePackets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2157), 'magic skill should broadcast the consumed spiritshot grade animation');
 
 console.log('Skill damage formula checks passed');

@@ -256,6 +256,25 @@ assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should incl
 assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
 assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
 
+const magicUse = ServerResponse.skillStarted(actor, actor.fetchId(), {
+    fetchSelfId: () => 2047,
+    fetchCalculatedHitTime: () => 0,
+    fetchReuseTime: () => 0
+});
+assert.strictEqual(magicUse[0], 0x48, 'C4 MagicSkillUse opcode should be 0x48');
+assert.strictEqual(magicUse.readInt32LE(9), 2047, 'MagicSkillUse should include shot skill id');
+assert.strictEqual(magicUse.readInt32LE(37), 0, 'MagicSkillUse should write the final critical flag as a D');
+
+const magicLaunched = ServerResponse.magicSkillLaunched(actor, {
+    fetchSelfId: () => 1177,
+    fetchLevel: () => 1
+}, [{ fetchId: () => 3000001 }]);
+assert.strictEqual(magicLaunched[0], 0x76, 'C4 MagicSkillLaunched opcode should be 0x76');
+assert.strictEqual(magicLaunched.readInt32LE(1), actor.fetchId(), 'MagicSkillLaunched should include caster id');
+assert.strictEqual(magicLaunched.readInt32LE(5), 1177, 'MagicSkillLaunched should include skill id');
+assert.strictEqual(magicLaunched.readInt32LE(13), 1, 'MagicSkillLaunched should include target count');
+assert.strictEqual(magicLaunched.readInt32LE(17), 3000001, 'MagicSkillLaunched should include target id');
+
 const shopShot = fakeItem({ class1: 4, class2: 5, id: 500001, selfId: 1835, amount: 1, price: 7 });
 const shopWand = fakeItem({ class1: 0, class2: 0, id: 500002, selfId: 6, amount: 1, price: 138, slot: 7, wearable: true });
 const purchaseList = ServerResponse.purchaseList([shopShot, shopWand], 1000);

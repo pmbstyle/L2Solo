@@ -89,16 +89,13 @@ class Backpack extends BackpackModel {
             return callback(false);
         }
 
-        const plan = ShotStock.planForActor(session.actor);
-        if (plan.kind !== 'soulshot') {
-            return callback(false);
-        }
+        const plan = ShotStock.planForActorKind('soulshot', session.actor);
 
         const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
         const cost = this.fetchShotCost('soulshot');
         if (cost > 0 && found && found.fetchAmount() >= cost) {
             this.deleteItem(session, found.fetchId(), cost, () => {
-                callback(true);
+                callback(true, this.shotChargeInfo(found.fetchSelfId()));
             });
         } else {
             callback(false);
@@ -110,20 +107,26 @@ class Backpack extends BackpackModel {
             return callback(false);
         }
 
-        const plan = ShotStock.planForActor(session.actor);
-        if (plan.kind !== 'spiritshot') {
-            return callback(false);
-        }
+        const plan = ShotStock.planForActorKind('spiritshot', session.actor);
 
         const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
         const cost = this.fetchShotCost('spiritshot');
         if (cost > 0 && found && found.fetchAmount() >= cost) {
             this.deleteItem(session, found.fetchId(), cost, () => {
-                callback(true);
+                callback(true, this.shotChargeInfo(found.fetchSelfId()));
             });
         } else {
             callback(false);
         }
+    }
+
+    shotChargeInfo(selfId) {
+        const itemSkill = C4ItemSkills.resolve(selfId);
+        return {
+            selfId,
+            skillId: itemSkill?.skillId || (ShotStock.SPIRITSHOT_IDS.includes(selfId) ? 2047 : 2039),
+            blessedSpiritshot: !!itemSkill?.blessedSpiritshot
+        };
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {
@@ -156,11 +159,10 @@ class Backpack extends BackpackModel {
                     }
                     this.deleteItem(session, id, cost, () => {
                         session.actor.soulshotLoaded = true;
-                        
-                        // Play activation effect (Skill 2039)
+                        const shot = this.shotChargeInfo(item.fetchSelfId());
                         session.dataSendToMeAndOthers(
                             ServerResponse.skillStarted(session.actor, session.actor.fetchId(), {
-                                fetchSelfId: () => 2039,
+                                fetchSelfId: () => shot.skillId,
                                 fetchCalculatedHitTime: () => 0,
                                 fetchReuseTime: () => 0
                             }), 
@@ -180,11 +182,10 @@ class Backpack extends BackpackModel {
                     }
                     this.deleteItem(session, id, cost, () => {
                         session.actor.spiritshotLoaded = true;
-
-                        // Play activation effect (Skill 2047)
+                        const shot = this.shotChargeInfo(item.fetchSelfId());
                         session.dataSendToMeAndOthers(
                             ServerResponse.skillStarted(session.actor, session.actor.fetchId(), {
-                                fetchSelfId: () => 2047,
+                                fetchSelfId: () => shot.skillId,
                                 fetchCalculatedHitTime: () => 0,
                                 fetchReuseTime: () => 0
                             }),

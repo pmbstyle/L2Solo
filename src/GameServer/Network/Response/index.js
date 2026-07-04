@@ -22,6 +22,7 @@ module.exports = {
         etcStatusUpdate: require('./EtcStatusUpdate'),
               itemsList: require('./ItemsList'),
       magicSkillCanceld: require('./MagicSkillCanceld'),
+     magicSkillLaunched: require('./MagicSkillLaunched'),
           logoutSuccess: require('./LogoutSuccess'),
          moveToLocation: require('./MoveToLocation'),
              moveToPawn: require('./MoveToPawn'),
