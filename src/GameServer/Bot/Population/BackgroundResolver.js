@@ -1,3 +1,5 @@
+const ProgressionRates = invoke('GameServer/ProgressionRates');
+
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -122,7 +124,8 @@ function resolveFight({ state, spot, pressure, rng }) {
     const remainingHp = Math.max(1, vitals.hp - hitsTaken * mobDamage);
     const rewards = spot.rewards;
     const expMultiplier = pressure?.expMultiplier || 1;
-    const adena = randInt(rng, rewards.adenaMin, rewards.adenaMax);
+    const rates = ProgressionRates.profile();
+    const adena = Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena);
     const loot = rng() < 0.08 ? [{
         selfId: 57,
         name: 'Adena',
@@ -134,8 +137,8 @@ function resolveFight({ state, spot, pressure, rng }) {
         died: false,
         hp: remainingHp,
         mp: Math.max(0, vitals.mp - bot.manaPerFight),
-        exp: Math.round(rewards.exp * expMultiplier),
-        sp: Math.round(rewards.sp * expMultiplier),
+        exp: Math.round(rewards.exp * expMultiplier * rates.exp),
+        sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
         loot
     };

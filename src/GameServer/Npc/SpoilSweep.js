@@ -2,6 +2,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 const SPOIL_SKILL_ID = 254;
 const SWEEP_SKILL_ID = 42;
@@ -20,11 +21,11 @@ function hasSpoils(npc) {
 }
 
 function rollSpoils(npc) {
-    const optn = options.default.General;
     const awarded = [];
 
     fetchSpoilGroups(npc).forEach((group) => {
-        if (Math.random() * 100 > group.overall * optn.dropChanceRate) {
+        const groupRoll = ProgressionRates.rollGroup(group.overall, ProgressionRates.groupRate(group, 'spoil'));
+        if (!groupRoll.hit) {
             return;
         }
 
@@ -35,10 +36,11 @@ function rollSpoils(npc) {
             rewardPartition += item.chance;
 
             if (number <= rewardPartition) {
+                const baseAmount = utils.oneFromSpan(item.min, item.max);
                 awarded.push({
                     selfId: item.selfId,
                     name: item.name,
-                    amount: utils.oneFromSpan(item.min, item.max)
+                    amount: ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier)
                 });
                 break;
             }

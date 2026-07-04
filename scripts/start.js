@@ -17,6 +17,7 @@ const previousLogPath = path.join(logsDir, 'previous-server.log');
 const debugFlagNames = [
     'L2NODE_PACKET_TRACE'
 ];
+const progressionPresets = new Set(['x1', 'x10', 'x50']);
 
 const state = {
     phase: 'stopped',
@@ -24,6 +25,7 @@ const state = {
     startedAt: null,
     lastExit: null,
     logFilePath: latestLogPath,
+    progressionRate: normalizeProgressionRate(process.env.L2NODE_PROGRESSION_RATE),
     logs: []
 };
 
@@ -111,6 +113,11 @@ function launcherUrl() {
     return `http://${host}:${port}/`;
 }
 
+function normalizeProgressionRate(value) {
+    const rate = String(value || 'x1').trim().toLowerCase();
+    return progressionPresets.has(rate) ? rate : 'x1';
+}
+
 function prepareLogFile() {
     fs.mkdirSync(logsDir, { recursive: true });
 
@@ -183,15 +190,18 @@ function publicState() {
         launcherUrl: launcherUrl(),
         logUrl: `${launcherUrl()}api/log`,
         logFilePath: state.logFilePath,
+        progressionRate: state.progressionRate,
+        progressionRates: Array.from(progressionPresets),
         logs: state.logs.slice(-40)
     };
 }
 
-function startServer() {
+function startServer({ progressionRate } = {}) {
     if (state.child) {
         return publicState();
     }
 
+    state.progressionRate = normalizeProgressionRate(progressionRate || state.progressionRate);
     state.phase = 'starting';
     state.startedAt = Date.now();
     state.lastExit = null;
@@ -200,7 +210,10 @@ function startServer() {
 
     const child = spawn(process.execPath, [path.join('scripts', 'run-server.js')], {
         cwd: rootDir,
-        env: process.env,
+        env: {
+            ...process.env,
+            L2NODE_PROGRESSION_RATE: state.progressionRate
+        },
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -362,6 +375,31 @@ function sendHtml(response) {
             gap: 10px;
         }
 
+        .rate-field {
+            display: grid;
+            gap: 8px;
+            margin: 0 0 14px;
+        }
+
+        .rate-field label {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        select {
+            width: 100%;
+            height: 42px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 15px;
+            font-weight: 700;
+            padding: 0 12px;
+        }
+
         button {
             height: 44px;
             border: 1px solid var(--border);
@@ -452,6 +490,15 @@ function sendHtml(response) {
             <div id="status" class="status stopped"><span class="dot"></span><span>Stopped</span></div>
         </header>
 
+        <section class="rate-field">
+            <label for="progressionRate">Progression</label>
+            <select id="progressionRate">
+                <option value="x1">x1</option>
+                <option value="x10">x10</option>
+                <option value="x50">x50</option>
+            </select>
+        </section>
+
         <section class="controls">
             <button id="start" class="primary" type="button">Start</button>
             <button id="stop" type="button">Stop</button>
@@ -461,6 +508,7 @@ function sendHtml(response) {
 
         <section class="meta">
             <div class="row"><span class="label">Server</span><span id="server" class="value">Stopped</span></div>
+            <div class="row"><span class="label">Progression</span><span id="progression" class="value">x1</span></div>
             <div class="row"><span class="label">PID</span><span id="pid" class="value">-</span></div>
             <div class="row"><span class="label">Uptime</span><span id="uptime" class="value">-</span></div>
             <div class="row"><span class="label">Log</span><span id="logPath" class="value">-</span></div>
@@ -473,6 +521,7 @@ function sendHtml(response) {
         const statusEl = document.getElementById('status');
         const statusText = statusEl.querySelector('span:last-child');
         const serverEl = document.getElementById('server');
+        const progressionEl = document.getElementById('progression');
         const pidEl = document.getElementById('pid');
         const uptimeEl = document.getElementById('uptime');
         const logPathEl = document.getElementById('logPath');
@@ -481,8 +530,11 @@ function sendHtml(response) {
         const stopButton = document.getElementById('stop');
         const mapButton = document.getElementById('map');
         const logFileButton = document.getElementById('logFile');
+        const progressionRateSelect = document.getElementById('progressionRate');
         let mapUrl = '';
         let logUrl = '';
+        let pendingProgressionRate = progressionRateSelect.value || 'x1';
+        let hasPendingProgressionRate = false;
 
         function titleCase(value) {
             return value.charAt(0).toUpperCase() + value.slice(1);
@@ -509,12 +561,23 @@ function sendHtml(response) {
             statusEl.className = 'status ' + phase;
             statusText.textContent = titleCase(phase);
             serverEl.textContent = titleCase(phase);
+            const serverProgressionRate = data.progressionRate || 'x1';
+            const locked = phase === 'starting' || phase === 'running' || phase === 'stopping';
+            if (locked || !hasPendingProgressionRate) {
+                pendingProgressionRate = serverProgressionRate;
+                hasPendingProgressionRate = false;
+                progressionRateSelect.value = serverProgressionRate;
+            } else {
+                progressionRateSelect.value = pendingProgressionRate;
+            }
+            progressionEl.textContent = progressionRateSelect.value;
             pidEl.textContent = data.pid || '-';
             uptimeEl.textContent = formatUptime(data.uptimeMs);
             logPathEl.textContent = data.logFilePath || '-';
             logUrl = data.logUrl || '';
-            startButton.disabled = phase === 'starting' || phase === 'running' || phase === 'stopping';
+            startButton.disabled = locked;
             stopButton.disabled = phase === 'stopped' || phase === 'stopping';
+            progressionRateSelect.disabled = locked;
             logEl.textContent = data.logs && data.logs.length
                 ? data.logs.map((entry) => entry.line).join('\\n')
                 : 'Launcher ready.';
@@ -530,7 +593,17 @@ function sendHtml(response) {
         }
 
         startButton.addEventListener('click', async () => {
-            render(await request('/api/start', { method: 'POST' }));
+            render(await request('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ progressionRate: progressionRateSelect.value })
+            }));
+        });
+
+        progressionRateSelect.addEventListener('change', () => {
+            pendingProgressionRate = progressionRateSelect.value;
+            hasPendingProgressionRate = true;
+            progressionEl.textContent = pendingProgressionRate;
         });
 
         stopButton.addEventListener('click', async () => {
@@ -583,8 +656,14 @@ async function route(request, response) {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/start') {
-        await readBody(request);
-        sendJson(response, startServer());
+        const body = await readBody(request);
+        let payload = {};
+        try {
+            payload = body ? JSON.parse(body) : {};
+        } catch {
+            payload = {};
+        }
+        sendJson(response, startServer({ progressionRate: payload.progressionRate }));
         return;
     }
 

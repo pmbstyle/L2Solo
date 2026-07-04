@@ -1,3 +1,5 @@
+const ProgressionRates = invoke('GameServer/ProgressionRates');
+
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -55,14 +57,15 @@ function estimateWinRate({ party, members, spot, pressure }) {
 function distributeRewards({ members, spot, wins, pressure, rng }) {
     const rewards = spot.rewards;
     const expMultiplier = Number(pressure?.expMultiplier || 1);
+    const rates = ProgressionRates.profile();
     const totalAdena = Array.from({ length: wins }).reduce((sum) => (
-        sum + randInt(rng, rewards.adenaMin, rewards.adenaMax)
+        sum + Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena)
     ), 0);
 
     return members.map((state) => ({
         state,
-        exp: Math.round((rewards.exp * wins * expMultiplier) / members.length),
-        sp: Math.round((rewards.sp * wins * expMultiplier) / members.length),
+        exp: Math.round((rewards.exp * wins * expMultiplier * rates.exp) / members.length),
+        sp: Math.round((rewards.sp * wins * expMultiplier * rates.sp) / members.length),
         adena: Math.round(totalAdena / members.length)
     }));
 }

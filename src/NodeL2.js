@@ -11,6 +11,7 @@ const BotManager  = invoke('GameServer/Bot/BotManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const DevConsole = invoke('GameServer/DevConsole');
 const WorldObserver = invoke('WorldObserver/WorldObserverServer');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 console.info('\n\
     + ================================== \n\
@@ -21,6 +22,15 @@ console.info('\n\
     # NodeJS version: ...... %s          \n\
     + ================================== \n\
 ', utils.buildNumber(), utils.currentDate(), utils.nodeVersion());
+console.info(
+    'Progress   :: preset %s | exp x%s | sp x%s | adena x%s | drop x%s | spoil x%s',
+    ProgressionRates.profile().preset,
+    ProgressionRates.profile().exp,
+    ProgressionRates.profile().sp,
+    ProgressionRates.profile().adena,
+    ProgressionRates.profile().drop,
+    ProgressionRates.profile().spoil
+);
 
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 Database.init(() => {

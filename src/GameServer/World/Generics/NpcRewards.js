@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 function isBotSession(session) {
     return !!(session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_'))));
@@ -58,10 +59,10 @@ function awardPartyLoot(world, session, npc, selfId, amount) {
 function npcRewards(session, npc) {
     DataCache.fetchNpcRewardsFromSelfId(npc.fetchSelfId(), (result) => {
         const rewards = result.rewards ?? [];
-        const optn    = options.default.General;
 
         rewards.forEach((reward) => {
-            if (Math.random() * 100 <= reward.overall * optn.dropChanceRate) {
+            const groupRoll = ProgressionRates.rollGroup(reward.overall, ProgressionRates.groupRate(reward, 'drop'));
+            if (groupRoll.hit) {
                 let number = Math.random() * 100;
                 let rewardPartition = 0;
 
@@ -69,7 +70,8 @@ function npcRewards(session, npc) {
                     rewardPartition += item.chance;
 
                     if (number <= rewardPartition) { // TODO: Remove locZ hack at some point
-                        const amount = utils.oneFromSpan(item.min, item.max);
+                        const baseAmount = utils.oneFromSpan(item.min, item.max);
+                        const amount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier);
                         if (isBotSession(session)) {
                             if (session.partyCompanion === true && session.followPlayerSession) {
                                 awardPartyLoot(this, session, npc, item.selfId, amount);

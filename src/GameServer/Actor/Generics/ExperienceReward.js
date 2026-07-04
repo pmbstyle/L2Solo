@@ -2,12 +2,17 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const Database       = invoke('Database');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 function experienceReward(session, actor, exp, sp) {
     const optn = options.default.General;
+    const rates = ProgressionRates.profile();
 
-    let totalExp = actor.fetchExp() + (exp *= optn.expRate);
-    let totalSp  = actor.fetchSp () + ( sp *= optn.expRate);
+    exp = Math.max(0, Math.round(exp * rates.exp));
+    sp = Math.max(0, Math.round(sp * rates.sp));
+
+    let totalExp = actor.fetchExp() + exp;
+    let totalSp  = actor.fetchSp () + sp;
 
     actor.setExpSp(totalExp, totalSp);
     ConsoleText.transmit(session, ConsoleText.caption.earnedExpAndSp, [{ kind: ConsoleText.kind.number, value: exp }, { kind: ConsoleText.kind.number, value: sp }]);
