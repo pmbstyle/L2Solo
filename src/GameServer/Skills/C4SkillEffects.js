@@ -420,6 +420,7 @@ function applyEffect(session, target, skill, semantic) {
         EffectTicker.applyHot(session, session?.actor, target, effect);
     }
 
+    EffectTicker.scheduleExpiry(session, target, effect);
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect);
     refreshEffects(session, target);
     return effect;

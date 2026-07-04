@@ -3,10 +3,80 @@ function ensureTimers(actor) {
     return actor.effectTimers;
 }
 
+function ensureExpiryTimers(actor) {
+    if (!actor.effectExpiryTimers) actor.effectExpiryTimers = {};
+    return actor.effectExpiryTimers;
+}
+
 function clear(actor, key) {
+    let removed = false;
+    if (actor?.effectTimers?.[key]) {
+        clearInterval(actor.effectTimers[key]);
+        delete actor.effectTimers[key];
+        removed = true;
+    }
+    if (actor?.effectExpiryTimers?.[key]) {
+        clearTimeout(actor.effectExpiryTimers[key]);
+        delete actor.effectExpiryTimers[key];
+        removed = true;
+    }
+    return removed;
+}
+
+function clearRuntime(actor, key) {
     if (!actor?.effectTimers?.[key]) return false;
     clearInterval(actor.effectTimers[key]);
     delete actor.effectTimers[key];
+    return true;
+}
+
+function clearExpiry(actor, key) {
+    if (!actor?.effectExpiryTimers?.[key]) return false;
+    clearTimeout(actor.effectExpiryTimers[key]);
+    delete actor.effectExpiryTimers[key];
+    return true;
+}
+
+function refreshEffects(session, target) {
+    const ServerResponse = invoke('GameServer/Network/Response');
+    const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
+    if (target?.session?.dataSendToMe) {
+        target.session.dataSendToMe(packet);
+    } else if (target === session?.actor && session?.dataSendToMe) {
+        session.dataSendToMe(packet);
+    }
+
+    try {
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+        if (target?.session) PartyCompanionService.updateActorEffects(target.session);
+    } catch (err) {
+        utils.infoWarn('EffectTicker', 'party effect refresh failed: %s', err.message);
+    }
+}
+
+function scheduleExpiry(session, target, effect) {
+    if (!target || !effect?.key || !effect.expiresAt) return false;
+
+    const delay = Number(effect.expiresAt) - Date.now();
+    if (!Number.isFinite(delay) || delay <= 0) return false;
+
+    const timers = ensureExpiryTimers(target);
+    clearExpiry(target, effect.key);
+    timers[effect.key] = setTimeout(() => {
+        if (target.effectExpiryTimers?.[effect.key]) {
+            delete target.effectExpiryTimers[effect.key];
+        }
+
+        const EffectStore = invoke('GameServer/Effects/EffectStore');
+        EffectStore.prune(target);
+        if (target.activeBuffs?.[effect.key] && target.activeBuffs[effect.key] <= Date.now()) {
+            delete target.activeBuffs[effect.key];
+        }
+        refreshEffects(session, target);
+    }, Math.max(1, delay + 25));
+    if (typeof timers[effect.key].unref === 'function') {
+        timers[effect.key].unref();
+    }
     return true;
 }
 
@@ -23,14 +93,14 @@ function applyDot(session, source, target, effect) {
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
         if (target.state?.fetchDead?.()) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
             return;
         }
 
         applyDamage(session, source, target, damage);
         remaining -= 1;
         if (remaining <= 0) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
         }
     }, intervalMs);
     return true;
@@ -49,14 +119,14 @@ function applyHot(session, source, target, effect) {
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
         if (target.state?.fetchDead?.()) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
             return;
         }
 
         applyHeal(target, heal);
         remaining -= 1;
         if (remaining <= 0) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
         }
     }, intervalMs);
     return true;
@@ -75,14 +145,14 @@ function applyManaDot(session, source, target, effect) {
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
         if (target.state?.fetchDead?.()) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
             return;
         }
 
         applyManaDamage(target, damage);
         remaining -= 1;
         if (remaining <= 0) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
         }
     }, intervalMs);
     return true;
@@ -101,14 +171,14 @@ function applyManaHot(session, source, target, effect) {
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
         if (target.state?.fetchDead?.()) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
             return;
         }
 
         applyManaHeal(target, heal);
         remaining -= 1;
         if (remaining <= 0) {
-            clear(target, effect.key);
+            clearRuntime(target, effect.key);
         }
     }, intervalMs);
     return true;
@@ -159,5 +229,6 @@ module.exports = {
     applyManaDot,
     applyManaHot,
     applyHot,
+    scheduleExpiry,
     clear
 };

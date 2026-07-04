@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
@@ -97,6 +98,7 @@ function applyBuff(session, actor, buffType, Generics, source = {}) {
         type: 'buff',
         durationMs: BUFF_DURATION_MS
     });
+    EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
     broadcastSkillCast(source.casterSession, source.caster, actor, buff);
     refreshActorPackets(session, actor, Generics);
 
@@ -132,6 +134,7 @@ function applyFullNewbieBlessing(session, actor, Generics) {
             type: 'buff',
             expiresAt
         });
+        EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
     });
 
     actor.setHp(actor.fetchMaxHp());
