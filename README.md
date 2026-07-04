@@ -16,6 +16,8 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 ✅ Authentication (C4 client, protocol 656)
 
+✅ Controllable progression rate on server start (x1/x10/x50) Xp, Sp, party XP/SP, drop/adena/spoil/quest multipliers
+
 ✅ Player character, inventory, skills, shortcuts, position, and progression
 
 ✅ Mob fight, damage, death, respawn
