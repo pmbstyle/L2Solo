@@ -86,6 +86,7 @@ function select(session, actor, data) {
     if (actor.fetchId() === data.id) { // Click on self
         actor.setDestId(actor.fetchId());
         session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));
+        session.dataSendToMe(ServerResponse.relationChanged(actor));
         return;
     }
 
@@ -98,6 +99,7 @@ function select(session, actor, data) {
         if (user.fetchId() !== actor.fetchDestId()) { // First click on bot
             actor.setDestId(user.fetchId());
             session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));
+            session.dataSendToMe(ServerResponse.relationChanged(user));
             return;
         }
         // Second click on bot
@@ -139,6 +141,7 @@ function select(session, actor, data) {
                 if (user.fetchId() !== actor.fetchDestId()) { // First click on a User
                     actor.setDestId(user.fetchId());
                     session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));
+                    session.dataSendToMe(ServerResponse.relationChanged(user));
                 }
                 else { // Second click on same User
                     if (user.fetchPrivateStoreType && user.fetchPrivateStoreType() !== 0) {

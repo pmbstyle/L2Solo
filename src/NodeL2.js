@@ -12,6 +12,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const DevConsole = invoke('GameServer/DevConsole');
 const WorldObserver = invoke('WorldObserver/WorldObserverServer');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const ClanService = invoke('GameServer/Clan/ClanService');
 
 console.info('\n\
     + ================================== \n\
@@ -35,18 +36,20 @@ console.info(
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 Database.init(() => {
     DataCache.init();
-    GeodataEngine.init();
-    World.init();
+    ClanService.init().then(() => {
+        GeodataEngine.init();
+        World.init();
 
-    new Server('AuthServer', options.default.AuthServer, (socket) => {
-        return new AuthSession(socket);
+        new Server('AuthServer', options.default.AuthServer, (socket) => {
+            return new AuthSession(socket);
+        });
+
+        new Server('GameServer', options.default.GameServer, (socket) => {
+            return new GameSession(socket);
+        });
+
+        BotManager.init();
+        WorldObserver.init();
+        DevConsole.init();
     });
-
-    new Server('GameServer', options.default.GameServer, (socket) => {
-        return new GameSession(socket);
-    });
-
-    BotManager.init();
-    WorldObserver.init();
-    DevConsole.init();
 });

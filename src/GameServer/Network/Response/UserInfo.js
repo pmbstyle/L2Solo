@@ -1,7 +1,11 @@
 const SendPacket = invoke('Packet/Send');
+const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
+const ClanService = invoke('GameServer/Clan/ClanService');
 
 function userInfo(actor) {
     const packet = new SendPacket(0x04);
+    const clan = Pledge.clan(actor);
+    const relation = ClanService.isLeader(actor, clan) ? 0x40 : 0x00;
 
     packet
         .writeD(actor.fetchLocX())
@@ -70,11 +74,11 @@ function userInfo(actor) {
         .writeD(actor.fetchFace())
         .writeD(actor.fetchIsGM())
         .writeS(actor.fetchTitle())
-        .writeD(0x00)  // Clan ID
-        .writeD(0x00)  // Clan Crest ID
-        .writeD(0x00)  // Ally ID
-        .writeD(0x00)  // Ally Crest ID
-        .writeD(0x00)  // ?
+        .writeD(Pledge.clanId(actor))  // Clan ID
+        .writeD(Pledge.crestId(actor))  // Clan Crest ID
+        .writeD(Pledge.allyId(actor))  // Ally ID
+        .writeD(Pledge.allyCrestId(actor))  // Ally Crest ID
+        .writeD(relation)  // Clan leader / siege relation flags
         .writeC(0x00)  // ?
         .writeC(actor.fetchPrivateStoreType())  // Private Store Type
         .writeC(actor.fetchIsCrafter())
@@ -84,7 +88,7 @@ function userInfo(actor) {
         .writeC(0x00)  // Find Party Members = 0x01
         .writeD(0x00)  // Is invisible?
         .writeC(0x00)  // ?
-        .writeD(0x00)  // Clan Privileges
+        .writeD(Pledge.privileges(actor))  // Clan Privileges
         .writeD(0x00)  // ?
         .writeD(0x00)  // ?
         .writeD(0x00)  // ?
@@ -102,7 +106,7 @@ function userInfo(actor) {
         .writeD(actor.fetchCp())
         .writeC(0x00)  // Mounted
         .writeC(0x00)  // Team circle color
-        .writeD(0x00)  // Clan large crest ID
+        .writeD(Pledge.largeCrestId(actor))  // Clan large crest ID
         .writeC(0x00)  // Noble
         .writeC(0x00)  // Hero
         .writeC(0x00)  // Fishing

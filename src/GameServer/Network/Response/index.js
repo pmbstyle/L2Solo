@@ -2,6 +2,7 @@ module.exports = {
           actionFailed: require('./ActionFailed'),
            addShortcut: require('./AddShortcut'),
           askForTeamUp: require('./AskForTeamUp'),
+          askJoinPledge: require('./AskJoinPledge'),
                 attack: require('./Attack'),
        autoAttackStart: require('./AutoAttackStart'),
         autoAttackStop: require('./AutoAttackStop'),
@@ -66,5 +67,14 @@ module.exports = {
               partySpelled: require('./PartySpelled'),
    abnormalStatusUpdate: require('./AbnormalStatusUpdate'),
               joinParty: require('./JoinParty'),
-         relationChanged: require('./RelationChanged')
+             joinPledge: require('./JoinPledge'),
+         relationChanged: require('./RelationChanged'),
+    managePledgePower: require('./ManagePledgePower'),
+             pledgeInfo: require('./PledgeInfo'),
+            pledgeCrest: require('./PledgeCrest'),
+ pledgeShowInfoUpdate: require('./PledgeShowInfoUpdate'),
+ pledgeShowMemberListAdd: require('./PledgeShowMemberListAdd'),
+ pledgeShowMemberListAll: require('./PledgeShowMemberListAll'),
+ pledgeShowMemberListUpdate: require('./PledgeShowMemberListUpdate'),
+ pledgeShowMemberListDelete: require('./PledgeShowMemberListDelete')
 };

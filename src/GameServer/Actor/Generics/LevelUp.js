@@ -34,6 +34,15 @@ function levelUp(session, actor, nextLevel) {
     // Update database with new hp, mp
     Database.updateCharacterVitals(id, hp, maxHp, mp, maxMp);
 
+    const ClanService = invoke('GameServer/Clan/ClanService');
+    const clanUpdate = ClanService.updateActorMember(actor);
+    if (clanUpdate?.clan) {
+        ClanService.onlineSessions(clanUpdate.clan).forEach((memberSession) => {
+            memberSession.dataSendToMe(ServerResponse.pledgeShowMemberListUpdate(clanUpdate.member));
+            memberSession.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(clanUpdate.clan));
+        });
+    }
+
     // Bot celebration reaction
     if (session.accountId && session.accountId.startsWith('bot_')) {
         try {

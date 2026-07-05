@@ -51,6 +51,12 @@ const Database = {
         );
     },
 
+    fetchClanCharacters() {
+        return Database.execute(
+            builder.select('characters', ['*'], 'clanId != 0')
+        );
+    },
+
     // Checks if acharacter `Name` exists
     fetchCharacterName: (name) => {
         return Database.execute(
@@ -168,6 +174,69 @@ const Database = {
     deleteItems(characterId) {
         return Database.execute(
             builder.delete('items', 'characterId = ?', characterId)
+        );
+    },
+
+    fetchClans() {
+        return Database.execute(
+            builder.select('clans', ['*'])
+        );
+    },
+
+    createClanCrest(clanId, kind, data) {
+        return Database.execute([
+            'INSERT INTO clan_crests (clanId, kind, data) VALUES (?, ?, ?)',
+            [clanId, kind, data]
+        ]);
+    },
+
+    fetchClanCrest(id) {
+        return Database.execute(
+            builder.selectOne('clan_crests', ['*'], 'id = ? LIMIT 1', id)
+        );
+    },
+
+    createClan(data) {
+        return Database.execute(
+            builder.insert('clans', {
+                name: data.name,
+                leaderId: data.leaderId
+            })
+        );
+    },
+
+    updateClanCrest(id, crestId) {
+        return Database.execute(
+            builder.update('clans', {
+                crestId: crestId
+            }, 'id = ? LIMIT 1', id)
+        );
+    },
+
+    updateClanLevel(id, level) {
+        return Database.execute(
+            builder.update('clans', {
+                level: level
+            }, 'id = ? LIMIT 1', id)
+        );
+    },
+
+    updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) {
+        return Database.execute(
+            builder.update('characters', {
+                clanId: clanId,
+                clanPrivileges: clanPrivileges,
+                clanJoinExpiryTime: clanJoinExpiryTime,
+                clanCreateExpiryTime: clanCreateExpiryTime
+            }, 'id = ? LIMIT 1', id)
+        );
+    },
+
+    updateCharacterClanPrivileges(id, clanPrivileges) {
+        return Database.execute(
+            builder.update('characters', {
+                clanPrivileges: clanPrivileges
+            }, 'id = ? LIMIT 1', id)
         );
     },
 

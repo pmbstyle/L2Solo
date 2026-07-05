@@ -84,6 +84,22 @@ class ActorModel extends CreatureModel {
         this.model.classId = data;
     }
 
+    setClanId(data) {
+        this.model.clanId = data;
+    }
+
+    setClanPrivileges(data) {
+        this.model.clanPrivileges = data;
+    }
+
+    setClanJoinExpiryTime(data) {
+        this.model.clanJoinExpiryTime = data;
+    }
+
+    setClanCreateExpiryTime(data) {
+        this.model.clanCreateExpiryTime = data;
+    }
+
     // Get
 
     fetchPvpFlag() {
@@ -188,6 +204,26 @@ class ActorModel extends CreatureModel {
 
     fetchIsActive() {
         return this.model.isActive;
+    }
+
+    fetchClanId() {
+        return this.model.clanId || 0;
+    }
+
+    fetchClanPrivileges() {
+        return this.model.clanPrivileges || 0;
+    }
+
+    fetchClanJoinExpiryTime() {
+        return this.model.clanJoinExpiryTime || 0;
+    }
+
+    fetchClanCreateExpiryTime() {
+        return this.model.clanCreateExpiryTime || 0;
+    }
+
+    fetchClan() {
+        return invoke('GameServer/Clan/ClanService').findById(this.fetchClanId());
     }
 
     // Abstract

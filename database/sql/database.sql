@@ -31,6 +31,10 @@ CREATE TABLE `characters`(
     `karma`       int(10)     NOT NULL DEFAULT 0,
     `evalScore`   int( 5)     NOT NULL DEFAULT 0,
     `recRemain`   int( 5)     NOT NULL DEFAULT 0,
+    `clanId`      int( 8)     NOT NULL DEFAULT 0,
+    `clanPrivileges` int( 8) NOT NULL DEFAULT 0,
+    `clanJoinExpiryTime` bigint NOT NULL DEFAULT 0,
+    `clanCreateExpiryTime` bigint NOT NULL DEFAULT 0,
     `isGM`        boolean     NOT NULL DEFAULT 0,
     `isOnline`    boolean     NOT NULL DEFAULT 0,
     `isActive`    boolean     NOT NULL DEFAULT 1,
@@ -41,6 +45,34 @@ CREATE TABLE `characters`(
     PRIMARY KEY (`id`)
 );
 ALTER TABLE `characters` AUTO_INCREMENT=2000000;
+
+CREATE TABLE `clans`(
+    `id`          int( 8)     NOT NULL AUTO_INCREMENT,
+    `name`        varchar(16) NOT NULL,
+    `level`       int( 5)     NOT NULL DEFAULT 0,
+    `leaderId`    int( 8)     NOT NULL,
+    `crestId`     int( 8)     NOT NULL DEFAULT 0,
+    `crestLargeId` int( 8)    NOT NULL DEFAULT 0,
+    `allyId`      int( 8)     NOT NULL DEFAULT 0,
+    `allyName`    varchar(16) NOT NULL DEFAULT "",
+    `allyCrestId` int( 8)     NOT NULL DEFAULT 0,
+    `dissolvingExpiryTime` bigint NOT NULL DEFAULT 0,
+    `charPenaltyExpiryTime` bigint NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `name` (`name`),
+    KEY `leaderId` (`leaderId`)
+);
+
+CREATE TABLE `clan_crests`(
+    `id`          int( 8)     NOT NULL AUTO_INCREMENT,
+    `clanId`      int( 8)     NOT NULL,
+    `kind`        varchar(16) NOT NULL DEFAULT "pledge",
+    `data`        varbinary(256) NOT NULL,
+    `createdAt`   timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `clanId` (`clanId`)
+);
+ALTER TABLE `clans` AUTO_INCREMENT=6000000;
 
 CREATE TABLE `items`(
     `id`          int( 8)     NOT NULL AUTO_INCREMENT,

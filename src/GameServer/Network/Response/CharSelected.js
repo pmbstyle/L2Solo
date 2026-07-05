@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 
 function charSelected(actor) {
     const packet = new SendPacket(0x15);
@@ -8,7 +9,7 @@ function charSelected(actor) {
         .writeD(actor.fetchId())
         .writeS(actor.fetchTitle())
         .writeD(0x55555555)
-        .writeD(0x00)  // Clan ID
+        .writeD(Pledge.clanId(actor))  // Clan ID
         .writeD(0x00)  // ?
         .writeD(actor.fetchSex())
         .writeD(actor.fetchRace())

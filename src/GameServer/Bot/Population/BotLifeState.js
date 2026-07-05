@@ -183,6 +183,7 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
+        clanId: actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,

@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
@@ -57,10 +58,10 @@ function charInfo(actor) {
         .writeD(actor.fetchHairColor())
         .writeD(actor.fetchFace())
         .writeS(title)
-        .writeD(0x00)  // Clan Id
-        .writeD(0x00)  // Clan Crest Id
-        .writeD(0x00)  // Ally Id
-        .writeD(0x00)  // Ally Crest Id
+        .writeD(Pledge.clanId(actor))  // Clan Id
+        .writeD(Pledge.crestId(actor))  // Clan Crest Id
+        .writeD(Pledge.allyId(actor))  // Ally Id
+        .writeD(Pledge.allyCrestId(actor))  // Ally Crest Id
         .writeD(0x00)  // ?
         .writeC(standingState)  // Sitting = 0, Standing = 1
         .writeC(0x01)  // Running = 1
@@ -79,7 +80,7 @@ function charInfo(actor) {
         .writeD(0x00)  // Special effects
         .writeC(0x00)  // Enchant effect
         .writeC(0x00)  // Team circle color
-        .writeD(0x00)  // Clan large crest ID
+        .writeD(Pledge.largeCrestId(actor))  // Clan large crest ID
         .writeC(0x00)  // Noble
         .writeC(0x00)  // Hero
         .writeC(0x00)  // Fishing
