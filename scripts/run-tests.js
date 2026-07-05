@@ -18,6 +18,7 @@ const tests = [
     'tests/test_geodata_regions.js',
     'tests/test_item_skill_use.js',
     'tests/test_npc_combat_range.js',
+    'tests/test_npc_social_aggro.js',
     'tests/test_party_companion_rest_follow.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',

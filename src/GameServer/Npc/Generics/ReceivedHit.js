@@ -1,5 +1,6 @@
 function receivedHit(session, actor, npc, hit) {
     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+    const SocialAggro = invoke('GameServer/Npc/SocialAggro');
 
     BotSocialMemory.recordCombatHelp(session, npc, `hit ${npc.fetchName()} for ${hit}`);
 
@@ -13,6 +14,7 @@ function receivedHit(session, actor, npc, hit) {
 
     npc.automation.replenishVitals(npc);
     npc.enterCombatState(session, actor);
+    SocialAggro.notifyClan(session, npc, actor);
 }
 
 module.exports = receivedHit;

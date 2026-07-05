@@ -63,6 +63,14 @@ class NpcModel extends CreatureModel {
         return this.model.armor;
     }
 
+    fetchClanName() {
+        return this.model.clanName ?? this.model.clan?.clanName ?? '';
+    }
+
+    fetchClanHelpRadius() {
+        return this.model.helpRadius ?? this.model.clan?.helpRadius ?? 0;
+    }
+
     fetchRewardExp() {
         return this.model.exp;
     }
