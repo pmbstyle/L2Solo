@@ -2,7 +2,9 @@ const assert = require('assert');
 
 require('../src/Global');
 
+const Attack = invoke('GameServer/Actor/Attack');
 const Npc = invoke('GameServer/Npc/Npc');
+const SkillModel = invoke('GameServer/Model/Skill');
 
 function npcWithRange(atkRadius, selfId = 900000) {
     return new Npc(900000, {
@@ -137,6 +139,27 @@ assert.strictEqual(castPacket.readInt32LE(25), castStop.locX, 'MagicSkillUse sho
 assert.strictEqual(session.packets.some((packet) => packet[0] === 0x05), false, 'spellcasting path should not emit an immediate melee attack');
 casterNpc.state.setCasts(false);
 AttackHelperCleanup(casterNpc);
+
+const npcPhysicalSkill = new SkillModel({
+    selfId: 4032,
+    name: 'NPC Strike',
+    passive: false,
+    spell: false,
+    distance: 40,
+    hitTime: 1000,
+    reuse: 1000,
+    buff: 0,
+    level: 1,
+    power: 18,
+    mp: 0,
+    hp: 0,
+    itemId: 0,
+    itemCount: 0
+});
+assert.doesNotThrow(
+    () => new Attack().prepareSkillDamage(meleeNpc, target, npcPhysicalSkill, false),
+    'physical NPC skills should not require a player backpack'
+);
 
 console.log('NPC combat range checks passed');
 

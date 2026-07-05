@@ -399,12 +399,13 @@ class Attack {
         const usedSoulshot = !!actor.soulshotLoaded;
         const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
         const semantic = skill.fetchSemantic?.() || {};
+        const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: semantic.trait === 'bow' || this.isBowAttack(actor)
         });
         const damage = Math.round(Formulas.calcPhysicalDamage(
             actor.fetchCollectivePAtk(),
-            actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0,
+            weaponPAtkRnd,
             creature.fetchCollectivePDef() + shieldPDef,
             skill.fetchPower(),
             { soulshot: usedSoulshot }
