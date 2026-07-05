@@ -98,10 +98,12 @@ class Npc extends NpcModel {
                 coords.locY = newDstY;
                 coords.locZ = newDstZ;
 
-                this.automation.scheduleAction(session, this, actor, actor.fetchRadius(), () => {
-                    this.setLocXYZ(coords);
+                const attackRange = this.fetchCombatAttackRange(actor);
 
-                    if (new SpeckMath.Point(coords.locX, coords.locY).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) <= this.fetchAtkRadius()) {
+                this.automation.scheduleAction(session, this, actor, attackRange, () => {
+                    this.setLocXYZ(this.fetchCombatStopCoords(actor, attackRange));
+
+                    if (this.isTargetInAttackRange(actor, attackRange)) {
                         session.dataSendToMeAndOthers(
                             ServerResponse.stopMove(this.fetchId(), {
                                 locX: this.fetchLocX(),
@@ -118,6 +120,25 @@ class Npc extends NpcModel {
             }, 100);
 
         }, 1000);
+    }
+
+    fetchCombatAttackRange(actor) {
+        return Math.max(
+            0,
+            Number(this.fetchAtkRadius()) || 0,
+            Number(actor?.fetchRadius?.()) || 0
+        );
+    }
+
+    fetchCombatStopCoords(actor, attackRange = this.fetchCombatAttackRange(actor)) {
+        return this.automation.actionStopCoords(this, actor, attackRange);
+    }
+
+    isTargetInAttackRange(actor, attackRange = this.fetchCombatAttackRange(actor)) {
+        const distance = new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ()).distance(
+            new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
+        );
+        return distance <= attackRange + 1;
     }
 
     abortCombatState(session) {
