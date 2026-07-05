@@ -611,6 +611,15 @@ class Attack {
         ConsoleText.transmit(session, ConsoleText.caption.actorHit, [{ kind: ConsoleText.kind.number, value: hit }]);
 
         if (creature.fetchId() >= 2000000) {
+            if (actor?.fetchKind) {
+                if (creature?.session) {
+                    creature.session.incomingThreatId = actor.fetchId();
+                    creature.session.incomingThreatAt = Date.now();
+                }
+                invoke(path.actor).receivedHit(session, creature, hit);
+                return;
+            }
+
             // Flag the attacker when hitting another player/bot
             actor.setPvpFlag(1);
             session.dataSendToMe(ServerResponse.userInfo(actor));

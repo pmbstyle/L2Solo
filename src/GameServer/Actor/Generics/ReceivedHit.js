@@ -37,7 +37,7 @@ function receivedHit(session, actor, hit) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
-        if (session.actor && session.actor !== actor) {
+        if (session.actor && session.actor !== actor && !session.actor.fetchKind) {
             const attacker = session.actor;
             const victim = actor;
             const Database = invoke('Database');

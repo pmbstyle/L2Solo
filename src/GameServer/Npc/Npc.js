@@ -7,6 +7,7 @@ const Formulas       = invoke('GameServer/Formulas');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const Attack         = invoke('GameServer/Actor/Attack');
 const ManorData      = invoke('GameServer/Manor/ManorData');
+const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const AttackHelper   = new Attack();
 
 class Npc extends NpcModel {
@@ -38,6 +39,7 @@ class Npc extends NpcModel {
         this.timer = {
             combat: undefined
         };
+        this.skillReuseUntil = new Map();
     }
 
     destructor(session) {
@@ -98,21 +100,22 @@ class Npc extends NpcModel {
                 coords.locY = newDstY;
                 coords.locZ = newDstZ;
 
-                const attackRange = this.fetchCombatAttackRange(actor);
+                const combatSkill = this.selectCombatSkill(actor);
+                const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);
 
-                this.automation.scheduleAction(session, this, actor, attackRange, () => {
-                    this.setLocXYZ(this.fetchCombatStopCoords(actor, attackRange));
+                this.automation.scheduleAction(session, this, actor, actionRange, () => {
+                    this.setLocXYZ(this.fetchCombatStopCoords(actor, actionRange));
+
+                    if (combatSkill && this.isTargetInAttackRange(actor, actionRange)) {
+                        this.stopForCombatAction(session);
+                        this.castSkill(session, actor, combatSkill);
+                        return;
+                    }
+
+                    const attackRange = this.fetchCombatAttackRange(actor);
 
                     if (this.isTargetInAttackRange(actor, attackRange)) {
-                        session.dataSendToMeAndOthers(
-                            ServerResponse.stopMove(this.fetchId(), {
-                                locX: this.fetchLocX(),
-                                locY: this.fetchLocY(),
-                                locZ: this.fetchLocZ(),
-                                head: this.fetchHead(),
-                            }), this
-                        );
-
+                        this.stopForCombatAction(session);
                         this.meleeHit(session, this, actor);
                     }
                 });
@@ -139,6 +142,57 @@ class Npc extends NpcModel {
             new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
         );
         return distance <= attackRange + 1;
+    }
+
+    fetchCombatSkills() {
+        if (!this.combatSkills) {
+            this.combatSkills = NpcSkills.combatSkillsFor(this);
+        }
+        return this.combatSkills;
+    }
+
+    fetchSkillCastRange(skill, actor) {
+        return Math.max(
+            0,
+            Number(skill?.fetchDistance?.()) || 0,
+            Number(actor?.fetchRadius?.()) || 0
+        );
+    }
+
+    selectCombatSkill(actor) {
+        const now = Date.now();
+        return this.fetchCombatSkills().find((skill) => {
+            if (skill.fetchTargetKind() !== 'enemy') return false;
+            if (this.fetchMp() < skill.fetchConsumedMp()) return false;
+            return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+        }) || null;
+    }
+
+    markSkillReuse(skill) {
+        this.skillReuseUntil.set(
+            skill.fetchSelfId(),
+            Date.now() + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
+        );
+    }
+
+    stopForCombatAction(session) {
+        session.dataSendToMeAndOthers(
+            ServerResponse.stopMove(this.fetchId(), {
+                locX: this.fetchLocX(),
+                locY: this.fetchLocY(),
+                locZ: this.fetchLocZ(),
+                head: this.fetchHead(),
+            }), this
+        );
+    }
+
+    castSkill(session, actor, skill) {
+        this.markSkillReuse(skill);
+        AttackHelper.remoteHit({
+            actor: this,
+            dataSendToMe() {},
+            dataSendToMeAndOthers: (packet) => session.dataSendToMeAndOthers(packet, this)
+        }, actor, skill);
     }
 
     abortCombatState(session) {
@@ -205,7 +259,15 @@ class Npc extends NpcModel {
     }
 
     broadcastVitals() {
+        const World = invoke('GameServer/World/World');
+        if (!World.user?.sessions) {
+            return;
+        }
         invoke(path.npc).broadcastVitals(this);
+    }
+
+    statusUpdateVitals() {
+        this.broadcastVitals();
     }
 
     addAbsorber(actor) {
