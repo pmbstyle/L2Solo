@@ -4,85 +4,90 @@
 
 # L2Solo (C4: Scions of Destiny)
 
-Old-school Lineage 2 solo play, locally in a live world with over 1500 population.
+Old-school Lineage 2 solo play, locally in a live world with over 1500 bot population.
 
-L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and SimPlayers with AI that make the server feel alive.
+L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
 
 <p align="center">🏗️ Work in progress. Playable.</p>
 
 ## Game Checklist
 
-### Playable Now
+### ✅ What's done
 
-✅ Authentication (C4 client, protocol 656)
+**Server:**
+- Server launcher
+- Authentication: create account, login (C4 client, protocol 656)
+- Character creation
+- Variable server rates for each server start: (x1/x10/x50) XP, SP, party XP/SP, drop/adena/spoil multipliers
+- Real-time player web map that shows bots and players
 
-✅ Controllable progression rate on server start (x1/x10/x50) Xp, Sp, party XP/SP, drop/adena/spoil/quest multipliers
+**World:**
+- Complete geodata for all locations
+- Teleports via NPC or .admin menu
+- Live world / local / trade chats
+- NPC shops in towns
+- SoE, other TP scrolls
+- Profession change
+- Auto-learn skills (no books or NPC needed)
 
-✅ Player character, inventory, skills, shortcuts, position, and progression
+**Character:**
+- Progression depending on chosen rates
+- Full C4 skills coverage: self, on target, AoE, etc (excluding summons - in-progress)
+- Potions, scrolls, spoil, SA, manor, etc
+- Party with bots with native (/invite, /leave), plus .botpaty to find nearby bots and invite to the party
+- All armor sets
+- Soulshots/Spiritshots
+- Death, respawn
 
-✅ Mob fight, damage, death, respawn
+**Mobs:**
+- Attack
+- Skill usage
+- Drop table (scales from server rates)
+- Social agro
+- AoE agro
+- Party loot
 
-✅ All C4 skills, including mob skills, potions, scrolls, spoil, SA, manor, etc
-
-✅ Drop pickup, item use, equip and unequip gear, soulshots, heal potions, etc
-
-✅ Buy and sell through NPC shops with city and NPC-specific assortments, prices, and Giran luxury exchanges
-
-✅ SimPlayers population that hunts, rests, flees, revives, shops, restocks, loots, chatters, and reacts to nearby player chat
-
-✅ Trade with buing/selling Simplayers
-
-✅ Find SimPlayers with `.botparty`, invite nearby candidates, and manage accepted companions through the in-game companion panel
-
-✅ Inspect companion, social memory, and bot state through `.botstatus`
-
-✅ Trade directly with targeted SimPlayers through the native trade window (/trade)
-
-✅ See companion bots ask for useful non-junk drops, then satisfy the request by handing the item over through the real trade flow
-
-✅ SimPlayers role-aware in party: tanks protect/pull cautiously, healers conserve MP and heal, buffers refresh support buffs, daggers close-assist, and ranged roles assist at range
-
-✅ Early PK-style bot behavior: hostile hunting, fleeing, and nearby bot reactions
-
-✅ Early SimPlayer social memory: bots remember invite/group/dismiss interactions and expose relationship/trust in status surfaces
-
-✅ First loot-etiquette loop: party members can request useful drops, fulfilled trades update social memory, and ignored active requests are remembered lightly
-
-✅ Local admin tools for teleporting, item grants, random teleport, and Adena
-
-✅ Optional AI bot brain is available for player-visible moments, but still needs more personality tuning
+**Bots:**
+- World population based on a character level. Hundreds of bots on start.
+- Farming
+- Drop pick up
+- Rest/Regen
+- Join bot parties
+- In-party roles (tank, dps, healer, etc)
+- Trade with a bot
+- Communication in chat
+- Custom communication (not-scripted) via AI (OpenRouter LLM) - you can chat with a bot like a real player
+- Bots will ask for loot if you have something they need
+- Bot traders in towns (sell/buy)
+- PK bots
+- Bots will attack a PK or run away
+- Bots will go for NPC (Nobie guide) buff
+- Bots changing their farming location based on lvl or number of mobs around
+- Bots join and fight in a party with a player
+- Bot's equipment scales with a lvl
+- Some bots will be higher lvl than a player, most of them will keep around the same lvl as a player, and some will be noobs
+- Bots have a memory about interaction with a player; they act correspondingly 
 
 
-### In Progress
+### ✴️ Will be added
 
+- Clans, including bot clans
+- Clan halls
+- Clan wars
+- Wars for a farm spot
+- Olympiad, heroes
+- Siages (bot or player driven)
+- Raids (Raid/World bosses)
+- Live economy (bots will sell, craft, buy)
+- Full craft
+- Full quests
+- Better bot AI brain
+- Complete Lineage 2 C4 experience
+- One-click installer
 
-✴️ More natural long-term SimPlayer memory: level history, wipes, insults, deeper relationships, and personal routines should persist instead of feeling reset between sessions
+## 🎮 Wanna play now?
 
-✴️ Bot progression that feels earned: levels, gear, and class growth should come from real activity, not from hidden scaling
-
-✴️ More believable economy loops: local buyers, sellers, stock pressure, restocking, and player-visible trade behavior
-
-✴️ More social chatter that sounds like players talking about the world, drops, prices, spots, danger, and plans
-
-✴️ Better AI brain: social connections (friends/enemies), memory, chat, etc
-
-### Planned
-
-#️⃣ All NPC quests, all dialogues
-
-#️⃣ More complete towns, hunting routes, respawn behavior, and regional difficulty curves
-
-#️⃣ Crafting, enchanting, warehouse, freight, and deeper item economy systems
-
-#️⃣ Clan/social systems and longer-term player identity
-
-#️⃣ Clan halls, sieges, raid bosses, world bosses 
-
-#️⃣ Easy install for non-tech fellows (install and play)
-
-#️⃣ Complete Lineage 2 C4 experience
-
-## Requirements
+You will need:
 
 - Node.js LTS
 - Docker, unless you run MariaDB yourself
@@ -196,39 +201,6 @@ To reset generated SimPlayer accounts and characters while keeping the rest of t
 ```bash
 npm run wipe:bots
 ```
-
-## Merchant Bots
-
-Merchant bots currently cover:
-
-- Talking Island: starter materials, starter gear, and island-drop buyers.
-- Gludio: D-grade materials, gear, and plains-drop buyers.
-- Dion: C-grade crafting stock, parts, and Dion-drop buyers.
-- Giran: C/B-grade materials, gear, and Giran-drop buyers.
-- Oren: B/A-grade materials, gear, and Oren-drop buyers.
-
-## Bot Trade and Loot Etiquette
-
-Player-to-bot trade uses the normal client trade flow. Target a SimPlayer and use the native trade action, or type `.trade` / `/trade` while testing. The server opens the trade window, accepts offered items, moves them into the bot inventory, and records the interaction in social memory.
-
-Grouped companion bots also watch notable drops. They ignore Adena and obvious junk, score item usefulness by role, throttle requests, and ask only when a nearby companion has a reason to want the item. If the player trades the requested item to that bot before the request expires, the handoff records `gave_useful_loot`; ignored requests are only remembered when the bot is still an active nearby companion.
-
-Dwarven Spoil/Sweeper uses the normal skill flow. Use `Spoil` on a living monster with spoil-table rewards, kill it, then use `Sweeper` on the sweepable corpse before it decays. Spoil rewards are rolled from `data/Npcs/Rewards/rewards.json` and are added to the player's inventory.
-
-
-## AI Bot Brain
-
-The deterministic server code still owns combat, movement, inventory, shopping, and safety. The optional LLM brain is only allowed to influence small, whitelisted decisions.
-
-Important behavior:
-
-- Disabled by default.
-- Requires `OpenRouter.enabled = true` plus an API key.
-- Only considers bots visible to a real online player.
-- Skips merchant plans and missing-player contexts.
-- Emits debug skip reasons when `OpenRouter.debug = true`.
-
-This keeps token spend tied to player-visible moments instead of letting offline bots burn calls in an empty world.
 
 ## Development
 
