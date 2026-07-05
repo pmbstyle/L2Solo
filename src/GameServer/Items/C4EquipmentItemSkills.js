@@ -2947,7 +2947,7 @@ function sync(actor, items = []) {
     EffectStore.removeByCategory(actor, CATEGORY);
     const applied = [];
     items
-        .filter((item) => item?.fetchEquipped?.() === true)
+        .filter((item) => !!item?.fetchEquipped?.())
         .forEach((item) => {
             const effect = effectForItem(item, { actor });
             if (effect) {
@@ -2959,7 +2959,7 @@ function sync(actor, items = []) {
 
 function situationalStats(actor, context = {}) {
     return actor?.backpack?.fetchItems?.()
-        .filter((item) => item?.fetchEquipped?.() === true)
+        .filter((item) => !!item?.fetchEquipped?.())
         .map((item) => {
             const itemSkill = resolveItem(item.fetchSelfId?.());
             if (!itemSkill) return {};

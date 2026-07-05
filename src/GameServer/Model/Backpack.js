@@ -79,17 +79,27 @@ class BackpackModel {
         return this.fetchItems().find(ob => ob.isArmor () && ob.fetchEquipped() && ob.fetchSlot() === slot);
     }
 
+    fetchEquippedArmors() {
+        return this.fetchItems().filter(ob => ob.isArmor() && ob.fetchEquipped());
+    }
+
     fetchEquippedWeapon() {
         return this.fetchItems().find(ob => ob.isWeapon() && ob.fetchEquipped());
     }
 
     fetchTotalArmorPDef(spellcaster) {
         const equip = this.equipment;
+        const fullBody = this.fetchEquippedArmor(equip.armor);
+        const torsoPDef = fullBody
+            ? fullBody.fetchPDef()
+            : (
+                (this.fetchEquippedArmor(equip.chest)?.fetchPDef() ?? (spellcaster ? 15 : 31)) +
+                (this.fetchEquippedArmor(equip.pants)?.fetchPDef() ?? (spellcaster ?  8 : 18))
+            );
 
         return (
             (this.fetchEquippedArmor(equip.head )?.fetchPDef() ?? (12)) +
-            (this.fetchEquippedArmor(equip.chest)?.fetchPDef() ?? (spellcaster ? 15 : 31)) +
-            (this.fetchEquippedArmor(equip.pants)?.fetchPDef() ?? (spellcaster ?  8 : 18)) +
+            torsoPDef +
             (this.fetchEquippedArmor(equip.hands)?.fetchPDef() ?? ( 8)) +
             (this.fetchEquippedArmor(equip.feet )?.fetchPDef() ?? ( 7))
         );
@@ -118,13 +128,13 @@ class BackpackModel {
     }
 
     fetchTotalArmorEvasion() {
-        let values = this.paperdoll.map((ob) => this.fetchItemRaw(ob.id)?.fetchEvasion() ?? 0) ?? [];
-        return values.reduce((acc, value) => acc + value);
+        let values = this.fetchEquippedArmors().map((ob) => ob.fetchEvasion() ?? 0) ?? [];
+        return values.reduce((acc, value) => acc + value, 0);
     }
 
     fetchTotalArmorBonusMp() {
-        let values = this.paperdoll.map((ob) => this.fetchItemRaw(ob.id)?.fetchBonusMp() ?? 0) ?? [];
-        return values.reduce((acc, value) => acc + value);
+        let values = this.fetchEquippedArmors().map((ob) => ob.fetchBonusMp() ?? 0) ?? [];
+        return values.reduce((acc, value) => acc + value, 0);
     }
 
     fetchTotalWeaponPAtk() {

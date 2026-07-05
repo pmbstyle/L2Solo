@@ -13,6 +13,7 @@ const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
 const C4ExtractableItems = invoke('GameServer/Items/C4ExtractableItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const C4ArmorSets = invoke('GameServer/Items/C4ArmorSets');
 const C4UtilityItems = invoke('GameServer/Items/C4UtilityItems');
 const C4RecipeItems  = invoke('GameServer/Items/C4RecipeItems');
 const C4MercTickets  = invoke('GameServer/Items/C4MercTickets');
@@ -1270,7 +1271,10 @@ class Backpack extends BackpackModel {
     }
 
     syncEquipmentItemSkills(actor) {
-        return C4EquipmentItemSkills.sync(actor, this.fetchItems());
+        return [
+            ...C4EquipmentItemSkills.sync(actor, this.fetchItems()),
+            ...C4ArmorSets.sync(actor, this.fetchItems())
+        ];
     }
 
     equipGear(session, item) {
