@@ -14,6 +14,7 @@ const maxLogLines = 80;
 const logsDir = path.join(rootDir, 'tmp', 'logs');
 const latestLogPath = path.join(logsDir, 'latest-server.log');
 const previousLogPath = path.join(logsDir, 'previous-server.log');
+const launcherSettingsPath = process.env.L2NODE_LAUNCHER_SETTINGS_FILE || path.join(rootDir, 'tmp', 'launcher-settings.json');
 const debugFlagNames = [
     'L2NODE_PACKET_TRACE'
 ];
@@ -25,7 +26,7 @@ const state = {
     startedAt: null,
     lastExit: null,
     logFilePath: latestLogPath,
-    progressionRate: normalizeProgressionRate(process.env.L2NODE_PROGRESSION_RATE),
+    progressionRate: initialProgressionRate(),
     logs: []
 };
 
@@ -118,6 +119,45 @@ function normalizeProgressionRate(value) {
     return progressionPresets.has(rate) ? rate : 'x1';
 }
 
+function readLauncherSettings() {
+    try {
+        if (!fs.existsSync(launcherSettingsPath)) {
+            return {};
+        }
+
+        return JSON.parse(fs.readFileSync(launcherSettingsPath, 'utf8'));
+    } catch (err) {
+        warn(`could not read launcher settings: ${err.message}`);
+        return {};
+    }
+}
+
+function writeLauncherSettings(settings) {
+    try {
+        fs.mkdirSync(path.dirname(launcherSettingsPath), { recursive: true });
+        fs.writeFileSync(launcherSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+    } catch (err) {
+        warn(`could not write launcher settings: ${err.message}`);
+    }
+}
+
+function initialProgressionRate() {
+    if (process.env.L2NODE_PROGRESSION_RATE) {
+        return normalizeProgressionRate(process.env.L2NODE_PROGRESSION_RATE);
+    }
+
+    return normalizeProgressionRate(readLauncherSettings().progressionRate);
+}
+
+function setProgressionRate(value) {
+    state.progressionRate = normalizeProgressionRate(value);
+    writeLauncherSettings({
+        ...readLauncherSettings(),
+        progressionRate: state.progressionRate
+    });
+    return state.progressionRate;
+}
+
 function prepareLogFile() {
     fs.mkdirSync(logsDir, { recursive: true });
 
@@ -201,7 +241,7 @@ function startServer({ progressionRate } = {}) {
         return publicState();
     }
 
-    state.progressionRate = normalizeProgressionRate(progressionRate || state.progressionRate);
+    setProgressionRate(progressionRate || state.progressionRate);
     state.phase = 'starting';
     state.startedAt = Date.now();
     state.lastExit = null;
@@ -604,6 +644,15 @@ function sendHtml(response) {
             pendingProgressionRate = progressionRateSelect.value;
             hasPendingProgressionRate = true;
             progressionEl.textContent = pendingProgressionRate;
+            request('/api/progression-rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ progressionRate: pendingProgressionRate })
+            }).then((data) => {
+                render(data);
+            }).catch((err) => {
+                logEl.textContent = err.message;
+            });
         });
 
         stopButton.addEventListener('click', async () => {
@@ -664,6 +713,19 @@ async function route(request, response) {
             payload = {};
         }
         sendJson(response, startServer({ progressionRate: payload.progressionRate }));
+        return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/progression-rate') {
+        const body = await readBody(request);
+        let payload = {};
+        try {
+            payload = body ? JSON.parse(body) : {};
+        } catch {
+            payload = {};
+        }
+        setProgressionRate(payload.progressionRate);
+        sendJson(response, publicState());
         return;
     }
 
