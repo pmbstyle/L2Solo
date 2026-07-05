@@ -34,6 +34,7 @@ module.exports = function(session, parts) {
             // Retrieve item nextId generator from dynamic context
             const nextId = invoke('GameServer/World/Generics/NpcTalkResponse').items.nextId++;
             const row = utils.crushOb(item);
+            row.amount = 0;
             if (entry.price !== undefined) row.price = entry.price;
             list.push(new Item(nextId, row));
         });
