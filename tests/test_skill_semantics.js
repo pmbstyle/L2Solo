@@ -4825,6 +4825,11 @@ const flameStrike = skill({ selfId: 1181, name: 'Flame Strike', spell: true, pow
 assert.strictEqual(flameStrike.fetchSkillType(), C4SkillRules.DAMAGE, 'Flame Strike should resolve as sourced MDAM damage');
 assert.strictEqual(flameStrike.fetchSemantic().trait, 'fire', 'Flame Strike should preserve sourced fire element');
 assert.strictEqual(flameStrike.fetchTargetKind(), 'enemy', 'Flame Strike should resolve as an enemy nuke');
+assert.strictEqual(flameStrike.fetchSemantic().sourceTarget, 'area', 'Flame Strike should preserve sourced TARGET_AREA semantics');
+assert.strictEqual(flameStrike.fetchSemantic().radius, 200, 'Flame Strike should preserve sourced skillRadius 200');
+assert.strictEqual(flameStrike.fetchSemantic().magicLevel, 30, 'Flame Strike level 3 should preserve sourced magicLvl 30');
+assert.strictEqual(flameStrike.fetchSemantic().castRange, 500, 'Flame Strike should preserve sourced castRange metadata');
+assert.strictEqual(flameStrike.fetchSemantic().effectRange, 1000, 'Flame Strike should preserve sourced effectRange metadata');
 
 const prominenceData = activeSkills.find((entry) => entry.selfId === 1230);
 assert(prominenceData, 'Prominence should be present in active skills data');

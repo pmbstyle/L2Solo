@@ -25,6 +25,8 @@ const tests = [
     'tests/test_progression_rates.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',
+    'tests/test_skill_area_semantics.js',
+    'tests/test_skill_area_runtime.js',
     'tests/test_skill_semantics.js',
     'tests/test_skill_damage_formulas.js',
     'tests/test_town_pathfinder.js',

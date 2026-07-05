@@ -179,8 +179,15 @@ class Attack {
                 return;
             }
 
+            const targets = this.resolveSkillTargets(actor, creature, skill);
+
+            if (targets.length === 0) {
+                actor.state.setCasts(false);
+                return;
+            }
+
             if (magicSkill) {
-                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, [creature]), actor);
+                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, targets), actor);
             }
 
             actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
@@ -189,17 +196,22 @@ class Attack {
             }
             actor.statusUpdateVitals(actor);
 
-            const outcome = SkillEffects.execute(session, actor, creature, skill, {
-                attack: this,
-                magicSkill
-            });
+            const shotState = this.captureShotState(actor);
+            targets.forEach((target) => {
+                this.restoreShotState(actor, shotState);
+                const outcome = SkillEffects.execute(session, actor, target, skill, {
+                    attack: this,
+                    magicSkill
+                });
 
-            if (outcome.damage > 0) {
-                this.hit(session, actor, creature, outcome.damage);
-            }
-            else if (outcome.missed) {
-                ConsoleText.transmit(session, ConsoleText.caption.missedHit);
-            }
+                if (outcome.damage > 0) {
+                    this.hit(session, actor, target, outcome.damage);
+                }
+                else if (outcome.missed) {
+                    ConsoleText.transmit(session, ConsoleText.caption.missedHit);
+                }
+            });
+            this.clearLoadedShot(actor, magicSkill);
             actor.state.setCasts(false);
 
             // Start replenish
@@ -215,6 +227,83 @@ class Attack {
         this.queueTimer(() => {
             // TODO: Prohibit same skill use before reuse time
         }, skill.fetchReuseTime());
+    }
+
+    captureShotState(actor) {
+        return {
+            soulshotLoaded: !!actor.soulshotLoaded,
+            spiritshotLoaded: !!actor.spiritshotLoaded,
+            blessedSpiritshotLoaded: !!actor.blessedSpiritshotLoaded
+        };
+    }
+
+    restoreShotState(actor, state) {
+        actor.soulshotLoaded = state.soulshotLoaded;
+        actor.spiritshotLoaded = state.spiritshotLoaded;
+        actor.blessedSpiritshotLoaded = state.blessedSpiritshotLoaded;
+    }
+
+    resolveSkillTargets(actor, primary, skill) {
+        const semantic = skill.fetchSemantic?.() || {};
+        const sourceTarget = semantic.sourceTarget;
+        const radius = Math.max(0, Number(semantic.radius) || 0);
+
+        if (
+            !sourceTarget ||
+            radius <= 0 ||
+            !['enemy', 'corpse_mob'].includes(skill.fetchTargetKind?.()) ||
+            !this.isNpcAreaPrimary(primary, skill)
+        ) {
+            return [primary];
+        }
+
+        const center = sourceTarget === 'area' ? primary : actor;
+        const World = invoke('GameServer/World/World');
+        const nearby = typeof World.fetchNpcsInRadius === 'function'
+            ? World.fetchNpcsInRadius(center.fetchLocX(), center.fetchLocY(), radius)
+            : [];
+        const targets = [primary, ...nearby];
+        const seen = new Set();
+
+        return targets.filter((target) => {
+            const id = target?.fetchId?.();
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+
+            if (!this.isValidSkillTarget(target, skill)) return false;
+            if (this.distance2d(center, target) > radius) return false;
+            if (sourceTarget === 'front_area' && !this.isFacing(actor, target, 120)) return false;
+            return true;
+        });
+    }
+
+    isNpcAreaPrimary(target, skill) {
+        if (skill.fetchTargetKind?.() === 'corpse_mob') {
+            return target?.fetchAttackable?.() === true && target?.isDead?.() === true;
+        }
+
+        return target?.fetchAttackable?.() === true;
+    }
+
+    isValidSkillTarget(target, skill) {
+        if (!target) return false;
+        const targetKind = skill.fetchTargetKind?.();
+
+        if (targetKind === 'corpse_mob') {
+            return target.fetchAttackable?.() === true && target.isDead?.() === true;
+        }
+
+        if (targetKind === 'enemy') {
+            return target.fetchAttackable?.() === true && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+        }
+
+        return target.state?.fetchDead?.() !== true;
+    }
+
+    distance2d(src, dst) {
+        const dx = (Number(src?.fetchLocX?.()) || 0) - (Number(dst?.fetchLocX?.()) || 0);
+        const dy = (Number(src?.fetchLocY?.()) || 0) - (Number(dst?.fetchLocY?.()) || 0);
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     chargeShotForSkill(session, actor, magicSkill) {
