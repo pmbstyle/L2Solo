@@ -33,6 +33,19 @@ const CHAT_PHRASES = {
     ]
 };
 
+const TOWNS = [
+    { name: "Talking Island", x: -84318, y: 244579, z: -3730 },
+    { name: "Elven Village", x: 45475, y: 48359, z: -3060 },
+    { name: "Dark Elven Village", x: 12111, y: 16686, z: -4582 },
+    { name: "Dwarven Village", x: 115632, y: -177996, z: -905 },
+    { name: "Orc Village", x: -45032, y: -113598, z: -192 },
+    { name: "Gludin", x: -80752, y: 149776, z: -3044 },
+    { name: "Gludio", x: -12736, y: 122816, z: -3114 },
+    { name: "Dion", x: 15631, y: 142885, z: -2704 },
+    { name: "Giran", x: 83396, y: 147904, z: -3404 },
+    { name: "Oren", x: 82960, y: 53177, z: -1497 }
+];
+
 function getRandomPhrase(category, ...args) {
     const list = CHAT_PHRASES[category];
     const phrase = list[Math.floor(Math.random() * list.length)];
@@ -42,6 +55,26 @@ function getRandomPhrase(category, ...args) {
 function newbieSpawnCoords(classId) {
     const DataCache = invoke('GameServer/DataCache');
     return DataCache.newbieSpawns.find(ob => ob.classId === classId)?.spawns ?? [{ locX: -84318, locY: 244579, locZ: -3730 }];
+}
+
+function closestTown(locX, locY) {
+    let closest = TOWNS[0];
+    let minDist = Infinity;
+    TOWNS.forEach(town => {
+        const dx = town.x - locX;
+        const dy = town.y - locY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDist) {
+            minDist = dist;
+            closest = town;
+        }
+    });
+    return closest;
+}
+
+function townRespawnCoords(bot) {
+    const town = closestTown(bot.fetchLocX(), bot.fetchLocY());
+    return { locX: town.x, locY: town.y, locZ: town.z };
 }
 
 function isRealPlayerSession(session) {
@@ -158,30 +191,32 @@ const BotAI = {
     },
 
     getClosestTown(locX, locY) {
-        const towns = [
-            { name: "Talking Island", x: -84318, y: 244579, z: -3730 },
-            { name: "Elven Village", x: 45475, y: 48359, z: -3060 },
-            { name: "Dark Elven Village", x: 12111, y: 16686, z: -4582 },
-            { name: "Dwarven Village", x: 115632, y: -177996, z: -905 },
-            { name: "Orc Village", x: -45032, y: -113598, z: -192 },
-            { name: "Gludin", x: -80752, y: 149776, z: -3044 },
-            { name: "Gludio", x: -12736, y: 122816, z: -3114 },
-            { name: "Dion", x: 15631, y: 142885, z: -2704 },
-            { name: "Giran", x: 83396, y: 147904, z: -3404 },
-            { name: "Oren", x: 82960, y: 53177, z: -1497 }
-        ];
-        let closest = towns[0];
-        let minDist = Infinity;
-        towns.forEach(town => {
-            const dx = town.x - locX;
-            const dy = town.y - locY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDist) {
-                minDist = dist;
-                closest = town;
-            }
-        });
-        return closest;
+        return closestTown(locX, locY);
+    },
+
+    getDeathRespawnTarget(session, bot, wasCompanion = false) {
+        if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
+            return {
+                locX: session.initialSpawnCoord.locX,
+                locY: session.initialSpawnCoord.locY,
+                locZ: session.initialSpawnCoord.locZ
+            };
+        }
+
+        const leader = session.followPlayerSession?.actor;
+        if (wasCompanion && leader?.fetchIsOnline?.()) {
+            return session.botStay && session.stayLocation ? {
+                locX: session.stayLocation.locX,
+                locY: session.stayLocation.locY,
+                locZ: session.stayLocation.locZ
+            } : {
+                locX: leader.fetchLocX() + utils.oneFromSpan(-80, 80),
+                locY: leader.fetchLocY() + utils.oneFromSpan(-80, 80),
+                locZ: leader.fetchLocZ()
+            };
+        }
+
+        return townRespawnCoords(bot);
     },
 
     getClosestTownName(locX, locY) {
@@ -311,6 +346,8 @@ const BotAI = {
                 bot.fillupVitals(); // Restore full HP/MP
                 session.deathTimerStart = undefined;
                 session.currentTargetId = undefined;
+                session.incomingThreatId = undefined;
+                session.incomingThreatAt = undefined;
                 
                 let spawnTarget;
                 if (bot.fetchKarma() > 0) {
@@ -330,18 +367,9 @@ const BotAI = {
                             locZ: session.initialSpawnCoord.locZ
                         };
                     } else {
-                        const leader = session.followPlayerSession?.actor;
-                        if (wasCompanion && leader?.fetchIsOnline?.()) {
+                        if (wasCompanion && session.followPlayerSession?.actor?.fetchIsOnline?.()) {
                             session.plan = 'following';
-                            spawnTarget = session.botStay && session.stayLocation ? {
-                                locX: session.stayLocation.locX,
-                                locY: session.stayLocation.locY,
-                                locZ: session.stayLocation.locZ
-                            } : {
-                                locX: leader.fetchLocX() + utils.oneFromSpan(-80, 80),
-                                locY: leader.fetchLocY() + utils.oneFromSpan(-80, 80),
-                                locZ: leader.fetchLocZ()
-                            };
+                            spawnTarget = this.getDeathRespawnTarget(session, bot, wasCompanion);
                         } else {
                             if (wasCompanion) {
                                 PartyCompanionService.clearCompanion(session, {
@@ -351,18 +379,9 @@ const BotAI = {
                                 });
                             }
                             session.plan = 'hunting'; // Reset plan
-                            
-                            // Teleport back to spawn coordinate to prevent getting stuck in deep water
-                            if (!session.initialSpawnCoord) {
-                                session.initialSpawnCoord = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-                            }
-                            
-                            spawnTarget = {
-                                locX: session.initialSpawnCoord.locX + (Math.random() - 0.5) * 1000,
-                                locY: session.initialSpawnCoord.locY + (Math.random() - 0.5) * 1000,
-                                locZ: session.initialSpawnCoord.locZ
-                            };
-                            spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
+                            session.currentSpot = null;
+                            session.noTargetTicks = 0;
+                            spawnTarget = this.getDeathRespawnTarget(session, bot, wasCompanion);
                         }
                     }
                 }
@@ -371,6 +390,10 @@ const BotAI = {
                 
                 this.say(session, getRandomPhrase('revived'));
             }
+            return;
+        }
+
+        if (bot.state?.fetchDead?.()) {
             return;
         }
 
