@@ -28,6 +28,7 @@ const tests = [
     'tests/test_party_companion_rest_follow.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',
+    'tests/test_player_ranged_combat.js',
     'tests/test_progression_rates.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',
