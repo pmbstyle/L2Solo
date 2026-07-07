@@ -45,6 +45,9 @@ function session(options = {}) {
         moveTimer: options.moveTimer ? setInterval(() => {}, 1000) : null,
         dataSendToMe(packet) {
             this.packets.push(packet);
+        },
+        dataSendToMeAndOthers(packet) {
+            this.packets.push(packet);
         }
     };
 }
@@ -59,6 +62,12 @@ const silenced = actor();
 EffectStore.apply(silenced, { key: 'silence', id: 1064, type: 'debuff', durationMs: 10000 });
 assert.strictEqual(EffectRestrictions.canCast(silenced), false, 'Silence should block casting');
 assert.strictEqual(EffectRestrictions.canMove(silenced), true, 'Silence should not block movement');
+
+const feared = actor();
+EffectStore.apply(feared, { key: 'fear', id: 1092, type: 'debuff', durationMs: 10000 });
+assert.strictEqual(EffectRestrictions.canMove(feared), false, 'Fear should block player-directed movement');
+assert.strictEqual(EffectRestrictions.canAttack(feared), false, 'Fear should block attacks');
+assert.strictEqual(EffectRestrictions.canCast(feared), false, 'Fear should block casts');
 
 const stunned = actor();
 const stunnedSession = session({ moveTimer: true });
@@ -84,10 +93,42 @@ EffectStore.apply(stunnedByDamage, { key: 'stun', id: 100, type: 'debuff', durat
 EffectRestrictions.wakeOnDamage(stunnedByDamage);
 assert.strictEqual(EffectStore.hasDebuff(stunnedByDamage, 'stun'), true, 'Damage should not remove non-sleep control debuffs');
 
+const fearTarget = {
+    ...actor(),
+    effects: {},
+    loc: { locX: 100, locY: 100, locZ: 0 },
+    model: { stateRun: false },
+    fetchId: () => 3000001,
+    fetchLocX() { return this.loc.locX; },
+    fetchLocY() { return this.loc.locY; },
+    fetchLocZ() { return this.loc.locZ; },
+    setLocXYZ(coords) { this.loc = coords; },
+    fetchCollectiveRunSpd: () => 1000,
+    setStateRun(value) { this.model.stateRun = value; },
+    fetchStateRun() { return this.model.stateRun; }
+};
+const fearSource = {
+    fetchLocX: () => 0,
+    fetchLocY: () => 0
+};
+const fearSession = session();
+const fearEffect = EffectStore.apply(fearTarget, { key: 'fear', id: 1092, type: 'debuff', durationMs: 10000 });
+EffectRestrictions.interruptOnApply(fearSession, fearTarget, fearEffect, fearSource);
+assert.strictEqual(fearTarget.aborted, true, 'Fear should abort current target automation');
+assert.strictEqual(fearTarget.combatAborted, true, 'Fear should abort NPC-style combat loops');
+assert.strictEqual(fearTarget.isAfraid, true, 'Fear should mark the target as afraid');
+const fearMove = fearSession.packets.find((packet) => packet[0] === 0x01);
+assert(fearMove, 'Fear should broadcast a flee MoveToLocation packet');
+assert.strictEqual(fearMove.readInt32LE(5), 600, 'Fear should move the target 500 units away on X');
+assert.strictEqual(fearMove.readInt32LE(9), 600, 'Fear should move the target 500 units away on Y');
+assert(fearTarget.effectTimers.fear, 'Fear should keep ticking while the debuff is active');
+EffectRestrictions.stopFear(fearTarget);
+
 const rejectSession = session();
 EffectRestrictions.reject(rejectSession);
 assert.strictEqual(rejectSession.packets.length, 1, 'Rejected control action should send ActionFailed');
 clearInterval(rooted.effectTimers?.root);
 clearInterval(silenced.effectTimers?.silence);
+EffectStore.remove(feared, 'fear');
 
 console.log('Effect restriction checks passed');

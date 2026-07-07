@@ -60,18 +60,18 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.HEAL_HOT) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
-        result.effect = applyEffect(session, target, skill, semantic);
+        result.effect = applyEffect(session, target, skill, semantic, actor);
         return result;
     }
 
     if (semantic.skillType === C4SkillRules.HOT) {
-        result.effect = applyEffect(session, target, skill, semantic);
+        result.effect = applyEffect(session, target, skill, semantic, actor);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
 
     if (semantic.skillType === C4SkillRules.MANA_HOT) {
-        result.effect = applyEffect(session, target, skill, semantic);
+        result.effect = applyEffect(session, target, skill, semantic, actor);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
@@ -208,7 +208,7 @@ function execute(session, actor, target, skill, context = {}) {
         if (resisted) {
             result.effectResisted = true;
         } else {
-            result.effect = applyEffect(session, target, skill, semantic);
+            result.effect = applyEffect(session, target, skill, semantic, actor);
         }
     }
 
@@ -217,7 +217,7 @@ function execute(session, actor, target, skill, context = {}) {
             ...semantic,
             ...semantic.selfEffect,
             stats: semantic.selfEffect.stats || {}
-        });
+        }, actor);
     }
 
     return result;
@@ -378,7 +378,7 @@ function applyDrain(session, actor, target, skill, semantic, magicSkill, attack,
     return { damage, heal: Math.max(0, nextHp - currentHp) };
 }
 
-function applyEffect(session, target, skill, semantic) {
+function applyEffect(session, target, skill, semantic, source = session?.actor) {
     const durationMs = Number(skill.fetchBuffTime()) || 0;
     if (!durationMs || !semantic.effect) return null;
 
@@ -421,7 +421,7 @@ function applyEffect(session, target, skill, semantic) {
     }
 
     EffectTicker.scheduleExpiry(session, target, effect);
-    EffectRestrictions.interruptOnApply(target?.session || session, target, effect);
+    EffectRestrictions.interruptOnApply(target?.session || session, target, effect, source);
     refreshEffects(session, target);
     return effect;
 }

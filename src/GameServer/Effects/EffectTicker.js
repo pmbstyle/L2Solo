@@ -69,6 +69,7 @@ function scheduleExpiry(session, target, effect) {
 
         const EffectStore = invoke('GameServer/Effects/EffectStore');
         EffectStore.prune(target);
+        clearRuntime(target, effect.key);
         if (target.activeBuffs?.[effect.key] && target.activeBuffs[effect.key] <= Date.now()) {
             delete target.activeBuffs[effect.key];
         }
