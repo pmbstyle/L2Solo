@@ -9,6 +9,7 @@ function actor() {
     return {
         effects: {},
         aborted: false,
+        combatAborted: false,
         queue: false,
         automation: {
             abortAll(target) {
@@ -16,9 +17,24 @@ function actor() {
             }
         },
         attack: {
+            timersCleared: false,
+            clearTimers() {
+                this.timersCleared = true;
+            },
             resetQueuedEvent() {
                 this.reset = true;
             }
+        },
+        state: {
+            hits: true,
+            casts: true,
+            combats: true,
+            setHits(value) { this.hits = value; },
+            setCasts(value) { this.casts = value; },
+            setCombats(value) { this.combats = value; }
+        },
+        abortCombatState() {
+            this.combatAborted = true;
         }
     };
 }
@@ -52,7 +68,21 @@ assert.strictEqual(EffectRestrictions.canMove(stunned), false, 'Stun should bloc
 assert.strictEqual(EffectRestrictions.canAttack(stunned), false, 'Stun should block attacks');
 assert.strictEqual(EffectRestrictions.canCast(stunned), false, 'Stun should block casting');
 assert.strictEqual(stunned.aborted, true, 'Control debuff should abort current movement/action');
+assert.strictEqual(stunned.attack.timersCleared, true, 'Control debuff should clear active attack timers');
+assert.strictEqual(stunned.state.hits, false, 'Control debuff should clear active hit state');
+assert.strictEqual(stunned.state.casts, false, 'Control debuff should clear active cast state');
+assert.strictEqual(stunned.combatAborted, true, 'Control debuff should abort NPC-style combat loops when available');
 assert.strictEqual(stunnedSession.moveTimer, null, 'Control debuff should clear active move timer');
+
+const sleeping = actor();
+EffectStore.apply(sleeping, { key: 'sleep', id: 1069, type: 'debuff', durationMs: 10000 });
+EffectRestrictions.wakeOnDamage(sleeping);
+assert.strictEqual(EffectStore.hasDebuff(sleeping, 'sleep'), false, 'Damage should wake a sleeping target');
+
+const stunnedByDamage = actor();
+EffectStore.apply(stunnedByDamage, { key: 'stun', id: 100, type: 'debuff', durationMs: 10000 });
+EffectRestrictions.wakeOnDamage(stunnedByDamage);
+assert.strictEqual(EffectStore.hasDebuff(stunnedByDamage, 'stun'), true, 'Damage should not remove non-sleep control debuffs');
 
 const rejectSession = session();
 EffectRestrictions.reject(rejectSession);

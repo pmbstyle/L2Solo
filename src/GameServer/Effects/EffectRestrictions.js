@@ -31,11 +31,33 @@ function interruptOnApply(session, actor, effect) {
     if (!(impairments.disabled || impairments.rooted)) return;
 
     actor.automation?.abortAll?.(actor);
+    actor.attack?.clearTimers?.();
     actor.attack?.resetQueuedEvent?.();
+    actor.state?.setHits?.(false);
+    actor.state?.setCasts?.(false);
+    if (impairments.disabled) {
+        actor.state?.setCombats?.(false);
+        if (typeof actor.abortCombatState === 'function') {
+            const safeSession = session?.dataSendToMeAndOthers ? session : { dataSendToMeAndOthers() {} };
+            actor.abortCombatState(safeSession);
+        }
+    }
     if (session?.moveTimer) {
         clearInterval(session.moveTimer);
         session.moveTimer = null;
     }
+}
+
+function wakeOnDamage(actor) {
+    if (!actor) return false;
+    const removed = EffectStore.remove(actor, 'sleep');
+    if (!removed) return false;
+
+    const packet = ServerResponse.abnormalStatusUpdate.fromActor(actor);
+    if (actor.session?.dataSendToMe) {
+        actor.session.dataSendToMe(packet);
+    }
+    return true;
 }
 
 module.exports = {
@@ -44,5 +66,6 @@ module.exports = {
     canCast,
     canUseBasicAction,
     reject,
-    interruptOnApply
+    interruptOnApply,
+    wakeOnDamage
 };
