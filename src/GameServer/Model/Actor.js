@@ -16,6 +16,10 @@ class ActorModel extends CreatureModel {
         this.model.cp = data;
     }
 
+    setMaxCp(data) {
+        this.model.maxCp = data;
+    }
+
     setCharges(data) {
         this.model.charges = data;
     }
@@ -230,6 +234,15 @@ class ActorModel extends CreatureModel {
 
     isSpellcaster() {
         return [10, 25, 38, 49].includes(this.fetchClassId()) ? 1 : 0;
+    }
+
+    fillupCp() {
+        this.setCp(this.fetchMaxCp());
+    }
+
+    fillupVitals() {
+        super.fillupVitals();
+        this.fillupCp();
     }
 }
 

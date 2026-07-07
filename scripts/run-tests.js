@@ -17,6 +17,7 @@ const tests = [
     'tests/test_change_class.js',
     'tests/test_clan_bot_invite.js',
     'tests/test_clan_system.js',
+    'tests/test_cp_stats.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
     'tests/test_geodata_regions.js',

@@ -33,6 +33,21 @@ function setCollectiveTotalMp(actor) {
     actor.setMp(Math.min(actor.fetchMp(), actor.fetchMaxMp()));
 }
 
+function setCollectiveTotalCp(actor) {
+    if (typeof actor.setMaxCp !== 'function' || typeof actor.setCp !== 'function') return;
+
+    const previousMaxCp = Number(actor.fetchMaxCp?.()) || 0;
+    const con = effectiveBaseStat(actor, 'CON', () => actor.fetchCon());
+    const base = Formulas.calcCp(actor.fetchLevel(), actor.fetchClassId(), con);
+    actor.setMaxCp((base * EffectStats.multiplier(actor, 'maxCpMul')) + EffectStats.add(actor, 'maxCpAdd'));
+
+    if (previousMaxCp <= 0) {
+        actor.setCp(actor.fetchMaxCp());
+    } else {
+        actor.setCp(Math.min(actor.fetchCp(), actor.fetchMaxCp()));
+    }
+}
+
 function setCollectiveTotalLoad(actor) {
     const con = effectiveBaseStat(actor, 'CON', () => actor.fetchCon());
     const base = Formulas.calcMaxLoad(con) + EffectStats.add(actor, 'maxLoad');
@@ -154,6 +169,7 @@ function calculateStats(session, actor) {
     actor.backpack?.syncEquipmentItemSkills?.(actor);
     setCollectiveTotalHp      (actor);
     setCollectiveTotalMp      (actor);
+    setCollectiveTotalCp      (actor);
     setCollectiveTotalLoad    (actor);
     setCollectiveTotalPAtk    (actor);
     setCollectiveTotalMAtk    (actor);

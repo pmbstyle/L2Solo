@@ -91,6 +91,78 @@ const Formulas = {
         return this.calcBaseMp[classTransfer][kind](level) * this.calcBaseMod.MEN(men);
     },
 
+    calcCp: (() => {
+        const table = {
+            0: { classBaseLevel: 1, baseCpMax: 32, lvlCpAdd: 4.73, lvlCpMod: 0.22 },
+            1: { classBaseLevel: 20, baseCpMax: 261.6, lvlCpAdd: 26.4, lvlCpMod: 0.22 },
+            2: { classBaseLevel: 40, baseCpMax: 939.6, lvlCpAdd: 44.46, lvlCpMod: 0.22 },
+            3: { classBaseLevel: 40, baseCpMax: 835.2, lvlCpAdd: 43.68, lvlCpMod: 0.22 },
+            4: { classBaseLevel: 20, baseCpMax: 196.2, lvlCpAdd: 17.82, lvlCpMod: 0.22 },
+            5: { classBaseLevel: 40, baseCpMax: 583.3, lvlCpAdd: 28.08, lvlCpMod: 0.22 },
+            6: { classBaseLevel: 40, baseCpMax: 583.3, lvlCpAdd: 28.08, lvlCpMod: 0.22 },
+            7: { classBaseLevel: 20, baseCpMax: 130.8, lvlCpAdd: 11, lvlCpMod: 0.22 },
+            8: { classBaseLevel: 40, baseCpMax: 369.8, lvlCpAdd: 16.64, lvlCpMod: 0.22 },
+            9: { classBaseLevel: 40, baseCpMax: 647.1, lvlCpAdd: 30.94, lvlCpMod: 0.22 },
+            10: { classBaseLevel: 1, baseCpMax: 50.5, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
+            11: { classBaseLevel: 20, baseCpMax: 212, lvlCpAdd: 13.85, lvlCpMod: 0.22 },
+            12: { classBaseLevel: 40, baseCpMax: 510.7, lvlCpAdd: 22.85, lvlCpMod: 0.22 },
+            13: { classBaseLevel: 40, baseCpMax: 510.7, lvlCpAdd: 22.85, lvlCpMod: 0.22 },
+            14: { classBaseLevel: 40, baseCpMax: 612.9, lvlCpAdd: 29.74, lvlCpMod: 0.22 },
+            15: { classBaseLevel: 20, baseCpMax: 212, lvlCpAdd: 17.15, lvlCpMod: 0.22 },
+            16: { classBaseLevel: 40, baseCpMax: 815.4, lvlCpAdd: 34.68, lvlCpMod: 0.22 },
+            17: { classBaseLevel: 40, baseCpMax: 582.4, lvlCpAdd: 26.75, lvlCpMod: 0.22 },
+            18: { classBaseLevel: 1, baseCpMax: 35.6, lvlCpAdd: 5, lvlCpMod: 0.22 },
+            19: { classBaseLevel: 20, baseCpMax: 177.5, lvlCpAdd: 16.5, lvlCpMod: 0.22 },
+            20: { classBaseLevel: 40, baseCpMax: 643.2, lvlCpAdd: 31.2, lvlCpMod: 0.22 },
+            21: { classBaseLevel: 40, baseCpMax: 536, lvlCpAdd: 27.3, lvlCpMod: 0.22 },
+            22: { classBaseLevel: 20, baseCpMax: 142, lvlCpAdd: 12.32, lvlCpMod: 0.22 },
+            23: { classBaseLevel: 40, baseCpMax: 409.6, lvlCpAdd: 18.72, lvlCpMod: 0.22 },
+            24: { classBaseLevel: 40, baseCpMax: 512.1, lvlCpAdd: 24.7, lvlCpMod: 0.22 },
+            25: { classBaseLevel: 1, baseCpMax: 52, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
+            26: { classBaseLevel: 20, baseCpMax: 213.5, lvlCpAdd: 14.4, lvlCpMod: 0.22 },
+            27: { classBaseLevel: 40, baseCpMax: 524.2, lvlCpAdd: 24.15, lvlCpMod: 0.22 },
+            28: { classBaseLevel: 40, baseCpMax: 629, lvlCpAdd: 30.52, lvlCpMod: 0.22 },
+            29: { classBaseLevel: 20, baseCpMax: 213.5, lvlCpAdd: 17.7, lvlCpMod: 0.22 },
+            30: { classBaseLevel: 40, baseCpMax: 595.9, lvlCpAdd: 27.4, lvlCpMod: 0.22 },
+            31: { classBaseLevel: 1, baseCpMax: 37.6, lvlCpAdd: 5.46, lvlCpMod: 0.22 },
+            32: { classBaseLevel: 20, baseCpMax: 189.5, lvlCpAdd: 17.6, lvlCpMod: 0.22 },
+            33: { classBaseLevel: 40, baseCpMax: 686.2, lvlCpAdd: 32.76, lvlCpMod: 0.22 },
+            34: { classBaseLevel: 40, baseCpMax: 571.9, lvlCpAdd: 29.25, lvlCpMod: 0.22 },
+            35: { classBaseLevel: 20, baseCpMax: 151.6, lvlCpAdd: 13.2, lvlCpMod: 0.22 },
+            36: { classBaseLevel: 40, baseCpMax: 438.4, lvlCpAdd: 19.76, lvlCpMod: 0.22 },
+            37: { classBaseLevel: 40, baseCpMax: 548, lvlCpAdd: 26, lvlCpMod: 0.22 },
+            38: { classBaseLevel: 1, baseCpMax: 53, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
+            39: { classBaseLevel: 20, baseCpMax: 214.5, lvlCpAdd: 14.95, lvlCpMod: 0.22 },
+            40: { classBaseLevel: 40, baseCpMax: 537.1, lvlCpAdd: 24.15, lvlCpMod: 0.22 },
+            41: { classBaseLevel: 40, baseCpMax: 644.5, lvlCpAdd: 31.3, lvlCpMod: 0.22 },
+            42: { classBaseLevel: 20, baseCpMax: 214.5, lvlCpAdd: 18.25, lvlCpMod: 0.22 },
+            43: { classBaseLevel: 40, baseCpMax: 608.8, lvlCpAdd: 27.4, lvlCpMod: 0.22 },
+            44: { classBaseLevel: 1, baseCpMax: 40, lvlCpAdd: 6.27, lvlCpMod: 0.22 },
+            45: { classBaseLevel: 20, baseCpMax: 242.2, lvlCpAdd: 24.54, lvlCpMod: 0.22 },
+            46: { classBaseLevel: 40, baseCpMax: 777.5, lvlCpAdd: 39.94, lvlCpMod: 0.22 },
+            47: { classBaseLevel: 20, baseCpMax: 173, lvlCpAdd: 16.4, lvlCpMod: 0.22 },
+            48: { classBaseLevel: 40, baseCpMax: 531.5, lvlCpAdd: 27.2, lvlCpMod: 0.22 },
+            49: { classBaseLevel: 1, baseCpMax: 47.5, lvlCpAdd: 7.74, lvlCpMod: 0.22 },
+            50: { classBaseLevel: 20, baseCpMax: 209, lvlCpAdd: 17.6, lvlCpMod: 0.22 },
+            51: { classBaseLevel: 40, baseCpMax: 946.2, lvlCpAdd: 42.64, lvlCpMod: 0.22 },
+            52: { classBaseLevel: 40, baseCpMax: 591.4, lvlCpAdd: 26.65, lvlCpMod: 0.22 },
+            53: { classBaseLevel: 1, baseCpMax: 56, lvlCpAdd: 8.82, lvlCpMod: 0.22 },
+            54: { classBaseLevel: 20, baseCpMax: 242.2, lvlCpAdd: 24.54, lvlCpMod: 0.22 },
+            55: { classBaseLevel: 40, baseCpMax: 777.5, lvlCpAdd: 39.94, lvlCpMod: 0.22 },
+            56: { classBaseLevel: 20, baseCpMax: 276.8, lvlCpAdd: 26.3, lvlCpMod: 0.22 },
+            57: { classBaseLevel: 40, baseCpMax: 850.4, lvlCpAdd: 43.58, lvlCpMod: 0.22 }
+        };
+
+        return (level, classId, con) => {
+            const data = table[classId] || table[0];
+            const delta = Math.max(0, (Number(level) || 1) - data.classBaseLevel);
+            const cpmod = data.lvlCpMod * delta;
+            const cpmax = (data.lvlCpAdd + cpmod) * delta;
+            const cpmin = (data.lvlCpAdd * delta) + cpmod;
+            return (data.baseCpMax + ((cpmax + cpmin) / 2)) * Formulas.calcBaseMod.CON(con);
+        };
+    })(),
+
     calcMaxLoad(con) {
         return this.calcBaseMod.CON(con) * 69000;
     },
