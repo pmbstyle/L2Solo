@@ -12,11 +12,15 @@ const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
+const DIRECT_SUPPORT_RANGE = 900;
+const DIRECT_HEAL_MP_COST = 15;
+const DIRECT_BUFF_MP_COST = 20;
 
 const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     const cfg = MerchantConfigs[name];
@@ -444,6 +448,13 @@ const BotManager = {
             if (distance > 1500) return; // Too far to hear
 
             let handledByRule = false;
+            const botName = bot.fetchName().toLowerCase();
+            const shortBotName = botName.replace(/^bot_/, '');
+            const addressedToBot = text.includes(botName) || text.includes(shortBotName);
+            const selectedBot = typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId();
+            const companionBot = session.followPlayerSession === playerSession && session.partyCompanion === true;
+            const directCommandTarget = addressedToBot || selectedBot || companionBot;
+            const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
 
             if (text.includes("hi") || text.includes("hello") || text.includes("привет") || text.includes("ку")) {
                 handledByRule = true;
@@ -458,7 +469,7 @@ const BotManager = {
                 }, 1000 + Math.random() * 1000);
             }
 
-            else if (text.includes("follow") || text.includes("за мной") || text.includes("помоги")) {
+            else if (directCommandTarget && (text.includes("follow") || text.includes("за мной") || text.includes("помоги"))) {
                 handledByRule = true;
                 setTimeout(() => {
                     if (session.partyCompanion === true && session.followPlayerSession === playerSession) {
@@ -478,7 +489,7 @@ const BotManager = {
                 }, 800 + Math.random() * 800);
             }
 
-            else if (text.includes("stop") || text.includes("стой") || text.includes("wait")) {
+            else if (directCommandTarget && (text.includes("stop") || text.includes("стой") || text.includes("wait"))) {
                 handledByRule = true;
                 setTimeout(() => {
                     this.botSay(session, `Staying here! Let me know if you need help.`);
@@ -490,7 +501,7 @@ const BotManager = {
                 }, 800 + Math.random() * 800);
             }
 
-            else if (text.includes("hunt") || text.includes("иди качайся") || text.includes("кач")) {
+            else if (directCommandTarget && (text.includes("hunt") || text.includes("иди качайся") || text.includes("кач"))) {
                 handledByRule = true;
                 setTimeout(() => {
                     this.botSay(session, `Alright, returning to hunt keltirs!`);
@@ -503,45 +514,17 @@ const BotManager = {
                 }, 800 + Math.random() * 800);
             }
 
-            else if (text.includes("heal") || text.includes("хил") || text.includes("buff") || text.includes("бафф")) {
+            else if (directCommandTarget && (text.includes("heal") || text.includes("хил") || text.includes("buff") || text.includes("бафф"))) {
                 handledByRule = true;
-                const healerClasses = [15, 16, 17, 29, 30, 42, 43];
-                if (healerClasses.includes(bot.fetchClassId())) {
-                    setTimeout(() => {
-                        this.botSay(session, `Casting divine healing on you, ${player.fetchName()}!`);
-                        
-                        const ServerResponse = invoke('GameServer/Network/Response');
-                        playerSession.dataSendToMe(
-                            ServerResponse.skillStarted(bot, player.fetchId(), {
-                                fetchSelfId: () => 1011,
-                                fetchCalculatedHitTime: () => 1000,
-                                fetchReuseTime: () => 1000
-                            })
-                        );
-
-                        setTimeout(() => {
-                            player.setHp(player.fetchMaxHp());
-                            player.setMp(player.fetchMaxMp());
-                            player.statusUpdateVitals(player);
-                            this.botSay(session, `There! You are fully healed.`);
-                        }, 1000);
-
-                    }, 1000);
-                } else {
-                    setTimeout(() => {
-                        this.botTell(session, playerSession, `I do not have proper healing magic yet.`);
-                    }, 1000 + Math.random() * 500);
-                }
+                setTimeout(() => {
+                    this.handleDirectSupportRequest(session, playerSession, distance, {
+                        heal: text.includes("heal") || text.includes("хил"),
+                        buff: text.includes("buff") || text.includes("бафф")
+                    });
+                }, 1000);
             }
 
             if (!handledByRule) {
-                const botName = bot.fetchName().toLowerCase();
-                const shortBotName = botName.replace(/^bot_/, '');
-                const addressedToBot = text.includes(botName) || text.includes(shortBotName);
-                const selectedBot = typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId();
-                const companionBot = session.followPlayerSession === playerSession && session.partyCompanion === true;
-                const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
-
                 if (addressedToBot || selectedBot || companionBot || (groupAddress && !brainGroupResponderPicked)) {
                     if (groupAddress && !addressedToBot && !selectedBot && !companionBot) {
                         brainGroupResponderPicked = true;
@@ -550,6 +533,75 @@ const BotManager = {
                 }
             }
         });
+    },
+
+    handleDirectSupportRequest(botSession, playerSession, distance, request = {}) {
+        const bot = botSession?.actor;
+        const player = playerSession?.actor;
+        if (!bot || !player) return false;
+
+        if (distance > DIRECT_SUPPORT_RANGE) {
+            this.botTell(botSession, playerSession, `You're too far for me to cast safely.`);
+            return false;
+        }
+
+        if (request.heal) {
+            if (!BotRoles.isHealer(bot)) {
+                this.botTell(botSession, playerSession, `I don't have proper healing magic.`);
+                return false;
+            }
+            if (bot.fetchMp() < DIRECT_HEAL_MP_COST) {
+                this.botTell(botSession, playerSession, `I need to recover MP before healing.`);
+                return false;
+            }
+
+            const ServerResponse = invoke('GameServer/Network/Response');
+            playerSession.dataSendToMe(
+                ServerResponse.skillStarted(bot, player.fetchId(), {
+                    fetchSelfId: () => 1011,
+                    fetchCalculatedHitTime: () => 1000,
+                    fetchReuseTime: () => 1000
+                })
+            );
+
+            setTimeout(() => {
+                if (player.isDead && player.isDead()) return;
+                player.setHp(player.fetchMaxHp());
+                bot.setMp(Math.max(0, bot.fetchMp() - DIRECT_HEAL_MP_COST));
+                player.statusUpdateVitals(player);
+                bot.statusUpdateVitals(bot);
+                this.botTell(botSession, playerSession, `Healing done. Watch your HP.`);
+            }, 1000);
+            return true;
+        }
+
+        if (request.buff) {
+            if (!BotRoles.canBuff(bot)) {
+                this.botTell(botSession, playerSession, `I don't have useful support buffs.`);
+                return false;
+            }
+            if (bot.fetchMp() < DIRECT_BUFF_MP_COST) {
+                this.botTell(botSession, playerSession, `I need more MP before buffing.`);
+                return false;
+            }
+
+            const buffType = BotBuffs.nextSupportBuff(player) || 'might';
+            const result = BotBuffs.applySupportBuff(playerSession, player, buffType, invoke(path.actor), {
+                casterSession: botSession,
+                caster: bot
+            });
+            if (!result) {
+                this.botTell(botSession, playerSession, `That buff did not land.`);
+                return false;
+            }
+
+            bot.setMp(Math.max(0, bot.fetchMp() - DIRECT_BUFF_MP_COST));
+            bot.statusUpdateVitals(bot);
+            this.botTell(botSession, playerSession, `${result.name} is up.`);
+            return true;
+        }
+
+        return false;
     },
 
     botSay(session, text) {
