@@ -81,6 +81,19 @@ try {
     });
     assert.strictEqual(result.available, true, 'same-clan cold bot state should ignore party invite refusal reasons');
 
+    const farColdBot = {
+        characterId: 2000011,
+        name: 'FarColdBot',
+        level: 20,
+        activity: 'hunting',
+        loc: { locX: 100000, locY: 0, locZ: 0 },
+        vitals: { hp: 100, maxHp: 100 },
+        stats: {}
+    };
+    result = BotAvailability.evaluateState(lowPlayer, farColdBot);
+    assert.strictEqual(result.available, false, 'far cold bot should obey the same invite range as a hot bot');
+    assert.strictEqual(result.reason, 'too_far');
+
     console.log('Bot availability checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalGetSnapshot;

@@ -359,6 +359,29 @@ function hydrateCache() {
     });
 }
 
+function recoverStaleHotStates() {
+    const timestamp = now();
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET phase = 'cold',
+            activity = CASE
+                WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'
+                ELSE activity
+            END,
+            nextResolveAt = COALESCE(nextResolveAt, ?),
+            updatedAt = ?
+        WHERE phase = 'hot'
+        AND activity <> 'merchant'`,
+        [timestamp + 30000, timestamp]
+    ]).then((result) => {
+        const recovered = Number(result?.affectedRows || 0);
+        if (recovered > 0) {
+            utils.infoWarn('BotLife', 'recovered %d stale hot states as cold on startup', recovered);
+        }
+        return recovered;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -397,7 +420,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => hydrateCache()).then((count) => {
+        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => hydrateCache()).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
             return true;
