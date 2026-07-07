@@ -53,8 +53,10 @@ module.exports = {
 
         if (dist > 250) {
             if (dist > 5000) {
-                // Teleport to the guide if too far (prevents getting stuck on geography/ocean)
-                Generics.teleportTo(session, bot, { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ });
+                bot.moveTo({
+                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                    to: { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ }
+                });
             } else {
                 if (Math.random() < 0.20 || !bot.state.inMotion()) {
                     bot.moveTo({
@@ -70,7 +72,10 @@ module.exports = {
             const target = returnLocation(session);
             resumePreviousPlan(session, bot);
             if (target) {
-                Generics.teleportTo(session, bot, target);
+                bot.moveTo({
+                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                    to: target
+                });
             }
         }
     }

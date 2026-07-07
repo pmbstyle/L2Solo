@@ -135,15 +135,23 @@ module.exports = {
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
 
+            let returnTarget = null;
             if (session.partyCompanion === true && session.followPlayerSession) {
                 session.preShopLocation = undefined;
             } else if (session.preShopLocation) {
-                Generics.teleportTo(session, bot, session.preShopLocation);
+                returnTarget = session.preShopLocation;
                 session.preShopLocation = undefined;
             } else if (session.initialSpawnCoord) {
-                Generics.teleportTo(session, bot, session.initialSpawnCoord);
+                returnTarget = session.initialSpawnCoord;
             } else {
-                Generics.teleportTo(session, bot, { locX: -81174, locY: 246037, locZ: -3719 });
+                returnTarget = { locX: -81174, locY: 246037, locZ: -3719 };
+            }
+
+            if (returnTarget) {
+                bot.moveTo({
+                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                    to: returnTarget
+                });
             }
         }, 9000);
     }
