@@ -47,6 +47,19 @@ const TAKE_CASTLE = 'takeCastle';
 const SIEGE_FLAG = 'siegeFlag';
 
 const RULES = {
+    1001: {
+        skillType: EFFECT,
+        trait: 'buff',
+        effect: 'soul_cry',
+        effectType: 'buff',
+        target: 'self',
+        baseLandRate: 100,
+        operateType: 'toggle',
+        mpInitialConsumeByLevel: [2, 3, 5, 6, 7, 9, 11, 11, 13, 14],
+        toggleMpConsumeByLevel: [3, 6, 9, 12, 15, 18, 21, 24, 27, 30],
+        toggleIntervalMs: 3000,
+        statsByLevel: { pAtkAdd: [4.5, 14, 33.5, 66.5, 90.5, 141.5, 208.5, 247.0, 310.0, 375.5] }
+    },
     1: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' } },
     2: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', baseLandRate: 80, mobOnly: true, castRange: 600, effectRange: 1100 },
     3: { skillType: DAMAGE, trait: 'sword', ssBoost: 1 },
@@ -677,6 +690,8 @@ function resolve(skill = {}) {
         hitTime: resolveByLevel(rule.hitTimeByLevel, skill.level) ?? rule.hitTime ?? null,
         coolTime: resolveByLevel(rule.coolTimeByLevel, skill.level) ?? rule.coolTime ?? null,
         mpInitialConsume: resolveByLevel(rule.mpInitialConsumeByLevel, skill.level) ?? rule.mpInitialConsume ?? null,
+        toggleMpConsume: resolveByLevel(rule.toggleMpConsumeByLevel, skill.level) ?? rule.toggleMpConsume ?? null,
+        toggleIntervalMs: rule.toggleIntervalMs ?? null,
         itemConsumeId: resolveByLevel(rule.itemConsumeIdByLevel, skill.level) ?? rule.itemConsumeId ?? null,
         itemConsumeCount: rule.itemConsumeCount ?? null,
         npcId: rule.npcId ?? null,

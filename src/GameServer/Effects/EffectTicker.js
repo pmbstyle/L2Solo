@@ -139,7 +139,7 @@ function applyManaDot(session, source, target, effect) {
     const damage = Math.max(0, Number(manaDot.damage) || 0);
     const intervalMs = Math.max(1, Number(manaDot.intervalMs) || 1000);
     let remaining = Math.max(0, Number(manaDot.count) || 0);
-    if (!damage || !remaining) return false;
+    if (!damage || (!remaining && !manaDot.toggle)) return false;
 
     const timers = ensureTimers(target);
     clear(target, effect.key);
@@ -149,12 +149,29 @@ function applyManaDot(session, source, target, effect) {
             return;
         }
 
+        if (manaDot.toggle && damage > (Number(target.fetchMp?.()) || 0)) {
+            clearRuntime(target, effect.key);
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            EffectStore.remove(target, effect.key);
+            refreshStats(target.session || session, target);
+            refreshEffects(session, target);
+            return;
+        }
+
         applyManaDamage(target, damage);
+        if (manaDot.toggle) {
+            refreshStats(target.session || session, target);
+            return;
+        }
+
         remaining -= 1;
         if (remaining <= 0) {
             clearRuntime(target, effect.key);
         }
     }, intervalMs);
+    if (typeof timers[effect.key].unref === 'function') {
+        timers[effect.key].unref();
+    }
     return true;
 }
 
@@ -204,6 +221,19 @@ function applyManaDamage(target, damage) {
     target.setMp(Math.max(0, currentMp - damage));
     if (target.statusUpdateVitals) target.statusUpdateVitals(target);
     else if (target.broadcastVitals) target.broadcastVitals();
+}
+
+function refreshStats(session, target) {
+    if (target?.statusUpdateVitals) {
+        target.statusUpdateVitals(target);
+    }
+
+    if (target && session?.dataSendToMe) {
+        try {
+            const ServerResponse = invoke('GameServer/Network/Response');
+            session.dataSendToMe(ServerResponse.userInfo(target));
+        } catch (_) {}
+    }
 }
 
 function applyManaHeal(target, heal) {

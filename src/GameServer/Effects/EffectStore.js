@@ -27,6 +27,7 @@ function normalize(effect = {}) {
         name: effect.name || key,
         category: effect.category || null,
         dispellable: effect.dispellable !== false,
+        toggle: effect.toggle === true,
         stats: effect.stats || {},
         dot: effect.dot || null,
         manaDot: effect.manaDot || null,
@@ -115,7 +116,9 @@ function packetEffects(actor, options = {}) {
         .map((effect) => ({
             id: effect.id,
             level: effect.level || DEFAULT_EFFECT_LEVEL,
-            duration: Math.max(0, Math.round(remainingMs(actor, effect.key) / 1000)),
+            duration: effect.toggle && !effect.expiresAt
+                ? 0x7fffffff
+                : Math.max(0, Math.round(remainingMs(actor, effect.key) / 1000)),
             type: effect.type,
             key: effect.key
         }))
