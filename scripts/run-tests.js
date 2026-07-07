@@ -20,6 +20,7 @@ const tests = [
     'tests/test_cp_stats.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
+    'tests/test_equipment_item_skills.js',
     'tests/test_geodata_regions.js',
     'tests/test_item_skill_use.js',
     'tests/test_launcher_progression_memory.js',

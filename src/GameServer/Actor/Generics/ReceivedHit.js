@@ -23,11 +23,39 @@ function wakeBotOnDamage(victimSession, attacker) {
     invoke('GameServer/Bot/BotAI').wakeup(victimSession);
 }
 
+function shouldDamageCp(session, actor) {
+    const attacker = session?.actor;
+    return !!(
+        attacker &&
+        attacker !== actor &&
+        !attacker.fetchKind &&
+        typeof actor?.fetchCp === 'function' &&
+        typeof actor?.setCp === 'function'
+    );
+}
+
+function applyCombatPointShield(session, actor, hit) {
+    let damage = Math.max(0, Number(hit) || 0);
+    if (!shouldDamageCp(session, actor)) {
+        return damage;
+    }
+
+    const currentCp = Math.max(0, Number(actor.fetchCp()) || 0);
+    const cpDamage = Math.min(currentCp, damage);
+    if (cpDamage <= 0) {
+        return damage;
+    }
+
+    actor.setCp(currentCp - cpDamage);
+    return damage - cpDamage;
+}
+
 function receivedHit(session, actor, hit) {
     const Generics = invoke(path.actor);
     const victimSession = actor?.session;
+    const hpDamage = applyCombatPointShield(session, actor, hit);
 
-    actor.setHp(Math.max(0, actor.fetchHp() - hit)); // HP bar would disappear if less than zero
+    actor.setHp(Math.max(0, actor.fetchHp() - hpDamage)); // HP bar would disappear if less than zero
     actor.statusUpdateVitals(actor);
 
     // On hit, actor should stand-up
@@ -86,3 +114,4 @@ function receivedHit(session, actor, hit) {
 }
 
 module.exports = receivedHit;
+module.exports.applyCombatPointShield = applyCombatPointShield;

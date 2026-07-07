@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+const ReceivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Formulas = invoke('GameServer/Formulas');
 
@@ -73,6 +74,36 @@ function actor() {
     };
 }
 
+function combatActor({ hp = 100, cp = 0 } = {}) {
+    return {
+        id: 2000002,
+        hp,
+        cp,
+        session: null,
+        fetchId() { return this.id; },
+        fetchHp() { return this.hp; },
+        setHp(value) { this.hp = value; },
+        fetchCp() { return this.cp; },
+        setCp(value) { this.cp = value; },
+        state: {
+            fetchSeated: () => false,
+            fetchCombats: () => false,
+            setCombats() {}
+        },
+        automation: {
+            replenishVitals() {}
+        },
+        statusUpdateVitals() {}
+    };
+}
+
+function hitSession(attacker) {
+    return {
+        actor: attacker,
+        dataSendToMeAndOthers() {}
+    };
+}
+
 const fighter = actor();
 calculateStats({}, fighter);
 assert.strictEqual(Math.round(fighter.fetchMaxCp()), Math.round(Formulas.calcCp(1, 0, 43)), 'max CP should be calculated from sourced class template parameters');
@@ -87,5 +118,19 @@ assert.strictEqual(fighter.fetchCp(), 10, 'recalculating max CP should not refil
 fighter.setCp(999999);
 calculateStats({}, fighter);
 assert.strictEqual(fighter.fetchCp(), fighter.fetchMaxCp(), 'current CP should clamp down to max CP');
+
+const playerVictim = combatActor({ hp: 100, cp: 30 });
+ReceivedHit(hitSession({ fetchId: () => 2000001 }), playerVictim, 20);
+assert.strictEqual(playerVictim.fetchCp(), 10, 'PvP damage should consume CP before HP');
+assert.strictEqual(playerVictim.fetchHp(), 100, 'PvP damage fully absorbed by CP should not reduce HP');
+
+ReceivedHit(hitSession({ fetchId: () => 2000001 }), playerVictim, 40);
+assert.strictEqual(playerVictim.fetchCp(), 0, 'PvP overflow damage should consume remaining CP');
+assert.strictEqual(playerVictim.fetchHp(), 70, 'PvP overflow damage should reduce HP after CP is gone');
+
+const npcHitVictim = combatActor({ hp: 100, cp: 30 });
+ReceivedHit(hitSession({ fetchId: () => 3000001, fetchKind: () => 'Monster' }), npcHitVictim, 20);
+assert.strictEqual(npcHitVictim.fetchCp(), 30, 'NPC damage should not consume player CP');
+assert.strictEqual(npcHitVictim.fetchHp(), 80, 'NPC damage should still reduce HP directly');
 
 console.log('CP stat checks passed');
