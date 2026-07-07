@@ -37,6 +37,12 @@ const chestAndPants = backpack([
 ]);
 assert.strictEqual(chestAndPants.fetchTotalArmorPDef(false), 177, 'separate chest and pants should contribute their P.Def');
 
+const underwearAndCloak = backpack([
+    equippedArmor({ id: 13, slot: 0, pDef: 24 }),
+    equippedArmor({ id: 14, slot: 13, pDef: 18 })
+]);
+assert.strictEqual(underwearAndCloak.fetchTotalArmorPDef(false), 118, 'underwear and cloak should contribute P.Def as extra armor slots');
+
 const fullBody = backpack([
     equippedArmor({ id: 3, slot: 15, pDef: 200 })
 ]);

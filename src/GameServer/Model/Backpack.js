@@ -6,6 +6,7 @@ class BackpackModel {
 
     // Enum
     equipment = {
+     underwear:  0,
           earr:  1,
           earl:  2,
           neck:  3,
@@ -18,6 +19,7 @@ class BackpackModel {
          chest: 10,
          pants: 11,
           feet: 12,
+         cloak: 13,
           dual: 14,
          armor: 15,
     }
@@ -98,10 +100,12 @@ class BackpackModel {
             );
 
         return (
+            (this.fetchEquippedArmor(equip.underwear)?.fetchPDef() ?? 0) +
             (this.fetchEquippedArmor(equip.head )?.fetchPDef() ?? (12)) +
             torsoPDef +
             (this.fetchEquippedArmor(equip.hands)?.fetchPDef() ?? ( 8)) +
-            (this.fetchEquippedArmor(equip.feet )?.fetchPDef() ?? ( 7))
+            (this.fetchEquippedArmor(equip.feet )?.fetchPDef() ?? ( 7)) +
+            (this.fetchEquippedArmor(equip.cloak)?.fetchPDef() ?? 0)
         );
     }
 
