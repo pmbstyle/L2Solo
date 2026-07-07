@@ -397,52 +397,23 @@ const BotAI = {
 
     executeCombat(session, bot, npc, Generics) {
         const role = BotRoles.inferRole(bot);
-        const MAGE_ATTACK_RANGE = 600;
         const ARCHER_ATTACK_RANGE = 700;
+        const castOwnedSkill = (selfId) => {
+            const skill = bot.skillset.fetchSkill(selfId);
+            if (skill && bot.fetchMp() >= skill.fetchConsumedMp()) {
+                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId, ctrl: true });
+                return true;
+            }
+            return false;
+        };
 
         if (role === 'mage' || role === 'healer' || role === 'buffer') {
-            const SkillModel = invoke('GameServer/Model/Skill');
-            let skill = bot.skillset.fetchSkill(1177);
-            if (!skill) {
-                skill = new SkillModel({
-                    selfId: 1177,
-                    name: "Wind Strike",
-                    level: 1,
-                    hp: 0,
-                    mp: 8,
-                    hitTime: 1500,
-                    reuse: 1000,
-                    power: 12,
-                    distance: MAGE_ATTACK_RANGE,
-                    passive: false
-                });
-                bot.skillset.skills.push(skill);
-            }
-            if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId: 1177, ctrl: true });
+            if (castOwnedSkill(1177)) {
                 return;
             }
         }
         else if (role === 'archer') {
-            const SkillModel = invoke('GameServer/Model/Skill');
-            let skill = bot.skillset.fetchSkill(56);
-            if (!skill) {
-                skill = new SkillModel({
-                    selfId: 56,
-                    name: "Power Shot",
-                    level: 1,
-                    hp: 0,
-                    mp: 5,
-                    hitTime: 1200,
-                    reuse: 1500,
-                    power: 15,
-                    distance: ARCHER_ATTACK_RANGE,
-                    passive: false
-                });
-                bot.skillset.skills.push(skill);
-            }
-            if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId: 56, ctrl: true });
+            if (castOwnedSkill(56)) {
                 return;
             }
             Generics.attackExec(session, bot, { id: npc.fetchId(), ctrl: true, range: ARCHER_ATTACK_RANGE });
@@ -450,28 +421,8 @@ const BotAI = {
         }
         else {
             // Melee Fighter: Cast Power Strike with 40% probability if MP allows
-            if (Math.random() < 0.40) {
-                const SkillModel = invoke('GameServer/Model/Skill');
-                let skill = bot.skillset.fetchSkill(3);
-                if (!skill) {
-                    skill = new SkillModel({
-                        selfId: 3,
-                        name: "Power Strike",
-                        level: 1,
-                        hp: 0,
-                        mp: 4,
-                        hitTime: 1000,
-                        reuse: 2000,
-                        power: 10,
-                        distance: 80,
-                        passive: false
-                    });
-                    bot.skillset.skills.push(skill);
-                }
-                if (bot.fetchMp() >= skill.fetchConsumedMp()) {
-                    Generics.skillExec(session, bot, { id: npc.fetchId(), selfId: 3, ctrl: true });
-                    return;
-                }
+            if (Math.random() < 0.40 && castOwnedSkill(3)) {
+                return;
             }
         }
 
