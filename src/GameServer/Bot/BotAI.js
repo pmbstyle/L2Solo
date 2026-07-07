@@ -299,6 +299,10 @@ const BotAI = {
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
                 this.say(session, "Oops... I died! Resurrecting shortly.");
+                if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
+                    const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+                    BotSocialMemory.recordEvent(session.followPlayerSession, session, 'party_wiped', 'bot_and_leader_dead');
+                }
             }
 
             // Revive after 12 seconds of death

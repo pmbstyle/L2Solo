@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotManager = invoke('GameServer/Bot/BotManager');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 function fakeActor(id, name, options = {}) {
     const actor = {
@@ -50,6 +51,7 @@ function fakeSession(accountId, actor) {
 
 const originalSessions = BotManager.sessions;
 const originalSetTimeout = global.setTimeout;
+const originalRecordEvent = BotSocialMemory.recordEvent;
 
 try {
     global.setTimeout = (fn) => {
@@ -89,8 +91,36 @@ try {
     assert(player.vitalUpdates > 0, 'player vitals should refresh after direct heal');
     assert(healer.vitalUpdates > 0, 'healer vitals should refresh after MP cost');
 
+    const socialEvents = [];
+    BotSocialMemory.recordEvent = (fromSession, botSession, eventName, detail) => {
+        socialEvents.push({
+            player: fromSession.actor.fetchName(),
+            bot: botSession.actor.fetchName(),
+            eventName,
+            detail
+        });
+        return Promise.resolve(null);
+    };
+
+    const insultBot = fakeActor(2000005, 'InsultBot', { locX: 100 });
+    const nearbyBot = fakeActor(2000006, 'NearbyBot', { locX: 120 });
+    const insultSession = fakeSession('bot_insult', insultBot);
+    const nearbySession = fakeSession('bot_nearby', nearbyBot);
+    BotManager.sessions = [insultSession, nearbySession];
+    player.fetchDestId = () => insultBot.fetchId();
+
+    BotManager.handlePlayerSpeak(playerSession, { text: 'you idiot' });
+
+    assert.deepStrictEqual(socialEvents, [{
+        player: 'Slava',
+        bot: 'InsultBot',
+        eventName: 'insulted',
+        detail: 'chat'
+    }], 'direct insult should be recorded only for the targeted bot');
+
     console.log('Bot chat command checks passed');
 } finally {
     BotManager.sessions = originalSessions;
     global.setTimeout = originalSetTimeout;
+    BotSocialMemory.recordEvent = originalRecordEvent;
 }

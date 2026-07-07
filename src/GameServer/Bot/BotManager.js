@@ -21,6 +21,7 @@ const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
 const DIRECT_HEAL_MP_COST = 15;
 const DIRECT_BUFF_MP_COST = 20;
+const INSULT_PATTERN = /\b(noob|idiot|stupid|trash|useless|suck|sucks)\b|(?:дурак|дура|тупой|тупая|лох|нуб|мусор|бесполезн)/i;
 
 const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     const cfg = MerchantConfigs[name];
@@ -456,7 +457,15 @@ const BotManager = {
             const directCommandTarget = addressedToBot || selectedBot || companionBot;
             const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
 
-            if (text.includes("hi") || text.includes("hello") || text.includes("привет") || text.includes("ку")) {
+            if (directCommandTarget && INSULT_PATTERN.test(rawText)) {
+                handledByRule = true;
+                BotSocialMemory.recordEvent(playerSession, session, 'insulted', 'chat');
+                setTimeout(() => {
+                    this.botTell(session, playerSession, `That was uncalled for.`);
+                }, 500 + Math.random() * 500);
+            }
+
+            else if (text.includes("hi") || text.includes("hello") || text.includes("привет") || text.includes("ку")) {
                 handledByRule = true;
                 setTimeout(() => {
                     const currentPlan = session.plan || 'hunting';
