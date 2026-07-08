@@ -37,9 +37,11 @@ module.exports = function(session, parts) {
 
     itemIds.forEach((selfId) => {
         DataCache.fetchItemFromSelfId(selfId, (item) => {
-            item.template.price = 0; // Admin prices :)
             const nextId = invoke('GameServer/World/Generics/NpcTalkResponse').items.nextId++;
-            list.push(new Item(nextId, utils.crushOb(item)));
+            const row = utils.crushOb(item);
+            row.amount = 0;
+            row.price = 0; // Admin prices :)
+            list.push(new Item(nextId, row));
         });
     });
 

@@ -11,9 +11,11 @@ const AdminSetLevel = invoke('GameServer/World/Generics/NpcBypasses/AdminSetLeve
 
 const armors = require('../data/Items/Armors/armors.json');
 const weapons = require('../data/Items/Weapons/weapons.json');
+const others = require('../data/Items/Others/others.json');
 const adminShop = require('../data/Admin/Shop/shop.json');
 
-DataCache.items = [...armors, ...weapons];
+DataCache.items = [...armors, ...weapons, ...others];
+DataCache.adminShop = adminShop;
 DataCache.experience = require('../data/Templates/Experience/experience.json');
 
 const adminHtml = utils.parseRawFile('data/Html/Admin/main.html');
@@ -23,6 +25,11 @@ assert.ok(!adminHtml.includes('admin-shop armor-all'), 'admin panel should not e
 assert.ok(!adminHtml.includes('admin-shop weapon-all'), 'admin panel should not expose crash-prone full weapon lists');
 assert.ok(adminShopHtml.includes('admin-shop armor-s'), 'equipment shop should expose armor grade links');
 assert.ok(adminShopHtml.includes('admin-shop weapon-s'), 'equipment shop should expose weapon grade links');
+assert.ok(adminShopHtml.includes('admin-shop supply-crystals'), 'equipment shop should expose crystal supplies');
+assert.ok(adminShopHtml.includes('admin-shop supply-soulshots'), 'equipment shop should expose soulshot supplies');
+assert.ok(adminShopHtml.includes('admin-shop supply-spiritshots'), 'equipment shop should expose spiritshot supplies');
+assert.ok(adminShopHtml.includes('admin-shop supply-blessed-spiritshots'), 'equipment shop should expose blessed spiritshot supplies');
+assert.ok(adminShopHtml.includes('admin-shop supply-arrows'), 'equipment shop should expose arrow supplies');
 assert.ok(adminHtml.includes('admin-set-level $admin_level'), 'admin panel should submit own level edits');
 
 for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
@@ -41,6 +48,40 @@ for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
 }
 assert.strictEqual(AdminShop.itemIdsForSource('all-armors'), null, 'admin shop should reject old full armor source');
 assert.strictEqual(AdminShop.itemIdsForSource('all-weapons'), null, 'admin shop should reject old full weapon source');
+
+const expectedSupplyGroups = {
+    'supply-crystals': [1458, 1459, 1460, 1461, 1462],
+    'supply-soulshots': [1835, 1463, 1464, 1465, 1466, 1467],
+    'supply-spiritshots': [2509, 2510, 2511, 2512, 2513, 2514],
+    'supply-blessed-spiritshots': [3947, 3948, 3949, 3950, 3951, 3952],
+    'supply-arrows': [17, 1341, 1342, 1343, 1344, 1345]
+};
+for (const [category, itemIds] of Object.entries(expectedSupplyGroups)) {
+    assert.deepStrictEqual(AdminShop.itemIdsForSource(adminShop[category]), itemIds, `${category} should resolve to its explicit item list`);
+    itemIds.forEach((selfId) => {
+        assert.ok(others.some((item) => item.selfId === selfId), `${category} item ${selfId} should exist in the item datapack`);
+    });
+}
+
+let adminBuyListPacket = null;
+AdminShop({
+    actor: { backpack: { fetchTotalAdena: () => 1000000 } },
+    dataSendToMe(packet) { adminBuyListPacket = packet; }
+}, ['admin-shop', 'supply-soulshots']);
+
+assert.ok(adminBuyListPacket, 'admin shop should send a BuyList packet for supplies');
+assert.strictEqual(adminBuyListPacket[0], 0x11, 'admin shop supplies should use the C4 BuyList opcode');
+const adminShopRows = new Map();
+for (let i = 0; i < adminBuyListPacket.readInt16LE(9); i++) {
+    const offset = 11 + (i * 32);
+    adminShopRows.set(adminBuyListPacket.readInt32LE(offset + 6), {
+        amount: adminBuyListPacket.readInt32LE(offset + 10),
+        price: adminBuyListPacket.readInt32LE(offset + 28)
+    });
+}
+assert.strictEqual(adminShopRows.get(1835).amount, 0, 'admin Soulshot stock should be unlimited in BuyList');
+assert.strictEqual(adminShopRows.get(1467).amount, 0, 'admin S-grade Soulshot stock should be unlimited in BuyList');
+assert.strictEqual(adminShopRows.get(1835).price, 0, 'admin supply prices should be free');
 
 assert.strictEqual(AdminSetLevel.normalizeLevel('1'), 1, 'admin level should accept level 1');
 assert.strictEqual(AdminSetLevel.normalizeLevel('75'), 75, 'admin level should accept the configured max level');
