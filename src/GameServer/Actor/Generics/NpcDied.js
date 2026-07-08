@@ -29,6 +29,13 @@ function partyLeaderSession(killerSession) {
     return killerSession;
 }
 
+function ownerSessionForSummon(actor) {
+    if (actor?.fetchIsSummon?.() !== true) return null;
+    const ownerId = actor.fetchOwnerId?.();
+    if (!ownerId) return null;
+    return (World.user?.sessions || []).find((session) => session.actor?.fetchId?.() === ownerId) || null;
+}
+
 function rewardParticipants(killerSession, killer, npc) {
     const leaderSession = partyLeaderSession(killerSession);
     const leader = leaderSession?.actor;
@@ -57,12 +64,25 @@ function rewardParticipants(killerSession, killer, npc) {
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
 
+    if (npc.fetchIsSummon?.() === true) {
+        World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
+        session.dataSendToMeAndOthers?.(invoke('GameServer/Network/Response').deleteOb(npc.fetchId()), npc);
+        if (actor?.fetchIsSummon?.() === true) actor.attack?.clearTimers?.();
+        return;
+    }
+
+    const ownerSession = ownerSessionForSummon(actor);
+    if (ownerSession) {
+        session = ownerSession;
+    }
+
     World.removeNpc(session, npc);
     Generics.abortCombatState(session, actor);
 
     if (actor.isDead()) return;
 
-    const participants = rewardParticipants(session, actor, npc);
+    const rewardActor = ownerSession?.actor || actor;
+    const participants = rewardParticipants(session, rewardActor, npc);
     const rewardExp = Math.max(0, Math.floor(npc.fetchAcquiredExp() / Math.max(1, participants.length)));
     const rewardSp = Math.max(0, Math.floor(npc.fetchRewardSp() / Math.max(1, participants.length)));
 

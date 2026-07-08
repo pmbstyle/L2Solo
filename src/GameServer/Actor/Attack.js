@@ -166,7 +166,7 @@ class Attack {
         }
 
         const magicSkill = this.isMagicSkill(skill);
-        this.chargeShotForSkill(session, actor, magicSkill);
+        this.chargeShotForSkill(session, actor, magicSkill, skill);
 
         const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
         skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), attackRate));
@@ -306,7 +306,11 @@ class Attack {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    chargeShotForSkill(session, actor, magicSkill) {
+    chargeShotForSkill(session, actor, magicSkill, skill = null) {
+        if (skill?.fetchSsBoost && Number(skill.fetchSsBoost()) <= 0) {
+            return;
+        }
+
         if (magicSkill) {
             if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
                 actor.backpack.consumeSpiritshot(session, (success, shot = {}) => {
@@ -331,6 +335,11 @@ class Attack {
 
     skillUseConditionFailure(actor, skill) {
         const condition = skill.fetchSemantic?.().condition || null;
+        const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill);
+        if (summonFailure) {
+            return summonFailure;
+        }
+
         if (!condition) return null;
 
         if (condition.actorHpPercentAtMost !== undefined) {

@@ -71,6 +71,22 @@ class NpcModel extends CreatureModel {
         return this.model.helpRadius ?? this.model.clan?.helpRadius ?? 0;
     }
 
+    fetchOwnerId() {
+        return this.model.ownerId ?? 0;
+    }
+
+    fetchOwnerName() {
+        return this.model.ownerName ?? '';
+    }
+
+    fetchSummonSkillId() {
+        return this.model.summonSkillId ?? 0;
+    }
+
+    fetchIsSummon() {
+        return this.model.isSummon === true || this.model.kind === 'Summon';
+    }
+
     fetchRewardExp() {
         return this.model.exp;
     }

@@ -24,6 +24,7 @@ class Npc extends NpcModel {
         this.automation = new Automation();
         this.automation.setRevHp(this.fetchRevHp());
         this.automation.setRevMp(this.fetchRevMp());
+        this.attack = new Attack();
 
         this.setId(id);
         this.fillupVitals();
@@ -37,13 +38,15 @@ class Npc extends NpcModel {
 
         // TODO: Move this into actual GameServer timer
         this.timer = {
-            combat: undefined
+            combat: undefined,
+            combatStart: undefined
         };
         this.skillReuseUntil = new Map();
     }
 
     destructor(session) {
         this.automation.stopReplenish();
+        this.attack.clearTimers?.();
         this.abortCombatState(session);
     }
 
@@ -66,7 +69,12 @@ class Npc extends NpcModel {
         session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
         session.dataSendToMeAndOthers(ServerResponse.autoAttackStart(this.fetchId()), this);
 
-        setTimeout(() => {
+        this.timer.combatStart = setTimeout(() => {
+            this.timer.combatStart = undefined;
+            if (!this.state.fetchCombats()) {
+                return;
+            }
+
             const coords = {
                 locX: 0,
                 locY: 0,
@@ -196,6 +204,8 @@ class Npc extends NpcModel {
     }
 
     abortCombatState(session) {
+        clearTimeout(this.timer.combatStart);
+        this.timer.combatStart = undefined;
         clearInterval(this.timer.combat);
         this.timer.combat = undefined;
 
@@ -250,6 +260,15 @@ class Npc extends NpcModel {
         ConsoleText.transmit(session, ConsoleText.caption.monsterHit, [
             { kind: ConsoleText.kind.npc, value: this.fetchDispSelfId() }, { kind: ConsoleText.kind.number, value: hit }
         ]);
+
+        if (actor?.fetchIsSummon?.() === true) {
+            actor.setHp(Math.max(0, actor.fetchHp() - hit));
+            actor.broadcastVitals?.();
+            if (actor.fetchHp() <= 0) {
+                invoke(path.npc).die(session, this, actor);
+            }
+            return;
+        }
 
         if (actor?.session) {
             actor.session.incomingThreatId = this.fetchId();

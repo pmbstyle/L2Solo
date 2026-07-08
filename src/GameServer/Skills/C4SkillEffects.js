@@ -35,6 +35,12 @@ function execute(session, actor, target, skill, context = {}) {
         cancelled: []
     };
 
+    if (semantic.skillType === C4SkillRules.SUMMON) {
+        result.summon = applySummon(session, actor, target, skill, semantic, magicSkill, context.attack);
+        result.rejected = !result.summon;
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.SOULSHOT || semantic.skillType === C4SkillRules.SPIRITSHOT) {
         result.shotLoaded = applyShot(actor, semantic);
         return result;
@@ -355,6 +361,168 @@ function applyDrainSoul(actor, target) {
     return false;
 }
 
+function applySummon(session, actor, target, skill, semantic, magicSkill, attack) {
+    const failure = validateSummonUse(actor, target, skill);
+    if (failure) {
+        clearLoadedShot(attack || actor.attack, actor, magicSkill);
+        return null;
+    }
+
+    return consumeSkillItems(session, actor, skill, () => {
+        const npcData = fetchSummonNpcData(skill);
+        if (!npcData) return null;
+
+        const Npc = invoke('GameServer/Npc/Npc');
+        const World = invoke('GameServer/World/World');
+        const coords = fetchSummonCoords(actor, target, skill);
+        const npc = new Npc(World.npc.nextId++, {
+            ...utils.crushOb(npcData),
+            ...coords,
+            title: actor.fetchName?.() || '',
+            ownerId: actor.fetchId?.() || 0,
+            ownerName: actor.fetchName?.() || '',
+            summonSkillId: skill.fetchSelfId?.() || 0,
+            summonLifeTime: skill.fetchSummonTotalLifeTime?.() || 0,
+            isSummon: true
+        });
+
+        World.npc.spawns.push(npc);
+        World.indexSpawnsInGrid?.();
+
+        actor.summon = npc;
+        session.summon = npc;
+
+        session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
+        clearLoadedShot(attack || actor.attack, actor, magicSkill);
+        return npc;
+    });
+}
+
+function validateSummonUse(actor, target, skill) {
+    if (skill.fetchSkillType?.() !== C4SkillRules.SUMMON) {
+        return null;
+    }
+
+    if (skill.fetchSummonIsCubic?.()) {
+        return 'Cubic summon runtime is not implemented yet.';
+    }
+
+    const npcId = Number(skill.fetchSummonNpcId?.()) || 0;
+    if (!npcId || !fetchSummonNpcData(skill)) {
+        return 'Summon template is missing.';
+    }
+
+    const activeSummon = actor?.summon || actor?.pet;
+    if (activeSummon && activeSummon.state?.fetchDead?.() !== true && activeSummon.isDead?.() !== true) {
+        return 'You already have a servitor.';
+    }
+
+    if (!hasRequiredSkillItems(actor, skill)) {
+        return 'Not enough required items.';
+    }
+
+    return null;
+}
+
+function fetchSummonNpcData(skill) {
+    const npcId = Number(skill.fetchSummonNpcId?.()) || 0;
+    if (!npcId) return null;
+
+    const DataCache = invoke('GameServer/DataCache');
+    const npcData = DataCache.npcs?.find((npc) => Number(npc.selfId) === npcId);
+    if (npcData) {
+        return structuredClone(npcData);
+    }
+
+    const fallback = fetchSummonNpcFallback(DataCache, skill);
+    if (!fallback) {
+        return null;
+    }
+
+    const cloned = structuredClone(fallback);
+    cloned.selfId = npcId;
+    cloned.template.name = summonDisplayName(skill, cloned.template.name);
+    return cloned;
+}
+
+function fetchSummonNpcFallback(DataCache, skill) {
+    const skillData = DataCache.skills?.find((entry) => Number(entry.selfId) === Number(skill.fetchSelfId?.()));
+    const currentLevel = Number(skill.fetchLevel?.()) || 1;
+    const levelCandidates = (skillData?.levels || [])
+        .map((level) => ({
+            level: Number(level.level) || 0,
+            npc: DataCache.npcs?.find((npc) => Number(npc.selfId) === Number(level.npcId))
+        }))
+        .filter((entry) => entry.npc)
+        .sort((a, b) => Math.abs(a.level - currentLevel) - Math.abs(b.level - currentLevel));
+
+    if (levelCandidates.length > 0) {
+        return levelCandidates[0].npc;
+    }
+
+    const name = String(skill.fetchName?.() || '').toLowerCase();
+    const fallbackIds = summonFamilyFallbackIds(name);
+    return fallbackIds
+        .map((id) => DataCache.npcs?.find((npc) => Number(npc.selfId) === id))
+        .find(Boolean) || null;
+}
+
+function summonFamilyFallbackIds(name) {
+    if (name.includes('panther')) return [12184, 12183, 12182, 12181];
+    if (name.includes('unicorn') || name.includes('seraphim')) return [12064, 12357, 12065, 12358];
+    if (name.includes('nightshade') || name.includes('shadow') || name.includes('silhouette')) return [12070, 12366, 12071, 12367];
+    if (name.includes('cat') || name.includes('mew') || name.includes('kat')) return [12006, 12348, 12007, 12349];
+    if (name.includes('golem')) return [12021, 22421];
+    return [];
+}
+
+function summonDisplayName(skill, fallbackName) {
+    const skillName = String(skill.fetchName?.() || '').replace(/^Summon\s+/i, '').trim();
+    return skillName || fallbackName;
+}
+
+function hasRequiredSkillItems(actor, skill) {
+    const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
+    const count = Number(skill.fetchItemConsumeCount?.()) || 0;
+    if (!itemId || count <= 0) return true;
+
+    const item = actor?.backpack?.fetchItemFromSelfId?.(itemId);
+    return (Number(item?.fetchAmount?.()) || 0) >= count;
+}
+
+function consumeSkillItems(session, actor, skill, callback) {
+    const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
+    const count = Number(skill.fetchItemConsumeCount?.()) || 0;
+    if (!itemId || count <= 0) {
+        return callback();
+    }
+
+    const item = actor?.backpack?.fetchItemFromSelfId?.(itemId);
+    if (!item || (Number(item.fetchAmount?.()) || 0) < count) {
+        return null;
+    }
+
+    let result = null;
+    actor.backpack.deleteItem(session, item.fetchId(), count, () => {
+        result = callback();
+    });
+    return result;
+}
+
+function fetchSummonCoords(actor, target, skill) {
+    const anchor = skill.fetchTargetKind?.() === 'corpse_mob' && target ? target : actor;
+    const head = Number(actor.fetchHead?.()) || 0;
+    const angle = (head / 65535) * Math.PI * 2;
+    const distance = Math.max(40, Number(actor.fetchRadius?.()) || 0);
+
+    return {
+        locX: Math.round((Number(anchor.fetchLocX?.()) || 0) + Math.cos(angle) * distance),
+        locY: Math.round((Number(anchor.fetchLocY?.()) || 0) + Math.sin(angle) * distance),
+        locZ: Number(anchor.fetchLocZ?.()) || 0,
+        head
+    };
+}
+
 function applyDrain(session, actor, target, skill, semantic, magicSkill, attack, rng) {
     let damage = 0;
 
@@ -664,5 +832,7 @@ function refreshEffects(session, target) {
 }
 
 module.exports = {
-    execute
+    execute,
+    validateSummonUse,
+    hasRequiredSkillItems
 };

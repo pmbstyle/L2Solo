@@ -75,6 +75,30 @@ class SkillModel {
         return null;
     }
 
+    fetchItemConsumeId() {
+        return this.model.itemId;
+    }
+
+    fetchItemConsumeCount() {
+        return this.model.itemCount ?? 0;
+    }
+
+    fetchOngoingItemConsumeCount() {
+        return this.model.itemCountOT ?? 0;
+    }
+
+    fetchSummonNpcId() {
+        return this.model.npcId;
+    }
+
+    fetchSummonTotalLifeTime() {
+        return this.model.totalLifeTime ?? 0;
+    }
+
+    fetchSummonIsCubic() {
+        return this.model.isCubic === true;
+    }
+
     fetchBuffTime() {
         return this.model.buff;
     }
