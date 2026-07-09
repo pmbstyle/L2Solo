@@ -45,6 +45,10 @@ class Npc extends NpcModel {
     }
 
     destructor(session) {
+        clearInterval(this.timer.followOwner);
+        this.timer.followOwner = undefined;
+        clearTimeout(this.timer.summonResume);
+        this.timer.summonResume = undefined;
         this.automation.stopReplenish();
         this.attack.clearTimers?.();
         this.abortCombatState(session);

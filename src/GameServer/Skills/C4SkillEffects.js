@@ -393,6 +393,8 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         session.summon = npc;
 
         session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
+        const SummonControl = invoke('GameServer/Npc/SummonControl');
+        SummonControl.startFollowOwner(session, actor, npc);
         clearLoadedShot(attack || actor.attack, actor, magicSkill);
         return npc;
     });

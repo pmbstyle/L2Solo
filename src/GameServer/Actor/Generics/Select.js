@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const World          = invoke('GameServer/World/World');
 const DataCache      = invoke('GameServer/DataCache');
 const Item           = invoke('GameServer/Item/Item');
+const SummonControl  = invoke('GameServer/Npc/SummonControl');
 
 function merchantPurchaseItems(store) {
     const items = [];
@@ -131,6 +132,11 @@ function select(session, actor, data) {
             actor.statusUpdateVitals(npc);
         }
         else { // Second click on same Creature
+            if (npc.fetchIsSummon?.() === true && Number(npc.fetchOwnerId?.()) === Number(actor.fetchId())) {
+                SummonControl.showStatusWindow(session, actor, npc);
+                return;
+            }
+
             Generics.attackRequest(session, actor, data);
         }
     }).catch(() => {

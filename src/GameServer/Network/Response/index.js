@@ -29,6 +29,7 @@ module.exports = {
              moveToPawn: require('./MoveToPawn'),
                 npcHtml: require('./NpcHtml'),
                 npcInfo: require('./NpcInfo'),
+          petStatusShow: require('./PetStatusShow'),
                pickupItem: require('./PickupItem'),
            privateStoreMsg: require('./PrivateStoreMsg'),
         privateStoreBuyMsg: require('./PrivateStoreBuyMsg'),

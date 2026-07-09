@@ -10,6 +10,7 @@ const BasicAction = invoke('GameServer/Actor/Generics/BasicAction');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Npc = invoke('GameServer/Npc/Npc');
+const Select = invoke('GameServer/Actor/Generics/Select');
 const Skill = invoke('GameServer/Model/Skill');
 const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
@@ -41,15 +42,26 @@ function sessionFor(backpack, skill, options = {}) {
     let mp = options.mp ?? 100;
     let casts = false;
     let destId = options.destId;
+    const loc = {
+        locX: options.locX ?? 1000,
+        locY: options.locY ?? 2000,
+        locZ: options.locZ ?? -50
+    };
     const actor = {
         backpack,
         skillset: { fetchSkill: () => skill },
         summon: options.summon || null,
         fetchId: () => 2000001,
         fetchName: () => 'Summoner',
-        fetchLocX: () => 1000,
-        fetchLocY: () => 2000,
-        fetchLocZ: () => -50,
+        fetchLevel: () => 40,
+        fetchLocX: () => loc.locX,
+        fetchLocY: () => loc.locY,
+        fetchLocZ: () => loc.locZ,
+        setLocXYZ(coords) {
+            loc.locX = coords.locX;
+            loc.locY = coords.locY;
+            loc.locZ = coords.locZ;
+        },
         fetchHead: () => 0,
         fetchRadius: () => 10,
         fetchDestId: () => destId,
@@ -57,6 +69,7 @@ function sessionFor(backpack, skill, options = {}) {
         fetchIsOnline: () => true,
         fetchMp: () => mp,
         setMp(value) { mp = value; },
+        fetchMaxMp: () => 100,
         fetchHp: () => 100,
         setHp() {},
         fetchMaxHp: () => 100,
@@ -124,9 +137,12 @@ async function withFastTimers(callback) {
     assert.strictEqual(World.npc.spawns[0].fetchOwnerId(), session.actor.fetchId(), 'summoned servitor should keep owner id');
     assert.strictEqual(World.npc.spawns[0].fetchIsSummon(), true, 'summoned servitor should be marked as summon');
     assert.strictEqual(session.actor.summon, World.npc.spawns[0], 'actor should retain active summon reference');
+    assert.strictEqual(World.npc.spawns[0].controlMode, 'follow', 'summoned servitor should enter native follow mode on spawn');
+    assert.strictEqual(World.npc.spawns[0].followOwner, true, 'summoned servitor should follow owner by default');
     assert.strictEqual(backpack.fetchItemFromSelfId(1458), undefined, 'Summon Kat should consume sourced D crystal count');
     assert.strictEqual(session.actor.fetchMp(), 61, 'Summon Kat should consume sourced MP');
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');
+    World.npc.spawns[0].destructor(session);
 
     const noCrystalBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     noCrystalBackpack.items = [item(2, 1458, 2)];
@@ -157,6 +173,7 @@ async function withFastTimers(callback) {
     assert.strictEqual(World.npc.spawns[0].fetchSelfId(), 13137, 'Summon Queen of Cat should preserve sourced requested npcId');
     assert.strictEqual(World.npc.spawns[0].fetchName(), 'Queen of Cat', 'fallback summon should use skill-derived display name');
     assert.strictEqual(queenBackpack.fetchItemFromSelfId(1459), undefined, 'Summon Queen of Cat should consume sourced B crystal count');
+    World.npc.spawns[0].destructor(queenSession);
 
     const controlBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     controlBackpack.items = [item(4, 1458, 3)];
@@ -171,6 +188,12 @@ async function withFastTimers(callback) {
     }));
 
     const summon = controlSession.actor.summon;
+    Select(controlSession, controlSession.actor, { id: summon.fetchId() });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    Select(controlSession, controlSession.actor, { id: summon.fetchId() });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert(controlSession.packets.some((packet) => packet[0] === 0xb0), 'second click on owned servitor should open PetStatusShow');
+
     summon.setCollectiveAtkSpd(2000);
     summon.setCollectivePAtk(40);
     const target = npc(1, 9100000, { locX: summon.fetchLocX(), locY: summon.fetchLocY(), locZ: summon.fetchLocZ() });
@@ -200,6 +223,29 @@ async function withFastTimers(callback) {
     assert.strictEqual(controlSession.actor.summon, null, 'servitor unsummon action should clear owner summon reference');
     assert.strictEqual(World.npc.spawns.some((spawn) => spawn.fetchId() === summon.fetchId()), false, 'servitor unsummon action should remove summon from world');
     target.destructor(controlSession);
+
+    const rechargeBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    rechargeBackpack.items = [item(5, 1458, 3)];
+    const boxerSession = sessionFor(rechargeBackpack, buildSkill(1226, 1), { mp: 100 });
+    World.user = { sessions: [boxerSession] };
+    World.npc = { spawns: [], grid: {}, nextId: 9000040 };
+
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        attack.remoteHit(boxerSession, boxerSession.actor, buildSkill(1226, 1));
+        realSetTimeout(resolve, 20);
+    }));
+
+    const boxer = boxerSession.actor.summon;
+    boxerSession.actor.setMp(20);
+    boxer.setCollectiveCastSpd(2000);
+    boxer.setMp(1000);
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        BasicAction(boxerSession, boxerSession.actor, { actionId: 0x2d });
+        realSetTimeout(resolve, 20);
+    }));
+    assert(boxerSession.actor.fetchMp() > 20, 'Unicorn Boxer pet action should recharge owner MP with npc skill 4025');
+    assert(boxerSession.packets.some((packet) => packet[0] === 0x48), 'servitor skill action should broadcast MagicSkillUse');
+    BasicAction(boxerSession, boxerSession.actor, { actionId: 0x34 });
 
     console.log('Summon runtime checks passed');
 })().catch((err) => {
