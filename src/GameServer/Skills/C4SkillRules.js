@@ -586,7 +586,7 @@ const RULES = {
     4139: { skillType: DAMAGE, trait: 'fire', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1 },
     4230: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 2500, effectRange: 3000 },
     4259: { skillType: EFFECT, trait: 'poison', effect: 'toxic_smoke', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 1, baseLandRate: 80, castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damage: 12 } },
-    4378: { skillType: EFFECT, trait: 'buff', effect: 'self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100 },
+    4378: { skillType: EFFECT, trait: 'buff', effect: 'self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { reflectDam: 20 } },
     4711: { skillType: EFFECT, trait: 'buff', effect: 'wild_defense', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { pDefMul: 5, mDefMul: 5, pAtkSpdMul: 0.3, runSpdMul: 0.1 } },
     4100: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4101: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95] },

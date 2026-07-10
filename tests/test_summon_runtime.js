@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 
 const Attack = invoke('GameServer/Actor/Attack');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 const BasicAction = invoke('GameServer/Actor/Generics/BasicAction');
 const AttackExec = invoke('GameServer/Actor/Generics/AttackExec');
 const Backpack = invoke('GameServer/Actor/Backpack');
@@ -486,6 +487,22 @@ async function withFastTimers(callback) {
     assert.notStrictEqual(bigBoom.controlMode, 'attack', 'Big Boom should reject generic pet attack and use only Boom Attack');
     bigBoom.destructor(boxerSession);
     bigBoomTarget.destructor(boxerSession);
+
+    const kai = npc(12187, 990040);
+    kai.model.isSummon = true;
+    kai.model.summonSkillId = 1276;
+    const kaiShield = NpcSkills.forNpc(kai).find((skill) => skill.fetchSelfId() === 4378);
+    assert(kaiShield, 'Kai the Cat should resolve Self Damage Shield from its originating summon skill');
+    SkillEffects.execute(boxerSession, kai, kai, kaiShield, { attack });
+    assert.strictEqual(EffectStats.add(kai, 'reflectDam'), 20, 'Self Damage Shield should grant sourced 20% reflected damage');
+    const reflectedAttacker = npc(1, 990041);
+    reflectedAttacker.setHp(1000);
+    kai.setHp(1000);
+    World.npc = { spawns: [kai, reflectedAttacker], grid: {}, nextId: 990042 };
+    attack.hit(boxerSession, reflectedAttacker, kai, 100);
+    assert.strictEqual(reflectedAttacker.fetchHp(), 980, 'Self Damage Shield should reflect sourced damage to an NPC attacker');
+    kai.destructor(boxerSession);
+    reflectedAttacker.destructor(boxerSession);
 
     console.log('Summon runtime checks passed');
 })().catch((err) => {

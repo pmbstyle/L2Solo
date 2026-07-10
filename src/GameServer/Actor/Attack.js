@@ -660,6 +660,21 @@ class Attack {
         else {
             invoke(path.npc).receivedHit(session, actor, creature, hit);
         }
+
+        this.applyReflectedDamage(session, actor, creature, hit);
+    }
+
+    applyReflectedDamage(session, actor, creature, hit) {
+        if (!actor || actor === creature || actor.isDead?.() || creature?.isDead?.()) return;
+        const reflectPercent = Math.max(0, Number(EffectStats.add(creature, 'reflectDam')) || 0);
+        const reflected = Math.floor(Math.max(0, Number(hit) || 0) * reflectPercent / 100);
+        if (reflected <= 0) return;
+
+        if (Number(actor.fetchId?.()) >= 2000000) {
+            invoke(path.actor).receivedHit(session, actor, reflected);
+        } else {
+            invoke(path.npc).receivedHit(session, creature, actor, reflected);
+        }
     }
 }
 
