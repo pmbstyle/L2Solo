@@ -1112,6 +1112,7 @@ try {
     World.npc = { spawns: [], grid: {}, nextId: 9000110 };
     striderSummonBackpack.useItem(striderSummonSession, 35);
     assert.strictEqual(striderSummonSession.actor.pet.fetchSelfId(), 12526, 'Strider collar should create its sourced strider NPC through the pet template fallback');
+    assert.strictEqual(striderSummonSession.actor.pet.fetchName(), 'Strider of Wind', 'fallback strider should keep its sourced visible name');
     assert.deepStrictEqual(striderSummonSession.actor.pet.fetchPetFoodCategories(), ['strider'], 'fallback strider should retain its sourced food category');
     striderSummonSession.actor.pet.destructor(striderSummonSession);
 

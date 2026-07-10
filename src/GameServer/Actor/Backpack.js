@@ -866,10 +866,20 @@ class Backpack extends BackpackModel {
             12781: 12077,
             12782: 12077
         };
+        const names = {
+            12526: 'Strider of Wind',
+            12527: 'Strider of Star',
+            12528: 'Strider of Twilight',
+            12564: 'Sin Eater',
+            12780: 'Baby Buffalo',
+            12781: 'Baby Kookaburra',
+            12782: 'Baby Cougar'
+        };
         const fallback = DataCache.npcs.find((npc) => Number(npc.selfId) === fallbackNpcIds[Number(npcId)]);
         if (!fallback) return null;
         const cloned = structuredClone(fallback);
         cloned.selfId = Number(npcId);
+        if (names[Number(npcId)]) cloned.template.name = names[Number(npcId)];
         return cloned;
     }
 
