@@ -13,6 +13,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const Select = invoke('GameServer/Actor/Generics/Select');
 const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const CubicControl = invoke('GameServer/Skills/CubicControl');
 const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
 
@@ -168,6 +169,23 @@ async function withFastTimers(callback) {
     assert.strictEqual(cubicSession.actor.cubics.get(6).skillId, 1279, 'Binding Cubic should retain its sourced cubic id and summon skill');
     assert.strictEqual(cubicBackpack.fetchItemFromSelfId(1458), undefined, 'Summon Binding Cubic should consume sourced crystals');
     clearTimeout(cubicSession.actor.cubics.get(6).expireTimer);
+    clearInterval(cubicSession.actor.cubics.get(6).actionTimer);
+
+    const lifeCubicBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    lifeCubicBackpack.items = [item(31, 1458, 6)];
+    const lifeCubicSkill = buildSkill(67, 1);
+    const lifeCubicSession = sessionFor(lifeCubicBackpack, lifeCubicSkill);
+    let lifeCubicHp = 20;
+    lifeCubicSession.actor.fetchHp = () => lifeCubicHp;
+    lifeCubicSession.actor.setHp = (value) => { lifeCubicHp = value; };
+    SkillEffects.execute(lifeCubicSession, lifeCubicSession.actor, lifeCubicSession.actor, lifeCubicSkill);
+    const lifeCubic = lifeCubicSession.actor.cubics.get(3);
+    CubicControl.act(lifeCubicSession, lifeCubicSession.actor, lifeCubic);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(lifeCubicHp > 20, 'Life Cubic should periodically heal its owner with sourced Cubic Heal power');
+    assert(lifeCubicSession.packets.some((packet) => packet[0] === 0x76), 'Life Cubic proc should broadcast MagicSkillLaunched');
+    clearTimeout(lifeCubic.expireTimer);
+    clearInterval(lifeCubic.actionTimer);
 
     const queenCat = buildSkill(1331, 1);
     const queenBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
