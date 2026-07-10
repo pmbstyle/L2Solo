@@ -276,6 +276,10 @@ async function withFastTimers(callback) {
     assert(controlSession.packets.some((packet) => packet[0] === 0xb0), 'second click on owned servitor should open PetStatusShow');
     assert(controlSession.packets.some((packet) => packet[0] === 0xb1), 'owned servitor window should receive PetInfo before opening');
     assert(controlSession.packets.some((packet) => packet[0] === 0xb5), 'owned servitor window should receive PetStatusUpdate before opening');
+    controlSession.packets = [];
+    summon.setHp(summon.fetchHp() - 1);
+    summon.broadcastVitals();
+    assert(controlSession.packets.some((packet) => packet[0] === 0xb5), 'summon vitality changes should refresh the owner PetStatusUpdate');
 
     summon.setCollectiveAtkSpd(2000);
     summon.setCollectivePAtk(40);
