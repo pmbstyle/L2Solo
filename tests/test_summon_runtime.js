@@ -164,6 +164,8 @@ async function withFastTimers(callback) {
     assert.strictEqual(actionPet.controlMode, 'follow', 'legacy pet follow action 15 should be handled');
     BasicAction(session, session.actor, { actionId: 0x11 });
     assert.strictEqual(actionPet.controlMode, 'idle', 'legacy pet cancel action 17 should be handled');
+    session.actor.summon = { state: { fetchDead: () => true } };
+    assert.strictEqual(SummonControl.activeSummon(session.actor), actionPet, 'live pet should remain controllable when a stale dead summon reference exists');
     actionPet.destructor(session);
     session.actor.pet = null;
 

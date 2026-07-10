@@ -38,9 +38,9 @@ const FollowTickMs = 500;
 const InteractionDistance = 150;
 
 function activeSummon(actor) {
-    const summon = actor.summon || actor.pet || null;
-    if (!summon || summon.state?.fetchDead?.() === true || summon.isDead?.() === true) return null;
-    return summon;
+    return [actor.summon, actor.pet].find((summon) => (
+        summon && summon.state?.fetchDead?.() !== true && summon.isDead?.() !== true
+    )) || null;
 }
 
 function distance2d(src, dst) {
