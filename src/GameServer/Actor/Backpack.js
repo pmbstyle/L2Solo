@@ -839,6 +839,7 @@ class Backpack extends BackpackModel {
 
             const SummonControl = invoke('GameServer/Npc/SummonControl');
             SummonControl.startFollowOwner(session, session.actor, npc);
+            SummonControl.startPetFeed(session, session.actor, npc);
         });
     }
 

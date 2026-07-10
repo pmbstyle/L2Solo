@@ -70,6 +70,41 @@ function clearLifetimeTimer(summon) {
     if (summon.timer) summon.timer.summonLifetime = undefined;
 }
 
+function clearPetFeedTimer(pet) {
+    if (!pet) return;
+    clearInterval(pet.timer?.petFeed);
+    if (pet.timer) pet.timer.petFeed = undefined;
+}
+
+function tickPetFeed(session, actor, pet) {
+    if (!pet?.fetchIsPet?.() || actor.pet !== pet || pet.state?.fetchDead?.() === true) {
+        clearPetFeedTimer(pet);
+        return;
+    }
+
+    const active = pet.controlMode === 'attack' || pet.state?.fetchHits?.() === true;
+    const consume = Number(active ? pet.petData?.feedBattle : pet.petData?.feedNormal) || 0;
+    if (consume <= 0) return;
+
+    pet.setCurrentFeed?.(Math.max(0, (Number(pet.fetchCurrentFeed?.()) || 0) - consume));
+    const currentFeed = Number(pet.fetchCurrentFeed?.()) || 0;
+    const maxFeed = Number(pet.fetchMaxFeed?.()) || 0;
+    const hungry = maxFeed > 0 && currentFeed < maxFeed * 0.55;
+    if (pet.fetchStateRun?.() !== !hungry) {
+        pet.setStateRun?.(!hungry);
+        session.dataSendToMeAndOthers?.(ServerResponse.walkAndRun(pet.fetchId(), hungry ? 0 : 1), pet);
+    }
+    invoke('GameServer/Npc/Generics/BroadcastVitals')(pet);
+}
+
+function startPetFeed(session, actor, pet) {
+    if (!pet?.fetchIsPet?.() || !pet.fetchCurrentFeed || !pet.setCurrentFeed) return;
+    ensureTimerBag(pet);
+    clearPetFeedTimer(pet);
+    pet.timer.petFeed = setInterval(() => tickPetFeed(session, actor, pet), 10000);
+    pet.timer.petFeed.unref?.();
+}
+
 function sendStopMove(session, summon) {
     session?.dataSendToMeAndOthers?.(ServerResponse.stopMove(summon.fetchId(), {
         locX: summon.fetchLocX(),
@@ -274,6 +309,7 @@ function attackTick(session, summon, target) {
 function unsummon(session, actor, summon) {
     stop(session, summon);
     clearLifetimeTimer(summon);
+    clearPetFeedTimer(summon);
     if (summon.fetchPetControlItemObjectId?.()) {
         const controlItem = actor.backpack?.fetchItemRaw?.(summon.fetchPetControlItemObjectId());
         const petData = {
@@ -311,6 +347,7 @@ function revivePet(session, pet) {
 
     if (owner && ownerSession) {
         startFollowOwner(ownerSession, owner, pet);
+        startPetFeed(ownerSession, owner, pet);
     }
     return true;
 }
@@ -402,8 +439,10 @@ module.exports = {
     showStatusWindow,
     startFollowOwner,
     startLifetime,
+    startPetFeed,
     stop,
     tickLifetime,
+    tickPetFeed,
     toggleFollowOwner,
     unsummon,
     revivePet,

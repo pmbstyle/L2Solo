@@ -51,6 +51,8 @@ class Npc extends NpcModel {
         this.timer.summonResume = undefined;
         clearInterval(this.timer.summonLifetime);
         this.timer.summonLifetime = undefined;
+        clearInterval(this.timer.petFeed);
+        this.timer.petFeed = undefined;
         this.automation.stopReplenish();
         this.attack.clearTimers?.();
         this.abortCombatState(session);

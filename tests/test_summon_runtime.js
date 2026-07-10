@@ -192,6 +192,25 @@ async function withFastTimers(callback) {
     BasicAction(session, session.actor, { actionId: 0x13 });
     assert.strictEqual(session.actor.pet, null, 'fed pet should return to its control item through action 19');
 
+    const feedingPet = npc(12077, 9000013);
+    feedingPet.model.isPet = true;
+    feedingPet.model.isSummon = true;
+    feedingPet.model.ownerId = session.actor.fetchId();
+    feedingPet.petData = { currentFeed: 100, maxFeed: 248, feedNormal: 2, feedBattle: 5 };
+    feedingPet.fetchCurrentFeed = () => feedingPet.petData.currentFeed;
+    feedingPet.fetchMaxFeed = () => feedingPet.petData.maxFeed;
+    feedingPet.setCurrentFeed = (value) => { feedingPet.petData.currentFeed = value; };
+    session.actor.pet = feedingPet;
+    World.npc = { spawns: [feedingPet], grid: {}, nextId: 9000014 };
+    SummonControl.tickPetFeed(session, session.actor, feedingPet);
+    assert.strictEqual(feedingPet.fetchCurrentFeed(), 98, 'idle pet hunger should decrease by its sourced normal-feed cost every tick');
+    assert.strictEqual(feedingPet.fetchStateRun(), false, 'hungry pet should switch to walking');
+    feedingPet.controlMode = 'attack';
+    feedingPet.state.setHits(true);
+    SummonControl.tickPetFeed(session, session.actor, feedingPet);
+    assert.strictEqual(feedingPet.fetchCurrentFeed(), 93, 'pet hunger should use its sourced battle-feed cost while attacking');
+    feedingPet.destructor(session);
+
     const noCrystalBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     noCrystalBackpack.items = [item(2, 1458, 2)];
     const noCrystalSession = sessionFor(noCrystalBackpack, summonKat);
