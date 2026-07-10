@@ -1081,15 +1081,6 @@ assert.strictEqual(C4ItemSkills.resolve(6649).npcId, 12782, 'Baby Cougar Chime s
 assert.strictEqual(wolfCollar.fetchSelfId(), 2046, 'Wolf Collar should use sourced skill 2046');
 assert.strictEqual(wolfCollar.fetchHitTime(), 5000, 'Wolf Collar should preserve sourced 5000ms summon hitTime');
 
-const noHookPetSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
-noHookPetSummonBackpack.items = [
-    item(33, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })
-];
-const noHookPetSummonSession = sessionFor(noHookPetSummonBackpack);
-noHookPetSummonBackpack.useItem(noHookPetSummonSession, 33);
-assert(noHookPetSummonBackpack.fetchItemRaw(33), 'Pet summon control item should not be consumed without summon hook');
-assert.strictEqual(noHookPetSummonSession.packets.length, 0, 'Pet summon should safe-fail before cast when no summon hook exists');
-
 const savedPetSummonSetTimeout = global.setTimeout;
 global.setTimeout = (callback) => {
     callback();
@@ -1097,6 +1088,20 @@ global.setTimeout = (callback) => {
 };
 
 try {
+    const nativePetSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    nativePetSummonBackpack.items = [
+        item(33, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })
+    ];
+    const nativePetSummonSession = sessionFor(nativePetSummonBackpack);
+    World.npc = { spawns: [], grid: {}, nextId: 9000100 };
+    nativePetSummonBackpack.useItem(nativePetSummonSession, 33);
+    assert(nativePetSummonBackpack.fetchItemRaw(33), 'Pet summon control item should not be consumed after native summon');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchSelfId(), 12077, 'Wolf Collar should create the sourced wolf pet without an injected hook');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchPetControlItemObjectId(), 33, 'native pet should retain its control item object id');
+    assert.deepStrictEqual(nativePetSummonSession.actor.pet.fetchPetFoodCategories(), ['wolf'], 'native pet should retain its sourced food category');
+    assert(nativePetSummonSession.packets.some((packet) => packet[0] === 0x16), 'native pet summon should broadcast NpcInfo');
+    nativePetSummonSession.actor.pet.destructor(nativePetSummonSession);
+
     const petSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     petSummonBackpack.items = [
         item(34, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })

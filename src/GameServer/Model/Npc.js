@@ -87,6 +87,14 @@ class NpcModel extends CreatureModel {
         return this.model.isSummon === true || this.model.kind === 'Summon';
     }
 
+    fetchPetControlItemObjectId() {
+        return this.model.petControlItemObjectId ?? 0;
+    }
+
+    fetchPetFoodCategories() {
+        return this.model.petFoodCategories || [];
+    }
+
     fetchRewardExp() {
         return this.model.exp;
     }

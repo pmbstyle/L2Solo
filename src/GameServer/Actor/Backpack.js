@@ -635,6 +635,7 @@ class Backpack extends BackpackModel {
         if (Array.isArray(eater.petFoodCategories)) {
             return eater.petFoodCategories;
         }
+        if (Array.isArray(eater.fetchPetFoodCategories?.())) return eater.fetchPetFoodCategories();
         if (typeof eater.fetchPetFoodCategories === 'function') {
             return eater.fetchPetFoodCategories() || [];
         }
@@ -727,9 +728,6 @@ class Backpack extends BackpackModel {
         }
 
         const summonPet = session.summonPetFromItem || session.actor.summonPetFromItem;
-        if (typeof summonPet !== 'function') {
-            return true;
-        }
 
         if (session.actor.state.fetchCasts()) {
             return true;
@@ -747,12 +745,19 @@ class Backpack extends BackpackModel {
             if (session.actor.isDead()) {
                 return;
             }
-            summonPet.call(session.actor, session, {
+            const payload = {
                 itemObjectId: id,
                 itemSkill,
                 npcId: itemSkill.npcId,
                 skill
-            });
+            };
+
+            if (typeof summonPet === 'function') {
+                summonPet.call(session.actor, session, payload);
+                return;
+            }
+
+            this.spawnPetFromItem(session, payload);
         };
 
         if (castTime > 0) {
@@ -762,6 +767,47 @@ class Backpack extends BackpackModel {
         }
 
         return true;
+    }
+
+    spawnPetFromItem(session, payload) {
+        DataCache.fetchNpcFromSelfId(payload.npcId, (npcData) => {
+            if (!npcData || this.fetchActivePet(session) || session.actor.isDead?.()) {
+                return;
+            }
+
+            const npc = new Npc(World.npc.nextId++, {
+                ...utils.crushOb(npcData),
+                locX: session.actor.fetchLocX(),
+                locY: session.actor.fetchLocY(),
+                locZ: session.actor.fetchLocZ(),
+                head: session.actor.fetchHead?.() || 0,
+                title: session.actor.fetchName?.() || '',
+                ownerId: session.actor.fetchId?.() || 0,
+                ownerName: session.actor.fetchName?.() || '',
+                isPet: true,
+                isSummon: true,
+                petControlItemObjectId: payload.itemObjectId,
+                petFoodCategories: this.petFoodCategoriesForNpc(payload.npcId)
+            });
+
+            World.npc.spawns.push(npc);
+            World.indexSpawnsInGrid?.();
+            session.actor.pet = npc;
+            session.pet = npc;
+            session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
+
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
+            SummonControl.startFollowOwner(session, session.actor, npc);
+        });
+    }
+
+    petFoodCategoriesForNpc(npcId) {
+        const id = Number(npcId);
+        if (id === 12077 || id === 12564) return ['wolf'];
+        if ([12311, 12312, 12313].includes(id)) return ['hatchling'];
+        if ([12526, 12527, 12528].includes(id)) return ['strider'];
+        if ([12780, 12781, 12782].includes(id)) return ['baby'];
+        return [];
     }
 
     isFishingRod(item) {
