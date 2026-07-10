@@ -8,11 +8,11 @@ const CubicSkills = {
     1: [{ id: 4049, name: 'Cubic Drain', powers: [26, 31, 36, 41, 45, 48, 51, 54] }],
     2: [{ id: 4050, name: 'Cubic Drain', powers: [29, 33, 39, 43, 46, 50, 53] }],
     3: [{ id: 4051, name: 'Cubic Heal', powers: [201, 241, 281, 314, 339, 361, 382] }],
-    4: [{ id: 4052, name: 'Poison', powers: [70, 70, 70, 70, 70, 70] }],
-    5: [{ id: 4053, name: 'Decrease P. Atk.', powers: Array(8).fill(80) }, { id: 4054, name: 'Decrease P. Def.', powers: Array(8).fill(80) }, { id: 4055, name: 'Decrease Atk. Spd.', powers: Array(8).fill(80) }],
-    6: [{ id: 4164, name: 'Paralysis', powers: Array(9).fill(15) }],
-    7: [{ id: 4165, name: 'Icy Air', powers: [77, 77, 77, 94, 94, 108, 108, 118, 118] }],
-    8: [{ id: 4166, name: 'Shock', powers: Array(9).fill(80) }]
+    4: [{ id: 4052, name: 'Poison', buff: 30000, powers: [70, 70, 70, 70, 70, 70] }],
+    5: [{ id: 4053, name: 'Decrease P. Atk.', buff: 120000, powers: Array(8).fill(80) }, { id: 4054, name: 'Decrease P. Def.', buff: 120000, powers: Array(8).fill(80) }, { id: 4055, name: 'Decrease Atk. Spd.', buff: 120000, powers: Array(8).fill(80) }],
+    6: [{ id: 4164, name: 'Paralysis', buff: 120000, powers: Array(9).fill(15) }],
+    7: [{ id: 4165, name: 'Icy Air', buff: 15000, powers: [77, 77, 77, 94, 94, 108, 108, 118, 118] }],
+    8: [{ id: 4166, name: 'Shock', buff: 9000, powers: Array(9).fill(80) }]
 };
 
 function cubicsFor(actor) {
@@ -53,6 +53,7 @@ function buildSkill(cubic, definition) {
         power: definition.powers[level - 1],
         spell: true,
         distance: 900,
+        buff: definition.buff || 0,
         hitTime: 0,
         reuse: 0,
         mp: 0,
