@@ -248,6 +248,11 @@ function moveToTarget(session, actor, summon) {
 }
 
 function attack(session, actor, summon) {
+    if (Number(summon.fetchSummonSkillId?.()) === 301) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
     selectedTarget(actor).then((target) => {
         if (!target || target === summon) {
             session.dataSendToMe(ServerResponse.actionFailed());

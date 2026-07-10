@@ -475,6 +475,18 @@ async function withFastTimers(callback) {
     merrow.destructor(boxerSession);
     merrowTarget.destructor(boxerSession);
 
+    const bigBoom = npc(12187, 9100030);
+    bigBoom.model.isSummon = true;
+    bigBoom.model.summonSkillId = 301;
+    const bigBoomTarget = npc(1, 9100031);
+    boxerSession.actor.summon = bigBoom;
+    boxerSession.actor.setDestId(bigBoomTarget.fetchId());
+    World.npc = { spawns: [bigBoom, bigBoomTarget], grid: {}, nextId: 9100032 };
+    BasicAction(boxerSession, boxerSession.actor, { actionId: 0x16 });
+    assert.notStrictEqual(bigBoom.controlMode, 'attack', 'Big Boom should reject generic pet attack and use only Boom Attack');
+    bigBoom.destructor(boxerSession);
+    bigBoomTarget.destructor(boxerSession);
+
     console.log('Summon runtime checks passed');
 })().catch((err) => {
     console.error(err);
