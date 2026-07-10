@@ -204,6 +204,15 @@ async function withFastTimers(callback) {
         clearInterval(member.cubics.get(1).actionTimer);
     });
 
+    const cubicPvpSession = sessionFor(new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] }), summonKat, { destId: 3000002 });
+    const cubicPvpTargetSession = sessionFor(new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] }), summonKat);
+    cubicPvpTargetSession.actor.fetchId = () => 3000002;
+    cubicPvpTargetSession.actor.fetchPvpFlag = () => 1;
+    World.user = { sessions: [cubicPvpSession, cubicPvpTargetSession] };
+    assert.strictEqual(await CubicControl.selectedEnemy(cubicPvpSession, cubicPvpSession.actor), cubicPvpTargetSession.actor, 'offensive cubic should accept a flagged PvP target inside the sourced 900 range');
+    cubicPvpTargetSession.actor.setLocXYZ({ locX: 2500, locY: 2000, locZ: -50 });
+    assert.strictEqual(await CubicControl.selectedEnemy(cubicPvpSession, cubicPvpSession.actor), null, 'offensive cubic should reject targets outside the sourced 900 range');
+
     const queenCat = buildSkill(1331, 1);
     const queenBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     queenBackpack.items = [item(3, 1459, 1)];

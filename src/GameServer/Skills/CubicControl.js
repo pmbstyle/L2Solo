@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
 const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 const CubicSkills = {
     1: [{ id: 4049, name: 'Cubic Drain', powers: [26, 31, 36, 41, 45, 48, 51, 54] }],
@@ -59,11 +60,29 @@ function buildSkill(cubic, definition) {
     });
 }
 
-function selectedEnemy(actor) {
+function distance2d(src, dst) {
+    const dx = Number(src?.fetchLocX?.() || 0) - Number(dst?.fetchLocX?.() || 0);
+    const dy = Number(src?.fetchLocY?.() || 0) - Number(dst?.fetchLocY?.() || 0);
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function selectedEnemy(session, actor) {
     const targetId = actor.fetchDestId?.();
     if (targetId === undefined || targetId === null) return Promise.resolve(null);
     return World.fetchNpc(targetId).catch(() => World.fetchUser(targetId).catch(() => null))
-        .then((target) => target?.fetchAttackable?.() === true && target.isDead?.() !== true ? target : null);
+        .then((target) => {
+            if (!target || target.isDead?.() === true || distance2d(actor, target) > 900) return null;
+            if (target.fetchAttackable?.() === true) return target;
+
+            const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+                ? session.followPlayerSession
+                : session;
+            const partyActors = PartyAwareness.partyActors(leaderSession);
+            if (target === actor || partyActors.includes(target)) return null;
+            return target.fetchIsOnline?.() === true && (target.fetchKarma?.() > 0 || target.fetchPvpFlag?.() > 0)
+                ? target
+                : null;
+        });
 }
 
 function act(session, actor, cubic) {
@@ -77,7 +96,7 @@ function act(session, actor, cubic) {
     const lifeCubic = cubic.id === 3;
     if (!lifeCubic && Math.random() * 100 >= cubic.activationChance) return;
 
-    const targetPromise = lifeCubic ? Promise.resolve(actor) : selectedEnemy(actor);
+    const targetPromise = lifeCubic ? Promise.resolve(actor) : selectedEnemy(session, actor);
     targetPromise.then((target) => {
         if (!target || !actor.cubics?.has(cubic.id)) return;
         const definition = definitions[Math.floor(Math.random() * definitions.length)];
@@ -124,5 +143,6 @@ module.exports = {
     act,
     idsFor,
     remove,
+    selectedEnemy,
     summon
 };
