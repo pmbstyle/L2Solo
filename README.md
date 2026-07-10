@@ -32,7 +32,7 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 **Character:**
 - Progression depending on chosen rates
-- Full C4 skills coverage: self, on target, AoE, etc (excluding summons - in-progress)
+- Full C4 skills coverage: self, on target, AoE, etc
 - Potions, scrolls, spoil, SA, manor, etc
 - Party with bots with native (/invite, /leave), plus .botpaty to find nearby bots and invite to the party
 - All armor sets
@@ -84,6 +84,12 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
 - One-click installer
+
+### 🆕 Recently added
+- Summons
+- Cubics
+- Sleep
+
 
 ## 🎮 Wanna play now?
 
