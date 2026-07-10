@@ -60,7 +60,19 @@ function sessionFor(backpack, skill, options = {}) {
         summon: options.summon || null,
         fetchId: () => 2000001,
         fetchName: () => 'Summoner',
+        fetchTitle: () => '',
+        fetchRace: () => 0,
+        fetchSex: () => 0,
+        fetchClassId: () => 0,
         fetchLevel: () => 40,
+        fetchExp: () => 0,
+        fetchSp: () => 0,
+        fetchStr: () => 40,
+        fetchDex: () => 30,
+        fetchCon: () => 43,
+        fetchInt: () => 21,
+        fetchWit: () => 11,
+        fetchMen: () => 25,
         fetchLocX: () => loc.locX,
         fetchLocY: () => loc.locY,
         fetchLocZ: () => loc.locZ,
@@ -77,6 +89,33 @@ function sessionFor(backpack, skill, options = {}) {
         fetchMp: () => mp,
         setMp(value) { mp = value; },
         fetchMaxMp: () => 100,
+        fetchCp: () => 0,
+        fetchMaxCp: () => 0,
+        fetchMaxLoad: () => 1000,
+        fetchCollectivePAtk: () => 1,
+        fetchCollectivePDef: () => 1,
+        fetchCollectiveEvasion: () => 1,
+        fetchCollectiveAccur: () => 1,
+        fetchCollectiveCritical: () => 1,
+        fetchCollectiveMAtk: () => 1,
+        fetchCollectiveMDef: () => 1,
+        fetchPvpFlag: () => 0,
+        fetchKarma: () => 0,
+        fetchCollectiveRunSpd: () => 1,
+        fetchCollectiveWalkSpd: () => 1,
+        fetchSwim: () => 0,
+        fetchAtkSpdMultiplier: () => 1,
+        fetchSize: () => 1,
+        fetchHair: () => 0,
+        fetchHairColor: () => 0,
+        fetchFace: () => 0,
+        fetchIsGM: () => 0,
+        fetchPrivateStoreType: () => 0,
+        fetchIsCrafter: () => 0,
+        fetchPk: () => 0,
+        fetchPvp: () => 0,
+        fetchRecRemain: () => 0,
+        fetchEvalScore: () => 0,
         fetchHp: () => 100,
         setHp() {},
         fetchMaxHp: () => 100,
@@ -87,6 +126,10 @@ function sessionFor(backpack, skill, options = {}) {
         automation: { replenishVitals() {} },
         state: {
             fetchDead: () => false,
+            fetchSeated: () => false,
+            fetchWalkin: () => false,
+            fetchCombats: () => false,
+            fetchStateInvisible: () => false,
             setHits() {},
             setCasts(value) { casts = value; },
             fetchCasts: () => casts
@@ -168,6 +211,22 @@ async function withFastTimers(callback) {
     session.actor.summon = { state: { fetchDead: () => true } };
     assert.strictEqual(SummonControl.activeSummon(session.actor), actionPet, 'live pet should remain controllable when a stale dead summon reference exists');
     actionPet.destructor(session);
+    session.actor.pet = null;
+
+    const strider = npc(12311, 990060);
+    strider.model.selfId = 12526;
+    strider.model.isPet = true;
+    strider.model.isSummon = true;
+    strider.model.ownerId = session.actor.fetchId();
+    session.actor.pet = strider;
+    World.npc = { spawns: [strider], grid: {}, nextId: 990061 };
+    BasicAction(session, session.actor, { actionId: 0x26 });
+    assert.strictEqual(session.actor.mounted, true, 'strider mount action should set mounted state');
+    assert.strictEqual(World.npc.spawns.includes(strider), false, 'mounted strider should be removed from the visible NPC world');
+    BasicAction(session, session.actor, { actionId: 0x26 });
+    assert.strictEqual(session.actor.mounted, false, 'second mount action should dismount');
+    assert.strictEqual(World.npc.spawns.includes(strider), true, 'dismount should restore the strider NPC to the world');
+    strider.destructor(session);
     session.actor.pet = null;
 
     const corpseBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });

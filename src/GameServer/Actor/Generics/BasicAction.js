@@ -2,6 +2,44 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
 
+const StriderNpcIds = new Set([12526, 12527, 12528]);
+
+function setMounted(actor, value, mountNpcId = 0) {
+    if (typeof actor.setMounted === 'function') actor.setMounted(value);
+    else actor.mounted = value;
+    if (typeof actor.setMountNpcId === 'function') actor.setMountNpcId(mountNpcId);
+    else actor.mountNpcId = mountNpcId;
+}
+
+function mountPet(session, actor) {
+    const World = invoke('GameServer/World/World');
+    const pet = actor.pet;
+    if (!pet?.fetchIsPet?.() || !StriderNpcIds.has(Number(pet.fetchSelfId?.())) || pet.state?.fetchDead?.() === true) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
+    World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== pet.fetchId?.());
+    World.indexSpawnsInGrid?.();
+    setMounted(actor, true, pet.fetchSelfId());
+    session.dataSendToMeAndOthers(ServerResponse.userInfo(actor), actor);
+    session.dataSendToMeAndOthers(ServerResponse.charInfo(actor), actor);
+}
+
+function dismountPet(session, actor) {
+    const World = invoke('GameServer/World/World');
+    const pet = actor.pet;
+    setMounted(actor, false, 0);
+    if (pet && !pet.state?.fetchDead?.() && !World.npc.spawns.some((spawn) => spawn.fetchId?.() === pet.fetchId?.())) {
+        pet.setLocXYZ?.({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
+        World.npc.spawns.push(pet);
+        World.indexSpawnsInGrid?.();
+        session.dataSendToMeAndOthers(ServerResponse.npcInfo(pet), pet);
+    }
+    session.dataSendToMeAndOthers(ServerResponse.userInfo(actor), actor);
+    session.dataSendToMeAndOthers(ServerResponse.charInfo(actor), actor);
+}
+
 function sitAndStand(session, actor, data) {
     if (actor.state.fetchHits() || actor.state.fetchCasts() || actor.state.fetchAnimated() || actor.state.inMotion()) {
         invoke(path.actor).queueRequest(session, actor, 'sit', data);
@@ -77,6 +115,11 @@ function basicAction(session, actor, data) {
                 SummonControl.unsummon(session, actor, pet);
             }
         }
+        break;
+
+    case 0x26: // Strider mount / dismount
+        if (actor.fetchMounted?.() === true || actor.mounted === true) dismountPet(session, actor);
+        else mountPet(session, actor);
         break;
 
     case 0x28: // Recommend without selection

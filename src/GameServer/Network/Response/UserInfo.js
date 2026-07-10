@@ -104,13 +104,13 @@ function userInfo(actor) {
         .writeD(0x00)  // ?
         .writeH(actor.fetchRecRemain())
         .writeH(actor.fetchEvalScore())
-        .writeD(0x00)  // Mount ID
+        .writeD(actor.fetchMountNpcId?.() || 0)  // Mount ID
         .writeH(0x00)  // Inventory limit
         .writeD(actor.fetchClassId())
         .writeD(0x00)  // Special effects
         .writeD(actor.fetchMaxCp())
         .writeD(actor.fetchCp())
-        .writeC(0x00)  // Mounted
+        .writeC(actor.fetchMounted?.() || actor.mounted ? 1 : 0)  // Mounted
         .writeC(0x00)  // Team circle color
         .writeD(Pledge.largeCrestId(actor))  // Clan large crest ID
         .writeC(0x00)  // Noble

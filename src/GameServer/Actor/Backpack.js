@@ -790,7 +790,8 @@ class Backpack extends BackpackModel {
 
     spawnPetFromItem(session, payload) {
         DataCache.fetchNpcFromSelfId(payload.npcId, (npcData) => {
-            if (!npcData || this.fetchActivePet(session) || session.actor.isDead?.()) {
+            const resolvedNpcData = npcData || this.petNpcFallback(payload.npcId);
+            if (!resolvedNpcData || this.fetchActivePet(session) || session.actor.isDead?.()) {
                 return;
             }
 
@@ -802,7 +803,7 @@ class Backpack extends BackpackModel {
             petData.feedBattle ??= feedDefaults.battle;
             petData.currentFeed ??= petData.maxFeed;
             const npc = new Npc(World.npc.nextId++, {
-                ...utils.crushOb(npcData),
+                ...utils.crushOb(resolvedNpcData),
                 locX: session.actor.fetchLocX(),
                 locY: session.actor.fetchLocY(),
                 locZ: session.actor.fetchLocZ(),
@@ -850,6 +851,23 @@ class Backpack extends BackpackModel {
         if ([12526, 12527, 12528].includes(id)) return ['strider'];
         if ([12780, 12781, 12782].includes(id)) return ['baby'];
         return [];
+    }
+
+    petNpcFallback(npcId) {
+        const fallbackNpcIds = {
+            12526: 12311,
+            12527: 12312,
+            12528: 12313,
+            12564: 12077,
+            12780: 12077,
+            12781: 12077,
+            12782: 12077
+        };
+        const fallback = DataCache.npcs.find((npc) => Number(npc.selfId) === fallbackNpcIds[Number(npcId)]);
+        if (!fallback) return null;
+        const cloned = structuredClone(fallback);
+        cloned.selfId = Number(npcId);
+        return cloned;
     }
 
     isFishingRod(item) {

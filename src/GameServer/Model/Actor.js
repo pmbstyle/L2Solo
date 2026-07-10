@@ -68,8 +68,24 @@ class ActorModel extends CreatureModel {
         this.model.privateStoreType = data;
     }
 
+    setMounted(data) {
+        this.model.mounted = data === true;
+    }
+
+    setMountNpcId(data) {
+        this.model.mountNpcId = Number(data) || 0;
+    }
+
     fetchPrivateStoreType() {
         return this.model.privateStoreType || 0;
+    }
+
+    fetchMounted() {
+        return this.model.mounted === true;
+    }
+
+    fetchMountNpcId() {
+        return this.model.mountNpcId || 0;
     }
 
     setPrivateStore(data) {

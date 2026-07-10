@@ -68,7 +68,7 @@ function charInfo(actor) {
         .writeC(0x00)  // Combat = 1
         .writeC(0x00)  // Dead = 1
         .writeC(0x00)  // Invisible = 1
-        .writeC(0x00)  // Mount
+        .writeC(actor.fetchMounted?.() || actor.mounted ? 1 : 0)  // Mount
         .writeC(privateStoreType)  // Private store type
         .writeH((actor.cubics instanceof Map ? actor.cubics.size : 0));  // Cubic count
 
@@ -81,7 +81,7 @@ function charInfo(actor) {
         .writeD(0x00)  // Abnormal effect
         .writeC(0x00)  // Recommendations left
         .writeH(0x00)  // Recommendations won
-        .writeD(0x00)  // Mount NPC ID
+        .writeD(actor.fetchMountNpcId?.() || 0)  // Mount NPC ID
         .writeD(actor.fetchClassId())
         .writeD(0x00)  // Special effects
         .writeC(0x00)  // Enchant effect
