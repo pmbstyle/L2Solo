@@ -70,7 +70,13 @@ function charInfo(actor) {
         .writeC(0x00)  // Invisible = 1
         .writeC(0x00)  // Mount
         .writeC(privateStoreType)  // Private store type
-        .writeH(0x00)  // Cubic count
+        .writeH((actor.cubics instanceof Map ? actor.cubics.size : 0));  // Cubic count
+
+    for (const cubicId of actor.cubics instanceof Map ? actor.cubics.keys() : []) {
+        packet.writeH(cubicId);
+    }
+
+    packet
         .writeC(0x00)  // Party matching
         .writeD(0x00)  // Abnormal effect
         .writeC(0x00)  // Recommendations left

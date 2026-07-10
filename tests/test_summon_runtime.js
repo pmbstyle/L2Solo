@@ -12,6 +12,7 @@ const Item = invoke('GameServer/Item/Item');
 const Npc = invoke('GameServer/Npc/Npc');
 const Select = invoke('GameServer/Actor/Generics/Select');
 const Skill = invoke('GameServer/Model/Skill');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
 
@@ -157,6 +158,16 @@ async function withFastTimers(callback) {
     assert.strictEqual(World.npc.spawns.length, 0, 'summon should not spawn without required crystals');
     assert.strictEqual(noCrystalBackpack.fetchItemFromSelfId(1458).fetchAmount(), 2, 'failed summon should not consume crystals');
     assert.strictEqual(noCrystalSession.actor.fetchMp(), 100, 'failed summon should not consume MP');
+
+    const cubicBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    cubicBackpack.items = [item(30, 1458, 5)];
+    const cubicSkill = buildSkill(1279, 1);
+    const cubicSession = sessionFor(cubicBackpack, cubicSkill);
+    SkillEffects.execute(cubicSession, cubicSession.actor, cubicSession.actor, cubicSkill);
+    assert.strictEqual(cubicSession.actor.cubics.size, 1, 'Summon Binding Cubic should create a cubic instance instead of a servitor NPC');
+    assert.strictEqual(cubicSession.actor.cubics.get(6).skillId, 1279, 'Binding Cubic should retain its sourced cubic id and summon skill');
+    assert.strictEqual(cubicBackpack.fetchItemFromSelfId(1458), undefined, 'Summon Binding Cubic should consume sourced crystals');
+    clearTimeout(cubicSession.actor.cubics.get(6).expireTimer);
 
     const queenCat = buildSkill(1331, 1);
     const queenBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });

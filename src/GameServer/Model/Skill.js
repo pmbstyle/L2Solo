@@ -99,6 +99,14 @@ class SkillModel {
         return this.model.isCubic === true;
     }
 
+    fetchSummonActivationChance() {
+        return this.model.activationChance ?? 0;
+    }
+
+    fetchSummonActivationTime() {
+        return this.model.activationTime ?? 0;
+    }
+
     fetchBuffTime() {
         return this.model.buff;
     }

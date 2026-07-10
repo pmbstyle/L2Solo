@@ -368,6 +368,10 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         return null;
     }
 
+    if (skill.fetchSummonIsCubic?.()) {
+        return consumeSkillItems(session, actor, skill, () => invoke('GameServer/Skills/CubicControl').summon(session, target || actor, skill));
+    }
+
     return consumeSkillItems(session, actor, skill, () => {
         const npcData = fetchSummonNpcData(skill);
         if (!npcData) return null;
@@ -405,9 +409,7 @@ function validateSummonUse(actor, target, skill) {
         return null;
     }
 
-    if (skill.fetchSummonIsCubic?.()) {
-        return 'Cubic summon runtime is not implemented yet.';
-    }
+    if (skill.fetchSummonIsCubic?.()) return null;
 
     const npcId = Number(skill.fetchSummonNpcId?.()) || 0;
     if (!npcId || !fetchSummonNpcData(skill)) {

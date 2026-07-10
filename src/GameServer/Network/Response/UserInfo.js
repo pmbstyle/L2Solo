@@ -84,7 +84,13 @@ function userInfo(actor) {
         .writeC(actor.fetchIsCrafter())
         .writeD(actor.fetchPk())
         .writeD(actor.fetchPvp())
-        .writeH(0x00)  // Cubic Count
+        .writeH((actor.cubics instanceof Map ? actor.cubics.size : 0));  // Cubic Count
+
+    for (const cubicId of actor.cubics instanceof Map ? actor.cubics.keys() : []) {
+        packet.writeH(cubicId);
+    }
+
+    packet
         .writeC(0x00)  // Find Party Members = 0x01
         .writeD(0x00)  // Is invisible?
         .writeC(0x00)  // ?
