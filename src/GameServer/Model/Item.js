@@ -13,6 +13,10 @@ class ItemModel {
         this.model.amount = data;
     }
 
+    setPetData(data) {
+        this.model.petData = data;
+    }
+
     // Get
 
     fetchId() {
@@ -65,6 +69,17 @@ class ItemModel {
 
     fetchLocZ() {
         return this.model.locZ ?? 0;
+    }
+
+    fetchPetData() {
+        if (typeof this.model.petData === 'string') {
+            try {
+                return JSON.parse(this.model.petData);
+            } catch (err) {
+                return {};
+            }
+        }
+        return this.model.petData || {};
     }
 
     // Abstract

@@ -261,6 +261,20 @@ function attackTick(session, summon, target) {
 function unsummon(session, actor, summon) {
     stop(session, summon);
     clearLifetimeTimer(summon);
+    if (summon.fetchPetControlItemObjectId?.()) {
+        const controlItem = actor.backpack?.fetchItemRaw?.(summon.fetchPetControlItemObjectId());
+        const petData = {
+            ...(summon.petData || controlItem?.fetchPetData?.() || {}),
+            hp: summon.fetchHp?.(),
+            mp: summon.fetchMp?.(),
+            level: summon.fetchLevel?.(),
+            currentFeed: summon.fetchCurrentFeed?.() ?? 0
+        };
+        controlItem?.setPetData?.(petData);
+        invoke('Database').updateItemPetData?.(actor.fetchId(), controlItem?.fetchId?.(), petData).catch?.((err) => {
+            utils.infoWarn('Pet', 'failed to persist pet state: %s', err.message);
+        });
+    }
     World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== summon.fetchId());
     World.indexSpawnsInGrid?.();
     if (actor.summon === summon) actor.summon = null;

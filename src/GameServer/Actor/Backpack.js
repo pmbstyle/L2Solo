@@ -775,6 +775,8 @@ class Backpack extends BackpackModel {
                 return;
             }
 
+            const controlItem = this.fetchItemRaw(payload.itemObjectId);
+            const petData = controlItem?.fetchPetData?.() || {};
             const npc = new Npc(World.npc.nextId++, {
                 ...utils.crushOb(npcData),
                 locX: session.actor.fetchLocX(),
@@ -787,8 +789,21 @@ class Backpack extends BackpackModel {
                 isPet: true,
                 isSummon: true,
                 petControlItemObjectId: payload.itemObjectId,
-                petFoodCategories: this.petFoodCategoriesForNpc(payload.npcId)
+                petFoodCategories: this.petFoodCategoriesForNpc(payload.npcId),
+                petData
             });
+
+            npc.petData = petData;
+            npc.fetchCurrentFeed = () => Number(npc.petData.currentFeed) || 0;
+            npc.setCurrentFeed = (value) => {
+                npc.petData.currentFeed = Math.max(0, Number(value) || 0);
+                controlItem?.setPetData?.(npc.petData);
+                Database.updateItemPetData?.(session.actor.fetchId(), payload.itemObjectId, npc.petData).catch?.((err) => {
+                    utils.infoWarn('Pet', 'failed to persist pet feed: %s', err.message);
+                });
+            };
+            if (Number.isFinite(Number(petData.hp))) npc.setHp(Math.min(npc.fetchMaxHp(), Number(petData.hp)));
+            if (Number.isFinite(Number(petData.mp))) npc.setMp(Math.min(npc.fetchMaxMp(), Number(petData.mp)));
 
             World.npc.spawns.push(npc);
             World.indexSpawnsInGrid?.();

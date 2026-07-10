@@ -137,6 +137,7 @@ const Database = {
                      amount: item.amount ?? 1,
                    equipped: item.equipped ?? false,
                        slot: item.slot ?? 0,
+                    petData: item.petData ? JSON.stringify(item.petData) : null,
                 characterId: characterId
             })
         );
@@ -174,6 +175,14 @@ const Database = {
     deleteItems(characterId) {
         return Database.execute(
             builder.delete('items', 'characterId = ?', characterId)
+        );
+    },
+
+    updateItemPetData(characterId, id, petData) {
+        return Database.execute(
+            builder.update('items', {
+                petData: JSON.stringify(petData || {})
+            }, 'id = ? AND characterId = ?', id, characterId)
         );
     },
 

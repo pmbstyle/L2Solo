@@ -81,6 +81,7 @@ CREATE TABLE `items`(
     `amount`      int(20)     NOT NULL DEFAULT 1,
     `equipped`    boolean     NOT NULL DEFAULT 0,
     `slot`        int( 5)     NOT NULL DEFAULT 0,
+    `petData`     text                 NULL,
     `characterId` int( 8)     NOT NULL,
     PRIMARY KEY (`id`)
 );
