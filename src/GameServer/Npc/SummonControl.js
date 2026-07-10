@@ -285,6 +285,8 @@ function unsummon(session, actor, summon) {
 
 function showStatusWindow(session, actor, summon) {
     session.dataSendToMe(ServerResponse.moveToPawn(actor, summon, InteractionDistance));
+    session.dataSendToMe(ServerResponse.petInfo(summon, actor));
+    session.dataSendToMe(ServerResponse.petStatusUpdate(summon));
     session.dataSendToMe(ServerResponse.petStatusShow(1));
     session.dataSendToMe(ServerResponse.actionFailed());
 }

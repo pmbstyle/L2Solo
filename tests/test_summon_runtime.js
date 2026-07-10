@@ -269,6 +269,8 @@ async function withFastTimers(callback) {
     Select(controlSession, controlSession.actor, { id: summon.fetchId() });
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert(controlSession.packets.some((packet) => packet[0] === 0xb0), 'second click on owned servitor should open PetStatusShow');
+    assert(controlSession.packets.some((packet) => packet[0] === 0xb1), 'owned servitor window should receive PetInfo before opening');
+    assert(controlSession.packets.some((packet) => packet[0] === 0xb5), 'owned servitor window should receive PetStatusUpdate before opening');
 
     summon.setCollectiveAtkSpd(2000);
     summon.setCollectivePAtk(40);

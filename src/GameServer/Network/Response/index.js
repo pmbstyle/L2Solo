@@ -30,6 +30,8 @@ module.exports = {
                 npcHtml: require('./NpcHtml'),
                 npcInfo: require('./NpcInfo'),
           petStatusShow: require('./PetStatusShow'),
+                petInfo: require('./PetInfo'),
+        petStatusUpdate: require('./PetStatusUpdate'),
                pickupItem: require('./PickupItem'),
            privateStoreMsg: require('./PrivateStoreMsg'),
         privateStoreBuyMsg: require('./PrivateStoreBuyMsg'),
