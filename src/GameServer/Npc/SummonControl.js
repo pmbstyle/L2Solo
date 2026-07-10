@@ -55,6 +55,12 @@ function clearResumeTimer(summon) {
     if (summon.timer) summon.timer.summonResume = undefined;
 }
 
+function clearLifetimeTimer(summon) {
+    if (!summon) return;
+    clearInterval(summon.timer?.summonLifetime);
+    if (summon.timer) summon.timer.summonLifetime = undefined;
+}
+
 function sendStopMove(session, summon) {
     session?.dataSendToMeAndOthers?.(ServerResponse.stopMove(summon.fetchId(), {
         locX: summon.fetchLocX(),
@@ -74,6 +80,59 @@ function stop(session, summon) {
     summon.state.setHits(false);
     summon.state.setCasts(false);
     sendStopMove(session, summon);
+}
+
+function startLifetime(session, actor, summon, skill) {
+    const total = Number(skill.fetchSummonTotalLifeTime?.()) || 0;
+    if (total <= 0) return;
+
+    ensureTimerBag(summon);
+    clearLifetimeTimer(summon);
+    summon.summonTimeRemaining = total;
+    summon.summonTotalLifeTime = total;
+    summon.summonTimeLostIdle = Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
+    summon.summonTimeLostActive = Number(skill.fetchSummonTimeLostActive?.()) || summon.summonTimeLostIdle;
+    summon.summonItemConsumeId = Number(skill.fetchOngoingItemConsumeId?.()) || 0;
+    summon.summonItemConsumeCount = Number(skill.fetchOngoingItemConsumeCount?.()) || 0;
+    summon.summonItemConsumeSteps = Number(skill.fetchOngoingItemConsumeSteps?.()) || 0;
+    summon.summonNextItemConsumeTime = summon.summonItemConsumeId && summon.summonItemConsumeSteps > 0
+        ? total - total / (summon.summonItemConsumeSteps + 1)
+        : -1;
+
+    summon.timer.summonLifetime = setInterval(() => tickLifetime(session, actor, summon), 1000);
+    summon.timer.summonLifetime.unref?.();
+}
+
+function tickLifetime(session, actor, summon) {
+    if (!summon || (actor.summon !== summon && actor.pet !== summon)) {
+        clearLifetimeTimer(summon);
+        return;
+    }
+
+    const oldRemaining = Number(summon.summonTimeRemaining) || 0;
+    const active = summon.controlMode === 'attack' || summon.state?.fetchHits?.() === true;
+    const loss = active ? summon.summonTimeLostActive : summon.summonTimeLostIdle;
+    summon.summonTimeRemaining = oldRemaining - Math.max(0, Number(loss) || 0);
+
+    if (summon.summonTimeRemaining < 0) {
+        unsummon(session, actor, summon);
+        return;
+    }
+
+    if (
+        summon.summonNextItemConsumeTime >= 0 &&
+        summon.summonTimeRemaining <= summon.summonNextItemConsumeTime &&
+        oldRemaining > summon.summonNextItemConsumeTime
+    ) {
+        const step = (Number(summon.summonTotalLifeTime) || oldRemaining) / (summon.summonItemConsumeSteps + 1);
+        summon.summonNextItemConsumeTime -= step;
+        const item = actor.backpack?.fetchItemFromSelfId?.(summon.summonItemConsumeId);
+        if (!item || Number(item.fetchAmount?.()) < summon.summonItemConsumeCount) {
+            unsummon(session, actor, summon);
+            return;
+        }
+        actor.backpack.deleteItem(session, item.fetchId(), summon.summonItemConsumeCount, () => {});
+    }
 }
 
 function scheduleFollowStep(session, actor, summon) {
@@ -201,6 +260,7 @@ function attackTick(session, summon, target) {
 
 function unsummon(session, actor, summon) {
     stop(session, summon);
+    clearLifetimeTimer(summon);
     World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== summon.fetchId());
     World.indexSpawnsInGrid?.();
     if (actor.summon === summon) actor.summon = null;
@@ -286,7 +346,9 @@ module.exports = {
     moveToTarget,
     showStatusWindow,
     startFollowOwner,
+    startLifetime,
     stop,
+    tickLifetime,
     toggleFollowOwner,
     unsummon,
     useSkillAction

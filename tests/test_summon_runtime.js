@@ -14,6 +14,7 @@ const Select = invoke('GameServer/Actor/Generics/Select');
 const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const CubicControl = invoke('GameServer/Skills/CubicControl');
+const SummonControl = invoke('GameServer/Npc/SummonControl');
 const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
 
@@ -159,6 +160,26 @@ async function withFastTimers(callback) {
     assert.strictEqual(World.npc.spawns.length, 0, 'summon should not spawn without required crystals');
     assert.strictEqual(noCrystalBackpack.fetchItemFromSelfId(1458).fetchAmount(), 2, 'failed summon should not consume crystals');
     assert.strictEqual(noCrystalSession.actor.fetchMp(), 100, 'failed summon should not consume MP');
+
+    const upkeepBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    upkeepBackpack.items = [item(29, 1458, 2)];
+    const upkeepSkill = buildSkill(1111, 3);
+    const upkeepSession = sessionFor(upkeepBackpack, upkeepSkill);
+    World.npc = { spawns: [], grid: {}, nextId: 9000015 };
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        attack.remoteHit(upkeepSession, upkeepSession.actor, upkeepSkill);
+        realSetTimeout(resolve, 20);
+    }));
+    const upkeepSummon = upkeepSession.actor.summon;
+    clearInterval(upkeepSummon.timer.summonLifetime);
+    upkeepSummon.summonTimeRemaining = 1000;
+    upkeepSummon.summonNextItemConsumeTime = 500;
+    SummonControl.tickLifetime(upkeepSession, upkeepSession.actor, upkeepSummon);
+    assert.strictEqual(upkeepBackpack.fetchItemFromSelfId(1458), undefined, 'servitor upkeep should consume the sourced ongoing crystal count at its lifetime checkpoint');
+    assert.strictEqual(upkeepSession.actor.summon, upkeepSummon, 'servitor should remain active while the ongoing crystal cost can be paid');
+    upkeepSummon.summonTimeRemaining = 100;
+    SummonControl.tickLifetime(upkeepSession, upkeepSession.actor, upkeepSummon);
+    assert.strictEqual(upkeepSession.actor.summon, null, 'servitor should auto-unsummon when its sourced lifetime expires');
 
     const cubicBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     cubicBackpack.items = [item(30, 1458, 5)];
