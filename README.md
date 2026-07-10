@@ -91,9 +91,7 @@ You will need:
 
 - Node.js LTS
 - Docker, unless you run MariaDB yourself
-- A Lineage II C4 client using protocol 656
-
-Client reference: use a clean Lineage II C4 client matching protocol 656.
+- A [Lineage II C4 client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing) using protocol 656
 
 ## Quick Start
 
