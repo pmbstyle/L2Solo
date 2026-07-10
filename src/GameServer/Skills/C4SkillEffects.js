@@ -395,6 +395,10 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
             isSummon: true
         });
 
+        if (skill.fetchTargetKind?.() === 'corpse_mob') {
+            World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== target?.fetchId?.());
+        }
+
         World.npc.spawns.push(npc);
         World.indexSpawnsInGrid?.();
 

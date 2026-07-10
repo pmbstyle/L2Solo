@@ -153,6 +153,17 @@ async function withFastTimers(callback) {
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');
     World.npc.spawns[0].destructor(session);
 
+    const corpseBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    corpseBackpack.items = [item(9, 1459, 2)];
+    const corpseSession = sessionFor(corpseBackpack, buildSkill(1129, 1));
+    const corpse = npc(1, 9000008);
+    corpse.state.setDead(true);
+    World.npc = { spawns: [corpse], grid: {}, nextId: 9000009 };
+    const corpseSummon = SkillEffects.execute(corpseSession, corpseSession.actor, corpse, buildSkill(1129, 1), { attack });
+    assert(corpseSummon.summon, 'Summon Reanimated Man should create a servitor from a dead NPC');
+    assert.strictEqual(World.npc.spawns.some((spawn) => spawn.fetchId() === corpse.fetchId()), false, 'corpse summon should consume the source corpse');
+    corpseSummon.summon.destructor(corpseSession);
+
     const deadPet = npc(12077, 9000009);
     deadPet.model.isPet = true;
     deadPet.model.isSummon = true;
