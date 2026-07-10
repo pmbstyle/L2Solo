@@ -5,6 +5,7 @@ const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 
 const SummonSkillActions = new Map([
     [0x20, { skillId: 4230, target: 'selected' }], // Wild Hog Cannon - Mode Change
+    [0x29, { skillId: 4230, target: 'selected' }], // Wild Hog Cannon - Attack
     [0x24, { skillId: 4259, target: 'selected' }], // Soulless - Toxic Smoke
     [0x27, { skillId: 4138, target: 'corpse' }],   // Soulless - Parasite Burst
     [0x2a, { skillId: 4378, target: 'self' }],     // Kai the Cat - Self Damage Shield

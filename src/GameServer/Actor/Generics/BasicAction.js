@@ -41,6 +41,7 @@ function basicAction(session, actor, data) {
         walkAndRun(session, actor);
         break;
 
+    case 0x0f: // Pet follow/stop (legacy action ID)
     case 0x15: // Pet/servitor follow/stop
         {
             const summon = SummonControl.activeSummon(actor);
@@ -48,6 +49,7 @@ function basicAction(session, actor, data) {
         }
         break;
 
+    case 0x10: // Pet attack (legacy action ID)
     case 0x16: // Pet/servitor attack
         {
             const summon = SummonControl.activeSummon(actor);
@@ -55,6 +57,7 @@ function basicAction(session, actor, data) {
         }
         break;
 
+    case 0x11: // Pet cancel action (legacy action ID)
     case 0x17: // Pet/servitor cancel action
         {
             const summon = SummonControl.activeSummon(actor);
@@ -87,6 +90,7 @@ function basicAction(session, actor, data) {
         break;
 
     case 0x35: // Servitor move to selected target
+    case 0x36: // Hatchling/strider move to selected target
         {
             const summon = SummonControl.activeSummon(actor);
             summon ? SummonControl.moveToTarget(session, actor, summon) : session.dataSendToMe(ServerResponse.actionFailed());

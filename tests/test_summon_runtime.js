@@ -153,6 +153,20 @@ async function withFastTimers(callback) {
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');
     World.npc.spawns[0].destructor(session);
 
+    const actionPet = npc(12077, 9000007);
+    actionPet.model.isPet = true;
+    actionPet.model.isSummon = true;
+    actionPet.model.ownerId = session.actor.fetchId();
+    session.actor.summon = null;
+    session.actor.pet = actionPet;
+    World.npc = { spawns: [actionPet], grid: {}, nextId: 9000008 };
+    BasicAction(session, session.actor, { actionId: 0x0f });
+    assert.strictEqual(actionPet.controlMode, 'follow', 'legacy pet follow action 15 should be handled');
+    BasicAction(session, session.actor, { actionId: 0x11 });
+    assert.strictEqual(actionPet.controlMode, 'idle', 'legacy pet cancel action 17 should be handled');
+    actionPet.destructor(session);
+    session.actor.pet = null;
+
     const corpseBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     corpseBackpack.items = [item(9, 1459, 2)];
     const corpseSession = sessionFor(corpseBackpack, buildSkill(1129, 1));
