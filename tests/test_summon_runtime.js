@@ -152,6 +152,20 @@ async function withFastTimers(callback) {
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');
     World.npc.spawns[0].destructor(session);
 
+    const deadPet = npc(12077, 9000009);
+    deadPet.model.isPet = true;
+    deadPet.model.isSummon = true;
+    deadPet.model.ownerId = session.actor.fetchId();
+    deadPet.state.setDead(true);
+    deadPet.setHp(0);
+    World.npc.spawns = [deadPet];
+    World.user = { sessions: [session] };
+    assert.strictEqual(SummonControl.revivePet(session, deadPet), true, 'dead pet should revive through the native summon lifecycle');
+    assert.strictEqual(deadPet.state.fetchDead(), false, 'pet revival should clear its dead state');
+    assert.strictEqual(deadPet.fetchHp(), deadPet.fetchMaxHp(), 'pet revival should restore its HP before resuming control');
+    assert.strictEqual(deadPet.controlMode, 'follow', 'revived pet should resume following its owner');
+    deadPet.destructor(session);
+
     const noCrystalBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     noCrystalBackpack.items = [item(2, 1458, 2)];
     const noCrystalSession = sessionFor(noCrystalBackpack, summonKat);

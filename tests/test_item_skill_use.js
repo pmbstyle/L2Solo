@@ -1452,6 +1452,18 @@ try {
     invalidBackpack.useItem(invalidSession, 3);
     assert.strictEqual(invalidBackpack.fetchItemFromSelfId(3936).fetchAmount(), 1, 'Blessed Scroll of Resurrection should not consume on living target');
     assert.strictEqual(livingTarget.wasRevived(), false, 'Blessed Scroll of Resurrection should not revive a living target');
+
+    const petTarget = resurrectionTarget({ id: 3000002, name: 'Fallen Wolf' });
+    petTarget.fetchIsPet = () => true;
+    World.npc = { spawns: [petTarget] };
+    const petResurrectionBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    petResurrectionBackpack.items = [
+        item(4, { selfId: 6387, kind: 'Other.Scroll', amount: 1 })
+    ];
+    const petResurrectionSession = sessionFor(petResurrectionBackpack, { destId: petTarget.fetchId() });
+    petResurrectionBackpack.useItem(petResurrectionSession, 4);
+    assert.strictEqual(petResurrectionBackpack.fetchItemFromSelfId(6387), undefined, 'Pet resurrection scroll should consume on a valid dead pet');
+    assert.strictEqual(petTarget.wasRevived(), true, 'Pet resurrection scroll should resolve the selected pet NPC rather than only player sessions');
 } finally {
     global.setTimeout = originalSetTimeout;
 }

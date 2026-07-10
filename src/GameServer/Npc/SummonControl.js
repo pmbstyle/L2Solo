@@ -287,6 +287,25 @@ function unsummon(session, actor, summon) {
     session.dataSendToMeAndOthers(ServerResponse.deleteOb(summon.fetchId()), summon);
 }
 
+function revivePet(session, pet) {
+    if (!pet?.fetchIsPet?.() || pet.state?.fetchDead?.() !== true) {
+        return false;
+    }
+
+    const ownerSession = (World.user?.sessions || []).find((candidate) => Number(candidate.actor?.fetchId?.()) === Number(pet.fetchOwnerId?.()));
+    const owner = ownerSession?.actor;
+    pet.state.setDead(false);
+    pet.setHp(pet.fetchMaxHp());
+    pet.setMp(pet.fetchMaxMp());
+    session.dataSendToMeAndOthers(ServerResponse.revive(pet.fetchId()), pet);
+    invoke('GameServer/Npc/Generics/BroadcastVitals')(pet);
+
+    if (owner && ownerSession) {
+        startFollowOwner(ownerSession, owner, pet);
+    }
+    return true;
+}
+
 function showStatusWindow(session, actor, summon) {
     session.dataSendToMe(ServerResponse.moveToPawn(actor, summon, InteractionDistance));
     session.dataSendToMe(ServerResponse.petInfo(summon, actor));
@@ -371,5 +390,6 @@ module.exports = {
     tickLifetime,
     toggleFollowOwner,
     unsummon,
+    revivePet,
     useSkillAction
 };

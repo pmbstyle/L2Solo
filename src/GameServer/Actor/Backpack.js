@@ -513,7 +513,7 @@ class Backpack extends BackpackModel {
             return false;
         }
 
-        if (skill.fetchTargetKind() === 'corpse_player') {
+        if (['corpse_player', 'corpse_pet'].includes(skill.fetchTargetKind())) {
             return this.useResurrectionItem(session, id, itemSkill, skill);
         }
 
@@ -1165,7 +1165,7 @@ class Backpack extends BackpackModel {
     }
 
     useResurrectionItem(session, id, itemSkill, skill) {
-        const target = this.fetchSelectedPlayableTarget(session);
+        const target = this.fetchSelectedResurrectionTarget(session, skill);
         if (!this.canResurrectTarget(session.actor, target, skill)) {
             return true;
         }
@@ -1190,7 +1190,7 @@ class Backpack extends BackpackModel {
                 if (!this.canResurrectTarget(session.actor, target, skill)) {
                     return;
                 }
-                this.applyResurrection(target);
+                this.applyResurrection(session, target);
             };
 
             if (castTime > 0) {
@@ -1249,6 +1249,13 @@ class Backpack extends BackpackModel {
         return userSession?.actor || null;
     }
 
+    fetchSelectedResurrectionTarget(session, skill) {
+        if (skill.fetchTargetKind() === 'corpse_pet') {
+            return this.fetchSelectedNpcTarget(session);
+        }
+        return this.fetchSelectedPlayableTarget(session);
+    }
+
     fetchSelectedNpcTarget(session) {
         const targetId = session.actor.fetchDestId?.();
         if (targetId === undefined || targetId === null) {
@@ -1304,6 +1311,14 @@ class Backpack extends BackpackModel {
             return false;
         }
 
+        const targetKind = skill.fetchTargetKind();
+        if (targetKind === 'corpse_pet' && target.fetchIsPet?.() !== true) {
+            return false;
+        }
+        if (targetKind === 'corpse_player' && target.fetchIsPet?.() === true) {
+            return false;
+        }
+
         const distance = new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()).distance(
             new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
         );
@@ -1311,9 +1326,14 @@ class Backpack extends BackpackModel {
         return range <= 0 || distance <= range;
     }
 
-    applyResurrection(target) {
+    applyResurrection(session, target) {
         if (typeof target.revive === 'function') {
             target.revive();
+            return;
+        }
+
+        if (target.fetchIsPet?.() === true) {
+            invoke('GameServer/Npc/SummonControl').revivePet(session, target);
             return;
         }
 
