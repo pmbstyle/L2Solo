@@ -496,8 +496,9 @@ function summonFamilyFallbackIds(name) {
     if (name.includes('panther')) return [12184, 12183, 12182, 12181];
     if (name.includes('unicorn') || name.includes('seraphim')) return [12064, 12357, 12065, 12358];
     if (name.includes('nightshade') || name.includes('shadow') || name.includes('silhouette')) return [12070, 12366, 12071, 12367];
+    if (name.includes('soulless') || name.includes('reanimated') || name.includes('corrupted') || name.includes('cursed man')) return [12070, 12366, 12071, 12367];
     if (name.includes('cat') || name.includes('mew') || name.includes('kat')) return [12006, 12348, 12007, 12349];
-    if (name.includes('golem')) return [12021, 22421];
+    if (name.includes('golem') || name.includes('hog cannon') || name.includes('big boom')) return [12187, 12188, 12189, 12021, 22421];
     return [];
 }
 

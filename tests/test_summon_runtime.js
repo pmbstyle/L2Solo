@@ -236,10 +236,25 @@ async function withFastTimers(callback) {
         attack.remoteHit(noCrystalSession, noCrystalSession.actor, summonKat);
         realSetTimeout(resolve, 20);
     }));
-
     assert.strictEqual(World.npc.spawns.length, 0, 'summon should not spawn without required crystals');
     assert.strictEqual(noCrystalBackpack.fetchItemFromSelfId(1458).fetchAmount(), 2, 'failed summon should not consume crystals');
     assert.strictEqual(noCrystalSession.actor.fetchMp(), 100, 'failed summon should not consume MP');
+
+    const classSummonIds = [13, 25, 283, 299, 301, 1111, 1128, 1129, 1154, 1225, 1226, 1227, 1228, 1276, 1277, 1278, 1331, 1332, 1333, 1334, 7030, 7031, 7032];
+    for (const selfId of classSummonIds) {
+        const summonSkill = buildSkill(selfId, 1);
+        const itemId = summonSkill.fetchItemConsumeId();
+        const itemCount = summonSkill.fetchItemConsumeCount();
+        const summonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+        if (itemId && itemCount) summonBackpack.items = [item(10000 + selfId, itemId, itemCount)];
+        const summonSession = sessionFor(summonBackpack, summonSkill, { mp: 10000 });
+        const corpseTarget = [1129, 1154, 1334].includes(selfId) ? npc(1, 110000 + selfId) : summonSession.actor;
+        corpseTarget.state?.setDead?.(true);
+        World.npc = { spawns: corpseTarget === summonSession.actor ? [] : [corpseTarget], grid: {}, nextId: 120000 + selfId };
+        const outcome = SkillEffects.execute(summonSession, summonSession.actor, corpseTarget, summonSkill, { attack });
+        assert(outcome.summon, `${summonSkill.fetchName()} should spawn through the summon template fallback when needed`);
+        outcome.summon.destructor(summonSession);
+    }
 
     const upkeepBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     upkeepBackpack.items = [item(29, 1458, 2)];
