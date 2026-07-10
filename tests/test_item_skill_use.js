@@ -1104,6 +1104,17 @@ try {
     assert(nativePetSummonSession.packets.some((packet) => packet[0] === 0x16), 'native pet summon should broadcast NpcInfo');
     nativePetSummonSession.actor.pet.destructor(nativePetSummonSession);
 
+    const striderSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    striderSummonBackpack.items = [
+        item(35, { selfId: 4422, kind: 'Other.PetCollar', amount: 1 })
+    ];
+    const striderSummonSession = sessionFor(striderSummonBackpack);
+    World.npc = { spawns: [], grid: {}, nextId: 9000110 };
+    striderSummonBackpack.useItem(striderSummonSession, 35);
+    assert.strictEqual(striderSummonSession.actor.pet.fetchSelfId(), 12526, 'Strider collar should create its sourced strider NPC through the pet template fallback');
+    assert.deepStrictEqual(striderSummonSession.actor.pet.fetchPetFoodCategories(), ['strider'], 'fallback strider should retain its sourced food category');
+    striderSummonSession.actor.pet.destructor(striderSummonSession);
+
     const petSummonBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     petSummonBackpack.items = [
         item(34, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })

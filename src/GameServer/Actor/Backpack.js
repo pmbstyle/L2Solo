@@ -789,7 +789,7 @@ class Backpack extends BackpackModel {
     }
 
     spawnPetFromItem(session, payload) {
-        DataCache.fetchNpcFromSelfId(payload.npcId, (npcData) => {
+        const spawn = (npcData) => {
             const resolvedNpcData = npcData || this.petNpcFallback(payload.npcId);
             if (!resolvedNpcData || this.fetchActivePet(session) || session.actor.isDead?.()) {
                 return;
@@ -841,7 +841,10 @@ class Backpack extends BackpackModel {
             const SummonControl = invoke('GameServer/Npc/SummonControl');
             SummonControl.startFollowOwner(session, session.actor, npc);
             SummonControl.startPetFeed(session, session.actor, npc);
-        });
+        };
+
+        const cachedNpc = DataCache.npcs.find((npc) => Number(npc.selfId) === Number(payload.npcId));
+        spawn(cachedNpc ? structuredClone(cachedNpc) : null);
     }
 
     petFoodCategoriesForNpc(npcId) {
