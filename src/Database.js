@@ -16,7 +16,13 @@ const Database = {
         }).then((instance) => {
             utils.infoSuccess('DB', 'connected');
             conn = instance;
-            callback();
+            conn.query('ALTER TABLE `items` ADD COLUMN `petData` TEXT NULL')
+                .catch((error) => {
+                    if (error?.errno !== 1060) {
+                        utils.infoWarn('DB', 'failed to add items.petData: %s', error.message);
+                    }
+                })
+                .finally(callback);
 
         }).catch(error => {
             utils.infoFail('DB', 'failed(%d) -> %s', error.errno, error.text);
@@ -130,16 +136,17 @@ const Database = {
     },
 
     setItem(characterId, item) {
+        const values = {
+                 selfId: item.selfId,
+                   name: item.name ?? '',
+                 amount: item.amount ?? 1,
+               equipped: item.equipped ?? false,
+                   slot: item.slot ?? 0,
+            characterId: characterId
+        };
+        if (item.petData) values.petData = JSON.stringify(item.petData);
         return Database.execute(
-            builder.insert('items', {
-                     selfId: item.selfId,
-                       name: item.name ?? '',
-                     amount: item.amount ?? 1,
-                   equipped: item.equipped ?? false,
-                       slot: item.slot ?? 0,
-                    petData: item.petData ? JSON.stringify(item.petData) : null,
-                characterId: characterId
-            })
+            builder.insert('items', values)
         );
     },
 
