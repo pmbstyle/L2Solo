@@ -89,7 +89,7 @@ function act(session, actor, cubic) {
     });
 }
 
-function summon(session, actor, skill) {
+function summon(session, actor, skill, source = actor) {
     const cubicId = Number(skill.fetchSummonNpcId?.()) || 0;
     const lifetime = Number(skill.fetchSummonTotalLifeTime?.()) || 0;
     if (!cubicId || lifetime <= 0) return null;
@@ -104,6 +104,7 @@ function summon(session, actor, skill) {
     const cubic = {
         id: cubicId,
         skillId: Number(skill.fetchSelfId?.()) || 0,
+        sourceId: Number(source?.fetchId?.()) || 0,
         level: Number(skill.fetchLevel?.()) || 1,
         power: Number(skill.fetchPower?.()) || 0,
         activationChance: Number(skill.fetchSummonActivationChance?.()) || 0,

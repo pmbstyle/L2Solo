@@ -187,6 +187,23 @@ async function withFastTimers(callback) {
     clearTimeout(lifeCubic.expireTimer);
     clearInterval(lifeCubic.actionTimer);
 
+    const massCubicBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    massCubicBackpack.items = [item(32, 1458, 20)];
+    const massCubicSkill = buildSkill(1328, 1);
+    const massCubicSession = sessionFor(massCubicBackpack, massCubicSkill);
+    const massCubicCompanion = sessionFor(new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] }), massCubicSkill);
+    massCubicCompanion.followPlayerSession = massCubicSession;
+    massCubicCompanion.partyCompanion = true;
+    World.user = { sessions: [massCubicSession, massCubicCompanion] };
+    SkillEffects.execute(massCubicSession, massCubicSession.actor, massCubicSession.actor, massCubicSkill);
+    assert.strictEqual(massCubicSession.actor.cubics.get(1).sourceId, massCubicSession.actor.fetchId(), 'Mass Storm Cubic should retain the caster as cubic source');
+    assert.strictEqual(massCubicCompanion.actor.cubics.get(1).sourceId, massCubicSession.actor.fetchId(), 'Mass Storm Cubic should apply the cubic to each active party companion');
+    assert.strictEqual(massCubicBackpack.fetchItemFromSelfId(1458), undefined, 'Mass Storm Cubic should consume the sourced crystals only once for the whole party');
+    [massCubicSession.actor, massCubicCompanion.actor].forEach((member) => {
+        clearTimeout(member.cubics.get(1).expireTimer);
+        clearInterval(member.cubics.get(1).actionTimer);
+    });
+
     const queenCat = buildSkill(1331, 1);
     const queenBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     queenBackpack.items = [item(3, 1459, 1)];

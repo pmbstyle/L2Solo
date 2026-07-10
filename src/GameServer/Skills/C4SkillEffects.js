@@ -369,7 +369,12 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
     }
 
     if (skill.fetchSummonIsCubic?.()) {
-        return consumeSkillItems(session, actor, skill, () => invoke('GameServer/Skills/CubicControl').summon(session, target || actor, skill));
+        return consumeSkillItems(session, actor, skill, () => {
+            const CubicControl = invoke('GameServer/Skills/CubicControl');
+            return cubicRecipients(session, actor, target, skill)
+                .map((recipient) => CubicControl.summon(recipient.session || session, recipient, skill, actor))
+                .filter(Boolean);
+        });
     }
 
     return consumeSkillItems(session, actor, skill, () => {
@@ -402,6 +407,17 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         clearLoadedShot(attack || actor.attack, actor, magicSkill);
         return npc;
     });
+}
+
+function cubicRecipients(session, actor, target, skill) {
+    if (skill.fetchTargetKind?.() !== 'party') return [target || actor];
+
+    const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+    const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+        ? session.followPlayerSession
+        : session;
+    const recipients = PartyAwareness.partyActors(leaderSession);
+    return recipients.length > 0 ? recipients : [actor];
 }
 
 function validateSummonUse(actor, target, skill) {
