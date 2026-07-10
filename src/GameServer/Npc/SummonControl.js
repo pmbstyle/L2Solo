@@ -4,9 +4,12 @@ const Formulas = invoke('GameServer/Formulas');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 
 const SummonSkillActions = new Map([
-    [0x27, { skillId: 4138, target: 'selected' }], // Soulless - Parasite Burst
+    [0x20, { skillId: 4230, target: 'selected' }], // Wild Hog Cannon - Mode Change
+    [0x24, { skillId: 4259, target: 'selected' }], // Soulless - Toxic Smoke
+    [0x27, { skillId: 4138, target: 'corpse' }],   // Soulless - Parasite Burst
     [0x2a, { skillId: 4378, target: 'self' }],     // Kai the Cat - Self Damage Shield
     [0x2b, { skillId: 4137, target: 'selected' }], // Unicorn Merrow - Hydro Screw
+    [0x2c, { skillId: 4139, target: 'self' }],     // Big Boom - Boom Attack
     [0x2d, { skillId: 4025, target: 'owner' }],    // Unicorn Boxer - Master Recharge
     [0x2e, { skillId: 4261, target: 'selected' }], // Mew the Cat - Mega Storm Strike
     [0x2f, { skillId: 4260, target: 'selected' }], // Silhouette - Steal Blood
@@ -331,7 +334,14 @@ function isValidEnemyTarget(target) {
 function resolveSkillTarget(actor, summon, config) {
     if (config.target === 'owner') return Promise.resolve(actor);
     if (config.target === 'self') return Promise.resolve(summon);
-    return selectedTarget(actor).then((target) => (isValidEnemyTarget(target) ? target : null));
+    return selectedTarget(actor).then((target) => {
+        if (config.target === 'corpse') {
+            return target?.fetchAttackable?.() === true && (target.state?.fetchDead?.() === true || target.isDead?.() === true)
+                ? target
+                : null;
+        }
+        return isValidEnemyTarget(target) ? target : null;
+    });
 }
 
 function useSkillAction(session, actor, summon, actionId) {

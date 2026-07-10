@@ -376,6 +376,30 @@ async function withFastTimers(callback) {
     hatchling.destructor(boxerSession);
     hatchlingTarget.destructor(boxerSession);
 
+    const merrow = npc(12490, 9100020, { locX: 1000, locY: 2000, locZ: -50 });
+    merrow.model.isSummon = true;
+    merrow.model.ownerId = boxerSession.actor.fetchId();
+    merrow.model.summonSkillId = 1277;
+    merrow.setCollectiveCastSpd(2000);
+    merrow.setMp(1000);
+    const merrowTarget = npc(1, 9100021, { locX: 1010, locY: 2000, locZ: -50 });
+    merrowTarget.setMaxHp(100000);
+    merrowTarget.setHp(100000);
+    assert(NpcSkills.forNpc(merrow).some((skill) => skill.fetchSelfId() === 4137), 'Unicorn Merrow should gain Hydro Screw from its originating summon skill');
+    boxerSession.actor.summon = merrow;
+    boxerSession.actor.pet = null;
+    boxerSession.actor.setDestId(merrowTarget.fetchId());
+    World.npc = { spawns: [merrow, merrowTarget], grid: {}, nextId: 9100022 };
+    World.indexSpawnsInGrid?.();
+    const merrowPacketCount = boxerSession.packets.length;
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        BasicAction(boxerSession, boxerSession.actor, { actionId: 0x2b });
+        realSetTimeout(resolve, 20);
+    }));
+    assert(boxerSession.packets.slice(merrowPacketCount).some((packet) => packet[0] === 0x48), 'Unicorn Merrow Hydro Screw action should cast the fallback summon skill');
+    merrow.destructor(boxerSession);
+    merrowTarget.destructor(boxerSession);
+
     console.log('Summon runtime checks passed');
 })().catch((err) => {
     console.error(err);

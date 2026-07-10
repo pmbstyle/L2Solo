@@ -248,6 +248,14 @@ class Attack {
         const sourceTarget = semantic.sourceTarget;
         const radius = Math.max(0, Number(semantic.radius) || 0);
 
+        if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
+            const World = invoke('GameServer/World/World');
+            const nearby = typeof World.fetchNpcsInRadius === 'function'
+                ? World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), radius)
+                : [];
+            return nearby.filter((target) => this.isValidSkillTarget(target, skill) && this.distance2d(actor, target) <= radius);
+        }
+
         if (
             !sourceTarget ||
             radius <= 0 ||
