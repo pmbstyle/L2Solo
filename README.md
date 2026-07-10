@@ -32,7 +32,7 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 
 **Character:**
 - Progression depending on chosen rates
-- Full C4 skills coverage: self, on target, AoE, etc
+- Broad C4 skill coverage: self, targeted, AoE, effects, items, and class skills
 - Potions, scrolls, spoil, SA, manor, etc
 - Party with bots with native (/invite, /leave), plus .botpaty to find nearby bots and invite to the party
 - All armor sets
@@ -86,8 +86,9 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 - One-click installer
 
 ### 🆕 Recently added
-- Summons
-- Cubics
+- Summon runtime: class servitors, corpse summons, cubics, and native follow/attack/action controls
+- Pets: collar-based summon/return, status window, resurrection scrolls, food, persistent vitals, and hunger
+- Cubics: all C4 cubic families, party variants, lifecycle, and combat procs
 - Sleep
 
 
@@ -213,6 +214,9 @@ Run the focused tests:
 ```bash
 node tests/test_pathfinder_astar.js
 node tests/test_path_obstacle.js
+node tests/test_summon_runtime.js
+node tests/test_item_skill_use.js
+npm run check
 ```
 
 Run a full boot check:
