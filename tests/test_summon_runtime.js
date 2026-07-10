@@ -457,24 +457,36 @@ async function withFastTimers(callback) {
     merrow.model.ownerId = boxerSession.actor.fetchId();
     merrow.model.summonSkillId = 1277;
     merrow.setCollectiveCastSpd(2000);
+    merrow.setCollectiveMAtk(1000);
     merrow.setMp(1000);
     const merrowTarget = npc(1, 9100021, { locX: 1010, locY: 2000, locZ: -50 });
     merrowTarget.setMaxHp(100000);
     merrowTarget.setHp(100000);
+    merrowTarget.setCollectiveMDef(1);
+    const merrowAreaTarget = npc(1, 9100022, { locX: 1020, locY: 2000, locZ: -50 });
+    merrowAreaTarget.setMaxHp(100000);
+    merrowAreaTarget.setHp(100000);
+    merrowAreaTarget.setCollectiveMDef(1);
     assert(NpcSkills.forNpc(merrow).some((skill) => skill.fetchSelfId() === 4137), 'Unicorn Merrow should gain Hydro Screw from its originating summon skill');
     boxerSession.actor.summon = merrow;
     boxerSession.actor.pet = null;
     boxerSession.actor.setDestId(merrowTarget.fetchId());
-    World.npc = { spawns: [merrow, merrowTarget], grid: {}, nextId: 9100022 };
+    World.npc = { spawns: [merrow, merrowTarget, merrowAreaTarget], grid: {}, nextId: 9100023 };
     World.indexSpawnsInGrid?.();
     const merrowPacketCount = boxerSession.packets.length;
+    const savedMerrowRandom = Math.random;
+    Math.random = () => 0;
     await withFastTimers((realSetTimeout) => new Promise((resolve) => {
         BasicAction(boxerSession, boxerSession.actor, { actionId: 0x2b });
         realSetTimeout(resolve, 20);
     }));
+    Math.random = savedMerrowRandom;
     assert(boxerSession.packets.slice(merrowPacketCount).some((packet) => packet[0] === 0x48), 'Unicorn Merrow Hydro Screw action should cast the fallback summon skill');
+    assert(merrowTarget.fetchHp() < merrowTarget.fetchMaxHp(), 'Hydro Screw should damage its selected primary target');
+    assert(merrowAreaTarget.fetchHp() < merrowAreaTarget.fetchMaxHp(), 'Hydro Screw should damage nearby NPCs in its sourced 200 radius');
     merrow.destructor(boxerSession);
     merrowTarget.destructor(boxerSession);
+    merrowAreaTarget.destructor(boxerSession);
 
     const bigBoom = npc(12187, 9100030);
     bigBoom.model.isSummon = true;
