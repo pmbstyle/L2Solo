@@ -13,7 +13,7 @@ function petStatusUpdate(summon) {
         .writeD(summon.fetchLocZ())
         .writeS('')
         .writeD(Number.isFinite(remaining) ? remaining : Number(summon.fetchCurrentFeed?.()) || 0)
-        .writeD(Number.isFinite(total) ? total : 0)
+        .writeD(Number.isFinite(total) ? total : Number(summon.fetchMaxFeed?.()) || 0)
         .writeD(summon.fetchHp())
         .writeD(summon.fetchMaxHp())
         .writeD(summon.fetchMp())

@@ -35,6 +35,21 @@ const FISHING_ROD_GRADES = {
 const COMMON_CRAFT_LEVELS = [5, 20, 28, 36, 43, 49, 55, 62, 70];
 const MANUFACTURE_STORE_TYPES = [5, 6];
 
+// C4 pets_stats.sql, level 1. Pet progression is not modelled yet, so these
+// values give a newly summoned pet the same initial feed state as Lisvus.
+const PetFeedDefaults = new Map([
+    [12077, { max: 248, normal: 2, battle: 2 }],
+    [12311, { max: 696, normal: 2, battle: 5 }],
+    [12312, { max: 508, normal: 2, battle: 5 }],
+    [12313, { max: 12, normal: 1, battle: 1 }],
+    [12526, { max: 696, normal: 2, battle: 5 }],
+    [12527, { max: 508, normal: 2, battle: 5 }],
+    [12528, { max: 12, normal: 1, battle: 1 }],
+    [12780, { max: 12, normal: 1, battle: 1 }],
+    [12781, { max: 12, normal: 1, battle: 1 }],
+    [12782, { max: 12, normal: 1, battle: 1 }]
+]);
+
 class Backpack extends BackpackModel {
     constructor(data) {
         // Parent inheritance
@@ -618,6 +633,10 @@ class Backpack extends BackpackModel {
             return actor;
         }
 
+        if (actor.pet?.fetchIsPet?.() === true && actor.pet.state?.fetchDead?.() !== true) {
+            return actor.pet;
+        }
+
         return null;
     }
 
@@ -776,7 +795,12 @@ class Backpack extends BackpackModel {
             }
 
             const controlItem = this.fetchItemRaw(payload.itemObjectId);
-            const petData = controlItem?.fetchPetData?.() || {};
+            const petData = { ...(controlItem?.fetchPetData?.() || {}) };
+            const feedDefaults = PetFeedDefaults.get(Number(payload.npcId)) || { max: 0, normal: 0, battle: 0 };
+            petData.maxFeed ??= feedDefaults.max;
+            petData.feedNormal ??= feedDefaults.normal;
+            petData.feedBattle ??= feedDefaults.battle;
+            petData.currentFeed ??= petData.maxFeed;
             const npc = new Npc(World.npc.nextId++, {
                 ...utils.crushOb(npcData),
                 locX: session.actor.fetchLocX(),
@@ -795,8 +819,10 @@ class Backpack extends BackpackModel {
 
             npc.petData = petData;
             npc.fetchCurrentFeed = () => Number(npc.petData.currentFeed) || 0;
+            npc.fetchMaxFeed = () => Number(npc.petData.maxFeed) || 0;
             npc.setCurrentFeed = (value) => {
-                npc.petData.currentFeed = Math.max(0, Number(value) || 0);
+                const maxFeed = npc.fetchMaxFeed();
+                npc.petData.currentFeed = Math.max(0, maxFeed > 0 ? Math.min(maxFeed, Number(value) || 0) : Number(value) || 0);
                 controlItem?.setPetData?.(npc.petData);
                 Database.updateItemPetData?.(session.actor.fetchId(), payload.itemObjectId, npc.petData).catch?.((err) => {
                     utils.infoWarn('Pet', 'failed to persist pet feed: %s', err.message);

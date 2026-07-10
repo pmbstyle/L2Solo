@@ -1099,6 +1099,8 @@ try {
     assert.strictEqual(nativePetSummonSession.actor.pet.fetchSelfId(), 12077, 'Wolf Collar should create the sourced wolf pet without an injected hook');
     assert.strictEqual(nativePetSummonSession.actor.pet.fetchPetControlItemObjectId(), 33, 'native pet should retain its control item object id');
     assert.deepStrictEqual(nativePetSummonSession.actor.pet.fetchPetFoodCategories(), ['wolf'], 'native pet should retain its sourced food category');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchMaxFeed(), 248, 'new wolf should start with the sourced level-1 max feed');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchCurrentFeed(), 248, 'new wolf should start fully fed rather than with a 0/0 hunger meter');
     assert(nativePetSummonSession.packets.some((packet) => packet[0] === 0x16), 'native pet summon should broadcast NpcInfo');
     nativePetSummonSession.actor.pet.destructor(nativePetSummonSession);
 
@@ -1155,6 +1157,28 @@ mountedPetFoodBackpack.useItem(mountedPetFoodSession, 29);
 assert.strictEqual(mountedPetFoodBackpack.fetchItemRaw(29), undefined, 'PetFood should consume one item when mounted eater category matches');
 assert.strictEqual(mountedPetFoodSession.actor.currentFeed, 300, 'Food for Strider should add sourced feed 200 to mounted eater');
 assert(mountedPetFoodSession.packets.some((packet) => packet[0] === 0x48), 'PetFood should emit sourced food skill packet on success');
+
+const petFoodBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+petFoodBackpack.items = [
+    item(30, { selfId: 2515, kind: 'Other.PetFood', amount: 1 })
+];
+const petFoodSession = sessionFor(petFoodBackpack);
+let wolfFeed = 100;
+petFoodSession.actor.pet = {
+    fetchId: () => 3000003,
+    fetchIsPet: () => true,
+    fetchLocX: () => 0,
+    fetchLocY: () => 0,
+    fetchLocZ: () => 0,
+    fetchHeading: () => 0,
+    fetchPetFoodCategories: () => ['wolf'],
+    fetchCurrentFeed: () => wolfFeed,
+    setCurrentFeed(value) { wolfFeed = value; },
+    state: { fetchDead: () => false }
+};
+petFoodBackpack.useItem(petFoodSession, 30);
+assert.strictEqual(petFoodBackpack.fetchItemRaw(30), undefined, 'Wolf food should be usable for the active pet from the owner inventory');
+assert.strictEqual(wolfFeed, 250, 'Wolf food should apply its sourced feed amount to the active pet');
 
 const mysteryPotion = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(5234));
 assert(mysteryPotion, 'Mystery Potion should resolve to an item skill');

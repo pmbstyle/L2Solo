@@ -5,7 +5,7 @@ function petInfo(summon, owner, val = 1) {
     const remaining = Number(summon.summonTimeRemaining);
     const total = Number(summon.summonTotalLifeTime);
     const currentFed = Number.isFinite(remaining) ? remaining : Number(summon.fetchCurrentFeed?.()) || 0;
-    const maxFed = Number.isFinite(total) ? total : 0;
+    const maxFed = Number.isFinite(total) ? total : Number(summon.fetchMaxFeed?.()) || 0;
     const runSpeed = Number(summon.fetchCollectiveRunSpd?.()) || 0;
     const walkSpeed = Number(summon.fetchCollectiveWalkSpd?.()) || runSpeed;
 
