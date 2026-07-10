@@ -1,11 +1,15 @@
 const World = invoke('GameServer/World/World');
 
+function canAttackNpc(npc, data = {}) {
+    return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
+}
+
 function attackExec(session, actor, data) {
     const attackRange = Math.max(0, Number(data.range) || 0);
 
     World.fetchNpc(data.id).then((npc) => {
         actor.automation.scheduleAction(session, actor, npc, attackRange, () => {
-            if (npc.fetchAttackable() || data.ctrl) {
+            if (canAttackNpc(npc, data)) {
                 actor.attack.meleeHit(session, npc);
             }
             else {
@@ -39,3 +43,4 @@ function attackExec(session, actor, data) {
 }
 
 module.exports = attackExec;
+module.exports.canAttackNpc = canAttackNpc;

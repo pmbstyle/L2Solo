@@ -1,5 +1,9 @@
 const World = invoke('GameServer/World/World');
 
+function canTargetEnemyNpc(npc, data = {}) {
+    return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
+}
+
 function skillExec(session, actor, data) {
     const skill = actor.skillset.fetchSkill(data.selfId);
     if (!skill) return;
@@ -25,7 +29,7 @@ function skillExec(session, actor, data) {
             if (skill.fetchTargetKind() === 'corpse_mob' && npc.fetchAttackable?.() && npc.isDead?.()) {
                 actor.attack.remoteHit(session, npc, skill);
             }
-            else if (skill.fetchTargetKind() === 'enemy' && (npc.fetchAttackable() || data.ctrl)) {
+            else if (skill.fetchTargetKind() === 'enemy' && canTargetEnemyNpc(npc, data)) {
                 actor.attack.remoteHit(session, npc, skill);
             }
         });
@@ -51,3 +55,4 @@ function skillExec(session, actor, data) {
 }
 
 module.exports = skillExec;
+module.exports.canTargetEnemyNpc = canTargetEnemyNpc;

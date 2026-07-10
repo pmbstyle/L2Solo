@@ -7,6 +7,7 @@ DataCache.init();
 
 const Attack = invoke('GameServer/Actor/Attack');
 const BasicAction = invoke('GameServer/Actor/Generics/BasicAction');
+const AttackExec = invoke('GameServer/Actor/Generics/AttackExec');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Npc = invoke('GameServer/Npc/Npc');
@@ -15,6 +16,7 @@ const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const CubicControl = invoke('GameServer/Skills/CubicControl');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
+const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
 
@@ -139,6 +141,8 @@ async function withFastTimers(callback) {
     assert.strictEqual(World.npc.spawns[0].fetchSelfId(), 12006, 'Summon Kat level 1 should spawn sourced npcId 12006');
     assert.strictEqual(World.npc.spawns[0].fetchOwnerId(), session.actor.fetchId(), 'summoned servitor should keep owner id');
     assert.strictEqual(World.npc.spawns[0].fetchIsSummon(), true, 'summoned servitor should be marked as summon');
+    assert.strictEqual(AttackExec.canAttackNpc(World.npc.spawns[0]), true, 'player attack path should treat an active servitor as damageable');
+    assert.strictEqual(SkillExec.canTargetEnemyNpc(World.npc.spawns[0]), true, 'player skill path should treat an active servitor as an enemy target');
     assert.strictEqual(session.actor.summon, World.npc.spawns[0], 'actor should retain active summon reference');
     assert.strictEqual(World.npc.spawns[0].controlMode, 'follow', 'summoned servitor should enter native follow mode on spawn');
     assert.strictEqual(World.npc.spawns[0].followOwner, true, 'summoned servitor should follow owner by default');
