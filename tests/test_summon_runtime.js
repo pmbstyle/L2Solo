@@ -223,6 +223,7 @@ async function withFastTimers(callback) {
     BasicAction(session, session.actor, { actionId: 0x26 });
     assert.strictEqual(session.actor.mounted, true, 'strider mount action should set mounted state');
     assert.strictEqual(World.npc.spawns.includes(strider), false, 'mounted strider should be removed from the visible NPC world');
+    assert.strictEqual(SummonControl.activeSummon(session.actor), null, 'mounted strider should not accept off-world pet control actions');
     BasicAction(session, session.actor, { actionId: 0x26 });
     assert.strictEqual(session.actor.mounted, false, 'second mount action should dismount');
     assert.strictEqual(World.npc.spawns.includes(strider), true, 'dismount should restore the strider NPC to the world');

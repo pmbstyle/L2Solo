@@ -109,7 +109,7 @@ function basicAction(session, actor, data) {
             const currentFeed = Number(pet?.fetchCurrentFeed?.()) || 0;
             const maxFeed = Number(pet?.fetchMaxFeed?.()) || 0;
             const hungry = maxFeed > 0 && currentFeed < maxFeed * 0.55;
-            if (!pet || pet.fetchIsPet?.() !== true || pet.state?.fetchDead?.() === true || pet.isDead?.() === true || hungry) {
+            if (actor.fetchMounted?.() === true || actor.mounted === true || !pet || pet.fetchIsPet?.() !== true || pet.state?.fetchDead?.() === true || pet.isDead?.() === true || hungry) {
                 session.dataSendToMe(ServerResponse.actionFailed());
             } else {
                 SummonControl.unsummon(session, actor, pet);

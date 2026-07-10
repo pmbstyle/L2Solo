@@ -38,6 +38,7 @@ const FollowTickMs = 500;
 const InteractionDistance = 150;
 
 function activeSummon(actor) {
+    if (actor.fetchMounted?.() === true || actor.mounted === true) return null;
     return [actor.summon, actor.pet].find((summon) => (
         summon && summon.state?.fetchDead?.() !== true && summon.isDead?.() !== true
     )) || null;
