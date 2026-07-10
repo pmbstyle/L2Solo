@@ -517,6 +517,29 @@ async function withFastTimers(callback) {
     bigBoom.destructor(boxerSession);
     bigBoomTarget.destructor(boxerSession);
 
+    const soulless = npc(12070, 990050);
+    soulless.model.isSummon = true;
+    soulless.model.summonSkillId = 1278;
+    soulless.setCollectiveMAtk(1000);
+    soulless.setCollectiveCastSpd(2000);
+    soulless.setMp(1000);
+    const smokeTarget = npc(1, 990051);
+    smokeTarget.setCollectiveMDef(1);
+    boxerSession.actor.summon = soulless;
+    boxerSession.actor.setDestId(smokeTarget.fetchId());
+    World.npc = { spawns: [soulless, smokeTarget], grid: {}, nextId: 990052 };
+    World.indexSpawnsInGrid?.();
+    const savedSmokeRandom = Math.random;
+    Math.random = () => 0;
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        BasicAction(boxerSession, boxerSession.actor, { actionId: 0x24 });
+        realSetTimeout(resolve, 20);
+    }));
+    Math.random = savedSmokeRandom;
+    assert(smokeTarget.effects.toxic_smoke, 'Soulless Toxic Smoke should apply its poison DOT effect to the selected target');
+    soulless.destructor(boxerSession);
+    smokeTarget.destructor(boxerSession);
+
     const kai = npc(12187, 990040);
     kai.model.isSummon = true;
     kai.model.summonSkillId = 1276;
