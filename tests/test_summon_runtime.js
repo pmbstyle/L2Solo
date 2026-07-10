@@ -491,12 +491,29 @@ async function withFastTimers(callback) {
     const bigBoom = npc(12187, 9100030);
     bigBoom.model.isSummon = true;
     bigBoom.model.summonSkillId = 301;
+    bigBoom.setCollectiveMAtk(1000);
+    bigBoom.setCollectiveCastSpd(2000);
+    bigBoom.setMp(1000);
     const bigBoomTarget = npc(1, 9100031);
+    bigBoomTarget.setMaxHp(100000);
+    bigBoomTarget.setHp(100000);
+    bigBoomTarget.setCollectiveMDef(1);
     boxerSession.actor.summon = bigBoom;
     boxerSession.actor.setDestId(bigBoomTarget.fetchId());
     World.npc = { spawns: [bigBoom, bigBoomTarget], grid: {}, nextId: 9100032 };
+    World.indexSpawnsInGrid?.();
     BasicAction(boxerSession, boxerSession.actor, { actionId: 0x16 });
     assert.notStrictEqual(bigBoom.controlMode, 'attack', 'Big Boom should reject generic pet attack and use only Boom Attack');
+    const bigBoomHp = bigBoom.fetchHp();
+    const savedBigBoomRandom = Math.random;
+    Math.random = () => 0;
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        BasicAction(boxerSession, boxerSession.actor, { actionId: 0x2c });
+        realSetTimeout(resolve, 20);
+    }));
+    Math.random = savedBigBoomRandom;
+    assert(bigBoomTarget.fetchHp() < bigBoomTarget.fetchMaxHp(), 'Boom Attack should damage nearby enemies through its aura target');
+    assert.strictEqual(bigBoom.fetchHp(), bigBoomHp, 'Boom Attack should not damage the summoner itself');
     bigBoom.destructor(boxerSession);
     bigBoomTarget.destructor(boxerSession);
 
