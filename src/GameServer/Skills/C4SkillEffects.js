@@ -199,7 +199,7 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.DRAIN) {
-        const drain = applyDrain(session, actor, target, skill, semantic, magicSkill, context.attack, rng);
+        const drain = applyDrain(session, actor, target, skill, semantic, magicSkill, context.attack, rng, context.cubicMAtk);
         result.damage = drain.damage;
         result.heal = drain.heal;
         return result;
@@ -543,13 +543,13 @@ function fetchSummonCoords(actor, target, skill) {
     };
 }
 
-function applyDrain(session, actor, target, skill, semantic, magicSkill, attack, rng) {
+function applyDrain(session, actor, target, skill, semantic, magicSkill, attack, rng, cubicMAtk = null) {
     let damage = 0;
 
     if (semantic.target === 'corpse_mob') {
         clearLoadedShot(attack || actor.attack, actor, magicSkill);
     } else {
-        damage = attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
+        damage = attack.prepareSkillDamage(actor, target, skill, magicSkill, rng, cubicMAtk);
     }
 
     const amount = Formulas.calcDrainHeal({

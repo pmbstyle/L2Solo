@@ -373,7 +373,7 @@ class Attack {
         return skill.fetchSpell ? skill.fetchSpell() : true;
     }
 
-    prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random) {
+    prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random, magicAtkOverride = null) {
         const shield = Formulas.rollShieldUse({
             shieldRate: this.fetchShieldRate(creature),
             dex: creature.fetchDex ? creature.fetchDex() : 0,
@@ -396,7 +396,7 @@ class Attack {
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
                 : skill.fetchPower();
             const damage = Math.round(Formulas.calcMagicDamage(
-                actor.fetchCollectiveMAtk(),
+                magicAtkOverride ?? actor.fetchCollectiveMAtk(),
                 power,
                 creature.fetchCollectiveMDef() + shieldMDef,
                 { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot }

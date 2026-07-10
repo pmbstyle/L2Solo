@@ -103,7 +103,11 @@ function act(session, actor, cubic) {
         const skill = buildSkill(cubic, definition);
         const attack = actor.attack || new (invoke('GameServer/Actor/Attack'))();
         session.dataSendToMeAndOthers?.(ServerResponse.magicSkillLaunched(actor, skill, [target]), actor);
-        const outcome = SkillEffects.execute(session, actor, target, skill, { attack, magicSkill: true });
+        const outcome = SkillEffects.execute(session, actor, target, skill, {
+            attack,
+            cubicMAtk: cubic.power,
+            magicSkill: true
+        });
         if (outcome.damage > 0) attack.hit(session, actor, target, outcome.damage);
     });
 }
