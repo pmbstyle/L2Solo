@@ -142,6 +142,7 @@ async function withFastTimers(callback) {
     assert.strictEqual(session.actor.summon, World.npc.spawns[0], 'actor should retain active summon reference');
     assert.strictEqual(World.npc.spawns[0].controlMode, 'follow', 'summoned servitor should enter native follow mode on spawn');
     assert.strictEqual(World.npc.spawns[0].followOwner, true, 'summoned servitor should follow owner by default');
+    assert.strictEqual(World.npc.spawns[0].fetchStateRun(), true, 'summoned servitor should run rather than use its sourced walk speed');
     assert.strictEqual(backpack.fetchItemFromSelfId(1458), undefined, 'Summon Kat should consume sourced D crystal count');
     assert.strictEqual(session.actor.fetchMp(), 61, 'Summon Kat should consume sourced MP');
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');

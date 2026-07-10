@@ -156,6 +156,10 @@ function startFollowOwner(session, actor, summon) {
     clearFollowTimer(summon);
     clearResumeTimer(summon);
     summon.attack?.clearTimers?.();
+    if (summon.fetchStateRun?.() !== true) {
+        summon.setStateRun?.(true);
+        session?.dataSendToMeAndOthers?.(ServerResponse.walkAndRun(summon.fetchId(), 1), summon);
+    }
     summon.controlMode = 'follow';
     summon.followOwner = true;
 
