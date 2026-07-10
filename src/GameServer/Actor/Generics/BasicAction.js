@@ -62,6 +62,20 @@ function basicAction(session, actor, data) {
         }
         break;
 
+    case 0x13: // Pet unsummon to control item
+        {
+            const pet = actor.pet;
+            const currentFeed = Number(pet?.fetchCurrentFeed?.()) || 0;
+            const maxFeed = Number(pet?.fetchMaxFeed?.()) || 0;
+            const hungry = maxFeed > 0 && currentFeed < maxFeed * 0.55;
+            if (!pet || pet.fetchIsPet?.() !== true || pet.state?.fetchDead?.() === true || pet.isDead?.() === true || hungry) {
+                session.dataSendToMe(ServerResponse.actionFailed());
+            } else {
+                SummonControl.unsummon(session, actor, pet);
+            }
+        }
+        break;
+
     case 0x28: // Recommend without selection
         break;
 

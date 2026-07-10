@@ -178,6 +178,20 @@ async function withFastTimers(callback) {
     assert.strictEqual(deadPet.controlMode, 'follow', 'revived pet should resume following its owner');
     deadPet.destructor(session);
 
+    const hungryPet = npc(12077, 9000011);
+    hungryPet.model.isPet = true;
+    hungryPet.model.isSummon = true;
+    hungryPet.model.ownerId = session.actor.fetchId();
+    hungryPet.fetchCurrentFeed = () => 100;
+    hungryPet.fetchMaxFeed = () => 248;
+    session.actor.pet = hungryPet;
+    World.npc = { spawns: [hungryPet], grid: {}, nextId: 9000012 };
+    BasicAction(session, session.actor, { actionId: 0x13 });
+    assert.strictEqual(session.actor.pet, hungryPet, 'hungry pet should not be returned to its control item');
+    hungryPet.fetchCurrentFeed = () => 248;
+    BasicAction(session, session.actor, { actionId: 0x13 });
+    assert.strictEqual(session.actor.pet, null, 'fed pet should return to its control item through action 19');
+
     const noCrystalBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
     noCrystalBackpack.items = [item(2, 1458, 2)];
     const noCrystalSession = sessionFor(noCrystalBackpack, summonKat);
