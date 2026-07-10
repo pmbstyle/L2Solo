@@ -11,6 +11,7 @@ const AttackExec = invoke('GameServer/Actor/Generics/AttackExec');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Npc = invoke('GameServer/Npc/Npc');
+const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const Select = invoke('GameServer/Actor/Generics/Select');
 const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
@@ -347,6 +348,33 @@ async function withFastTimers(callback) {
     assert(boxerSession.actor.fetchMp() > 20, 'Unicorn Boxer pet action should recharge owner MP with npc skill 4025');
     assert(boxerSession.packets.some((packet) => packet[0] === 0x48), 'servitor skill action should broadcast MagicSkillUse');
     BasicAction(boxerSession, boxerSession.actor, { actionId: 0x34 });
+
+    const hatchling = npc(12311, 9100010, { locX: 1000, locY: 2000, locZ: -50 });
+    hatchling.model.isPet = true;
+    hatchling.model.isSummon = true;
+    hatchling.model.ownerId = boxerSession.actor.fetchId();
+    hatchling.setCollectiveCastSpd(2000);
+    hatchling.setMp(1000);
+    const hatchlingTarget = npc(1, 9100011, { locX: 1010, locY: 2000, locZ: -50 });
+    hatchlingTarget.setMaxHp(100000);
+    hatchlingTarget.setHp(100000);
+    assert.deepStrictEqual(
+        NpcSkills.forNpc(hatchling).map((skill) => skill.fetchSelfId()).filter((id) => [4710, 4711].includes(id)),
+        [4710, 4711],
+        'Wind Hatchling should load both sourced special skills'
+    );
+    boxerSession.actor.pet = hatchling;
+    boxerSession.actor.setDestId(hatchlingTarget.fetchId());
+    World.npc = { spawns: [hatchling, hatchlingTarget], grid: {}, nextId: 9100012 };
+    World.indexSpawnsInGrid?.();
+    const packetCount = boxerSession.packets.length;
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        BasicAction(boxerSession, boxerSession.actor, { actionId: 1003 });
+        realSetTimeout(resolve, 20);
+    }));
+    assert(boxerSession.packets.slice(packetCount).some((packet) => packet[0] === 0x48), 'Wind Hatchling Wild Stun action should resolve to sourced NPC skill 4710');
+    hatchling.destructor(boxerSession);
+    hatchlingTarget.destructor(boxerSession);
 
     console.log('Summon runtime checks passed');
 })().catch((err) => {

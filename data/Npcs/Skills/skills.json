@@ -2983,5 +2983,13 @@
     "npcId": 12370,
     "skillId": 4260,
     "level": 5
-  }
+  },
+  { "npcId": 12311, "skillId": 4710, "level": 1 },
+  { "npcId": 12311, "skillId": 4711, "level": 1 },
+  { "npcId": 12312, "skillId": 4712, "level": 1 },
+  { "npcId": 12312, "skillId": 4713, "level": 1 },
+  { "npcId": 12526, "skillId": 4710, "level": 1 },
+  { "npcId": 12526, "skillId": 4711, "level": 1 },
+  { "npcId": 12527, "skillId": 4712, "level": 1 },
+  { "npcId": 12527, "skillId": 4713, "level": 1 }
 ]

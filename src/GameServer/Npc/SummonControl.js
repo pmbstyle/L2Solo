@@ -12,6 +12,10 @@ const SummonSkillActions = new Map([
     [0x2f, { skillId: 4260, target: 'selected' }], // Silhouette - Steal Blood
     [0x30, { skillId: 4068, target: 'selected' }], // Mechanic Golem - Mech. Cannon
     [1000, { skillId: 4079, target: 'selected' }], // Siege Golem - Siege Hammer
+    [1003, { skillId: 4710, target: 'selected' }], // Wind Hatchling/Strider - Wild Stun
+    [1004, { skillId: 4711, target: 'self' }],     // Wind Hatchling/Strider - Wild Defense
+    [1005, { skillId: 4712, target: 'selected' }], // Star Hatchling/Strider - Bright Burst
+    [1006, { skillId: 4713, target: 'owner' }],    // Star Hatchling/Strider - Bright Heal
     [1007, { skillId: 4699, target: 'owner' }],
     [1008, { skillId: 4700, target: 'owner' }],
     [1009, { skillId: 4701, target: 'owner' }],

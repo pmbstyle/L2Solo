@@ -4174,5 +4174,29 @@
         "itemCount": 0
       }
     ]
+  },
+  {
+    "selfId": 4710,
+    "template": { "name": "Wild Stun", "passive": false, "spell": false, "distance": 40 },
+    "time": { "hitTime": 1100, "reuse": 12000, "buff": 9000 },
+    "levels": [{ "level": 1, "power": 16, "mp": 3, "hp": 0, "itemId": 0, "itemCount": 0 }]
+  },
+  {
+    "selfId": 4711,
+    "template": { "name": "Wild Defense", "passive": false, "spell": false, "distance": -1 },
+    "time": { "hitTime": 1100, "reuse": 120000, "buff": 30000 },
+    "levels": [{ "level": 1, "power": 0, "mp": 46, "hp": 0, "itemId": 0, "itemCount": 0 }]
+  },
+  {
+    "selfId": 4712,
+    "template": { "name": "Bright Burst", "passive": false, "spell": true, "distance": 600 },
+    "time": { "hitTime": 1500, "reuse": 0, "buff": 0 },
+    "levels": [{ "level": 1, "power": 6, "mp": 6, "hp": 0, "itemId": 0, "itemCount": 0 }]
+  },
+  {
+    "selfId": 4713,
+    "template": { "name": "Bright Heal", "passive": false, "spell": true, "distance": 0 },
+    "time": { "hitTime": 3000, "reuse": 12000, "buff": 0 },
+    "levels": [{ "level": 1, "power": 33, "mp": 5, "hp": 0, "itemId": 0, "itemCount": 0 }]
   }
 ]
