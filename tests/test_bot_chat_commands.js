@@ -6,6 +6,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Generics = invoke(path.actor);
 const SkillModel = invoke('GameServer/Model/Skill');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function fakeActor(id, name, options = {}) {
     const actor = {
@@ -59,6 +60,7 @@ const originalSessions = BotManager.sessions;
 const originalSetTimeout = global.setTimeout;
 const originalRecordEvent = BotSocialMemory.recordEvent;
 const originalSkillExec = Generics.skillExec;
+const originalBotTell = BotManager.botTell;
 
 try {
     global.setTimeout = (fn) => {
@@ -122,6 +124,43 @@ try {
     BotManager.handlePlayerSpeak(playerSession, { text: 'heal me' });
     assert.strictEqual(supportCast, null, 'direct support should reject a heal the bot has not learned');
 
+    const buffer = fakeActor(2000008, 'MageWithBuff', { classId: 25, mp: 30, locX: 100 });
+    buffer.skillset.skills.push(new SkillModel({
+        selfId: 1068,
+        name: 'Might',
+        level: 2,
+        passive: false,
+        spell: true,
+        hp: 0,
+        mp: 10,
+        hitTime: 1000,
+        reuse: 1000,
+        power: 0,
+        distance: 600
+    }));
+    const bufferSession = fakeSession('bot_buffer', buffer);
+    const supportReplies = [];
+    BotManager.botTell = (_botSession, _playerSession, text) => supportReplies.push(text);
+    supportCast = null;
+    BotManager.handleDirectSupportRequest(bufferSession, playerSession, 100, { buff: true });
+    assert.deepStrictEqual(supportCast, {
+        id: player.fetchId(),
+        selfId: 1068,
+        ctrl: false
+    }, 'any bot with a learned friendly buff should cast it, regardless of role');
+    supportReplies.length = 0;
+
+    EffectStore.apply(player, {
+        key: 'might', id: 1068, level: 2, type: 'buff', stats: { pAtkMul: 1.12 }, durationMs: 20 * 60 * 1000
+    });
+    supportCast = null;
+    BotManager.handleDirectSupportRequest(bufferSession, playerSession, 100, { buff: true });
+    assert.strictEqual(supportCast, null, 'do not overwrite an active equal-level support buff');
+    assert.deepStrictEqual(supportReplies, [
+        "I don't have a stronger support buff to add right now."
+    ], 'the bot should explain when its learned buff is already active');
+    BotManager.botTell = originalBotTell;
+
     const socialEvents = [];
     BotSocialMemory.recordEvent = (fromSession, botSession, eventName, detail) => {
         socialEvents.push({
@@ -155,4 +194,5 @@ try {
     global.setTimeout = originalSetTimeout;
     BotSocialMemory.recordEvent = originalRecordEvent;
     Generics.skillExec = originalSkillExec;
+    BotManager.botTell = originalBotTell;
 }

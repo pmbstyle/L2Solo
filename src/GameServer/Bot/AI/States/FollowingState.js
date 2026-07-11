@@ -4,6 +4,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
@@ -146,22 +147,11 @@ function weakestPartyVitals(leaderSession, bot) {
         .reduce((lowest, entry) => !lowest || entry.hpRatio < lowest.hpRatio ? entry : lowest, null);
 }
 
-function nextSupportBuffTarget(leaderSession, bot) {
-    return partyMembersInSupportRange(leaderSession, bot)
-        .sort((a, b) => {
-            const aRank = a.session === leaderSession ? 0 : (a.actor === bot ? 2 : 1);
-            const bRank = b.session === leaderSession ? 0 : (b.actor === bot ? 2 : 1);
-            return aRank - bRank;
-        })
-        .flatMap((entry) => Object.keys(BotBuffs.SUPPORT_BUFFS)
-            .filter((buff) => BotBuffs.needsBuff(entry.actor, buff))
-            .map((buff) => ({
-                ...entry,
-                buff,
-                skill: BotSkillCapabilities.buffSkill(bot, buff)
-            })))
-        .filter((entry) => entry.skill)
-        .find((entry) => entry.buff) || null;
+function partySupportMembers(leaderSession) {
+    return PartyAwareness.partySessions(leaderSession).map((memberSession) => ({
+        actor: memberSession.actor,
+        leader: memberSession === leaderSession
+    }));
 }
 
 function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
@@ -195,12 +185,8 @@ function followTargetFor(session, player) {
     };
 }
 
-function supportBuffPhrase(buffType, playerName) {
-    if (buffType === 'might') return "Might on " + playerName + ". Hit harder!";
-    if (buffType === 'shield') return "Shield on " + playerName + ". Stay sturdy.";
-    if (buffType === 'haste') return "Haste on " + playerName + ". Keep the pressure up!";
-    if (buffType === 'windwalk') return "Wind Walk on " + playerName + ". Move fast.";
-    return "Buffing " + playerName + ".";
+function supportBuffPhrase(skill, playerName) {
+    return `${skill.fetchName()} on ${playerName}.`;
 }
 
 module.exports = {
@@ -378,13 +364,24 @@ module.exports = {
             }
         }
 
-        const supportBuffTarget = nextSupportBuffTarget(playerSession, bot);
-        if (!acted && BotRoles.canBuff(bot) && supportBuffTarget) {
+        const supportBuffTarget = BotSupportPlanner.nextAction(
+            bot,
+            partySupportMembers(playerSession),
+            PartyAwareness.partyActors(playerSession)
+        );
+        const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
+            ? BotSupportPlanner.rebuffRequest(bot, PartyAwareness.partyActors(playerSession))
+            : null;
+        if (rebuff && rebuff.provider !== bot && Date.now() - (session.lastRebuffRequestAt || 0) > 90000) {
+            session.lastRebuffRequestAt = Date.now();
+            BotAI.say(session, `${rebuff.provider.fetchName()}, could you refresh ${rebuff.skill.fetchName()}?`);
+        }
+        if (!acted && supportBuffTarget) {
             const activeMobs = partyAggroCount(playerSession);
-            if (unsafeSupportMoment(session, bot, supportBuffTarget.actor, activeMobs)) {
+            if (unsafeSupportMoment(session, bot, supportBuffTarget.target, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
-                    buff: supportBuffTarget.buff,
-                    targetId: supportBuffTarget.actor.fetchId(),
+                    buff: supportBuffTarget.effect,
+                    targetId: supportBuffTarget.target.fetchId(),
                     activeMobs
                 });
                 keepRoleDecision = true;
@@ -393,20 +390,20 @@ module.exports = {
                 keepRoleDecision = true;
             } else if (bot.fetchMp() < supportBuffTarget.skill.fetchConsumedMp() || botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
-                    buff: supportBuffTarget.buff,
-                    targetId: supportBuffTarget.actor.fetchId()
+                    buff: supportBuffTarget.effect,
+                    targetId: supportBuffTarget.target.fetchId()
                 });
                 keepRoleDecision = true;
             } else {
                 acted = true;
-                castSkillOn(session, bot, Generics, supportBuffTarget.actor, supportBuffTarget.skill.fetchSelfId(), false);
-                recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.buff, {
-                    buff: supportBuffTarget.buff,
+                castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill.fetchSelfId(), false);
+                recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.effect, {
+                    buff: supportBuffTarget.effect,
                     skillId: supportBuffTarget.skill.fetchSelfId(),
-                    targetId: supportBuffTarget.actor.fetchId()
+                    targetId: supportBuffTarget.target.fetchId()
                 });
                 if (Math.random() < 0.30) {
-                    BotAI.say(session, supportBuffPhrase(supportBuffTarget.buff, supportBuffTarget.actor.fetchName()));
+                    BotAI.say(session, supportBuffPhrase(supportBuffTarget.skill, supportBuffTarget.target.fetchName()));
                 }
             }
         }
