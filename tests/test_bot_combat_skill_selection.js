@@ -93,6 +93,22 @@ try {
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
 
+    const lowManaMage = bot(10, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 10);
+    const lowManaMageGenerics = generics();
+    BotAI.executeCombat({}, lowManaMage, npc(1109), lowManaMageGenerics);
+    assert.strictEqual(lowManaMageGenerics.skills[0].selfId, 1177, 'a mage should cast whenever it can pay the spell cost, even below the old MP reserve');
+    assert.strictEqual(lowManaMageGenerics.attacks.length, 0, 'a mage with mana for a nuke should not switch to melee');
+
+    const emptyManaMage = bot(10, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 7);
+    const emptyManaMageGenerics = generics();
+    BotAI.executeCombat({}, emptyManaMage, npc(1110), emptyManaMageGenerics);
+    assert.strictEqual(emptyManaMageGenerics.skills.length, 0, 'a mage without enough MP should not attempt an unaffordable spell');
+    assert.strictEqual(emptyManaMageGenerics.attacks.length, 1, 'melee is the mage fallback only after it cannot pay for its spell');
+
     const sleep = skill(1097, {
         name: 'Dreaming Spirit',
         mp: 10,
