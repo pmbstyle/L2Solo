@@ -1,7 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
-const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 function isBotSession(session) {
@@ -42,18 +41,11 @@ function awardDirect(world, session, selfId, amount) {
     maybeBragAboutLoot(session, selfId, amount);
 }
 
-function awardPartyLoot(world, session, npc, selfId, amount) {
-    if (selfId === 57) {
-        PartyCompanionService.adenaAllocations(session, amount, npc)
-            .forEach((entry) => world.purchaseItem(entry.session, selfId, entry.amount));
-        return;
-    }
-
-    const recipientSession = PartyCompanionService.resolveLootSession(session, selfId, npc);
-    world.purchaseItem(recipientSession, selfId, amount);
-    if (recipientSession === session) {
-        maybeBragAboutLoot(session, selfId, amount);
-    }
+function spawnGroundDrop(world, session, npc, selfId, amount) {
+    const point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
+    world.spawnItem(session, selfId, amount, {
+        ...point.toCoords(), locZ: npc.fetchLocZ() - 10
+    });
 }
 
 function npcRewards(session, npc) {
@@ -72,18 +64,13 @@ function npcRewards(session, npc) {
                     if (number <= rewardPartition) { // TODO: Remove locZ hack at some point
                         const baseAmount = utils.oneFromSpan(item.min, item.max);
                         const amount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier);
-                        if (isBotSession(session)) {
-                            if (session.partyCompanion === true && session.followPlayerSession) {
-                                awardPartyLoot(this, session, npc, item.selfId, amount);
-                            } else {
-                                awardDirect(this, session, item.selfId, amount);
-                            }
+                        if (isBotSession(session) && !(session.partyCompanion === true && session.followPlayerSession)) {
+                            awardDirect(this, session, item.selfId, amount);
                         } else {
-                            let point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
-                            this.spawnItem(session, item.selfId, amount, {
-                                ...point.toCoords(), locZ: npc.fetchLocZ() - 10
-                            });
-                            BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
+                            spawnGroundDrop(this, session, npc, item.selfId, amount);
+                            if (!isBotSession(session)) {
+                                BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
+                            }
                         }
                         break;
                     }
