@@ -7,6 +7,8 @@ const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
+const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
+const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 const TARGET_STALL_TICKS = 5;
@@ -217,20 +219,30 @@ module.exports = {
         });
 
         if (spottedPk) {
-            // Count friendly (white) units nearby
-            let friendlyCount = 1;
-            World.user.sessions.forEach((user) => {
-                const other = user.actor;
-                if (other && other !== bot && other.fetchIsOnline() && !other.state.fetchDead() && other.fetchKarma() === 0) {
-                    const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
-                    if (dist < 1000) {
-                        friendlyCount++;
-                    }
-                }
+            const allies = World.user.sessions.filter((otherSession) => {
+                const other = otherSession.actor;
+                if (!BotPvpRisk.isCombatAlly(session, otherSession, spottedPk)) return false;
+                const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
+                return dist < 1000;
             });
+            const pvpDecision = BotPvpRisk.evaluate({
+                botLevel: bot.fetchLevel(),
+                threatLevel: spottedPk.fetchLevel(),
+                hpRatio: bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
+                mpRatio: bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
+                allies: allies.length,
+                targetedByThreat: spottedPk.fetchDestId?.() === bot.fetchId(),
+                role: BotRoles.inferRole(bot)
+            });
+            session.lastPvpDecision = {
+                ...pvpDecision,
+                threatId: spottedPk.fetchId(),
+                threatName: spottedPk.fetchName(),
+                allies: allies.map((ally) => ally.actor.fetchId()),
+                at: Date.now()
+            };
 
-            // Fight or Flight evaluation
-            if (bot.fetchLevel() >= spottedPk.fetchLevel() || friendlyCount >= 2) {
+            if (pvpDecision.action === 'fight') {
                 // Fight back!
                 if (session.currentTargetId !== spottedPk.fetchId()) {
                     session.currentTargetId = spottedPk.fetchId();
@@ -239,6 +251,8 @@ module.exports = {
                     if (Math.random() < 0.25) {
                         BotAI.say(session, `Everyone, attack the PK! Get ${spottedPk.fetchName()}!`);
                     }
+                }
+                if (!bot.state.fetchTowards() && !bot.state.fetchHits() && !bot.state.fetchCasts()) {
                     BotAI.executePvPCombat(session, bot, spottedPk, Generics);
                 }
                 return; // Skip rest of AI tick while fighting back PK!
