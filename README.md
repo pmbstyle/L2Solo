@@ -1,5 +1,5 @@
 <p align="center">
-<img width="500" height="500" alt="Lineage II Solo" src="https://github.com/user-attachments/assets/9e65567a-c0ca-4cb5-80d3-e709bd819ca9" />
+<img width="500" height="500" alt="Lineage II Solo" src="l2solo-logo.png" />
 </p>
 
 
