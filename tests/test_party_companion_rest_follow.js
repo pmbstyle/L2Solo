@@ -19,6 +19,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
+const SkillModel = invoke('GameServer/Model/Skill');
 
 class FakeState {
     constructor() {
@@ -166,6 +167,22 @@ function fakeSession(accountId, actor) {
     };
     actor.session = session;
     return session;
+}
+
+function learnSkill(actor, data) {
+    const skill = new SkillModel({
+        passive: false,
+        hp: 0,
+        level: 1,
+        hitTime: 1000,
+        reuse: 1000,
+        distance: 600,
+        power: 20,
+        mp: 10,
+        ...data
+    });
+    actor.skillset.skills.push(skill);
+    return skill;
 }
 
 const originalUsers = World.user;
@@ -562,6 +579,7 @@ try {
     const healerLeader = fakeActor(2000024, { locX: 0, locY: 0 });
     const healerLeaderSession = fakeSession('player_healer_party', healerLeader);
     const healerBot = fakeActor(2000025, { locX: 80, locY: 0, classId: 15 });
+    learnSkill(healerBot, { selfId: 1011, name: 'Heal', spell: true, mp: 15 });
     const healerSession = fakeSession('bot_healer_party', healerBot);
     healerSession.followPlayerSession = healerLeaderSession;
     healerSession.partyCompanion = true;
@@ -582,9 +600,55 @@ try {
     assert.strictEqual(healedTargetId, woundedCompanion.fetchId(), 'healer should heal the wounded companion, not only the leader');
     assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
 
+    const unskilledHealer = fakeActor(2000033, { locX: 90, locY: 0, classId: 15 });
+    const unskilledHealerSession = fakeSession('bot_unskilled_healer', unskilledHealer);
+    unskilledHealerSession.followPlayerSession = healerLeaderSession;
+    unskilledHealerSession.partyCompanion = true;
+    unskilledHealerSession.plan = 'following';
+    World.user = { sessions: [healerLeaderSession, unskilledHealerSession, woundedCompanionSession] };
+    let inventedHeal = false;
+    FollowingState.tick(unskilledHealerSession, unskilledHealer, {
+        skillExec() { inventedHeal = true; }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(inventedHeal, false, 'healer should not cast a heal it has not learned');
+    assert.strictEqual(unskilledHealer.skillset.skills.length, 0, 'party AI should not inject missing skills into the actor');
+    assert.strictEqual(unskilledHealerSession.roleDecision.reason, 'no_learned_heal', 'missing heal capability should be observable');
+
+    const unskilledTank = fakeActor(2000036, { locX: 90, locY: 0, classId: 4 });
+    const unskilledTankSession = fakeSession('bot_unskilled_tank', unskilledTank);
+    unskilledTankSession.followPlayerSession = healerLeaderSession;
+    unskilledTankSession.partyCompanion = true;
+    unskilledTankSession.plan = 'following';
+    const tankThreat = {
+        fetchId: () => 1009,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => healerLeader.fetchId(),
+        fetchLocX: () => 100,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'tank threat'
+    };
+    World.user = { sessions: [healerLeaderSession, unskilledTankSession] };
+    World.npc = { spawns: [tankThreat] };
+    World.fetchNpcsInRadius = () => [tankThreat];
+    let inventedAggression = false;
+    let tankFallbackTarget = null;
+    FollowingState.tick(unskilledTankSession, unskilledTank, {
+        skillExec() { inventedAggression = true; }
+    }, {
+        say() {},
+        executeCombat(_session, _bot, npc) { tankFallbackTarget = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(inventedAggression, false, 'tank should not cast Aggression it has not learned');
+    assert.strictEqual(unskilledTank.skillset.skills.length, 0, 'tank AI should not inject Aggression into the actor');
+    assert.strictEqual(tankFallbackTarget, tankThreat.fetchId(), 'tank without Aggression should still defend with normal combat');
+
     const bufferLeader = fakeActor(2000027, { locX: 0, locY: 0 });
     const bufferLeaderSession = fakeSession('player_buffer_party', bufferLeader);
     const bufferBot = fakeActor(2000028, { locX: 80, locY: 0, classId: 17 });
+    learnSkill(bufferBot, { selfId: 1040, name: 'Shield', spell: true, mp: 8 });
     const bufferSession = fakeSession('bot_buffer_party', bufferBot);
     bufferSession.followPlayerSession = bufferLeaderSession;
     bufferSession.partyCompanion = true;
@@ -597,17 +661,32 @@ try {
     unbuffedCompanionSession.plan = 'following';
     World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
     let buffedTargetId = null;
-    let appliedBuffType = null;
-    BotBuffs.applySupportBuff = (targetSession, target, buffType) => {
-        buffedTargetId = target.fetchId();
-        appliedBuffType = buffType;
-        return { name: buffType };
-    };
+    let appliedBuffSkillId = null;
 
-    FollowingState.tick(bufferSession, bufferBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    FollowingState.tick(bufferSession, bufferBot, {
+        skillExec(_session, _bot, data) {
+            buffedTargetId = data.id;
+            appliedBuffSkillId = data.selfId;
+        }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
 
     assert.strictEqual(buffedTargetId, unbuffedCompanion.fetchId(), 'buffer should refresh buffs on party companions');
-    assert.strictEqual(appliedBuffType, 'shield', 'buffer should apply the missing support buff');
+    assert.strictEqual(appliedBuffSkillId, 1040, 'buffer should cast its learned Shield skill');
+
+    const refreshLeader = fakeActor(2000034, { locX: 0, locY: 0, level: 10 });
+    const refreshLeaderSession = fakeSession('player_refresh_party', refreshLeader);
+    const refreshBot = fakeActor(2000035, { locX: 80, locY: 0, level: 10 });
+    Object.keys(refreshBot.activeBuffs).forEach((key) => { refreshBot.activeBuffs[key] = 0; });
+    const refreshSession = fakeSession('bot_refresh_party', refreshBot);
+    refreshSession.followPlayerSession = refreshLeaderSession;
+    refreshSession.partyCompanion = true;
+    refreshSession.plan = 'following';
+    World.user = { sessions: [refreshLeaderSession, refreshSession] };
+    FollowingState.tick(refreshSession, refreshBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(refreshSession.plan, 'getting_buffed', 'safe companion should leave briefly to refresh expired newbie buffs');
+    assert.strictEqual(refreshSession.resumeAfterBuff?.plan, 'following', 'buff refresh should preserve the companion return plan');
+
+    World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
 
     const compactPartyStatus = BotBrainContext.compactStatus(
         bufferSession,
@@ -665,6 +744,40 @@ try {
 
     World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
     World.fetchNpcsInRadius = () => [];
+    partyHudBotASession.lastTargetEvaluation = {
+        targetId: 9001,
+        targetName: 'Keltir',
+        score: 112,
+        reasons: ['same_spot', 'direct_path'],
+        at: Date.now()
+    };
+    partyHudBotASession.lastCombatDecision = {
+        action: 'cast_skill',
+        skillId: 1234,
+        skillName: 'Power Strike',
+        score: 48,
+        reasons: ['fighter_skill', 'in_range'],
+        at: Date.now()
+    };
+    partyHudBotASession.lastPvpDecision = {
+        action: 'fight',
+        threatId: 9002,
+        threatName: 'RedPlayer',
+        score: 1.4,
+        reasons: ['self_defense', 'allies:1'],
+        at: Date.now()
+    };
+    const tacticalStatus = BotStatus.getStatus(partyHudBotASession);
+    assert.strictEqual(tacticalStatus.decisions.target.score, 112, 'bot status should expose target scoring');
+    assert.strictEqual(tacticalStatus.decisions.combat.skillId, 1234, 'bot status should expose combat skill selection');
+    assert.strictEqual(tacticalStatus.decisions.pvp.action, 'fight', 'bot status should expose PvP risk decisions');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.target, 'target').includes('Keltir score 112'), 'target decision should have a compact UI summary');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.combat, 'combat').includes('Power Strike score 48'), 'combat decision should have a compact UI summary');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.pvp, 'pvp').includes('fight vs RedPlayer score 1.4'), 'PvP decision should have a compact UI summary');
+    const tacticalLog = BotStatus.summarize(tacticalStatus);
+    assert(tacticalLog.includes('targetScore=112'), 'runtime summary should include target score');
+    assert(tacticalLog.includes('combat=1234/48'), 'runtime summary should include combat choice');
+    assert(tacticalLog.includes('pvp=fight/1.4'), 'runtime summary should include PvP choice');
     partyHudBotA.locX = 520;
     partyHudBotB.locX = 540;
     partyHudBotA.moves = [];

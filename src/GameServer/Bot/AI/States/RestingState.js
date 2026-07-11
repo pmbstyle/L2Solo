@@ -65,6 +65,22 @@ module.exports = {
             }
         }
 
+        if (!session.followPlayerSession && session.partyCompanion !== true) {
+            const threat = PartyAwareness.recentIncomingNpc(session);
+            if (threat) {
+                session.plan = 'hunting';
+                session.currentTargetId = threat.fetchId();
+                session.townGossip = false;
+                standUp(session, bot);
+                bot.select({ id: threat.fetchId() });
+                recordWakeDecision(session, bot, 'defend_self', 'incoming_threat', {
+                    targetId: threat.fetchId()
+                });
+                BotAI.executeCombat(session, bot, threat, Generics);
+                return;
+            }
+        }
+
         if (session.townGossip) {
             // 3% chance per tick to attempt conversation when resting near other bots
             if (Math.random() < 0.03) {

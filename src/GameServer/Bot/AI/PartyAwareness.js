@@ -65,17 +65,22 @@ function uniqueNpcsAround(actors, radius) {
     return npcs;
 }
 
+function recentIncomingNpc(session, npcRadius = 2500) {
+    const threatId = session?.incomingThreatId;
+    const threatAt = Number(session?.incomingThreatAt || 0);
+    if (!threatId || Date.now() - threatAt > RECENT_INCOMING_THREAT_MS || !session?.actor) return null;
+
+    const npc = (World.npc?.spawns || []).find((spawn) => actorId(spawn) === threatId);
+    if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) return null;
+    if (distance2d(actorLoc(npc), actorLoc(session.actor)) > npcRadius) return null;
+
+    return npc;
+}
+
 function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
-    const now = Date.now();
-
     for (const memberSession of memberSessions) {
-        const threatId = memberSession.incomingThreatId;
-        const threatAt = Number(memberSession.incomingThreatAt || 0);
-        if (!threatId || now - threatAt > RECENT_INCOMING_THREAT_MS) continue;
-
-        const npc = (World.npc?.spawns || []).find((spawn) => actorId(spawn) === threatId);
-        if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) continue;
-        if (distance2d(actorLoc(npc), actorLoc(memberSession.actor)) > npcRadius) continue;
+        const npc = recentIncomingNpc(memberSession, npcRadius);
+        if (!npc) continue;
 
         return {
             type: 'npc',
@@ -167,5 +172,6 @@ module.exports = {
     isPartySession,
     leaderCombatTargetId,
     partyActors,
-    partySessions
+    partySessions,
+    recentIncomingNpc
 };

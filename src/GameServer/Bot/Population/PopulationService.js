@@ -50,6 +50,24 @@ function activationCandidatesForPlayer(states, playerLevel) {
     return matching.length > 0 ? matching : states;
 }
 
+function distance2d(a, b) {
+    const dx = Number(a?.fetchLocX?.() || 0) - Number(b?.fetchLocX?.() || 0);
+    const dy = Number(a?.fetchLocY?.() || 0) - Number(b?.fetchLocY?.() || 0);
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function nearbyHotCount(sessions, player) {
+    const playerLevel = Number(player.fetchLevel?.() || 1);
+    return sessions.filter((session) => {
+        const actor = session?.actor;
+        if (!actor || !session.accountId || !String(session.accountId).startsWith('bot_')) return false;
+        if (actor.fetchIsOnline && !actor.fetchIsOnline()) return false;
+        if (session.plan === 'merchant') return false;
+        if (distance2d(actor, player) > Config.activationRadius) return false;
+        return Math.abs(Number(actor.fetchLevel?.() || 1) - playerLevel) <= Config.activationLevelRange;
+    }).length;
+}
+
 function chooseLeader(members) {
     return members.reduce((best, state) => {
         if (!best || Number(state.level || 1) > Number(best.level || 1)) return state;
@@ -259,6 +277,7 @@ const PopulationService = {
         const players = this.realPlayerSessions();
         if (players.length === 0) return Promise.resolve([]);
 
+        const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
         let chain = Promise.resolve();
 
@@ -271,7 +290,13 @@ const PopulationService = {
                     locY: actor.fetchLocY(),
                     locZ: actor.fetchLocZ()
                 };
-                const remaining = Config.maxActivationsPerScan - activated.length;
+                const existingNearby = nearbyHotCount(BotManager.sessions, actor);
+                const densityDeficit = Math.max(0, Config.nearPlayerHotTarget - existingNearby);
+                const remaining = Math.min(
+                    Config.maxActivationsPerScan - activated.length,
+                    densityDeficit
+                );
+                if (remaining <= 0) return [];
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
@@ -297,13 +322,28 @@ const PopulationService = {
     cooldownEligibleHot() {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const now = Date.now();
+        const players = this.realPlayerSessions();
+        const cooldownRadius = Math.max(Config.cooldownRadius, Config.activationRadius);
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
                 if (session.plan === 'merchant') return false;
                 if (session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
-                return !lastHotAt || now - lastHotAt >= Config.cooldownGraceMs;
+                if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs) return false;
+                if (players.length === 0) return true;
+                return players.every((playerSession) => (
+                    distance2d(session.actor, playerSession.actor) > cooldownRadius
+                ));
+            })
+            .sort((a, b) => {
+                const aDistance = players.length
+                    ? Math.min(...players.map((player) => distance2d(a.actor, player.actor)))
+                    : Infinity;
+                const bDistance = players.length
+                    ? Math.min(...players.map((player) => distance2d(b.actor, player.actor)))
+                    : Infinity;
+                return bDistance - aDistance;
             })
             .slice(0, Config.cooldownBatchSize);
 

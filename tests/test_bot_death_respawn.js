@@ -37,4 +37,27 @@ assert.deepStrictEqual(
     'merchant death should preserve the fixed store respawn location'
 );
 
+const deadSession = {
+    currentTargetId: 1001,
+    targetTrackId: 1001,
+    targetAcquiredAt: Date.now(),
+    targetLastDistance: 80,
+    targetStallTicks: 3,
+    incomingThreatId: 1002,
+    incomingThreatAt: Date.now(),
+    roleDecision: { action: 'defend_self' },
+    lastDecision: { action: 'abandon_target' },
+    lastTargetEvaluation: { targetId: 1001, score: 500 },
+    lastCombatDecision: { action: 'basic_attack' },
+    lastPvpDecision: { action: 'fight' }
+};
+BotAI.clearTacticalState(deadSession);
+assert.strictEqual(deadSession.currentTargetId, undefined, 'death should release the active target immediately');
+assert.strictEqual(deadSession.incomingThreatId, undefined, 'death should clear incoming threat state');
+assert.strictEqual(deadSession.roleDecision, undefined, 'death should clear stale role decisions');
+assert.strictEqual(deadSession.lastDecision, undefined, 'death should clear stale hunting decisions');
+assert.strictEqual(deadSession.lastTargetEvaluation, undefined, 'death should clear stale target scoring');
+assert.strictEqual(deadSession.lastCombatDecision, undefined, 'death should clear stale combat choices');
+assert.strictEqual(deadSession.lastPvpDecision, undefined, 'death should clear stale PvP choices');
+
 console.log('Bot death respawn checks passed');

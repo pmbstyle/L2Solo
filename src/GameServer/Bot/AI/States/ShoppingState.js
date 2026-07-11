@@ -2,6 +2,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
+const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 
 function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -15,6 +16,13 @@ module.exports = {
             session.shoppingDoneAnnounced = false;
             session.preShopLocation = undefined;
             BotAI.say(session, "Shopping can wait. Staying with the party.");
+            return;
+        }
+
+        if (session.townEscape) {
+            if (BotTownTravel.hasCombatThreat(session, bot) || !bot.state.fetchCasts()) {
+                BotTownTravel.interruptEscape(session, bot);
+            }
             return;
         }
 

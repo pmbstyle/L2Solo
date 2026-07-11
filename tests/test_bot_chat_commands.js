@@ -4,6 +4,8 @@ require('../src/Global');
 
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const Generics = invoke(path.actor);
+const SkillModel = invoke('GameServer/Model/Skill');
 
 function fakeActor(id, name, options = {}) {
     const actor = {
@@ -34,7 +36,11 @@ function fakeActor(id, name, options = {}) {
         fetchIsOnline() { return true; },
         isDead() { return false; },
         statusUpdateVitals() { this.vitalUpdates += 1; },
-        moveTo(data) { this.moveCalls.push(data); }
+        moveTo(data) { this.moveCalls.push(data); },
+        skillset: {
+            skills: [],
+            fetchSkill(selfId) { return this.skills.find((skill) => skill.fetchSelfId() === selfId) || null; }
+        }
     };
     return actor;
 }
@@ -52,6 +58,7 @@ function fakeSession(accountId, actor) {
 const originalSessions = BotManager.sessions;
 const originalSetTimeout = global.setTimeout;
 const originalRecordEvent = BotSocialMemory.recordEvent;
+const originalSkillExec = Generics.skillExec;
 
 try {
     global.setTimeout = (fn) => {
@@ -79,17 +86,41 @@ try {
     assert.strictEqual(bystanderBot.moveCalls.length, 0, 'direct follow command should not spill to other nearby bots');
 
     const healer = fakeActor(2000004, 'HealerBot', { classId: 15, mp: 30, locX: 100 });
+    healer.skillset.skills.push(new SkillModel({
+        selfId: 1011,
+        name: 'Heal',
+        level: 1,
+        passive: false,
+        spell: true,
+        hp: 0,
+        mp: 15,
+        hitTime: 1000,
+        reuse: 1000,
+        power: 20,
+        distance: 600
+    }));
     const healerSession = fakeSession('bot_healer', healer);
     BotManager.sessions = [healerSession];
     player.fetchDestId = () => healer.fetchId();
 
+    let supportCast = null;
+    Generics.skillExec = (_session, _actor, data) => { supportCast = data; };
     BotManager.handlePlayerSpeak(playerSession, { text: 'heal me' });
 
-    assert.strictEqual(player.fetchHp(), player.fetchMaxHp(), 'direct healer support should heal HP');
-    assert.strictEqual(player.fetchMp(), 7, 'direct healer support must not restore player MP for free');
-    assert.strictEqual(healer.fetchMp(), 15, 'direct healer support should consume healer MP');
-    assert(player.vitalUpdates > 0, 'player vitals should refresh after direct heal');
-    assert(healer.vitalUpdates > 0, 'healer vitals should refresh after MP cost');
+    assert.deepStrictEqual(supportCast, {
+        id: player.fetchId(),
+        selfId: 1011,
+        ctrl: false
+    }, 'direct healer support should cast the learned heal through normal skill execution');
+    assert.strictEqual(player.fetchHp(), 20, 'support command should not bypass skill execution with a full-HP write');
+
+    const unskilledHealer = fakeActor(2000007, 'UnskilledHealer', { classId: 15, mp: 30, locX: 100 });
+    const unskilledHealerSession = fakeSession('bot_unskilled_healer', unskilledHealer);
+    BotManager.sessions = [unskilledHealerSession];
+    player.fetchDestId = () => unskilledHealer.fetchId();
+    supportCast = null;
+    BotManager.handlePlayerSpeak(playerSession, { text: 'heal me' });
+    assert.strictEqual(supportCast, null, 'direct support should reject a heal the bot has not learned');
 
     const socialEvents = [];
     BotSocialMemory.recordEvent = (fromSession, botSession, eventName, detail) => {
@@ -123,4 +154,5 @@ try {
     BotManager.sessions = originalSessions;
     global.setTimeout = originalSetTimeout;
     BotSocialMemory.recordEvent = originalRecordEvent;
+    Generics.skillExec = originalSkillExec;
 }
