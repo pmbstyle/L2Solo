@@ -83,4 +83,45 @@ assert.strictEqual(session.currentTargetId, threatNpc.fetchId(), 'solo hunter sh
 assert.strictEqual(bot.selected, threatNpc.fetchId(), 'solo hunter should select the incoming threat');
 assert.strictEqual(attackedId, threatNpc.fetchId(), 'solo hunter should counterattack the incoming threat immediately');
 
+const woundedBot = actor(2000011);
+woundedBot.fetchHp = () => 20;
+const woundedSession = {
+    accountId: 'bot_wounded_self_defense',
+    actor: woundedBot,
+    plan: 'hunting',
+    incomingThreatId: threatNpc.fetchId(),
+    incomingThreatAt: Date.now(),
+    dataSendToOthers() {}
+};
+let woundedAttackId = null;
+World.user = { sessions: [woundedSession] };
+
+HuntingState.tick(woundedSession, woundedBot, {}, {
+    say() {},
+    executeCombat(_session, _bot, npc) {
+        woundedAttackId = npc.fetchId();
+    }
+});
+
+assert.strictEqual(woundedSession.plan, 'hunting', 'wounded solo hunter should not sit while under attack');
+assert.strictEqual(woundedAttackId, threatNpc.fetchId(), 'wounded solo hunter should defend itself before resting');
+
+let seated = true;
+woundedBot.state.fetchSeated = () => seated;
+woundedBot.state.setSeated = (value) => { seated = value; };
+woundedSession.plan = 'resting';
+woundedAttackId = null;
+const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
+
+RestingState.tick(woundedSession, woundedBot, {}, {
+    say() {},
+    executeCombat(_session, _bot, npc) {
+        woundedAttackId = npc.fetchId();
+    }
+});
+
+assert.strictEqual(woundedSession.plan, 'hunting', 'resting solo hunter should wake when attacked');
+assert.strictEqual(seated, false, 'resting solo hunter should stand before defending itself');
+assert.strictEqual(woundedAttackId, threatNpc.fetchId(), 'resting solo hunter should counterattack immediately');
+
 console.log('Bot hunting self-defense checks passed');

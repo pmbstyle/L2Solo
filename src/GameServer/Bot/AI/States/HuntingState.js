@@ -5,9 +5,8 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
-
-const RECENT_INCOMING_THREAT_MS = 5000;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -80,20 +79,6 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     });
 
     return closestFreeMonster || closestClaimedMonster;
-}
-
-function recentIncomingMonster(session, bot, radius = 2500) {
-    const threatId = session.incomingThreatId;
-    const threatAt = Number(session.incomingThreatAt || 0);
-    if (!threatId || Date.now() - threatAt > RECENT_INCOMING_THREAT_MS) return null;
-
-    const npc = (World.npc?.spawns || []).find((spawn) => spawn.fetchId?.() === threatId);
-    if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) return null;
-
-    const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-        .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
-
-    return distance <= radius ? npc : null;
 }
 
 module.exports = {
@@ -203,7 +188,21 @@ module.exports = {
             }
         }
 
-        // 3. HP/MP resting check
+        // 3. Immediate self-defense outranks recovery. Sitting while a mob is
+        // actively hitting the bot only turns the recovery state into a death loop.
+        const incomingMonster = PartyAwareness.recentIncomingNpc(session);
+        if (incomingMonster) {
+            session.currentTargetId = incomingMonster.fetchId();
+            if (bot.state.fetchSeated()) {
+                bot.state.setSeated(false);
+                session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            }
+            bot.select({ id: incomingMonster.fetchId() });
+            BotAI.executeCombat(session, bot, incomingMonster, Generics);
+            return;
+        }
+
+        // 4. HP/MP resting check
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
         if (hpRatio < 0.35 || mpRatio < 0.20) {
@@ -221,14 +220,6 @@ module.exports = {
         }
 
         // 5. Hunt/Attack Combat execution
-        const incomingMonster = recentIncomingMonster(session, bot);
-        if (!session.currentTargetId && incomingMonster) {
-            session.currentTargetId = incomingMonster.fetchId();
-            bot.select({ id: incomingMonster.fetchId() });
-            BotAI.executeCombat(session, bot, incomingMonster, Generics);
-            return;
-        }
-
         if (session.currentTargetId) {
             World.fetchUser(session.currentTargetId).then((targetActor) => {
                 if (targetActor && targetActor.fetchIsOnline() && !targetActor.state.fetchDead()) {
