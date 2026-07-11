@@ -1,4 +1,7 @@
-<img alt="LineageII Solo" src="https://github.com/user-attachments/assets/a78e7191-80a1-4411-937e-e5e7de69ff4b" />
+<p align="center">
+<img width="500" height="500" alt="Lineage II Solo" src="https://github.com/user-attachments/assets/9e65567a-c0ca-4cb5-80d3-e709bd819ca9" />
+</p>
+
 
 
 # L2Solo (C4: Scions of Destiny)
@@ -7,7 +10,7 @@ Old-school Lineage 2 solo play, locally in a live world with over 1500 bot popul
 
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
 
-<p align="center">🏗️ Work in progress. Playable.</p>
+🏗️ Work in progress. Playable.
 
 💬 [Discord](https://discord.gg/dXsQ8SJA7k)
 support and communication
