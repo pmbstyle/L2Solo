@@ -85,4 +85,21 @@ const cooled = BotTargetScorer.score({
 });
 assert.strictEqual(cooled.eligible, false, 'retry cooldown should exclude a recently abandoned target');
 
+const badCandidate = {
+    evaluation: BotTargetScorer.score({
+        attackable: true,
+        dead: false,
+        botLevel: 20,
+        npcLevel: 27,
+        distance: 2400,
+        currentSpotId: '20_20',
+        npcSpotId: '20_21',
+        claimed: true,
+        socialAllies: 4,
+        directPath: false
+    })
+};
+assert(badCandidate.evaluation.score < 0, 'fixture should represent a harmful target choice');
+assert.deepStrictEqual(BotTargetScorer.rank([badCandidate]), [], 'negative-utility targets should not be selected');
+
 console.log('Bot target scorer checks passed');

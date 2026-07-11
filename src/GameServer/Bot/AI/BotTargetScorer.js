@@ -92,7 +92,7 @@ function score(context = {}) {
 
 function rank(candidates) {
     return (candidates || [])
-        .filter((candidate) => candidate?.evaluation?.eligible)
+        .filter((candidate) => candidate?.evaluation?.eligible && candidate.evaluation.score > 0)
         .sort((a, b) => b.evaluation.score - a.evaluation.score);
 }
 
