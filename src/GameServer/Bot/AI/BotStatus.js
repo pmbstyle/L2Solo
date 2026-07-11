@@ -41,6 +41,27 @@ function actorSummary(actor, fromActor) {
     };
 }
 
+function decisionSummary(decision, kind = 'decision') {
+    if (!decision) return 'none';
+
+    const score = Number.isFinite(Number(decision.score)) ? ` score ${decision.score}` : '';
+    const reasons = Array.isArray(decision.reasons) && decision.reasons.length > 0
+        ? ` / ${decision.reasons.slice(0, 3).join(', ')}`
+        : decision.reason ? ` / ${decision.reason}` : '';
+
+    if (kind === 'target') {
+        return `${decision.targetName || decision.targetId || 'unknown'}${score}${reasons}`;
+    }
+    if (kind === 'combat') {
+        const choice = decision.skillName || (decision.skillId ? `skill ${decision.skillId}` : decision.action);
+        return `${choice || 'unknown'}${score}${reasons}`;
+    }
+    if (kind === 'pvp') {
+        return `${decision.action || 'unknown'} vs ${decision.threatName || decision.threatId || 'threat'}${score}${reasons}`;
+    }
+    return `${decision.action || 'unknown'}${score}${reasons}`;
+}
+
 function partyMemberSummary(memberSession, leaderSession, bot) {
     const actor = memberSession?.actor;
     if (!actor) return null;
@@ -231,6 +252,13 @@ const BotStatus = {
             intent: undefined,
             role,
             roleDecision: session.roleDecision || null,
+            decisions: {
+                role: session.roleDecision || null,
+                hunt: session.lastDecision || null,
+                target: session.lastTargetEvaluation || null,
+                combat: session.lastCombatDecision || null,
+                pvp: session.lastPvpDecision || null
+            },
             home: {
                 region: session.homeRegion || null,
                 visitor: !!session.visitor
@@ -284,15 +312,23 @@ const BotStatus = {
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
         const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
+        const targetDecision = status.decisions?.target ? ` targetScore=${status.decisions.target.score}` : '';
+        const combatDecision = status.decisions?.combat
+            ? ` combat=${status.decisions.combat.skillId || status.decisions.combat.action}/${status.decisions.combat.score ?? 'na'}`
+            : '';
+        const pvpDecision = status.decisions?.pvp
+            ? ` pvp=${status.decisions.pvp.action}/${status.decisions.pvp.score ?? 'na'}`
+            : '';
         const build = status.build ? ` build=${status.build.grade}/${status.build.weapon}/${status.build.armor}` : '';
         const path = status.movement?.pathfinding?.townRoute?.changedTarget ? ' path=town' : '';
         const buffs = status.buffs?.needsRefresh ? ' buffs=refresh' : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${build}${path}${buffs}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${targetDecision}${combatDecision}${pvpDecision}${build}${path}${buffs}${blockers}`;
     }
 };
 
 BotStatus.ROLE_CLASSES = BotRoles.ROLE_CLASSES;
+BotStatus.decisionSummary = decisionSummary;
 
 module.exports = BotStatus;

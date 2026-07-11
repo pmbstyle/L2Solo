@@ -744,6 +744,40 @@ try {
 
     World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
     World.fetchNpcsInRadius = () => [];
+    partyHudBotASession.lastTargetEvaluation = {
+        targetId: 9001,
+        targetName: 'Keltir',
+        score: 112,
+        reasons: ['same_spot', 'direct_path'],
+        at: Date.now()
+    };
+    partyHudBotASession.lastCombatDecision = {
+        action: 'cast_skill',
+        skillId: 1234,
+        skillName: 'Power Strike',
+        score: 48,
+        reasons: ['fighter_skill', 'in_range'],
+        at: Date.now()
+    };
+    partyHudBotASession.lastPvpDecision = {
+        action: 'fight',
+        threatId: 9002,
+        threatName: 'RedPlayer',
+        score: 1.4,
+        reasons: ['self_defense', 'allies:1'],
+        at: Date.now()
+    };
+    const tacticalStatus = BotStatus.getStatus(partyHudBotASession);
+    assert.strictEqual(tacticalStatus.decisions.target.score, 112, 'bot status should expose target scoring');
+    assert.strictEqual(tacticalStatus.decisions.combat.skillId, 1234, 'bot status should expose combat skill selection');
+    assert.strictEqual(tacticalStatus.decisions.pvp.action, 'fight', 'bot status should expose PvP risk decisions');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.target, 'target').includes('Keltir score 112'), 'target decision should have a compact UI summary');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.combat, 'combat').includes('Power Strike score 48'), 'combat decision should have a compact UI summary');
+    assert(BotStatus.decisionSummary(tacticalStatus.decisions.pvp, 'pvp').includes('fight vs RedPlayer score 1.4'), 'PvP decision should have a compact UI summary');
+    const tacticalLog = BotStatus.summarize(tacticalStatus);
+    assert(tacticalLog.includes('targetScore=112'), 'runtime summary should include target score');
+    assert(tacticalLog.includes('combat=1234/48'), 'runtime summary should include combat choice');
+    assert(tacticalLog.includes('pvp=fight/1.4'), 'runtime summary should include PvP choice');
     partyHudBotA.locX = 520;
     partyHudBotB.locX = 540;
     partyHudBotA.moves = [];

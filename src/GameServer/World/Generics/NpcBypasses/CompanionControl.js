@@ -2,6 +2,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
@@ -189,9 +190,14 @@ function renderCompanionCard(companionSession) {
     const role = status?.role || BotRoles.inferRole(bot);
     const stance = stayActive ? 'hold' : 'follow';
     const intent = compactText(status?.intent || companionSession.plan, 'idle');
+    const tacticalDecision = status?.decisions?.pvp
+        ? BotStatus.decisionSummary(status.decisions.pvp, 'pvp')
+        : status?.decisions?.combat
+            ? BotStatus.decisionSummary(status.decisions.combat, 'combat')
+            : null;
     const roleDecision = status?.roleDecision
         ? compactText(`${status.roleDecision.action}/${status.roleDecision.reason}`)
-        : intent;
+        : compactText(tacticalDecision, intent);
     const target = status?.target
         ? compactText(status.target.name || status.target.id, 'target')
         : null;
@@ -200,7 +206,10 @@ function renderCompanionCard(companionSession) {
         : null;
     const buffWarning = status?.buffs?.needsRefresh ? 'buffs low' : null;
     const debuff = status?.debuffs?.[0]?.key ? `debuff ${status.debuffs[0].key}` : null;
-    const note = blocker || debuff || buffWarning || target || 'ready';
+    const targetEvaluation = status?.decisions?.target
+        ? compactText(BotStatus.decisionSummary(status.decisions.target, 'target'))
+        : null;
+    const note = blocker || debuff || buffWarning || targetEvaluation || target || 'ready';
     const noteColor = blocker || debuff ? Html.COLOR.warn : Html.COLOR.muted;
     const pullText = BotRoles.isTank(bot)
         ? ` / pull ${companionSession.autoTaunt === false ? 'off' : 'auto'}`

@@ -93,9 +93,12 @@ const BotManager = {
         const party = status.party ? `${status.party.role}, ${status.party.stance}/${status.party.roleStance}, leader ${status.party.leader?.name || 'unknown'}` : 'none';
         const home = status.home?.region ? `${status.home.region}${status.home.visitor ? ' visitor' : ''}` : 'unknown';
         const blockers = status.blockers.length > 0 ? status.blockers.join(', ') : 'none';
-        const roleDecision = status.roleDecision ? `${status.roleDecision.action} / ${status.roleDecision.reason}` : null;
-        const huntDecision = botSession.lastDecision ? `${botSession.lastDecision.action} / ${botSession.lastDecision.reason}${botSession.lastDecision.spotName ? ` / ${botSession.lastDecision.spotName}` : ''}` : null;
+        const roleDecision = status.decisions?.role ? BotStatus.decisionSummary(status.decisions.role, 'role') : null;
+        const huntDecision = status.decisions?.hunt ? BotStatus.decisionSummary(status.decisions.hunt, 'hunt') : null;
         const decision = roleDecision || huntDecision || 'none';
+        const targetDecision = BotStatus.decisionSummary(status.decisions?.target, 'target');
+        const combatDecision = BotStatus.decisionSummary(status.decisions?.combat, 'combat');
+        const pvpDecision = BotStatus.decisionSummary(status.decisions?.pvp, 'pvp');
         const pathInfo = status.movement.pathfinding
             ? `${status.movement.pathSummary} / geodata ${status.movement.pathfinding.pathLength}`
             : 'none';
@@ -124,6 +127,9 @@ const BotManager = {
             ['Path', safe(pathInfo)],
             ['Blockers', safe(blockers)],
             ['Decision', safe(decision)],
+            ['Target AI', safe(targetDecision)],
+            ['Combat AI', safe(combatDecision)],
+            ['PvP AI', safe(pvpDecision)],
             ['Buffs', safe(buffs)],
             ['Trade', safe(trade)],
             ['Social', safe(social)],
@@ -745,12 +751,7 @@ const BotManager = {
                 const summaries = this.sessions
                     .filter((session) => session.actor && session.plan !== 'merchant')
                     .slice(0, 10)
-                    .map((session) => {
-                        const summary = BotAI.summarizeStatus(session);
-                        if (session.roleDecision) return `${summary} roleDecision=${session.roleDecision.action}/${session.roleDecision.reason}`;
-                        if (!session.lastDecision) return summary;
-                        return `${summary} decision=${session.lastDecision.action}/${session.lastDecision.reason}`;
-                    });
+                    .map((session) => BotAI.summarizeStatus(session));
 
                 if (summaries.length > 0) {
                     console.info("BotStatus :: %s", summaries.join(" | "));
