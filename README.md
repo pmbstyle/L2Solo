@@ -1,4 +1,6 @@
-<img alt="LineageII Solo" src="https://github.com/user-attachments/assets/a78e7191-80a1-4411-937e-e5e7de69ff4b" />
+<p align="center">
+<img width="500" height="500" alt="Lineage II Solo" src="https://github.com/user-attachments/assets/9e65567a-c0ca-4cb5-80d3-e709bd819ca9" />
+</p>
 
 
 
@@ -8,7 +10,13 @@ Old-school Lineage 2 solo play, locally in a live world with over 1500 bot popul
 
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
 
-<p align="center">🏗️ Work in progress. Playable.</p>
+🏗️ Work in progress. Playable.
+
+💬 [Discord](https://discord.gg/dXsQ8SJA7k)
+support and communication
+
+⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
+Clean C4 client protocol 656
 
 ## Game Checklist
 
@@ -84,12 +92,6 @@ L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO expe
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
 - One-click installer
-
-### 🆕 Recently added
-- Summon runtime: class servitors, corpse summons, cubics, and native follow/attack/action controls
-- Pets: collar-based summon/return, status window, resurrection scrolls, food, persistent vitals, and hunger
-- Cubics: all C4 cubic families, party variants, lifecycle, and combat procs
-- Sleep
 
 
 ## 🎮 Wanna play now?
