@@ -71,6 +71,14 @@ function score(context = {}) {
         reasons.push('incoming_threat');
     }
 
+    if (context.directPath === true) {
+        value += 40;
+        reasons.push('direct_path');
+    } else if (context.directPath === false) {
+        value -= 300;
+        reasons.push('blocked_direct_path');
+    }
+
     return {
         eligible: true,
         score: Math.round(value),

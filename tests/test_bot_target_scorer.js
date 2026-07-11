@@ -57,6 +57,25 @@ assert(freeMob.score > claimedSocialMob.score, 'free isolated mob should outrank
 assert(claimedSocialMob.reasons.includes('claimed'));
 assert(claimedSocialMob.reasons.includes('social_allies:3'));
 
+const openPath = BotTargetScorer.score({
+    attackable: true,
+    dead: false,
+    botLevel: 20,
+    npcLevel: 20,
+    distance: 400,
+    directPath: true
+});
+const blockedPath = BotTargetScorer.score({
+    attackable: true,
+    dead: false,
+    botLevel: 20,
+    npcLevel: 20,
+    distance: 300,
+    directPath: false
+});
+assert(openPath.score > blockedPath.score, 'clear direct path should outrank a slightly closer blocked target');
+assert(blockedPath.reasons.includes('blocked_direct_path'));
+
 const cooled = BotTargetScorer.score({
     attackable: true,
     dead: false,

@@ -13,6 +13,7 @@ const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const TARGET_SPOT_GRID_SIZE = 6000;
+const TARGET_GEODATA_CHECK_LIMIT = 4;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -66,13 +67,13 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / TARGET_SPOT_GRID_SIZE)}_${Math.floor(actor.fetchLocY() / TARGET_SPOT_GRID_SIZE)}`;
     const currentSpotId = session.currentSpot?.id || spotIdAt(bot);
 
-    const ranked = BotTargetScorer.rank(nearbyNpcs
+    const candidates = nearbyNpcs
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .map((npc) => {
             const claimed = isClaimedByOtherSoloBot(session, npc);
             const npcSpotId = spotIdAt(npc);
             const clan = npc.fetchClanName?.();
-            const evaluation = BotTargetScorer.score({
+            const scoreContext = {
                 attackable: npc.fetchAttackable(),
                 dead: npc.isDead(),
                 retryCooldown: targetOnCooldown(session, npc.fetchId()),
@@ -84,10 +85,26 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 npcSpotId,
                 claimed,
                 socialAllies: clan ? Math.max(0, (clanCounts.get(clan) || 1) - 1) : 0
-            });
-            return { npc, evaluation, claimed };
+            };
+            return { npc, evaluation: BotTargetScorer.score(scoreContext), scoreContext, claimed };
         })
-        .filter((candidate) => !options.freeOnly || !candidate.claimed));
+        .filter((candidate) => !options.freeOnly || !candidate.claimed);
+
+    const preRanked = BotTargetScorer.rank(candidates);
+    const checkedIds = new Set(preRanked
+        .slice(0, TARGET_GEODATA_CHECK_LIMIT)
+        .map((candidate) => candidate.npc.fetchId()));
+    const ranked = BotTargetScorer.rank(candidates.map((candidate) => {
+        if (!checkedIds.has(candidate.npc.fetchId())) return candidate;
+        const directPath = GeodataEngine.hasLineOfSight(
+            bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
+            candidate.npc.fetchLocX(), candidate.npc.fetchLocY(), candidate.npc.fetchLocZ()
+        );
+        return {
+            ...candidate,
+            evaluation: BotTargetScorer.score({ ...candidate.scoreContext, directPath })
+        };
+    }));
 
     const selected = ranked[0] || null;
     session.lastTargetEvaluation = selected ? {
