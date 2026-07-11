@@ -10,6 +10,7 @@ const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
+const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -45,18 +46,7 @@ function startShopping(session, bot, BotAI, reason) {
         return false;
     }
 
-    const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
-    session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    session.plan = 'shopping';
-    session.shopTimer = Date.now();
-    session.shoppingTarget = undefined;
-    BotAI.say(session, reason || `Walking back to ${closestTown.name} to sell and restock.`);
-    bot.moveTo({
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
-    });
-
-    return true;
+    return BotTownTravel.request(session, bot, BotAI, reason);
 }
 
 function findPreferredMonster(session, bot, radius, options = {}) {
@@ -183,6 +173,11 @@ function targetProgressing(session, bot, target) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
+        if (session.pendingTownTrip) {
+            const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
+            if (trip !== 'deferred') return;
+        }
+
         // 1. Expire buffs check for hunting bots
         if (!session.followPlayerSession) {
             if (BotBuffs.needsNewbieRefresh(bot, 0)) {
@@ -198,8 +193,8 @@ module.exports = {
 
         if (isSoloHunter(session) && ShotStock.needsActorRestock(bot, 0)) {
             const plan = ShotStock.planForActor(bot);
-            startShopping(session, bot, BotAI, `Out of ${ShotStock.describe(plan)}. Heading to town to restock.`);
-            return;
+            const trip = startShopping(session, bot, BotAI, `Out of ${ShotStock.describe(plan)}. Heading to town to restock.`);
+            if (trip !== 'deferred') return;
         }
 
         // 2. PK Spotting & Fleeing Check
@@ -330,8 +325,8 @@ module.exports = {
 
         if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
-            startShopping(session, bot, BotAI, `My bags are full of loot. Walking back to ${closestTown.name} to sell and restock.`);
-            return;
+            const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
+            if (trip !== 'deferred') return;
         }
 
         // 5. Hunt/Attack Combat execution

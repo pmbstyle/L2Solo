@@ -102,17 +102,8 @@ function startShopping(session, bot) {
     }
 
     const BotAI = invoke('GameServer/Bot/BotAI');
-    const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
-    session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    session.plan = 'shopping';
-    session.shopTimer = Date.now();
-    session.shoppingTarget = undefined;
-    bot.moveTo({
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: { locX: closestTown.x, locY: closestTown.y, locZ: closestTown.z }
-    });
-
-    return true;
+    const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+    return BotTownTravel.request(session, bot, BotAI, 'Heading to town to sell and restock.') !== 'companion';
 }
 
 function isPartyCompanionOf(session, targetSession) {
