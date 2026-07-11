@@ -13,6 +13,7 @@ function npcTalkResponse(session, data) {
             session.dataSendToMe(
                 ServerResponse.npcHtml(7146, utils.parseRawFile(filename))
             );
+            session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
         utils.infoWarn('GameServer', 'html file "%s" does not exist', filename);

@@ -16,6 +16,10 @@ function npcTalk(session, npc) {
             utils.fileExists(filename) ? filename : path + 'noquest.html'
         ))
     );
+    // C4 keeps the interaction pending until the response is terminated.
+    // Without this, closing the HTML leaves movement blocked while the NPC
+    // remains selected.
+    session.dataSendToMe(ServerResponse.actionFailed());
 }
 
 module.exports = npcTalk;

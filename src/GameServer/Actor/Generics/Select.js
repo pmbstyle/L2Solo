@@ -59,6 +59,7 @@ function openMerchantTradeWindow(session, merchant) {
     const store = merchant.fetchPrivateStore && merchant.fetchPrivateStore();
     if (!store || !store.items || store.items.length === 0) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant is not trading right now." }));
+        session.dataSendToMe(ServerResponse.actionFailed());
         return;
     }
 
@@ -70,6 +71,7 @@ function openMerchantTradeWindow(session, merchant) {
             merchantPurchaseItems(store),
             session.actor.backpack.fetchTotalAdena()
         ));
+        session.dataSendToMe(ServerResponse.actionFailed());
         return;
     }
 
@@ -78,6 +80,7 @@ function openMerchantTradeWindow(session, merchant) {
             merchantDemandRows(session.actor, store),
             session.actor.backpack.fetchTotalAdena()
         ));
+        session.dataSendToMe(ServerResponse.actionFailed());
     }
 }
 

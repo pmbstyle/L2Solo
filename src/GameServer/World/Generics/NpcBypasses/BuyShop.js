@@ -49,4 +49,7 @@ module.exports = function(session, parts) {
     session.dataSendToMe(
         ServerResponse.purchaseList(list, session.actor.backpack.fetchTotalAdena())
     );
+    // BuyList is an interaction response too; release the client's action
+    // state so it can move after the shop window is closed.
+    session.dataSendToMe(ServerResponse.actionFailed());
 };

@@ -7,7 +7,7 @@ const BuyShop = invoke('GameServer/World/Generics/NpcBypasses/BuyShop');
 
 DataCache.items = require('../data/Items/Others/others.json');
 
-let buyListPacket = null;
+const packets = [];
 const session = {
     activeNpcTalk: { selfId: 7004 },
     actor: {
@@ -16,14 +16,16 @@ const session = {
         }
     },
     dataSendToMe(packet) {
-        buyListPacket = packet;
+        packets.push(packet);
     }
 };
 
 BuyShop(session, ['buy-shop', 'npc']);
 
+const buyListPacket = packets[0];
 assert.ok(buyListPacket, 'NPC shop should send a BuyList packet');
 assert.strictEqual(buyListPacket[0], 0x11, 'NPC shop should send the C4 BuyList opcode');
+assert.strictEqual(packets[1][0], 0x25, 'NPC shop should finish the interaction with ActionFailed so closing it does not block movement');
 
 const rowSize = 32;
 const rowCount = buyListPacket.readInt16LE(9);
