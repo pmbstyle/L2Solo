@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
@@ -425,35 +426,36 @@ const BotAI = {
     executeCombat(session, bot, npc, Generics) {
         const role = BotRoles.inferRole(bot);
         const ARCHER_ATTACK_RANGE = 700;
-        const castOwnedSkill = (selfId) => {
-            const skill = bot.skillset.fetchSkill(selfId);
-            if (skill && bot.fetchMp() >= skill.fetchConsumedMp()) {
-                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId, ctrl: true });
-                return true;
-            }
-            return false;
-        };
-
-        if (role === 'mage' || role === 'healer' || role === 'buffer') {
-            if (castOwnedSkill(1177)) {
-                return;
-            }
-        }
-        else if (role === 'archer') {
-            if (castOwnedSkill(56)) {
-                return;
-            }
-            Generics.attackExec(session, bot, { id: npc.fetchId(), ctrl: true, range: ARCHER_ATTACK_RANGE });
+        const decision = BotCombatUtility.select(bot, npc, role);
+        if (decision) {
+            session.lastCombatDecision = {
+                action: 'cast_skill',
+                role,
+                skillId: decision.skill.fetchSelfId(),
+                skillName: decision.skill.fetchName?.() || null,
+                score: decision.score,
+                reasons: decision.reasons,
+                at: Date.now()
+            };
+            Generics.skillExec(session, bot, {
+                id: npc.fetchId(),
+                selfId: decision.skill.fetchSelfId(),
+                ctrl: true
+            });
             return;
         }
-        else {
-            // Melee Fighter: Cast Power Strike with 40% probability if MP allows
-            if (Math.random() < 0.40 && castOwnedSkill(3)) {
-                return;
-            }
-        }
 
-        Generics.attackExec(session, bot, { id: npc.fetchId(), ctrl: true });
+        session.lastCombatDecision = {
+            action: 'basic_attack',
+            role,
+            reason: 'no_usable_offensive_skill',
+            at: Date.now()
+        };
+        Generics.attackExec(session, bot, {
+            id: npc.fetchId(),
+            ctrl: true,
+            ...(role === 'archer' ? { range: ARCHER_ATTACK_RANGE } : {})
+        });
     },
 
     say(session, text) {
