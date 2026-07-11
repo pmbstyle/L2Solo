@@ -589,6 +589,8 @@ module.exports = {
             if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
                 acted = true;
                 World.fetchUser(playerTargetId).then((user) => {
+                    if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
+                    if (session.currentTargetId && session.currentTargetId !== playerTargetId) return;
                     const targetIsTeammate = user.session && (
                         user.session === playerSession ||
                         (user.session.followPlayerSession === playerSession && user.session.partyCompanion === true)
@@ -619,11 +621,15 @@ module.exports = {
                         }
                         BotAI.executePvPCombat(session, bot, user, Generics);
                     } else {
-                        session.currentTargetId = undefined;
-                        bot.unselect();
+                        if (session.currentTargetId === playerTargetId) {
+                            session.currentTargetId = undefined;
+                            bot.unselect();
+                        }
                     }
                 }).catch(() => {
                     World.fetchNpc(playerTargetId).then((npc) => {
+                        if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
+                        if (session.currentTargetId && session.currentTargetId !== playerTargetId) return;
                         if (npc.fetchAttackable() && !npc.isDead()) {
                             if (session.botStay && session.stayLocation) {
                                 const stayDist = new SpeckMath.Point3D(session.stayLocation.locX, session.stayLocation.locY, session.stayLocation.locZ)
@@ -647,12 +653,16 @@ module.exports = {
                             }
                             BotAI.executeCombat(session, bot, npc, Generics);
                         } else {
+                            if (session.currentTargetId === playerTargetId) {
+                                session.currentTargetId = undefined;
+                                bot.unselect();
+                            }
+                        }
+                    }).catch(() => {
+                        if (session.currentTargetId === playerTargetId) {
                             session.currentTargetId = undefined;
                             bot.unselect();
                         }
-                    }).catch(() => {
-                        session.currentTargetId = undefined;
-                        bot.unselect();
                     });
                 });
             } else {

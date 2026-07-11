@@ -43,7 +43,11 @@ function actor(id) {
         },
         select(data) {
             this.selected = data.id;
-        }
+        },
+        unselect() {
+            this.selected = undefined;
+        },
+        moveTo() {}
     };
 }
 
@@ -124,4 +128,83 @@ assert.strictEqual(woundedSession.plan, 'hunting', 'resting solo hunter should w
 assert.strictEqual(seated, false, 'resting solo hunter should stand before defending itself');
 assert.strictEqual(woundedAttackId, threatNpc.fetchId(), 'resting solo hunter should counterattack immediately');
 
-console.log('Bot hunting self-defense checks passed');
+async function targetLifecycleChecks() {
+    const originalRandom = Math.random;
+    Math.random = () => 0.5;
+
+    try {
+        const unreachableNpc = {
+            fetchId: () => 1201,
+            fetchName: () => 'unreachable mob',
+            fetchAttackable: () => true,
+            isDead: () => false,
+            fetchLocX: () => 900,
+            fetchLocY: () => 0,
+            fetchLocZ: () => 0,
+            fetchLevel: () => 5
+        };
+        const stalledBot = actor(2000012);
+        stalledBot.state.fetchTowards = () => true;
+        const stalledSession = {
+            accountId: 'bot_stalled_target',
+            actor: stalledBot,
+            plan: 'hunting',
+            currentTargetId: unreachableNpc.fetchId()
+        };
+        World.user = { sessions: [stalledSession] };
+        World.npc = { spawns: [unreachableNpc] };
+        World.fetchNpcsInRadius = () => [unreachableNpc];
+        World.fetchUser = () => Promise.reject(new Error('user_not_found'));
+        World.fetchNpc = () => Promise.resolve(unreachableNpc);
+
+        for (let i = 0; i < 6; i++) {
+            HuntingState.tick(stalledSession, stalledBot, {}, {
+                say() {},
+                getStatus() { return {}; },
+                executeCombat() {}
+            });
+            await new Promise((resolve) => setImmediate(resolve));
+        }
+
+        assert.strictEqual(stalledSession.currentTargetId, undefined, 'hunter should abandon a target after repeated movement without progress');
+        assert(stalledSession.targetRetryAfter?.[unreachableNpc.fetchId()] > Date.now(), 'abandoned target should receive a retry cooldown');
+        assert.strictEqual(stalledSession.lastDecision.reason, 'no_progress', 'target abandonment should be observable');
+
+        HuntingState.tick(stalledSession, stalledBot, {}, {
+            say() {},
+            getStatus() { return {}; },
+            executeCombat() {}
+        });
+        assert.strictEqual(stalledSession.currentTargetId, undefined, 'hunter should not immediately reacquire a cooled-down target');
+
+        let rejectOldLookup;
+        let fetchedNpcId = null;
+        stalledSession.currentTargetId = unreachableNpc.fetchId();
+        World.fetchUser = () => new Promise((_resolve, reject) => { rejectOldLookup = reject; });
+        World.fetchNpc = (id) => {
+            fetchedNpcId = id;
+            return Promise.resolve(unreachableNpc);
+        };
+
+        HuntingState.tick(stalledSession, stalledBot, {}, {
+            say() {},
+            getStatus() { return {}; },
+            executeCombat() {}
+        });
+        stalledSession.currentTargetId = 9999;
+        rejectOldLookup(new Error('user_not_found'));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.strictEqual(fetchedNpcId, unreachableNpc.fetchId(), 'NPC fallback should use the captured target id');
+        assert.strictEqual(stalledSession.currentTargetId, 9999, 'stale target callbacks should not clear a newer target');
+    } finally {
+        Math.random = originalRandom;
+    }
+}
+
+targetLifecycleChecks()
+    .then(() => console.log('Bot hunting self-defense checks passed'))
+    .catch((err) => {
+        console.error(err);
+        process.exitCode = 1;
+    });

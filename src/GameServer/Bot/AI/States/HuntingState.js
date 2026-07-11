@@ -8,6 +8,10 @@ const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
+const TARGET_STALL_TICKS = 5;
+const TARGET_RETRY_COOLDOWN_MS = 15000;
+const TARGET_PROGRESS_DISTANCE = 40;
+
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
 }
@@ -60,9 +64,9 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     nearbyNpcs.forEach((npc) => {
         if (!npc.fetchAttackable() || npc.isDead()) return;
         if (options.excludeTargetId && npc.fetchId() === options.excludeTargetId) return;
+        if (targetOnCooldown(session, npc.fetchId())) return;
 
-        const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-            .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
+        const distance = targetDistance(bot, npc);
 
         if (isClaimedByOtherSoloBot(session, npc)) {
             if (!options.freeOnly && distance < closestClaimedDistance) {
@@ -79,6 +83,68 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     });
 
     return closestFreeMonster || closestClaimedMonster;
+}
+
+function targetDistance(bot, target) {
+    return new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
+        .distance(new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()));
+}
+
+function targetOnCooldown(session, targetId) {
+    const until = Number(session.targetRetryAfter?.[targetId] || 0);
+    if (!until) return false;
+    if (Date.now() < until) return true;
+    delete session.targetRetryAfter[targetId];
+    return false;
+}
+
+function assignTarget(session, bot, target) {
+    const targetId = target.fetchId();
+    if (session.currentTargetId !== targetId) {
+        session.targetTrackId = targetId;
+        session.targetAcquiredAt = Date.now();
+        session.targetLastDistance = targetDistance(bot, target);
+        session.targetStallTicks = 0;
+    }
+    session.currentTargetId = targetId;
+    bot.select({ id: targetId });
+}
+
+function clearTarget(session, bot, targetId, retryCooldown = false) {
+    if (session.currentTargetId !== targetId) return false;
+    if (retryCooldown) {
+        session.targetRetryAfter = session.targetRetryAfter || {};
+        session.targetRetryAfter[targetId] = Date.now() + TARGET_RETRY_COOLDOWN_MS;
+    }
+    session.currentTargetId = undefined;
+    session.targetTrackId = undefined;
+    session.targetAcquiredAt = undefined;
+    session.targetLastDistance = undefined;
+    session.targetStallTicks = 0;
+    bot.unselect();
+    return true;
+}
+
+function targetProgressing(session, bot, target) {
+    const targetId = target.fetchId();
+    const distance = targetDistance(bot, target);
+    if (session.targetTrackId !== targetId) {
+        session.targetTrackId = targetId;
+        session.targetAcquiredAt = Date.now();
+        session.targetLastDistance = distance;
+        session.targetStallTicks = 0;
+        return true;
+    }
+
+    const moving = bot.state.fetchTowards();
+    const fighting = bot.state.fetchHits() || bot.state.fetchCasts() || distance <= 180;
+    const movedCloser = Number(session.targetLastDistance || Infinity) - distance >= TARGET_PROGRESS_DISTANCE;
+    session.targetLastDistance = distance;
+    const shouldMeasureStall = moving || distance > 900;
+    session.targetStallTicks = fighting || movedCloser || !shouldMeasureStall
+        ? 0
+        : (session.targetStallTicks || 0) + 1;
+    return session.targetStallTicks < TARGET_STALL_TICKS;
 }
 
 module.exports = {
@@ -192,12 +258,11 @@ module.exports = {
         // actively hitting the bot only turns the recovery state into a death loop.
         const incomingMonster = PartyAwareness.recentIncomingNpc(session);
         if (incomingMonster) {
-            session.currentTargetId = incomingMonster.fetchId();
+            assignTarget(session, bot, incomingMonster);
             if (bot.state.fetchSeated()) {
                 bot.state.setSeated(false);
                 session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
             }
-            bot.select({ id: incomingMonster.fetchId() });
             BotAI.executeCombat(session, bot, incomingMonster, Generics);
             return;
         }
@@ -221,25 +286,36 @@ module.exports = {
 
         // 5. Hunt/Attack Combat execution
         if (session.currentTargetId) {
-            World.fetchUser(session.currentTargetId).then((targetActor) => {
+            const targetId = session.currentTargetId;
+            World.fetchUser(targetId).then((targetActor) => {
+                if (session.currentTargetId !== targetId) return;
                 if (targetActor && targetActor.fetchIsOnline() && !targetActor.state.fetchDead()) {
                     if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
                         return;
                     }
                     BotAI.executePvPCombat(session, bot, targetActor, Generics);
                 } else {
-                    session.currentTargetId = undefined;
-                    bot.unselect();
+                    clearTarget(session, bot, targetId);
                 }
             }).catch(() => {
-                World.fetchNpc(session.currentTargetId).then((npc) => {
+                World.fetchNpc(targetId).then((npc) => {
+                    if (session.currentTargetId !== targetId) return;
                     if (npc.isDead()) {
                         if (Math.random() < 0.20) {
                             BotAI.say(session, BotAI.getRandomPhrase('victory'));
                         }
-                        session.currentTargetId = undefined;
-                        bot.unselect();
+                        clearTarget(session, bot, targetId);
                     } else {
+                        if (!targetProgressing(session, bot, npc)) {
+                            clearTarget(session, bot, targetId, true);
+                            session.lastDecision = {
+                                action: 'abandon_target',
+                                reason: 'no_progress',
+                                targetId,
+                                retryAfter: session.targetRetryAfter?.[targetId] || null
+                            };
+                            return;
+                        }
                         if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
                             return;
                         }
@@ -250,8 +326,7 @@ module.exports = {
                                 freeOnly: true
                             });
                             if (alternateMonster) {
-                                session.currentTargetId = alternateMonster.fetchId();
-                                bot.select({ id: alternateMonster.fetchId() });
+                                assignTarget(session, bot, alternateMonster);
                                 BotAI.executeCombat(session, bot, alternateMonster, Generics);
                                 return;
                             }
@@ -260,8 +335,7 @@ module.exports = {
                         BotAI.executeCombat(session, bot, npc, Generics);
                     }
                 }).catch(() => {
-                    session.currentTargetId = undefined;
-                    bot.unselect();
+                    clearTarget(session, bot, targetId);
                 });
             });
         } else {
@@ -270,8 +344,7 @@ module.exports = {
 
             if (closestMonster) {
                 session.noTargetTicks = 0;
-                session.currentTargetId = closestMonster.fetchId();
-                bot.select({ id: closestMonster.fetchId() });
+                assignTarget(session, bot, closestMonster);
 
                 if (!session.currentSpot) {
                     const spot = SpotService.findCurrentSpot({
