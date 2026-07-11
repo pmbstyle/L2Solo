@@ -6,11 +6,13 @@ const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
+const TARGET_SPOT_GRID_SIZE = 6000;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -55,34 +57,47 @@ function startShopping(session, bot, BotAI, reason) {
 }
 
 function findPreferredMonster(session, bot, radius, options = {}) {
-    let closestFreeMonster = null;
-    let closestFreeDistance = radius;
-    let closestClaimedMonster = null;
-    let closestClaimedDistance = radius;
-
     const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), radius);
-    nearbyNpcs.forEach((npc) => {
-        if (!npc.fetchAttackable() || npc.isDead()) return;
-        if (options.excludeTargetId && npc.fetchId() === options.excludeTargetId) return;
-        if (targetOnCooldown(session, npc.fetchId())) return;
+    const clanCounts = nearbyNpcs.reduce((counts, npc) => {
+        const clan = npc.fetchClanName?.();
+        if (clan) counts.set(clan, (counts.get(clan) || 0) + 1);
+        return counts;
+    }, new Map());
+    const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / TARGET_SPOT_GRID_SIZE)}_${Math.floor(actor.fetchLocY() / TARGET_SPOT_GRID_SIZE)}`;
+    const currentSpotId = session.currentSpot?.id || spotIdAt(bot);
 
-        const distance = targetDistance(bot, npc);
+    const ranked = BotTargetScorer.rank(nearbyNpcs
+        .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
+        .map((npc) => {
+            const claimed = isClaimedByOtherSoloBot(session, npc);
+            const npcSpotId = spotIdAt(npc);
+            const clan = npc.fetchClanName?.();
+            const evaluation = BotTargetScorer.score({
+                attackable: npc.fetchAttackable(),
+                dead: npc.isDead(),
+                retryCooldown: targetOnCooldown(session, npc.fetchId()),
+                botLevel: bot.fetchLevel(),
+                npcLevel: npc.fetchLevel?.() || bot.fetchLevel(),
+                distance: targetDistance(bot, npc),
+                verticalGap: Math.abs(bot.fetchLocZ() - npc.fetchLocZ()),
+                currentSpotId,
+                npcSpotId,
+                claimed,
+                socialAllies: clan ? Math.max(0, (clanCounts.get(clan) || 1) - 1) : 0
+            });
+            return { npc, evaluation, claimed };
+        })
+        .filter((candidate) => !options.freeOnly || !candidate.claimed));
 
-        if (isClaimedByOtherSoloBot(session, npc)) {
-            if (!options.freeOnly && distance < closestClaimedDistance) {
-                closestClaimedDistance = distance;
-                closestClaimedMonster = npc;
-            }
-            return;
-        }
-
-        if (distance < closestFreeDistance) {
-            closestFreeDistance = distance;
-            closestFreeMonster = npc;
-        }
-    });
-
-    return closestFreeMonster || closestClaimedMonster;
+    const selected = ranked[0] || null;
+    session.lastTargetEvaluation = selected ? {
+        targetId: selected.npc.fetchId(),
+        targetName: selected.npc.fetchName(),
+        score: selected.evaluation.score,
+        reasons: selected.evaluation.reasons,
+        at: Date.now()
+    } : null;
+    return selected?.npc || null;
 }
 
 function targetDistance(bot, target) {

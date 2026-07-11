@@ -17,6 +17,7 @@ const tests = [
     'tests/test_bot_population_state.js',
     'tests/test_bot_population_policy.js',
     'tests/test_bot_social_memory_events.js',
+    'tests/test_bot_target_scorer.js',
     'tests/test_bot_travel_realism.js',
     'tests/test_c4_buff_modifiers.js',
     'tests/test_c4_protocol_packets.js',
