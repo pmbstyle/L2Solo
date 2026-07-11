@@ -100,7 +100,24 @@ const States = {
     merchant: invoke('GameServer/Bot/AI/States/MerchantState')
 };
 
+function clearTacticalState(session) {
+    session.currentTargetId = undefined;
+    session.targetTrackId = undefined;
+    session.targetAcquiredAt = undefined;
+    session.targetLastDistance = undefined;
+    session.targetStallTicks = 0;
+    session.incomingThreatId = undefined;
+    session.incomingThreatAt = undefined;
+    session.roleDecision = undefined;
+    session.lastDecision = undefined;
+    session.lastTargetEvaluation = undefined;
+    session.lastCombatDecision = undefined;
+    session.lastPvpDecision = undefined;
+}
+
 const BotAI = {
+    clearTacticalState,
+
     init(session) {
         const runAiTick = () => {
             if (!session.actor || !session.aiActive) return;
@@ -297,6 +314,8 @@ const BotAI = {
         if (!bot) return;
 
         PopulationService.recordHotTick(session);
+        const botDead = bot.isDead();
+        if (botDead) clearTacticalState(session);
         session.botStatus = BotStatus.getStatus(session);
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
@@ -304,7 +323,7 @@ const BotAI = {
         const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
-        if (onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping') {
+        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -330,7 +349,7 @@ const BotAI = {
         const Generics = invoke(path.actor);
 
         // 1. Handle Death State
-        if (bot.isDead()) {
+        if (botDead) {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();

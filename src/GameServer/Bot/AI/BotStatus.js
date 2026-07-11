@@ -225,6 +225,7 @@ const BotStatus = {
         };
 
         const role = BotRoles.inferRole(bot);
+        const dead = bot.state.fetchDead();
         const target = findTarget(session, bot);
         const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
         const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
@@ -248,16 +249,16 @@ const BotStatus = {
             name: bot.fetchName(),
             level: bot.fetchLevel(),
             classId: bot.fetchClassId(),
-            mode: session.plan || 'hunting',
+            mode: dead ? 'dead' : session.plan || 'hunting',
             intent: undefined,
             role,
-            roleDecision: session.roleDecision || null,
+            roleDecision: dead ? null : session.roleDecision || null,
             decisions: {
-                role: session.roleDecision || null,
-                hunt: session.lastDecision || null,
-                target: session.lastTargetEvaluation || null,
-                combat: session.lastCombatDecision || null,
-                pvp: session.lastPvpDecision || null
+                role: dead ? null : session.roleDecision || null,
+                hunt: dead ? null : session.lastDecision || null,
+                target: dead ? null : session.lastTargetEvaluation || null,
+                combat: dead ? null : session.lastCombatDecision || null,
+                pvp: dead ? null : session.lastPvpDecision || null
             },
             home: {
                 region: session.homeRegion || null,
