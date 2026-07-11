@@ -25,9 +25,14 @@ function reserveRatio(role) {
 
 function evaluate(bot, target, skill, role) {
     if (!skill || skill.fetchPassive?.()) return null;
-    if (skill.fetchSemantic?.().notUsedInC4) return null;
+    const semantic = skill.fetchSemantic?.() || {};
+    if (semantic.notUsedInC4) return null;
     if (!OFFENSIVE_TYPES.has(skill.fetchSkillType?.())) return null;
     if (skill.fetchTargetKind?.() !== 'enemy') return null;
+
+    // Pure debuffs are tactical tools, not damage rotation. Scoring their
+    // effect power as damage made mages spam Sleep/Root until their MP ran out.
+    if (skill.fetchSkillType() === C4SkillRules.EFFECT && semantic.effectType === 'debuff') return null;
 
     const range = Number(skill.fetchDistance?.());
     if (!Number.isFinite(range) || range < 0) return null;
@@ -68,11 +73,6 @@ function evaluate(bot, target, skill, role) {
         score += 90;
         reasons.push('tank_control');
     }
-    if (type === C4SkillRules.EFFECT && power <= 0) {
-        score += 45;
-        reasons.push('control_effect');
-    }
-
     return { skill, score: Math.round(score), reasons, cost, range, power };
 }
 

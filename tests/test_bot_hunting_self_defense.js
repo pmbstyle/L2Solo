@@ -128,6 +128,30 @@ assert.strictEqual(woundedSession.plan, 'hunting', 'resting solo hunter should w
 assert.strictEqual(seated, false, 'resting solo hunter should stand before defending itself');
 assert.strictEqual(woundedAttackId, threatNpc.fetchId(), 'resting solo hunter should counterattack immediately');
 
+const exhaustedBot = actor(2000013);
+exhaustedBot.fetchMp = () => 10;
+exhaustedBot.selected = threatNpc.fetchId();
+const exhaustedSession = {
+    accountId: 'bot_exhausted',
+    actor: exhaustedBot,
+    plan: 'hunting',
+    currentTargetId: threatNpc.fetchId(),
+    lastTargetEvaluation: { targetId: threatNpc.fetchId(), score: 500 },
+    lastCombatDecision: { action: 'cast_skill', skillId: 1097 },
+    lastPvpDecision: { action: 'fight' },
+    dataSendToOthers() {}
+};
+World.user = { sessions: [exhaustedSession] };
+World.npc = { spawns: [] };
+World.fetchNpcsInRadius = () => [];
+HuntingState.tick(exhaustedSession, exhaustedBot, {}, { say() {}, executeCombat() {} });
+assert.strictEqual(exhaustedSession.plan, 'resting', 'low-MP hunter should enter recovery');
+assert.strictEqual(exhaustedSession.currentTargetId, undefined, 'voluntary recovery should release the combat target');
+assert.strictEqual(exhaustedBot.selected, undefined, 'voluntary recovery should clear the visible selection');
+assert.strictEqual(exhaustedSession.lastTargetEvaluation, undefined, 'recovery should clear stale target scoring');
+assert.strictEqual(exhaustedSession.lastCombatDecision, undefined, 'recovery should clear stale combat choices');
+assert.strictEqual(exhaustedSession.lastPvpDecision, undefined, 'recovery should clear stale PvP choices');
+
 async function targetLifecycleChecks() {
     const originalRandom = Math.random;
     Math.random = () => 0.5;

@@ -317,6 +317,10 @@ module.exports = {
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
         if (hpRatio < 0.35 || mpRatio < 0.20) {
+            if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
+            session.lastTargetEvaluation = undefined;
+            session.lastCombatDecision = undefined;
+            session.lastPvpDecision = undefined;
             session.plan = 'resting';
             bot.state.setSeated(true);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);

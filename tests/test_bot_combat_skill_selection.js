@@ -12,7 +12,7 @@ function skill(selfId, options = {}) {
         fetchName: () => options.name || `skill_${selfId}`,
         fetchConsumedMp: () => options.mp ?? 5,
         fetchPassive: () => false,
-        fetchSemantic: () => ({}),
+        fetchSemantic: () => options.semantic || {},
         fetchSkillType: () => options.type || C4SkillRules.DAMAGE,
         fetchTargetKind: () => options.target || 'enemy',
         fetchDistance: () => options.range ?? 600,
@@ -92,6 +92,28 @@ try {
     BotAI.executeCombat(utilitySession, utilityMage, npc(1104), utilityGenerics);
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
+
+    const sleep = skill(1097, {
+        name: 'Dreaming Spirit',
+        mp: 10,
+        power: 20,
+        spell: true,
+        type: C4SkillRules.EFFECT,
+        semantic: { effect: 'sleep', trait: 'sleep', effectType: 'debuff' }
+    });
+    const orcMage = bot(49, [
+        sleep,
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 100);
+    const orcMageGenerics = generics();
+    BotAI.executeCombat({}, orcMage, npc(1107), orcMageGenerics);
+    assert.strictEqual(orcMageGenerics.skills[0].selfId, 1177, 'mage damage rotation should not prefer pure Sleep over a learned nuke');
+
+    const controlOnlyMage = bot(49, [sleep], 100);
+    const controlOnlyGenerics = generics();
+    BotAI.executeCombat({}, controlOnlyMage, npc(1108), controlOnlyGenerics);
+    assert.strictEqual(controlOnlyGenerics.skills.length, 0, 'pure control should wait for a tactical control policy');
+    assert.strictEqual(controlOnlyGenerics.attacks.length, 1, 'mage with only control skills should use the basic attack fallback');
 
     const reserveHealer = bot(15, [skill(1300, { mp: 20, power: 100, spell: true })], 50);
     const reserveGenerics = generics();
