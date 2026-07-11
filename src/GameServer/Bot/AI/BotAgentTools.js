@@ -2,9 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
-
-const SUPPORT_BUFF_MP_COST = 20;
-const HEAL_MP_COST = 15;
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 
 const ACTIONS = [
     'none',
@@ -153,18 +151,13 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     const buffType = String(decision.buffType || '').toLowerCase();
     if (!target || !BotBuffs.SUPPORT_BUFFS[buffType]) return { applied: false, reason: 'invalid_buff_target' };
     if (!BotRoles.canBuff(bot)) return { applied: false, reason: 'bot_cannot_buff' };
-    if (bot.fetchMp() < SUPPORT_BUFF_MP_COST) return { applied: false, reason: 'low_mp_for_buff' };
+    const skill = BotSkillCapabilities.buffSkill(bot, buffType);
+    if (!skill) return { applied: false, reason: 'buff_not_learned' };
+    if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
-    const result = BotBuffs.applySupportBuff(targetSession, target, buffType, invoke(path.actor), {
-        casterSession: session,
-        caster: bot
-    });
-    if (!result) return { applied: false, reason: 'buff_failed' };
-
-    bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
-    bot.statusUpdateVitals(bot);
-    say(session, decision.reply || `${result.name} on ${target.fetchName()}.`, targetSession);
+    invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
+    say(session, decision.reply || `${BotBuffs.SUPPORT_BUFFS[buffType].name} on ${target.fetchName()}.`, targetSession);
     return { applied: true, reason: `buff:${buffType}` };
 }
 
@@ -172,25 +165,13 @@ function applyHealTarget(session, bot, decision, targetSession) {
     const target = targetSession?.actor;
     if (!target) return { applied: false, reason: 'invalid_heal_target' };
     if (!BotRoles.isHealer(bot)) return { applied: false, reason: 'bot_cannot_heal' };
-    if (bot.fetchMp() < HEAL_MP_COST) return { applied: false, reason: 'low_mp_for_heal' };
+    const skill = BotSkillCapabilities.healSkill(bot);
+    if (!skill) return { applied: false, reason: 'heal_not_learned' };
+    if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_heal' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
-    targetSession.dataSendToMe(
-        ServerResponse.skillStarted(bot, target.fetchId(), {
-            fetchSelfId: () => 1011,
-            fetchCalculatedHitTime: () => 1000,
-            fetchReuseTime: () => 1000
-        })
-    );
-
-    setTimeout(() => {
-        if (target.isDead && target.isDead()) return;
-        target.setHp(target.fetchMaxHp());
-        target.statusUpdateVitals(target);
-        bot.setMp(Math.max(0, bot.fetchMp() - HEAL_MP_COST));
-        bot.statusUpdateVitals(bot);
-        say(session, decision.reply || `Healing you, ${target.fetchName()}.`, targetSession);
-    }, 1000);
+    invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
+    say(session, decision.reply || `Healing you, ${target.fetchName()}.`, targetSession);
 
     return { applied: true, reason: 'heal_target' };
 }

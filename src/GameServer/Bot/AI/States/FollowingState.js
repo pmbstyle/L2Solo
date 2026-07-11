@@ -3,11 +3,11 @@ const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 
-const SUPPORT_BUFF_MP_COST = 20;
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
 const FOLLOW_TARGET_DRIFT = 650;
@@ -59,45 +59,6 @@ function sitDown(session, bot) {
     bot.state.setSeated(true);
     session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
     return true;
-}
-
-function ensureSkill(bot, selfId, data) {
-    let skill = bot.skillset.fetchSkill(selfId);
-    if (skill) return skill;
-
-    const SkillModel = invoke('GameServer/Model/Skill');
-    skill = new SkillModel({
-        selfId,
-        hp: 0,
-        passive: false,
-        ...data
-    });
-    bot.skillset.skills.push(skill);
-    return skill;
-}
-
-function healSkill(bot) {
-    return ensureSkill(bot, 1011, {
-        name: "Heal",
-        level: 1,
-        mp: 15,
-        hitTime: 1500,
-        reuse: 1000,
-        power: 20,
-        distance: 600
-    });
-}
-
-function aggressionSkill(bot) {
-    return ensureSkill(bot, 28, {
-        name: "Aggression",
-        level: 1,
-        mp: 10,
-        hitTime: 1000,
-        reuse: 3000,
-        power: 0,
-        distance: 600
-    });
 }
 
 function recordRoleDecision(session, bot, action, reason, extra = {}) {
@@ -192,10 +153,14 @@ function nextSupportBuffTarget(leaderSession, bot) {
             const bRank = b.session === leaderSession ? 0 : (b.actor === bot ? 2 : 1);
             return aRank - bRank;
         })
-        .map((entry) => ({
-            ...entry,
-            buff: BotBuffs.nextSupportBuff(entry.actor)
-        }))
+        .flatMap((entry) => Object.keys(BotBuffs.SUPPORT_BUFFS)
+            .filter((buff) => BotBuffs.needsBuff(entry.actor, buff))
+            .map((buff) => ({
+                ...entry,
+                buff,
+                skill: BotSkillCapabilities.buffSkill(bot, buff)
+            })))
+        .filter((entry) => entry.skill)
         .find((entry) => entry.buff) || null;
 }
 
@@ -385,7 +350,7 @@ module.exports = {
         if (buffsNeedRefresh) {
             const unsafeToRefresh = unsafeSupportMoment(session, bot, player, partyAggroCount(playerSession));
 
-            if (unsafeToRefresh || session.partyCompanion === true) {
+            if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
@@ -426,28 +391,22 @@ module.exports = {
             } else if (impairments.silenced) {
                 recordRoleDecision(session, bot, 'save_mp', 'silenced');
                 keepRoleDecision = true;
-            } else if (bot.fetchMp() < SUPPORT_BUFF_MP_COST || botVitals.mpRatio < 0.35) {
+            } else if (bot.fetchMp() < supportBuffTarget.skill.fetchConsumedMp() || botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_buff', {
                     buff: supportBuffTarget.buff,
                     targetId: supportBuffTarget.actor.fetchId()
                 });
                 keepRoleDecision = true;
             } else {
-                const result = BotBuffs.applySupportBuff(supportBuffTarget.session, supportBuffTarget.actor, supportBuffTarget.buff, Generics, {
-                    casterSession: session,
-                    caster: bot
+                acted = true;
+                castSkillOn(session, bot, Generics, supportBuffTarget.actor, supportBuffTarget.skill.fetchSelfId(), false);
+                recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.buff, {
+                    buff: supportBuffTarget.buff,
+                    skillId: supportBuffTarget.skill.fetchSelfId(),
+                    targetId: supportBuffTarget.actor.fetchId()
                 });
-                if (result) {
-                    acted = true;
-                    bot.setMp(Math.max(0, bot.fetchMp() - SUPPORT_BUFF_MP_COST));
-                    bot.statusUpdateVitals(bot);
-                    recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.buff, {
-                        buff: supportBuffTarget.buff,
-                        targetId: supportBuffTarget.actor.fetchId()
-                    });
-                    if (Math.random() < 0.30) {
-                        BotAI.say(session, supportBuffPhrase(supportBuffTarget.buff, supportBuffTarget.actor.fetchName()));
-                    }
+                if (Math.random() < 0.30) {
+                    BotAI.say(session, supportBuffPhrase(supportBuffTarget.buff, supportBuffTarget.actor.fetchName()));
                 }
             }
         }
@@ -491,21 +450,21 @@ module.exports = {
         }
 
         if (role === 'healer') {
-            const skill = healSkill(bot);
-            const canCast = bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
+            const skill = BotSkillCapabilities.healSkill(bot);
+            const canCast = !!skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
             const woundedPartyMember = weakestPartyMember(playerSession, bot);
 
             if (woundedPartyMember?.hpRatio < 0.45 && canCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'emergency_heal', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, 1011, false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, skill.fetchSelfId(), false);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Emergency heal on " + woundedPartyMember.actor.fetchName() + "!");
                 }
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && canCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'top_off', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, 1011, false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, skill.fetchSelfId(), false);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing " + woundedPartyMember.actor.fetchName() + "!");
                 }
@@ -515,7 +474,7 @@ module.exports = {
             } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && canCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
-                castSkillOn(session, bot, Generics, bot, 1011, false);
+                castSkillOn(session, bot, Generics, bot, skill.fetchSelfId(), false);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing myself!");
                 }
@@ -524,6 +483,9 @@ module.exports = {
                 keepRoleDecision = true;
             } else if (botVitals.mpRatio < 0.25) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp');
+                keepRoleDecision = true;
+            } else if (!skill && woundedPartyMember?.hpRatio < 0.70) {
+                recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
                 keepRoleDecision = true;
             }
         }
@@ -535,14 +497,17 @@ module.exports = {
                 : nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
 
             if (monsterToAggro) {
-                const skill = aggressionSkill(bot);
-                if (bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                const skill = BotSkillCapabilities.aggressionSkill(bot);
+                if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
                     acted = true;
                     recordRoleDecision(session, bot, 'protect_leader', 'leader_targeted', { targetId: monsterToAggro.fetchId() });
-                    castSkillOn(session, bot, Generics, monsterToAggro, 28, true);
+                    castSkillOn(session, bot, Generics, monsterToAggro, skill.fetchSelfId(), true);
                     if (Math.random() < 0.20) {
                         BotAI.say(session, "Hey, " + monsterToAggro.fetchName() + "! Attack me instead!");
                     }
+                } else if (!skill) {
+                    recordRoleDecision(session, bot, 'cannot_taunt', 'no_learned_aggression');
+                    keepRoleDecision = true;
                 } else if (botVitals.mpRatio < 0.25) {
                     recordRoleDecision(session, bot, 'save_mp', 'low_mp_for_taunt');
                     keepRoleDecision = true;
@@ -573,17 +538,20 @@ module.exports = {
                 }
 
                 if (targetMonster) {
-                    const skill = aggressionSkill(bot);
-                    if (bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                    const skill = BotSkillCapabilities.aggressionSkill(bot);
+                    if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
                         acted = true;
                         recordRoleDecision(session, bot, 'pull_target', 'safe_pull', {
                             targetId: targetMonster.fetchId(),
                             activeMobs
                         });
-                        castSkillOn(session, bot, Generics, targetMonster, 28, true);
+                        castSkillOn(session, bot, Generics, targetMonster, skill.fetchSelfId(), true);
                         if (Math.random() < 0.30) {
                             BotAI.say(session, "Pulling " + targetMonster.fetchName() + " to the group!");
                         }
+                    } else if (!skill) {
+                        recordRoleDecision(session, bot, 'avoid_pull', 'no_learned_aggression');
+                        keepRoleDecision = true;
                     }
                 }
             }

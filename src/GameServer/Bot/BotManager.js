@@ -13,14 +13,13 @@ const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
-const DIRECT_HEAL_MP_COST = 15;
-const DIRECT_BUFF_MP_COST = 20;
 const INSULT_PATTERN = /\b(noob|idiot|stupid|trash|useless|suck|sucks)\b|(?:дурак|дура|тупой|тупая|лох|нуб|мусор|бесполезн)/i;
 
 const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
@@ -559,28 +558,22 @@ const BotManager = {
                 this.botTell(botSession, playerSession, `I don't have proper healing magic.`);
                 return false;
             }
-            if (bot.fetchMp() < DIRECT_HEAL_MP_COST) {
+            const skill = BotSkillCapabilities.healSkill(bot);
+            if (!skill) {
+                this.botTell(botSession, playerSession, `I haven't learned a suitable healing spell.`);
+                return false;
+            }
+            if (bot.fetchMp() < skill.fetchConsumedMp()) {
                 this.botTell(botSession, playerSession, `I need to recover MP before healing.`);
                 return false;
             }
 
-            const ServerResponse = invoke('GameServer/Network/Response');
-            playerSession.dataSendToMe(
-                ServerResponse.skillStarted(bot, player.fetchId(), {
-                    fetchSelfId: () => 1011,
-                    fetchCalculatedHitTime: () => 1000,
-                    fetchReuseTime: () => 1000
-                })
-            );
-
-            setTimeout(() => {
-                if (player.isDead && player.isDead()) return;
-                player.setHp(player.fetchMaxHp());
-                bot.setMp(Math.max(0, bot.fetchMp() - DIRECT_HEAL_MP_COST));
-                player.statusUpdateVitals(player);
-                bot.statusUpdateVitals(bot);
-                this.botTell(botSession, playerSession, `Healing done. Watch your HP.`);
-            }, 1000);
+            invoke(path.actor).skillExec(botSession, bot, {
+                id: player.fetchId(),
+                selfId: skill.fetchSelfId(),
+                ctrl: false
+            });
+            this.botTell(botSession, playerSession, `Casting ${skill.fetchName()} on you.`);
             return true;
         }
 
@@ -589,24 +582,25 @@ const BotManager = {
                 this.botTell(botSession, playerSession, `I don't have useful support buffs.`);
                 return false;
             }
-            if (bot.fetchMp() < DIRECT_BUFF_MP_COST) {
+            const buffType = Object.keys(BotBuffs.SUPPORT_BUFFS).find((type) => (
+                BotBuffs.needsBuff(player, type) && BotSkillCapabilities.buffSkill(bot, type)
+            ));
+            const skill = buffType ? BotSkillCapabilities.buffSkill(bot, buffType) : null;
+            if (!skill) {
+                this.botTell(botSession, playerSession, `I haven't learned a useful missing buff for you.`);
+                return false;
+            }
+            if (bot.fetchMp() < skill.fetchConsumedMp()) {
                 this.botTell(botSession, playerSession, `I need more MP before buffing.`);
                 return false;
             }
 
-            const buffType = BotBuffs.nextSupportBuff(player) || 'might';
-            const result = BotBuffs.applySupportBuff(playerSession, player, buffType, invoke(path.actor), {
-                casterSession: botSession,
-                caster: bot
+            invoke(path.actor).skillExec(botSession, bot, {
+                id: player.fetchId(),
+                selfId: skill.fetchSelfId(),
+                ctrl: false
             });
-            if (!result) {
-                this.botTell(botSession, playerSession, `That buff did not land.`);
-                return false;
-            }
-
-            bot.setMp(Math.max(0, bot.fetchMp() - DIRECT_BUFF_MP_COST));
-            bot.statusUpdateVitals(bot);
-            this.botTell(botSession, playerSession, `${result.name} is up.`);
+            this.botTell(botSession, playerSession, `Casting ${skill.fetchName()} on you.`);
             return true;
         }
 
