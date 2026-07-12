@@ -41,6 +41,7 @@ const tests = [
     'tests/test_npc_shop_stock.js',
     'tests/test_npc_social_aggro.js',
     'tests/test_party_companion_rest_follow.js',
+    'tests/test_party_buff_targets.js',
     'tests/test_party_bot_loot.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',

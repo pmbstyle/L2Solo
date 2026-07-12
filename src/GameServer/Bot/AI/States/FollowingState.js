@@ -396,6 +396,7 @@ module.exports = {
                 keepRoleDecision = true;
             } else {
                 acted = true;
+                BotSupportPlanner.reserve(supportBuffTarget);
                 castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill.fetchSelfId(), false);
                 recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.effect, {
                     buff: supportBuffTarget.effect,

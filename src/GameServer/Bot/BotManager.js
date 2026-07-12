@@ -624,6 +624,7 @@ const BotManager = {
                 return false;
             }
 
+            BotSupportPlanner.reserve(supportAction);
             invoke(path.actor).skillExec(botSession, bot, {
                 id: player.fetchId(),
                 selfId: skill.fetchSelfId(),

@@ -179,7 +179,7 @@ class Attack {
                 return;
             }
 
-            const targets = this.resolveSkillTargets(actor, creature, skill);
+            const targets = this.resolveSkillTargets(session, actor, creature, skill);
 
             if (targets.length === 0) {
                 actor.state.setCasts(false);
@@ -243,10 +243,20 @@ class Attack {
         actor.blessedSpiritshotLoaded = state.blessedSpiritshotLoaded;
     }
 
-    resolveSkillTargets(actor, primary, skill) {
+    resolveSkillTargets(session, actor, primary, skill) {
         const semantic = skill.fetchSemantic?.() || {};
         const sourceTarget = semantic.sourceTarget;
         const radius = Math.max(0, Number(semantic.radius) || 0);
+
+        if (skill.fetchTargetKind?.() === 'party') {
+            const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+            const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+                ? session.followPlayerSession
+                : session;
+            const party = PartyAwareness.partyActors(leaderSession)
+                .filter((target) => this.isValidSkillTarget(target, skill));
+            return party.length > 0 ? party : [primary];
+        }
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
             const World = invoke('GameServer/World/World');

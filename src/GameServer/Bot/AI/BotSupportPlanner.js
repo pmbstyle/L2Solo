@@ -97,7 +97,6 @@ function allActions(members, providers, respectReservations = true) {
 function nextAction(caster, members, providers = members.map((member) => member.actor).filter(Boolean)) {
     const next = allActions(members, providers).sort(actionCompare)[0] || null;
     if (next?.provider !== caster) return null;
-    reserve(next);
     return next;
 }
 

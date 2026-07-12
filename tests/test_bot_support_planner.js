@@ -61,6 +61,7 @@ assert.strictEqual(
 );
 action = BotSupportPlanner.nextAction(highManaMage, [{ actor: unbuffedTarget, leader: true }], [lowManaMage, highManaMage]);
 assert.strictEqual(action.skill.fetchSelfId(), 2040, 'the higher-MP owner should cast the shared buff');
+BotSupportPlanner.reserve(action);
 assert.strictEqual(
     BotSupportPlanner.nextAction(highManaMage, [{ actor: unbuffedTarget, leader: true }], [lowManaMage, highManaMage]),
     null,
