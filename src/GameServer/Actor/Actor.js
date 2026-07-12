@@ -15,6 +15,7 @@ class Actor extends ActorModel {
         this.backpack   = new Backpack(data);
         this.attack     = new Attack();
         this.automation = new Automation();
+        this.skillReuseUntil = new Map();
 
         this.session    = session;
         this.previousXY = undefined;
@@ -84,6 +85,15 @@ class Actor extends ActorModel {
         invoke(path.actor).skillRequest(
             this.session, this, data
         );
+    }
+
+    canUseSkill(skill, now = Date.now()) {
+        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+    }
+
+    markSkillReuse(skill, now = Date.now()) {
+        const reuse = Math.max(0, Number(skill.fetchReuseTime()) || 0);
+        this.skillReuseUntil.set(skill.fetchSelfId(), now + reuse);
     }
 
     revive() {

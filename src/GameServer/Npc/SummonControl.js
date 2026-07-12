@@ -406,6 +406,11 @@ function useSkillAction(session, actor, summon, actionId) {
         return true;
     }
 
+    if (summon.canUseSkill?.(skill) === false) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return true;
+    }
+
     resolveSkillTarget(actor, summon, config).then((target) => {
         if (!target) {
             session.dataSendToMe(ServerResponse.actionFailed());

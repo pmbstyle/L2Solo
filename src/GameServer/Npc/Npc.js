@@ -176,18 +176,21 @@ class Npc extends NpcModel {
     }
 
     selectCombatSkill(actor) {
-        const now = Date.now();
         return this.fetchCombatSkills().find((skill) => {
             if (skill.fetchTargetKind() !== 'enemy') return false;
             if (this.fetchMp() < skill.fetchConsumedMp()) return false;
-            return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+            return this.canUseSkill(skill);
         }) || null;
     }
 
-    markSkillReuse(skill) {
+    canUseSkill(skill, now = Date.now()) {
+        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+    }
+
+    markSkillReuse(skill, now = Date.now()) {
         this.skillReuseUntil.set(
             skill.fetchSelfId(),
-            Date.now() + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
+            now + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
         );
     }
 
@@ -203,7 +206,6 @@ class Npc extends NpcModel {
     }
 
     castSkill(session, actor, skill) {
-        this.markSkillReuse(skill);
         AttackHelper.remoteHit({
             actor: this,
             dataSendToMe() {},

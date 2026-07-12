@@ -210,6 +210,23 @@ async function withFastTimers(callback) {
     assert.strictEqual(actionPet.controlMode, 'idle', 'legacy pet cancel action 17 should be handled');
     session.actor.summon = { state: { fetchDead: () => true } };
     assert.strictEqual(SummonControl.activeSummon(session.actor), actionPet, 'live pet should remain controllable when a stale dead summon reference exists');
+
+    const originalNpcSkillsForNpc = NpcSkills.forNpc;
+    let clearedCooldownSummonTimers = 0;
+    NpcSkills.forNpc = () => [{ fetchSelfId: () => 4230 }];
+    try {
+        session.packets.length = 0;
+        SummonControl.useSkillAction(session, session.actor, {
+            canUseSkill: () => false,
+            attack: { clearTimers() { clearedCooldownSummonTimers += 1; } },
+            automation: { abortAll() { throw new Error('a skill on reuse must not abort summon automation'); } }
+        }, 0x20);
+        assert.strictEqual(clearedCooldownSummonTimers, 0, 'a summon skill on reuse must preserve the active cast timers');
+        assert(session.packets.some((packet) => packet[0] === 0x25), 'a summon skill on reuse should return ActionFailed');
+    } finally {
+        NpcSkills.forNpc = originalNpcSkillsForNpc;
+    }
+
     actionPet.destructor(session);
     session.actor.pet = null;
 

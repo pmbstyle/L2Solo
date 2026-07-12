@@ -154,6 +154,11 @@ class Attack {
             return;
         }
 
+        if (actor.canUseSkill?.(skill) === false) {
+            session.dataSendToMe?.(ServerResponse.actionFailed());
+            return;
+        }
+
         if (actor.fetchMp() < skill.fetchConsumedMp()) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
             return;
@@ -170,6 +175,7 @@ class Attack {
 
         const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
         skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), attackRate));
+        actor.markSkillReuse?.(skill);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
@@ -224,9 +230,6 @@ class Attack {
 
         }, skill.fetchCalculatedHitTime());
 
-        this.queueTimer(() => {
-            // TODO: Prohibit same skill use before reuse time
-        }, skill.fetchReuseTime());
     }
 
     captureShotState(actor) {

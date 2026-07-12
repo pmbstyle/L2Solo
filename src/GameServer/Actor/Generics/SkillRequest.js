@@ -28,6 +28,11 @@ function skillRequest(session, actor, data) {
         return;
     }
 
+    if (!actor.canUseSkill(skill)) {
+        EffectRestrictions.reject(session);
+        return;
+    }
+
     if (actor.isBlocked()) {
         Generics.queueRequest(session, actor, 'skill', data);
         return;
