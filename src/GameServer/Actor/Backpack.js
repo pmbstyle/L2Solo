@@ -528,6 +528,11 @@ class Backpack extends BackpackModel {
             return false;
         }
 
+        if (session.actor.canUseSkill?.(skill) === false) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return true;
+        }
+
         if (['corpse_player', 'corpse_pet'].includes(skill.fetchTargetKind())) {
             return this.useResurrectionItem(session, id, itemSkill, skill);
         }
@@ -569,6 +574,7 @@ class Backpack extends BackpackModel {
         }
 
         const castTime = skill.fetchHitTime() || 0;
+        session.actor.markSkillReuse?.(skill);
         session.actor.state.setCasts(true);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
         if (castTime > 0) {
@@ -616,6 +622,7 @@ class Backpack extends BackpackModel {
         }
 
         const feed = Number(skill.fetchSemantic().feed) || 0;
+        session.actor.markSkillReuse?.(skill);
         this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
             this.applyPetFood(eater, feed);
             session.dataSendToMeAndOthers(ServerResponse.skillStarted(eater, eater.fetchId(), skill), eater);
@@ -689,6 +696,7 @@ class Backpack extends BackpackModel {
             return true;
         }
 
+        session.actor.markSkillReuse?.(skill);
         this.deleteItem(session, id, 1, () => {
             if (weapon.model) {
                 weapon.model.chargedFishShot = true;
@@ -712,6 +720,7 @@ class Backpack extends BackpackModel {
             return true;
         }
 
+        session.actor.markSkillReuse?.(skill);
         DataCache.fetchNpcFromSelfId(itemSkill.npcId, (npcData) => {
             const npc = new Npc(World.npc.nextId++, {
                 ...utils.crushOb(npcData),
@@ -753,6 +762,7 @@ class Backpack extends BackpackModel {
         }
 
         const castTime = skill.fetchHitTime() || 0;
+        session.actor.markSkillReuse?.(skill);
         session.actor.state.setCasts(true);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
         if (castTime > 0) {
@@ -1009,6 +1019,7 @@ class Backpack extends BackpackModel {
 
     castTargetedItemSkill(session, target, skill, apply) {
         const castTime = skill.fetchHitTime() || 0;
+        session.actor.markSkillReuse?.(skill);
         session.actor.state.setCasts(true);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
         if (castTime > 0) {
@@ -1187,6 +1198,7 @@ class Backpack extends BackpackModel {
         }
 
         const castTime = skill.fetchHitTime() || 0;
+        session.actor.markSkillReuse?.(skill);
         session.actor.state.setCasts(true);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
         if (castTime > 0) {
@@ -1234,6 +1246,7 @@ class Backpack extends BackpackModel {
 
         const startCast = () => {
             const castTime = skill.fetchHitTime() || 0;
+            session.actor.markSkillReuse?.(skill);
             session.actor.state.setCasts(true);
             session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
             if (castTime > 0) {
