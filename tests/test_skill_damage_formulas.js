@@ -21,7 +21,9 @@ function actor() {
         fetchCollectiveAtkSpd: () => 333,
         fetchCollectiveCastSpd: () => 666,
         backpack: {
-            fetchTotalWeaponPAtkRnd: () => 0
+            fetchTotalWeaponPAtkRnd: () => 0,
+            isAutoShotEnabled: () => false,
+            fetchAutoSpiritshotKind: () => null
         }
     };
 }
@@ -153,6 +155,12 @@ attack.chargeShotForSkill({
     actor: physicalChargeActor,
     dataSendToMeAndOthers() {}
 }, physicalChargeActor, false);
+assert.strictEqual(soulshotConsumed, false, 'physical skill should not charge soulshot before the hotbar toggle is enabled');
+physicalChargeActor.backpack.isAutoShotEnabled = () => true;
+attack.chargeShotForSkill({
+    actor: physicalChargeActor,
+    dataSendToMeAndOthers() {}
+}, physicalChargeActor, false);
 assert.strictEqual(soulshotConsumed, true, 'physical skill should try to charge soulshot');
 assert.strictEqual(spiritshotConsumed, false, 'physical skill should not try to charge spiritshot');
 assert.strictEqual(physicalChargeActor.soulshotLoaded, true, 'physical skill should load soulshot on successful consume');
@@ -169,6 +177,7 @@ magicChargeActor.backpack.consumeSpiritshot = (session, callback) => {
     spiritshotConsumed = true;
     callback(true, { skillId: 2157 });
 };
+magicChargeActor.backpack.fetchAutoSpiritshotKind = () => 'spiritshot';
 attack.chargeShotForSkill({
     actor: magicChargeActor,
     dataSendToMeAndOthers(packet) { chargePackets.push(packet); }
