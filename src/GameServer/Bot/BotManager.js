@@ -586,10 +586,37 @@ const BotManager = {
         }
 
         if (request.buff) {
-            const supportAction = BotSupportPlanner.nextAction(bot, [{ actor: player, leader: true }], [bot]);
+            const providers = this.sessions
+                .filter((session) => session?.actor && (
+                    session === botSession ||
+                    (session.partyCompanion === true && session.followPlayerSession === playerSession)
+                ))
+                .map((session) => session.actor);
+            if (!providers.includes(bot)) providers.push(bot);
+
+            const supportAction = BotSupportPlanner.nextAction(bot, [{ actor: player, leader: true }], providers);
             const skill = supportAction?.skill;
             if (!skill) {
-                this.botTell(botSession, playerSession, `I don't have a stronger support buff to add right now.`);
+                const otherProviderCanCast = providers.some((provider) => {
+                    if (provider === bot) return false;
+                    return BotSupportPlanner.supportSkills(provider).some((candidate) => (
+                        Number(provider.fetchMp?.() || 0) >= Number(candidate.fetchConsumedMp?.() || 0)
+                    ));
+                });
+                if (otherProviderCanCast) return false;
+
+                const known = BotSupportPlanner.supportSkills(bot);
+                const names = known.map((candidate) => candidate.fetchName()).join(', ');
+                const requiredMp = known.length > 0
+                    ? Math.min(...known.map((candidate) => Number(candidate.fetchConsumedMp?.() || 0)))
+                    : 0;
+                if (known.length > 0 && bot.fetchMp() < requiredMp) {
+                    this.botTell(botSession, playerSession, `I know ${names}, but I need at least ${requiredMp} MP before buffing.`);
+                } else if (known.length > 0) {
+                    this.botTell(botSession, playerSession, `You already have the party buffs I can improve: ${names}.`);
+                } else {
+                    this.botTell(botSession, playerSession, `I haven't learned any friendly support buffs.`);
+                }
                 return false;
             }
             if (bot.fetchMp() < skill.fetchConsumedMp()) {
