@@ -164,7 +164,8 @@ function systemPrompt() {
         'React only when a real visible player writes to this bot or nearby bots.',
         'For player_chat, react only if the message is addressed to this bot, nearby bots, or clearly asks for help.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
-        'For buff_target and heal_target, choose a visible player and let the server validate class, MP, range, and safety.',
+        'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
+        'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
         'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');

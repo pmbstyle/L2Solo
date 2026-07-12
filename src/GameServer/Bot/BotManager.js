@@ -17,6 +17,8 @@ const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
+const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
@@ -584,16 +586,37 @@ const BotManager = {
         }
 
         if (request.buff) {
-            if (!BotRoles.canBuff(bot)) {
-                this.botTell(botSession, playerSession, `I don't have useful support buffs.`);
-                return false;
-            }
-            const buffType = Object.keys(BotBuffs.SUPPORT_BUFFS).find((type) => (
-                BotBuffs.needsBuff(player, type) && BotSkillCapabilities.buffSkill(bot, type)
-            ));
-            const skill = buffType ? BotSkillCapabilities.buffSkill(bot, buffType) : null;
+            const providers = this.sessions
+                .filter((session) => session?.actor && (
+                    session === botSession ||
+                    (session.partyCompanion === true && session.followPlayerSession === playerSession)
+                ))
+                .map((session) => session.actor);
+            if (!providers.includes(bot)) providers.push(bot);
+
+            const supportAction = BotSupportPlanner.nextAction(bot, [{ actor: player, leader: true }], providers);
+            const skill = supportAction?.skill;
             if (!skill) {
-                this.botTell(botSession, playerSession, `I haven't learned a useful missing buff for you.`);
+                const otherProviderCanCast = providers.some((provider) => {
+                    if (provider === bot) return false;
+                    return BotSupportPlanner.supportSkills(provider).some((candidate) => (
+                        Number(provider.fetchMp?.() || 0) >= Number(candidate.fetchConsumedMp?.() || 0)
+                    ));
+                });
+                if (otherProviderCanCast) return false;
+
+                const known = BotSupportPlanner.supportSkills(bot);
+                const names = known.map((candidate) => candidate.fetchName()).join(', ');
+                const requiredMp = known.length > 0
+                    ? Math.min(...known.map((candidate) => Number(candidate.fetchConsumedMp?.() || 0)))
+                    : 0;
+                if (known.length > 0 && bot.fetchMp() < requiredMp) {
+                    this.botTell(botSession, playerSession, `I know ${names}, but I need at least ${requiredMp} MP before buffing.`);
+                } else if (known.length > 0) {
+                    this.botTell(botSession, playerSession, `You already have the party buffs I can improve: ${names}.`);
+                } else {
+                    this.botTell(botSession, playerSession, `I haven't learned any friendly support buffs.`);
+                }
                 return false;
             }
             if (bot.fetchMp() < skill.fetchConsumedMp()) {
@@ -601,6 +624,7 @@ const BotManager = {
                 return false;
             }
 
+            BotSupportPlanner.reserve(supportAction);
             invoke(path.actor).skillExec(botSession, bot, {
                 id: player.fetchId(),
                 selfId: skill.fetchSelfId(),
@@ -649,7 +673,7 @@ const BotManager = {
     },
 
     checkAndStartConversation(botSession) {
-        if (botSession.inConversation) return;
+        if (botSession.inConversation || botSession.partyCompanion) return;
         const bot = botSession.actor;
         if (!bot) return;
 
@@ -658,7 +682,7 @@ const BotManager = {
 
         // Find a nearby bot session
         const targetSession = this.sessions.find((session) => {
-            if (session === botSession || session.inConversation) return false;
+            if (session === botSession || session.inConversation || session.partyCompanion) return false;
             const target = session.actor;
             if (!target) return false;
 
@@ -666,35 +690,29 @@ const BotManager = {
             if (session.plan !== 'resting') return false;
 
             const dist = new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()).distance(botPt);
-            return dist < 800; // nearby range
+            return dist < BotConversation.CONVERSATION_RANGE;
         });
 
-        if (targetSession) {
+        if (targetSession && BotConversation.canStart(botSession, targetSession)) {
             this.triggerConversation(botSession, targetSession);
         }
     },
 
     triggerConversation(botSession, targetSession) {
-        botSession.inConversation = true;
-        targetSession.inConversation = true;
+        const conversation = BotConversation.start(botSession, targetSession);
+        if (!conversation) return false;
 
-        const topic = CONVERSATION_TOPICS[Math.floor(Math.random() * CONVERSATION_TOPICS.length)];
-        const reply = topic.replies[Math.floor(Math.random() * topic.replies.length)];
+        const deliver = (index) => {
+            const line = conversation.lines[index];
+            if (!line?.speaker?.actor) return;
+            this.botSay(line.speaker, line.text);
+        };
 
-        // Stage 1: First bot speaks
-        this.botSay(botSession, topic.prompt);
-
-        // Stage 2: Second bot reactively replies after 2.5s
-        setTimeout(() => {
-            if (targetSession.actor) {
-                this.botSay(targetSession, reply);
-            }
-            // Clear conversation state after another 2 seconds
-            setTimeout(() => {
-                botSession.inConversation = false;
-                targetSession.inConversation = false;
-            }, 2000);
-        }, 2500);
+        deliver(0);
+        setTimeout(() => deliver(1), 2200);
+        setTimeout(() => deliver(2), 4300);
+        setTimeout(() => BotConversation.finish(conversation), 6500);
+        return true;
     },
 
     handleBotGlobalShout(botSession) {
@@ -762,49 +780,6 @@ const BotManager = {
         }, 30000);
     }
 };
-
-const CONVERSATION_TOPICS = [
-    {
-        prompt: "Man, these Keltirs near the village are getting annoying.",
-        replies: [
-            "Tell me about it! I've killed like a hundred today.",
-            "At least they drop some adena. Slow and steady!",
-            "I'm moving to the ruins soon. Better exp there."
-        ]
-    },
-    {
-        prompt: "Anyone want to form a party later for Goblins?",
-        replies: [
-            "Sure! I'm a Knight, can tank them easily.",
-            "I'm in if we find someone who can heal.",
-            "Count me in, I need to level my Scavenger skills."
-        ]
-    },
-    {
-        prompt: "Did you see that player running around? Crazy gear!",
-        replies: [
-            "Yeah, must have spent hours farming those Goblins.",
-            "I heard they got a weapon drop from an Orc!",
-            "Nice, one day we will get C-grade gear too!"
-        ]
-    },
-    {
-        prompt: "I'm so tired. Talking Island Town is cozy though.",
-        replies: [
-            "True. Sitting by the square feels great after a long hunt.",
-            "Agreed. Let's rest up and get back out there.",
-            "Yeah, recovery is fast when you just sit back."
-        ]
-    },
-    {
-        prompt: "Have you seen the market near town today?",
-        replies: [
-            "Adena is tight, but the material prices are fair.",
-            "I should sell this junk before I go back out.",
-            "If I find enough leather, I might upgrade my gloves."
-        ]
-    }
-];
 
 const GLOBAL_SHOUTS = [
     "WTB starter mats near Talking Island. Check Nika or Tarin.",

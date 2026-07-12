@@ -6,6 +6,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Generics = invoke(path.actor);
 const SkillModel = invoke('GameServer/Model/Skill');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function fakeActor(id, name, options = {}) {
     const actor = {
@@ -59,6 +60,7 @@ const originalSessions = BotManager.sessions;
 const originalSetTimeout = global.setTimeout;
 const originalRecordEvent = BotSocialMemory.recordEvent;
 const originalSkillExec = Generics.skillExec;
+const originalBotTell = BotManager.botTell;
 
 try {
     global.setTimeout = (fn) => {
@@ -122,6 +124,67 @@ try {
     BotManager.handlePlayerSpeak(playerSession, { text: 'heal me' });
     assert.strictEqual(supportCast, null, 'direct support should reject a heal the bot has not learned');
 
+    const buffer = fakeActor(2000008, 'MageWithBuff', { classId: 25, mp: 30, locX: 100 });
+    buffer.skillset.skills.push(new SkillModel({
+        selfId: 1068,
+        name: 'Might',
+        level: 2,
+        passive: false,
+        spell: true,
+        hp: 0,
+        mp: 10,
+        hitTime: 1000,
+        reuse: 1000,
+        power: 0,
+        distance: 600
+    }));
+    const bufferSession = fakeSession('bot_buffer', buffer);
+    const supportReplies = [];
+    BotManager.botTell = (_botSession, _playerSession, text) => supportReplies.push(text);
+    supportCast = null;
+    BotManager.handleDirectSupportRequest(bufferSession, playerSession, 100, { buff: true });
+    assert.deepStrictEqual(supportCast, {
+        id: player.fetchId(),
+        selfId: 1068,
+        ctrl: false
+    }, 'any bot with a learned friendly buff should cast it, regardless of role');
+    supportReplies.length = 0;
+
+    EffectStore.apply(player, {
+        key: 'might', id: 1068, level: 2, type: 'buff', stats: { pAtkMul: 1.12 }, durationMs: 20 * 60 * 1000
+    });
+    supportCast = null;
+    BotManager.handleDirectSupportRequest(bufferSession, playerSession, 100, { buff: true });
+    assert.strictEqual(supportCast, null, 'do not overwrite an active equal-level support buff');
+    assert.deepStrictEqual(supportReplies, [
+        'You already have the party buffs I can improve: Might.'
+    ], 'the bot should name the already-active buff instead of claiming it has nothing to offer');
+
+    EffectStore.remove(player, 'might');
+    player.supportReservations = {};
+    const lowerMpBuffer = fakeActor(2000009, 'LowerMpBuffer', { classId: 25, mp: 20, locX: 100 });
+    const higherMpBuffer = fakeActor(2000010, 'HigherMpBuffer', { classId: 25, mp: 50, locX: 100 });
+    [lowerMpBuffer, higherMpBuffer].forEach((caster) => caster.skillset.skills.push(new SkillModel({
+        selfId: 1068, name: 'Might', level: 1, passive: false, spell: true, hp: 0, mp: 10, hitTime: 1000, reuse: 1000, power: 0, distance: 600
+    })));
+    const lowerMpSession = fakeSession('bot_lower_mp', lowerMpBuffer);
+    const higherMpSession = fakeSession('bot_higher_mp', higherMpBuffer);
+    lowerMpSession.partyCompanion = true;
+    lowerMpSession.followPlayerSession = playerSession;
+    higherMpSession.partyCompanion = true;
+    higherMpSession.followPlayerSession = playerSession;
+    BotManager.sessions = [lowerMpSession, higherMpSession];
+    supportReplies.length = 0;
+    supportCast = null;
+    BotManager.handleDirectSupportRequest(lowerMpSession, playerSession, 100, { buff: true });
+    assert.strictEqual(supportCast, null, 'a lower-MP bot should wait when a party peer owns the same buff');
+    BotManager.handleDirectSupportRequest(higherMpSession, playerSession, 100, { buff: true });
+    assert.deepStrictEqual(supportCast, {
+        id: player.fetchId(), selfId: 1068, ctrl: false
+    }, 'the highest-MP party bot should cast the shared requested buff');
+    assert.deepStrictEqual(supportReplies, ['Casting Might on you.'], 'only the selected party caster should answer the direct buff request');
+    BotManager.botTell = originalBotTell;
+
     const socialEvents = [];
     BotSocialMemory.recordEvent = (fromSession, botSession, eventName, detail) => {
         socialEvents.push({
@@ -155,4 +218,5 @@ try {
     global.setTimeout = originalSetTimeout;
     BotSocialMemory.recordEvent = originalRecordEvent;
     Generics.skillExec = originalSkillExec;
+    BotManager.botTell = originalBotTell;
 }

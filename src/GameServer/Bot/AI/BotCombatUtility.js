@@ -40,7 +40,9 @@ function evaluate(bot, target, skill, role) {
     const mp = Number(bot.fetchMp?.() || 0);
     const maxMp = Math.max(1, Number(bot.fetchMaxMp?.() || mp || 1));
     const cost = Math.max(0, Number(skill.fetchConsumedMp?.() || 0));
-    if (cost > mp || (mp - cost) / maxMp < reserveRatio(role)) return null;
+    // A mage's staff is the primary weapon. Keeping a generic MP reserve made
+    // a mage walk into melee even though it could still afford a nuke.
+    if (cost > mp || (role !== 'mage' && (mp - cost) / maxMp < reserveRatio(role))) return null;
 
     const type = skill.fetchSkillType();
     const power = Math.max(0, Number(skill.fetchPower?.() || 0));
@@ -77,7 +79,12 @@ function evaluate(bot, target, skill, role) {
 }
 
 function select(bot, target, role) {
-    return (bot?.skillset?.skills || [])
+    const skills = bot?.skillset?.skills || [];
+    const candidates = role === 'mage'
+        ? skills.filter((skill) => skill.fetchSpell?.() === true)
+        : skills;
+
+    return candidates
         .map((skill) => evaluate(bot, target, skill, role))
         .filter(Boolean)
         .sort((a, b) => b.score - a.score)[0] || null;
