@@ -17,6 +17,7 @@ const ConsoleText = {
         earnedExpAndSp    :  95,
         levelUp           :  96,
         incorrectDest     : 144,
+        magicResisted     : 159,
         waitForResponse   : 164,
         insufficientSp    : 278,
         insufficientAdena : 279,
@@ -27,6 +28,7 @@ const ConsoleText = {
     },
 
     kind: {
+        text   : 0,
         number : 1,
         npc    : 2,
         item   : 3,

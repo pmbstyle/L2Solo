@@ -88,6 +88,34 @@ function npc(id, x, y, dead = false) {
     };
 }
 
+function player(id, x, y, level = 70) {
+    return {
+        hp: 1000,
+        fetchId: () => id,
+        fetchName: () => `Player${id}`,
+        fetchLevel: () => level,
+        fetchLocX: () => x,
+        fetchLocY: () => y,
+        fetchLocZ: () => 0,
+        fetchHead: () => 0,
+        fetchCollectiveMDef: () => 50,
+        fetchCollectivePDef: () => 100,
+        fetchDex: () => 30,
+        fetchHp() { return this.hp; },
+        setHp(value) { this.hp = value; },
+        statusUpdateVitals() {},
+        automation: {
+            replenishVitals() {}
+        },
+        state: {
+            fetchDead: () => false,
+            fetchSeated: () => false,
+            fetchCombats: () => false,
+            setCombats() {}
+        }
+    };
+}
+
 function session(caster) {
     return {
         actor: caster,
@@ -174,5 +202,53 @@ assert.deepStrictEqual(
     [caster.fetchId(), primary.fetchId(), nearby.fetchId()],
     'area damage should send vitals updates for every affected visible NPC, not only the selected primary target'
 );
+
+const npcCaster = actor();
+npcCaster.fetchId = () => 1004999;
+npcCaster.fetchName = () => 'Area Monster';
+npcCaster.fetchKind = () => 'Monster';
+const playerPrimary = player(2004999, 100, 0);
+const playerNearby = player(2005000, 240, 0);
+const playerOutside = player(2005001, 500, 0);
+const npcSession = session(npcCaster);
+const playerPrimarySession = session(playerPrimary);
+const playerNearbySession = session(playerNearby);
+const playerOutsideSession = session(playerOutside);
+playerPrimary.session = playerPrimarySession;
+playerNearby.session = playerNearbySession;
+playerOutside.session = playerOutsideSession;
+
+World.user = { sessions: [playerPrimarySession, playerNearbySession, playerOutsideSession] };
+Math.random = () => 0;
+try {
+    attack.remoteHit(npcSession, playerPrimary, flameStrike());
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+}
+
+assert.strictEqual(playerPrimary.fetchHp(), 967, 'NPC TARGET_AREA skill should damage its selected player target');
+assert.strictEqual(playerNearby.fetchHp(), 967, 'NPC TARGET_AREA skill should damage nearby players');
+assert.strictEqual(playerOutside.fetchHp(), 1000, 'NPC TARGET_AREA skill should not damage players outside sourced radius');
+const npcLaunched = npcSession.packets.find((packet) => packet?.[0] === 0x76);
+assert(npcLaunched, 'NPC area spell should broadcast MagicSkillLaunched');
+assert.strictEqual(npcLaunched.readInt32LE(13), 2, 'NPC area spell should include each affected player in MagicSkillLaunched');
+
+const resistedPlayer = player(2005002, 100, 0, 100);
+const resistedPlayerSession = session(resistedPlayer);
+resistedPlayer.session = resistedPlayerSession;
+World.user = { sessions: [resistedPlayerSession] };
+Math.random = () => 0.99;
+try {
+    attack.remoteHit(npcSession, resistedPlayer, flameStrike());
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+}
+
+assert.strictEqual(resistedPlayer.fetchHp(), 1000, 'resisted NPC magic should not deal damage');
+const resistedMessage = resistedPlayerSession.packets.find((packet) => packet?.[0] === 0x64 && packet.readInt32LE(1) === 159);
+assert(resistedMessage, 'a player should receive the C4 magic-resisted system message for an NPC spell');
+assert.strictEqual(resistedMessage.readInt32LE(9), 0, 'magic-resisted system message should carry the monster name as text');
 
 console.log('Skill area runtime checks passed');

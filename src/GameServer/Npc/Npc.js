@@ -8,6 +8,7 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const Attack         = invoke('GameServer/Actor/Attack');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
+const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const AttackHelper   = new Attack();
 
 class Npc extends NpcModel {
@@ -149,6 +150,20 @@ class Npc extends NpcModel {
         );
     }
 
+    fetchCollectiveAccur() {
+        // NPC templates carry the base accuracy bonus.  As in the C4 stat
+        // calculator, add DEX and level before using it in the hit formula.
+        return Formulas.calcAccur(this.fetchLevel(), this.fetchDex(), this.fetchAccur())
+            + EffectStats.add(this, 'pAccuracyCombatAdd');
+    }
+
+    fetchCollectiveEvasion() {
+        // NPC templates have no authored evasion value, but they still use
+        // the standard DEX/level evasion calculation and active effects.
+        return Formulas.calcEvasion(this.fetchLevel(), this.fetchDex(), this.fetchEvasion())
+            + EffectStats.add(this, 'pEvasionRateAdd');
+    }
+
     fetchCombatStopCoords(actor, attackRange = this.fetchCombatAttackRange(actor)) {
         return this.automation.actionStopCoords(this, actor, attackRange);
     }
@@ -208,7 +223,7 @@ class Npc extends NpcModel {
     castSkill(session, actor, skill) {
         AttackHelper.remoteHit({
             actor: this,
-            dataSendToMe() {},
+            dataSendToMe: (packet) => session.dataSendToMe?.(packet),
             dataSendToMeAndOthers: (packet) => session.dataSendToMeAndOthers(packet, this)
         }, actor, skill);
     }
@@ -248,6 +263,9 @@ class Npc extends NpcModel {
 
             if (hitLanded) {
                 this.hit(session, dst, hit.damage);
+            }
+            else {
+                ConsoleText.transmit(session, ConsoleText.caption.missedHit);
             }
 
         }, speed * 0.644);

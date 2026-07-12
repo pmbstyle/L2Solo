@@ -70,6 +70,22 @@ const castDamage = attack.prepareSkillDamage(magicActor, target(), skill({ spell
 assert.strictEqual(castDamage, 257, 'magic skill damage should follow C4 magic formula with spiritshot');
 assert.strictEqual(magicActor.spiritshotLoaded, false, 'magic skill should clear used spiritshot charge');
 
+const shieldedMagicTarget = target();
+shieldedMagicTarget.fetchHead = () => 0;
+shieldedMagicTarget.backpack = {
+    fetchTotalShieldRate: () => 100,
+    fetchTotalShieldPDef: () => 100
+};
+const shieldedMagicActor = actor();
+shieldedMagicActor.fetchLocX = () => 1;
+shieldedMagicActor.fetchLocY = () => 0;
+const shieldedMagicDamage = attack.prepareSkillDamage(shieldedMagicActor, shieldedMagicTarget, skill({ spell: true, power: 10 }), true, () => 0.99);
+assert.strictEqual(
+    shieldedMagicDamage,
+    magicNoShot,
+    'magic skill damage should ignore shield P.Def and shield block rolls'
+);
+
 const blessedMagicActor = actor();
 blessedMagicActor.spiritshotLoaded = true;
 blessedMagicActor.blessedSpiritshotLoaded = true;
