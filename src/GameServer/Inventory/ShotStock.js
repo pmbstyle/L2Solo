@@ -23,9 +23,19 @@ const SPIRITSHOT_BY_RANK = {
     s: 2514
 };
 
+const BLESSED_SPIRITSHOT_BY_RANK = {
+    none: 3947,
+    d: 3948,
+    c: 3949,
+    b: 3950,
+    a: 3951,
+    s: 3952
+};
+
 const SOULSHOT_IDS = Object.values(SOULSHOT_BY_RANK);
 const SPIRITSHOT_IDS = Object.values(SPIRITSHOT_BY_RANK);
-const SHOT_IDS = [...SOULSHOT_IDS, ...SPIRITSHOT_IDS];
+const BLESSED_SPIRITSHOT_IDS = Object.values(BLESSED_SPIRITSHOT_BY_RANK);
+const SHOT_IDS = [...SOULSHOT_IDS, ...SPIRITSHOT_IDS, ...BLESSED_SPIRITSHOT_IDS];
 
 function normalizeRank(rank) {
     const value = String(rank || 'none').toLowerCase();
@@ -84,10 +94,14 @@ function planFor({ classId, rank = 'none' } = {}) {
 
 function planForKind(kind, rank = 'none') {
     const normalizedRank = normalizeRank(rank);
-    const normalizedKind = kind === 'spiritshot' ? 'spiritshot' : 'soulshot';
-    const selfId = normalizedKind === 'spiritshot'
-        ? SPIRITSHOT_BY_RANK[normalizedRank]
-        : SOULSHOT_BY_RANK[normalizedRank];
+    const normalizedKind = kind === 'blessedSpiritshot'
+        ? 'blessedSpiritshot'
+        : kind === 'spiritshot' ? 'spiritshot' : 'soulshot';
+    const selfId = normalizedKind === 'blessedSpiritshot'
+        ? BLESSED_SPIRITSHOT_BY_RANK[normalizedRank]
+        : normalizedKind === 'spiritshot'
+            ? SPIRITSHOT_BY_RANK[normalizedRank]
+            : SOULSHOT_BY_RANK[normalizedRank];
 
     return {
         kind: normalizedKind,
@@ -240,6 +254,7 @@ module.exports = {
     DEFAULT_TARGET_AMOUNT,
     SOULSHOT_IDS,
     SPIRITSHOT_IDS,
+    BLESSED_SPIRITSHOT_IDS,
     SHOT_IDS,
     planFor,
     planForKind,

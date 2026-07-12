@@ -1,5 +1,6 @@
 module.exports = {
-          actionFailed: require('./ActionFailed'),
+           actionFailed: require('./ActionFailed'),
+           autoSoulShot: require('./AutoSoulShot'),
            addShortcut: require('./AddShortcut'),
           askForTeamUp: require('./AskForTeamUp'),
           askJoinPledge: require('./AskJoinPledge'),

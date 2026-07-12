@@ -1,6 +1,7 @@
 module.exports = {
                action: require('./Action'),
             actionUse: require('./ActionUse'),
+        autoSoulShot: require('./AutoSoulShot'),
          addTradeItem: require('./AddTradeItem'),
           addShortcut: require('./AddShortcut'),
       answerForTeamUp: require('./AnswerForTeamUp'),
@@ -24,7 +25,8 @@ module.exports = {
              dropItem: require('./DropItem'),
     enterCharCreation: require('./EnterCharCreation'),
            enterWorld: require('./EnterWorld'),
-             htmlLink: require('./HtmlLink'),
+     extendedRequest: require('./ExtendedRequest'),
+            htmlLink: require('./HtmlLink'),
             itemsList: require('./ItemsList'),
                logout: require('./Logout'),
        moveToLocation: require('./MoveToLocation'),

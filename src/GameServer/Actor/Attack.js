@@ -85,8 +85,8 @@ class Attack {
             return;
         }
 
-        // Auto-consume Soulshot if available in backpack and not already loaded
-        if (!actor.soulshotLoaded && actor.backpack && typeof actor.backpack.consumeSoulshot === 'function') {
+        // Soulshots are only reloaded after the player enables their hotbar toggle.
+        if (!actor.soulshotLoaded && actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot') && typeof actor.backpack.consumeSoulshot === 'function') {
             actor.backpack.consumeSoulshot(session, (success) => {
                 if (success) {
                     actor.soulshotLoaded = true;
@@ -333,18 +333,20 @@ class Attack {
         }
 
         if (magicSkill) {
-            if (!actor.spiritshotLoaded && actor.backpack && typeof actor.backpack.consumeSpiritshot === 'function') {
+            const shotKind = actor.backpack?.fetchAutoSpiritshotKind?.(actor);
+            if (!actor.spiritshotLoaded && shotKind && typeof actor.backpack.consumeSpiritshot === 'function') {
                 actor.backpack.consumeSpiritshot(session, (success, shot = {}) => {
                     if (success) {
                         actor.spiritshotLoaded = true;
+                        actor.blessedSpiritshotLoaded = !!shot.blessedSpiritshot;
                         this.broadcastShotCharge(session, actor, shot.skillId || 2047);
                     }
-                });
+                }, shotKind);
             }
             return;
         }
 
-        if (!actor.soulshotLoaded && actor.backpack && typeof actor.backpack.consumeSoulshot === 'function') {
+        if (!actor.soulshotLoaded && actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot') && typeof actor.backpack.consumeSoulshot === 'function') {
             actor.backpack.consumeSoulshot(session, (success, shot = {}) => {
                 if (success) {
                     actor.soulshotLoaded = true;

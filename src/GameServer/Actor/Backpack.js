@@ -118,12 +118,12 @@ class Backpack extends BackpackModel {
         }
     }
 
-    consumeSpiritshot(session, callback = () => {}) {
+    consumeSpiritshot(session, callback = () => {}, kind = 'spiritshot') {
         if (session.actor.isDead()) {
             return callback(false);
         }
 
-        const plan = ShotStock.planForActorKind('spiritshot', session.actor);
+        const plan = ShotStock.planForActorKind(kind, session.actor);
 
         const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
         const cost = this.fetchShotCost('spiritshot');
@@ -141,8 +141,26 @@ class Backpack extends BackpackModel {
         return {
             selfId,
             skillId: itemSkill?.skillId || (ShotStock.SPIRITSHOT_IDS.includes(selfId) ? 2047 : 2039),
-            blessedSpiritshot: !!itemSkill?.blessedSpiritshot
+            blessedSpiritshot: ShotStock.BLESSED_SPIRITSHOT_IDS.includes(selfId)
         };
+    }
+
+    isAutoShotEnabled(actor, kind) {
+        const selfId = ShotStock.planForActorKind(kind, actor).selfId;
+        return !!actor.autoSoulshots?.has(selfId);
+    }
+
+    fetchAutoSpiritshotKind(actor) {
+        const enabled = actor.autoSoulshots;
+        if (!enabled) return null;
+
+        const spiritshot = ShotStock.planForActorKind('spiritshot', actor).selfId;
+        const blessedSpiritshot = ShotStock.planForActorKind('blessedSpiritshot', actor).selfId;
+        for (const selfId of enabled) {
+            if (selfId === spiritshot) return 'spiritshot';
+            if (selfId === blessedSpiritshot) return 'blessedSpiritshot';
+        }
+        return null;
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {

@@ -65,7 +65,7 @@ const Opcodes = {
         table[0xc1] = () => {}; // Macro
         table[0x4a] = () => {}; // StartRotating
         table[0x4b] = () => {}; // FinishRotating
-        table[0xd0] = () => {}; // Multi-purpose extended request root in later clients.
+        table[0xd0] = ClientRequest.extendedRequest;
 
         return table;
     })()
