@@ -1,7 +1,7 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
-const ORC_SUPPORT_CLASS_IDS = new Set([49, 50, 51]);
+const CAST_RESERVATION_MS = 5000;
 
 function supportSkills(actor) {
     const skills = actor?.skillset?.fetchSkills?.() || actor?.skillset?.skills || [];
@@ -11,10 +11,6 @@ function supportSkills(actor) {
             const semantic = skill.fetchSemantic?.();
             return semantic?.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target);
         });
-}
-
-function priority(actor) {
-    return ORC_SUPPORT_CLASS_IDS.has(Number(actor?.fetchClassId?.())) ? 0 : 1;
 }
 
 function statKeys(skill) {
@@ -52,45 +48,62 @@ function canCast(actor, skill) {
     return Number(actor?.fetchMp?.() || 0) >= Number(skill?.fetchConsumedMp?.() || 0);
 }
 
-function preferredSkill(actor, target, candidates = supportSkills(actor)) {
-    return candidates
-        .filter((skill) => needsSkill(target, skill))
-        .filter((skill) => canCast(actor, skill))
-        .sort((a, b) => {
-            const partyFirst = Number(b.fetchTargetKind?.() === 'party') - Number(a.fetchTargetKind?.() === 'party');
-            return partyFirst || Number(b.fetchLevel?.() || 1) - Number(a.fetchLevel?.() || 1);
-        })[0] || null;
+function actorOrder(actor) {
+    return Number(actor?.fetchId?.() || Number.MAX_SAFE_INTEGER);
 }
 
-function isCoveredByHigherPriority(caster, target, providers, skill) {
-    const keys = statKeys(skill);
-    return providers.some((provider) => {
-        if (provider === caster || priority(provider) >= priority(caster)) return false;
-        return supportSkills(provider).some((other) => (
-            canCast(provider, other) && statKeys(other).some((key) => keys.includes(key)) && needsSkill(target, other)
-        ));
-    });
+function supportKey(skill) {
+    return statKeys(skill).sort().join('|');
+}
+
+function isReserved(target, skill) {
+    const entry = target?.supportReservations?.[supportKey(skill)];
+    return Number(entry?.expiresAt || 0) > Date.now();
+}
+
+function reserve(action) {
+    if (!action?.target || !action?.skill) return;
+    if (!action.target.supportReservations) action.target.supportReservations = {};
+    action.target.supportReservations[supportKey(action.skill)] = {
+        casterId: actorOrder(action.provider),
+        expiresAt: Date.now() + CAST_RESERVATION_MS
+    };
+}
+
+function actionCompare(a, b) {
+    const partyFirst = Number(b.skill.fetchTargetKind?.() === 'party') - Number(a.skill.fetchTargetKind?.() === 'party');
+    if (partyFirst) return partyFirst;
+
+    const leaderFirst = Number(b.leader) - Number(a.leader);
+    if (leaderFirst) return leaderFirst;
+
+    const strongerFirst = Number(b.skill.fetchLevel?.() || 1) - Number(a.skill.fetchLevel?.() || 1);
+    if (strongerFirst) return strongerFirst;
+
+    const moreManaFirst = Number(b.provider.fetchMp?.() || 0) - Number(a.provider.fetchMp?.() || 0);
+    if (moreManaFirst) return moreManaFirst;
+
+    return actorOrder(a.provider) - actorOrder(b.provider);
+}
+
+function allActions(members, providers, respectReservations = true) {
+    return members
+        .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
+        .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)
+            .filter((skill) => canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
+            .map((skill) => ({ provider, target: member.actor, leader: member.leader === true, skill, effect: skill.fetchSemantic().effect }))));
 }
 
 function nextAction(caster, members, providers = members.map((member) => member.actor).filter(Boolean)) {
-    const targets = members
-        .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
-        .sort((a, b) => Number(a.leader !== true) - Number(b.leader !== true));
-
-    for (const member of targets) {
-        const skill = preferredSkill(caster, member.actor);
-        if (!skill) continue;
-        if (isCoveredByHigherPriority(caster, member.actor, providers, skill)) continue;
-        return { target: member.actor, skill, effect: skill.fetchSemantic().effect };
-    }
-    return null;
+    const next = allActions(members, providers).sort(actionCompare)[0] || null;
+    if (next?.provider !== caster) return null;
+    reserve(next);
+    return next;
 }
 
 function rebuffRequest(target, providers) {
-    const candidate = providers
-        .map((provider) => ({ provider, skill: preferredSkill(provider, target) }))
-        .filter((entry) => entry.skill)
-        .sort((a, b) => priority(a.provider) - priority(b.provider))[0];
+    const candidate = allActions([{ actor: target, leader: true }], providers, false)
+        .sort(actionCompare)[0];
     if (!candidate) return null;
     return {
         provider: candidate.provider,
@@ -101,8 +114,11 @@ function rebuffRequest(target, providers) {
 
 module.exports = {
     REFRESH_THRESHOLD_MS,
+    CAST_RESERVATION_MS,
     supportSkills,
     needsSkill,
+    actionCompare,
+    reserve,
     nextAction,
     rebuffRequest
 };
