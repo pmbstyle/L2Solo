@@ -8,9 +8,13 @@ function consoleText(textId, params) {
         .writeD(utils.size(params))
 
     params.forEach((param) => {
-        packet
-            .writeD(param.kind)
-            .writeD(param.value);
+        packet.writeD(param.kind);
+        if (param.kind === 0) {
+            packet.writeS(String(param.value ?? ''));
+        }
+        else {
+            packet.writeD(param.value);
+        }
     });
 
     return packet.fetchBuffer();

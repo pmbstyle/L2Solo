@@ -216,6 +216,15 @@ class Attack {
                 else if (outcome.missed) {
                     ConsoleText.transmit(session, ConsoleText.caption.missedHit);
                 }
+                else if (outcome.resisted) {
+                    const targetSession = target?.session || (this.isNpcCombatant(actor) ? session : null);
+                    if (targetSession?.dataSendToMe) {
+                        ConsoleText.transmit(targetSession, ConsoleText.caption.magicResisted, [{
+                            kind: ConsoleText.kind.text,
+                            value: actor.fetchName?.() || 'The monster'
+                        }]);
+                    }
+                }
             });
             this.clearLoadedShot(actor, magicSkill);
             actor.state.setCasts(false);
@@ -257,32 +266,26 @@ class Attack {
                 ? session.followPlayerSession
                 : session;
             const party = PartyAwareness.partyActors(leaderSession)
-                .filter((target) => this.isValidSkillTarget(target, skill));
+                .filter((target) => this.isValidSkillTarget(target, skill, actor));
             return party.length > 0 ? party : [primary];
         }
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
-            const World = invoke('GameServer/World/World');
-            const nearby = typeof World.fetchNpcsInRadius === 'function'
-                ? World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), radius)
-                : [];
-            return nearby.filter((target) => this.isValidSkillTarget(target, skill) && this.distance2d(actor, target) <= radius);
+            return this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
+                .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.distance2d(actor, target) <= radius);
         }
 
         if (
             !sourceTarget ||
             radius <= 0 ||
             !['enemy', 'corpse_mob'].includes(skill.fetchTargetKind?.()) ||
-            !this.isNpcAreaPrimary(primary, skill)
+            !this.isAreaPrimary(actor, primary, skill)
         ) {
             return [primary];
         }
 
         const center = sourceTarget === 'area' ? primary : actor;
-        const World = invoke('GameServer/World/World');
-        const nearby = typeof World.fetchNpcsInRadius === 'function'
-            ? World.fetchNpcsInRadius(center.fetchLocX(), center.fetchLocY(), radius)
-            : [];
+        const nearby = this.fetchSkillTargetsInRadius(actor, center.fetchLocX(), center.fetchLocY(), radius);
         const targets = [primary, ...nearby];
         const seen = new Set();
 
@@ -291,22 +294,33 @@ class Attack {
             if (!id || seen.has(id)) return false;
             seen.add(id);
 
-            if (!this.isValidSkillTarget(target, skill)) return false;
+            if (!this.isValidSkillTarget(target, skill, actor)) return false;
             if (this.distance2d(center, target) > radius) return false;
             if (sourceTarget === 'front_area' && !this.isFacing(actor, target, 120)) return false;
             return true;
         });
     }
 
-    isNpcAreaPrimary(target, skill) {
+    fetchSkillTargetsInRadius(actor, locX, locY, radius) {
+        const World = invoke('GameServer/World/World');
+        if (this.isNpcCombatant(actor)) {
+            return (World.user?.sessions || []).map((session) => session?.actor).filter(Boolean);
+        }
+
+        return typeof World.fetchNpcsInRadius === 'function'
+            ? World.fetchNpcsInRadius(locX, locY, radius)
+            : [];
+    }
+
+    isAreaPrimary(actor, target, skill) {
         if (skill.fetchTargetKind?.() === 'corpse_mob') {
             return target?.fetchAttackable?.() === true && target?.isDead?.() === true;
         }
 
-        return target?.fetchAttackable?.() === true;
+        return this.isValidSkillTarget(target, skill, actor);
     }
 
-    isValidSkillTarget(target, skill) {
+    isValidSkillTarget(target, skill, actor = null) {
         if (!target) return false;
         const targetKind = skill.fetchTargetKind?.();
 
@@ -315,6 +329,9 @@ class Attack {
         }
 
         if (targetKind === 'enemy') {
+            if (this.isNpcCombatant(actor)) {
+                return target !== actor && !target.fetchKind && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+            }
             return target.fetchAttackable?.() === true && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
         }
 
@@ -325,6 +342,10 @@ class Attack {
         const dx = (Number(src?.fetchLocX?.()) || 0) - (Number(dst?.fetchLocX?.()) || 0);
         const dy = (Number(src?.fetchLocY?.()) || 0) - (Number(dst?.fetchLocY?.()) || 0);
         return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    isNpcCombatant(actor) {
+        return !!(actor?.fetchKind && actor.fetchIsSummon?.() !== true);
     }
 
     chargeShotForSkill(session, actor, magicSkill, skill = null) {
@@ -397,6 +418,24 @@ class Attack {
     }
 
     prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random, magicAtkOverride = null) {
+        if (magicSkill) {
+            const usedSpiritshot = !!actor.spiritshotLoaded;
+            const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
+            const semantic = skill.fetchSemantic?.() || {};
+            const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
+            const power = semantic.skillType === C4SkillRules.DEATH_LINK
+                ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
+                : skill.fetchPower();
+            const damage = Math.round(Formulas.calcMagicDamage(
+                magicAtkOverride ?? actor.fetchCollectiveMAtk(),
+                power,
+                creature.fetchCollectiveMDef(),
+                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot }
+            ) * vulnModifier);
+            this.clearLoadedShot(actor, magicSkill);
+            return damage;
+        }
+
         const shield = Formulas.rollShieldUse({
             shieldRate: this.fetchShieldRate(creature),
             dex: creature.fetchDex ? creature.fetchDex() : 0,
@@ -407,25 +446,6 @@ class Attack {
         if (shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK) {
             this.clearLoadedShot(actor, magicSkill);
             return 1;
-        }
-
-        if (magicSkill) {
-            const usedSpiritshot = !!actor.spiritshotLoaded;
-            const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
-            const shieldMDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
-            const semantic = skill.fetchSemantic?.() || {};
-            const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const power = semantic.skillType === C4SkillRules.DEATH_LINK
-                ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
-                : skill.fetchPower();
-            const damage = Math.round(Formulas.calcMagicDamage(
-                magicAtkOverride ?? actor.fetchCollectiveMAtk(),
-                power,
-                creature.fetchCollectiveMDef() + shieldMDef,
-                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot }
-            ) * vulnModifier);
-            this.clearLoadedShot(actor, magicSkill);
-            return damage;
         }
 
         const usedSoulshot = !!actor.soulshotLoaded;
