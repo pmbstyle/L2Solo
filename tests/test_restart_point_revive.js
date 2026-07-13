@@ -2,7 +2,26 @@ const assert = require('assert');
 
 require('../src/Global');
 
+const die = invoke('GameServer/Actor/Generics/Die');
 const revive = invoke('GameServer/Actor/Generics/Revive');
+const StateModel = invoke('GameServer/Model/State');
+
+const dyingActor = {
+    state: new StateModel(),
+    fetchId: () => 41,
+    isDead() { return this.state.fetchDead(); },
+    destructor() {}
+};
+dyingActor.state.setHits(true);
+dyingActor.state.setCasts(true);
+dyingActor.state.setSeated(true);
+dyingActor.state.setAnimated(true);
+dyingActor.state.setPickinUp(true);
+
+die({ dataSendToMeAndOthers() {} }, dyingActor);
+
+assert.strictEqual(dyingActor.state.fetchDead(), true, 'death should mark the actor dead');
+assert.strictEqual(dyingActor.state.isBlocked(), false, 'death should clear action flags whose cancellation would otherwise permanently block movement after a restart');
 
 const packets = [];
 const actor = {
