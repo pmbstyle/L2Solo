@@ -1,4 +1,5 @@
 const BOT_WAKEUP_THROTTLE_MS = 750;
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function isBotSession(session) {
     return !!(
@@ -50,11 +51,32 @@ function applyCombatPointShield(session, actor, hit) {
     return damage - cpDamage;
 }
 
+function applyTransferPain(session, actor, hit) {
+    const incoming = Math.max(0, Number(hit) || 0);
+    const percent = Math.max(0, Math.min(100, Number(EffectStats.add(actor, 'transDam')) || 0));
+    const summon = actor?.summon;
+    if (!incoming || !percent || !summon || summon.state?.fetchDead?.() === true || summon.isDead?.() === true) {
+        return incoming;
+    }
+
+    const desired = Math.floor(incoming * percent / 100);
+    const summonHp = Math.max(0, Number(summon.fetchHp?.()) || 0);
+    const transferred = Math.min(desired, summonHp);
+    if (!transferred) return incoming;
+
+    summon.setHp(summonHp - transferred);
+    summon.broadcastVitals?.();
+    if ((Number(summon.fetchHp?.()) || 0) <= 0) {
+        invoke(path.npc).die(session, session?.actor, summon);
+    }
+    return incoming - transferred;
+}
+
 function receivedHit(session, actor, hit, options = {}) {
     const Generics = invoke(path.actor);
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const victimSession = actor?.session;
-    const hpDamage = applyCombatPointShield(session, actor, hit);
+    const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit));
 
     if (options.wakeSleep !== false) {
         EffectRestrictions.wakeOnDamage(actor, victimSession || session);
@@ -119,3 +141,4 @@ function receivedHit(session, actor, hit, options = {}) {
 
 module.exports = receivedHit;
 module.exports.applyCombatPointShield = applyCombatPointShield;
+module.exports.applyTransferPain = applyTransferPain;

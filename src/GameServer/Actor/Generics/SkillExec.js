@@ -21,6 +21,15 @@ function skillExec(session, actor, data) {
                 return;
             }
 
+            if (SpoilSweep.isSpoilFestivalSkill(data.selfId)) {
+                const radius = Math.max(0, Number(skill.fetchSemantic?.().radius) || 0);
+                const nearby = radius > 0
+                    ? actor.attack.fetchSkillTargetsInRadius(actor, npc.fetchLocX(), npc.fetchLocY(), radius)
+                    : [];
+                SpoilSweep.castSpoilTargets(session, actor, [npc, ...nearby], skill);
+                return;
+            }
+
             if (SpoilSweep.isSweepSkill(data.selfId)) {
                 SpoilSweep.castSweep(session, actor, npc, skill);
                 return;

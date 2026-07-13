@@ -11,9 +11,23 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const Formulas = invoke('GameServer/Formulas');
 const Attack = invoke('GameServer/Actor/Attack');
+const receivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
 const Automation = invoke('GameServer/Automation');
 const ServerResponse = invoke('GameServer/Network/Response');
 const activeSkills = require('../data/Skills/Active/active.json');
+const passiveSkills = require('../data/Skills/Passive/passive.json');
+const switchSkills = require('../data/Skills/Switch/switch.json');
+const skillTree = require('../data/Skills/Tree/tree.json');
+
+const skillDefinitions = new Set([...activeSkills, ...passiveSkills, ...switchSkills]
+    .map((entry) => Number(entry.selfId)));
+// C4 third-class trees use ids 88..118; keeping this bound at 118 makes an
+// omitted third-class skill fail before it can reach a client after a class change.
+const playableSkillTree = skillTree.filter((entry) => Number(entry.classId) >= 0 && Number(entry.classId) <= 118);
+const missingTreeDefinitions = [...new Set(playableSkillTree.flatMap((entry) => entry.skills || [])
+    .map((entry) => Number(entry.selfId)))]
+    .filter((selfId) => !skillDefinitions.has(selfId));
+assert.deepStrictEqual(missingTreeDefinitions, [], 'Every class-tree skill must have a client/runtime definition');
 
 function creature(overrides = {}) {
     return {
@@ -1615,6 +1629,7 @@ const runtimeShieldTarget = creature({ id: 1000092, hp: 100, maxHp: 100, level: 
 const runtimeShieldSession = session(runtimeShieldCaster);
 runtimeShieldCaster.session = runtimeShieldSession;
 runtimeShieldCaster.automation = { replenishVitals() {} };
+runtimeShieldCaster.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Shield' }];
 const runtimeShieldAttack = new Attack();
 runtimeShieldAttack.queueTimer = (callback) => {
     callback();
@@ -7117,6 +7132,190 @@ assert.strictEqual(resistedStunOutcome.damage, 1, 'Resisted Stun Attack should s
 assert.strictEqual(resistedStunOutcome.effect, null, 'Resist Shock stunResist should lower Stun Attack land chance below the roll');
 assert.strictEqual(resistedStunOutcome.effectResisted, true, 'Stun blocked by Resist Shock should report effect resistance');
 assert.strictEqual(EffectStore.hasDebuff(shockProtected, 'stun'), false, 'Resisted Stun Attack should not leave a stun debuff');
+
+assert.strictEqual(
+    C4SkillRules.resolve({ selfId: 286, name: 'Provoke', level: 3 }).radius,
+    900,
+    'Provoke should resolve the sourced level-dependent aura radius'
+);
+assert.strictEqual(
+    C4SkillRules.resolve({ selfId: 310, name: 'Dance of Vampire', level: 1 }).stats.absorbDam,
+    8,
+    'Dance of Vampire should expose its sourced 8% damage absorption'
+);
+
+const passiveActor = { skillset: { fetchSkills: () => [{
+    fetchPassive: () => true,
+    fetchSelfId: () => 1045,
+    fetchName: () => 'Blessed Body',
+    fetchLevel: () => 1
+}] } };
+assert.strictEqual(EffectStats.multiplier(passiveActor, 'maxHpMul'), 1.1, 'passive semantic stats should contribute to EffectStats');
+
+const finalFrenzySkill = {
+    fetchPassive: () => true,
+    fetchSelfId: () => 290,
+    fetchName: () => 'Final Frenzy',
+    fetchLevel: () => 14
+};
+const frenzyActor = {
+    hp: 31,
+    maxHp: 100,
+    fetchHp() { return this.hp; },
+    fetchMaxHp() { return this.maxHp; },
+    skillset: { fetchSkills: () => [finalFrenzySkill] }
+};
+assert.strictEqual(EffectStats.add(frenzyActor, 'pAtkAdd'), 0, 'Final Frenzy must not apply above 30% HP');
+frenzyActor.hp = 30;
+assert.strictEqual(EffectStats.add(frenzyActor, 'pAtkAdd'), 129.3, 'Final Frenzy must apply its sourced level-14 P.Atk bonus at 30% HP');
+
+const twoHandedMastery = {
+    fetchPassive: () => true,
+    fetchSelfId: () => 293,
+    fetchName: () => 'Two-handed Weapon Mastery',
+    fetchLevel: () => 20
+};
+const masteryActor = {
+    skillset: { fetchSkills: () => [twoHandedMastery] },
+    backpack: { fetchTotalWeaponKind: () => 'Weapon.GreatSword' }
+};
+assert.strictEqual(EffectStats.add(masteryActor, 'pAtkAdd'), 129.3, 'Two-handed Weapon Mastery must apply with a great sword');
+masteryActor.backpack.fetchTotalWeaponKind = () => 'Weapon.Sword';
+assert.strictEqual(EffectStats.add(masteryActor, 'pAtkAdd'), 0, 'Two-handed Weapon Mastery must not apply with a one-handed sword');
+
+const aegisTarget = {
+    fetchLocX: () => 0,
+    fetchLocY: () => 0,
+    fetchHead: () => 0,
+    skillset: { fetchSkills: () => [{ fetchPassive: () => true, fetchSelfId: () => 316, fetchName: () => 'Aegis', fetchLevel: () => 1 }] },
+    backpack: { fetchTotalShieldPDef: () => 100 }
+};
+const rearAttacker = { fetchLocX: () => -100, fetchLocY: () => 0 };
+const aegisAttack = new Attack();
+assert.strictEqual(aegisAttack.isFacing(aegisTarget, rearAttacker), false, 'A rear attacker should be outside the default shield angle');
+assert.strictEqual(aegisAttack.isShieldFacing(aegisTarget, rearAttacker), true, 'Aegis must expand shield defense to sourced 360 degrees');
+
+const wordOfFear = skill({ selfId: 1272, name: 'Word of Fear', spell: true, level: 1, distance: -1, buff: 30000 });
+const fearedTarget = creature({ id: 2000300 });
+const wordOfFearOutcome = SkillEffects.execute(session(), caster, fearedTarget, wordOfFear, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(wordOfFear.fetchSkillType(), C4SkillRules.EFFECT, 'Word of Fear must resolve as a control effect, not direct damage');
+assert.strictEqual(wordOfFearOutcome.effect?.key, 'fear', 'Word of Fear must apply the fear lifecycle effect');
+
+const avatarTarget = creature({ id: 2000301, hp: 20, maxHp: 100 });
+const avatar = skill({ selfId: 1311, name: 'Body Of Avatar', spell: true, level: 2, power: 20, distance: -1, buff: 1200000 });
+const avatarOutcome = SkillEffects.execute(session(), caster, avatarTarget, avatar, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(avatarOutcome.heal, 20, 'Body Of Avatar must restore its sourced HP percentage');
+assert.strictEqual(EffectStats.multiplier(avatarTarget, 'maxHpMul'), 1.15, 'Body Of Avatar must also apply its sourced max-HP effect');
+
+const snipe = C4SkillRules.resolve({ selfId: 313, name: 'Snipe', level: 8 });
+assert.deepStrictEqual(snipe.stats, { pAtkAdd: 177, pAccuracyCombatAdd: 3, pCritRateMul: 0.2 }, 'Snipe must retain sourced attack, accuracy and critical-rate modifiers');
+
+const wrathTarget = creature({ id: 2000302 });
+wrathTarget.cp = 1000;
+wrathTarget.maxCp = 1000;
+wrathTarget.fetchCp = () => wrathTarget.cp;
+wrathTarget.fetchMaxCp = () => wrathTarget.maxCp;
+wrathTarget.setCp = (value) => { wrathTarget.cp = value; };
+const wrath = skill({ selfId: 320, name: 'Wrath', spell: false, level: 10, power: 30, distance: 40 });
+const wrathOutcome = SkillEffects.execute(session(), caster, wrathTarget, wrath, {
+    magicSkill: false,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(wrath.fetchSkillType(), C4SkillRules.COMBAT_POINT_DAMAGE, 'Wrath must resolve as CP-percent damage');
+assert.strictEqual(wrathOutcome.cpDamage, 300, 'Wrath level 10 must remove 30% of target max CP');
+assert.strictEqual(wrathTarget.fetchCp(), 700, 'Wrath must not convert CP damage into HP damage');
+
+const cursedServitor = creature({ id: 2000305 });
+EffectStore.apply(cursedServitor, { key: 'poison', id: 116, type: 'debuff', category: 'poison', durationMs: 60000 });
+EffectStore.apply(cursedServitor, { key: 'bleed', id: 96, type: 'debuff', category: 'bleed', durationMs: 60000 });
+const servitorCure = skill({ selfId: 1300, name: 'Servitor Cure', spell: true, level: 2, distance: 600 });
+const cureOutcome = SkillEffects.execute(session(), caster, cursedServitor, servitorCure, { magicSkill: true, attack: { clearLoadedShot() {} } });
+assert.strictEqual(servitorCure.fetchSkillType(), C4SkillRules.CLEANSE, 'Servitor Cure must resolve as a cleanse');
+assert.strictEqual(cureOutcome.cleansed.length, 2, 'Servitor Cure level 2 must cleanse poison and bleed through level 7');
+
+const quiverA = C4SkillRules.resolve({ selfId: 323, name: 'Quiver of Arrow: Grade A', level: 1 });
+assert.strictEqual(quiverA.skillType, C4SkillRules.CREATE_ITEM, 'Quiver of Arrow A must resolve as item creation');
+assert.deepStrictEqual([quiverA.itemConsumeId, quiverA.itemConsumeCount, quiverA.createItemId, quiverA.createItemCount], [1461, 1, 1344, 450], 'Quiver A must retain sourced material and arrow batch');
+
+const restrictedSkillAttack = new Attack();
+const bowUser = creature({ id: 2000306 });
+bowUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Bow';
+const fatalCounter = skill({ selfId: 314, name: 'Fatal Counter', spell: false, level: 1, power: 2908, distance: 900 });
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), null, 'Fatal Counter must allow its sourced bow requirement');
+bowUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Sword';
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), 'Incorrect weapon.', 'Weapon-restricted skills must reject an incompatible weapon');
+const focusAttack = C4SkillRules.resolve({ selfId: 317, name: 'Focus Attack', level: 1 });
+assert.deepStrictEqual(focusAttack.stats, { pAccuracyCombatAdd: 5, hitMainTarget: true }, 'Focus Attack must preserve its pole accuracy and main-target behavior');
+assert.strictEqual(focusAttack.toggleMpConsume, 7, 'Focus Attack must consume 7 MP every two seconds');
+
+const wildMagic = C4SkillRules.resolve({ selfId: 1303, name: 'Wild Magic', level: 2 });
+const advancedBlock = C4SkillRules.resolve({ selfId: 1304, name: 'Advanced Block', level: 3 });
+const prayer = C4SkillRules.resolve({ selfId: 1307, name: 'Prayer', level: 3 });
+assert.strictEqual(wildMagic.stats.mCritRateMul, 4, 'Wild Magic level 2 must quadruple magic critical rate');
+assert.strictEqual(advancedBlock.stats.sDefMul, 2, 'Advanced Block level 3 must double shield defense');
+assert.strictEqual(prayer.stats.gainHpMul, 1.12, 'Prayer level 3 must increase received healing by 12%');
+const magicCritAttack = new Attack();
+const magicCritCaster = creature({ id: 2000307, mAtk: 100 });
+const magicCritTarget = creature({ id: 2000308, mDef: 100 });
+const magicDamageSkill = skill({ selfId: 1230, name: 'Prominence', spell: true, power: 100 });
+const normalMagicDamage = magicCritAttack.prepareSkillDamage(magicCritCaster, magicCritTarget, magicDamageSkill, true, () => 0.01);
+EffectStore.apply(magicCritCaster, { key: 'wild_magic', id: 1303, type: 'buff', stats: wildMagic.stats, durationMs: 60000 });
+const boostedMagicDamage = magicCritAttack.prepareSkillDamage(magicCritCaster, magicCritTarget, magicDamageSkill, true, () => 0.01);
+assert.strictEqual(boostedMagicDamage, normalMagicDamage * 4, 'Wild Magic must affect the magic critical damage roll');
+EffectStore.remove(magicCritCaster, 'wild_magic');
+const prayerTarget = creature({ id: 2000309, hp: 0, maxHp: 1000 });
+EffectStore.apply(prayerTarget, { key: 'prayer', id: 1307, type: 'buff', stats: prayer.stats, durationMs: 60000 });
+const prayerHeal = skill({ selfId: 1218, name: 'Greater Battle Heal', spell: true, power: 100 });
+assert.strictEqual(SkillEffects.execute(session(), caster, prayerTarget, prayerHeal, { magicSkill: true, attack: { clearLoadedShot() {} } }).heal, 112, 'Prayer must increase received healing at runtime');
+EffectStore.remove(prayerTarget, 'prayer');
+
+const shadowSenseActor = creature({ id: 2000310 });
+shadowSenseActor.night = true;
+shadowSenseActor.isNight = () => shadowSenseActor.night;
+shadowSenseActor.skillset = { fetchSkills: () => [new SkillModel({ selfId: 294, name: 'Shadow Sense', level: 1, passive: true })] };
+assert.strictEqual(EffectStats.add(shadowSenseActor, 'pAccuracyCombatAdd'), 3, 'Shadow Sense must add accuracy at night');
+shadowSenseActor.night = false;
+assert.strictEqual(EffectStats.add(shadowSenseActor, 'pAccuracyCombatAdd'), 0, 'Shadow Sense must not add accuracy during the day');
+
+const thirdClassPassiveActor = creature({ id: 2000312 });
+thirdClassPassiveActor.skillset = { fetchSkills: () => [
+    new SkillModel({ selfId: 328, name: 'Wisdom', level: 1, passive: true }),
+    new SkillModel({ selfId: 329, name: 'Health', level: 1, passive: true })
+] };
+assert.strictEqual(EffectStats.multiplier(thirdClassPassiveActor, 'rootVuln'), 0.8, 'Wisdom must reduce root vulnerability');
+assert.strictEqual(EffectStats.multiplier(thirdClassPassiveActor, 'poisonVuln'), 0.8, 'Health must reduce poison vulnerability');
+const arcanePower = C4SkillRules.resolve({ selfId: 337, name: 'Arcane Power', level: 1 });
+assert.deepStrictEqual(arcanePower.stats, { mAtkMul: 1.3, magicalMpConsumeMul: 1.1 }, 'Arcane Power must retain its sourced power and mana tradeoff');
+
+const seedTarget = creature({ id: 2000311 });
+const seedOfFire = skill({ selfId: 1285, name: 'Seed of Fire', spell: true, distance: 600 });
+const seedOfWater = skill({ selfId: 1286, name: 'Seed of Water', spell: true, distance: 600 });
+SkillEffects.execute(session(), caster, seedTarget, seedOfFire, { magicSkill: true, attack: { clearLoadedShot() {} } });
+SkillEffects.execute(session(), caster, seedTarget, seedOfFire, { magicSkill: true, attack: { clearLoadedShot() {} } });
+SkillEffects.execute(session(), caster, seedTarget, seedOfWater, { magicSkill: true, attack: { clearLoadedShot() {} } });
+assert.strictEqual(SkillEffects.seedPower(seedTarget, 1285), 2, 'Repeated Seed of Fire casts must accumulate seed power');
+assert.strictEqual(SkillEffects.seedPower(seedTarget, 1286), 1, 'Different elemental seeds must keep independent power');
+assert.strictEqual(EffectStore.list(seedTarget).filter((effect) => effect.category === 'element_seed').length, 2, 'Elemental seeds must coexist on the target');
+
+const dwarvenCraft = skill({ selfId: 1321, name: 'Dwarven Craft', spell: false, distance: -1 });
+const craftOutcome = SkillEffects.execute(session(), caster, caster, dwarvenCraft, { magicSkill: false, attack: { clearLoadedShot() {} } });
+assert.strictEqual(dwarvenCraft.fetchSkillType(), C4SkillRules.DUMMY, 'Dwarven Craft must not fall back to a combat skill');
+assert.strictEqual(craftOutcome.damage, 0, 'Dwarven Craft must never damage the crafter');
+
+const transferOwner = creature({ id: 2000303 });
+const servitor = creature({ id: 2000304, hp: 100, maxHp: 100 });
+servitor.broadcastVitals = () => {};
+transferOwner.summon = servitor;
+EffectStore.apply(transferOwner, { key: 'transfer_pain', id: 1262, type: 'buff', stats: { transDam: 50 }, durationMs: 60000 });
+assert.strictEqual(receivedHit.applyTransferPain(session(), transferOwner, 80), 40, 'Transfer Pain must leave the untransferred half on the owner');
+assert.strictEqual(servitor.fetchHp(), 60, 'Transfer Pain must transfer its sourced share of incoming damage to the servitor');
 
 console.log('Skill semantic checks passed');
 

@@ -119,6 +119,10 @@ const GeodataEngine = {
         return null;
     },
 
+    hasGeo(x, y) {
+        return !!this.regions[this.getRegionKey(x, y)];
+    },
+
     getHeight(x, y, z) {
         const regionX = getRegionX(x);
         const regionY = getRegionY(y);

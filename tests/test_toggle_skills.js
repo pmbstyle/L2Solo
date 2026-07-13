@@ -88,9 +88,13 @@ function session(target) {
 }
 
 function soulCry(level = 2) {
+    return toggleSkill(1001, 'Soul Cry', level);
+}
+
+function toggleSkill(selfId, name, level) {
     return new SkillModel({
-        selfId: 1001,
-        name: 'Soul Cry',
+        selfId,
+        name,
         level,
         passive: false,
         spell: false,
@@ -121,6 +125,43 @@ function wait(ms) {
     ToggleSkills.handleRequest(castSession, orc, skill);
     assert.strictEqual(EffectStats.add(orc, 'pAtkAdd'), 0, 'Second Soul Cry use should remove the toggle effect');
     assert.strictEqual(orc.collectivePAtk, basePAtk, 'Soul Cry removal should refresh actor P.Atk');
+
+    const knight = actor(100);
+    const guardStance = toggleSkill(288, 'Guard Stance', 4);
+    ToggleSkills.handleRequest(session(knight), knight, guardStance);
+    assert.strictEqual(EffectStats.add(knight, 'pDefAdd'), 256.5, 'Guard Stance should apply sourced P.Def at level 4');
+    assert.strictEqual(EffectStats.multiplier(knight, 'rShldMul'), 1.5, 'Guard Stance should apply sourced shield-rate multiplier');
+
+    const dagger = actor(100);
+    const viciousStance = toggleSkill(312, 'Vicious Stance', 20);
+    ToggleSkills.handleRequest(session(dagger), dagger, viciousStance);
+    assert.strictEqual(dagger.fetchMp(), 86, 'Vicious Stance should consume sourced initial MP at level 20');
+    assert.strictEqual(EffectStats.add(dagger, 'pCritDamageAdd'), 609, 'Vicious Stance should apply sourced critical damage bonus');
+    assert.strictEqual(
+        Formulas.calcMeleeDamage(100, 0, 50, { critical: true, criticalDamageAdd: EffectStats.add(dagger, 'pCritDamageAdd') }),
+        1132.6,
+        'Vicious Stance bonus should be consumed by the critical damage formula'
+    );
+
+    const summoner = actor(100);
+    const soulGuard = toggleSkill(1283, 'Soul Guard', 13);
+    ToggleSkills.handleRequest(session(summoner), summoner, soulGuard);
+    assert.strictEqual(summoner.fetchMp(), 86, 'Soul Guard should consume sourced initial MP at level 13');
+    assert.strictEqual(EffectStats.add(summoner, 'pDefAdd'), 653.1, 'Soul Guard should apply sourced P.Def at level 13');
+
+    const restingSummoner = actor(100);
+    restingSummoner.state = {
+        seated: false,
+        fetchSeated() { return this.seated; },
+        setSeated(value) { this.seated = value; }
+    };
+    const chameleonRest = toggleSkill(296, 'Rest of Chameleon', 1);
+    ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
+    assert.strictEqual(restingSummoner.state.fetchSeated(), true, 'Rest of Chameleon should sit the caster down');
+    assert.strictEqual(restingSummoner.silentMoving, true, 'Rest of Chameleon should enable silent moving while resting');
+    assert.strictEqual(EffectStore.list(restingSummoner)[0].manaDot.damage, 9, 'Rest of Chameleon should consume sourced 9 MP per tick');
+    ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
+    assert.strictEqual(restingSummoner.silentMoving, false, 'Stopping Rest of Chameleon should clear silent moving');
 
     const tiredOrc = actor(1);
     const tiredSession = session(tiredOrc);
