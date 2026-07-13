@@ -1,7 +1,7 @@
 const Database = invoke('Database');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
-function updatePosition(session, actor, coords) {
+function updatePosition(session, actor, coords, environmentOptions) {
     const Generics = invoke(path.actor);
 
     // NOTE: Do NOT snap Z to geodata here. UpdatePosition is called both after
@@ -15,7 +15,7 @@ function updatePosition(session, actor, coords) {
     Database.updateCharacterLocation(actor.fetchId(), coords);
 
     // Update Online users, NPCs, underwater locations
-    Generics.updateEnvironment(session, actor);
+    Generics.updateEnvironment(session, actor, environmentOptions);
     Generics.underwaterCheck  (session, actor);
 
     // Reschedule actions based on updated position

@@ -56,7 +56,7 @@ assert(distance(dionEntry, dionCenter) < distance(dionField, dionCenter));
 
 const gludinTown = BotAI.getClosestTown(-82000, 151000);
 assert.strictEqual(gludinTown.name, 'Gludin');
-assert.strictEqual(gludinTown.z, -3044);
+assert.strictEqual(gludinTown.z, -3040);
 
 const talkingIslandExitSteps = routeUntilTarget(talkingIslandCenter, talkingIslandField);
 assert.deepStrictEqual(

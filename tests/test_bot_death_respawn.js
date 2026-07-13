@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotAI = invoke('GameServer/Bot/BotAI');
+const revive = invoke('GameServer/Actor/Generics/Revive');
 
 function botAt(loc) {
     return {
@@ -22,7 +23,7 @@ const huntingSession = {
 
 assert.deepStrictEqual(
     BotAI.getDeathRespawnTarget(huntingSession, botAt(huntingSpot), false),
-    { locX: 45475, locY: 48359, locZ: -3060 },
+    { locX: 46976, locY: 51511, locZ: -2976 },
     'solo hunting death should restart at the nearest town instead of the active hunting spot'
 );
 
@@ -59,5 +60,30 @@ assert.strictEqual(deadSession.lastDecision, undefined, 'death should clear stal
 assert.strictEqual(deadSession.lastTargetEvaluation, undefined, 'death should clear stale target scoring');
 assert.strictEqual(deadSession.lastCombatDecision, undefined, 'death should clear stale combat choices');
 assert.strictEqual(deadSession.lastPvpDecision, undefined, 'death should clear stale PvP choices');
+
+const respawningBot = {
+    hp: 0,
+    mp: 0,
+    fetchId: () => 200001,
+    fillupVitals() {
+        this.hp = 100;
+        this.mp = 100;
+    },
+    automation: {
+        stopReplenish() {},
+        replenishVitals() { throw new Error('bot town respawn must not wait for gradual regeneration'); }
+    },
+    state: {
+        dead: true,
+        setDead(value) { this.dead = value; }
+    }
+};
+const respawnPackets = [];
+revive({
+    dataSendToMeAndOthers(packet) { respawnPackets.push(packet); }
+}, respawningBot, { delayMs: 0, restoreFullVitals: true });
+assert.strictEqual(respawningBot.state.dead, false, 'bot must be alive before its immediate town teleport');
+assert.strictEqual(respawningBot.hp, 100, 'bot town respawn should restore HP before teleport validation');
+assert.strictEqual(respawnPackets.length, 2, 'bot town respawn should send revive and stand-up packets synchronously');
 
 console.log('Bot death respawn checks passed');

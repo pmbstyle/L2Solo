@@ -3,13 +3,19 @@ const World          = invoke('GameServer/World/World');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotAI          = invoke('GameServer/Bot/BotAI');
 
-function updateEnvironment(session, actor) {
+function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefresh = false } = {}) {
     const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), 6000);
     const npcs = World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 6000).filter((ob) => ob.state.fetchDead() === false) ?? [];
 
-    if (new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
-        npcs.forEach((npc) => { // Gives a sense of random NPC Animation to the actor
-            setTimeout( () => { session.dataSendToMe(ServerResponse.npcInfo(npc)); }, utils.randomNumber(2000));
+    if (forceRefresh || new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
+        npcs.forEach((npc) => {
+            const sendNpcInfo = () => session.dataSendToMe(ServerResponse.npcInfo(npc));
+            if (immediateNpcInfo) {
+                sendNpcInfo();
+            } else {
+                // Gives a sense of random NPC Animation to the actor.
+                setTimeout(sendNpcInfo, utils.randomNumber(2000));
+            }
         });
 
         World.fetchVisibleUsers(session, actor).forEach((user) => {
