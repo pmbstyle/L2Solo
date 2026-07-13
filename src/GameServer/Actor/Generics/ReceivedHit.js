@@ -50,13 +50,15 @@ function applyCombatPointShield(session, actor, hit) {
     return damage - cpDamage;
 }
 
-function receivedHit(session, actor, hit) {
+function receivedHit(session, actor, hit, options = {}) {
     const Generics = invoke(path.actor);
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const victimSession = actor?.session;
     const hpDamage = applyCombatPointShield(session, actor, hit);
 
-    EffectRestrictions.wakeOnDamage(actor);
+    if (options.wakeSleep !== false) {
+        EffectRestrictions.wakeOnDamage(actor, victimSession || session);
+    }
     actor.setHp(Math.max(0, actor.fetchHp() - hpDamage)); // HP bar would disappear if less than zero
     actor.statusUpdateVitals(actor);
 

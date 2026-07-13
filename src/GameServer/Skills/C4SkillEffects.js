@@ -137,7 +137,7 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
-    if (magicSkill && isOffensive(semantic) && !rollMagicSuccess(actor, target, skill, semantic, rng)) {
+    if (magicSkill && isOffensive(semantic) && !usesEffectSuccessFormula(semantic) && !rollMagicSuccess(actor, target, skill, semantic, rng)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.resisted = true;
         return result;
@@ -589,6 +589,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         manaDot: manaDotFromSkill(skill, semantic),
         manaHot: manaHotFromSkill(skill, semantic),
         hot: hotFromSkill(skill, semantic),
+        confusionMobOnly: semantic.confusionMobOnly,
         durationMs
     });
 
@@ -616,6 +617,9 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
 
     EffectTicker.scheduleExpiry(session, target, effect);
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect, source);
+    if (hasStats(effect)) {
+        refreshStats(target?.session || session, target);
+    }
     refreshEffects(session, target);
     return effect;
 }
@@ -630,6 +634,9 @@ function applyCleanse(session, target, semantic) {
         removed.push(...EffectStore.removeByCategory(target, entry.category, entry.maxLevel ?? Infinity));
     });
     if (removed.length) {
+        if (removed.some(hasStats)) {
+            refreshStats(target?.session || session, target);
+        }
         refreshEffects(session, target);
     }
     return removed;
@@ -648,6 +655,9 @@ function applyCancel(session, target, semantic, rng) {
         }
     });
     if (removed.length) {
+        if (removed.some(hasStats)) {
+            refreshStats(target?.session || session, target);
+        }
         refreshEffects(session, target);
     }
     return removed;
@@ -730,17 +740,27 @@ function rollMagicSuccess(actor, target, skill, semantic, rng) {
 }
 
 function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
+    const effectTrait = semantic.effectTrait || semantic.trait;
+    // Lisvus calcSkillSuccess defaults unset lvlDepend to 1 for PARALYZE
+    // and FEAR, and to 2 for every other effect type.
+    const levelDepend = semantic.levelDepend || (
+        semantic.effect === 'paralyze' || semantic.effect === 'fear' || effectTrait === 'paralyze' || effectTrait === 'fear'
+            ? 1
+            : 2
+    );
     const chance = Formulas.calcSkillEffectSuccessRate({
         baseChance: semantic.baseLandRate,
         magic: magicSkill,
         mAtk: actor.fetchCollectiveMAtk?.(),
         mDef: target.fetchCollectiveMDef?.(),
+        soulshot: !!actor.soulshotLoaded,
+        spiritshot: !!actor.spiritshotLoaded,
         blessedSpiritshot: !!actor.blessedSpiritshotLoaded,
         attackerLevel: actor.fetchLevel?.(),
         targetLevel: target.fetchLevel?.(),
         magicLevel: semantic.magicLevel,
-        levelDepend: semantic.levelDepend,
-        resistModifier: traitResistModifier(target, semantic.effectTrait || semantic.trait)
+        levelDepend,
+        resistModifier: traitResistModifier(target, effectTrait)
     });
     return !(chance >= rng() * 100);
 }
@@ -779,6 +799,14 @@ function applyLethal(target, semantic, rng, result) {
 
 function isOffensive(semantic) {
     return semantic.target !== 'self' && semantic.effectType !== 'buff';
+}
+
+function usesEffectSuccessFormula(semantic) {
+    return semantic.skillType === C4SkillRules.EFFECT
+        || semantic.skillType === C4SkillRules.DAMAGE_EFFECT
+        || semantic.skillType === C4SkillRules.CANCEL
+        || semantic.skillType === C4SkillRules.AGGRO_REMOVE
+        || semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR;
 }
 
 function isAttackableNpc(target) {
@@ -849,12 +877,39 @@ function refreshEffects(session, target) {
         session.dataSendToMe(packet);
     }
 
+    if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {
+        target.session.dataSendToMe(ServerResponse.userInfo(target));
+    }
+
+    // MagicEffectIcons has no object id and is only valid for the receiver's
+    // own effect bar. For NPCs, C4 renders persistent abnormal states from the
+    // abnormal-effect mask embedded in NpcInfo instead.
+    if (target?.fetchKind && session?.dataSendToMeAndOthers) {
+        session.dataSendToMeAndOthers(ServerResponse.npcInfo(target), target);
+    } else if (target?.session?.dataSendToOthers && target?.backpack?.fetchPaperdollSelfId) {
+        target.session.dataSendToOthers(ServerResponse.charInfo(target), target);
+    }
+
     try {
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         if (target?.session) PartyCompanionService.updateActorEffects(target.session);
     } catch (err) {
         utils.infoWarn('SkillEffects', 'party effect refresh failed: %s', err.message);
     }
+}
+
+function refreshStats(session, target) {
+    if (!target) return;
+    if (target?.session) {
+        try {
+            invoke(path.actor).calculateStats(target?.session || session, target);
+        } catch (_) {}
+    }
+    target.statusUpdateVitals?.(target);
+}
+
+function hasStats(effect) {
+    return Object.keys(effect?.stats || {}).length > 0;
 }
 
 module.exports = {

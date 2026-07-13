@@ -29,10 +29,28 @@ function reject(session) {
     }
 }
 
+function stopMovement(session, actor) {
+    if (session?.moveTimer) {
+        clearInterval(session.moveTimer);
+        session.moveTimer = null;
+    }
+    if (!actor?.fetchId) return false;
+    actor.state?.setTowards?.(false);
+    const packet = ServerResponse.stopMove(actor.fetchId(), {
+        locX: actor.fetchLocX?.() || 0,
+        locY: actor.fetchLocY?.() || 0,
+        locZ: actor.fetchLocZ?.() || 0,
+        head: actor.fetchHead?.() || 0
+    });
+    session?.dataSendToMeAndOthers?.(packet, actor);
+    return true;
+}
+
 function interruptOnApply(session, actor, effect, source = session?.actor) {
     if (!actor || !effect || effect.type !== 'debuff') return;
     const impairments = EffectStore.impairments(actor);
-    if (!(impairments.disabled || impairments.rooted)) return;
+    const confused = EffectStore.hasDebuff(actor, 'confusion');
+    if (!(impairments.disabled || impairments.rooted || confused)) return;
 
     actor.automation?.abortAll?.(actor);
     actor.attack?.clearTimers?.();
@@ -46,13 +64,62 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
             actor.abortCombatState(safeSession);
         }
     }
-    if (session?.moveTimer) {
-        clearInterval(session.moveTimer);
-        session.moveTimer = null;
-    }
+    stopMovement(session, actor);
     if (impairments.afraid) {
         startFear(session, actor, source, effect);
     }
+    if (confused) {
+        startConfusion(session, actor, effect);
+    }
+}
+
+// Lisvus EffectConfusion / EffectConfuseMob: immediately, then once per
+// effect period, pick a known character in a 600 radius and attack it. The
+// ConfuseMob variant limits the candidates to attackable NPCs.
+function startConfusion(session, actor, effect) {
+    if (!actor?.fetchId || !effect?.key || !EffectStore.hasDebuff(actor, 'confusion')) return false;
+    const timers = actor.effectTimers || (actor.effectTimers = {});
+    if (timers[effect.key]) clearInterval(timers[effect.key]);
+
+    const act = () => {
+        if (!EffectStore.hasDebuff(actor, 'confusion')) {
+            stopConfusion(actor, effect.key);
+            return;
+        }
+        const targets = confusionTargets(actor, effect.confusionMobOnly);
+        if (!targets.length) return;
+        const target = targets[Math.floor(Math.random() * targets.length)];
+        // Npc.enterCombatState deliberately ignores a second start while the
+        // mob has an active combat loop. Confusion must replace that target.
+        actor.abortCombatState?.(session);
+        actor.enterCombatState?.(session, target);
+    };
+
+    act();
+    timers[effect.key] = setInterval(act, 6000);
+    timers[effect.key].unref?.();
+    return true;
+}
+
+function stopConfusion(actor, key = 'confusion') {
+    if (!actor?.effectTimers?.[key]) return false;
+    clearInterval(actor.effectTimers[key]);
+    delete actor.effectTimers[key];
+    return true;
+}
+
+function confusionTargets(actor, attackableOnly) {
+    const World = invoke('GameServer/World/World');
+    const npcs = World.npc?.spawns || [];
+    const users = attackableOnly ? [] : (World.user?.sessions || []).map((session) => session.actor).filter(Boolean);
+    return [...npcs, ...users].filter((candidate) => {
+        if (!candidate || candidate === actor || candidate.state?.fetchDead?.()) return false;
+        if (attackableOnly && candidate.fetchAttackable?.() !== true) return false;
+        const dx = (candidate.fetchLocX?.() || 0) - (actor.fetchLocX?.() || 0);
+        const dy = (candidate.fetchLocY?.() || 0) - (actor.fetchLocY?.() || 0);
+        const dz = (candidate.fetchLocZ?.() || 0) - (actor.fetchLocZ?.() || 0);
+        return Math.hypot(dx, dy, dz) <= 600;
+    });
 }
 
 function startFear(session, actor, source, effect) {
@@ -150,15 +217,13 @@ function fearMoveStep(session, actor, source) {
     }
 }
 
-function wakeOnDamage(actor) {
+function wakeOnDamage(actor, session = actor?.session) {
     if (!actor) return false;
     const removed = EffectStore.remove(actor, 'sleep');
     if (!removed) return false;
 
-    const packet = ServerResponse.abnormalStatusUpdate.fromActor(actor);
-    if (actor.session?.dataSendToMe) {
-        actor.session.dataSendToMe(packet);
-    }
+    const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+    EffectTicker.refreshEffects(session, actor);
     return true;
 }
 
@@ -168,8 +233,11 @@ module.exports = {
     canCast,
     canUseBasicAction,
     reject,
+    stopMovement,
     interruptOnApply,
     startFear,
     stopFear,
+    startConfusion,
+    stopConfusion,
     wakeOnDamage
 };

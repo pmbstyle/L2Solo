@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function npcInfo(npc) {
     const packet = new SendPacket(0x16);
@@ -39,7 +40,7 @@ function npcInfo(npc) {
         .writeD(0x00)  // ?
         .writeD(0x00)  // Pvp?
         .writeD(0x00)  // Pk?
-        .writeD(0x00)  // Abnormal effect
+        .writeD(EffectStore.abnormalMask(npc))  // Abnormal effect
         .writeD(0x00)  // Clan Id
         .writeD(0x00)  // Clan crest
         .writeD(0x00)  // Ally Id

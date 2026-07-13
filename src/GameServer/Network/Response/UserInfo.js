@@ -1,6 +1,7 @@
 const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const ClanService = invoke('GameServer/Clan/ClanService');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function userInfo(actor) {
     const packet = new SendPacket(0x04);
@@ -92,7 +93,7 @@ function userInfo(actor) {
 
     packet
         .writeC(0x00)  // Find Party Members = 0x01
-        .writeD(0x00)  // Is invisible?
+        .writeD(EffectStore.abnormalMask(actor))  // Abnormal effect
         .writeC(0x00)  // ?
         .writeD(Pledge.privileges(actor))  // Clan Privileges
         .writeD(0x00)  // ?

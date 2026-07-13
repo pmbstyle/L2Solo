@@ -9,6 +9,7 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const AttackHelper   = new Attack();
 
 class Npc extends NpcModel {
@@ -40,7 +41,9 @@ class Npc extends NpcModel {
         // TODO: Move this into actual GameServer timer
         this.timer = {
             combat: undefined,
-            combatStart: undefined
+            combatStart: undefined,
+            hit: undefined,
+            hitEnd: undefined
         };
         this.skillReuseUntil = new Map();
     }
@@ -96,7 +99,7 @@ class Npc extends NpcModel {
                     return;
                 }
 
-                if (this.state.isBlocked()) {
+                if (this.state.isBlocked() || !EffectRestrictions.canAttack(this)) {
                     return;
                 }
 
@@ -121,6 +124,9 @@ class Npc extends NpcModel {
                 const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);
 
                 this.automation.scheduleAction(session, this, actor, actionRange, () => {
+                    if (!EffectRestrictions.canAttack(this)) {
+                        return;
+                    }
                     this.setLocXYZ(this.fetchCombatStopCoords(actor, actionRange));
 
                     if (combatSkill && this.isTargetInAttackRange(actor, actionRange)) {
@@ -164,6 +170,42 @@ class Npc extends NpcModel {
             + EffectStats.add(this, 'pEvasionRateAdd');
     }
 
+    // Lisvus NpcStat inherits CharStat, so NPCs evaluate the same stat
+    // functions as players while effects are active. NPC templates already
+    // provide this project's base combat values; apply only the active effect
+    // modifiers here instead of running the player-only class calculator.
+    fetchCollectivePAtk() {
+        return effectAdjusted(super.fetchCollectivePAtk(), this, 'pAtk');
+    }
+
+    fetchCollectiveMAtk() {
+        return effectAdjusted(super.fetchCollectiveMAtk(), this, 'mAtk');
+    }
+
+    fetchCollectivePDef() {
+        return effectAdjusted(super.fetchCollectivePDef(), this, 'pDef');
+    }
+
+    fetchCollectiveMDef() {
+        return effectAdjusted(super.fetchCollectiveMDef(), this, 'mDef');
+    }
+
+    fetchCollectiveAtkSpd() {
+        return effectAdjusted(super.fetchCollectiveAtkSpd(), this, 'pAtkSpd');
+    }
+
+    fetchCollectiveCastSpd() {
+        return effectAdjusted(super.fetchCollectiveCastSpd(), this, 'castSpd');
+    }
+
+    fetchCollectiveWalkSpd() {
+        return effectAdjusted(super.fetchCollectiveWalkSpd(), this, 'walkSpd', { speed: true });
+    }
+
+    fetchCollectiveRunSpd() {
+        return effectAdjusted(super.fetchCollectiveRunSpd(), this, 'runSpd', { speed: true });
+    }
+
     fetchCombatStopCoords(actor, attackRange = this.fetchCombatAttackRange(actor)) {
         return this.automation.actionStopCoords(this, actor, attackRange);
     }
@@ -191,6 +233,7 @@ class Npc extends NpcModel {
     }
 
     selectCombatSkill(actor) {
+        if (!EffectRestrictions.canCast(this)) return null;
         return this.fetchCombatSkills().find((skill) => {
             if (skill.fetchTargetKind() !== 'enemy') return false;
             if (this.fetchMp() < skill.fetchConsumedMp()) return false;
@@ -221,7 +264,8 @@ class Npc extends NpcModel {
     }
 
     castSkill(session, actor, skill) {
-        AttackHelper.remoteHit({
+        if (!EffectRestrictions.canCast(this)) return;
+        this.attack.remoteHit({
             actor: this,
             dataSendToMe: (packet) => session.dataSendToMe?.(packet),
             dataSendToMeAndOthers: (packet) => session.dataSendToMeAndOthers(packet, this)
@@ -233,6 +277,10 @@ class Npc extends NpcModel {
         this.timer.combatStart = undefined;
         clearInterval(this.timer.combat);
         this.timer.combat = undefined;
+        clearTimeout(this.timer.hit);
+        this.timer.hit = undefined;
+        clearTimeout(this.timer.hitEnd);
+        this.timer.hitEnd = undefined;
 
         this.clearDestId();
         this.state.setCombatEnded();
@@ -245,7 +293,7 @@ class Npc extends NpcModel {
     }
 
     meleeHit(session, src, dst) {
-        if (this.checkParticipants(session, src, dst)) {
+        if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
             return;
         }
 
@@ -256,8 +304,10 @@ class Npc extends NpcModel {
         session.dataSendToMeAndOthers(ServerResponse.attack(src, dst.fetchId(), hit), this);
         src.state.setHits(true);
 
-        setTimeout(() => {
-            if (this.checkParticipants(session, src, dst)) {
+        clearTimeout(this.timer.hit);
+        this.timer.hit = setTimeout(() => {
+            this.timer.hit = undefined;
+            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
                 return;
             }
 
@@ -270,7 +320,9 @@ class Npc extends NpcModel {
 
         }, speed * 0.644);
 
-        setTimeout(() => {
+        clearTimeout(this.timer.hitEnd);
+        this.timer.hitEnd = setTimeout(() => {
+            this.timer.hitEnd = undefined;
             this.state.setHits(false);
 
         }, speed); // Until end of combat move
@@ -415,6 +467,15 @@ class Npc extends NpcModel {
         }
         return items;
     }
+}
+
+function effectAdjusted(base, actor, stat, { speed = false } = {}) {
+    const add = EffectStats.add(actor, `${stat}Add`);
+    const multiplier = EffectStats.multiplier(actor, `${stat}Mul`);
+    const adjusted = speed
+        ? (Number(base) + add) * multiplier
+        : (Number(base) * multiplier) + add;
+    return Math.max(1, Math.round(adjusted));
 }
 
 module.exports = Npc;

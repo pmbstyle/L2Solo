@@ -297,7 +297,7 @@ const RULES = {
     1157: { skillType: MANA_HEAL, trait: 'mana', target: 'self', ssBoost: 0, manaPowerByLevel: [22, 35, 47, 53, 61] },
     1159: { skillType: DEATH_LINK, trait: 'dark', target: 'enemy', ssBoost: 1, baseLandRate: 92 },
     1160: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { runSpdMul: [0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
-    1163: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', baseLandRate: 80, mobOnly: true },
+    1163: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', baseLandRate: 80, mobOnly: true, confusionMobOnly: true },
     1164: { skillType: EFFECT, trait: 'debuff', effect: 'curse_weakness', effectType: 'debuff', target: 'enemy', baseLandRate: 80, statsByLevel: { pAtkMul: [0.83, 0.8, 0.8, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77] } },
     1167: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, baseLandRateByLevel: [3, 4, 5, 6, 7, 8], magicLevelByLevel: [25, 35, 48, 56, 64, 74], castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damageByLevel: [18, 24, 31, 38, 44, 48] } },
     1168: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', baseLandRateByLevel: [1, 3, 4, 5, 6, 7, 8], dot: { count: 10, intervalMs: 3000, damageByLevel: [8, 18, 24, 31, 38, 44, 48] } },
@@ -726,6 +726,7 @@ function resolve(skill = {}) {
         dispellable: rule.dispellable,
         nextActionAttack: rule.nextActionAttack || false,
         mobOnly: rule.mobOnly || inferred.mobOnly || false,
+        confusionMobOnly: rule.confusionMobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled
     };

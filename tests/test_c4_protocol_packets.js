@@ -207,6 +207,8 @@ assert.strictEqual(userInfo[0], 0x04);
 assert.deepStrictEqual(actor.paperdollIdSlots, Array.from({ length: 16 }, (_, i) => i));
 assert.deepStrictEqual(actor.paperdollSelfIdSlots, Array.from({ length: 16 }, (_, i) => i));
 assert.ok(userInfo.includes(0xff), 'C4 UserInfo should include trailing name-color bytes');
+actor.effects = { stun: { key: 'stun', id: 100, type: 'debuff', expiresAt: Date.now() + 10000 } };
+assert.ok(ServerResponse.userInfo(actor).includes(0x40), 'C4 UserInfo should expose the stun abnormal-effect mask');
 
 const charInfo = ServerResponse.charInfo(actor);
 assert.strictEqual(charInfo[0], 0x03);
