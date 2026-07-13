@@ -48,6 +48,7 @@ const tests = [
     'tests/test_pathfinder_astar.js',
     'tests/test_player_ranged_combat.js',
     'tests/test_progression_rates.js',
+    'tests/test_restart_point_revive.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',
     'tests/test_skill_area_semantics.js',
@@ -56,6 +57,7 @@ const tests = [
     'tests/test_skill_semantics.js',
     'tests/test_skill_damage_formulas.js',
     'tests/test_town_pathfinder.js',
+    'tests/test_town_respawn.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
 ];

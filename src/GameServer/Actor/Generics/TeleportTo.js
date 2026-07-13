@@ -20,8 +20,7 @@ function teleportTo(session, actor, coords) {
 
     // Turns out to be a viable solution
     setTimeout(() => {
-        Generics.updatePosition(session, actor, coords);
-        Generics.updateEnvironment(session, actor); // Force update position, in case we Teleport to the same Location
+        Generics.updatePosition(session, actor, coords, { immediateNpcInfo: true, forceRefresh: true });
 
         // Wake up bot AI after teleportation is complete and position updated
         if (session.aiActive) {

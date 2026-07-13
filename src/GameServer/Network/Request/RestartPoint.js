@@ -1,4 +1,5 @@
 const ReceivePacket = invoke('Packet/Receive');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 function restartPoint(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -12,24 +13,22 @@ function restartPoint(session, buffer) {
 }
 
 function consume(session, data) {
-    session.actor.revive();
+    const actor = session.actor;
+    if (!actor || !actor.state?.fetchDead?.() || !actor.isDead()) {
+        return;
+    }
 
-    // Teleport resurrected players to a randomized newbie spawn coordinate of their class
-    const DataCache = invoke('GameServer/DataCache');
-    const classId = session.actor.fetchClassId();
-    const spawns = DataCache.newbieSpawns.find(ob => ob.classId === classId)?.spawns ?? [{ locX: -84318, locY: 244579, locZ: -3730 }];
-    const randomSpawn = spawns[Math.floor(Math.random() * spawns.length)];
+    const TownRespawn = invoke('GameServer/World/TownRespawn');
+    const townRespawn = TownRespawn.getRespawnCoords(actor.fetchLocX(), actor.fetchLocY());
+    const Generics = invoke(path.actor);
 
-    const targetCoord = {
-        locX: randomSpawn.locX + (Math.random() - 0.5) * 600,
-        locY: randomSpawn.locY + (Math.random() - 0.5) * 600,
-        locZ: randomSpawn.locZ
-    };
+    // Town restart is a complete respawn, unlike a gradual resurrection skill.
+    // Make the actor alive before TeleportTo checks HP/dead state.
+    Generics.revive(session, actor, { delayMs: 0, restoreFullVitals: true });
+    session.dataSendToMe(ServerResponse.userInfo(actor));
 
-    setTimeout(() => {
-        const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-        TeleportTo(session, session.actor, targetCoord);
-    }, 2800);
+    Generics.teleportTo(session, actor, townRespawn);
 }
 
 module.exports = restartPoint;
+module.exports.consume = consume;

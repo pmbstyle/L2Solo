@@ -6,6 +6,7 @@ const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const TownRespawn = invoke('GameServer/World/TownRespawn');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -34,19 +35,6 @@ const CHAT_PHRASES = {
     ]
 };
 
-const TOWNS = [
-    { name: "Talking Island", x: -84318, y: 244579, z: -3730 },
-    { name: "Elven Village", x: 45475, y: 48359, z: -3060 },
-    { name: "Dark Elven Village", x: 12111, y: 16686, z: -4582 },
-    { name: "Dwarven Village", x: 115632, y: -177996, z: -905 },
-    { name: "Orc Village", x: -45032, y: -113598, z: -192 },
-    { name: "Gludin", x: -80752, y: 149776, z: -3044 },
-    { name: "Gludio", x: -12736, y: 122816, z: -3114 },
-    { name: "Dion", x: 15631, y: 142885, z: -2704 },
-    { name: "Giran", x: 83396, y: 147904, z: -3404 },
-    { name: "Oren", x: 82960, y: 53177, z: -1497 }
-];
-
 function getRandomPhrase(category, ...args) {
     const list = CHAT_PHRASES[category];
     const phrase = list[Math.floor(Math.random() * list.length)];
@@ -58,24 +46,8 @@ function newbieSpawnCoords(classId) {
     return DataCache.newbieSpawns.find(ob => ob.classId === classId)?.spawns ?? [{ locX: -84318, locY: 244579, locZ: -3730 }];
 }
 
-function closestTown(locX, locY) {
-    let closest = TOWNS[0];
-    let minDist = Infinity;
-    TOWNS.forEach(town => {
-        const dx = town.x - locX;
-        const dy = town.y - locY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDist) {
-            minDist = dist;
-            closest = town;
-        }
-    });
-    return closest;
-}
-
 function townRespawnCoords(bot) {
-    const town = closestTown(bot.fetchLocX(), bot.fetchLocY());
-    return { locX: town.x, locY: town.y, locZ: town.z };
+    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
 }
 
 function isRealPlayerSession(session) {
@@ -209,7 +181,8 @@ const BotAI = {
     },
 
     getClosestTown(locX, locY) {
-        return closestTown(locX, locY);
+        const town = TownRespawn.getClosestTown(locX, locY);
+        return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
     },
 
     getDeathRespawnTarget(session, bot, wasCompanion = false) {
@@ -362,8 +335,9 @@ const BotAI = {
 
             // Revive after 12 seconds of death
             if (Date.now() - session.deathTimerStart > 12000) {
-                Generics.revive(session, bot);
-                bot.fillupVitals(); // Restore full HP/MP
+                // TeleportTo rejects actors that are still marked dead, so bot
+                // respawns must complete before applying the new town location.
+                Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true });
                 session.deathTimerStart = undefined;
                 session.currentTargetId = undefined;
                 session.incomingThreatId = undefined;
