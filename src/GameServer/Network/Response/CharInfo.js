@@ -1,5 +1,6 @@
 const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
@@ -78,7 +79,7 @@ function charInfo(actor) {
 
     packet
         .writeC(0x00)  // Party matching
-        .writeD(0x00)  // Abnormal effect
+        .writeD(EffectStore.abnormalMask(actor))  // Abnormal effect
         .writeC(0x00)  // Recommendations left
         .writeH(0x00)  // Recommendations won
         .writeD(actor.fetchMountNpcId?.() || 0)  // Mount NPC ID

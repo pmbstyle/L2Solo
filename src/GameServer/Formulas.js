@@ -357,12 +357,16 @@ const Formulas = {
         return Math.max(1, Math.min(99, 100 - (failRate / 100)));
     },
 
-    // Adapted from aCis calcSkillSuccess; C4SkillEffects supplies sourced trait-resist modifiers.
+    // Lisvus C4 Formulas.calcSkillSuccess. C4SkillEffects supplies the
+    // sourced trait-resist modifier because the local effect model keeps it
+    // separately from an L2Character stat calculator.
     calcSkillEffectSuccessRate({
         baseChance = 80,
         magic = false,
         mAtk = 0,
         mDef = 1,
+        soulshot = false,
+        spiritshot = false,
         blessedSpiritshot = false,
         attackerLevel = 1,
         targetLevel = 1,
@@ -370,21 +374,45 @@ const Formulas = {
         levelDepend = 0,
         resistModifier = 1
     } = {}) {
-        let mAtkModifier = 1;
+        let rate = Number(baseChance) || 0;
+        const resolvedLevelDepend = Number(levelDepend) || 2;
+
         if (magic) {
-            const boostedMAtk = (Number(mAtk) || 0) * (blessedSpiritshot ? 4 : 1);
-            mAtkModifier = (utils.sqrt(boostedMAtk) / Math.max(1, Number(mDef) || 1)) * 11;
+            rate *= Math.pow(
+                Math.max(0, Number(mAtk) || 0) / Math.max(1, Number(mDef) || 1),
+                0.2
+            );
         }
 
-        let levelModifier = 1;
-        if (Number(levelDepend) !== 0) {
-            const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
-            const delta = effectiveMagicLevel + Number(levelDepend) - (Number(targetLevel) || 1);
-            levelModifier = 1 + ((delta < 0 ? 0.01 : 0.005) * delta);
+        const shotModifier = blessedSpiritshot ? 200 : (spiritshot || soulshot ? 150 : 100);
+        if (shotModifier !== 100) {
+            rate = rate > (10000 / (100 + shotModifier))
+                ? 100 - (((100 - rate) * 100) / shotModifier)
+                : (rate * shotModifier) / 100;
         }
 
-        const chance = (Number(baseChance) || 0) * mAtkModifier * Math.max(0, levelModifier) * Math.max(0, Number(resistModifier) || 0);
-        return Math.max(1, Math.min(chance, 99));
+        if (resolvedLevelDepend > 0) {
+            let attackerLevelModifier = Number(attackerLevel) || 1;
+            let targetLevelModifier = Number(targetLevel) || 1;
+            if (attackerLevelModifier >= 70) attackerLevelModifier = ((attackerLevelModifier - 69) * 2) + 70;
+            if (targetLevelModifier >= 70) targetLevelModifier = ((targetLevelModifier - 69) * 2) + 70;
+
+            const resolvedMagicLevel = Number(magicLevel) || 0;
+            const delta = resolvedMagicLevel === 0
+                ? attackerLevelModifier - targetLevelModifier
+                : ((resolvedMagicLevel + attackerLevelModifier) / 2) - targetLevelModifier;
+            let levelModifier;
+            if ((delta + 3) < 0) {
+                levelModifier = delta <= -20 ? 0.05 : 1 - ((-1) * (delta / 20));
+                if (levelModifier >= 1) levelModifier = 0.05;
+            } else {
+                levelModifier = 1 + ((delta + 3) / 75);
+            }
+            rate *= Math.abs(levelModifier);
+        }
+
+        rate = Math.max(1, Math.min(rate, 99));
+        return rate * Math.max(0, Number(resistModifier) || 0);
     },
 
     calcRemoteHit(mAtk, power, mDef) {

@@ -1,5 +1,18 @@
 const DEFAULT_EFFECT_LEVEL = 1;
 
+// C4 abnormal-effect bits used by CharInfo/NpcInfo. MagicEffectIcons is only
+// sent to the affected player, so nearby clients need this mask to render
+// persistent control effects on another creature.
+const ABNORMAL_MASKS = {
+    bleed: 0x0001,
+    poison: 0x0002,
+    stun: 0x0040,
+    sleep: 0x0080,
+    silence: 0x0100,
+    root: 0x0200,
+    paralyze: 0x0400
+};
+
 function now() {
     return Date.now();
 }
@@ -33,6 +46,7 @@ function normalize(effect = {}) {
         manaDot: effect.manaDot || null,
         manaHot: effect.manaHot || null,
         hot: effect.hot || null,
+        confusionMobOnly: effect.confusionMobOnly === true,
         expiresAt
     };
 }
@@ -145,6 +159,14 @@ function impairments(actor) {
     };
 }
 
+function abnormalMask(actor) {
+    return activeDebuffs(actor).reduce((mask, effect) => {
+        const key = effect.key || effect.category;
+        const category = effect.category || effect.key;
+        return mask | (ABNORMAL_MASKS[key] || ABNORMAL_MASKS[category] || 0);
+    }, 0);
+}
+
 module.exports = {
     apply,
     remove,
@@ -156,5 +178,6 @@ module.exports = {
     activeDebuffs,
     hasDebuff,
     impairments,
+    abnormalMask,
     prune
 };

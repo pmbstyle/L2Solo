@@ -7,6 +7,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const SkillModel = invoke('GameServer/Model/Skill');
 const Formulas = invoke('GameServer/Formulas');
 const ConsoleText = invoke('GameServer/ConsoleText');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function npcWithRange(atkRadius, selfId = 900000) {
     return new Npc(900000, {
@@ -22,11 +23,11 @@ function npcWithRange(atkRadius, selfId = 900000) {
         int: 1,
         wit: 1,
         men: 1,
-        pAtk: 1,
+        pAtk: 100,
         pAtkRnd: 0,
-        pDef: 1,
-        mAtk: 1,
-        mDef: 1,
+        pDef: 100,
+        mAtk: 100,
+        mDef: 100,
         accur: 4.75,
         atkSpd: 253,
         castSpd: 333,
@@ -105,6 +106,23 @@ assert.strictEqual(rangedNpc.isTargetInAttackRange(target), true, 'ranged NPC sh
 assert.notStrictEqual(rangedNpc.fetchLocX(), target.fetchLocX(), 'ranged NPC must not snap onto the player');
 
 const meleeNpc = npcWithRange(40);
+EffectStore.apply(meleeNpc, {
+    key: 'npc_debuff_regression',
+    id: 9999,
+    type: 'debuff',
+    durationMs: 10000,
+    stats: { pAtkMul: 0.8, pDefMul: 0.77, pAtkSpdMul: 0.77, runSpdMul: 0.7 }
+});
+assert.strictEqual(meleeNpc.fetchCollectivePAtk(), 80, 'NPC P.Atk should apply active effect modifiers');
+assert.strictEqual(meleeNpc.fetchCollectivePDef(), 77, 'NPC P.Def should apply active effect modifiers');
+assert.strictEqual(meleeNpc.fetchCollectiveAtkSpd(), 195, 'NPC attack speed should apply active effect modifiers');
+assert.strictEqual(meleeNpc.fetchCollectiveRunSpd(), 84, 'NPC run speed should apply active effect modifiers');
+EffectStore.remove(meleeNpc, 'npc_debuff_regression');
+EffectStore.apply(meleeNpc, { key: 'stun', id: 100, type: 'debuff', durationMs: 10000 });
+const stunnedNpcSession = { packets: [], dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+meleeNpc.meleeHit(stunnedNpcSession, meleeNpc, target);
+assert.strictEqual(stunnedNpcSession.packets.some((packet) => packet[0] === 0x05), false, 'A stunned NPC must not start a melee attack');
+EffectStore.remove(meleeNpc, 'stun');
 assert.strictEqual(
     Math.round(meleeNpc.fetchCollectiveAccur()),
     39,

@@ -1,4 +1,5 @@
 const ReceivePacket = invoke('Packet/Receive');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
 function validatePosition(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -10,7 +11,7 @@ function validatePosition(session, buffer) {
         .readD()  // Head
         .readD(); // Vehicle Id
 
-    consume(session, {
+    return consume(session, {
         locX: packet.data[0],
         locY: packet.data[1],
         locZ: packet.data[2],
@@ -19,7 +20,13 @@ function validatePosition(session, buffer) {
 }
 
 function consume(session, data) {
+    if (!EffectRestrictions.canMove(session.actor)) {
+        EffectRestrictions.stopMovement(session, session.actor);
+        EffectRestrictions.reject(session);
+        return false;
+    }
     session.actor.updatePosition(data);
+    return true;
 }
 
 module.exports = validatePosition;

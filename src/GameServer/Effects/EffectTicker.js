@@ -46,6 +46,16 @@ function refreshEffects(session, target) {
         session.dataSendToMe(packet);
     }
 
+    if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {
+        target.session.dataSendToMe(ServerResponse.userInfo(target));
+    }
+
+    if (target?.fetchKind && session?.dataSendToMeAndOthers) {
+        session.dataSendToMeAndOthers(ServerResponse.npcInfo(target), target);
+    } else if (target?.session?.dataSendToOthers && target?.backpack?.fetchPaperdollSelfId) {
+        target.session.dataSendToOthers(ServerResponse.charInfo(target), target);
+    }
+
     try {
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         if (target?.session) PartyCompanionService.updateActorEffects(target.session);
@@ -72,6 +82,9 @@ function scheduleExpiry(session, target, effect) {
         clearRuntime(target, effect.key);
         if (target.activeBuffs?.[effect.key] && target.activeBuffs[effect.key] <= Date.now()) {
             delete target.activeBuffs[effect.key];
+        }
+        if (Object.keys(effect.stats || {}).length > 0) {
+            refreshStats(target.session || session, target);
         }
         refreshEffects(session, target);
     }, Math.max(1, delay + 25));
@@ -205,9 +218,10 @@ function applyManaHot(session, source, target, effect) {
 function applyDamage(session, source, target, damage) {
     if (session && source && target?.fetchId && source !== target) {
         if (target.fetchId() >= 2000000) {
-            invoke(path.actor).receivedHit(session, target, damage);
+            invoke(path.actor).receivedHit(session, target, damage, { wakeSleep: true });
         } else {
-            invoke(path.npc).receivedHit(session, source, target, damage);
+            // Lisvus keeps an attackable NPC asleep when it takes DOT damage.
+            invoke(path.npc).receivedHit(session, source, target, damage, { wakeSleep: false });
         }
         return;
     }
@@ -225,6 +239,11 @@ function applyManaDamage(target, damage) {
 }
 
 function refreshStats(session, target) {
+    if (target?.session) {
+        try {
+            invoke(path.actor).calculateStats(target?.session || session, target);
+        } catch (_) {}
+    }
     if (target?.statusUpdateVitals) {
         target.statusUpdateVitals(target);
     }
@@ -261,5 +280,6 @@ module.exports = {
     applyManaHot,
     applyHot,
     scheduleExpiry,
+    refreshEffects,
     clear
 };

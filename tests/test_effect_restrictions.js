@@ -4,10 +4,17 @@ require('../src/Global');
 
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const validatePosition = invoke('GameServer/Network/Request/ValidatePosition');
+const World = invoke('GameServer/World/World');
 
 function actor() {
     return {
         effects: {},
+        fetchId: () => 2000001,
+        fetchLocX: () => 10,
+        fetchLocY: () => 20,
+        fetchLocZ: () => 30,
+        fetchHead: () => 40,
         aborted: false,
         combatAborted: false,
         queue: false,
@@ -76,15 +83,22 @@ EffectRestrictions.interruptOnApply(stunnedSession, stunned, stunEffect);
 assert.strictEqual(EffectRestrictions.canMove(stunned), false, 'Stun should block movement');
 assert.strictEqual(EffectRestrictions.canAttack(stunned), false, 'Stun should block attacks');
 assert.strictEqual(EffectRestrictions.canCast(stunned), false, 'Stun should block casting');
+assert.strictEqual(EffectStore.abnormalMask(stunned), 0x0040, 'Stun should expose the C4 abnormal-effect mask');
 assert.strictEqual(stunned.aborted, true, 'Control debuff should abort current movement/action');
 assert.strictEqual(stunned.attack.timersCleared, true, 'Control debuff should clear active attack timers');
 assert.strictEqual(stunned.state.hits, false, 'Control debuff should clear active hit state');
 assert.strictEqual(stunned.state.casts, false, 'Control debuff should clear active cast state');
 assert.strictEqual(stunned.combatAborted, true, 'Control debuff should abort NPC-style combat loops when available');
 assert.strictEqual(stunnedSession.moveTimer, null, 'Control debuff should clear active move timer');
+assert(stunnedSession.packets.some((packet) => packet[0] === 0x47), 'Control debuff should send StopMove to halt an in-flight client move');
+
+stunnedSession.actor = stunned;
+const validatedWhileStunned = validatePosition(stunnedSession, Buffer.alloc(21));
+assert.strictEqual(validatedWhileStunned, false, 'ValidatePosition must not bypass an active control debuff');
 
 const sleeping = actor();
 EffectStore.apply(sleeping, { key: 'sleep', id: 1069, type: 'debuff', durationMs: 10000 });
+assert.strictEqual(EffectStore.abnormalMask(sleeping), 0x0080, 'Sleep should expose the C4 abnormal-effect mask');
 EffectRestrictions.wakeOnDamage(sleeping);
 assert.strictEqual(EffectStore.hasDebuff(sleeping, 'sleep'), false, 'Damage should wake a sleeping target');
 
@@ -92,6 +106,28 @@ const stunnedByDamage = actor();
 EffectStore.apply(stunnedByDamage, { key: 'stun', id: 100, type: 'debuff', durationMs: 10000 });
 EffectRestrictions.wakeOnDamage(stunnedByDamage);
 assert.strictEqual(EffectStore.hasDebuff(stunnedByDamage, 'stun'), true, 'Damage should not remove non-sleep control debuffs');
+
+const confusedMob = actor();
+confusedMob.fetchAttackable = () => true;
+confusedMob.state.fetchCombats = () => true;
+confusedMob.abortCombatState = () => { confusedMob.confusionCombatAborted = true; };
+confusedMob.enterCombatState = (_session, target) => { confusedMob.confusionTarget = target; };
+const confusionTarget = {
+    fetchAttackable: () => true,
+    fetchLocX: () => 100,
+    fetchLocY: () => 100,
+    fetchLocZ: () => 0
+};
+World.npc = { spawns: [confusedMob, confusionTarget] };
+World.user = { sessions: [] };
+const confusionEffect = EffectStore.apply(confusedMob, {
+    key: 'confusion', id: 2, type: 'debuff', durationMs: 10000, confusionMobOnly: true
+});
+EffectRestrictions.interruptOnApply(session(), confusedMob, confusionEffect);
+assert.strictEqual(confusedMob.confusionCombatAborted, true, 'ConfuseMob should replace an NPC combat loop before retargeting');
+assert.strictEqual(confusedMob.confusionTarget, confusionTarget, 'ConfuseMob should make an NPC attack a nearby attackable NPC');
+EffectRestrictions.stopConfusion(confusedMob);
+EffectStore.remove(confusedMob, 'confusion');
 
 const fearTarget = {
     ...actor(),
