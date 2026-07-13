@@ -56,6 +56,7 @@ const Opcodes = {
         table[0x68] = ClientRequest.requestPledgeCrest;
         table[0x6d] = ClientRequest.restartPoint;
         table[0xaa] = ClientRequest.userCommand;
+        table[0xac] = ClientRequest.recipeBookOpen;
         table[0xc0] = ClientRequest.requestPledgePower;
         table[0xcd] = ClientRequest.showMap;
 

@@ -46,6 +46,15 @@ class Skillset {
     awardSkills(id, classId, level) {
         return new Promise((success) => {
             const createOrUpdateSkill = (skill) => {
+                const skillDetails = DataCache.skills.find((item) => item.selfId === skill.selfId);
+                if (!skillDetails) {
+                    // A tree entry without a definition used to leave this promise pending forever.
+                    // That is especially harmful during class transfer: the class is persisted before
+                    // the client refresh packets are sent.
+                    utils.infoWarn('Datapack', 'SkillTree ClassId %d references unknown Skill SelfId %d', classId, skill.selfId);
+                    return Promise.resolve();
+                }
+
                 return new Promise((done) => {
                     skill.levels = skill.levels.filter((ob) => ob.pLevel <= level).pop();
 
@@ -60,11 +69,9 @@ class Skillset {
                         }
                         else {
                             // The skill is a new addition based on character's level
-                            DataCache.fetchSkillFromSelfId(skill.selfId, (skillDetails) => {
-                                skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
-                                Database.setSkill(skill, id).then(() => {
-                                    done();
-                                });
+                            skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
+                            Database.setSkill(skill, id).then(() => {
+                                done();
                             });
                         }
                     });

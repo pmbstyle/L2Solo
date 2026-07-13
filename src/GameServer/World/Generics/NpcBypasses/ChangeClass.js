@@ -27,7 +27,7 @@ function statusParams(actor) {
     ];
 }
 
-module.exports = function(session, parts) {
+module.exports = async function(session, parts) {
     const actor = session.actor;
     if (!actor || actor.isDead()) return;
 
@@ -94,26 +94,30 @@ module.exports = function(session, parts) {
 
     // Execute class change
     actor.setClassId(targetClassId);
-    
-    Database.updateCharacterClassId(actor.fetchId(), targetClassId).then(() => {
-        actor.skillset.awardSkills(actor.fetchId(), targetClassId, currentLevel).then(() => {
-            CalculateStats(session, actor);
-            actor.fillupVitals();
 
-            // Send social effect (Social ID 15 is Level Up, very shiny and appropriate)
-            session.dataSendToMeAndOthers(ServerResponse.socialAction(actor.fetchId(), 15), actor);
-            session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
-            session.dataSendToMe(ServerResponse.userInfo(actor));
-            session.dataSendToMe(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));
-            
-            // Notify
-            const className = parts.slice(2).join(' ') || 'new profession';
-            const html = `<html><body>Gatekeeper Sylvain:<br>Congratulations! You have successfully advanced your path and became a <font color="LEVEL">${className}</font>!<br><br><a action="bypass -h html 7070">Return</a></body></html>`;
-            session.dataSendToMe(ServerResponse.npcHtml(7070, html));
-        });
-    }).catch((err) => {
-        console.error("Database class change error:", err);
-    });
+    try {
+        await Database.updateCharacterClassId(actor.fetchId(), targetClassId);
+        await actor.skillset.awardSkills(actor.fetchId(), targetClassId, currentLevel);
+        CalculateStats(session, actor);
+        actor.fillupVitals();
+
+        // Send social effect (Social ID 15 is Level Up, very shiny and appropriate)
+        session.dataSendToMeAndOthers(ServerResponse.socialAction(actor.fetchId(), 15), actor);
+        session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+        session.dataSendToMe(ServerResponse.userInfo(actor));
+        session.dataSendToMe(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));
+        session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
+
+        // Notify
+        const className = parts.slice(2).join(' ') || 'new profession';
+        const html = `<html><body>Gatekeeper Sylvain:<br>Congratulations! You have successfully advanced your path and became a <font color="LEVEL">${className}</font>!<br><br><a action="bypass -h html 7070">Return</a></body></html>`;
+        session.dataSendToMe(ServerResponse.npcHtml(7070, html));
+    } catch (err) {
+        actor.setClassId(currentClassId);
+        await Database.updateCharacterClassId(actor.fetchId(), currentClassId).catch(() => {});
+        utils.infoWarn('Character', 'class change failed for %s: %s', actor.fetchName(), err.message);
+        html(session, '<html><body>Gatekeeper Sylvain:<br>The class transfer could not be completed. Your previous profession was restored.</body></html>');
+    }
 };
 
 module.exports.statusParams = statusParams;

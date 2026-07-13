@@ -44,6 +44,13 @@ function activate(session, actor, skill, key) {
     }
 
     const toggleMpConsume = Math.max(0, Number(semantic.toggleMpConsume) || 0);
+    if (semantic.stats?.relaxing) {
+        actor.silentMoving = true;
+        if (!actor.state?.fetchSeated?.()) {
+            actor.state?.setSeated?.(true);
+            session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+        }
+    }
     const effect = EffectStore.apply(actor, {
         key,
         id: skill.fetchSelfId(),
@@ -57,7 +64,8 @@ function activate(session, actor, skill, key) {
         manaDot: toggleMpConsume > 0 ? {
             toggle: true,
             damage: toggleMpConsume,
-            intervalMs: Math.max(1, Number(semantic.toggleIntervalMs) || 3000)
+            intervalMs: Math.max(1, Number(semantic.toggleIntervalMs) || 3000),
+            requiresSeated: semantic.stats?.relaxing === true
         } : null
     });
 
@@ -70,7 +78,9 @@ function activate(session, actor, skill, key) {
 }
 
 function deactivate(session, actor, key) {
+    const effect = EffectStore.list(actor).find((entry) => entry.key === key);
     EffectStore.remove(actor, key);
+    if (effect?.stats?.relaxing) actor.silentMoving = false;
     refreshActor(session, actor);
     session.dataSendToMe?.(ServerResponse.actionFailed());
     return true;

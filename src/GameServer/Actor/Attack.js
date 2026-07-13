@@ -7,6 +7,20 @@ const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 
+// L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
+const WEAPON_MASK_BY_KIND = Object.freeze({
+    'Weapon.Sword': 4,
+    'Weapon.Blunt': 8,
+    'Weapon.Knife': 16,
+    'Weapon.Bow': 32,
+    'Weapon.Pole': 64,
+    'Weapon.Fist': 256,
+    'Weapon.Dual': 512,
+    'Weapon.DualFist': 1024,
+    'Weapon.GreatSword': 2048,
+    'Weapon.BigBlunt': 16384
+});
+
 class Attack {
     constructor() {
         this.timers = new Set();
@@ -378,10 +392,35 @@ class Attack {
     }
 
     skillUseConditionFailure(actor, skill) {
-        const condition = skill.fetchSemantic?.().condition || null;
+        const semantic = skill.fetchSemantic?.() || {};
+        const condition = semantic.condition || null;
         const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill);
         if (summonFailure) {
             return summonFailure;
+        }
+
+        if (semantic.createItemId) {
+            const materialId = Number(semantic.itemConsumeId) || 0;
+            const required = Math.max(1, Number(semantic.itemConsumeCount) || 1);
+            const material = actor?.backpack?.fetchItems?.().find((item) => Number(item.fetchSelfId?.()) === materialId);
+            if (!material || Number(material.fetchAmount?.()) < required) return 'Not enough required items.';
+        }
+
+        const requires = semantic.requires || {};
+        if (requires.weaponsAllowed) {
+            const kind = actor?.backpack?.fetchTotalWeaponKind?.() || '';
+            const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
+                .some((item) => item?.fetchKind?.() === 'Armor.Shield');
+            const mask = WEAPON_MASK_BY_KIND[kind] || (hasShield ? 1048576 : 0);
+            if ((Number(requires.weaponsAllowed) & mask) === 0) {
+                return 'Incorrect weapon.';
+            }
+        }
+
+        if (requires.itemKind === 'shield') {
+            const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
+                .some((item) => item?.fetchKind?.() === 'Armor.Shield');
+            if (!hasShield) return 'A shield must be equipped.';
         }
 
         if (!condition) return null;
@@ -423,6 +462,12 @@ class Attack {
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
+            const magicCritRateMultiplier = EffectStats.multiplier(actor, 'mCritRateMul');
+            // The legacy combat loop has no baseline magic-critical roll yet. Preserve its
+            // established damage output, while allowing C4 effects such as Wild Magic to
+            // introduce the sourced roll explicitly.
+            const magicCritical = magicCritRateMultiplier > 1
+                && Formulas.rollCritical(4 * magicCritRateMultiplier, rng);
             const power = semantic.skillType === C4SkillRules.DEATH_LINK
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
                 : skill.fetchPower();
@@ -430,7 +475,7 @@ class Attack {
                 magicAtkOverride ?? actor.fetchCollectiveMAtk(),
                 power,
                 creature.fetchCollectiveMDef(),
-                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot }
+                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot, magicCritical }
             ) * vulnModifier);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
@@ -439,7 +484,7 @@ class Attack {
         const shield = Formulas.rollShieldUse({
             shieldRate: this.fetchShieldRate(creature),
             dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isFacing(creature, actor),
+            facing: this.isShieldFacing(creature, actor),
             bow: this.isBowAttack(actor)
         }, rng);
 
@@ -488,7 +533,7 @@ class Attack {
         const shield = Formulas.rollShieldUse({
             shieldRate: this.fetchShieldRate(creature),
             dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isFacing(creature, actor),
+            facing: this.isShieldFacing(creature, actor),
             bow: this.isBowAttack(actor)
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
@@ -526,7 +571,7 @@ class Attack {
         const shield = Formulas.rollShieldUse({
             shieldRate: this.fetchShieldRate(dst),
             dex: dst.fetchDex ? dst.fetchDex() : 0,
-            facing: this.isFacing(dst, src),
+            facing: this.isShieldFacing(dst, src),
             bow: this.isBowAttack(src)
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
@@ -550,7 +595,8 @@ class Attack {
 
     fetchShieldPDef(creature) {
         if (creature?.backpack?.fetchTotalShieldPDef) {
-            return creature.backpack.fetchTotalShieldPDef();
+            const base = creature.backpack.fetchTotalShieldPDef();
+            return (base * EffectStats.multiplier(creature, 'sDefMul')) + EffectStats.add(creature, 'sDefAdd');
         }
 
         const shield = this.fetchNpcShieldItem(creature);
@@ -628,6 +674,11 @@ class Attack {
         if (diff > Math.PI) diff = (Math.PI * 2) - diff;
 
         return diff <= (degrees / 2) * (Math.PI / 180);
+    }
+
+    isShieldFacing(target, attacker) {
+        const configured = Number(EffectStats.add(target, 'shieldDefAngle')) || 0;
+        return this.isFacing(target, attacker, configured > 0 ? configured : Formulas.DEFAULT_SHIELD_DEFENCE_ANGLE);
     }
 
     isBehindTarget(attacker, target) {

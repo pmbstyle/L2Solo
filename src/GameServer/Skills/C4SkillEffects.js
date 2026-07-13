@@ -25,6 +25,8 @@ function execute(session, actor, target, skill, context = {}) {
         lethal: false,
         mpRestore: 0,
         cpRestore: 0,
+        cpDamage: 0,
+        createdItems: [],
         spReward: 0,
         charges: null,
         aggroDamage: 0,
@@ -55,6 +57,9 @@ function execute(session, actor, target, skill, context = {}) {
         result.heal = applyHealPercent(session, actor, target, skill, semantic, magicSkill, context.attack);
         if (semantic.manaHealPercent) {
             result.mpRestore = applyManaHealPercent(session, actor, target, skill, semantic, magicSkill, context.attack);
+        }
+        if (semantic.effect) {
+            result.effect = applyEffect(session, target, skill, semantic, actor);
         }
         return result;
     }
@@ -109,6 +114,21 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.BALANCE_LIFE) {
+        result.heal = applyBalanceLife(session, actor);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.COMBAT_POINT_DAMAGE) {
+        result.cpDamage = applyCombatPointDamage(session, actor, target, skill, semantic, magicSkill, context.attack);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.CREATE_ITEM) {
+        result.createdItems = applyCreateItem(session, actor, semantic);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.GIVE_SP) {
         result.spReward = applyGiveSp(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
@@ -121,6 +141,12 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.DRAIN_SOUL) {
         result.absorbedSoul = applyDrainSoul(actor, target);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
+    if (semantic.skillType === C4SkillRules.SEED) {
+        result.effect = applySeed(session, actor, target, skill, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
@@ -238,7 +264,7 @@ function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) 
             spiritshot: usedSpiritshot && skill.fetchSsBoost() > 0,
             blessedSpiritshot: usedBlessedSpiritshot && skill.fetchSsBoost() > 0
         }
-    ));
+    ) * EffectStats.multiplier(target, 'gainHpMul'));
 
     const maxHp = Number(target.fetchMaxHp?.()) || 0;
     const currentHp = Number(target.fetchHp?.()) || 0;
@@ -322,6 +348,31 @@ function applyCombatPointHeal(session, actor, target, skill, semantic, magicSkil
     refreshCp(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextCp - currentCp);
+}
+
+function applyCombatPointDamage(session, actor, target, skill, semantic, magicSkill, attack) {
+    const percent = Math.max(0, Number(semantic.cpDamagePercent ?? skill.fetchPower?.()) || 0);
+    const currentCp = Math.max(0, Number(target.fetchCp?.()) || 0);
+    const maxCp = Math.max(0, Number(target.fetchMaxCp?.()) || 0);
+    const damage = Math.min(currentCp, Math.round(maxCp * percent / 100));
+    if (typeof target.setCp === 'function') target.setCp(currentCp - damage);
+    refreshCp(session, actor, target);
+    clearLoadedShot(attack || actor.attack, actor, magicSkill);
+    return damage;
+}
+
+function applyCreateItem(session, actor, semantic) {
+    const itemId = Number(semantic.itemConsumeId) || 0;
+    const itemCount = Math.max(1, Number(semantic.itemConsumeCount) || 1);
+    const createdId = Number(semantic.createItemId) || 0;
+    const createdCount = Math.max(0, Number(semantic.createItemCount) || 0);
+    const source = actor?.backpack?.fetchItems?.().find((item) => Number(item.fetchSelfId?.()) === itemId && Number(item.fetchAmount?.()) >= itemCount);
+    if (!source || !createdId || !createdCount) return [];
+
+    actor.backpack.deleteItem(session, source.fetchId(), itemCount, () => {
+        invoke('GameServer/World/World').purchaseItem(session, createdId, createdCount);
+    });
+    return [{ selfId: createdId, amount: createdCount }];
 }
 
 function applyGiveSp(session, actor, target, skill, semantic, magicSkill, attack) {
@@ -624,6 +675,45 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
     return effect;
 }
 
+function applySeed(session, actor, target, skill, semantic) {
+    if (!target || !semantic.effect) return null;
+    const durationMs = Math.max(1, Number(semantic.seedDurationMs) || 5000);
+    const allSeeds = EffectStore.list(target).filter((effect) => effect.category === 'element_seed');
+    allSeeds.forEach((effect) => {
+        effect.expiresAt = Date.now() + durationMs;
+        EffectTicker.scheduleExpiry(session, target, effect);
+    });
+
+    const existing = allSeeds.find((effect) => Number(effect.id) === Number(skill.fetchSelfId()));
+    if (existing) {
+        existing.stats.seedPower = Math.max(1, Number(existing.stats?.seedPower) || 1) + 1;
+        existing.expiresAt = Date.now() + durationMs;
+        EffectTicker.scheduleExpiry(session, target, existing);
+        EffectTicker.refreshEffects(session, target);
+        return existing;
+    }
+
+    const effect = EffectStore.apply(target, {
+        key: semantic.effect,
+        id: skill.fetchSelfId(),
+        level: skill.fetchLevel(),
+        name: skill.fetchName(),
+        type: semantic.effectType || 'debuff',
+        category: 'element_seed',
+        dispellable: true,
+        stats: { seedPower: 1 },
+        durationMs
+    });
+    EffectTicker.scheduleExpiry(session, target, effect);
+    EffectTicker.refreshEffects(session, target);
+    return effect;
+}
+
+function seedPower(target, skillId) {
+    return Math.max(0, Number(EffectStore.list(target)
+        .find((effect) => Number(effect.id) === Number(skillId))?.stats?.seedPower) || 0);
+}
+
 function applyCleanse(session, target, semantic) {
     const removed = [];
     (semantic.cleanse || []).forEach((entry) => {
@@ -912,8 +1002,20 @@ function hasStats(effect) {
     return Object.keys(effect?.stats || {}).length > 0;
 }
 
+function applyBalanceLife(session, actor) {
+    const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+    // A companion can cast this skill too; PartyAwareness is rooted at the leader.
+    const leaderSession = session?.followPlayerSession || session;
+    const members = PartyAwareness.partyActors(leaderSession).filter((member) => !member.isDead?.());
+    if (!members.length) return 0;
+    const fraction = members.reduce((total, member) => total + (member.fetchHp() / member.fetchMaxHp()), 0) / members.length;
+    members.forEach((member) => { member.setHp(Math.floor(member.fetchMaxHp() * fraction)); member.statusUpdateVitals?.(member); });
+    return fraction;
+}
+
 module.exports = {
     execute,
+    seedPower,
     validateSummonUse,
     hasRequiredSkillItems
 };
