@@ -51,9 +51,15 @@ function spawnGroundDrop(world, session, npc, selfId, amount) {
 function npcRewards(session, npc) {
     DataCache.fetchNpcRewardsFromSelfId(npc.fetchSelfId(), (result) => {
         const rewards = result.rewards ?? [];
+        const dropState = npc.model ?? npc;
+        const rewardContext = {
+            npcLevel: npc.fetchLevel?.() ?? npc.model?.level,
+            killerLevel: dropState.dropLastAttackerLevel ?? session?.actor?.fetchLevel?.(),
+            attackerLevels: dropState.dropAttackerLevels ?? []
+        };
 
         rewards.forEach((reward) => {
-            const groupRoll = ProgressionRates.rollGroup(reward.overall, ProgressionRates.groupRate(reward, 'drop'));
+            const groupRoll = ProgressionRates.rewardGroupRoll(reward, 'drop', rewardContext);
             if (groupRoll.hit) {
                 let number = Math.random() * 100;
                 let rewardPartition = 0;

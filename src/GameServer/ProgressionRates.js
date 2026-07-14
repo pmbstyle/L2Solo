@@ -4,6 +4,12 @@ const PRESETS = {
     x50: { label: 'x50', multiplier: 50 }
 };
 
+const DEEP_BLUE_LEVEL_GAP = 9;
+const DEEP_BLUE_PENALTY_PER_LEVEL = 9;
+const DEEP_BLUE_CHANCE_DIVISOR = 3;
+// L2DropData.MAX_CHANCE is 1,000,000 in Lisvus, whose post-rounding floor is 1.
+const MIN_DEEP_BLUE_CHANCE = 0.0001;
+
 function numberOr(value, fallback) {
     if (value === undefined || value === null || value === '') return fallback;
     const parsed = Number(value);
@@ -42,14 +48,66 @@ function groupRate(group, kind = 'drop') {
     return kind === 'spoil' ? current.spoil : current.drop;
 }
 
-function rollGroup(overall, rate, rng = Math.random) {
+function rollGroup(overall, rate, rng = Math.random, minimumChance = 0) {
     const scaled = Math.max(0, Number(overall) || 0) * numberOr(rate, 1);
-    const chance = Math.min(100, scaled);
+    const chance = Math.min(100, Math.max(Math.max(0, Number(minimumChance) || 0), scaled));
 
     return {
         hit: chance > 0 && rng() * 100 <= chance,
-        amountMultiplier: Math.max(1, scaled / 100)
+        amountMultiplier: amountMultiplier(overall, rate)
     };
+}
+
+function amountMultiplier(overall, rate) {
+    const scaled = Math.max(0, Number(overall) || 0) * numberOr(rate, 1);
+    return Math.max(1, scaled / 100);
+}
+
+function deepBlueRule({ npcLevel, killerLevel, attackerLevels = [] } = {}) {
+    const levels = [killerLevel, ...attackerLevels]
+        .map((level) => Number(level))
+        .filter((level) => Number.isFinite(level) && level > 0);
+    const highestLevel = levels.length > 0 ? Math.max(...levels) : 0;
+    const normalizedNpcLevel = Number(npcLevel);
+    const levelGap = Number.isFinite(normalizedNpcLevel) && normalizedNpcLevel > 0
+        ? highestLevel - normalizedNpcLevel
+        : 0;
+
+    if (levelGap < DEEP_BLUE_LEVEL_GAP) {
+        return { active: false, highestLevel, levelGap, penaltyPercent: 0, chanceMultiplier: 1, minimumChance: 0 };
+    }
+
+    const penaltyPercent = (levelGap - (DEEP_BLUE_LEVEL_GAP - 1)) * DEEP_BLUE_PENALTY_PER_LEVEL;
+    return {
+        active: true,
+        highestLevel,
+        levelGap,
+        penaltyPercent,
+        chanceMultiplier: Math.max(0, (100 - penaltyPercent) / 100) / DEEP_BLUE_CHANCE_DIVISOR,
+        minimumChance: MIN_DEEP_BLUE_CHANCE
+    };
+}
+
+function rewardGroupRoll(group, kind = 'drop', context = {}, rng = Math.random) {
+    const current = profile();
+    const rule = deepBlueRule(context);
+    const baseRate = groupRate(group, kind);
+    let rate = baseRate;
+
+    if (rule.active) {
+        rate *= rule.chanceMultiplier;
+        // Lisvus divides deep-blue Adena by RateDropItems before applying RateDropAdena.
+        // This keeps a shared high-rate preset from cancelling the retail penalty.
+        if ((group.items || []).some((item) => Number(item.selfId) === 57)) {
+            rate = current.drop > 0 ? rate / current.drop : 0;
+        }
+    }
+
+    const roll = rollGroup(group.overall, rate, rng, rule.minimumChance);
+    // Lisvus applies the Deep Blue modifier to categorized normal-drop chance,
+    // but still calculates a selected item's high-rate quantity from its base rate.
+    const amountRate = rule.active && kind === 'drop' ? baseRate : rate;
+    return { ...roll, amountMultiplier: amountMultiplier(group.overall, amountRate), rule };
 }
 
 function scaleAmount(amount, amountMultiplier, rng = Math.random) {
@@ -66,5 +124,7 @@ module.exports = {
     profile,
     groupRate,
     rollGroup,
+    deepBlueRule,
+    rewardGroupRoll,
     scaleAmount
 };

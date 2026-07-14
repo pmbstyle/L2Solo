@@ -25,9 +25,15 @@ function hasSpoils(npc) {
 
 function rollSpoils(npc) {
     const awarded = [];
+    const dropState = npc.model ?? npc;
+    const rewardContext = {
+        npcLevel: npc.fetchLevel?.() ?? npc.model?.level,
+        killerLevel: dropState.dropLastAttackerLevel,
+        attackerLevels: dropState.dropAttackerLevels ?? []
+    };
 
     fetchSpoilGroups(npc).forEach((group) => {
-        const groupRoll = ProgressionRates.rollGroup(group.overall, ProgressionRates.groupRate(group, 'spoil'));
+        const groupRoll = ProgressionRates.rewardGroupRoll(group, 'spoil', rewardContext);
         if (!groupRoll.hit) {
             return;
         }
