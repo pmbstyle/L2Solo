@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ClassProgression = invoke('GameServer/ClassProgression');
 
 function html(session, body) {
     session.dataSendToMe(ServerResponse.npcHtml(7070, body));
@@ -71,6 +72,8 @@ module.exports = async function(session, parts) {
         56: [57]
     };
 
+    const thirdClass = ClassProgression.getThirdClass(targetClassId);
+
     let isAllowed = false;
     let requiredLevel = 20;
 
@@ -80,6 +83,9 @@ module.exports = async function(session, parts) {
     } else if (secondProfMap[currentClassId] && secondProfMap[currentClassId].includes(targetClassId)) {
         isAllowed = true;
         requiredLevel = 40;
+    } else if (thirdClass?.parentClassId === currentClassId) {
+        isAllowed = true;
+        requiredLevel = 76;
     }
 
     if (!isAllowed) {

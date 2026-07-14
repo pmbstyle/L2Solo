@@ -1,4 +1,5 @@
 const CreatureModel = invoke('GameServer/Model/Creature');
+const Formulas = invoke('GameServer/Formulas');
 
 class ActorModel extends CreatureModel {
 
@@ -249,7 +250,7 @@ class ActorModel extends CreatureModel {
     // Abstract
 
     isSpellcaster() {
-        return [10, 25, 38, 49].includes(this.fetchClassId()) ? 1 : 0;
+        return [10, 25, 38, 49].includes(Formulas.getParentClassId(this.fetchClassId())) ? 1 : 0;
     }
 
     fillupCp() {

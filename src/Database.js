@@ -2,6 +2,24 @@ const SQL = require('like-sql'), builder = new SQL();
 
 let conn;
 
+function normalizeRowNumbers(row) {
+    return Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, typeof value === 'bigint' ? Number(value) : value])
+    );
+}
+
+function migrateCharacterExperience(optn) {
+    return conn.query(
+        'SELECT DATA_TYPE AS dataType FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+        [optn.databaseName, 'characters', 'exp']
+    ).then((rows) => {
+        if (rows[0]?.dataType === 'bigint') return null;
+        return conn.query('ALTER TABLE `characters` MODIFY COLUMN `exp` BIGINT NOT NULL DEFAULT 0');
+    }).catch((error) => {
+        utils.infoWarn('DB', 'failed to migrate characters.exp to BIGINT: %s', error.message);
+    });
+}
+
 const Database = {
     init: (callback) => {
         const optn = options.default.Database;
@@ -16,13 +34,15 @@ const Database = {
         }).then((instance) => {
             utils.infoSuccess('DB', 'connected');
             conn = instance;
-            conn.query('ALTER TABLE `items` ADD COLUMN `petData` TEXT NULL')
+            Promise.all([
+                conn.query('ALTER TABLE `items` ADD COLUMN `petData` TEXT NULL')
                 .catch((error) => {
                     if (error?.errno !== 1060) {
                         utils.infoWarn('DB', 'failed to add items.petData: %s', error.message);
                     }
-                })
-                .finally(callback);
+                }),
+                migrateCharacterExperience(optn)
+            ]).finally(callback);
 
         }).catch(error => {
             utils.infoFail('DB', 'failed(%d) -> %s', error.errno, error.text);
@@ -54,20 +74,20 @@ const Database = {
     fetchCharacters: (username) => {
         return Database.execute(
             builder.select('characters', ['*'], 'username = ?', username)
-        );
+        ).then((rows) => rows.map(normalizeRowNumbers));
     },
 
     fetchClanCharacters() {
         return Database.execute(
             builder.select('characters', ['*'], 'clanId != 0')
-        );
+        ).then((rows) => rows.map(normalizeRowNumbers));
     },
 
     // Checks if acharacter `Name` exists
     fetchCharacterName: (name) => {
         return Database.execute(
             builder.selectOne('characters', ['*'], 'name = ?', name)
-        );
+        ).then((rows) => rows.map(normalizeRowNumbers));
     },
 
     // Stores a new `Character` in database with provided details
