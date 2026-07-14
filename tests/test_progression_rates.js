@@ -31,6 +31,33 @@ assert.strictEqual(rareHit.amountMultiplier, 1);
 const rareMiss = ProgressionRates.rollGroup(0.5, profile.drop, () => 0.051);
 assert.strictEqual(rareMiss.hit, false);
 
+const noDeepBlue = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 28, attackerLevels: [27] });
+assert.strictEqual(noDeepBlue.active, false);
+assert.strictEqual(noDeepBlue.chanceMultiplier, 1);
+
+const deepBlue = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 29, attackerLevels: [25] });
+assert.strictEqual(deepBlue.active, true);
+assert.strictEqual(deepBlue.penaltyPercent, 9);
+assert.strictEqual(deepBlue.chanceMultiplier, 0.91 / 3);
+
+const highContributor = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 20, attackerLevels: [30] });
+assert.strictEqual(highContributor.levelGap, 10);
+assert.strictEqual(highContributor.penaltyPercent, 18);
+
+process.env.L2NODE_PROGRESSION_RATE = 'x10';
+const deepBlueAdena = ProgressionRates.rewardGroupRoll(adenaGroup, 'drop', { npcLevel: 20, killerLevel: 29 }, () => 0.2);
+assert.strictEqual(deepBlueAdena.rule.active, true);
+assert.strictEqual(deepBlueAdena.amountMultiplier, 7);
+assert.strictEqual(deepBlueAdena.hit, true);
+
+const deepBlueItem = ProgressionRates.rewardGroupRoll({ overall: 100, items: [{ selfId: 1000 }] }, 'drop', { npcLevel: 20, killerLevel: 29 }, () => 0.31);
+assert.strictEqual(deepBlueItem.hit, true);
+assert.strictEqual(deepBlueItem.amountMultiplier, 10);
+
+const summonOwner = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 40, attackerLevels: [10] });
+assert.strictEqual(summonOwner.highestLevel, 40);
+assert.strictEqual(summonOwner.active, true);
+
 const originalDropChanceRate = options.default.General.dropChanceRate;
 options.default.General.dropChanceRate = 0;
 profile = ProgressionRates.profile();
