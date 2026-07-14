@@ -8,13 +8,14 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
-function actor(id, x, level = 10) {
+function actor(id, x, level = 10, karma = 0) {
     return {
         fetchId: () => id,
         fetchLocX: () => x,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
         fetchLevel: () => level,
+        fetchKarma: () => karma,
         fetchIsOnline: () => true
     };
 }
@@ -48,6 +49,7 @@ async function run() {
     const nearBotA = session('bot_near_a', actor(2, 1000), { populationHotAt: Date.now() - 300000 });
     const nearBotB = session('bot_near_b', actor(3, 2000), { populationHotAt: Date.now() - 300000 });
     const farBot = session('bot_far', actor(4, 14000), { populationHotAt: Date.now() - 300000 });
+    const farPk = session('bot_far_pk', actor(6, 16000, 10, 720), { plan: 'pk_hunting', populationHotAt: Date.now() - 300000 });
     const youngFarBot = session('bot_young_far', actor(5, 15000), { populationHotAt: Date.now() - 1000 });
 
     Config.activationRadius = 9000;
@@ -58,9 +60,10 @@ async function run() {
     Config.cooldownRadius = 11000;
     Config.cooldownBatchSize = 20;
     World.user = { sessions: [playerSession, nearBotA, nearBotB, farBot, youngFarBot] };
-    BotManager.sessions = [nearBotA, nearBotB, farBot, youngFarBot];
+    BotManager.sessions = [nearBotA, nearBotB, farBot, farPk, youngFarBot];
 
     const coldStates = [
+        { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
         { characterId: 101, name: 'ColdA', level: 10 },
         { characterId: 102, name: 'ColdB', level: 10 },
         { characterId: 103, name: 'ColdC', level: 10 }
@@ -68,7 +71,7 @@ async function run() {
     let coldLimit = null;
     LifeState.coldNear = (_loc, _radius, limit) => {
         coldLimit = limit;
-        return Promise.resolve(coldStates.slice(0, limit));
+        return Promise.resolve(coldStates);
     };
     const activated = [];
     PopulationService.requestActivation = (state) => {
@@ -86,7 +89,7 @@ async function run() {
         return Promise.resolve({ ok: true });
     };
     await PopulationService.cooldownEligibleHot();
-    assert.deepStrictEqual(cooled, ['bot_far'], 'cooldown should keep near-player and newly activated hot bots resident');
+    assert.deepStrictEqual(cooled, ['bot_far'], 'cooldown should keep near-player, PK, and newly activated hot bots resident');
 }
 
 run()

@@ -121,6 +121,8 @@ const STARTER_REGIONS = [
     }
 ];
 
+const PkProfiles = invoke('GameServer/Bot/AI/PkProfiles');
+
 function appearance(seed, sex) {
     return {
         sex,
@@ -166,6 +168,11 @@ const BotPopulation = {
             });
         });
 
+        PkProfiles.materializeBots().forEach((profileData, index) => {
+            const bot = profileData;
+            bots.push({ ...profileData, ...appearance(100 + index, bot.sex) });
+        });
+
         return bots;
     },
 
@@ -173,6 +180,10 @@ const BotPopulation = {
         return STARTER_REGIONS
             .map((region) => `${region.name}: ${bots.filter((bot) => bot.homeRegion === region.name).length}`)
             .join(', ');
+    },
+
+    pkEncounters(random = Math.random) {
+        return PkProfiles.materializeBots(random);
     }
 };
 

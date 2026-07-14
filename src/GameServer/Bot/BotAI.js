@@ -186,6 +186,13 @@ const BotAI = {
     },
 
     getDeathRespawnTarget(session, bot, wasCompanion = false) {
+        if (session?.pkProfile?.anchor) {
+            return { ...session.pkProfile.anchor };
+        }
+        if (bot.fetchKarma?.() > 0) {
+            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
+        }
+
         if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
             return {
                 locX: session.initialSpawnCoord.locX,
@@ -296,7 +303,7 @@ const BotAI = {
         const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
-        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping') {
+        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -346,11 +353,7 @@ const BotAI = {
                 let spawnTarget;
                 if (bot.fetchKarma() > 0) {
                     session.plan = 'pk_hunting';
-                    const BotManager = invoke('GameServer/Bot/BotManager');
-                    spawnTarget = BotManager.findHighDensityCoord();
-                    spawnTarget.locX += (Math.random() - 0.5) * 800;
-                    spawnTarget.locY += (Math.random() - 0.5) * 800;
-                    spawnTarget.locZ = GeodataEngine.getHeight(spawnTarget.locX, spawnTarget.locY, spawnTarget.locZ);
+                    spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else {
                     if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                         session.plan = 'merchant';

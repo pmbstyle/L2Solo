@@ -536,6 +536,7 @@ const BotLifeState = {
         return Database.execute([
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
+            AND activity <> 'pk_hunting'
             AND locX BETWEEN ? AND ?
             AND locY BETWEEN ? AND ?
             LIMIT ${safeLimit * 3}`,
@@ -565,6 +566,7 @@ const BotLifeState = {
         return Database.execute([
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
+            AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             ORDER BY COALESCE(nextResolveAt, 0) ASC

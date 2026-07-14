@@ -15,7 +15,8 @@ const COLORS = {
     cold: '#7aa7ff',
     player: '#57c7e8',
     merchant: '#d8b96d',
-    dead: '#e66d61'
+    dead: '#e66d61',
+    pk: '#ff3b30'
 };
 
 const els = {
@@ -187,6 +188,7 @@ function applyViewport(viewport) {
 }
 
 function phaseColor(item) {
+    if (item.isPk) return COLORS.pk;
     if (item.kind === 'player') return COLORS.player;
     if (item.mode === 'merchant') return COLORS.merchant;
     if (item.blockers && item.blockers.includes('dead')) return COLORS.dead;
@@ -398,7 +400,7 @@ function renderActorList() {
         button.innerHTML = `
             <span class="phase-dot" style="background:${phaseColor(bot)}"></span>
             <span class="actor-main">
-                <strong>${bot.name}</strong>
+                <strong>${bot.isPk ? 'PK ' : ''}${bot.name}</strong>
                 <span>${bot.phase} / ${bot.mode} / Lv ${bot.level}</span>
             </span>
             <span class="actor-vitals">
@@ -445,8 +447,9 @@ function renderSelected() {
     const loc = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
     const hpPct = actor.vitals?.hpPct ?? 0;
     const mpPct = actor.vitals?.mpPct ?? 0;
+    const kind = actor.isPk ? 'PK' : 'Player';
     const detail = actor.kind === 'player' || state.selectedId.kind === 'player'
-        ? `Player / ${actor.online ? 'online' : 'offline'}`
+        ? `${kind} / ${actor.online ? 'online' : 'offline'}`
         : `${actor.phase} / ${actor.mode} / ${actor.intent || 'idle'} / ${actor.role}`;
     const target = actor.target?.name ? `Target: ${actor.target.name}` : actor.spot?.name ? `Spot: ${actor.spot.name}` : 'No target';
 

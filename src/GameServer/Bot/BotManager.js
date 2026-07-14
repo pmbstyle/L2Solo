@@ -33,6 +33,9 @@ const merchantConfigFor = (botData, characterName) => MerchantConfigs[botData.me
 
 const BotManager = {
     sessions: [],
+    pkEncounterTimer: null,
+    pkEncounterPending: new Set(),
+    pkEncounterBots: [],
 
     findSessionByName(name) {
         const lookup = String(name || '').toLowerCase();
@@ -209,7 +212,7 @@ const BotManager = {
         BotSocialMemory.init();
         PopulationService.init();
         
-        const bots = [...BOTS_TO_SPAWN, ...MERCHANT_BOTS];
+        const bots = [...BOTS_TO_SPAWN.filter((bot) => bot.plan !== 'pk_hunting'), ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
         
         // Wait 5 seconds after startup to let world finish loading
@@ -217,10 +220,84 @@ const BotManager = {
             bots.forEach((botData, idx) => {
                 this.provisionAndSpawn(botData, idx);
             });
-            this.startDynamicScalingMonitor();
-            this.startStatusLogMonitor();
-            PopulationService.start();
+            this.pkEncounterBots = BotPopulation.pkEncounters();
+            this.hydratePkEncounterAnchors().finally(() => {
+                this.startPkEncounterMonitor();
+                this.startDynamicScalingMonitor();
+                this.startStatusLogMonitor();
+                PopulationService.start();
+            });
         }, 5000);
+    },
+
+    bindPkAnchorToCharacter(botData, character) {
+        if (!botData?.dynamicStarter || !botData.pkProfile?.anchor || !character) return botData;
+        const anchor = {
+            locX: Number(character.locX),
+            locY: Number(character.locY),
+            locZ: Number(character.locZ)
+        };
+        if (!Number.isFinite(anchor.locX) || !Number.isFinite(anchor.locY) || !Number.isFinite(anchor.locZ)) return botData;
+        botData.pkProfile = { ...botData.pkProfile, anchor };
+        botData.locX = anchor.locX;
+        botData.locY = anchor.locY;
+        botData.locZ = anchor.locZ;
+        return botData;
+    },
+
+    hydratePkEncounterAnchors() {
+        return Promise.all(this.pkEncounterBots.map((botData) => (
+            botData.dynamicStarter
+                ? Shared.fetchCharacters(botData.username)
+                    .then((characters) => this.bindPkAnchorToCharacter(botData, characters[0]))
+                    .catch(() => botData)
+                : Promise.resolve(botData)
+        )));
+    },
+
+    activePopulationForPk(profile) {
+        if (!profile) return [];
+        return World.user.sessions.filter((session) => {
+            const actor = session?.actor;
+            if (!actor || !actor.fetchIsOnline?.() || session.plan === 'merchant') return false;
+            if (actor.state?.fetchDead?.() || utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) return false;
+            if (Number(actor.fetchKarma?.() || 0) !== 0) return false;
+            // The encounter stays alive for any local white actor. The level
+            // bracket is enforced by PkHuntingState when it selects victims;
+            // an out-of-band player is still a threat the PK must react to.
+            const dx = actor.fetchLocX() - profile.anchor.locX;
+            const dy = actor.fetchLocY() - profile.anchor.locY;
+            return Math.sqrt(dx * dx + dy * dy) <= profile.activationRadius;
+        });
+    },
+
+    reconcilePkEncounters() {
+        const encounters = this.pkEncounterBots;
+        return encounters.reduce((chain, botData, index) => chain.then(() => {
+            const active = this.sessions.find((session) => session.accountId === botData.username && session.actor);
+            const hasPopulation = this.activePopulationForPk(botData.pkProfile).length > 0;
+            if (hasPopulation && !active && !this.pkEncounterPending.has(botData.username)) {
+                this.pkEncounterPending.add(botData.username);
+                this.provisionAndSpawn(botData, 1000 + index);
+                setTimeout(() => this.pkEncounterPending.delete(botData.username), 12000);
+                return null;
+            }
+            if (!hasPopulation && active) {
+                return PopulationService.cooldownSession(active, 'pk_no_eligible_player', {
+                    allowPk: true,
+                    ignoreVisibility: true
+                });
+            }
+            return null;
+        }), Promise.resolve());
+    },
+
+    startPkEncounterMonitor() {
+        if (this.pkEncounterTimer) return;
+        if (this.pkEncounterBots.length === 0) this.pkEncounterBots = BotPopulation.pkEncounters();
+        this.reconcilePkEncounters();
+        this.pkEncounterTimer = setInterval(() => this.reconcilePkEncounters(), 15000);
+        if (typeof this.pkEncounterTimer.unref === 'function') this.pkEncounterTimer.unref();
     },
 
     provisionAndSpawn(botData, idx) {
@@ -251,7 +328,9 @@ const BotManager = {
     provisionCharacter(username, botData, idx) {
         Database.fetchCharacters(username).then((characters) => {
             if (characters[0]) {
-                this.loadAndSpawnBot(username, botData);
+                this.applyProfileLevel(characters[0], botData)
+                    .then(() => this.awardProfileSkills(characters[0].id, botData))
+                    .then(() => this.loadAndSpawnBot(username, botData));
                 return;
             }
 
@@ -293,13 +372,39 @@ const BotManager = {
 
                     Database.createCharacter(username, charData).then((packet) => {
                         const charId = Number(packet.insertId);
-                        this.awardBaseGear(charId, effectiveBotData.classId);
-                        this.awardBaseSkills(charId, effectiveBotData.classId);
-                        this.loadAndSpawnBot(username, effectiveBotData);
+                        this.applyProfileLevel({ id: charId }, effectiveBotData)
+                            .then(() => this.awardProfileSkills(charId, effectiveBotData))
+                            .then(() => {
+                                this.awardBaseGear(charId, effectiveBotData.classId);
+                                if (Number(effectiveBotData.level || 1) <= 1) {
+                                    this.awardBaseSkills(charId, effectiveBotData.classId);
+                                }
+                                this.loadAndSpawnBot(username, effectiveBotData);
+                            });
                     });
                 });
             });
         });
+    },
+
+    applyProfileLevel(character, botData = {}) {
+        const level = Number(botData.level || 0);
+        if (!character?.id || level <= 1) return Promise.resolve(false);
+        const exp = Number(DataCache.experience?.[level - 1] || 0);
+        const sp = Math.round(level * level * 3);
+        const classChanged = Number(character.classId) > 0 && Number(character.classId) !== Number(botData.classId);
+        const classReady = classChanged
+            ? Database.deleteSkills(character.id).then(() => Database.updateCharacterClassId(character.id, botData.classId))
+            : Promise.resolve();
+        return classReady.then(() => Database.updateCharacterExperience(character.id, level, exp, sp))
+            .then(() => true);
+    },
+
+    awardProfileSkills(characterId, botData = {}) {
+        const level = Number(botData.level || 1);
+        if (level <= 1) return Promise.resolve();
+        const Skillset = invoke('GameServer/Actor/Skillset');
+        return new Skillset().awardSkills(characterId, botData.classId, level);
     },
 
     prepareBotForSpawn(session, botData = {}) {
@@ -353,9 +458,24 @@ const BotManager = {
                         ...character, ...utils.crushOb(classInfo)
                     });
 
+                    // PK seeds must remain red across restarts. Existing bot
+                    // records predate the seed list, so update both runtime
+                    // and persistence on first load.
+                    if (Number(botData.karma) > 0 && session.actor.fetchKarma() <= 0) {
+                        session.actor.setKarma(Number(botData.karma));
+                        session.actor.setPk(Math.max(Number(botData.pk) || 0, Number(session.actor.fetchPk()) || 0));
+                        Database.updateCharacterPvpPkKarma(
+                            session.actor.fetchId(),
+                            session.actor.fetchPvp(),
+                            session.actor.fetchPk(),
+                            session.actor.fetchKarma()
+                        );
+                    }
+
                     session.homeRegion = botData.homeRegion || null;
                     session.visitor = !!botData.visitor;
                     session.newbieAnchor = !!botData.newbieAnchor;
+                    session.pkProfile = botData.pkProfile || null;
                 
                     session.initialSpawnCoord = {
                         locX: character.locX,
@@ -423,13 +543,13 @@ const BotManager = {
         });
     },
 
-    awardBaseSkills(id, classId) {
+    awardBaseSkills(id, classId, level = 1) {
         DataCache.fetchSkillTreeFromClassId(classId, (skillTree) => {
             const skills = skillTree.skills ?? [];
-            const level1 = skills.filter((ob) => ob.levels.find((ob) => ob.pLevel === 1));
+            const eligibleSkills = skills.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level));
 
-            level1.forEach((skill) => {
-                skill.levels = skill.levels.filter((ob) => ob.pLevel === 1);
+            eligibleSkills.forEach((skill) => {
+                skill.levels = skill.levels.filter((ob) => ob.pLevel <= level).slice(-1);
                 DataCache.fetchSkillFromSelfId(skill.selfId, (skillDetails) => {
                     skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
                     Database.setSkill(skill, id);
@@ -483,6 +603,18 @@ const BotManager = {
                     ];
                     this.botSay(session, phrases[Math.floor(Math.random() * phrases.length)]);
                 }, 1000 + Math.random() * 1000);
+            }
+
+            else if (directCommandTarget && session.plan === 'pk_hunting' && (
+                text.includes('follow') || text.includes('come here') || text.includes('за мной') || text.includes('иди сюда') ||
+                text.includes('помоги') || text.includes('stop') || text.includes('стой') || text.includes('wait') ||
+                text.includes('hunt') || text.includes('иди качайся') || text.includes('кач') ||
+                text.includes('heal') || text.includes('хил') || text.includes('buff') || text.includes('бафф')
+            )) {
+                handledByRule = true;
+                setTimeout(() => {
+                    this.botSay(session, `I take no orders, ${player.fetchName()}.`);
+                }, 500 + Math.random() * 500);
             }
 
             else if (directCommandTarget && (text.includes("follow") || text.includes("за мной") || text.includes("помоги"))) {

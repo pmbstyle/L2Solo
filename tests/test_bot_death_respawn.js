@@ -10,6 +10,7 @@ function botAt(loc) {
         fetchLocX: () => loc.locX,
         fetchLocY: () => loc.locY,
         fetchLocZ: () => loc.locZ,
+        fetchKarma: () => loc.karma || 0,
         fetchPrivateStore: () => false
     };
 }
@@ -25,6 +26,12 @@ assert.deepStrictEqual(
     BotAI.getDeathRespawnTarget(huntingSession, botAt(huntingSpot), false),
     { locX: 46976, locY: 51511, locZ: -2976 },
     'solo hunting death should restart at the nearest town instead of the active hunting spot'
+);
+
+const pkRestart = BotAI.getDeathRespawnTarget({ plan: 'pk_hunting' }, botAt({ locX: 76000, locY: 144000, locZ: -3400, karma: 720 }), false);
+assert.ok(
+    invoke('GameServer/World/TownRespawn').CHAOTIC_RESPAWNS.giran_town.some(([x, y, z]) => x === pkRestart.locX && y === pkRestart.locY && z === pkRestart.locZ),
+    'a PK bot death must use the sourced Giran chaotic restart set rather than a town gatekeeper'
 );
 
 const merchantSession = {

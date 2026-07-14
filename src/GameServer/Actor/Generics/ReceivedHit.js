@@ -1,5 +1,6 @@
 const BOT_WAKEUP_THROTTLE_MS = 750;
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const Karma = invoke('GameServer/Karma');
 
 function isBotSession(session) {
     return !!(
@@ -72,6 +73,23 @@ function applyTransferPain(session, actor, hit) {
     return incoming - transferred;
 }
 
+function tauntAfterPkKill(session, victim) {
+    const attacker = session?.actor;
+    if (!isBotSession(session) || !attacker || Number(attacker.fetchKarma?.() || 0) <= 0) return;
+
+    const now = Date.now();
+    if (now - Number(session.lastPkTauntAt || 0) < 15000) return;
+    session.lastPkTauntAt = now;
+
+    const victimName = victim?.fetchName?.() || 'another victim';
+    const lines = [
+        `${victimName}, you should have run while you could.`,
+        `Another one falls. Remember the name ${attacker.fetchName()}.`,
+        `${victimName} was easy prey.`
+    ];
+    invoke('GameServer/Bot/BotAI').say(session, lines[Math.floor(Math.random() * lines.length)]);
+}
+
 function receivedHit(session, actor, hit, options = {}) {
     const Generics = invoke(path.actor);
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
@@ -106,8 +124,9 @@ function receivedHit(session, actor, hit, options = {}) {
                 Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma());
             } else {
                 // PK kill (murdering an innocent white player/bot)
+                const karmaAward = Karma.pkKillKarma(attacker, victim);
                 attacker.setPk(attacker.fetchPk() + 1);
-                attacker.setKarma(attacker.fetchKarma() + 360);
+                attacker.setKarma(attacker.fetchKarma() + karmaAward);
                 session.dataSendToMe(ServerResponse.userInfo(attacker));
                 session.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
                 session.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
@@ -128,6 +147,8 @@ function receivedHit(session, actor, hit, options = {}) {
                 clearTimeout(victim.session.pvpFlagTimer);
                 victim.session.pvpFlagTimer = undefined;
             }
+
+            tauntAfterPkKill(session, victim);
         }
 
         Generics.die(session, actor);

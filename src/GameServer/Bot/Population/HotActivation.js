@@ -116,6 +116,9 @@ const HotActivation = {
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
             if (state.phase === 'hot') return { ok: false, reason: 'already_hot', state };
+            if (state.activity === 'pk_hunting' && options.pkEncounter !== true) {
+                return { ok: false, reason: 'pk_encounter_only', state };
+            }
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };

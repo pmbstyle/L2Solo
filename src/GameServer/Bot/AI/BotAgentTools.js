@@ -17,6 +17,8 @@ const ACTIONS = [
     'heal_target'
 ];
 
+const PK_LOCKED_ACTIONS = new Set(['follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot']);
+
 function clean(text) {
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
     return BotChatText.normalize(text).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
@@ -175,6 +177,12 @@ function execute(session, decision, visiblePlayers) {
 
     const action = decision.action;
     const targetSession = responseTargetSession(decision, visiblePlayers);
+
+    // A chaotic character remains autonomous.  Chat may make it talk, but may
+    // never turn it into a callable companion or redirect its hunting route.
+    if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(action)) {
+        return { applied: false, reason: 'pk_hunting_autonomous' };
+    }
 
     if (action === 'none') {
         return { applied: true, reason: 'none' };

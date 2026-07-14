@@ -372,6 +372,7 @@ const World = {
 
     fetchNpc        : invoke(path.world + 'FetchNpc'),
     spawnNpcs       : invoke(path.world + 'SpawnNpcs'),
+    spawnNpc        : invoke(path.world + 'SpawnNpcs').spawnNpc,
     removeNpc       : invoke(path.world + 'RemoveNpc'),
     npcRewards      : invoke(path.world + 'NpcRewards'),
     npcTalk         : invoke(path.world + 'NpcTalk'),
