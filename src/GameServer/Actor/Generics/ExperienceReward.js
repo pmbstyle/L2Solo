@@ -4,6 +4,19 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const Database       = invoke('Database');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 
+function resolveLevel(totalExp, maxLevel, experience) {
+    const availableLevels = Math.min(Math.max(1, Number(maxLevel) || 1), experience.length);
+
+    for (let i = 0; i < availableLevels; i++) {
+        const isFinalLevel = i === availableLevels - 1;
+        if (totalExp >= experience[i] && (isFinalLevel || totalExp < experience[i + 1])) {
+            return i + 1;
+        }
+    }
+
+    return null;
+}
+
 function experienceReward(session, actor, exp, sp) {
     const optn = options.default.General;
     const rates = ProgressionRates.profile();
@@ -17,13 +30,9 @@ function experienceReward(session, actor, exp, sp) {
     actor.setExpSp(totalExp, totalSp);
     ConsoleText.transmit(session, ConsoleText.caption.earnedExpAndSp, [{ kind: ConsoleText.kind.number, value: exp }, { kind: ConsoleText.kind.number, value: sp }]);
 
-    for (let i = 0; i < optn.maxLevel; i++) {
-        if (totalExp >= DataCache.experience[i] && totalExp < DataCache.experience[i + 1]) {
-            if (i + 1 > actor.fetchLevel()) { // Leveled up
-                invoke(path.actor).levelUp(session, actor, i + 1);
-                break;
-            }
-        }
+    const resolvedLevel = resolveLevel(totalExp, optn.maxLevel, DataCache.experience);
+    if (resolvedLevel && resolvedLevel > actor.fetchLevel()) {
+        invoke(path.actor).levelUp(session, actor, resolvedLevel);
     }
 
     // Update stats
@@ -34,3 +43,4 @@ function experienceReward(session, actor, exp, sp) {
 }
 
 module.exports = experienceReward;
+module.exports.resolveLevel = resolveLevel;

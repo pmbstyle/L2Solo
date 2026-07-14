@@ -84,8 +84,8 @@ assert.strictEqual(adminShopRows.get(1467).amount, 0, 'admin S-grade Soulshot st
 assert.strictEqual(adminShopRows.get(1835).price, 0, 'admin supply prices should be free');
 
 assert.strictEqual(AdminSetLevel.normalizeLevel('1'), 1, 'admin level should accept level 1');
-assert.strictEqual(AdminSetLevel.normalizeLevel('75'), 75, 'admin level should accept the configured max level');
-assert.strictEqual(AdminSetLevel.normalizeLevel('999'), 75, 'admin level should clamp to max level');
+assert.strictEqual(AdminSetLevel.normalizeLevel('80'), 80, 'admin level should accept the configured max level');
+assert.strictEqual(AdminSetLevel.normalizeLevel('999'), 80, 'admin level should clamp to max level');
 assert.strictEqual(AdminSetLevel.normalizeLevel('0'), 1, 'admin level should clamp to level 1');
 assert.strictEqual(AdminSetLevel.normalizeLevel('abc'), null, 'admin level should reject non-numeric input');
 assert.strictEqual(AdminSetLevel.expForLevel(1), DataCache.experience[0], 'level 1 exp should use the first threshold');

@@ -9,6 +9,11 @@ const ChangeClass = invoke('GameServer/World/Generics/NpcBypasses/ChangeClass');
 
 DataCache.init();
 
+const thirdClassTrees = DataCache.skillTree.filter((tree) => tree.classId >= 88 && tree.classId <= 118);
+assert.strictEqual(thirdClassTrees.length, 31, 'all C4 third-class skill trees must be present');
+assert.strictEqual(DataCache.classTemplates.filter((template) => template.classId >= 88 && template.classId <= 118).length, 31, 'all C4 third classes must have login templates');
+assert.ok(thirdClassTrees.every((tree) => tree.skills.every((skill) => DataCache.skills.some((definition) => definition.selfId === skill.selfId))), 'every third-class tree skill must have a loaded definition');
+
 let storedSkills = [{ selfId: 194, level: 1, passive: true }];
 Database.updateCharacterClassId = (id, classId) => {
     Database.lastClassUpdate = { id, classId };
@@ -98,6 +103,14 @@ function createSession({ level = 20, classId = 0 } = {}) {
     assert.ok(incompleteDataSession.actor.skillset.fetchSkills().some((skill) => skill.fetchSelfId() === 312), 'newly defined target-class skills must be persisted and sent to the client');
     assert.ok(incompleteDataSession.packets.some((packet) => packet[0] === 0x58), 'incomplete skill data must still finish with SkillsList');
     assert.ok(incompleteDataSession.packets.some((packet) => packet[0] === 0x04), 'incomplete skill data must still finish with UserInfo');
+
+    const thirdClassSession = createSession({ level: 76, classId: 2 });
+    await ChangeClass(thirdClassSession, ['change-class', '88', 'Duelist']);
+
+    assert.strictEqual(thirdClassSession.actor.fetchClassId(), 88, 'third class transfer should update the live actor class id');
+    assert.strictEqual(DataCache.classTemplates.find((template) => template.classId === 88)?.template.class, 'Duelist', 'third class must have a template for the next login');
+    assert.ok(thirdClassSession.actor.skillset.fetchSkills().some((skill) => skill.fetchSelfId() === 329), 'third class skills should be awarded at level 76');
+    assert.strictEqual(createSession({ level: 76, classId: 94 }).actor.isSpellcaster(), 1, 'third-class mages must retain caster MP and armor calculations');
 
     console.log('Class change checks passed');
 })().catch((err) => {

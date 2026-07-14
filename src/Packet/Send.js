@@ -11,12 +11,13 @@ class SendPacket {
 
     write(value, size) {
         const data = Buffer.alloc(size);
+        const numericValue = typeof value === 'bigint' ? Number(value) : value;
 
         switch (size) {
-            case 1: data.writeUInt8   (value); break;
-            case 2: data.writeInt16LE (value); break;
-            case 4: data.writeInt32LE (value); break;
-            case 8: data.writeDoubleLE(value); break;
+            case 1: data.writeUInt8   (numericValue); break;
+            case 2: data.writeInt16LE (numericValue); break;
+            case 4: data.writeInt32LE (numericValue > 0x7fffffff ? numericValue - 0x100000000 : numericValue); break;
+            case 8: data.writeDoubleLE(numericValue); break;
         }
 
         this.append(data);

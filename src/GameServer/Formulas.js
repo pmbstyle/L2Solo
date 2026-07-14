@@ -70,6 +70,8 @@ const Formulas = {
     })(),
 
     getParentClassId(classId) {
+        const thirdClass = invoke('GameServer/ClassProgression').getThirdClass(classId);
+        if (thirdClass) return this.getParentClassId(thirdClass.parentClassId);
         if (classId >= 0 && classId <= 9) return 0;
         if (classId >= 10 && classId <= 17) return 10;
         if (classId >= 18 && classId <= 24) return 18;
@@ -152,6 +154,10 @@ const Formulas = {
             56: { classBaseLevel: 20, baseCpMax: 276.8, lvlCpAdd: 26.3, lvlCpMod: 0.22 },
             57: { classBaseLevel: 40, baseCpMax: 850.4, lvlCpAdd: 43.58, lvlCpMod: 0.22 }
         };
+
+        Object.entries(invoke('GameServer/ClassProgression').thirdClasses).forEach(([classId, thirdClass]) => {
+            table[classId] = { classBaseLevel: 76, ...thirdClass.cp };
+        });
 
         return (level, classId, con) => {
             const data = table[classId] || table[0];

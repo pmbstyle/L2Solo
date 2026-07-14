@@ -1,10 +1,12 @@
 const validateSchema = require('jsonschema').validate;
+const ClassProgression = invoke('GameServer/ClassProgression');
 
 const DataCache = {
     init: () => {
         const path = '../data/';
 
         DataCache.classTemplates  = validateModel(path + 'Templates/templates');
+        ClassProgression.expandTemplates(DataCache.classTemplates);
         DataCache.newbieItems     = validateModel(path + 'Templates/Items/items');
         DataCache.newbieShortcuts = validateModel(path + 'Templates/Shortcuts/shortcuts');
         DataCache.newbieSpawns    = validateModel(path + 'Templates/Spawns/spawns');

@@ -3,7 +3,16 @@ const assert = require('assert');
 require('../src/Global');
 
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const DataCache = invoke('GameServer/DataCache');
+const ExperienceReward = invoke('GameServer/Actor/Generics/ExperienceReward');
+const SendPacket = invoke('Packet/Send');
 const originalRate = process.env.L2NODE_PROGRESSION_RATE;
+
+DataCache.init();
+assert.strictEqual(options.default.General.maxLevel, 80, 'C4 progression must allow the third-class cap of level 80');
+assert.strictEqual(ExperienceReward.resolveLevel(DataCache.experience.at(-1), options.default.General.maxLevel, DataCache.experience), 80, 'the final experience threshold must award level 80');
+const level80Packet = new SendPacket(0x04).writeD(4200000000n).fetchBuffer(false);
+assert.strictEqual(level80Packet.readUInt32LE(1), 4200000000, 'C4 packets must serialize the level-80 experience threshold as an unsigned D value');
 
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
 let profile = ProgressionRates.profile();
