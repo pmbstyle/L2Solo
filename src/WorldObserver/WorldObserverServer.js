@@ -96,6 +96,10 @@ function actorVitals(actor) {
     };
 }
 
+function isPkActor(actor) {
+    return Number(actor?.fetchKarma?.() || 0) > 0;
+}
+
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
     return (World.user?.sessions || []).filter((session) => (
@@ -113,11 +117,12 @@ function compactPlayer(session) {
         level: actor.fetchLevel(),
         loc: actorLoc(actor),
         vitals: actorVitals(actor),
-        online: !!actor.fetchIsOnline()
+        online: !!actor.fetchIsOnline(),
+        isPk: isPkActor(actor)
     };
 }
 
-function compactHotBot(status) {
+function compactHotBot(status, pkIds = new Set()) {
     return {
         id: status.id,
         name: status.name,
@@ -155,7 +160,8 @@ function compactHotBot(status) {
         trade: status.trade,
         blockers: status.blockers || [],
         lastSocialEvent: status.lastSocialEvent || null,
-        roleDecision: status.roleDecision || null
+        roleDecision: status.roleDecision || null,
+        isPk: pkIds.has(Number(status.id))
     };
 }
 
@@ -189,7 +195,8 @@ function compactStateBot(state, hotIds) {
         nearby: null,
         trade: null,
         blockers: [],
-        updatedAt: state.updatedAt || 0
+        updatedAt: state.updatedAt || 0,
+        isPk: state.activity === 'pk_hunting'
     };
 }
 
@@ -225,9 +232,12 @@ function snapshot() {
     const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
     const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
 
+    const pkHotIds = new Set(BotManager.sessions
+        .filter((session) => isPkActor(session.actor))
+        .map((session) => Number(session.actor.fetchId())));
     const hotBots = BotManager.getAllBotStatuses()
         .filter((status) => status && status.available)
-        .map(compactHotBot);
+        .map((status) => compactHotBot(status, pkHotIds));
     const hotIds = new Set(hotBots.map((bot) => Number(bot.id)));
     const stateBots = LifeState.allStates(700)
         .map((state) => compactStateBot(state, hotIds))
@@ -319,6 +329,9 @@ function route(request, response) {
 
 const WorldObserverServer = {
     server: null,
+    compactPlayer,
+    compactHotBot,
+    compactStateBot,
 
     init() {
         if (!isEnabled() || this.server) return;

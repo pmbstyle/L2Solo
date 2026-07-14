@@ -61,7 +61,7 @@ function moveTo(session, actor, coords) {
         const distanceToPlayer = getDistanceToClosestPlayer();
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
 
-        if (distanceToPlayer > 1500 && !isCompanion) {
+        if (distanceToPlayer > 1500 && !isCompanion && session.plan !== 'pk_hunting') {
             // Low LOD: instant warp (we do not calculate movements at all)
             const snappedTo = { ...requestedTo };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);

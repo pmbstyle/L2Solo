@@ -18,6 +18,18 @@ assert.deepStrictEqual(
 );
 
 assert.deepStrictEqual(
+    TownRespawn.getChaoticRespawnCoords(76000, 144000, () => 0),
+    { locX: 74450, locY: 144238, locZ: -3730 },
+    'a PK who dies near Giran must use the first sourced chaotic restart point, not the town gatekeeper'
+);
+
+assert.deepStrictEqual(
+    TownRespawn.getChaoticRespawnCoords(-12000, 122000, () => 0.99),
+    { locX: -19040, locY: 121632, locZ: -3200 },
+    'a PK who dies in the Gludio region must remain within Gludio chaotic restart points'
+);
+
+assert.deepStrictEqual(
     TownRespawn.getRespawnCoords(166612, 20436),
     { locX: 146787, locY: 25807, locZ: -2008 },
     'Cemetery belongs to the Aden restart region, not Oren'

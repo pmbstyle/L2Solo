@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const World          = invoke('GameServer/World/World');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotAI          = invoke('GameServer/Bot/BotAI');
+const TownGuard      = invoke('GameServer/Npc/TownGuard');
 
 function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefresh = false } = {}) {
     const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), 6000);
@@ -57,6 +58,10 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
         npc.setLocZ(actor.fetchLocZ()); // TODO: Remove, uber hack...
         npc.enterCombatState(session, actor);
     });
+
+    // C4 guards are not ordinary hostile mobs: they seek only red names and
+    // use line-of-sight before entering combat.
+    TownGuard.engageNearby(session, actor, npcs);
 }
 
 module.exports = updateEnvironment;

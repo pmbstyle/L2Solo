@@ -1,124 +1,124 @@
 const SpeckMath = invoke('GameServer/SpeckMath');
-const World     = invoke('GameServer/World/World');
+const World = invoke('GameServer/World/World');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
-module.exports = {
-    tick(session, bot, Generics, BotAI) {
-        const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
-        
-        // 1. Flee/Threat Check
-        let threatCount = 0;
-        let highestThreat = null;
+function distance(a, b) {
+    return new SpeckMath.Point3D(a.fetchLocX(), a.fetchLocY(), a.fetchLocZ())
+        .distance(new SpeckMath.Point3D(b.fetchLocX(), b.fetchLocY(), b.fetchLocZ()));
+}
 
-        World.user.sessions.forEach((user) => {
-            const other = user.actor;
-            if (other && other !== bot && other.fetchIsOnline() && !other.state.fetchDead() && other.fetchKarma() === 0) {
-                const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
-                if (dist < 1500) {
-                    if (other.fetchDestId() === bot.fetchId() || dist < 700) {
-                        threatCount++;
-                        if (other.fetchLevel() > bot.fetchLevel()) {
-                            highestThreat = other;
-                        }
-                    }
-                }
-            }
+function isEligibleTarget(session, bot, profile) {
+    const other = session?.actor;
+    if (!other || other === bot || !other.fetchIsOnline?.() || other.state?.fetchDead?.()) return false;
+    if (session.plan === 'merchant') return false;
+    if (Number(other.fetchKarma?.() || 0) !== 0 || utils.isInPeaceZone(other.fetchLocX(), other.fetchLocY())) return false;
+    const level = Number(other.fetchLevel?.() || 1);
+    if (level < Number(profile?.targetMinLevel || 1) || level > Number(profile?.targetMaxLevel || Infinity)) return false;
+    if (!profile?.anchor) return true;
+    const dx = other.fetchLocX() - profile.anchor.locX;
+    const dy = other.fetchLocY() - profile.anchor.locY;
+    return Math.sqrt(dx * dx + dy * dy) <= Number(profile.activationRadius || 0);
+}
+
+function isEligibleAttacker(session, bot, profile) {
+    const other = session?.actor;
+    if (!other || other === bot || !other.fetchIsOnline?.() || other.state?.fetchDead?.()) return false;
+    if (session.plan === 'merchant') return false;
+    if (utils.isInPeaceZone(other.fetchLocX(), other.fetchLocY())) return false;
+    if (!profile?.anchor) return true;
+    const dx = other.fetchLocX() - profile.anchor.locX;
+    const dy = other.fetchLocY() - profile.anchor.locY;
+    return Math.sqrt(dx * dx + dy * dy) <= Number(profile.activationRadius || 0);
+}
+
+function activeThreats(bot, profile) {
+    return World.user.sessions
+        .filter((session) => isEligibleAttacker(session, bot, profile))
+        .map((session) => session.actor)
+        .filter((other) => {
+            if (distance(other, bot) >= 1500) return false;
+            const activelyTargetingPk = other.fetchDestId?.() === bot.fetchId();
+            const overwhelming = Number(other.fetchLevel?.() || 1) >= Number(bot.fetchLevel?.() || 1) + 8;
+            return activelyTargetingPk || overwhelming;
         });
+}
 
-        // Flee check for PK
-        if (threatCount >= 2 || highestThreat) {
-            if (session.plan !== 'pk_fleeing') {
-                session.plan = 'pk_fleeing';
-                session.fleeStart = Date.now();
-                session.currentTargetId = undefined;
+function patrol(session, bot, profile) {
+    const anchor = profile?.anchor;
+    if (!anchor) return;
+    const dx = bot.fetchLocX() - anchor.locX;
+    const dy = bot.fetchLocY() - anchor.locY;
+    const away = Math.sqrt(dx * dx + dy * dy);
+    let locX;
+    let locY;
+    if (away > Number(profile.patrolRadius || 1200)) {
+        locX = anchor.locX;
+        locY = anchor.locY;
+    } else {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 120 + Math.random() * Math.min(400, Number(profile.patrolRadius || 1200));
+        locX = Math.round(anchor.locX + Math.cos(angle) * radius);
+        locY = Math.round(anchor.locY + Math.sin(angle) * radius);
+    }
+    bot.moveTo({
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+        to: { locX, locY, locZ: GeodataEngine.getHeight(locX, locY, anchor.locZ) }
+    });
+}
 
-                const panicPhrases = [
-                    `Whoa! Too many of them! Fall back!`,
-                    `You win this time, white names! Running!`,
-                    `Ah, you guys are too strong! Fallback!`,
-                    `I will be back for your blood! Fleeing!`
-                ];
-                BotAI.say(session, panicPhrases[Math.floor(Math.random() * panicPhrases.length)]);
+module.exports = {
+    isEligibleTarget,
+    isEligibleAttacker,
+    activeThreats,
 
-                const escapeFrom = highestThreat || bot; // flee from threat
-                const dx = bot.fetchLocX() - escapeFrom.fetchLocX();
-                const dy = bot.fetchLocY() - escapeFrom.fetchLocY();
-                const length = Math.sqrt(dx*dx + dy*dy) || 1;
-                const fleeX = Math.round(bot.fetchLocX() + (dx / length) * 900);
-                const fleeY = Math.round(bot.fetchLocY() + (dy / length) * 900);
-                const fleeZ = GeodataEngine.getHeight(fleeX, fleeY, bot.fetchLocZ());
+    tick(session, bot, Generics, BotAI) {
+        const profile = session.pkProfile;
+        if (!profile) return;
 
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: { locX: fleeX, locY: fleeY, locZ: fleeZ }
-                });
-
-                setTimeout(() => {
-                    if (session.plan === 'pk_fleeing') {
-                        session.plan = 'pk_hunting';
-                    }
-                }, 6000);
-            }
-            return; // Skip rest of AI tick while fleeing!
+        const threats = activeThreats(bot, profile);
+        const strongestThreat = threats.sort((a, b) => b.fetchLevel() - a.fetchLevel())[0];
+        const overwhelmingSolo = strongestThreat && strongestThreat.fetchLevel() >= bot.fetchLevel() + 8;
+        if (threats.length >= 2 || overwhelmingSolo) {
+            session.currentTargetId = undefined;
+            if (bot.state.fetchTowards?.()) return;
+            const escapeFrom = strongestThreat;
+            const dx = bot.fetchLocX() - escapeFrom.fetchLocX();
+            const dy = bot.fetchLocY() - escapeFrom.fetchLocY();
+            const length = Math.sqrt(dx * dx + dy * dy) || 1;
+            const locX = Math.round(bot.fetchLocX() + (dx / length) * 900);
+            const locY = Math.round(bot.fetchLocY() + (dy / length) * 900);
+            bot.moveTo({
+                from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                to: { locX, locY, locZ: GeodataEngine.getHeight(locX, locY, bot.fetchLocZ()) }
+            });
+            return;
         }
 
-        // 2. Normal PK Hunt Targeting
         if (session.currentTargetId) {
-            // Keep attacking existing target
-            World.fetchUser(session.currentTargetId).then((targetActor) => {
-                if (targetActor && targetActor.fetchIsOnline() && !targetActor.state.fetchDead()) {
-                    BotAI.executePvPCombat(session, bot, targetActor, Generics);
+            World.fetchUser(session.currentTargetId).then((target) => {
+                if (target && isEligibleTarget(target.session, bot, profile)) {
+                    if (bot.state.fetchTowards?.() || bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
+                    BotAI.executePvPCombat(session, bot, target, Generics);
                 } else {
                     session.currentTargetId = undefined;
                 }
-            }).catch(() => {
-                session.currentTargetId = undefined;
-            });
-        } else {
-            // Scan for closest white player/bot
-            let closestWhite = null;
-            let closestDist = 99999;
+            }).catch(() => { session.currentTargetId = undefined; });
+            return;
+        }
 
-            World.user.sessions.forEach((user) => {
-                const other = user.actor;
-                if (other && other !== bot && other.fetchIsOnline() && !other.state.fetchDead() && other.fetchKarma() === 0) {
-                    const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
-                    if (dist < 2500 && dist < closestDist) {
-                        closestDist = dist;
-                        closestWhite = other;
-                    }
-                }
-            });
+        const target = World.user.sessions
+            .filter((candidate) => isEligibleTarget(candidate, bot, profile))
+            .map((candidate) => candidate.actor)
+            .filter((candidate) => distance(candidate, bot) <= 2500)
+            .sort((a, b) => distance(a, bot) - distance(b, bot))[0];
 
-            if (closestWhite) {
-                session.currentTargetId = closestWhite.fetchId();
-                bot.select({ id: closestWhite.fetchId() });
-                
-                if (Math.random() < 0.20) {
-                    BotAI.say(session, `Found you, ${closestWhite.fetchName()}! Fresh meat!`);
-                }
-                BotAI.executePvPCombat(session, bot, closestWhite, Generics);
-            } else {
-                // Wandering around high density coordinates to find players
-                if (Math.random() < 0.20) {
-                    // Tiny chance to relocate to a new farming sector if completely alone
-                    if (Math.random() < 0.05) {
-                        try {
-                            const BotManager = invoke('GameServer/Bot/BotManager');
-                            const densityCoord = BotManager.findHighDensityCoord();
-                            Generics.teleportTo(session, bot, densityCoord);
-                            return;
-                        } catch (err) {}
-                    }
-
-                    const randomX = bot.fetchLocX() + utils.oneFromSpan(-150, 150);
-                    const randomY = bot.fetchLocY() + utils.oneFromSpan(-150, 150);
-                    bot.moveTo({
-                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: randomX, locY: randomY, locZ: bot.fetchLocZ() }
-                    });
-                }
-            }
+        if (target) {
+            session.currentTargetId = target.fetchId();
+            bot.select({ id: target.fetchId() });
+            BotAI.executePvPCombat(session, bot, target, Generics);
+        } else if (!bot.state.fetchTowards?.() && Date.now() - Number(session.lastPkPatrolAt || 0) >= 3000) {
+            session.lastPkPatrolAt = Date.now();
+            patrol(session, bot, profile);
         }
     }
 };

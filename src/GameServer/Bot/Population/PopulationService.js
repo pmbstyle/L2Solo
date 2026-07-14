@@ -226,9 +226,9 @@ const PopulationService = {
         return LifeState.markHot(session, reason);
     },
 
-    cooldownSession(session, reason = 'manual') {
+    cooldownSession(session, reason = 'manual', options = {}) {
         if (Config.enabled === false) return Promise.resolve({ ok: false, reason: 'disabled' });
-        return Cooldown.cooldown(session, reason);
+        return Cooldown.cooldown(session, reason, options);
     },
 
     requestActivation(stateOrName, reason = 'manual', options = {}) {
@@ -300,7 +300,10 @@ const PopulationService = {
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
-                        const candidates = activationCandidatesForPlayer(states, actor.fetchLevel());
+                        const candidates = activationCandidatesForPlayer(
+                            states.filter((state) => state.activity !== 'pk_hunting'),
+                            actor.fetchLevel()
+                        ).slice(0, remaining);
                         return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 return this.requestActivation(state, 'near_player', {
@@ -328,6 +331,10 @@ const PopulationService = {
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
                 if (session.plan === 'merchant') return false;
+                // Red-name bots are part of the visible PK population, not
+                // disposable ambient population. Keep them hot until their
+                // karma is genuinely cleared.
+                if (session.actor.fetchKarma?.() > 0) return false;
                 if (session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
                 if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs) return false;

@@ -12,18 +12,19 @@ function isVisibleToRealPlayer(session) {
 }
 
 const Cooldown = {
-    canCooldown(session) {
+    canCooldown(session, options = {}) {
         if (!session || !session.actor) return { ok: false, reason: 'missing_actor' };
         if (session.plan === 'merchant') return { ok: false, reason: 'merchant' };
+        if (session.actor.fetchKarma?.() > 0 && !options.allowPk) return { ok: false, reason: 'pk_active' };
         if (session.partyCompanion === true || session.followPlayerSession) return { ok: false, reason: 'player_party' };
         if (session.trade || session.activeTrade) return { ok: false, reason: 'trade_active' };
         if (session.actor.state.fetchDead && session.actor.state.fetchDead()) return { ok: false, reason: 'dead_visible_state' };
-        if (isVisibleToRealPlayer(session)) return { ok: false, reason: 'visible_to_player' };
+        if (!options.ignoreVisibility && isVisibleToRealPlayer(session)) return { ok: false, reason: 'visible_to_player' };
         return { ok: true, reason: 'eligible' };
     },
 
-    cooldown(session, reason = 'cooldown') {
-        const eligibility = this.canCooldown(session);
+    cooldown(session, reason = 'cooldown', options = {}) {
+        const eligibility = this.canCooldown(session, options);
         if (!eligibility.ok) {
             return Promise.resolve({ ok: false, reason: eligibility.reason });
         }
