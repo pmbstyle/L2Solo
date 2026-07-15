@@ -355,15 +355,16 @@ const PopulationService = {
             return Promise.resolve([]);
         }
 
-        const activeParties = BackgroundPartyState.counts().active || 0;
-        const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
-        if (slots <= 0) return Promise.resolve([]);
-
         this.partyFormationRunning = true;
-        const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
-
         return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-            .then((states) => {
+            .then((states) => this.recruitBackgroundMembers(states).then((recruitedIds) => ({
+                states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
+            })))
+            .then(({ states }) => {
+                const activeParties = BackgroundPartyState.counts().active || 0;
+                const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
+                if (slots <= 0) return [];
+                const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
                 const groups = groupBySpot(states);
                 const created = [];
 
@@ -447,6 +448,54 @@ const PopulationService = {
             .finally(() => {
                 this.partyFormationRunning = false;
             });
+    },
+
+    recruitBackgroundMembers(candidates = []) {
+        const claimed = new Set();
+        const parties = BackgroundPartyState.active()
+            .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
+            .sort((a, b) => (a.memberIds || []).length - (b.memberIds || []).length);
+
+        return parties.reduce((chain, party) => chain.then(() => LifeState.statesForParty(party.partyId)
+            .then((members) => {
+                if (members.length < Config.partyMinSize) return null;
+                const nearby = candidates.filter((state) => (
+                    !claimed.has(Number(state.characterId)) &&
+                    state.spotId === party.spotId
+                ));
+                const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
+                if (!recruits.length) return null;
+
+                return recruits.reduce((memberChain, recruit) => (
+                    memberChain.then(() => LifeState.assignParty(
+                        recruit,
+                        party.partyId,
+                        PartyComposition.roleForState(recruit),
+                        party.leaderId
+                    ))
+                ), Promise.resolve()).then(() => {
+                    recruits.forEach((recruit) => claimed.add(Number(recruit.characterId)));
+                    const allMembers = [...members, ...recruits];
+                    return BackgroundPartyState.createOrUpdate({
+                        ...party,
+                        memberIds: allMembers.map((member) => member.characterId),
+                        roleCoverage: PartyComposition.roleCoverage(allMembers),
+                        stats: {
+                            ...(party.stats || {}),
+                            memberNames: allMembers.map((member) => member.name),
+                            lastRecruitAt: Date.now()
+                        }
+                    }).then((updatedParty) => LifeEvents.record(party.leaderId, 'party_recruit', `${members[0].name} recruited ${recruits.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
+                        partyId: party.partyId,
+                        recruitIds: recruits.map((recruit) => recruit.characterId),
+                        spotId: party.spotId
+                    }, 1).then(() => {
+                        Metrics.recordPartyRecruit(recruits.length);
+                        console.info('BotPopulation :: recruited %d bot(s) into %s near %s', recruits.length, party.partyId, party.spotId || 'none');
+                        return updatedParty;
+                    }));
+                });
+            })), Promise.resolve()).then(() => claimed);
     },
 
     tickBudgeted() {

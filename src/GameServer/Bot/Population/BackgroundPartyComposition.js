@@ -92,6 +92,47 @@ function selectMembers(candidates = [], options = {}) {
     return best?.members || [];
 }
 
+function selectRecruits(members = [], candidates = [], options = {}) {
+    const maxSize = Math.max(2, Number(options.maxSize || 5));
+    const levelRange = Math.max(0, Number(options.levelRange ?? DEFAULT_LEVEL_RANGE));
+    const leader = chooseLeader(members);
+    if (!leader || members.length >= maxSize) return [];
+
+    const used = new Set(members.map((state) => Number(state.characterId)));
+    const coverage = roleCoverage(members);
+    const eligible = (candidates || []).filter((state) => (
+        state?.characterId &&
+        !used.has(Number(state.characterId)) &&
+        Math.abs(levelOf(state) - levelOf(leader)) <= levelRange
+    ));
+    const recruits = [];
+
+    SUPPORT_ROLES.forEach((role) => {
+        if (members.length + recruits.length >= maxSize || coverage[role]) return;
+        const recruit = eligible
+            .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
+            .sort(compareCandidate(leader, coverage))[0];
+        if (!recruit) return;
+        recruits.push(recruit);
+        used.add(Number(recruit.characterId));
+        coverage[role] = 1;
+    });
+
+    eligible
+        .filter((state) => !used.has(Number(state.characterId)))
+        .sort(compareCandidate(leader, coverage))
+        .some((state) => {
+            if (members.length + recruits.length >= maxSize) return true;
+            recruits.push(state);
+            used.add(Number(state.characterId));
+            const role = roleForState(state);
+            coverage[role] = (coverage[role] || 0) + 1;
+            return false;
+        });
+
+    return recruits;
+}
+
 function chooseLeader(members = []) {
     return members.reduce((best, state) => {
         if (!best) return state;
@@ -103,4 +144,4 @@ function chooseLeader(members = []) {
     }, null);
 }
 
-module.exports = { DEFAULT_LEVEL_RANGE, roleForState, roleCoverage, selectMembers, chooseLeader };
+module.exports = { DEFAULT_LEVEL_RANGE, roleForState, roleCoverage, selectMembers, selectRecruits, chooseLeader };

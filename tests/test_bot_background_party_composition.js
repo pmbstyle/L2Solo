@@ -35,4 +35,14 @@ const spread = PartyComposition.selectMembers([
 assert.strictEqual(spread.length, 2);
 assert(Math.max(...spread.map((state) => state.level)) - Math.min(...spread.map((state) => state.level)) <= PartyComposition.DEFAULT_LEVEL_RANGE);
 
+const recruits = PartyComposition.selectRecruits([
+    bot(21, 15, 'tank'),
+    bot(22, 15, 'healer')
+], [
+    bot(23, 15, 'dps'),
+    bot(24, 15, 'buffer'),
+    bot(25, 23, 'buffer')
+], { maxSize: 5 });
+assert.deepStrictEqual(recruits.map((state) => state.characterId), [24, 23]);
+
 console.log('Bot background party composition checks passed');
