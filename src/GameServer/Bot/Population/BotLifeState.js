@@ -801,6 +801,25 @@ const BotLifeState = {
             });
     },
 
+    leaveParty(state, reason = 'party_break') {
+        if (!state?.characterId) return Promise.resolve(null);
+        const nextState = {
+            ...state,
+            party: { ...(state.party || {}), partyId: null, leaderId: null },
+            stats: { ...(state.stats || {}), backgroundPartyId: null, partyBreakReason: reason },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row).then(() => {
+            const snapshot = normalize(row);
+            cache.set(snapshot.characterId, snapshot);
+            return snapshot;
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
+            return null;
+        });
+    },
+
     applyMarketPurchase(state, offer) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);

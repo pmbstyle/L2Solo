@@ -591,20 +591,34 @@ const PopulationService = {
             });
 
             return result.memberResults.reduce((chain, memberResult) => (
-                chain.then(() => LifeState.applyResolve(memberResult.state, memberResult.result))
-            ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({
+                chain.then((resolvedMembers) => LifeState.applyResolve(memberResult.state, memberResult.result)
+                    .then((updated) => updated ? [...resolvedMembers, updated] : resolvedMembers))
+            ), Promise.resolve([])).then((resolvedMembers) => resolvedMembers.reduce((chain, member) => (
+                chain.then((activeMembers) => GoalService.review(member, { spot }).then((goalSnapshot) => {
+                    const travel = GoalExecutor.beginMarketTravel(member, goalSnapshot?.current);
+                    if (!travel) return activeMembers;
+                    return LifeState.leaveParty(travel, 'market_break').then((departed) => departed ? activeMembers : [...activeMembers, member]);
+                }))
+            ), Promise.resolve([]))).then((activeMembers) => {
+                if (activeMembers.length < Config.partyMinSize) {
+                    return BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+                }
+                return BackgroundPartyState.createOrUpdate({
                 ...party,
+                leaderId: (activeMembers.find((member) => member.characterId === party.leaderId) || PartyComposition.chooseLeader(activeMembers) || {}).characterId || party.leaderId,
+                memberIds: activeMembers.map((member) => member.characterId),
                 spotId: spot.id,
                 nextResolveAt: result.nextResolveAt,
                 cohesion: result.partyPatch.cohesion,
                 risk: result.partyPatch.risk,
-                roleCoverage: PartyComposition.roleCoverage(members),
+                roleCoverage: PartyComposition.roleCoverage(activeMembers),
                 stats: {
                     ...(party.stats || {}),
                     ...(result.partyPatch.stats || {}),
                     route: spot.route || party.stats?.route || null
                 }
-            })).then((updatedParty) => {
+                });
+            }).then((updatedParty) => {
                 Metrics.recordPartyResolve();
                 const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
                 const persistedParty = recruitment.announced
