@@ -1,5 +1,6 @@
 const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 const DEFAULT_LEVEL_RANGE = 4;
+const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
@@ -17,13 +18,17 @@ function roleCoverage(states) {
     }, {});
 }
 
-function compareCandidate(anchor, coverage) {
+function compareCandidate(anchor, coverage, peers = [anchor]) {
     return (a, b) => {
         const aRole = roleForState(a);
         const bRole = roleForState(b);
         const aSupport = SUPPORT_ROLES.includes(aRole) && !coverage[aRole] ? 0 : 1;
         const bSupport = SUPPORT_ROLES.includes(bRole) && !coverage[bRole] ? 0 : 1;
         if (aSupport !== bSupport) return aSupport - bSupport;
+
+        const aAffinity = PartyAffinity.affinity(a, peers);
+        const bAffinity = PartyAffinity.affinity(b, peers);
+        if (aAffinity !== bAffinity) return bAffinity - aAffinity;
 
         const aDistance = Math.abs(levelOf(a) - levelOf(anchor));
         const bDistance = Math.abs(levelOf(b) - levelOf(anchor));
@@ -42,7 +47,7 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
         if (selected.length >= maxSize || coverage[role]) return;
         const support = eligible
             .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
-            .sort(compareCandidate(anchor, coverage))[0];
+            .sort(compareCandidate(anchor, coverage, selected))[0];
         if (!support) return;
         selected.push(support);
         used.add(Number(support.characterId));
@@ -51,7 +56,7 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
 
     eligible
         .filter((state) => !used.has(Number(state.characterId)))
-        .sort(compareCandidate(anchor, coverage))
+        .sort(compareCandidate(anchor, coverage, selected))
         .some((state) => {
             if (selected.length >= maxSize) return true;
             selected.push(state);
@@ -111,7 +116,7 @@ function selectRecruits(members = [], candidates = [], options = {}) {
         if (members.length + recruits.length >= maxSize || coverage[role]) return;
         const recruit = eligible
             .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
-            .sort(compareCandidate(leader, coverage))[0];
+            .sort(compareCandidate(leader, coverage, members))[0];
         if (!recruit) return;
         recruits.push(recruit);
         used.add(Number(recruit.characterId));
@@ -120,7 +125,7 @@ function selectRecruits(members = [], candidates = [], options = {}) {
 
     eligible
         .filter((state) => !used.has(Number(state.characterId)))
-        .sort(compareCandidate(leader, coverage))
+        .sort(compareCandidate(leader, coverage, members))
         .some((state) => {
             if (members.length + recruits.length >= maxSize) return true;
             recruits.push(state);

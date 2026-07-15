@@ -1,5 +1,6 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 
 const MAX_DROPS_PER_RESOLVE = 4;
 
@@ -157,6 +158,9 @@ const BackgroundPartyResolver = {
                             maxHp: vitals.maxHp,
                             mp,
                             maxMp: vitals.maxMp
+                        },
+                        stats: {
+                            partyHistory: PartyAffinity.recordRun(state, members)
                         }
                     },
                     events: [],
