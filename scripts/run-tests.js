@@ -14,6 +14,7 @@ const tests = [
     'tests/test_bot_death_respawn.js',
     'tests/test_bot_gear.js',
     'tests/test_bot_gear_skill_hints.js',
+    'tests/test_bot_goal_state.js',
     'tests/test_bot_hunting_self_defense.js',
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_population_state.js',
