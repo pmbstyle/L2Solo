@@ -12,7 +12,8 @@ function priceFor(state, item, template) {
     if (basePrice <= 0) return 0;
     const seed = (Number(state.characterId || 0) * 31) + (Number(item.selfId || 0) * 17);
     const percent = 70 + (Math.abs(seed) % 21);
-    return Math.max(1, Math.floor(basePrice * percent / 100));
+    const adjustment = Math.max(50, Math.min(100, Number(state?.stats?.marketPricing?.[Number(item.selfId)]?.percent || 100)));
+    return Math.max(1, Math.floor(basePrice * percent * adjustment / 10000));
 }
 
 function basePrice(item, template = templateFor(item?.selfId)) {

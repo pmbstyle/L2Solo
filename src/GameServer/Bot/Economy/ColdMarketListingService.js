@@ -61,7 +61,13 @@ function resolve(state, timestamp = Date.now()) {
         stats: {
             ...(state.stats || {}),
             marketStore: null,
-            marketSellRetryAfter: hasStock ? timestamp + SELL_RETRY_DELAY_MS : null
+            marketSellRetryAfter: hasStock ? timestamp + SELL_RETRY_DELAY_MS : null,
+            marketPricing: hasStock ? (store.items || []).reduce((pricing, item) => {
+                if (Number(item.count || 0) <= 0) return pricing;
+                const previous = Number(pricing[item.selfId]?.percent || 100);
+                pricing[item.selfId] = { percent: Math.max(50, previous - 5), lastAdjustedAt: timestamp };
+                return pricing;
+            }, { ...(state.stats?.marketPricing || {}) }) : state.stats?.marketPricing || {}
         },
         timing: { ...(state.timing || {}), nextResolveAt: timestamp + 30000 }
     };
