@@ -24,6 +24,7 @@ const tests = [
     'tests/test_bot_background_party_composition.js',
     'tests/test_bot_background_party_recruitment.js',
     'tests/test_bot_background_party_affinity.js',
+    'tests/test_bot_party_market_break.js',
     'tests/test_bot_party_recruitment_chat.js',
     'tests/test_bot_hunting_self_defense.js',
     'tests/test_bot_leveling_routes.js',
