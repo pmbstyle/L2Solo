@@ -158,7 +158,7 @@ function schema() {
 
 function systemPrompt() {
     return [
-        'You are the slow high-level brain for one Lineage 2 SimPlayer bot.',
+        'You are the slow high-level brain for one Lineage 2 bot.',
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
         'Only choose small, high-level social or intent changes.',
         'React only when a real visible player writes to this bot or nearby bots.',
@@ -235,7 +235,7 @@ async function requestDecision(payload, cfg) {
                 Authorization: `Bearer ${cfg.apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': 'http://localhost',
-                'X-OpenRouter-Title': 'L2Node SimPlayers'
+                'X-OpenRouter-Title': 'L2Node Bots'
             },
             body: JSON.stringify(body),
             signal: controller.signal

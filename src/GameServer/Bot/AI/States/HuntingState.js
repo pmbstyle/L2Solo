@@ -384,7 +384,7 @@ module.exports = {
                 });
             });
         } else {
-            // Prefer unclaimed mobs so solo SimPlayers do not form accidental trains.
+            // Prefer unclaimed mobs so solo bots do not form accidental trains.
             const closestMonster = findPreferredMonster(session, bot, 2500);
 
             if (closestMonster) {

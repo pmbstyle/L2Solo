@@ -118,7 +118,7 @@ const BackgroundPartyResolver = {
                 events.push({
                     characterId: state.characterId,
                     type: 'death',
-                    summary: `${state.name || 'SimPlayer'} died while grouped near ${spot.name}`,
+                    summary: `${state.name || 'Bot'} died while grouped near ${spot.name}`,
                     weight: 4,
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });

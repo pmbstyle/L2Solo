@@ -6,7 +6,7 @@ let lastGlobalAt = 0;
 function coldActor(state) {
     return {
         fetchId: () => Number(state?.characterId || 0),
-        fetchName: () => state?.name || 'SimPlayer'
+        fetchName: () => state?.name || 'Bot'
     };
 }
 
@@ -70,7 +70,7 @@ const BotGlobalChat = {
 
         console.info(
             'BotGlobalChat :: %s announced %s: %s',
-            state.name || 'SimPlayer',
+            state.name || 'Bot',
             event.type,
             text
         );

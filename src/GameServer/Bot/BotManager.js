@@ -208,7 +208,7 @@ const BotManager = {
     },
 
     init() {
-        console.info("BotManager :: Initializing automated SimPlayers...");
+        console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
         PopulationService.init();
         

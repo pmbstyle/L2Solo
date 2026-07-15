@@ -186,7 +186,7 @@ const BackgroundResolver = {
                 patch.deathCount = (state.stats?.deaths || 0) + 1;
                 events.push({
                     type: 'death',
-                    summary: `${state.name || 'SimPlayer'} died near ${spot.name}`,
+                    summary: `${state.name || 'Bot'} died near ${spot.name}`,
                     weight: 4,
                     meta: { spotId: spot.id, fights: i + 1 }
                 });
@@ -200,7 +200,7 @@ const BackgroundResolver = {
                 patch.restUntil = Date.now() + estimateRestMs(patch.vitals, botCombatStats(fightState, roleProfile(fightState)));
                 events.push({
                     type: 'rest',
-                    summary: `${state.name || 'SimPlayer'} sat down to recover near ${spot.name}`,
+                    summary: `${state.name || 'Bot'} sat down to recover near ${spot.name}`,
                     weight: 2,
                     meta: { spotId: spot.id, hpPct, mpPct }
                 });
@@ -211,7 +211,7 @@ const BackgroundResolver = {
         if (wins > 0 && !died) {
             events.push({
                 type: 'hunt',
-                summary: `${state.name || 'SimPlayer'} won ${wins} fights near ${spot.name}`,
+                summary: `${state.name || 'Bot'} won ${wins} fights near ${spot.name}`,
                 weight: wins >= 3 ? 2 : 1,
                 meta: { spotId: spot.id, wins }
             });
