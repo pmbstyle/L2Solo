@@ -51,6 +51,17 @@ function maybeAnnounceWanted(state, goal, timestamp = Date.now()) {
     return { state: { ...state, stats: { ...(state.stats || {}), marketWanted: { itemId: goal.target.itemId, itemName: goal.target.itemName, lastTradeAdAt: timestamp } } }, announced: true, text };
 }
 
+function announceRemoteOffer(offer) {
+    if (offer?.sourceType !== 'cold_store' || !offer.sellerState) return false;
+    const players = realPlayerSessions();
+    if (!players.length) return false;
+    const text = `WTS ${offer.itemName} in ${offer.town || 'town'} for ${offer.price}.`.slice(0, 120);
+    const packet = ServerResponse.speak(coldActor(offer.sellerState), { kind: 8, text });
+    players.forEach((session) => session.dataSendToMe(packet));
+    console.info('BotMarket :: %s answered WTB: %s', offer.sourceName, text);
+    return true;
+}
+
 function maybeAnnounce(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
     if (Config.marketTradeChatEnabled === false || state?.activity !== 'merchant' || !store) {
@@ -91,4 +102,4 @@ function reset() {
     lastGlobalAdAt = 0;
 }
 
-module.exports = { maybeAnnounce, maybeAnnounceWanted, offerText, wantedText, reset };
+module.exports = { maybeAnnounce, maybeAnnounceWanted, announceRemoteOffer, offerText, wantedText, reset };

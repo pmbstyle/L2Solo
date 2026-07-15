@@ -46,6 +46,13 @@ assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 
+const followingLead = GoalExecutor.finishMarketVisit({
+    ...shoppingState,
+    stats: { ...shoppingState.stats, marketLead: { town: 'Oren', itemId: 354 } }
+}, Date.now());
+assert.strictEqual(followingLead.stats.travel.reason, 'market_lead');
+assert.strictEqual(followingLead.stats.travel.townName, 'Oren');
+
 const returnedState = {
     ...returning,
     stats: {

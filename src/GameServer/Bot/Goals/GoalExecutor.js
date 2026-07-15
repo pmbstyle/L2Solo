@@ -6,8 +6,8 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function marketTown() {
-    return TownPathfinder.towns.find((town) => town.name === 'Giran') || null;
+function marketTown(name = 'Giran') {
+    return TownPathfinder.towns.find((town) => town.name === name) || TownPathfinder.towns.find((town) => town.name === 'Giran') || null;
 }
 
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
@@ -19,7 +19,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (buyingGear && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
-    const town = marketTown();
+    const town = marketTown(buyingGear ? state.stats?.marketLead?.town : 'Giran');
     if (!town) return null;
     const from = { ...state.loc };
     const to = { ...town.center };
@@ -56,7 +56,14 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     const destination = state.stats?.marketReturn;
     if (!destination?.loc) return null;
 
+    const leadTown = state.stats?.marketLead?.town;
+    const lead = leadTown && leadTown !== state.currentRegion ? marketTown(leadTown) : null;
     const from = { ...state.loc };
+    if (lead) {
+        const to = { ...lead.center };
+        const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
+        return { ...state, activity: 'traveling', stats: { ...(state.stats || {}), travel: { reason: 'market_lead', from, to, townName: lead.name, startedAt: timestamp, arrivalAt: timestamp + durationMs } }, timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 } };
+    }
     const to = { ...destination.loc };
     const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
     return {

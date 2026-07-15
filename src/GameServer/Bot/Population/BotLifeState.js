@@ -854,6 +854,7 @@ const BotLifeState = {
                 ...(state.stats || {}),
                 equipment,
                 marketRetryAfter: null,
+                marketLead: null,
                 lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
             },
             updatedAt: now()

@@ -17,16 +17,22 @@ const ColdMarketService = {
             buyerCharacterId: state.characterId
         });
         if (!offer) {
+            const remoteOffer = MarketOpportunity.bestOffer(goal.target.itemId, {
+                budget: state.adena,
+                buyerCharacterId: state.characterId
+            });
             const retryState = {
                 ...state,
                 stats: { ...(state.stats || {}), marketRetryAfter: Date.now() + RETRY_DELAY_MS,
-                    marketWanted: { ...(state.stats?.marketWanted || {}), itemId: goal.target.itemId, itemName: goal.target.itemName, lastMissingAt: Date.now() } }
+                    marketWanted: { ...(state.stats?.marketWanted || {}), itemId: goal.target.itemId, itemName: goal.target.itemName, lastMissingAt: Date.now() },
+                    marketLead: remoteOffer ? { town: remoteOffer.town, itemId: remoteOffer.selfId, itemName: remoteOffer.itemName, price: remoteOffer.price, sourceName: remoteOffer.sourceName, at: Date.now() } : null }
             };
             const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
+            if (remoteOffer) TradeChat.announceRemoteOffer(remoteOffer);
             return LifeState.upsertState(wanted.state, 'market_no_offer').then((saved) => ({
                 state: saved || wanted.state,
                 purchased: false,
-                reason: 'no_affordable_offer', wanted: wanted.announced
+                reason: remoteOffer ? 'remote_offer_found' : 'no_affordable_offer', wanted: wanted.announced, remoteOffer
             }));
         }
         if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ state, purchased: false, reason: 'offer_changed' });
