@@ -751,6 +751,11 @@ const BotLifeState = {
             phase: 'cold',
             activity: result.patch?.activity || state.activity,
             spotId: result.patch?.spotId || state.spotId,
+            currentRegion: result.patch?.currentRegion || state.currentRegion,
+            loc: {
+                ...(state.loc || {}),
+                ...(result.patch?.loc || {})
+            },
             vitals: {
                 ...(state.vitals || {}),
                 ...(result.patch?.vitals || {})
@@ -760,7 +765,10 @@ const BotLifeState = {
                 lastResolvedAt: timestamp,
                 nextResolveAt: result.nextResolveAt || timestamp + 60000
             },
-            stats,
+            stats: {
+                ...stats,
+                ...(result.patch?.stats || {})
+            },
             inventory,
             updatedAt: timestamp
         };

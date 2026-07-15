@@ -13,6 +13,7 @@ const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -614,6 +615,9 @@ const PopulationService = {
             return GoalService.review(updatedState, { spot }).catch((err) => {
                 utils.infoWarn('BotGoals', 'goal review failed for %s: %s', updatedState.name, err.message);
                 return null;
+            }).then((goalSnapshot) => {
+                const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current);
+                return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : updatedState;
             }).then(() => LifeEvents.recordMany(state.characterId, result.events)).then(() => {
                 GlobalChat.maybeAnnounce(updatedState, result.events);
                 return {

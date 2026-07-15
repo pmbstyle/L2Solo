@@ -78,6 +78,39 @@ function estimateRestMs(vitals, stats) {
     return Math.round(Math.max(hpSeconds, mpSeconds, 8) * 1000);
 }
 
+function resolveTravel(state, timestamp = Date.now()) {
+    const travel = state.stats?.travel;
+    if (!travel?.to || !travel?.arrivalAt) return null;
+    const startedAt = Number(travel.startedAt || timestamp);
+    const arrivalAt = Number(travel.arrivalAt);
+    const progress = Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
+    const from = travel.from || state.loc || {};
+    const to = travel.to;
+    const loc = {
+        locX: Math.round(Number(from.locX || 0) + (Number(to.locX || 0) - Number(from.locX || 0)) * progress),
+        locY: Math.round(Number(from.locY || 0) + (Number(to.locY || 0) - Number(from.locY || 0)) * progress),
+        locZ: Math.round(Number(from.locZ || 0) + (Number(to.locZ || 0) - Number(from.locZ || 0)) * progress)
+    };
+    const arrived = progress >= 1;
+    return {
+        patch: {
+            activity: arrived ? 'shopping' : 'traveling',
+            loc,
+            currentRegion: arrived ? travel.townName || state.currentRegion : state.currentRegion,
+            stats: { ...(state.stats || {}), travel: arrived ? null : travel }
+        },
+        events: arrived ? [{
+            type: 'arrived_town',
+            summary: `${state.name || 'Bot'} arrived in ${travel.townName || 'town'} to shop`,
+            weight: 2,
+            meta: { townName: travel.townName || null, reason: travel.reason || null }
+        }] : [],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + (arrived ? 120000 : 30000),
+        debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null }
+    };
+}
+
 function resolveFight({ state, spot, pressure, rng }) {
     const role = roleProfile(state);
     const bot = botCombatStats(state, role);
@@ -146,13 +179,38 @@ function resolveFight({ state, spot, pressure, rng }) {
 
 const BackgroundResolver = {
     resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random }) {
-        if (!state || !spot) {
+        if (!state) {
             return {
                 patch: {},
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 nextResolveAt: Date.now() + 60000,
                 debug: { reason: 'missing_state_or_spot' }
+            };
+        }
+
+        if (state.activity === 'traveling') {
+            const travelResult = resolveTravel(state);
+            if (travelResult) return travelResult;
+        }
+
+        if (state.activity === 'shopping') {
+            return {
+                patch: { activity: 'shopping' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 120000,
+                debug: { activity: 'shopping' }
+            };
+        }
+
+        if (!spot) {
+            return {
+                patch: {},
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { reason: 'missing_spot' }
             };
         }
 
