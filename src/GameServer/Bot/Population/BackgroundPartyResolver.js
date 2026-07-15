@@ -1,4 +1,7 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+
+const MAX_DROPS_PER_RESOLVE = 4;
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -61,12 +64,23 @@ function distributeRewards({ members, spot, wins, pressure, rng }) {
     const totalAdena = Array.from({ length: wins }).reduce((sum) => (
         sum + Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena)
     ), 0);
+    const loot = members.map(() => []);
+    for (let win = 0; win < Math.min(wins, MAX_DROPS_PER_RESOLVE); win++) {
+        const drops = BackgroundDropResolver.rollForFight({
+            spot,
+            killerLevel: Math.round(avgLevel(members)),
+            rng
+        });
+        if (!drops.length) continue;
+        loot[Math.min(members.length - 1, Math.floor(rng() * members.length))].push(...drops);
+    }
 
-    return members.map((state) => ({
+    return members.map((state, index) => ({
         state,
         exp: Math.round((rewards.exp * wins * expMultiplier * rates.exp) / members.length),
         sp: Math.round((rewards.sp * wins * expMultiplier * rates.sp) / members.length),
-        adena: Math.round(totalAdena / members.length)
+        adena: Math.round(totalAdena / members.length),
+        items: loot[index]
     }));
 }
 
@@ -100,7 +114,7 @@ const BackgroundPartyResolver = {
         let deaths = 0;
         let resting = 0;
 
-        rewards.forEach(({ state, exp, sp, adena }) => {
+        rewards.forEach(({ state, exp, sp, adena, items }) => {
             const vitals = memberVitals(state);
             const role = state.party?.role || state.stats?.role || 'dps';
             const mpUse = role === 'healer' ? wins * 5 + losses * 4 : role === 'buffer' ? wins * 3 : wins * 2;
@@ -146,7 +160,7 @@ const BackgroundPartyResolver = {
                         }
                     },
                     events: [],
-                    materialize: { exp, sp, adena, items: [] },
+                    materialize: { exp, sp, adena, items },
                     nextResolveAt: Date.now() + 45000 + Math.round(rng() * 90000),
                     debug: {
                         partyId: party.partyId,

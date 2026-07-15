@@ -741,7 +741,9 @@ const BotLifeState = {
             inventory[key] = {
                 selfId: item.selfId,
                 name: item.name || inventory[key]?.name || itemName(item.selfId),
-                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0)
+                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0),
+                kind: item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '',
+                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
             };
         });
         if (adena > 0) {

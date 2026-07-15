@@ -19,6 +19,7 @@ const tests = [
     'tests/test_bot_cold_travel.js',
     'tests/test_bot_cold_market_purchase.js',
     'tests/test_bot_cold_market_listing.js',
+    'tests/test_bot_background_drops.js',
     'tests/test_bot_hunting_self_defense.js',
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_market_opportunity.js',

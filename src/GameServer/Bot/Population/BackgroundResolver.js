@@ -1,4 +1,5 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -165,11 +166,11 @@ function resolveFight({ state, spot, pressure, rng }) {
     const expMultiplier = pressure?.expMultiplier || 1;
     const rates = ProgressionRates.profile();
     const adena = Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena);
-    const loot = rng() < 0.08 ? [{
-        selfId: 57,
-        name: 'Adena',
-        amount: Math.max(1, Math.round(adena * 0.15))
-    }] : [];
+    const loot = BackgroundDropResolver.rollForFight({
+        spot,
+        killerLevel: Number(state.level || bot.level),
+        rng
+    });
 
     return {
         won: true,
