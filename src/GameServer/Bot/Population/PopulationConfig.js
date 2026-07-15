@@ -42,6 +42,9 @@ const DEFAULTS = {
     marketTradeChatEnabled: true,
     marketTradeChatIntervalMs: 8 * 60 * 1000,
     marketTradeChatGlobalMinIntervalMs: 60000,
+    partyRecruitmentChatEnabled: true,
+    partyRecruitmentChatIntervalMs: 12 * 60 * 1000,
+    partyRecruitmentChatGlobalMinIntervalMs: 90000,
     partyInviteRange: 6000,
     devLogPlayerChat: true,
     resolveSlowMs: 250,
@@ -69,6 +72,8 @@ const ENV_KEYS = {
     partyInviteRange: 'BOT_PARTY_INVITE_RANGE',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
+    partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
+    partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

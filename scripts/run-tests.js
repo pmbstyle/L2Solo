@@ -22,6 +22,7 @@ const tests = [
     'tests/test_bot_cold_market_trade_chat.js',
     'tests/test_bot_background_drops.js',
     'tests/test_bot_background_party_composition.js',
+    'tests/test_bot_party_recruitment_chat.js',
     'tests/test_bot_hunting_self_defense.js',
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_market_opportunity.js',

@@ -18,6 +18,7 @@ const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
+const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 
 function groupBySpot(states) {
     const grouped = new Map();
@@ -556,6 +557,12 @@ const PopulationService = {
                 }
             })).then((updatedParty) => {
                 Metrics.recordPartyResolve();
+                const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
+                const persistedParty = recruitment.announced
+                    ? BackgroundPartyState.createOrUpdate(recruitment.party)
+                    : Promise.resolve(updatedParty);
+                return persistedParty.then((savedParty) => ({ party: savedParty || updatedParty, recruitment }));
+            }).then(({ party: updatedParty }) => {
                 return Promise.all(result.events.map((event) => (
                     LifeEvents.record(event.characterId || party.leaderId, event.type, event.summary, event.meta, event.weight)
                 ))).then(() => ({
