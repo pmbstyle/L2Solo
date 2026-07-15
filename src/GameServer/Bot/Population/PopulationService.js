@@ -601,7 +601,8 @@ const PopulationService = {
                 }))
             ), Promise.resolve([]))).then((activeMembers) => {
                 if (activeMembers.length < Config.partyMinSize) {
-                    return BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+                    return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
+                        .then(() => LifeState.clearParty(party.partyId));
                 }
                 return BackgroundPartyState.createOrUpdate({
                 ...party,
