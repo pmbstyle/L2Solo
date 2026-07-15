@@ -19,4 +19,13 @@ assert.deepStrictEqual(
     'a familiar bot should win between otherwise equal candidates'
 );
 
+const crowdedHistory = Object.fromEntries(Array.from({ length: 20 }, (_, index) => [
+    String(index + 100),
+    { runs: index === 0 ? 50 : 1, lastGroupedAt: index === 0 ? 1 : 1000 + index }
+]));
+const retained = PartyAffinity.recordRun({ characterId: 99, stats: { partyHistory: crowdedHistory } }, [], 2000);
+assert.strictEqual(Object.keys(retained).length, PartyAffinity.HISTORY_LIMIT);
+assert(retained['100'], 'an old but strong bond must survive history pruning');
+assert(retained['119'], 'a recent bond must survive history pruning');
+
 console.log('Bot background party affinity checks passed');
