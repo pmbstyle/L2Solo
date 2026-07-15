@@ -45,6 +45,9 @@ const DEFAULTS = {
     partyRecruitmentChatEnabled: true,
     partyRecruitmentChatIntervalMs: 12 * 60 * 1000,
     partyRecruitmentChatGlobalMinIntervalMs: 90000,
+    partyMarketBreakMinSessionMs: 10 * 60 * 1000,
+    partyMarketBreakMinFights: 8,
+    partyMarketBreakCooldownMs: 5 * 60 * 1000,
     partyInviteRange: 6000,
     devLogPlayerChat: true,
     resolveSlowMs: 250,
@@ -74,6 +77,7 @@ const ENV_KEYS = {
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
     partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
+    partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

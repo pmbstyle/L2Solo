@@ -19,7 +19,7 @@ const originals = {
 };
 
 async function run() {
-    const party = { partyId: 'market_break', leaderId: 1, memberIds: [1, 2, 3], spotId: 'cruma', stats: {} };
+    const party = { partyId: 'market_break', leaderId: 1, memberIds: [1, 2, 3], spotId: 'cruma', stats: { formedAt: Date.now() - 700000, fightsResolved: 10 } };
     const members = [1, 2, 3].map((characterId) => ({ characterId, name: `Bot${characterId}`, level: 20, party: { partyId: party.partyId, role: characterId === 1 ? 'tank' : 'dps' }, stats: {}, vitals: {} }));
     const savedParties = [];
     const departed = [];

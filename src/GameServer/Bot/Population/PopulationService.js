@@ -33,6 +33,15 @@ function groupBySpot(states) {
         .sort((a, b) => b.length - a.length);
 }
 
+function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
+    if (timestamp - Number(party.stats?.formedAt || party.startedAt || timestamp) < Config.partyMarketBreakMinSessionMs) return false;
+    if (Number(party.stats?.fightsResolved || 0) < Config.partyMarketBreakMinFights) return false;
+    if (timestamp - Number(party.stats?.lastMarketBreakAt || 0) < Config.partyMarketBreakCooldownMs) return false;
+    const role = PartyComposition.roleForState(member);
+    const coverage = PartyComposition.roleCoverage(members);
+    return !(['tank', 'healer'].includes(role) && Number(coverage[role] || 0) <= 1);
+}
+
 function activationCandidatesForPlayer(states, playerLevel) {
     const level = Number(playerLevel || 1);
     const range = Math.max(0, Number(Config.activationLevelRange || 0));
@@ -593,13 +602,20 @@ const PopulationService = {
             return result.memberResults.reduce((chain, memberResult) => (
                 chain.then((resolvedMembers) => LifeState.applyResolve(memberResult.state, memberResult.result)
                     .then((updated) => updated ? [...resolvedMembers, updated] : resolvedMembers))
-            ), Promise.resolve([])).then((resolvedMembers) => resolvedMembers.reduce((chain, member) => (
+            ), Promise.resolve([])).then((resolvedMembers) => {
+                let breakTaken = false;
+                return resolvedMembers.reduce((chain, member) => (
                 chain.then((activeMembers) => GoalService.review(member, { spot }).then((goalSnapshot) => {
+                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, member)) return activeMembers;
                     const travel = GoalExecutor.beginMarketTravel(member, goalSnapshot?.current);
                     if (!travel) return activeMembers;
-                    return LifeState.leaveParty(travel, 'market_break').then((departed) => departed ? activeMembers : [...activeMembers, member]);
+                    return LifeState.leaveParty(travel, 'market_break').then((departed) => {
+                        if (departed) breakTaken = true;
+                        return departed ? activeMembers : [...activeMembers, member];
+                    });
                 }))
-            ), Promise.resolve([]))).then((activeMembers) => {
+                ), Promise.resolve([]));
+            }).then((activeMembers) => {
                 if (activeMembers.length < Config.partyMinSize) {
                     return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
                         .then(() => LifeState.clearParty(party.partyId));
@@ -616,6 +632,7 @@ const PopulationService = {
                 stats: {
                     ...(party.stats || {}),
                     ...(result.partyPatch.stats || {}),
+                    lastMarketBreakAt: activeMembers.length < members.length ? Date.now() : party.stats?.lastMarketBreakAt || null,
                     route: spot.route || party.stats?.route || null
                 }
                 });
