@@ -150,6 +150,28 @@ const BotManager = {
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
     },
 
+    renderColdBotStatusPanel(playerSession, state) {
+        if (!playerSession.actor || !state) return;
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const Html = invoke('GameServer/World/Generics/HtmlKit');
+        const safe = (value) => Html.esc(value);
+        const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
+        const travel = state.stats?.travel;
+        const lead = state.stats?.marketLead;
+        const wanted = state.stats?.marketWanted;
+        const history = Object.values(state.stats?.partyHistory || {});
+        const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
+            ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
+            ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
+            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goal ? `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}` : 'none')],
+            ['Travel', safe(travel ? `${travel.reason} -> ${travel.townName || 'field'}` : 'none')],
+            ['Market Lead', safe(lead ? `${lead.itemName} in ${lead.town} for ${lead.price}` : 'none')],
+            ['WTB', safe(wanted ? wanted.itemName || `Item ${wanted.itemId}` : 'none')],
+            ['Party Bonds', safe(`${history.length} remembered partners`)]
+        ]) + '<br>' + Html.actionFooter([{ label: 'Refresh', command: `bot-status ${state.name}` }]);
+        playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), Html.page(body, { title: 'Cold Bot Status' })));
+    },
+
     renderBotPathPanel(playerSession, botSession = null) {
         if (!playerSession.actor) return;
 
