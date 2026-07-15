@@ -28,6 +28,7 @@ module.exports = function(session, parts) {
     }
 
     session.activeMerchantTrade = null;
+    session.activeNpcSellShop = null;
     session.activeAdminShop = {
         category: parts[1],
         itemIds: new Set(itemIds)
