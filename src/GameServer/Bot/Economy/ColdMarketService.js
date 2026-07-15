@@ -2,6 +2,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
@@ -18,12 +19,14 @@ const ColdMarketService = {
         if (!offer) {
             const retryState = {
                 ...state,
-                stats: { ...(state.stats || {}), marketRetryAfter: Date.now() + RETRY_DELAY_MS }
+                stats: { ...(state.stats || {}), marketRetryAfter: Date.now() + RETRY_DELAY_MS,
+                    marketWanted: { ...(state.stats?.marketWanted || {}), itemId: goal.target.itemId, itemName: goal.target.itemName, lastMissingAt: Date.now() } }
             };
-            return LifeState.upsertState(retryState, 'market_no_offer').then((saved) => ({
-                state: saved || retryState,
+            const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
+            return LifeState.upsertState(wanted.state, 'market_no_offer').then((saved) => ({
+                state: saved || wanted.state,
                 purchased: false,
-                reason: 'no_affordable_offer'
+                reason: 'no_affordable_offer', wanted: wanted.announced
             }));
         }
         if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ state, purchased: false, reason: 'offer_changed' });

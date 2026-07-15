@@ -31,6 +31,26 @@ function offerText(store) {
     return `WTS ${names.join(', ')}. Sitting in ${store.town || 'town'}.`;
 }
 
+function wantedText(state, goal) {
+    const item = goal?.target?.itemName || `Item ${goal?.target?.itemId || ''}`.trim();
+    if (!goal?.target?.itemId) return '';
+    return `WTB ${item} — ${state.currentRegion || 'Giran'}.`.slice(0, 120);
+}
+
+function maybeAnnounceWanted(state, goal, timestamp = Date.now()) {
+    const wanted = state?.stats?.marketWanted || {};
+    if (Config.marketTradeChatEnabled === false || state?.activity !== 'shopping' || !goal?.target?.itemId) return { state, announced: false, reason: 'not_waiting_for_gear' };
+    if (Number(wanted.lastTradeAdAt || 0) + Config.marketTradeChatIntervalMs > timestamp) return { state, announced: false, reason: 'cooldown' };
+    if (lastGlobalAdAt > 0 && timestamp - lastGlobalAdAt < Config.marketTradeChatGlobalMinIntervalMs) return { state, announced: false, reason: 'global_cooldown' };
+    const text = wantedText(state, goal);
+    const players = realPlayerSessions();
+    if (!text || !players.length) return { state, announced: false, reason: 'no_audience' };
+    const packet = ServerResponse.speak(coldActor(state), { kind: 8, text });
+    players.forEach((session) => session.dataSendToMe(packet));
+    lastGlobalAdAt = timestamp;
+    return { state: { ...state, stats: { ...(state.stats || {}), marketWanted: { itemId: goal.target.itemId, itemName: goal.target.itemName, lastTradeAdAt: timestamp } } }, announced: true, text };
+}
+
 function maybeAnnounce(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
     if (Config.marketTradeChatEnabled === false || state?.activity !== 'merchant' || !store) {
@@ -71,4 +91,4 @@ function reset() {
     lastGlobalAdAt = 0;
 }
 
-module.exports = { maybeAnnounce, offerText, reset };
+module.exports = { maybeAnnounce, maybeAnnounceWanted, offerText, wantedText, reset };
