@@ -39,6 +39,9 @@ const DEFAULTS = {
     globalChatChance: 0.015,
     globalChatImportantChance: 0.25,
     globalChatMinIntervalMs: 180000,
+    marketTradeChatEnabled: true,
+    marketTradeChatIntervalMs: 8 * 60 * 1000,
+    marketTradeChatGlobalMinIntervalMs: 60000,
     partyInviteRange: 6000,
     devLogPlayerChat: true,
     resolveSlowMs: 250,
@@ -64,6 +67,8 @@ const ENV_KEYS = {
     nearPlayerHotTarget: 'BOT_NEAR_PLAYER_HOT_TARGET',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
     partyInviteRange: 'BOT_PARTY_INVITE_RANGE',
+    marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
+    marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

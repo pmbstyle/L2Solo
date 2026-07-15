@@ -16,6 +16,7 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -639,7 +640,9 @@ const PopulationService = {
                             ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
                             : listingState;
                     });
-                    return marketStatePromise.then((persistedState) => persistedState || purchasedState).then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
+                    return marketStatePromise.then((persistedState) => persistedState || purchasedState)
+                        .then((marketState) => ColdMarketTradeChat.maybeAnnounce(marketState).then((result) => result.state || marketState))
+                        .then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;
                     }).then((goalSnapshot) => {
