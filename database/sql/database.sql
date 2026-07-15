@@ -20,6 +20,8 @@ CREATE TABLE `characters`(
     `maxHp`       float       NOT NULL,
     `mp`          float       NOT NULL DEFAULT 25,
     `maxMp`       float       NOT NULL,
+    `cp`          float                NULL,
+    `effects`     text                 NULL,
     `exp`         bigint      NOT NULL DEFAULT 0,
     `sp`          int(10)     NOT NULL DEFAULT 0,
     `pk`          int(10)     NOT NULL DEFAULT 0,

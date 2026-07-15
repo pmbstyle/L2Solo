@@ -23,6 +23,14 @@ function clear(actor, key) {
     return removed;
 }
 
+function clearAll(actor) {
+    const keys = new Set([
+        ...Object.keys(actor?.effectTimers || {}),
+        ...Object.keys(actor?.effectExpiryTimers || {})
+    ]);
+    keys.forEach((key) => clear(actor, key));
+}
+
 function clearRuntime(actor, key) {
     if (!actor?.effectTimers?.[key]) return false;
     clearInterval(actor.effectTimers[key]);
@@ -293,5 +301,6 @@ module.exports = {
     applyHot,
     scheduleExpiry,
     refreshEffects,
-    clear
+    clear,
+    clearAll
 };
