@@ -42,6 +42,7 @@ module.exports = function(session, parts) {
     session.activeMerchantTrade = null;
     session.activeAdminShop = null;
     session.activeNpcShop = null;
+    session.activeNpcSellShop = null;
 
     const npcSelfId = session.activeNpcTalk?.selfId;
     const rows = ExchangeLists.fetchForNpc(npcSelfId);

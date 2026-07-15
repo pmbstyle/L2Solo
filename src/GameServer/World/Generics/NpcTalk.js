@@ -5,6 +5,7 @@ function npcTalk(session, npc) {
     const filename = path + npc.fetchSelfId() + '.html';
 
     session.activeNpcShop = null;
+    session.activeNpcSellShop = null;
     session.activeNpcTalk = {
         selfId: npc.fetchSelfId(),
         objectId: npc.fetchId(),

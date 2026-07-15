@@ -45,6 +45,7 @@ const tests = [
     'tests/test_npc_combat_range.js',
     'tests/test_npc_interaction_completion.js',
     'tests/test_npc_shop_stock.js',
+    'tests/test_npc_sell_shop.js',
     'tests/test_npc_social_aggro.js',
     'tests/test_npc_respawn.js',
     'tests/test_party_companion_rest_follow.js',

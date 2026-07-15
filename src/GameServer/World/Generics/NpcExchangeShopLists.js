@@ -88,7 +88,7 @@ function renderHtml(npcSelfId, message = '') {
         lines.push(`${esc(row.result.name)} - ${required} <a action="bypass -h exchange-shop buy ${index}">Exchange</a><br>`);
     });
 
-    lines.push('<br><a action="bypass -h sell-junk">Sell unequipped items (50% price)</a><br>');
+    lines.push('<br><a action="bypass -h sell-shop">Sell items</a><br>');
     lines.push('</body></html>');
     return lines.join('');
 }
