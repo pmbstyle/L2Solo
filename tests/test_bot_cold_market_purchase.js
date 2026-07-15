@@ -7,6 +7,7 @@ const Database = invoke('Database');
 const World = invoke('GameServer/World/World');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 DataCache.init();
 
@@ -34,7 +35,8 @@ async function run() {
     };
     Database.fetchItems = () => Promise.resolve([
         { id: 10, selfId: 57, amount: 1000, equipped: false, slot: 0 },
-        { id: 11, selfId: 1, amount: 1, equipped: true, slot: 7 }
+        { id: 11, selfId: 1, amount: 1, equipped: true, slot: 7 },
+        { id: 12, selfId: 21, amount: 1, equipped: true, slot: 10 }
     ]);
     Database.updateItemAmount = (characterId, id, amount) => {
         calls.push({ type: 'amount', characterId, id, amount });
@@ -92,6 +94,30 @@ async function run() {
     assert(calls.some((call) => call.type === 'equip' && call.id === 11 && call.equipped === false));
     assert(calls.some((call) => call.type === 'insert' && call.item.selfId === 2 && call.item.equipped === true));
     assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
+
+    const armorPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 78,
+        adena: 505000,
+        inventory: {
+            ...state.inventory,
+            57: { selfId: 57, name: 'Adena', amount: 505000 },
+            21: { selfId: 21, name: 'Shirt', amount: 1, equipped: true, slot: 10, rank: 'none', kind: 'Armor.Light' }
+        },
+        stats: {
+            equipment: [
+                { selfId: 1, slot: 7, rank: 'none', kind: 'Weapon.Sword' },
+                { selfId: 21, slot: 10, rank: 'none', kind: 'Armor.Light' }
+            ]
+        }
+    }, { selfId: 354, price: 505000, sourceType: 'npc' });
+    assert.strictEqual(armorPurchase.inventory['1'].equipped, true, 'a chest purchase must keep the weapon equipped');
+    assert.strictEqual(armorPurchase.inventory['21'].equipped, false);
+    assert.strictEqual(armorPurchase.inventory['354'].equipped, true);
+    assert(armorPurchase.stats.equipment.some((item) => item.selfId === 1 && item.slot === 7));
+    assert(armorPurchase.stats.equipment.some((item) => item.selfId === 354 && item.slot === 10));
+    assert(calls.some((call) => call.type === 'equip' && call.characterId === 78 && call.id === 12 && call.equipped === false));
+    assert(calls.some((call) => call.type === 'insert' && call.characterId === 78 && call.item.selfId === 354 && call.item.equipped === true));
 
     console.log('Bot cold market purchase checks passed');
 }

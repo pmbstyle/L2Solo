@@ -51,6 +51,21 @@ assert.strictEqual(equipmentGoal.type, 'upgrade_gear');
 assert.strictEqual(equipmentGoal.target.itemId, expectedWeapon.selfId);
 assert.strictEqual(equipmentGoal.plan.expectedBenefit, 'adena_for_weapon_upgrade');
 
+const expectedChest = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 0, level: 40 }).items.find((item) => Number(item.slot) === 10);
+const armorGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    adena: 1000000,
+    stats: {
+        classId: 0,
+        build: { grade: 'c', classId: 0, level: 40 },
+        equipment: [{ selfId: expectedWeapon.selfId, slot: 7, rank: 'c', name: expectedWeapon.name }]
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(armorGoal.type, 'upgrade_gear');
+assert.strictEqual(armorGoal.target.equipmentSlot, 'chest');
+assert.strictEqual(armorGoal.target.itemId, expectedChest.selfId);
+assert.strictEqual(armorGoal.plan.expectedBenefit, 'market_search_for_gear');
+
 const noSnapshot = GoalPlanner.plan(NeedsEvaluator.evaluate({ ...base, stats: { classId: 0, build: { grade: 'c' } } }, { spot, now: timestamp }), timestamp);
 assert.notStrictEqual(noSnapshot.type, 'upgrade_gear', 'missing equipment data must not invent a gear deficit');
 

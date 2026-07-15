@@ -3,6 +3,22 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
+// Weapons make the largest immediate difference, then core armour.  The two
+// ring/earring slots deliberately stay out of the first pass: the compact
+// inventory snapshot identifies equipment by item id, so duplicate jewellery
+// cannot yet be distinguished reliably.
+const EQUIPMENT_PRIORITY = [7, 10, 15, 11, 8, 6, 9, 12, 3];
+const EQUIPMENT_SLOT_NAMES = {
+    3: 'necklace',
+    6: 'head',
+    7: 'weapon',
+    8: 'shield',
+    9: 'hands',
+    10: 'chest',
+    11: 'pants',
+    12: 'feet',
+    15: 'full_armor'
+};
 
 function percentage(value, maximum) {
     const max = Math.max(1, Number(maximum) || 0);
@@ -19,21 +35,31 @@ function equipmentNeed(state) {
     if (!Array.isArray(equipment)) return null;
 
     const build = state.stats?.build || {};
-    const desiredRank = String(build.grade || 'none').toLowerCase();
     const classId = Number(state.stats?.classId || build.classId || 0);
     const plan = BotGear.planFor({ classId, level: Number(state.level || build.level || 1) });
-    const desiredWeapon = plan.items.find((item) => Number(item.slot) === 7) || null;
-    const currentWeapon = equipment.find((item) => Number(item.slot) === 7) || null;
-    if (!desiredWeapon || currentWeapon && rankIndex(currentWeapon.rank) >= rankIndex(desiredRank)) return null;
+    const desiredItem = EQUIPMENT_PRIORITY
+        .map((slot) => plan.items.find((item) => Number(item.slot) === slot))
+        .find((item) => {
+            if (!item) return false;
+            const currentItem = equipment.find((equipped) => Number(equipped.slot) === Number(item.slot));
+            const desiredRank = String(item.rank || build.grade || 'none').toLowerCase();
+            return !currentItem || rankIndex(currentItem.rank) < rankIndex(desiredRank);
+        }) || null;
+    if (!desiredItem) return null;
 
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(desiredWeapon.selfId));
+    const currentItem = equipment.find((item) => Number(item.slot) === Number(desiredItem.slot)) || null;
+    const desiredRank = String(desiredItem.rank || build.grade || 'none').toLowerCase();
+
+    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(desiredItem.selfId));
     const price = Math.max(1, Number(template?.template?.price || 0));
     return {
-        currentWeapon,
+        currentItem,
         desiredRank,
-        desiredWeapon: {
-            selfId: Number(desiredWeapon.selfId),
-            name: desiredWeapon.name || template?.template?.name || `Item ${desiredWeapon.selfId}`,
+        slot: Number(desiredItem.slot),
+        slotName: EQUIPMENT_SLOT_NAMES[Number(desiredItem.slot)] || `slot_${desiredItem.slot}`,
+        desiredItem: {
+            selfId: Number(desiredItem.selfId),
+            name: desiredItem.name || template?.template?.name || `Item ${desiredItem.selfId}`,
             price
         }
     };
@@ -71,22 +97,25 @@ function evaluate(state = {}, options = {}) {
 
     const gear = equipmentNeed(state);
     if (gear) {
-        const requiredAdena = Math.max(0, gear.desiredWeapon.price - Number(state.adena || 0));
+        const requiredAdena = Math.max(0, gear.desiredItem.price - Number(state.adena || 0));
+        const weaponUpgrade = gear.slot === 7;
         candidates.push({
             type: 'upgrade_gear',
             priority: requiredAdena > 0 ? 72 : 58,
             target: {
-                equipmentSlot: 'weapon',
+                equipmentSlot: gear.slotName,
                 requiredRank: gear.desiredRank,
-                currentItemId: gear.currentWeapon?.selfId || null,
-                itemId: gear.desiredWeapon.selfId,
-                itemName: gear.desiredWeapon.name,
-                adena: gear.desiredWeapon.price
+                currentItemId: gear.currentItem?.selfId || null,
+                itemId: gear.desiredItem.selfId,
+                itemName: gear.desiredItem.name,
+                adena: gear.desiredItem.price
             },
             plan: {
                 ...routePlan(state, spot),
-                expectedBenefit: requiredAdena > 0 ? 'adena_for_weapon_upgrade' : 'market_search_for_weapon',
-                estimatedCost: gear.desiredWeapon.price,
+                expectedBenefit: requiredAdena > 0
+                    ? weaponUpgrade ? 'adena_for_weapon_upgrade' : 'adena_for_gear_upgrade'
+                    : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
+                estimatedCost: gear.desiredItem.price,
                 requiredAdena
             },
             blockers: spot ? [] : ['missing_spot'],

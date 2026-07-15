@@ -808,9 +808,11 @@ const BotLifeState = {
 
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
+        const slot = Number(template.etc?.slot || 0);
+        if (!slot) return Promise.resolve(null);
         const inventory = { ...(state.inventory || {}) };
         Object.keys(inventory).forEach((key) => {
-            if (Number(inventory[key]?.slot || 0) === 7) inventory[key] = { ...inventory[key], equipped: false };
+            if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
         });
         inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - price };
         inventory[String(selfId)] = {
@@ -819,7 +821,7 @@ const BotLifeState = {
             name: template.template?.name || offer.itemName || itemName(selfId),
             amount: Number(inventory[String(selfId)]?.amount || 0) + 1,
             equipped: true,
-            slot: Number(template.etc?.slot || 7),
+            slot,
             rank: template.etc?.rank || 'none',
             kind: template.template?.kind || ''
         };
