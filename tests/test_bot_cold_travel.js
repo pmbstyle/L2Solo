@@ -28,4 +28,29 @@ const arrived = BackgroundResolver.resolveSolo({ state: arrivedState, spot: null
 assert.strictEqual(arrived.patch.activity, 'shopping');
 assert.strictEqual(arrived.events[0].type, 'arrived_town');
 
+const shoppingState = {
+    ...arrivedState,
+    activity: 'shopping',
+    currentRegion: 'Giran',
+    loc: { ...started.stats.travel.to },
+    stats: { ...started.stats, travel: null }
+};
+const returning = GoalExecutor.finishMarketVisit(shoppingState, Date.now());
+assert.strictEqual(returning.activity, 'traveling');
+assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
+assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
+
+const returnedState = {
+    ...returning,
+    stats: {
+        ...returning.stats,
+        travel: { ...returning.stats.travel, arrivalAt: Date.now() - 1, startedAt: Date.now() - 1000 }
+    }
+};
+const returned = BackgroundResolver.resolveSolo({ state: returnedState, spot: null });
+assert.strictEqual(returned.patch.activity, 'hunting');
+assert.strictEqual(returned.patch.currentRegion, 'Dion');
+assert.strictEqual(returned.patch.stats.marketReturn, null);
+assert.strictEqual(returned.events[0].type, 'returned_to_spot');
+
 console.log('Bot cold travel checks passed');

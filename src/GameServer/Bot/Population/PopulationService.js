@@ -616,14 +616,18 @@ const PopulationService = {
             return GoalService.current(updatedState.characterId)
                 .then((goalSnapshot) => ColdMarketService.tryPurchase(updatedState, goalSnapshot?.current))
                 .then((marketResult) => {
-                    const marketState = marketResult.state || updatedState;
-                    return GoalService.review(marketState, { spot }).catch((err) => {
+                    const purchasedState = marketResult.state || updatedState;
+                    const returnState = marketResult.purchased ? GoalExecutor.finishMarketVisit(purchasedState) : null;
+                    const marketStatePromise = returnState
+                        ? LifeState.upsertState(returnState, 'market_purchase_complete')
+                        : Promise.resolve(purchasedState);
+                    return marketStatePromise.then((persistedState) => persistedState || purchasedState).then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;
                     }).then((goalSnapshot) => {
                         const travelState = GoalExecutor.beginMarketTravel(marketState, goalSnapshot?.current);
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : marketState;
-                    });
+                    }));
                 }).then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => finalState))
                 .then((finalState) => {
                     GlobalChat.maybeAnnounce(finalState, result.events);

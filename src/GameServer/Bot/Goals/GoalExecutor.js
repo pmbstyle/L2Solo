@@ -24,6 +24,11 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         activity: 'traveling',
         stats: {
             ...(state.stats || {}),
+            marketReturn: {
+                loc: from,
+                regionName: state.currentRegion || null,
+                spotId: state.spotId || null
+            },
             travel: {
                 reason: 'market_search_for_weapon',
                 from,
@@ -41,4 +46,38 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     };
 }
 
-module.exports = { beginMarketTravel };
+function finishMarketVisit(state, timestamp = Date.now()) {
+    if (!state || state.activity !== 'shopping') return null;
+    const destination = state.stats?.marketReturn;
+    if (!destination?.loc) return null;
+
+    const from = { ...state.loc };
+    const to = { ...destination.loc };
+    const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
+    return {
+        ...state,
+        activity: 'traveling',
+        stats: {
+            ...(state.stats || {}),
+            travel: {
+                reason: 'return_after_market',
+                from,
+                to,
+                regionName: destination.regionName,
+                spotId: destination.spotId,
+                arrivalActivity: 'hunting',
+                arrivalEvent: 'returned_to_spot',
+                clearMarketReturn: true,
+                startedAt: timestamp,
+                arrivalAt: timestamp + durationMs
+            }
+        },
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + 30000
+        }
+    };
+}
+
+module.exports = { beginMarketTravel, finishMarketVisit };

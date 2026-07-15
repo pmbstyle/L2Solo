@@ -92,22 +92,28 @@ function resolveTravel(state, timestamp = Date.now()) {
         locZ: Math.round(Number(from.locZ || 0) + (Number(to.locZ || 0) - Number(from.locZ || 0)) * progress)
     };
     const arrived = progress >= 1;
+    const arrivalActivity = travel.arrivalActivity || 'shopping';
+    const nextStats = { ...(state.stats || {}), travel: arrived ? null : travel };
+    if (arrived && travel.clearMarketReturn) nextStats.marketReturn = null;
     return {
         patch: {
-            activity: arrived ? 'shopping' : 'traveling',
+            activity: arrived ? arrivalActivity : 'traveling',
             loc,
-            currentRegion: arrived ? travel.townName || state.currentRegion : state.currentRegion,
-            stats: { ...(state.stats || {}), travel: arrived ? null : travel }
+            currentRegion: arrived ? travel.regionName || travel.townName || state.currentRegion : state.currentRegion,
+            spotId: arrived && travel.spotId ? travel.spotId : state.spotId,
+            stats: nextStats
         },
         events: arrived ? [{
-            type: 'arrived_town',
-            summary: `${state.name || 'Bot'} arrived in ${travel.townName || 'town'} to shop`,
+            type: travel.arrivalEvent || 'arrived_town',
+            summary: arrivalActivity === 'shopping'
+                ? `${state.name || 'Bot'} arrived in ${travel.townName || 'town'} to shop`
+                : `${state.name || 'Bot'} returned to ${travel.regionName || 'the hunting area'}`,
             weight: 2,
             meta: { townName: travel.townName || null, reason: travel.reason || null }
         }] : [],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: timestamp + (arrived ? 120000 : 30000),
-        debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null }
+        nextResolveAt: timestamp + (arrived && arrivalActivity === 'shopping' ? 120000 : 30000),
+        debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null, arrivalActivity }
     };
 }
 
