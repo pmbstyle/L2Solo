@@ -29,6 +29,12 @@ try {
     assert.strictEqual(MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 999 }), null);
     assert.strictEqual(MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 1000 }).sourceName, 'PlayerSeller');
 
+    const reserved = MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 1000 });
+    assert.strictEqual(MarketOpportunity.reserve(reserved), true);
+    assert.strictEqual(playerStore.items[0].count, 1);
+    MarketOpportunity.release(reserved);
+    assert.strictEqual(playerStore.items[0].count, 2);
+
     playerStore.items[0].count = 0;
     assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceType === 'private_store'));
     console.log('Bot market opportunity checks passed');

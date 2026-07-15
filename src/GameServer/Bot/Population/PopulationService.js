@@ -14,6 +14,7 @@ const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -612,20 +613,26 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
-            return GoalService.review(updatedState, { spot }).catch((err) => {
-                utils.infoWarn('BotGoals', 'goal review failed for %s: %s', updatedState.name, err.message);
-                return null;
-            }).then((goalSnapshot) => {
-                const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current);
-                return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : updatedState;
-            }).then(() => LifeEvents.recordMany(state.characterId, result.events)).then(() => {
-                GlobalChat.maybeAnnounce(updatedState, result.events);
-                return {
-                    ok: true,
-                    state: updatedState,
-                    debug: result.debug
-                };
-            });
+            return GoalService.current(updatedState.characterId)
+                .then((goalSnapshot) => ColdMarketService.tryPurchase(updatedState, goalSnapshot?.current))
+                .then((marketResult) => {
+                    const marketState = marketResult.state || updatedState;
+                    return GoalService.review(marketState, { spot }).catch((err) => {
+                        utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
+                        return null;
+                    }).then((goalSnapshot) => {
+                        const travelState = GoalExecutor.beginMarketTravel(marketState, goalSnapshot?.current);
+                        return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : marketState;
+                    });
+                }).then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => finalState))
+                .then((finalState) => {
+                    GlobalChat.maybeAnnounce(finalState, result.events);
+                    return {
+                        ok: true,
+                        state: finalState,
+                        debug: result.debug
+                    };
+                });
         }).finally(() => {
             Metrics.recordResolveDuration(Date.now() - startedAt);
         });

@@ -78,10 +78,29 @@ function bestOffer(selfId, options = {}) {
     return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
 }
 
+function reserve(offer, qty = 1) {
+    const count = Math.max(1, Number(qty) || 1);
+    if (!offer?.available || Number(offer.price) <= 0) return false;
+    if (offer.sourceType === 'npc') return true;
+    if (offer.sourceType !== 'private_store' || !offer.storeItem) return false;
+    if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
+    offer.storeItem.count -= count;
+    offer.count = offer.storeItem.count;
+    return true;
+}
+
+function release(offer, qty = 1) {
+    if (offer?.sourceType !== 'private_store' || !offer.storeItem) return;
+    offer.storeItem.count += Math.max(1, Number(qty) || 1);
+    offer.count = offer.storeItem.count;
+}
+
 module.exports = {
     TOWN_NPC_SELLERS,
     bestOffer,
     findOffers,
     npcOffers,
-    privateOffers
+    privateOffers,
+    release,
+    reserve
 };

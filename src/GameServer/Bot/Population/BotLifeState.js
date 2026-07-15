@@ -114,21 +114,31 @@ function inventoryAdena(inventory) {
 function syncInventoryItem(characterId, existingItems, item) {
     const selfId = Number(item.selfId || 0);
     const amount = Number(item.amount || 0);
-    if (!selfId || amount <= 0) return Promise.resolve(null);
+    if (!selfId || amount < 0) return Promise.resolve(null);
 
     const existing = existingItems.find((row) => Number(row.selfId) === selfId);
     if (existing) {
-        if (Number(existing.amount || 0) === amount) return Promise.resolve(null);
-        return Database.updateItemAmount(characterId, existing.id, amount);
+        let chain = Promise.resolve(null);
+        if (Number(existing.amount || 0) !== amount) {
+            chain = chain.then(() => Database.updateItemAmount(characterId, existing.id, amount));
+        }
+        const equipped = !!item.equipped;
+        const slot = Number(item.slot || existing.slot || 0);
+        if (!!existing.equipped !== equipped || Number(existing.slot || 0) !== slot) {
+            chain = chain.then(() => Database.updateItemEquipState(characterId, existing.id, equipped, slot));
+        }
+        return chain;
     }
+
+    if (amount === 0) return Promise.resolve(null);
 
     const template = itemTemplate(selfId);
     return Database.setItem(characterId, {
         selfId,
         name: item.name || itemName(selfId),
         amount,
-        equipped: false,
-        slot: template?.etc?.slot || 0
+        equipped: !!item.equipped,
+        slot: Number(item.slot || template?.etc?.slot || 0)
     });
 }
 
@@ -785,6 +795,54 @@ const BotLifeState = {
             })
             .catch((err) => {
                 utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    applyMarketPurchase(state, offer) {
+        const selfId = Number(offer?.selfId || 0);
+        const price = Number(offer?.price || 0);
+        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < price) return Promise.resolve(null);
+
+        const template = itemTemplate(selfId);
+        if (!template) return Promise.resolve(null);
+        const inventory = { ...(state.inventory || {}) };
+        Object.keys(inventory).forEach((key) => {
+            if (Number(inventory[key]?.slot || 0) === 7) inventory[key] = { ...inventory[key], equipped: false };
+        });
+        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - price };
+        inventory[String(selfId)] = {
+            ...(inventory[String(selfId)] || {}),
+            selfId,
+            name: template.template?.name || offer.itemName || itemName(selfId),
+            amount: Number(inventory[String(selfId)]?.amount || 0) + 1,
+            equipped: true,
+            slot: Number(template.etc?.slot || 7),
+            rank: template.etc?.rank || 'none',
+            kind: template.template?.kind || ''
+        };
+        const equipment = equipmentSummaryFromInventory(inventory);
+        const nextState = {
+            ...state,
+            adena: Number(state.adena) - price,
+            activity: 'shopping',
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                equipment,
+                lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
                 return null;
             });
     },

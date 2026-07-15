@@ -18,6 +18,11 @@ const GoalService = {
         return GoalState.snapshot(characterId);
     },
 
+    current(characterId) {
+        const cached = GoalState.snapshot(characterId);
+        return cached ? Promise.resolve(cached) : GoalState.load(characterId);
+    },
+
     review(state, options = {}) {
         if (!state?.characterId || state.phase === 'hot') return Promise.resolve(null);
         const timestamp = Number(options.now) || Date.now();
