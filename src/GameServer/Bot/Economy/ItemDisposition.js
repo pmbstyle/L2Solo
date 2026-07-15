@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
+const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 
 function templateFor(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
@@ -14,6 +15,10 @@ function priceFor(state, item, template) {
     return Math.max(1, Math.floor(basePrice * percent / 100));
 }
 
+function basePrice(item, template = templateFor(item?.selfId)) {
+    return Math.max(0, Number(template?.template?.price || 0));
+}
+
 function saleCandidates(state, options = {}) {
     const limit = Math.max(1, Math.min(20, Number(options.limit) || 8));
     return Object.values(state?.inventory || {}).flatMap((item) => {
@@ -25,6 +30,7 @@ function saleCandidates(state, options = {}) {
         const kind = item.kind || template?.template?.kind || '';
         if (!SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
+        const base = basePrice(item, template);
         const price = priceFor(state, item, template);
         if (price <= 0) return [];
         return [{
@@ -33,9 +39,27 @@ function saleCandidates(state, options = {}) {
             kind,
             rank: item.rank || template?.etc?.rank || 'none',
             count: amount,
-            price
+            price,
+            basePrice: base
         }];
     }).sort((a, b) => b.price - a.price || a.selfId - b.selfId).slice(0, limit);
 }
 
-module.exports = { priceFor, saleCandidates };
+function npcLiquidationCandidates(state, options = {}) {
+    const maxUnitPrice = Math.max(1, Number(options.maxUnitPrice) || NPC_LIQUIDATION_MAX_UNIT_PRICE);
+    return saleCandidates(state, { limit: 20 }).filter((item) => item.basePrice <= maxUnitPrice).map((item) => ({
+        ...item,
+        npcPrice: Math.max(1, Math.floor(item.basePrice * 0.5))
+    }));
+}
+
+function saleSummary(state, options = {}) {
+    const items = saleCandidates(state, options);
+    return {
+        items,
+        itemCount: items.reduce((sum, item) => sum + Number(item.count || 0), 0),
+        marketValue: items.reduce((sum, item) => sum + Number(item.count || 0) * Number(item.price || 0), 0)
+    };
+}
+
+module.exports = { NPC_LIQUIDATION_MAX_UNIT_PRICE, basePrice, npcLiquidationCandidates, priceFor, saleCandidates, saleSummary };

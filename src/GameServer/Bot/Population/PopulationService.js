@@ -615,15 +615,24 @@ const PopulationService = {
 
             Metrics.recordBackgroundResolve();
             return ColdMarketListingService.resolve(updatedState)
-                .then((marketLifecycleState) => GoalService.current(marketLifecycleState.characterId)
-                    .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycleState, goalSnapshot?.current)))
-                .then((marketResult) => {
-                    const purchasedState = marketResult.state || updatedState;
-                    const listingPromise = marketResult.purchased
+                .then((marketLifecycle) => {
+                    const completedSale = marketLifecycle.closed && marketLifecycle.reason === 'sold_out';
+                    const goalReady = completedSale
+                        ? GoalService.complete(marketLifecycle.state.characterId)
+                        : Promise.resolve(null);
+                    return goalReady.then(() => marketLifecycle);
+                }).then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
+                    .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycle.state, goalSnapshot?.current)
+                        .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
+                .then(({ marketLifecycle, marketResult, goal }) => {
+                    const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
+                    const shouldOpenListing = marketResult.purchased || (!marketLifecycle.closed && goal?.type === 'sell_inventory');
+                    const listingPromise = shouldOpenListing
                         ? ColdMarketListingService.open(purchasedState)
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;
+                        if (listingState.activity === 'merchant') return listingState;
                         if (listingResult.listed) return listingState;
                         const returnState = GoalExecutor.finishMarketVisit(listingState);
                         return returnState

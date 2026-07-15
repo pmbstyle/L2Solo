@@ -83,9 +83,19 @@ async function run() {
     assert(calls.some((call) => call.type === 'amount' && call.id === 21 && call.amount === 0));
     assert(calls.some((call) => call.type === 'amount' && call.id === 20 && call.amount === 500 + offer.price));
 
-    const closed = await ListingService.resolve(sold, 2000);
+    const closedResult = await ListingService.resolve(sold, 2000);
+    const closed = closedResult.state;
     assert.strictEqual(closed.activity, 'shopping');
     assert.strictEqual(closed.stats.marketStore, null);
+
+    const expiredState = { ...state, characterId: 89, name: 'ExpiredSeller' };
+    const expiredOpened = await ListingService.open(expiredState, { now: 1000, durationMs: 60000 });
+    const expiredResult = await ListingService.resolve(expiredOpened.state, 62000);
+    assert.strictEqual(expiredResult.closed, true);
+    assert.strictEqual(expiredResult.reason, 'expired');
+    assert.strictEqual(expiredResult.state.inventory['1'].amount, 0, 'low-value old gear should be liquidated at the NPC');
+    assert.strictEqual(expiredResult.state.adena, 884, 'NPC payout should use the normal 50% sale price');
+    assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
     console.log('Bot cold market listing checks passed');
 }
 

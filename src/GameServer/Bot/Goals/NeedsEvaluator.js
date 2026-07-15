@@ -1,5 +1,6 @@
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const DataCache = invoke('GameServer/DataCache');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 
@@ -113,6 +114,18 @@ function evaluate(state = {}, options = {}) {
             plan: { ...routePlan(state, spot), expectedBenefit: 'adena_and_loot' },
             blockers: spot ? [] : ['missing_spot'],
             nextReviewAt: timestamp + 8 * 60 * 1000
+        });
+    }
+
+    const sale = ItemDisposition.saleSummary(state);
+    if (sale.itemCount >= 3 || sale.marketValue >= 1000) {
+        candidates.push({
+            type: 'sell_inventory',
+            priority: 54,
+            target: { itemCount: sale.itemCount, marketValue: sale.marketValue },
+            plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0 },
+            blockers: [],
+            nextReviewAt: timestamp + 10 * 60 * 1000
         });
     }
 

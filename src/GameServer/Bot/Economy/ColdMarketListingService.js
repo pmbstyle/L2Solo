@@ -3,6 +3,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
+const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
 
 function open(state, options = {}) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
@@ -47,22 +48,33 @@ function open(state, options = {}) {
 
 function resolve(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
-    if (!state || state.activity !== 'merchant' || !store) return Promise.resolve(state);
+    if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, closed: false });
     const hasStock = (store.items || []).some((item) => Number(item.count) > 0);
     if (hasStock && Number(store.expiresAt || 0) > timestamp) {
         MarketOpportunity.indexColdStore(state);
-        return Promise.resolve(state);
+        return Promise.resolve({ state, closed: false });
     }
 
     const nextState = {
         ...state,
         activity: 'shopping',
-        stats: { ...(state.stats || {}), marketStore: null },
+        stats: {
+            ...(state.stats || {}),
+            marketStore: null,
+            marketSellRetryAfter: hasStock ? timestamp + SELL_RETRY_DELAY_MS : null
+        },
         timing: { ...(state.timing || {}), nextResolveAt: timestamp + 30000 }
     };
     MarketOpportunity.removeColdStore(state.characterId);
-    return LifeState.upsertState(nextState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out')
-        .then((saved) => saved || nextState);
+    const liquidated = hasStock ? ItemDisposition.npcLiquidationCandidates(nextState) : [];
+    return LifeState.applyNpcLiquidation(nextState, liquidated)
+        .then((liquidatedState) => LifeState.upsertState(liquidatedState || nextState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out'))
+        .then((saved) => ({
+            state: saved || nextState,
+            closed: true,
+            reason: hasStock ? 'expired' : 'sold_out',
+            liquidatedCount: liquidated.reduce((sum, item) => sum + Number(item.count || 0), 0)
+        }));
 }
 
 function settle(offer, qty = 1) {
@@ -75,4 +87,4 @@ function settle(offer, qty = 1) {
     });
 }
 
-module.exports = { DEFAULT_LISTING_MS, open, resolve, settle };
+module.exports = { DEFAULT_LISTING_MS, SELL_RETRY_DELAY_MS, open, resolve, settle };

@@ -11,9 +11,12 @@ function marketTown() {
 }
 
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
-    if (!state || !goal || state.activity === 'traveling' || state.activity === 'shopping') return null;
-    if (goal.type !== 'upgrade_gear' || goal.plan?.expectedBenefit !== 'market_search_for_weapon') return null;
-    if (Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
+    if (!state || !goal || ['traveling', 'shopping', 'merchant'].includes(state.activity)) return null;
+    const buyingGear = goal.type === 'upgrade_gear' && goal.plan?.expectedBenefit === 'market_search_for_weapon';
+    const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
+    if (!buyingGear && !sellingInventory) return null;
+    if (buyingGear && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
+    if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
     const town = marketTown();
     if (!town) return null;
@@ -31,7 +34,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
                 spotId: state.spotId || null
             },
             travel: {
-                reason: 'market_search_for_weapon',
+                reason: buyingGear ? 'market_search_for_weapon' : 'market_sale_inventory',
                 from,
                 to,
                 townName: town.name,

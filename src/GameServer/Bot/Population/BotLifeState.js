@@ -894,6 +894,52 @@ const BotLifeState = {
             });
     },
 
+    applyNpcLiquidation(state, candidates = []) {
+        if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
+        const inventory = { ...(state.inventory || {}) };
+        let payout = 0;
+        const sold = [];
+        candidates.forEach((candidate) => {
+            const selfId = Number(candidate.selfId || 0);
+            const existing = inventory[String(selfId)];
+            const amount = Math.min(Number(existing?.amount || 0), Math.max(0, Number(candidate.count || 0)));
+            const price = Math.max(0, Number(candidate.npcPrice || 0));
+            if (!selfId || amount <= 0 || price <= 0 || existing?.equipped) return;
+            inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
+            payout += amount * price;
+            sold.push({ selfId, amount, price });
+        });
+        if (!sold.length) return Promise.resolve(state);
+
+        inventory['57'] = {
+            ...(inventory['57'] || {}),
+            selfId: 57,
+            name: 'Adena',
+            amount: Number(state.adena || 0) + payout
+        };
+        const nextState = {
+            ...state,
+            adena: Number(state.adena || 0) + payout,
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                lastNpcLiquidation: { payout, sold, at: now() }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed NPC liquidation for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
     upsertState(state, reason = 'seed') {
         if (!state || !state.characterId) return Promise.resolve(null);
 

@@ -19,6 +19,12 @@ const started = GoalExecutor.beginMarketTravel(state, goal, Date.now());
 assert.strictEqual(started.activity, 'traveling');
 assert.strictEqual(started.stats.travel.townName, 'Giran');
 
+const sellStarted = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats: {} }, {
+    type: 'sell_inventory',
+    plan: { expectedBenefit: 'market_sale_inventory' }
+}, Date.now());
+assert.strictEqual(sellStarted.stats.travel.reason, 'market_sale_inventory');
+
 const midway = BackgroundResolver.resolveSolo({ state: started, spot: null, elapsedMs: 30000 });
 assert.strictEqual(midway.patch.activity, 'traveling');
 assert.strictEqual(midway.materialize.exp, 0);

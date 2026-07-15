@@ -54,4 +54,13 @@ assert.strictEqual(equipmentGoal.plan.expectedBenefit, 'adena_for_weapon_upgrade
 const noSnapshot = GoalPlanner.plan(NeedsEvaluator.evaluate({ ...base, stats: { classId: 0, build: { grade: 'c' } } }, { spot, now: timestamp }), timestamp);
 assert.notStrictEqual(noSnapshot.type, 'upgrade_gear', 'missing equipment data must not invent a gear deficit');
 
+const saleGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(saleGoal.type, 'sell_inventory');
+assert.strictEqual(saleGoal.plan.expectedBenefit, 'market_sale_inventory');
+
 console.log('Bot goal planner checks passed');
