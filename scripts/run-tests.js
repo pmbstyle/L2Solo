@@ -23,6 +23,7 @@ const tests = [
     'tests/test_pk_chat_guard.js',
     'tests/test_pk_profiles.js',
     'tests/test_bot_social_memory_events.js',
+    'tests/test_bot_simulation_kernel.js',
     'tests/test_bot_support_planner.js',
     'tests/test_bot_target_scorer.js',
     'tests/test_bot_town_travel.js',

@@ -17,6 +17,7 @@ const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 
@@ -211,6 +212,11 @@ const BotManager = {
         console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
         PopulationService.init();
+        SimulationKernel.init({ population: PopulationService });
+        SimulationKernel.register({
+            id: 'population',
+            register: (registry) => registry.statusProvider(() => PopulationService.summary?.() || null)
+        });
         
         const bots = [...BOTS_TO_SPAWN.filter((bot) => bot.plan !== 'pk_hunting'), ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
@@ -226,6 +232,7 @@ const BotManager = {
                 this.startDynamicScalingMonitor();
                 this.startStatusLogMonitor();
                 PopulationService.start();
+                SimulationKernel.start();
             });
         }, 5000);
     },
