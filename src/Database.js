@@ -20,6 +20,17 @@ function migrateCharacterExperience(optn) {
     });
 }
 
+function migrateCharacterStatus() {
+    return conn.query('ALTER TABLE `characters` ADD COLUMN `cp` FLOAT NULL')
+        .catch((error) => {
+            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add characters.cp: %s', error.message);
+        })
+        .then(() => conn.query('ALTER TABLE `characters` ADD COLUMN `effects` TEXT NULL'))
+        .catch((error) => {
+            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add characters.effects: %s', error.message);
+        });
+}
+
 const Database = {
     init: (callback) => {
         const optn = options.default.Database;
@@ -41,7 +52,8 @@ const Database = {
                         utils.infoWarn('DB', 'failed to add items.petData: %s', error.message);
                     }
                 }),
-                migrateCharacterExperience(optn)
+                migrateCharacterExperience(optn),
+                migrateCharacterStatus()
             ]).finally(callback);
 
         }).catch(error => {
@@ -340,6 +352,17 @@ const Database = {
                 maxHp: maxHp,
                    mp: mp,
                 maxMp: maxMp,
+            }, 'id = ? LIMIT 1', id)
+        );
+    },
+
+    updateCharacterStatus(id, { hp, mp, cp, effects }) {
+        return Database.execute(
+            builder.update('characters', {
+                hp,
+                mp,
+                cp,
+                effects
             }, 'id = ? LIMIT 1', id)
         );
     },

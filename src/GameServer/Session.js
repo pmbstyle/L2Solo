@@ -169,6 +169,16 @@ class Session {
         this.actor = new Actor(this, properties);
     }
 
+    persistCharacterStatus({ currentOnly = false } = {}) {
+        if (!this.actor?.fetchId) return Promise.resolve();
+        if (currentOnly && !(World.user?.sessions || []).includes(this)) return Promise.resolve();
+
+        const Database = invoke('Database');
+        const CharacterStatus = invoke('GameServer/Actor/CharacterStatus');
+        return Database.updateCharacterStatus(this.actor.fetchId(), CharacterStatus.persistenceRecord(this.actor))
+            .catch((error) => utils.infoWarn('DB', 'failed to save character status: %s', error.message));
+    }
+
     fetchAccountId() {
         return this.accountId;
     }
@@ -265,6 +275,8 @@ class Session {
             utils.infoWarn('GameServer', 'connection closed');
         }
         if (this.actor) {
+            this.persistCharacterStatus({ currentOnly: true });
+            invoke('GameServer/Effects/EffectTicker').clearAll(this.actor);
             const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
             PartyCompanionService.detachAll(this, {
                 event: 'party_dismissed',
