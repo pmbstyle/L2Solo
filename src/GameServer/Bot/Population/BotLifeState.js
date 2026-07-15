@@ -84,10 +84,27 @@ function inventorySummaryFromItems(items = []) {
         summary[key] = {
             selfId,
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
-            amount: Number(summary[key]?.amount || 0) + amount
+            amount: Number(summary[key]?.amount || 0) + amount,
+            equipped: !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped),
+            slot: Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0),
+            rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
+            kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
         };
         return summary;
     }, {});
+}
+
+function equipmentSummaryFromInventory(inventory = {}) {
+    return Object.values(inventory)
+        .filter((item) => item.equipped)
+        .map((item) => ({
+            selfId: Number(item.selfId),
+            name: item.name || itemName(item.selfId),
+            slot: Number(item.slot || 0),
+            rank: item.rank || 'none',
+            kind: item.kind || ''
+        }))
+        .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
 }
 
 function inventoryAdena(inventory) {
@@ -186,6 +203,7 @@ function recordFromSession(session, phase, reason = '') {
         clanId: actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
+        equipment: equipmentSummaryFromInventory(inventory),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
