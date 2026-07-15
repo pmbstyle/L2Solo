@@ -210,6 +210,16 @@ const BackgroundResolver = {
             };
         }
 
+        if (state.activity === 'merchant') {
+            return {
+                patch: { activity: 'merchant' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { activity: 'merchant' }
+            };
+        }
+
         if (!spot) {
             return {
                 patch: {},

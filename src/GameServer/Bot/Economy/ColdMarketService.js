@@ -1,6 +1,9 @@
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
+const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+
+const RETRY_DELAY_MS = 15 * 60 * 1000;
 
 const ColdMarketService = {
     tryPurchase(state, goal) {
@@ -9,21 +12,35 @@ const ColdMarketService = {
 
         const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
-            budget: state.adena
+            budget: state.adena,
+            buyerCharacterId: state.characterId
         });
-        if (!offer) return Promise.resolve({ state, purchased: false, reason: 'no_affordable_offer' });
+        if (!offer) {
+            const retryState = {
+                ...state,
+                stats: { ...(state.stats || {}), marketRetryAfter: Date.now() + RETRY_DELAY_MS }
+            };
+            return LifeState.upsertState(retryState, 'market_no_offer').then((saved) => ({
+                state: saved || retryState,
+                purchased: false,
+                reason: 'no_affordable_offer'
+            }));
+        }
         if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ state, purchased: false, reason: 'offer_changed' });
+        offer.buyerCharacterId = Number(state.characterId);
 
         return LifeState.applyMarketPurchase(state, offer).then((updated) => {
             if (!updated) {
                 MarketOpportunity.release(offer, 1);
                 return { state, purchased: false, reason: 'persist_failed' };
             }
-            return GoalState.clear(state.characterId, 'completed').then(() => ({
+            const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
+            return settlement.then((sellerState) => GoalState.clear(state.characterId, 'completed').then(() => ({
                 state: updated,
                 purchased: true,
-                offer
-            }));
+                offer,
+                sellerState
+            })));
         }).catch((err) => {
             MarketOpportunity.release(offer, 1);
             utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);
@@ -32,4 +49,5 @@ const ColdMarketService = {
     }
 };
 
+ColdMarketService.RETRY_DELAY_MS = RETRY_DELAY_MS;
 module.exports = ColdMarketService;

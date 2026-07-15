@@ -830,6 +830,7 @@ const BotLifeState = {
             stats: {
                 ...(state.stats || {}),
                 equipment,
+                marketRetryAfter: null,
                 lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
             },
             updatedAt: now()
@@ -843,6 +844,50 @@ const BotLifeState = {
                 return snapshot;
             }).catch((err) => {
                 utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    applyMarketSale(state, offer, qty = 1) {
+        const selfId = Number(offer?.selfId || 0);
+        const count = Math.max(1, Number(qty) || 1);
+        const price = Number(offer?.price || 0);
+        const currentItem = state?.inventory?.[String(selfId)];
+        if (!state || !selfId || price <= 0 || Number(currentItem?.amount || 0) < count) return Promise.resolve(null);
+
+        const inventory = { ...(state.inventory || {}) };
+        inventory[String(selfId)] = { ...currentItem, amount: Number(currentItem.amount) - count };
+        inventory['57'] = {
+            ...(inventory['57'] || {}),
+            selfId: 57,
+            name: 'Adena',
+            amount: Number(state.adena || 0) + (price * count)
+        };
+        const nextState = {
+            ...state,
+            adena: Number(state.adena || 0) + (price * count),
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                lastMarketSale: {
+                    selfId,
+                    qty: count,
+                    price,
+                    buyerCharacterId: Number(offer.buyerCharacterId || 0) || null,
+                    at: now()
+                }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
                 return null;
             });
     },

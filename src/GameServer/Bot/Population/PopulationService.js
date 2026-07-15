@@ -15,6 +15,7 @@ const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeede
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -613,14 +614,22 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
-            return GoalService.current(updatedState.characterId)
-                .then((goalSnapshot) => ColdMarketService.tryPurchase(updatedState, goalSnapshot?.current))
+            return ColdMarketListingService.resolve(updatedState)
+                .then((marketLifecycleState) => GoalService.current(marketLifecycleState.characterId)
+                    .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycleState, goalSnapshot?.current)))
                 .then((marketResult) => {
                     const purchasedState = marketResult.state || updatedState;
-                    const returnState = marketResult.purchased ? GoalExecutor.finishMarketVisit(purchasedState) : null;
-                    const marketStatePromise = returnState
-                        ? LifeState.upsertState(returnState, 'market_purchase_complete')
-                        : Promise.resolve(purchasedState);
+                    const listingPromise = marketResult.purchased
+                        ? ColdMarketListingService.open(purchasedState)
+                        : Promise.resolve({ state: purchasedState, listed: false });
+                    const marketStatePromise = listingPromise.then((listingResult) => {
+                        const listingState = listingResult.state || purchasedState;
+                        if (listingResult.listed) return listingState;
+                        const returnState = GoalExecutor.finishMarketVisit(listingState);
+                        return returnState
+                            ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
+                            : listingState;
+                    });
                     return marketStatePromise.then((persistedState) => persistedState || purchasedState).then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;

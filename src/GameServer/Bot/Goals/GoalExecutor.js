@@ -13,6 +13,7 @@ function marketTown() {
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!state || !goal || state.activity === 'traveling' || state.activity === 'shopping') return null;
     if (goal.type !== 'upgrade_gear' || goal.plan?.expectedBenefit !== 'market_search_for_weapon') return null;
+    if (Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
 
     const town = marketTown();
     if (!town) return null;
@@ -47,7 +48,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
 }
 
 function finishMarketVisit(state, timestamp = Date.now()) {
-    if (!state || state.activity !== 'shopping') return null;
+    if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     const destination = state.stats?.marketReturn;
     if (!destination?.loc) return null;
 
