@@ -12,6 +12,7 @@ const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
+const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 
 function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
@@ -610,7 +611,10 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
-            return LifeEvents.recordMany(state.characterId, result.events).then(() => {
+            return GoalService.review(updatedState, { spot }).catch((err) => {
+                utils.infoWarn('BotGoals', 'goal review failed for %s: %s', updatedState.name, err.message);
+                return null;
+            }).then(() => LifeEvents.recordMany(state.characterId, result.events)).then(() => {
                 GlobalChat.maybeAnnounce(updatedState, result.events);
                 return {
                     ok: true,
