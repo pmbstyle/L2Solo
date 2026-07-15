@@ -17,18 +17,7 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
-
-function roleForState(state) {
-    return state?.party?.role || state?.stats?.role || 'dps';
-}
-
-function roleCoverage(states) {
-    return states.reduce((coverage, state) => {
-        const role = roleForState(state);
-        coverage[role] = (coverage[role] || 0) + 1;
-        return coverage;
-    }, {});
-}
+const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 
 function groupBySpot(states) {
     const grouped = new Map();
@@ -71,13 +60,6 @@ function nearbyHotCount(sessions, player) {
         if (distance2d(actor, player) > Config.activationRadius) return false;
         return Math.abs(Number(actor.fetchLevel?.() || 1) - playerLevel) <= Config.activationLevelRange;
     }).length;
-}
-
-function chooseLeader(members) {
-    return members.reduce((best, state) => {
-        if (!best || Number(state.level || 1) > Number(best.level || 1)) return state;
-        return best;
-    }, null);
 }
 
 const PopulationService = {
@@ -388,23 +370,26 @@ const PopulationService = {
                     if (created.length >= maxNewParties) return null;
                     if (group.length < Config.partyMinSize) return null;
 
-                    const members = group.slice(0, Config.partyMaxSize);
+                    const members = PartyComposition.selectMembers(group, {
+                        minSize: Config.partyMinSize,
+                        maxSize: Config.partyMaxSize
+                    });
                     if (members.length < Config.partyMinSize) return null;
 
-                    const leader = chooseLeader(members);
+                    const leader = PartyComposition.chooseLeader(members);
                     const partySpot = SpotProfiles.findForState({
                         ...leader,
                         spotId: null,
                         party: {
                             ...(leader.party || {}),
                             partyId: 'forming',
-                            role: roleForState(leader)
+                            role: PartyComposition.roleForState(leader)
                         },
                         stats: {
                             ...(leader.stats || {}),
                             routeMode: 'party'
                         }
-                    }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
+                    }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
                     const partyId = `bgp_${Date.now().toString(36)}_${leader.characterId}`;
                     const nextResolveAt = Date.now() + 45000 + Math.round(Math.random() * 90000);
                     const party = {
@@ -416,7 +401,7 @@ const PopulationService = {
                         nextResolveAt,
                         cohesion: 0.55 + Math.random() * 0.25,
                         risk: 0.18 + Math.random() * 0.22,
-                        roleCoverage: roleCoverage(members),
+                        roleCoverage: PartyComposition.roleCoverage(members),
                         stats: {
                             formedAt: Date.now(),
                             memberNames: members.map((state) => state.name),
@@ -431,7 +416,7 @@ const PopulationService = {
                             memberChain.then(() => LifeState.assignParty(
                                 member,
                                 savedParty.partyId,
-                                roleForState(member),
+                                PartyComposition.roleForState(member),
                                 savedParty.leaderId
                             ))
                         ), Promise.resolve()).then(() => LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${party.spotId}`, {
@@ -534,13 +519,13 @@ const PopulationService = {
                 party: {
                     ...(leader.party || {}),
                     partyId: party.partyId,
-                    role: roleForState(leader)
+                    role: PartyComposition.roleForState(leader)
                 },
                 stats: {
                     ...(leader.stats || {}),
                     routeMode: 'party'
                 }
-            }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findForState(leader);
+            }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
             if (!spot) {
                 Metrics.recordSkippedResolve();
                 return { ok: false, reason: 'missing_spot', party };
@@ -563,7 +548,7 @@ const PopulationService = {
                 nextResolveAt: result.nextResolveAt,
                 cohesion: result.partyPatch.cohesion,
                 risk: result.partyPatch.risk,
-                roleCoverage: roleCoverage(members),
+                roleCoverage: PartyComposition.roleCoverage(members),
                 stats: {
                     ...(party.stats || {}),
                     ...(result.partyPatch.stats || {}),
