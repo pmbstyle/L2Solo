@@ -724,7 +724,10 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
-        const passiveActivity = ['traveling', 'shopping', 'merchant', 'dead'].includes(state?.activity);
+        const staleShopping = state?.activity === 'shopping'
+            && !state.stats?.marketReturn
+            && state.currentRegion !== 'Giran';
+        const passiveActivity = ['traveling', 'shopping', 'merchant', 'dead'].includes(state?.activity) && !staleShopping;
         const spot = passiveActivity ? null : SpotProfiles.findForState(state);
         if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
@@ -740,7 +743,9 @@ const PopulationService = {
             elapsedMs
         });
 
-        return LifeState.applyResolve(state, result).then((updatedState) => {
+        return LifeState.applyResolve(state, result).then((updatedState) => LifeState.refreshInventory(updatedState)
+            .then((refreshedState) => LifeState.upsertState(refreshedState, 'inventory_refresh').then((saved) => saved || refreshedState)))
+            .then((updatedState) => {
             if (!updatedState) {
                 Metrics.recordSkippedResolve();
                 return { ok: false, reason: 'apply_failed', state };

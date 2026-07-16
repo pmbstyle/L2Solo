@@ -121,6 +121,12 @@ function resolveTravel(state, timestamp = Date.now()) {
     };
 }
 
+function staleShopping(state) {
+    return state?.activity === 'shopping'
+        && !state.stats?.marketReturn
+        && state.currentRegion !== 'Giran';
+}
+
 function resolveDeathRecovery(state, timestamp = Date.now()) {
     const combat = botCombatStats(state, roleProfile(state));
     const respawnDelayMs = 90000;
@@ -233,6 +239,26 @@ const BackgroundResolver = {
         if (state.activity === 'traveling') {
             const travelResult = resolveTravel(state);
             if (travelResult) return travelResult;
+        }
+
+        if (staleShopping(state) && spot) {
+            return {
+                patch: {
+                    activity: 'hunting',
+                    spotId: spot.id,
+                    currentRegion: state.homeRegion || state.currentRegion,
+                    loc: { ...spot.center },
+                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: Date.now() }
+                },
+                events: [{
+                    type: 'shopping_recovered',
+                    summary: `${state.name || 'Bot'} left a stale town-shopping state and returned to hunting`,
+                    weight: 1
+                }],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 30000,
+                debug: { activity: 'shopping_recovered' }
+            };
         }
 
         if (state.activity === 'shopping') {

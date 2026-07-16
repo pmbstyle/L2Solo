@@ -858,6 +858,25 @@ const BotLifeState = {
         });
     },
 
+    refreshInventory(state) {
+        if (!state?.characterId) return Promise.resolve(state || null);
+        return Database.fetchItems(state.characterId).then((items) => {
+            const inventory = inventorySummaryFromItems(items || []);
+            return {
+                ...state,
+                adena: inventoryAdena(inventory) || Number(state.adena || 0),
+                inventory,
+                stats: {
+                    ...(state.stats || {}),
+                    equipment: equipmentSummaryFromInventory(inventory)
+                }
+            };
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to refresh inventory for %s: %s', state.name, err.message);
+            return state;
+        });
+    },
+
     leaveParty(state, reason = 'party_break') {
         if (!state?.characterId) return Promise.resolve(null);
         const nextState = {

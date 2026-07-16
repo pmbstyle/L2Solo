@@ -18,6 +18,8 @@ const originals = {
     findForState: SpotProfiles.findForState,
     resolveSolo: BackgroundResolver.resolveSolo,
     applyResolve: LifeState.applyResolve,
+    refreshInventory: LifeState.refreshInventory,
+    upsertState: LifeState.upsertState,
     resolveListing: ListingService.resolve,
     tryPurchase: MarketService.tryPurchase,
     current: GoalService.current,
@@ -29,6 +31,13 @@ const originals = {
 };
 
 async function run() {
+    const recoveredShopping = BackgroundResolver.resolveSolo({
+        state: { characterId: 72, name: 'LegacyShopper', activity: 'shopping', currentRegion: 'Wandering', homeRegion: 'Wandering', stats: {} },
+        spot: { id: 'starter_local', center: { locX: 10, locY: 20, locZ: 30 } }
+    });
+    assert.strictEqual(recoveredShopping.patch.activity, 'hunting');
+    assert.deepStrictEqual(recoveredShopping.patch.loc, { locX: 10, locY: 20, locZ: 30 });
+
     const state = {
         characterId: 71,
         name: 'TravelingSeller',
@@ -45,6 +54,8 @@ async function run() {
         return { patch: { activity: 'traveling' }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 30000, debug: { activity: 'traveling' } };
     };
     LifeState.applyResolve = () => Promise.resolve(state);
+    LifeState.refreshInventory = (value) => Promise.resolve(value);
+    LifeState.upsertState = (value) => Promise.resolve(value);
     ListingService.resolve = (value) => Promise.resolve({ state: value, closed: false });
     GoalService.current = () => Promise.resolve(null);
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
@@ -64,6 +75,8 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     SpotProfiles.findForState = originals.findForState;
     BackgroundResolver.resolveSolo = originals.resolveSolo;
     LifeState.applyResolve = originals.applyResolve;
+    LifeState.refreshInventory = originals.refreshInventory;
+    LifeState.upsertState = originals.upsertState;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
     GoalService.current = originals.current;
