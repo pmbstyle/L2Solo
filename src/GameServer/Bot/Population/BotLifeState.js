@@ -464,6 +464,15 @@ const BotLifeState = {
         if (!session || !session.actor) return Promise.resolve(null);
 
         const row = recordFromSession(session, 'hot', reason);
+        const marketState = session.coldMarketState;
+        if (marketState?.stats?.marketStore) {
+            row.activity = 'merchant';
+            row.currentRegion = marketState.currentRegion || row.currentRegion;
+            row.spotId = marketState.spotId || row.spotId;
+            row.inventorySummary = safeJson(marketState.inventory || {});
+            row.adena = Number(marketState.adena || row.adena || 0);
+            row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+        }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
         const ready = initialized ? Promise.resolve(true) : this.init();
@@ -492,6 +501,30 @@ const BotLifeState = {
 
     markCold(session, reason = 'cooldown') {
         if (!session || !session.actor) return Promise.resolve(null);
+
+        const marketState = session.coldMarketState;
+        if (marketState?.stats?.marketStore) {
+            const actor = session.actor;
+            const store = actor.fetchPrivateStore?.();
+            const timestamp = now();
+            const nextState = {
+                ...marketState,
+                phase: 'cold',
+                activity: 'merchant',
+                loc: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
+                timing: { ...(marketState.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 60000 },
+                stats: {
+                    ...(marketState.stats || {}),
+                    marketStore: {
+                        ...(marketState.stats.marketStore || {}),
+                        items: (store?.items || []).map((item) => ({
+                            selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId)
+                        }))
+                    }
+                }
+            };
+            return this.upsertState(nextState, reason);
+        }
 
         const row = {
             ...recordFromSession(session, 'cold', reason),
@@ -886,12 +919,21 @@ const BotLifeState = {
             name: 'Adena',
             amount: Number(state.adena || 0) + (price * count)
         };
+        const marketStore = state.stats?.marketStore;
+        const marketItems = (marketStore?.items || []).map((item) => {
+            if (Number(item.selfId) !== selfId) return item;
+            const remaining = offer?.storeItem && Number.isFinite(Number(offer.storeItem.count))
+                ? Math.max(0, Number(offer.storeItem.count))
+                : Math.max(0, Number(item.count || 0) - count);
+            return { ...item, count: remaining };
+        });
         const nextState = {
             ...state,
             adena: Number(state.adena || 0) + (price * count),
             inventory,
             stats: {
                 ...(state.stats || {}),
+                ...(marketStore ? { marketStore: { ...marketStore, items: marketItems } } : {}),
                 lastMarketSale: {
                     selfId,
                     qty: count,

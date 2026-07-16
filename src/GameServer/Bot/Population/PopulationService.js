@@ -313,15 +313,18 @@ const PopulationService = {
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
-                        const candidates = activationCandidatesForPlayer(
-                            states.filter((state) => state.activity !== 'pk_hunting'),
+                        const available = states.filter((state) => state.activity !== 'pk_hunting');
+                        const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
+                        const candidates = [...merchants, ...activationCandidatesForPlayer(
+                            available.filter((state) => state.activity !== 'merchant'),
                             actor.fetchLevel()
-                        ).slice(0, remaining);
+                        )].slice(0, remaining);
                         return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
+                                    keepStoreLocation: state.activity === 'merchant' && !!state.stats?.marketStore,
                                     playerLoc: loc
                                 });
                             }).then((result) => {
@@ -343,7 +346,7 @@ const PopulationService = {
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
-                if (session.plan === 'merchant') return false;
+                if (session.plan === 'merchant' && !session.coldMarketState) return false;
                 // Red-name bots are part of the visible PK population, not
                 // disposable ambient population. Keep them hot until their
                 // karma is genuinely cleared.

@@ -480,6 +480,7 @@ const BotManager = {
                 const character = readyCharacters[0];
                 if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);
+                const runtimeStore = botData.privateStore || null;
 
                 Shared.fetchClassInformation(character.classId).then((classInfo) => {
                     if (botData.locX !== undefined) {
@@ -519,19 +520,21 @@ const BotManager = {
                         locZ: character.locZ
                     };
 
-                    if (storeCfg) {
+                    if (storeCfg || runtimeStore) {
+                        const privateStore = runtimeStore || storeCfg;
                         session.plan = 'merchant';
+                        session.coldMarketState = botData.coldMarketState || null;
                         session.actor.state.setSeated(true);
 
-                        session.actor.setTitle(storeCfg.title);
-                        session.actor.setPrivateStoreType(storeCfg.storeType);
+                        session.actor.setTitle(privateStore.title);
+                        session.actor.setPrivateStoreType(privateStore.storeType);
 
-                        const storeItems = TradeService.normalizeStoreItems(storeCfg);
+                        const storeItems = TradeService.normalizeStoreItems(privateStore);
 
                         session.actor.setPrivateStore({
-                            storeType: storeCfg.storeType,
-                            title: storeCfg.title,
-                            town: storeCfg.town,
+                            storeType: privateStore.storeType,
+                            title: privateStore.title,
+                            town: privateStore.town,
                             items: storeItems
                         });
                     } else {

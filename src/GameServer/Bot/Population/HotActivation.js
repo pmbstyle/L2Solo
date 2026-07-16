@@ -4,8 +4,9 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const pendingActivations = new Set();
-const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'pk_hunting']);
+const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
 function activationPlan(state, options = {}) {
     const activity = state?.activity || 'hunting';
@@ -64,6 +65,9 @@ function validPlayerPlacement(loc, playerLoc) {
 }
 
 function activationPlacement(state, options = {}) {
+    if (options.keepStoreLocation && state?.loc) {
+        return { loc: { ...state.loc }, spot: SpotService.findCurrentSpot(state.loc) || null };
+    }
     const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
     const baseLoc = options.playerLoc
         ? (options.forceNearPlayer ? options.playerLoc : (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
@@ -132,7 +136,9 @@ const HotActivation = {
 
             const placement = activationPlacement(state, options);
             const plan = activationPlan(state, options);
+            const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
             pendingActivations.add(state.characterId);
+            if (marketStore) MarketOpportunity.removeColdStore(state.characterId);
             BotManager.loadAndSpawnBot(state.accountName, {
                 name: state.name,
                 homeRegion: state.homeRegion,
@@ -143,7 +149,15 @@ const HotActivation = {
                 spawnReady: true,
                 locX: placement.loc?.locX,
                 locY: placement.loc?.locY,
-                locZ: placement.loc?.locZ
+                locZ: placement.loc?.locZ,
+                keepStoreLocation: !!marketStore,
+                coldMarketState: marketStore ? state : null,
+                privateStore: marketStore ? {
+                    storeType: Number(marketStore.storeType || 1),
+                    title: marketStore.title || 'Useful loot and old gear',
+                    town: marketStore.town || state.currentRegion || null,
+                    items: marketStore.items || []
+                } : null
             });
 
             setTimeout(() => {
