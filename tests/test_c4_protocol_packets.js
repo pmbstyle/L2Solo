@@ -221,6 +221,16 @@ assert.strictEqual(charInfoTail.readInt32LE(0), 0, 'C4 CharInfo should send moun
 assert.strictEqual(charInfoTail.readInt32LE(4), 10, 'C4 CharInfo should send class id after mount NPC id');
 assert.strictEqual(charInfoTail.readInt32LE(8), 0, 'C4 CharInfo should not send CP in the public tail');
 
+const privateStoreSell = ServerResponse.privateStoreMsg(actor, 'Cheap C-Grade gear');
+assert.strictEqual(privateStoreSell[0], 0x9c, 'C4 PrivateStoreMsgSell should use opcode 0x9c');
+assert.strictEqual(privateStoreSell.readInt32LE(1), actor.fetchId(), 'C4 PrivateStoreMsgSell should include the seller object id');
+assert.strictEqual(privateStoreSell.toString('ucs2', 5, findUtf16Terminator(privateStoreSell, 5)), 'Cheap C-Grade gear', 'C4 PrivateStoreMsgSell should carry only the shop title after the object id');
+
+const privateStoreBuy = ServerResponse.privateStoreBuyMsg(actor, 'Buying mats');
+assert.strictEqual(privateStoreBuy[0], 0xb9, 'C4 PrivateStoreMsgBuy should use opcode 0xb9');
+assert.strictEqual(privateStoreBuy.readInt32LE(1), actor.fetchId(), 'C4 PrivateStoreMsgBuy should include the buyer object id');
+assert.strictEqual(privateStoreBuy.toString('ucs2', 5, findUtf16Terminator(privateStoreBuy, 5)), 'Buying mats', 'C4 PrivateStoreMsgBuy should carry only the shop title after the object id');
+
 const dualPaperdoll = fakePaperdoll();
 dualPaperdoll[7] = {};
 dualPaperdoll[8] = {};

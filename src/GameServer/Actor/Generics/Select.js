@@ -84,6 +84,10 @@ function openMerchantTradeWindow(session, merchant) {
     }
 }
 
+function privateStoreTitle(actor) {
+    return actor.fetchPrivateStore?.()?.title || actor.fetchTitle();
+}
+
 function select(session, actor, data) {
     const Generics = invoke(path.actor);
 
@@ -113,9 +117,10 @@ function select(session, actor, data) {
             const isMerchantBot = botSession.plan === 'merchant';
             if (isMerchantBot) {
                 utils.infoSuccess('Select', 'Opening native merchant trade window for bot "%s"', user.fetchName());
+                session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
                 openMerchantTradeWindow(session, user);
             } else if (user.fetchPrivateStoreType() === 1) {
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
+                session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
                 session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
             } else if (user.fetchPrivateStoreType() === 3) {
                 openMerchantTradeWindow(session, user);
@@ -156,7 +161,7 @@ function select(session, actor, data) {
                     if (user.fetchPrivateStoreType && user.fetchPrivateStoreType() !== 0) {
                         session.viewedPrivateStoreSeller = user;
                         if (user.fetchPrivateStoreType() === 1) {
-                            session.dataSendToMe(ServerResponse.privateStoreMsg(user, user.fetchTitle()));
+                            session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
                             session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                         } else if (user.fetchPrivateStoreType() === 3) {
                             openMerchantTradeWindow(session, user);

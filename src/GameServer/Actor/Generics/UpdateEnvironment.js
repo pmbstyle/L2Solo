@@ -24,11 +24,11 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
             session.dataSendToMe(ServerResponse.relationChanged(user.actor));
 
             const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
-            const isMerchantBot = user.constructor.name === 'BotSession' && user.plan === 'merchant';
-            if (!isMerchantBot && visibleStoreType === 1) {
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, user.actor.fetchTitle()));
-            } else if (!isMerchantBot && visibleStoreType === 3) {
-                session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, user.actor.fetchTitle()));
+            const storeTitle = user.actor.fetchPrivateStore?.()?.title || user.actor.fetchTitle();
+            if (visibleStoreType === 1) {
+                session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, storeTitle));
+            } else if (visibleStoreType === 3) {
+                session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, storeTitle));
             }
 
             user.dataSendToMe(ServerResponse.charInfo(actor));

@@ -527,7 +527,10 @@ const BotManager = {
                         session.coldMarketState = botData.coldMarketState || null;
                         session.actor.state.setSeated(true);
 
-                        session.actor.setTitle(privateStore.title);
+                        // A C4 shop title is carried by PrivateStoreMsg, not
+                        // CharInfo.title. Keeping it out of the character
+                        // title prevents an extra coloured nameplate line.
+                        session.actor.setTitle('');
                         session.actor.setPrivateStoreType(privateStore.storeType);
 
                         const storeItems = TradeService.normalizeStoreItems(privateStore);
@@ -556,6 +559,11 @@ const BotManager = {
                     const ServerResponse = invoke('GameServer/Network/Response');
                     session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
                     session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+                    if (privateStore?.storeType === 1) {
+                        session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
+                    } else if (privateStore?.storeType === 3) {
+                        session.dataSendToOthers(ServerResponse.privateStoreBuyMsg(session.actor, privateStore.title), session.actor);
+                    }
 
                     // Start AI loop
                     BotAI.init(session);

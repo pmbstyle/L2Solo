@@ -1,9 +1,9 @@
 const SendPacket = invoke('Packet/Send');
 
 function privateStoreBuyMsg(actor, storeTitle) {
-    const packet = new SendPacket(0x8c);
+    // C4 PrivateStoreMsgBuy mirrors the sell packet, with its own opcode.
+    const packet = new SendPacket(0xb9);
     packet.writeD(actor.fetchId());
-    packet.writeD(3); // Private store type: Buy (3)
     packet.writeS(typeof storeTitle === 'string' ? storeTitle : actor.fetchTitle());
     return packet.fetchBuffer();
 }
