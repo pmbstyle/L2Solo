@@ -5,11 +5,67 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
+// Captured in-game from the Giran trading square. The inner rectangle is the
+// central column: it is walkable around, but a private store cannot sit there.
+const GIRAN_MARKET_PLAZA = Object.freeze({
+    outer: Object.freeze({ minX: 80911, maxX: 82947, minY: 147662, maxY: 149550 }),
+    column: Object.freeze({ minX: 81667, maxX: 82174, minY: 148354, maxY: 148857 }),
+    locZ: -3466
+});
+const GIRAN_STALL_EDGE_PADDING = 60;
+const GIRAN_COLUMN_CLEARANCE = 80;
 
 function marketTown(name) {
     return TownPathfinder.towns.find((town) => town.name === name)
         || TownPathfinder.towns.find((town) => town.name === 'Giran')
         || null;
+}
+
+function isInRect(loc, rect) {
+    return Number(loc?.locX) >= rect.minX && Number(loc?.locX) <= rect.maxX
+        && Number(loc?.locY) >= rect.minY && Number(loc?.locY) <= rect.maxY;
+}
+
+function isGiranPlazaStallLocation(loc) {
+    const { outer, column } = GIRAN_MARKET_PLAZA;
+    const safeOuter = {
+        minX: outer.minX + GIRAN_STALL_EDGE_PADDING,
+        maxX: outer.maxX - GIRAN_STALL_EDGE_PADDING,
+        minY: outer.minY + GIRAN_STALL_EDGE_PADDING,
+        maxY: outer.maxY - GIRAN_STALL_EDGE_PADDING
+    };
+    const blockedColumn = {
+        minX: column.minX - GIRAN_COLUMN_CLEARANCE,
+        maxX: column.maxX + GIRAN_COLUMN_CLEARANCE,
+        minY: column.minY - GIRAN_COLUMN_CLEARANCE,
+        maxY: column.maxY + GIRAN_COLUMN_CLEARANCE
+    };
+    return isInRect(loc, safeOuter) && !isInRect(loc, blockedColumn);
+}
+
+function randomGiranPlazaStall(random = Math.random) {
+    const { outer, locZ } = GIRAN_MARKET_PLAZA;
+    const minX = outer.minX + GIRAN_STALL_EDGE_PADDING;
+    const maxX = outer.maxX - GIRAN_STALL_EDGE_PADDING;
+    const minY = outer.minY + GIRAN_STALL_EDGE_PADDING;
+    const maxY = outer.maxY - GIRAN_STALL_EDGE_PADDING;
+    for (let attempt = 0; attempt < 24; attempt++) {
+        const loc = {
+            locX: Math.round(minX + random() * (maxX - minX)),
+            locY: Math.round(minY + random() * (maxY - minY)),
+            locZ
+        };
+        if (isGiranPlazaStallLocation(loc)) return loc;
+    }
+
+    // The northwest corner is always clear of the column, including if a
+    // deterministic test source keeps proposing a blocked point.
+    return { locX: minX, locY: minY, locZ };
+}
+
+function marketLocation(town, options) {
+    if (town?.name === 'Giran') return randomGiranPlazaStall(options.random);
+    return town?.center ? { ...town.center } : { ...(options.state?.loc || {}) };
 }
 
 function open(state, options = {}) {
@@ -21,7 +77,7 @@ function open(state, options = {}) {
 
     const timestamp = Number(options.now) || Date.now();
     const town = marketTown(options.town || state.currentRegion || 'Giran');
-    const storeLoc = town?.center ? { ...town.center } : { ...(state.loc || {}) };
+    const storeLoc = marketLocation(town, { ...options, state });
     const nextState = {
         ...state,
         activity: 'merchant',
@@ -107,4 +163,12 @@ function settle(offer, qty = 1) {
     });
 }
 
-module.exports = { DEFAULT_LISTING_MS, SELL_RETRY_DELAY_MS, open, resolve, settle };
+module.exports = {
+    DEFAULT_LISTING_MS,
+    SELL_RETRY_DELAY_MS,
+    GIRAN_MARKET_PLAZA,
+    isGiranPlazaStallLocation,
+    open,
+    resolve,
+    settle
+};

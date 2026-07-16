@@ -65,10 +65,10 @@ async function run() {
     const candidates = ItemDisposition.saleCandidates(state);
     assert.deepStrictEqual(candidates.map((item) => item.selfId), [1], 'equipped gear must never be listed');
 
-    const opened = await ListingService.open(state, { now: 1000, durationMs: 60000 });
+    const opened = await ListingService.open(state, { now: 1000, durationMs: 60000, random: () => 0.1 });
     assert.strictEqual(opened.listed, true);
     assert.strictEqual(opened.state.activity, 'merchant');
-    assert.deepStrictEqual(opened.state.loc, { locX: 83396, locY: 147904, locZ: -3404 }, 'a Giran store must stay at the plaza');
+    assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
 
     const ownOffer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 88 });
