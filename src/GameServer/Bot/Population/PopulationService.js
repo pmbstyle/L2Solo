@@ -691,8 +691,9 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
-        const spot = SpotProfiles.findForState(state);
-        if (!spot) {
+        const passiveActivity = ['traveling', 'shopping', 'merchant', 'dead'].includes(state?.activity);
+        const spot = passiveActivity ? null : SpotProfiles.findForState(state);
+        if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
             Metrics.recordResolveDuration(Date.now() - startedAt);
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });

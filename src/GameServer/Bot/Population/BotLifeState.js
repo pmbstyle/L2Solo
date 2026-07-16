@@ -597,7 +597,11 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
-            ORDER BY CASE WHEN activity = 'dead' THEN 0 ELSE 1 END ASC,
+            ORDER BY CASE
+                WHEN activity = 'dead' THEN 0
+                WHEN activity IN ('traveling', 'shopping', 'merchant') THEN 1
+                ELSE 2
+            END ASC,
                 COALESCE(nextResolveAt, 0) ASC
             LIMIT ${safeLimit}`,
             [at]
