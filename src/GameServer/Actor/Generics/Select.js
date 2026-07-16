@@ -76,16 +76,26 @@ function openMerchantTradeWindow(session, merchant) {
     }
 
     if (store.storeType === 3) {
-        session.dataSendToMe(ServerResponse.sellList(
+        session.dataSendToMe(ServerResponse.privateStoreListBuy(
+            merchant,
             merchantDemandRows(session.actor, store),
             session.actor.backpack.fetchTotalAdena()
         ));
-        session.dataSendToMe(ServerResponse.actionFailed());
     }
 }
 
 function privateStoreTitle(actor) {
     return actor.fetchPrivateStore?.()?.title || actor.fetchTitle();
+}
+
+function sendPrivateStoreMessage(session, actor) {
+    const storeType = actor.fetchPrivateStoreType?.();
+    const title = privateStoreTitle(actor);
+    if (storeType === 3) {
+        session.dataSendToMe(ServerResponse.privateStoreBuyMsg(actor, title));
+    } else if (storeType === 1) {
+        session.dataSendToMe(ServerResponse.privateStoreMsg(actor, title));
+    }
 }
 
 function select(session, actor, data) {
@@ -117,12 +127,13 @@ function select(session, actor, data) {
             const isMerchantBot = botSession.plan === 'merchant';
             if (isMerchantBot) {
                 utils.infoSuccess('Select', 'Opening native merchant trade window for bot "%s"', user.fetchName());
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
+                sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
             } else if (user.fetchPrivateStoreType() === 1) {
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
+                sendPrivateStoreMessage(session, user);
                 session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
             } else if (user.fetchPrivateStoreType() === 3) {
+                sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
             }
             return;
@@ -161,9 +172,10 @@ function select(session, actor, data) {
                     if (user.fetchPrivateStoreType && user.fetchPrivateStoreType() !== 0) {
                         session.viewedPrivateStoreSeller = user;
                         if (user.fetchPrivateStoreType() === 1) {
-                            session.dataSendToMe(ServerResponse.privateStoreMsg(user, privateStoreTitle(user)));
+                            sendPrivateStoreMessage(session, user);
                             session.dataSendToMe(ServerResponse.privateStoreListSell(user, session.actor));
                         } else if (user.fetchPrivateStoreType() === 3) {
+                            sendPrivateStoreMessage(session, user);
                             openMerchantTradeWindow(session, user);
                         }
                         return;

@@ -164,6 +164,7 @@ assert.strictEqual(authGG[0], 0x0b, 'C4 AuthGG response opcode should be 0x0b');
 assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
 
 assert.strictEqual(GameOpcodes.table[0xcd], GameRequest.showMap, 'C4 map request opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0x96], GameRequest.privateStoreSell, 'C4 RequestPrivateStoreSell opcode should be wired');
 
 const joinPartyRequest = Buffer.concat([
     Buffer.from([0x29]),
@@ -230,6 +231,49 @@ const privateStoreBuy = ServerResponse.privateStoreBuyMsg(actor, 'Buying mats');
 assert.strictEqual(privateStoreBuy[0], 0xb9, 'C4 PrivateStoreMsgBuy should use opcode 0xb9');
 assert.strictEqual(privateStoreBuy.readInt32LE(1), actor.fetchId(), 'C4 PrivateStoreMsgBuy should include the buyer object id');
 assert.strictEqual(privateStoreBuy.toString('ucs2', 5, findUtf16Terminator(privateStoreBuy, 5)), 'Buying mats', 'C4 PrivateStoreMsgBuy should carry only the shop title after the object id');
+
+const wantedItem = {
+    fetchId: () => 70001,
+    fetchSelfId: () => 1864,
+    fetchPrice: () => 75,
+    fetchClass2: () => 5,
+    fetchSlot: () => 0,
+    isWearable: () => false
+};
+const privateBuyList = ServerResponse.privateStoreListBuy(actor, [{ item: wantedItem, amount: 12, price: 62 }], 5000);
+assert.strictEqual(privateBuyList[0], 0xb8, 'C4 private buyer should open PrivateStoreListBuy, not the NPC SellList');
+assert.strictEqual(privateBuyList.readInt32LE(1), actor.fetchId(), 'C4 PrivateStoreListBuy should identify the buyer merchant');
+assert.strictEqual(privateBuyList.readInt32LE(9), 1, 'C4 PrivateStoreListBuy should include the wanted row count');
+assert.strictEqual(privateBuyList.readInt32LE(13), 70001, 'C4 PrivateStoreListBuy should use the seller inventory object id');
+assert.strictEqual(privateBuyList.readInt32LE(39), 62, 'C4 PrivateStoreListBuy should expose the buyer offer price');
+
+const originalConsumeMerchant = GameRequest.sell.consumeMerchant;
+let capturedPrivateSell = null;
+GameRequest.sell.consumeMerchant = (session, list, options) => {
+    capturedPrivateSell = { session, list, options };
+};
+const privateSellSession = {
+    activeMerchantTrade: {
+        merchant: { fetchId: () => 50001 },
+        store: { storeType: 3 }
+    },
+    dataSendToMe: () => assert.fail('valid C4 RequestPrivateStoreSell should not fail before trade execution')
+};
+const privateSellRequest = Buffer.alloc(29);
+privateSellRequest[0] = 0x96;
+privateSellRequest.writeInt32LE(50001, 1);
+privateSellRequest.writeInt32LE(1, 5);
+privateSellRequest.writeInt32LE(70001, 9);
+privateSellRequest.writeInt32LE(1864, 13);
+privateSellRequest.writeInt16LE(0, 17);
+privateSellRequest.writeInt16LE(0, 19);
+privateSellRequest.writeInt32LE(4, 21);
+privateSellRequest.writeInt32LE(62, 25);
+GameRequest.privateStoreSell(privateSellSession, privateSellRequest);
+GameRequest.sell.consumeMerchant = originalConsumeMerchant;
+assert.strictEqual(capturedPrivateSell.session, privateSellSession, 'C4 private sale should execute against the selected buyer store');
+assert.deepStrictEqual(capturedPrivateSell.list, [{ objectId: 70001, selfId: 1864, amount: 4, price: 62 }], 'C4 private sale should parse object id, amount, and advertised price exactly');
+assert.deepStrictEqual(capturedPrivateSell.options, { native: true }, 'C4 private sale should preserve the native refresh path');
 
 const dualPaperdoll = fakePaperdoll();
 dualPaperdoll[7] = {};
