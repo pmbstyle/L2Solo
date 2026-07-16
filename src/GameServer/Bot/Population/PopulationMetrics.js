@@ -14,6 +14,7 @@ function emptyCounters() {
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
+        partyDissolutions: 0,
         dbFlushes: 0,
         schedulerRuns: 0,
         schedulerSkips: 0,
@@ -119,6 +120,10 @@ const PopulationMetrics = {
 
     recordPartyRecruit(count = 1) {
         this.counters.partyRecruits += Math.max(1, Number(count) || 1);
+    },
+
+    recordPartyDissolution() {
+        this.counters.partyDissolutions += 1;
     },
 
     recordDbFlush() {

@@ -36,6 +36,7 @@ async function run() {
     const result = await PopulationService.resolveBackgroundParty(party);
     assert.strictEqual(result.ok, true, result.reason);
     assert.deepStrictEqual(departed, [3]);
+    assert.deepStrictEqual(savedParties.at(-1).memberIds, [1, 2]);
     console.log('Bot party market break checks passed');
 }
 

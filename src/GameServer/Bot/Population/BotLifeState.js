@@ -634,12 +634,21 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
 
         return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND (partyId IS NULL OR partyId = '')
-            AND spotId IS NOT NULL
-            AND activity IN ('hunting', 'resting')
-            ORDER BY spotId ASC, level ASC, updatedAt ASC
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN (
+                SELECT spotId, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+                FROM ${TABLE}
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND spotId IS NOT NULL
+                AND activity IN ('hunting', 'resting')
+                GROUP BY spotId
+            ) party_spots ON party_spots.spotId = states.spotId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.spotId IS NOT NULL
+            AND states.activity IN ('hunting', 'resting')
+            ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
         ]).then((rows) => rows.map((row) => {
@@ -683,30 +692,15 @@ const BotLifeState = {
         });
     },
 
-    clearParty(partyId) {
+    clearParty(partyId, reason = 'party_dissolved') {
         if (!initialized || !partyId) return Promise.resolve(0);
 
-        return Database.execute([
-            `UPDATE ${TABLE} SET partyId = NULL, updatedAt = ? WHERE partyId = ?`,
-            [now(), partyId]
-        ]).then((result) => {
-            let cleared = 0;
-            cache.forEach((state, characterId) => {
-                if (state.party?.partyId === partyId) {
-                    cache.set(characterId, {
-                        ...state,
-                        party: {
-                            ...(state.party || {}),
-                            partyId: null,
-                            leaderId: null
-                        },
-                        updatedAt: now()
-                    });
-                    cleared += 1;
-                }
-            });
-            return result?.affectedRows || cleared;
-        }).catch((err) => {
+        return this.statesForParty(partyId).then((members) => (
+            members.reduce((chain, member) => (
+                chain.then((cleared) => this.leaveParty(member, reason)
+                    .then((updated) => cleared + (updated ? 1 : 0)))
+            ), Promise.resolve(0))
+        )).catch((err) => {
             utils.infoWarn('BotLife', 'failed to clear party %s: %s', partyId, err.message);
             return 0;
         });

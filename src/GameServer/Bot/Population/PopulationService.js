@@ -42,6 +42,22 @@ function canTakePartyMarketBreak(party, members, member, timestamp = Date.now())
     return !(['tank', 'healer'].includes(role) && Number(coverage[role] || 0) <= 1);
 }
 
+function dissolveBackgroundParty(party, reason, memberCount = 0) {
+    return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
+        .then(() => LifeState.clearParty(party.partyId, reason))
+        .then((cleared) => {
+            Metrics.recordPartyDissolution();
+            console.info(
+                'BotPopulation :: dissolved background party %s reason=%s members=%d cleared=%d',
+                party.partyId,
+                reason,
+                memberCount,
+                cleared
+            );
+            return { ok: false, reason, party, cleared };
+        });
+}
+
 function activationCandidatesForPlayer(states, playerLevel) {
     const level = Number(playerLevel || 1);
     const range = Math.max(0, Number(Config.activationLevelRange || 0));
@@ -566,9 +582,9 @@ const PopulationService = {
         const startedAt = Date.now();
         return LifeState.statesForParty(party.partyId).then((members) => {
             if (members.length < Config.partyMinSize) {
-                return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
-                    .then(() => LifeState.clearParty(party.partyId))
-                    .then(() => ({ ok: false, reason: 'too_few_members', party }));
+                const recordedIds = new Set((party.memberIds || []).map(Number));
+                const reason = recordedIds.size !== members.length ? 'state_mismatch' : 'too_few_members';
+                return dissolveBackgroundParty(party, reason, members.length);
             }
 
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
@@ -598,17 +614,26 @@ const PopulationService = {
                 pressure: Director.pressureForState(leader),
                 elapsedMs
             });
+            const deadMemberIds = new Set();
 
             return result.memberResults.reduce((chain, memberResult) => (
                 chain.then((resolvedMembers) => LifeState.applyResolve(memberResult.state, memberResult.result)
                     .then((updated) => updated ? [...resolvedMembers, updated] : resolvedMembers))
             ), Promise.resolve([])).then((resolvedMembers) => {
+                const deadMembers = resolvedMembers.filter((member) => member.activity === 'dead');
+                deadMembers.forEach((member) => deadMemberIds.add(Number(member.characterId)));
+                return deadMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.leaveParty(member, 'death'))
+                ), Promise.resolve()).then(() => resolvedMembers.filter((member) => member.activity !== 'dead'));
+            }).then((resolvedMembers) => {
                 let breakTaken = false;
                 return resolvedMembers.reduce((chain, member) => (
                 chain.then((activeMembers) => GoalService.review(member, { spot }).then((goalSnapshot) => {
-                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, member)) return activeMembers;
+                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, member)) {
+                        return [...activeMembers, member];
+                    }
                     const travel = GoalExecutor.beginMarketTravel(member, goalSnapshot?.current);
-                    if (!travel) return activeMembers;
+                    if (!travel) return [...activeMembers, member];
                     return LifeState.leaveParty(travel, 'market_break').then((departed) => {
                         if (departed) breakTaken = true;
                         return departed ? activeMembers : [...activeMembers, member];
@@ -617,8 +642,8 @@ const PopulationService = {
                 ), Promise.resolve([]));
             }).then((activeMembers) => {
                 if (activeMembers.length < Config.partyMinSize) {
-                    return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
-                        .then(() => LifeState.clearParty(party.partyId));
+                    const reason = deadMemberIds.size > 0 ? 'death' : 'market_break';
+                    return dissolveBackgroundParty(party, reason, activeMembers.length);
                 }
                 return BackgroundPartyState.createOrUpdate({
                 ...party,
