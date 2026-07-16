@@ -23,13 +23,11 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
             session.dataSendToMe(ServerResponse.charInfo(user.actor));
             session.dataSendToMe(ServerResponse.relationChanged(user.actor));
 
-            // Merchant bots already expose their store state through CharInfo.
-            // Sending a custom 0x8c text here is unstable on legacy clients.
             const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
-            const isMerchantBot = user.constructor.name === 'BotSession' && user.plan === 'merchant';
-            if (!isMerchantBot && visibleStoreType === 1) {
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, user.actor.fetchTitle()));
-            } else if (!isMerchantBot && visibleStoreType === 3) {
+            const storeTitle = user.actor.fetchPrivateStore?.()?.title || user.actor.fetchTitle();
+            if (visibleStoreType === 1) {
+                session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, storeTitle));
+            } else if (visibleStoreType === 3) {
                 session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, user.actor.fetchTitle()));
             }
 
