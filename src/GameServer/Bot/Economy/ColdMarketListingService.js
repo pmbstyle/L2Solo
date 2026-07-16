@@ -1,6 +1,7 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
@@ -120,7 +121,8 @@ function open(state, options = {}) {
                 storeType: 1,
                 sellerCharacterId: Number(state.characterId),
                 sellerName: state.name,
-                title: options.title || 'Useful loot and old gear',
+                title: options.title || marketStoreTitle(items),
+                autoTitle: !options.title,
                 town: town?.name || options.town || state.currentRegion,
                 loc: storeLoc,
                 items,
@@ -189,7 +191,16 @@ function reconcileInventory(state) {
     if (items.length) {
         const nextState = {
             ...state,
-            stats: { ...(state.stats || {}), marketStore: { ...store, items } }
+            stats: {
+                ...(state.stats || {}),
+                marketStore: {
+                    ...store,
+                    items,
+                    // Existing listings predate inventory-backed titles; they
+                    // are upgraded on their next cold-state reconciliation.
+                    title: store.autoTitle === false ? store.title : marketStoreTitle(items)
+                }
+            }
         };
         return LifeState.upsertState(nextState, 'cold_market_inventory_reconciled').then((saved) => {
             if (saved) MarketOpportunity.indexColdStore(saved);
@@ -227,6 +238,7 @@ module.exports = {
     SELL_RETRY_DELAY_MS,
     GIRAN_MARKET_PLAZA,
     GIRAN_STALL_MIN_DISTANCE,
+    marketStoreTitle,
     chooseGiranPlazaStall,
     isGiranPlazaStallLocation,
     open,

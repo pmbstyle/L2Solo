@@ -68,6 +68,8 @@ async function run() {
     const opened = await ListingService.open(state, { now: 1000, durationMs: 60000, random: () => 0.1 });
     assert.strictEqual(opened.listed, true);
     assert.strictEqual(opened.state.activity, 'merchant');
+    assert.strictEqual(opened.state.stats.marketStore.title, 'Short Sword', 'a dynamic store title should name its actual stock');
+    assert(opened.state.stats.marketStore.title.length <= 28, 'a dynamic store title must fit the compact C4 store overlay');
     assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
     const secondStall = ListingService.chooseGiranPlazaStall(() => 0.1, [opened.state.loc]);
@@ -111,6 +113,17 @@ async function run() {
     assert.strictEqual(expiredResult.state.inventory['1'].amount, 0, 'low-value old gear should be liquidated at the NPC');
     assert.strictEqual(expiredResult.state.adena, 884, 'NPC payout should use the normal 50% sale price');
     assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
+
+    assert.strictEqual(
+        ListingService.marketStoreTitle([
+            { name: 'Animal Bone', count: 20 },
+            { name: 'Stem', count: 5 },
+            { name: 'Very Long Weapon Name That Cannot Fit', count: 1 }
+        ]),
+        'Animal Bone x20, Stem x5 +1',
+        'compact titles should identify stock and summarize omitted listings'
+    );
+    assert.strictEqual(ListingService.marketStoreTitle([{ name: 'Very Long Weapon Name That Cannot Fit', count: 1 }]).length, 28, 'a single long item name must be safely truncated');
     console.log('Bot cold market listing checks passed');
 }
 

@@ -5,6 +5,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
@@ -161,7 +162,9 @@ const HotActivation = {
                 coldMarketState: marketStore ? state : null,
                 privateStore: marketStore ? {
                     storeType: Number(marketStore.storeType || 1),
-                    title: marketStore.title || 'Useful loot and old gear',
+                    title: marketStore.autoTitle === false
+                        ? marketStore.title
+                        : marketStoreTitle(marketStore.items),
                     town: marketStore.town || state.currentRegion || null,
                     items: marketStore.items || []
                 } : null
