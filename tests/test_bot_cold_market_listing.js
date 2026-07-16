@@ -68,6 +68,8 @@ async function run() {
     const opened = await ListingService.open(state, { now: 1000, durationMs: 60000 });
     assert.strictEqual(opened.listed, true);
     assert.strictEqual(opened.state.activity, 'merchant');
+    assert.deepStrictEqual(opened.state.loc, { locX: 83396, locY: 147904, locZ: -3404 }, 'a Giran store must stay at the plaza');
+    assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
 
     const ownOffer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 88 });
     assert(!ownOffer || ownOffer.sourceType !== 'cold_store', 'seller must not buy its own listing');

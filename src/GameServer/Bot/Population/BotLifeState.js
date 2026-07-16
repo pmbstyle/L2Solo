@@ -507,16 +507,18 @@ const BotLifeState = {
             const actor = session.actor;
             const store = actor.fetchPrivateStore?.();
             const timestamp = now();
+            const storeLoc = marketState.stats.marketStore.loc || marketState.loc;
             const nextState = {
                 ...marketState,
                 phase: 'cold',
                 activity: 'merchant',
-                loc: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
+                loc: { ...storeLoc },
                 timing: { ...(marketState.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 60000 },
                 stats: {
                     ...(marketState.stats || {}),
                     marketStore: {
                         ...(marketState.stats.marketStore || {}),
+                        loc: { ...storeLoc },
                         items: (store?.items || []).map((item) => ({
                             selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId)
                         }))

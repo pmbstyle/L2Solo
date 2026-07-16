@@ -1,9 +1,16 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
+
+function marketTown(name) {
+    return TownPathfinder.towns.find((town) => town.name === name)
+        || TownPathfinder.towns.find((town) => town.name === 'Giran')
+        || null;
+}
 
 function open(state, options = {}) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
@@ -13,9 +20,15 @@ function open(state, options = {}) {
     if (!items.length) return Promise.resolve({ state, listed: false, reason: 'nothing_to_sell' });
 
     const timestamp = Number(options.now) || Date.now();
+    const town = marketTown(options.town || state.currentRegion || 'Giran');
+    const storeLoc = town?.center ? { ...town.center } : { ...(state.loc || {}) };
     const nextState = {
         ...state,
         activity: 'merchant',
+        currentRegion: town?.name || state.currentRegion,
+        // A private store has a stall, not a roaming route. Persist the plaza
+        // coordinate so cold ticks and hot materialization use the same spot.
+        loc: storeLoc,
         stats: {
             ...(state.stats || {}),
             marketStore: {
@@ -24,7 +37,8 @@ function open(state, options = {}) {
                 sellerCharacterId: Number(state.characterId),
                 sellerName: state.name,
                 title: options.title || 'Useful loot and old gear',
-                town: options.town || state.currentRegion,
+                town: town?.name || options.town || state.currentRegion,
+                loc: storeLoc,
                 items,
                 openedAt: timestamp,
                 expiresAt: timestamp + (Number(options.durationMs) || DEFAULT_LISTING_MS)

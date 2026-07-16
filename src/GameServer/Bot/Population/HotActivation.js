@@ -65,8 +65,9 @@ function validPlayerPlacement(loc, playerLoc) {
 }
 
 function activationPlacement(state, options = {}) {
-    if (options.keepStoreLocation && state?.loc) {
-        return { loc: { ...state.loc }, spot: SpotService.findCurrentSpot(state.loc) || null };
+    if (options.keepStoreLocation && (options.storeLoc || state?.loc)) {
+        const loc = options.storeLoc || state.loc;
+        return { loc: { ...loc }, spot: SpotService.findCurrentSpot(loc) || null };
     }
     const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
     const baseLoc = options.playerLoc
@@ -134,9 +135,12 @@ const HotActivation = {
                 LifeState.clearParty(state.party.partyId);
             }
 
-            const placement = activationPlacement(state, options);
             const plan = activationPlan(state, options);
             const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
+            const placement = activationPlacement(state, {
+                ...options,
+                storeLoc: marketStore?.loc || state.loc
+            });
             pendingActivations.add(state.characterId);
             if (marketStore) MarketOpportunity.removeColdStore(state.characterId);
             BotManager.loadAndSpawnBot(state.accountName, {
