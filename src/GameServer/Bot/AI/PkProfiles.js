@@ -1,6 +1,6 @@
 // PKs are encounter actors, not part of the background farming population.
 // Each profile is anchored to a hunting ground and only becomes eligible while
-// an appropriately levelled player or ordinary SimPlayer is using that ground.
+// an appropriately levelled player or ordinary bot is using that ground.
 const ENCOUNTERS = [
     {
         id: 'starter_wilds',

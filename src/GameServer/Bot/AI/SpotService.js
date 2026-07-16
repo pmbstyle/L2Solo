@@ -53,7 +53,9 @@ const SpotService = {
                     minLevel: Infinity,
                     maxLevel: 0,
                     levels: {},
-                    names: {}
+                    names: {},
+                    selfIds: {},
+                    npcs: {}
                 };
             }
 
@@ -69,6 +71,11 @@ const SpotService = {
             sector.maxLevel = Math.max(sector.maxLevel, level);
             sector.levels[level] = (sector.levels[level] || 0) + 1;
             sector.names[name] = (sector.names[name] || 0) + 1;
+            const selfId = Number(npc.fetchSelfId?.() || 0);
+            if (selfId) sector.selfIds[selfId] = (sector.selfIds[selfId] || 0) + 1;
+            const npcKey = selfId ? `id:${selfId}` : `name:${name}`;
+            sector.npcs[npcKey] = sector.npcs[npcKey] || { selfId, name, level, count: 0 };
+            sector.npcs[npcKey].count++;
         });
 
         this.spots = Object.values(sectors).map((sector) => {
@@ -77,6 +84,9 @@ const SpotService = {
                 .sort((a, b) => b.count - a.count);
             const nameEntries = Object.entries(sector.names)
                 .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count);
+            const selfIdEntries = Object.entries(sector.selfIds)
+                .map(([selfId, count]) => ({ selfId: Number(selfId), count }))
                 .sort((a, b) => b.count - a.count);
             const avgLevel = levelEntries.reduce((sum, item) => sum + item.level * item.count, 0) / sector.count;
 
@@ -93,6 +103,11 @@ const SpotService = {
                 avgLevel: Math.round(avgLevel * 10) / 10,
                 density: sector.count,
                 npcNames: nameEntries.slice(0, 3).map((item) => item.name),
+                npcSelfIds: selfIdEntries.slice(0, 8).map((item) => item.selfId),
+                npcEntries: Object.values(sector.npcs)
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 24)
+                    .map((entry) => ({ ...entry })),
                 dominantLevels: levelEntries.slice(0, 3)
             };
 

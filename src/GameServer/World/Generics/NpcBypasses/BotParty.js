@@ -21,7 +21,7 @@ function render(session) {
         session,
         BotManager.sessions.filter((botSession) => botSession.plan !== 'merchant')
     ).slice(0, 18);
-    let body = `${Html.font('Available SimPlayers', Html.COLOR.title)}<br1>`;
+    let body = `${Html.font('Available Bots', Html.COLOR.title)}<br1>`;
     body += `${Html.font('Nearby bots you can invite as real companions.', Html.COLOR.muted)}<br>`;
 
     candidates.forEach((candidate) => {
@@ -51,7 +51,7 @@ function render(session) {
     });
 
     if (candidates.length === 0) {
-        body += Html.section('No Candidates', Html.font('No available SimPlayers are visible right now.', Html.COLOR.muted));
+        body += Html.section('No Candidates', Html.font('No available bots are visible right now.', Html.COLOR.muted));
     }
 
     body += '<br>' + Html.columns([

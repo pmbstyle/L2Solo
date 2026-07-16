@@ -5,6 +5,10 @@ const DataCache      = invoke('GameServer/DataCache');
 const Item           = invoke('GameServer/Item/Item');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
+const BotManager     = invoke('GameServer/Bot/BotManager');
+const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
+const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 function merchantPurchaseItems(store) {
     const items = [];
@@ -53,8 +57,21 @@ async function consume(session, data) {
     if (store && store.storeType === 1) {
         try {
             const bought = [];
+            let sellerSession = null;
             for (const item of data.list) {
-                bought.push(await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount));
+                const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount);
+                bought.push(result);
+                sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
+                if (sellerSession?.coldMarketState) {
+                    const storeItem = store.items.find((entry) => Number(entry.selfId) === Number(item.selfId));
+                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
+                        selfId: item.selfId,
+                        price: result.totalAdena / result.qty,
+                        buyerCharacterId: session.actor.fetchId(),
+                        storeItem
+                    }, result.qty);
+                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
+                }
             }
 
             if (bought.length > 0) {
@@ -64,6 +81,21 @@ async function consume(session, data) {
 
             session.dataSendToMe(ServerResponse.userInfo(session.actor));
             session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
+            const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
+            if (soldOut) {
+                const returnState = sellerSession?.coldMarketState
+                    ? GoalExecutor.finishMarketVisit(sellerSession.coldMarketState)
+                    : null;
+                if (returnState) {
+                    await Cooldown.transitionToColdState(sellerSession, {
+                        ...returnState,
+                        stats: { ...(returnState.stats || {}), marketStore: null }
+                    }, 'market_sold_out');
+                }
+                session.activeMerchantTrade = null;
+                session.dataSendToMe(ServerResponse.actionFailed());
+                return;
+            }
             session.dataSendToMe(ServerResponse.purchaseList(
                 merchantPurchaseItems(store),
                 session.actor.backpack.fetchTotalAdena()

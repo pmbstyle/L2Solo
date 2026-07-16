@@ -55,6 +55,7 @@ const Opcodes = {
         table[0x66] = ClientRequest.requestPledgeInfo;
         table[0x68] = ClientRequest.requestPledgeCrest;
         table[0x6d] = ClientRequest.restartPoint;
+        table[0x96] = ClientRequest.privateStoreSell;
         table[0xaa] = ClientRequest.userCommand;
         table[0xac] = ClientRequest.recipeBookOpen;
         table[0xc0] = ClientRequest.requestPledgePower;

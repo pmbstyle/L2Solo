@@ -32,6 +32,8 @@ function profileFromSpot(spot) {
         avgLevel,
         density: spot.density,
         npcNames: [...(spot.npcNames || [])],
+        npcSelfIds: [...(spot.npcSelfIds || [])],
+        npcEntries: (spot.npcEntries || []).map((entry) => ({ ...entry })),
         route: spot.route || null,
         rewards: rewardForLevel(avgLevel),
         mob: combatForLevel(avgLevel),

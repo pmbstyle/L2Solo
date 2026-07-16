@@ -1,4 +1,5 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -78,6 +79,85 @@ function estimateRestMs(vitals, stats) {
     return Math.round(Math.max(hpSeconds, mpSeconds, 8) * 1000);
 }
 
+function resolveTravel(state, timestamp = Date.now()) {
+    const travel = state.stats?.travel;
+    if (!travel?.to || !travel?.arrivalAt) return null;
+    const isLegacyGiranMarketTrip = travel.townName === 'Giran'
+        && ['market_sale_inventory', 'market_search_for_weapon', 'market_search_for_gear'].includes(travel.reason)
+        && travel.method !== 'soe_gatekeeper';
+    const startedAt = Number(travel.startedAt || timestamp);
+    const arrivalAt = Number(travel.arrivalAt);
+    const progress = isLegacyGiranMarketTrip ? 1 : Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
+    const from = travel.from || state.loc || {};
+    const to = travel.to;
+    const loc = {
+        locX: Math.round(Number(from.locX || 0) + (Number(to.locX || 0) - Number(from.locX || 0)) * progress),
+        locY: Math.round(Number(from.locY || 0) + (Number(to.locY || 0) - Number(from.locY || 0)) * progress),
+        locZ: Math.round(Number(from.locZ || 0) + (Number(to.locZ || 0) - Number(from.locZ || 0)) * progress)
+    };
+    const arrived = progress >= 1;
+    const arrivalActivity = travel.arrivalActivity || 'shopping';
+    const nextStats = { ...(state.stats || {}), travel: arrived ? null : travel };
+    if (arrived && travel.clearMarketReturn) nextStats.marketReturn = null;
+    return {
+        patch: {
+            activity: arrived ? arrivalActivity : 'traveling',
+            loc,
+            currentRegion: arrived ? travel.regionName || travel.townName || state.currentRegion : state.currentRegion,
+            spotId: arrived && travel.spotId ? travel.spotId : state.spotId,
+            stats: nextStats
+        },
+        events: arrived ? [{
+            type: travel.arrivalEvent || 'arrived_town',
+            summary: arrivalActivity === 'shopping'
+                ? `${state.name || 'Bot'} used SoE via ${travel.viaTown || 'town'} and reached ${travel.townName || 'town'} to shop`
+                : `${state.name || 'Bot'} returned to ${travel.regionName || 'the hunting area'}`,
+            weight: 2,
+            meta: { townName: travel.townName || null, reason: travel.reason || null }
+        }] : [],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + (arrived && arrivalActivity === 'shopping' ? 120000 : 30000),
+        debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null, arrivalActivity }
+    };
+}
+
+function staleShopping(state) {
+    return state?.activity === 'shopping'
+        && !state.stats?.marketReturn
+        && state.currentRegion !== 'Giran';
+}
+
+function resolveDeathRecovery(state, timestamp = Date.now()) {
+    const combat = botCombatStats(state, roleProfile(state));
+    const respawnDelayMs = 90000;
+
+    return {
+        patch: {
+            activity: 'resting',
+            vitals: {
+                hp: combat.maxHp,
+                maxHp: combat.maxHp,
+                mp: combat.maxMp,
+                maxMp: combat.maxMp
+            },
+            stats: {
+                ...(state.stats || {}),
+                lastRespawnAt: timestamp,
+                restUntil: timestamp + respawnDelayMs
+            }
+        },
+        events: [{
+            type: 'respawn',
+            summary: `${state.name || 'Bot'} recovered after dying near ${state.currentRegion || 'the hunting area'}`,
+            weight: 2,
+            meta: { spotId: state.spotId || null }
+        }],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + respawnDelayMs,
+        debug: { activity: 'respawning', respawnDelayMs }
+    };
+}
+
 function resolveFight({ state, spot, pressure, rng }) {
     const role = roleProfile(state);
     const bot = botCombatStats(state, role);
@@ -126,11 +206,11 @@ function resolveFight({ state, spot, pressure, rng }) {
     const expMultiplier = pressure?.expMultiplier || 1;
     const rates = ProgressionRates.profile();
     const adena = Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena);
-    const loot = rng() < 0.08 ? [{
-        selfId: 57,
-        name: 'Adena',
-        amount: Math.max(1, Math.round(adena * 0.15))
-    }] : [];
+    const loot = BackgroundDropResolver.rollForFight({
+        spot,
+        killerLevel: Number(state.level || bot.level),
+        rng
+    });
 
     return {
         won: true,
@@ -146,13 +226,73 @@ function resolveFight({ state, spot, pressure, rng }) {
 
 const BackgroundResolver = {
     resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random }) {
-        if (!state || !spot) {
+        if (!state) {
             return {
                 patch: {},
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 nextResolveAt: Date.now() + 60000,
                 debug: { reason: 'missing_state_or_spot' }
+            };
+        }
+
+        if (state.activity === 'traveling') {
+            const travelResult = resolveTravel(state);
+            if (travelResult) return travelResult;
+        }
+
+        if (staleShopping(state) && spot) {
+            return {
+                patch: {
+                    activity: 'hunting',
+                    spotId: spot.id,
+                    currentRegion: state.homeRegion || state.currentRegion,
+                    loc: { ...spot.center },
+                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: Date.now() }
+                },
+                events: [{
+                    type: 'shopping_recovered',
+                    summary: `${state.name || 'Bot'} left a stale town-shopping state and returned to hunting`,
+                    weight: 1
+                }],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 30000,
+                debug: { activity: 'shopping_recovered' }
+            };
+        }
+
+        if (state.activity === 'shopping') {
+            return {
+                patch: { activity: 'shopping' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 120000,
+                debug: { activity: 'shopping' }
+            };
+        }
+
+        if (state.activity === 'merchant') {
+            return {
+                patch: { activity: 'merchant' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { activity: 'merchant' }
+            };
+        }
+
+        const reportedHp = Number(state.vitals?.hp);
+        if (state.activity === 'dead' || (Number.isFinite(reportedHp) && reportedHp <= 0)) {
+            return resolveDeathRecovery(state);
+        }
+
+        if (!spot) {
+            return {
+                patch: {},
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { reason: 'missing_spot' }
             };
         }
 
@@ -186,7 +326,7 @@ const BackgroundResolver = {
                 patch.deathCount = (state.stats?.deaths || 0) + 1;
                 events.push({
                     type: 'death',
-                    summary: `${state.name || 'SimPlayer'} died near ${spot.name}`,
+                    summary: `${state.name || 'Bot'} died near ${spot.name}`,
                     weight: 4,
                     meta: { spotId: spot.id, fights: i + 1 }
                 });
@@ -200,7 +340,7 @@ const BackgroundResolver = {
                 patch.restUntil = Date.now() + estimateRestMs(patch.vitals, botCombatStats(fightState, roleProfile(fightState)));
                 events.push({
                     type: 'rest',
-                    summary: `${state.name || 'SimPlayer'} sat down to recover near ${spot.name}`,
+                    summary: `${state.name || 'Bot'} sat down to recover near ${spot.name}`,
                     weight: 2,
                     meta: { spotId: spot.id, hpPct, mpPct }
                 });
@@ -211,7 +351,7 @@ const BackgroundResolver = {
         if (wins > 0 && !died) {
             events.push({
                 type: 'hunt',
-                summary: `${state.name || 'SimPlayer'} won ${wins} fights near ${spot.name}`,
+                summary: `${state.name || 'Bot'} won ${wins} fights near ${spot.name}`,
                 weight: wins >= 3 ? 2 : 1,
                 meta: { spotId: spot.id, wins }
             });
@@ -227,6 +367,8 @@ const BackgroundResolver = {
                 fights,
                 wins,
                 died,
+                dropsRolled: materialize.items.length,
+                dropsAwarded: materialize.items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                 spotId: spot.id,
                 route: spot.route || null
             }

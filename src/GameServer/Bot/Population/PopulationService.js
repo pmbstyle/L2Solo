@@ -12,18 +12,13 @@ const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
-
-function roleForState(state) {
-    return state?.party?.role || state?.stats?.role || 'dps';
-}
-
-function roleCoverage(states) {
-    return states.reduce((coverage, state) => {
-        const role = roleForState(state);
-        coverage[role] = (coverage[role] || 0) + 1;
-        return coverage;
-    }, {});
-}
+const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
+const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
+const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 
 function groupBySpot(states) {
     const grouped = new Map();
@@ -36,6 +31,31 @@ function groupBySpot(states) {
     return Array.from(grouped.values())
         .map((group) => group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)))
         .sort((a, b) => b.length - a.length);
+}
+
+function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
+    if (timestamp - Number(party.stats?.formedAt || party.startedAt || timestamp) < Config.partyMarketBreakMinSessionMs) return false;
+    if (Number(party.stats?.fightsResolved || 0) < Config.partyMarketBreakMinFights) return false;
+    if (timestamp - Number(party.stats?.lastMarketBreakAt || 0) < Config.partyMarketBreakCooldownMs) return false;
+    const role = PartyComposition.roleForState(member);
+    const coverage = PartyComposition.roleCoverage(members);
+    return !(['tank', 'healer'].includes(role) && Number(coverage[role] || 0) <= 1);
+}
+
+function dissolveBackgroundParty(party, reason, memberCount = 0) {
+    return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
+        .then(() => LifeState.clearParty(party.partyId, reason))
+        .then((cleared) => {
+            Metrics.recordPartyDissolution();
+            console.info(
+                'BotPopulation :: dissolved background party %s reason=%s members=%d cleared=%d',
+                party.partyId,
+                reason,
+                memberCount,
+                cleared
+            );
+            return { ok: false, reason, party, cleared };
+        });
 }
 
 function activationCandidatesForPlayer(states, playerLevel) {
@@ -66,13 +86,6 @@ function nearbyHotCount(sessions, player) {
         if (distance2d(actor, player) > Config.activationRadius) return false;
         return Math.abs(Number(actor.fetchLevel?.() || 1) - playerLevel) <= Config.activationLevelRange;
     }).length;
-}
-
-function chooseLeader(members) {
-    return members.reduce((best, state) => {
-        if (!best || Number(state.level || 1) > Number(best.level || 1)) return state;
-        return best;
-    }, null);
 }
 
 const PopulationService = {
@@ -300,15 +313,22 @@ const PopulationService = {
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
-                        const candidates = activationCandidatesForPlayer(
-                            states.filter((state) => state.activity !== 'pk_hunting'),
+                        // A cold traveller has no hot equivalent for its
+                        // persisted route. Keep it cold until its resolver
+                        // reaches the destination, instead of spawning a
+                        // hunter/resting bot stranded on a road or plaza.
+                        const available = states.filter((state) => !['pk_hunting', 'traveling'].includes(state.activity));
+                        const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
+                        const candidates = [...merchants, ...activationCandidatesForPlayer(
+                            available.filter((state) => state.activity !== 'merchant'),
                             actor.fetchLevel()
-                        ).slice(0, remaining);
+                        )].slice(0, remaining);
                         return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
+                                    keepStoreLocation: state.activity === 'merchant' && !!state.stats?.marketStore,
                                     playerLoc: loc
                                 });
                             }).then((result) => {
@@ -330,7 +350,7 @@ const PopulationService = {
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
-                if (session.plan === 'merchant') return false;
+                if (session.plan === 'merchant' && !session.coldMarketState) return false;
                 // Red-name bots are part of the visible PK population, not
                 // disposable ambient population. Keep them hot until their
                 // karma is genuinely cleared.
@@ -367,15 +387,16 @@ const PopulationService = {
             return Promise.resolve([]);
         }
 
-        const activeParties = BackgroundPartyState.counts().active || 0;
-        const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
-        if (slots <= 0) return Promise.resolve([]);
-
         this.partyFormationRunning = true;
-        const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
-
         return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-            .then((states) => {
+            .then((states) => this.recruitBackgroundMembers(states).then((recruitedIds) => ({
+                states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
+            })))
+            .then(({ states }) => {
+                const activeParties = BackgroundPartyState.counts().active || 0;
+                const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
+                if (slots <= 0) return [];
+                const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
                 const groups = groupBySpot(states);
                 const created = [];
 
@@ -383,23 +404,26 @@ const PopulationService = {
                     if (created.length >= maxNewParties) return null;
                     if (group.length < Config.partyMinSize) return null;
 
-                    const members = group.slice(0, Config.partyMaxSize);
+                    const members = PartyComposition.selectMembers(group, {
+                        minSize: Config.partyMinSize,
+                        maxSize: Config.partyMaxSize
+                    });
                     if (members.length < Config.partyMinSize) return null;
 
-                    const leader = chooseLeader(members);
+                    const leader = PartyComposition.chooseLeader(members);
                     const partySpot = SpotProfiles.findForState({
                         ...leader,
                         spotId: null,
                         party: {
                             ...(leader.party || {}),
                             partyId: 'forming',
-                            role: roleForState(leader)
+                            role: PartyComposition.roleForState(leader)
                         },
                         stats: {
                             ...(leader.stats || {}),
                             routeMode: 'party'
                         }
-                    }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
+                    }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
                     const partyId = `bgp_${Date.now().toString(36)}_${leader.characterId}`;
                     const nextResolveAt = Date.now() + 45000 + Math.round(Math.random() * 90000);
                     const party = {
@@ -411,7 +435,7 @@ const PopulationService = {
                         nextResolveAt,
                         cohesion: 0.55 + Math.random() * 0.25,
                         risk: 0.18 + Math.random() * 0.22,
-                        roleCoverage: roleCoverage(members),
+                        roleCoverage: PartyComposition.roleCoverage(members),
                         stats: {
                             formedAt: Date.now(),
                             memberNames: members.map((state) => state.name),
@@ -426,7 +450,7 @@ const PopulationService = {
                             memberChain.then(() => LifeState.assignParty(
                                 member,
                                 savedParty.partyId,
-                                roleForState(member),
+                                PartyComposition.roleForState(member),
                                 savedParty.leaderId
                             ))
                         ), Promise.resolve()).then(() => LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${party.spotId}`, {
@@ -458,6 +482,54 @@ const PopulationService = {
             });
     },
 
+    recruitBackgroundMembers(candidates = []) {
+        const claimed = new Set();
+        const parties = BackgroundPartyState.active()
+            .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
+            .sort((a, b) => (a.memberIds || []).length - (b.memberIds || []).length);
+
+        return parties.reduce((chain, party) => chain.then(() => LifeState.statesForParty(party.partyId)
+            .then((members) => {
+                if (members.length < Config.partyMinSize) return null;
+                const nearby = candidates.filter((state) => (
+                    !claimed.has(Number(state.characterId)) &&
+                    state.spotId === party.spotId
+                ));
+                const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
+                if (!recruits.length) return null;
+
+                return recruits.reduce((memberChain, recruit) => (
+                    memberChain.then(() => LifeState.assignParty(
+                        recruit,
+                        party.partyId,
+                        PartyComposition.roleForState(recruit),
+                        party.leaderId
+                    ))
+                ), Promise.resolve()).then(() => {
+                    recruits.forEach((recruit) => claimed.add(Number(recruit.characterId)));
+                    const allMembers = [...members, ...recruits];
+                    return BackgroundPartyState.createOrUpdate({
+                        ...party,
+                        memberIds: allMembers.map((member) => member.characterId),
+                        roleCoverage: PartyComposition.roleCoverage(allMembers),
+                        stats: {
+                            ...(party.stats || {}),
+                            memberNames: allMembers.map((member) => member.name),
+                            lastRecruitAt: Date.now()
+                        }
+                    }).then((updatedParty) => LifeEvents.record(party.leaderId, 'party_recruit', `${members[0].name} recruited ${recruits.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
+                        partyId: party.partyId,
+                        recruitIds: recruits.map((recruit) => recruit.characterId),
+                        spotId: party.spotId
+                    }, 1).then(() => {
+                        Metrics.recordPartyRecruit(recruits.length);
+                        console.info('BotPopulation :: recruited %d bot(s) into %s near %s', recruits.length, party.partyId, party.spotId || 'none');
+                        return updatedParty;
+                    }));
+                });
+            })), Promise.resolve()).then(() => claimed);
+    },
+
     tickBudgeted() {
         if (this.resolving || Config.enabled === false || Config.backgroundResolverEnabled === false) {
             if (this.resolving) {
@@ -469,6 +541,7 @@ const PopulationService = {
         const startedAt = Date.now();
         this.resolving = true;
         return this.resolveDueParties()
+            .then(() => this.reconcileMarketGoals())
             .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
             .then((states) => {
                 if (states.length === 0) return [];
@@ -513,13 +586,38 @@ const PopulationService = {
             });
     },
 
+    reconcileMarketGoals() {
+        return LifeState.marketGoalCandidates(Config.maxMarketGoalReconcilesPerTick)
+            .then((states) => states.reduce(
+                (chain, state) => chain.then((results) => {
+                    const spot = SpotProfiles.findForState(state);
+                    return GoalService.review(state, { spot }).then((goalSnapshot) => {
+                        const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
+                        if (!travel) return results;
+                        return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
+                            if (saved) {
+                                console.info('BotPopulation :: reconciled market travel for %s', state.name);
+                                results.push(saved);
+                            }
+                            return results;
+                        });
+                    });
+                }),
+                Promise.resolve([])
+            ))
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
+                return [];
+            });
+    },
+
     resolveBackgroundParty(party) {
         const startedAt = Date.now();
         return LifeState.statesForParty(party.partyId).then((members) => {
             if (members.length < Config.partyMinSize) {
-                return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
-                    .then(() => LifeState.clearParty(party.partyId))
-                    .then(() => ({ ok: false, reason: 'too_few_members', party }));
+                const recordedIds = new Set((party.memberIds || []).map(Number));
+                const reason = recordedIds.size !== members.length ? 'state_mismatch' : 'too_few_members';
+                return dissolveBackgroundParty(party, reason, members.length);
             }
 
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
@@ -529,13 +627,13 @@ const PopulationService = {
                 party: {
                     ...(leader.party || {}),
                     partyId: party.partyId,
-                    role: roleForState(leader)
+                    role: PartyComposition.roleForState(leader)
                 },
                 stats: {
                     ...(leader.stats || {}),
                     routeMode: 'party'
                 }
-            }, { mode: 'party', role: roleForState(leader) }) || SpotProfiles.findForState(leader);
+            }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
             if (!spot) {
                 Metrics.recordSkippedResolve();
                 return { ok: false, reason: 'missing_spot', party };
@@ -549,23 +647,61 @@ const PopulationService = {
                 pressure: Director.pressureForState(leader),
                 elapsedMs
             });
+            const deadMemberIds = new Set();
 
             return result.memberResults.reduce((chain, memberResult) => (
-                chain.then(() => LifeState.applyResolve(memberResult.state, memberResult.result))
-            ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({
+                chain.then((resolvedMembers) => LifeState.applyResolve(memberResult.state, memberResult.result)
+                    .then((updated) => updated ? [...resolvedMembers, updated] : resolvedMembers))
+            ), Promise.resolve([])).then((resolvedMembers) => {
+                const deadMembers = resolvedMembers.filter((member) => member.activity === 'dead');
+                deadMembers.forEach((member) => deadMemberIds.add(Number(member.characterId)));
+                return deadMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.leaveParty(member, 'death'))
+                ), Promise.resolve()).then(() => resolvedMembers.filter((member) => member.activity !== 'dead'));
+            }).then((resolvedMembers) => {
+                let breakTaken = false;
+                return resolvedMembers.reduce((chain, member) => (
+                chain.then((activeMembers) => GoalService.review(member, { spot }).then((goalSnapshot) => {
+                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, member)) {
+                        return [...activeMembers, member];
+                    }
+                    const travel = GoalExecutor.beginMarketTravel(member, goalSnapshot?.current);
+                    if (!travel) return [...activeMembers, member];
+                    return LifeState.leaveParty(travel, 'market_break').then((departed) => {
+                        if (departed) breakTaken = true;
+                        return departed ? activeMembers : [...activeMembers, member];
+                    });
+                }))
+                ), Promise.resolve([]));
+            }).then((activeMembers) => {
+                if (activeMembers.length < Config.partyMinSize) {
+                    const reason = deadMemberIds.size > 0 ? 'death' : 'market_break';
+                    return dissolveBackgroundParty(party, reason, activeMembers.length);
+                }
+                return BackgroundPartyState.createOrUpdate({
                 ...party,
+                leaderId: (activeMembers.find((member) => member.characterId === party.leaderId) || PartyComposition.chooseLeader(activeMembers) || {}).characterId || party.leaderId,
+                memberIds: activeMembers.map((member) => member.characterId),
                 spotId: spot.id,
                 nextResolveAt: result.nextResolveAt,
                 cohesion: result.partyPatch.cohesion,
                 risk: result.partyPatch.risk,
-                roleCoverage: roleCoverage(members),
+                roleCoverage: PartyComposition.roleCoverage(activeMembers),
                 stats: {
                     ...(party.stats || {}),
                     ...(result.partyPatch.stats || {}),
+                    lastMarketBreakAt: activeMembers.length < members.length ? Date.now() : party.stats?.lastMarketBreakAt || null,
                     route: spot.route || party.stats?.route || null
                 }
-            })).then((updatedParty) => {
+                });
+            }).then((updatedParty) => {
                 Metrics.recordPartyResolve();
+                const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
+                const persistedParty = recruitment.announced
+                    ? BackgroundPartyState.createOrUpdate(recruitment.party)
+                    : Promise.resolve(updatedParty);
+                return persistedParty.then((savedParty) => ({ party: savedParty || updatedParty, recruitment }));
+            }).then(({ party: updatedParty }) => {
                 return Promise.all(result.events.map((event) => (
                     LifeEvents.record(event.characterId || party.leaderId, event.type, event.summary, event.meta, event.weight)
                 ))).then(() => ({
@@ -588,8 +724,12 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
-        const spot = SpotProfiles.findForState(state);
-        if (!spot) {
+        const staleShopping = state?.activity === 'shopping'
+            && !state.stats?.marketReturn
+            && state.currentRegion !== 'Giran';
+        const passiveActivity = ['traveling', 'shopping', 'merchant', 'dead'].includes(state?.activity) && !staleShopping;
+        const spot = passiveActivity ? null : SpotProfiles.findForState(state);
+        if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
             Metrics.recordResolveDuration(Date.now() - startedAt);
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
@@ -603,21 +743,59 @@ const PopulationService = {
             elapsedMs
         });
 
-        return LifeState.applyResolve(state, result).then((updatedState) => {
+        return LifeState.applyResolve(state, result).then((updatedState) => LifeState.refreshInventory(updatedState)
+            .then((refreshedState) => LifeState.upsertState(refreshedState, 'inventory_refresh').then((saved) => saved || refreshedState)))
+            .then((updatedState) => {
             if (!updatedState) {
                 Metrics.recordSkippedResolve();
                 return { ok: false, reason: 'apply_failed', state };
             }
 
             Metrics.recordBackgroundResolve();
-            return LifeEvents.recordMany(state.characterId, result.events).then(() => {
-                GlobalChat.maybeAnnounce(updatedState, result.events);
-                return {
-                    ok: true,
-                    state: updatedState,
-                    debug: result.debug
-                };
-            });
+            return ColdMarketListingService.reconcileInventory(updatedState)
+                .then((inventoryLifecycle) => ColdMarketListingService.resolve(inventoryLifecycle.state))
+                .then((marketLifecycle) => {
+                    const completedSale = marketLifecycle.closed && marketLifecycle.reason === 'sold_out';
+                    const goalReady = completedSale
+                        ? GoalService.complete(marketLifecycle.state.characterId)
+                        : Promise.resolve(null);
+                    return goalReady.then(() => marketLifecycle);
+                }).then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
+                    .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycle.state, goalSnapshot?.current)
+                        .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
+                .then(({ marketLifecycle, marketResult, goal }) => {
+                    const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
+                    const shouldOpenListing = marketResult.purchased || (!marketLifecycle.closed && goal?.type === 'sell_inventory');
+                    const listingPromise = shouldOpenListing
+                        ? ColdMarketListingService.open(purchasedState)
+                        : Promise.resolve({ state: purchasedState, listed: false });
+                    const marketStatePromise = listingPromise.then((listingResult) => {
+                        const listingState = listingResult.state || purchasedState;
+                        if (listingState.activity === 'merchant') return listingState;
+                        if (listingResult.listed) return listingState;
+                        const returnState = GoalExecutor.finishMarketVisit(listingState);
+                        return returnState
+                            ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
+                            : listingState;
+                    });
+                    return marketStatePromise.then((persistedState) => persistedState || purchasedState)
+                        .then((marketState) => ColdMarketTradeChat.maybeAnnounce(marketState).then((result) => result.state || marketState))
+                        .then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
+                        utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
+                        return null;
+                    }).then((goalSnapshot) => {
+                        const travelState = GoalExecutor.beginMarketTravel(marketState, goalSnapshot?.current);
+                        return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : marketState;
+                    }));
+                }).then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => finalState))
+                .then((finalState) => {
+                    GlobalChat.maybeAnnounce(finalState, result.events);
+                    return {
+                        ok: true,
+                        state: finalState,
+                        debug: result.debug
+                    };
+                });
         }).finally(() => {
             Metrics.recordResolveDuration(Date.now() - startedAt);
         });

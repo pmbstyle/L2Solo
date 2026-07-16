@@ -53,10 +53,10 @@ function sell(session, buffer) {
         });
     }
 
-    return consume(session, list);
+    return consumeMerchant(session, list);
 }
 
-async function consume(session, list) {
+async function consumeMerchant(session, list, { native = false } = {}) {
     const trade = session.activeMerchantTrade;
     const store = trade && trade.store;
 
@@ -66,11 +66,25 @@ async function consume(session, list) {
 
     try {
         const sold = [];
-        for (const line of list) {
+        const objectIds = new Set();
+        const requested = list.map((line) => {
             const item = session.actor.backpack.fetchItems().find((ob) => ob.fetchId() === line.objectId);
-            if (!item || item.fetchEquipped() || item.fetchSelfId() === 57 || item.fetchSelfId() !== line.selfId || line.amount <= 0) continue;
+            const wanted = store.items.find((storeItem) => storeItem.selfId === line.selfId && storeItem.count > 0);
+            const amount = Number(line.amount);
+            const matchesPrice = line.price === undefined || Number(line.price) === Number(wanted?.price);
+            if (!item || !wanted || item.fetchEquipped() || item.fetchSelfId() === 57 || item.fetchSelfId() !== line.selfId ||
+                !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount() || amount > wanted.count || !matchesPrice ||
+                objectIds.has(item.fetchId())) return null;
+            objectIds.add(item.fetchId());
+            return { item, amount };
+        });
+        if (requested.length !== list.length || requested.some((line) => line === null)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
 
-            sold.push(await TradeService.sellToStore(session.actor, store, item.fetchSelfId(), line.amount));
+        for (const line of requested) {
+            sold.push(await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount));
         }
 
         if (sold.length > 0) {
@@ -80,10 +94,25 @@ async function consume(session, list) {
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
-        session.dataSendToMe(ServerResponse.sellList(
-            merchantSellRows(session.actor, store),
-            session.actor.backpack.fetchTotalAdena()
-        ));
+        const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
+        if (soldOut) {
+            trade.merchant.setPrivateStoreType(0);
+            trade.merchant.setPrivateStore({ ...store, items: [] });
+            trade.merchant.session?.dataSendToOthers?.(ServerResponse.charInfo(trade.merchant), trade.merchant);
+            session.activeMerchantTrade = null;
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
+        const rows = merchantSellRows(session.actor, store);
+        if (native) {
+            session.dataSendToMe(ServerResponse.privateStoreListBuy(
+                trade.merchant,
+                rows,
+                session.actor.backpack.fetchTotalAdena()
+            ));
+        } else {
+            session.dataSendToMe(ServerResponse.sellList(rows, session.actor.backpack.fetchTotalAdena()));
+        }
     } catch (err) {
         utils.infoWarn('Sell', 'merchant sell error: %s', err.message || err);
         session.dataSendToMe(ServerResponse.actionFailed());
@@ -159,3 +188,4 @@ async function sellToNpcShop(session, list) {
 }
 
 module.exports = sell;
+module.exports.consumeMerchant = consumeMerchant;

@@ -36,6 +36,7 @@ module.exports = {
                pickupItem: require('./PickupItem'),
            privateStoreMsg: require('./PrivateStoreMsg'),
         privateStoreBuyMsg: require('./PrivateStoreBuyMsg'),
+       privateStoreListBuy: require('./PrivateStoreListBuy'),
            purchaseList: require('./PurchaseList'),
            questList: require('./QuestList'),
    recipeBookItemList: require('./RecipeBookItemList'),

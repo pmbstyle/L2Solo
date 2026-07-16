@@ -131,7 +131,7 @@ function schema() {
 
 function systemPrompt() {
     return [
-        'You are replying as one Lineage 2 SimPlayer bot in private chat.',
+        'You are replying as one Lineage 2 bot in private chat.',
         'Use only the provided state, social memory, availability, and life events.',
         'Do not invent items, rewards, locations, levels, party membership, or combat results.',
         'Keep the reply short, grounded, and in character.',
@@ -152,7 +152,7 @@ async function requestLlmReply(payload, cfg) {
                 Authorization: `Bearer ${cfg.apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': 'http://localhost',
-                'X-OpenRouter-Title': 'L2Node SimPlayers'
+                'X-OpenRouter-Title': 'L2Node Bots'
             },
             body: JSON.stringify({
                 model: cfg.model,

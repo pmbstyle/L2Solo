@@ -84,10 +84,27 @@ function inventorySummaryFromItems(items = []) {
         summary[key] = {
             selfId,
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
-            amount: Number(summary[key]?.amount || 0) + amount
+            amount: Number(summary[key]?.amount || 0) + amount,
+            equipped: !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped),
+            slot: Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0),
+            rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
+            kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
         };
         return summary;
     }, {});
+}
+
+function equipmentSummaryFromInventory(inventory = {}) {
+    return Object.values(inventory)
+        .filter((item) => item.equipped)
+        .map((item) => ({
+            selfId: Number(item.selfId),
+            name: item.name || itemName(item.selfId),
+            slot: Number(item.slot || 0),
+            rank: item.rank || 'none',
+            kind: item.kind || ''
+        }))
+        .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
 }
 
 function inventoryAdena(inventory) {
@@ -97,21 +114,31 @@ function inventoryAdena(inventory) {
 function syncInventoryItem(characterId, existingItems, item) {
     const selfId = Number(item.selfId || 0);
     const amount = Number(item.amount || 0);
-    if (!selfId || amount <= 0) return Promise.resolve(null);
+    if (!selfId || amount < 0) return Promise.resolve(null);
 
     const existing = existingItems.find((row) => Number(row.selfId) === selfId);
     if (existing) {
-        if (Number(existing.amount || 0) === amount) return Promise.resolve(null);
-        return Database.updateItemAmount(characterId, existing.id, amount);
+        let chain = Promise.resolve(null);
+        if (Number(existing.amount || 0) !== amount) {
+            chain = chain.then(() => Database.updateItemAmount(characterId, existing.id, amount));
+        }
+        const equipped = !!item.equipped;
+        const slot = Number(item.slot || existing.slot || 0);
+        if (!!existing.equipped !== equipped || Number(existing.slot || 0) !== slot) {
+            chain = chain.then(() => Database.updateItemEquipState(characterId, existing.id, equipped, slot));
+        }
+        return chain;
     }
+
+    if (amount === 0) return Promise.resolve(null);
 
     const template = itemTemplate(selfId);
     return Database.setItem(characterId, {
         selfId,
         name: item.name || itemName(selfId),
         amount,
-        equipped: false,
-        slot: template?.etc?.slot || 0
+        equipped: !!item.equipped,
+        slot: Number(item.slot || template?.etc?.slot || 0)
     });
 }
 
@@ -186,6 +213,7 @@ function recordFromSession(session, phase, reason = '') {
         clanId: actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
+        equipment: equipmentSummaryFromInventory(inventory),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
@@ -371,7 +399,10 @@ function recoverStaleHotStates() {
             nextResolveAt = COALESCE(nextResolveAt, ?),
             updatedAt = ?
         WHERE phase = 'hot'
-        AND activity <> 'merchant'`,
+        -- Static merchant bots are spawned from MerchantConfigs on startup.
+        -- A cold bot's marketStore is different: it has no startup owner, so
+        -- keeping it hot would leave only a database ghost after a restart.
+        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`,
         [timestamp + 30000, timestamp]
     ]).then((result) => {
         const recovered = Number(result?.affectedRows || 0);
@@ -436,6 +467,15 @@ const BotLifeState = {
         if (!session || !session.actor) return Promise.resolve(null);
 
         const row = recordFromSession(session, 'hot', reason);
+        const marketState = session.coldMarketState;
+        if (marketState?.stats?.marketStore) {
+            row.activity = 'merchant';
+            row.currentRegion = marketState.currentRegion || row.currentRegion;
+            row.spotId = marketState.spotId || row.spotId;
+            row.inventorySummary = safeJson(marketState.inventory || {});
+            row.adena = Number(marketState.adena || row.adena || 0);
+            row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+        }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
         const ready = initialized ? Promise.resolve(true) : this.init();
@@ -464,6 +504,32 @@ const BotLifeState = {
 
     markCold(session, reason = 'cooldown') {
         if (!session || !session.actor) return Promise.resolve(null);
+
+        const marketState = session.coldMarketState;
+        if (marketState?.stats?.marketStore) {
+            const actor = session.actor;
+            const store = actor.fetchPrivateStore?.();
+            const timestamp = now();
+            const storeLoc = marketState.stats.marketStore.loc || marketState.loc;
+            const nextState = {
+                ...marketState,
+                phase: 'cold',
+                activity: 'merchant',
+                loc: { ...storeLoc },
+                timing: { ...(marketState.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 60000 },
+                stats: {
+                    ...(marketState.stats || {}),
+                    marketStore: {
+                        ...(marketState.stats.marketStore || {}),
+                        loc: { ...storeLoc },
+                        items: (store?.items || []).map((item) => ({
+                            selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId)
+                        }))
+                    }
+                }
+            };
+            return this.upsertState(nextState, reason);
+        }
 
         const row = {
             ...recordFromSession(session, 'cold', reason),
@@ -539,8 +605,9 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND locX BETWEEN ? AND ?
             AND locY BETWEEN ? AND ?
+            ORDER BY ((locX - ?) * (locX - ?)) + ((locY - ?) * (locY - ?)) ASC
             LIMIT ${safeLimit * 3}`,
-            [minX, maxX, minY, maxY]
+            [minX, maxX, minY, maxY, Number(loc.locX), Number(loc.locX), Number(loc.locY), Number(loc.locY)]
         ]).then((rows) => rows.map((row) => normalize(row))
             .map((state) => {
                 const dx = state.loc.locX - Number(loc.locX);
@@ -569,7 +636,12 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
-            ORDER BY COALESCE(nextResolveAt, 0) ASC
+            ORDER BY CASE
+                WHEN activity = 'dead' THEN 0
+                WHEN activity IN ('traveling', 'shopping', 'merchant') THEN 1
+                ELSE 2
+            END ASC,
+                COALESCE(nextResolveAt, 0) ASC
             LIMIT ${safeLimit}`,
             [at]
         ]).then((rows) => rows.map((row) => {
@@ -606,12 +678,21 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
 
         return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND (partyId IS NULL OR partyId = '')
-            AND spotId IS NOT NULL
-            AND activity IN ('hunting', 'resting')
-            ORDER BY spotId ASC, level ASC, updatedAt ASC
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN (
+                SELECT spotId, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+                FROM ${TABLE}
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND spotId IS NOT NULL
+                AND activity IN ('hunting', 'resting')
+                GROUP BY spotId
+            ) party_spots ON party_spots.spotId = states.spotId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.spotId IS NOT NULL
+            AND states.activity IN ('hunting', 'resting')
+            ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
         ]).then((rows) => rows.map((row) => {
@@ -655,30 +736,15 @@ const BotLifeState = {
         });
     },
 
-    clearParty(partyId) {
+    clearParty(partyId, reason = 'party_dissolved') {
         if (!initialized || !partyId) return Promise.resolve(0);
 
-        return Database.execute([
-            `UPDATE ${TABLE} SET partyId = NULL, updatedAt = ? WHERE partyId = ?`,
-            [now(), partyId]
-        ]).then((result) => {
-            let cleared = 0;
-            cache.forEach((state, characterId) => {
-                if (state.party?.partyId === partyId) {
-                    cache.set(characterId, {
-                        ...state,
-                        party: {
-                            ...(state.party || {}),
-                            partyId: null,
-                            leaderId: null
-                        },
-                        updatedAt: now()
-                    });
-                    cleared += 1;
-                }
-            });
-            return result?.affectedRows || cleared;
-        }).catch((err) => {
+        return this.statesForParty(partyId).then((members) => (
+            members.reduce((chain, member) => (
+                chain.then((cleared) => this.leaveParty(member, reason)
+                    .then((updated) => cleared + (updated ? 1 : 0)))
+            ), Promise.resolve(0))
+        )).catch((err) => {
             utils.infoWarn('BotLife', 'failed to clear party %s: %s', partyId, err.message);
             return 0;
         });
@@ -713,7 +779,9 @@ const BotLifeState = {
             inventory[key] = {
                 selfId: item.selfId,
                 name: item.name || inventory[key]?.name || itemName(item.selfId),
-                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0)
+                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0),
+                kind: item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '',
+                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
             };
         });
         if (adena > 0) {
@@ -733,6 +801,11 @@ const BotLifeState = {
             phase: 'cold',
             activity: result.patch?.activity || state.activity,
             spotId: result.patch?.spotId || state.spotId,
+            currentRegion: result.patch?.currentRegion || state.currentRegion,
+            loc: {
+                ...(state.loc || {}),
+                ...(result.patch?.loc || {})
+            },
             vitals: {
                 ...(state.vitals || {}),
                 ...(result.patch?.vitals || {})
@@ -742,7 +815,10 @@ const BotLifeState = {
                 lastResolvedAt: timestamp,
                 nextResolveAt: result.nextResolveAt || timestamp + 60000
             },
-            stats,
+            stats: {
+                ...stats,
+                ...(result.patch?.stats || {})
+            },
             inventory,
             updatedAt: timestamp
         };
@@ -759,6 +835,240 @@ const BotLifeState = {
             })
             .catch((err) => {
                 utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    marketGoalCandidates(limit = 8) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        return Database.execute([
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'dead', 'pk_hunting')
+            AND goals.goalJson LIKE '%"type":"sell_inventory"%'
+            ORDER BY states.updatedAt ASC
+            LIMIT ${safeLimit}`,
+            []
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    refreshInventory(state) {
+        if (!state?.characterId) return Promise.resolve(state || null);
+        return Database.fetchItems(state.characterId).then((items) => {
+            // Cold progression owns virtual item counts between hot
+            // materializations. The character inventory remains authoritative
+            // for equip flags, so a stale snapshot cannot sell worn gear.
+            const physicalInventory = inventorySummaryFromItems(items || []);
+            const inventory = { ...(state.inventory || {}) };
+            Object.entries(physicalInventory).forEach(([key, item]) => {
+                const previous = inventory[key] || {};
+                inventory[key] = {
+                    ...previous,
+                    ...item,
+                    amount: Math.max(Number(previous.amount || 0), Number(item.amount || 0)),
+                    equipped: !!previous.equipped || !!item.equipped,
+                    slot: Number(item.slot || previous.slot || 0)
+                };
+            });
+            return {
+                ...state,
+                adena: Math.max(Number(state.adena || 0), inventoryAdena(inventory)),
+                inventory,
+                stats: {
+                    ...(state.stats || {}),
+                    equipment: equipmentSummaryFromInventory(inventory)
+                }
+            };
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to refresh inventory for %s: %s', state.name, err.message);
+            return state;
+        });
+    },
+
+    leaveParty(state, reason = 'party_break') {
+        if (!state?.characterId) return Promise.resolve(null);
+        const nextState = {
+            ...state,
+            party: { ...(state.party || {}), partyId: null, leaderId: null },
+            stats: { ...(state.stats || {}), backgroundPartyId: null, partyBreakReason: reason },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row).then(() => {
+            const snapshot = normalize(row);
+            cache.set(snapshot.characterId, snapshot);
+            return snapshot;
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
+            return null;
+        });
+    },
+
+    applyMarketPurchase(state, offer) {
+        const selfId = Number(offer?.selfId || 0);
+        const price = Number(offer?.price || 0);
+        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < price) return Promise.resolve(null);
+
+        const template = itemTemplate(selfId);
+        if (!template) return Promise.resolve(null);
+        const slot = Number(template.etc?.slot || 0);
+        if (!slot) return Promise.resolve(null);
+        const inventory = { ...(state.inventory || {}) };
+        Object.keys(inventory).forEach((key) => {
+            if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
+        });
+        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - price };
+        inventory[String(selfId)] = {
+            ...(inventory[String(selfId)] || {}),
+            selfId,
+            name: template.template?.name || offer.itemName || itemName(selfId),
+            amount: Number(inventory[String(selfId)]?.amount || 0) + 1,
+            equipped: true,
+            slot,
+            rank: template.etc?.rank || 'none',
+            kind: template.template?.kind || ''
+        };
+        const equipment = equipmentSummaryFromInventory(inventory);
+        const nextState = {
+            ...state,
+            adena: Number(state.adena) - price,
+            activity: 'shopping',
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                equipment,
+                marketRetryAfter: null,
+                marketLead: null,
+                lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    applyMarketSale(state, offer, qty = 1) {
+        const selfId = Number(offer?.selfId || 0);
+        const count = Math.max(1, Number(qty) || 1);
+        const price = Number(offer?.price || 0);
+        const currentItem = state?.inventory?.[String(selfId)];
+        if (!state || !selfId || price <= 0) return Promise.resolve(null);
+
+        const inventory = { ...(state.inventory || {}) };
+        // A hot private store can sell before an older cold snapshot has been
+        // refreshed from the character inventory. The store is authoritative
+        // for the transaction, otherwise sold stock returns after a restart.
+        inventory[String(selfId)] = {
+            ...(currentItem || {}),
+            selfId,
+            name: currentItem?.name || offer?.storeItem?.name || itemName(selfId),
+            amount: Math.max(0, Number(currentItem?.amount || 0) - count)
+        };
+        inventory['57'] = {
+            ...(inventory['57'] || {}),
+            selfId: 57,
+            name: 'Adena',
+            amount: Number(state.adena || 0) + (price * count)
+        };
+        const marketStore = state.stats?.marketStore;
+        const marketItems = (marketStore?.items || []).map((item) => {
+            if (Number(item.selfId) !== selfId) return item;
+            const remaining = offer?.storeItem && Number.isFinite(Number(offer.storeItem.count))
+                ? Math.max(0, Number(offer.storeItem.count))
+                : Math.max(0, Number(item.count || 0) - count);
+            return { ...item, count: remaining };
+        });
+        const nextState = {
+            ...state,
+            adena: Number(state.adena || 0) + (price * count),
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                ...(marketStore ? { marketStore: { ...marketStore, items: marketItems } } : {}),
+                lastMarketSale: {
+                    selfId,
+                    qty: count,
+                    price,
+                    buyerCharacterId: Number(offer.buyerCharacterId || 0) || null,
+                    at: now()
+                }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    applyNpcLiquidation(state, candidates = []) {
+        if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
+        const inventory = { ...(state.inventory || {}) };
+        let payout = 0;
+        const sold = [];
+        candidates.forEach((candidate) => {
+            const selfId = Number(candidate.selfId || 0);
+            const existing = inventory[String(selfId)];
+            const amount = Math.min(Number(existing?.amount || 0), Math.max(0, Number(candidate.count || 0)));
+            const price = Math.max(0, Number(candidate.npcPrice || 0));
+            if (!selfId || amount <= 0 || price <= 0 || existing?.equipped) return;
+            inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
+            payout += amount * price;
+            sold.push({ selfId, amount, price });
+        });
+        if (!sold.length) return Promise.resolve(state);
+
+        inventory['57'] = {
+            ...(inventory['57'] || {}),
+            selfId: 57,
+            name: 'Adena',
+            amount: Number(state.adena || 0) + payout
+        };
+        const nextState = {
+            ...state,
+            adena: Number(state.adena || 0) + payout,
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                lastNpcLiquidation: { payout, sold, at: now() }
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed NPC liquidation for %s: %s', state.name, err.message);
                 return null;
             });
     },

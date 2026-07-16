@@ -17,6 +17,8 @@ const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
+const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 
@@ -148,6 +150,28 @@ const BotManager = {
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), html));
     },
 
+    renderColdBotStatusPanel(playerSession, state) {
+        if (!playerSession.actor || !state) return;
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const Html = invoke('GameServer/World/Generics/HtmlKit');
+        const safe = (value) => Html.esc(value);
+        const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
+        const travel = state.stats?.travel;
+        const lead = state.stats?.marketLead;
+        const wanted = state.stats?.marketWanted;
+        const history = Object.values(state.stats?.partyHistory || {});
+        const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
+            ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
+            ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
+            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goal ? `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}` : 'none')],
+            ['Travel', safe(travel ? `${travel.reason} -> ${travel.townName || 'field'}` : 'none')],
+            ['Market Lead', safe(lead ? `${lead.itemName} in ${lead.town} for ${lead.price}` : 'none')],
+            ['WTB', safe(wanted ? wanted.itemName || `Item ${wanted.itemId}` : 'none')],
+            ['Party Bonds', safe(`${history.length} remembered partners`)]
+        ]) + '<br>' + Html.actionFooter([{ label: 'Refresh', command: `bot-status ${state.name}` }]);
+        playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), Html.page(body, { title: 'Cold Bot Status' })));
+    },
+
     renderBotPathPanel(playerSession, botSession = null) {
         if (!playerSession.actor) return;
 
@@ -208,9 +232,20 @@ const BotManager = {
     },
 
     init() {
-        console.info("BotManager :: Initializing automated SimPlayers...");
+        console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
         PopulationService.init();
+        GoalService.init();
+        SimulationKernel.init({ population: PopulationService });
+        SimulationKernel.register({
+            id: 'population',
+            register: (registry) => registry.statusProvider(() => PopulationService.summary?.() || null)
+        });
+        SimulationKernel.register({
+            id: 'goals',
+            requires: ['population'],
+            register: (registry) => registry.statusProvider(() => ({ initialized: GoalService.initialized }))
+        });
         
         const bots = [...BOTS_TO_SPAWN.filter((bot) => bot.plan !== 'pk_hunting'), ...MERCHANT_BOTS];
         console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
@@ -226,6 +261,7 @@ const BotManager = {
                 this.startDynamicScalingMonitor();
                 this.startStatusLogMonitor();
                 PopulationService.start();
+                SimulationKernel.start();
             });
         }, 5000);
     },
@@ -444,6 +480,7 @@ const BotManager = {
                 const character = readyCharacters[0];
                 if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);
+                const runtimeStore = botData.privateStore || null;
 
                 Shared.fetchClassInformation(character.classId).then((classInfo) => {
                     if (botData.locX !== undefined) {
@@ -483,19 +520,25 @@ const BotManager = {
                         locZ: character.locZ
                     };
 
-                    if (storeCfg) {
+                    let privateStore = null;
+                    if (storeCfg || runtimeStore) {
+                        privateStore = runtimeStore || storeCfg;
                         session.plan = 'merchant';
+                        session.coldMarketState = botData.coldMarketState || null;
                         session.actor.state.setSeated(true);
 
-                        session.actor.setTitle(storeCfg.title);
-                        session.actor.setPrivateStoreType(storeCfg.storeType);
+                        // A C4 shop title is carried by PrivateStoreMsg, not
+                        // CharInfo.title. Keeping it out of the character
+                        // title prevents an extra coloured nameplate line.
+                        session.actor.setTitle('');
+                        session.actor.setPrivateStoreType(privateStore.storeType);
 
-                        const storeItems = TradeService.normalizeStoreItems(storeCfg);
+                        const storeItems = TradeService.normalizeStoreItems(privateStore);
 
                         session.actor.setPrivateStore({
-                            storeType: storeCfg.storeType,
-                            title: storeCfg.title,
-                            town: storeCfg.town,
+                            storeType: privateStore.storeType,
+                            title: privateStore.title,
+                            town: privateStore.town,
                             items: storeItems
                         });
                     } else {
@@ -516,6 +559,11 @@ const BotManager = {
                     const ServerResponse = invoke('GameServer/Network/Response');
                     session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
                     session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+                    if (privateStore?.storeType === 1) {
+                        session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
+                    } else if (privateStore?.storeType === 3) {
+                        session.dataSendToOthers(ServerResponse.privateStoreBuyMsg(session.actor, privateStore.title), session.actor);
+                    }
 
                     // Start AI loop
                     BotAI.init(session);
