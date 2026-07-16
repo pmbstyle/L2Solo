@@ -106,6 +106,7 @@ module.exports = async function(session, parts) {
 
     try {
         const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty);
+        const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === bot);
         if (sellerSession?.coldMarketState) {
             const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
@@ -119,7 +120,6 @@ module.exports = async function(session, parts) {
             // A dynamic seller has no reason to remain seated after its last
             // item is bought. Preserve its planned return trip, remove the
             // now-empty store, and hand it back to cold simulation.
-            const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
             const returnState = soldOut ? GoalExecutor.finishMarketVisit(updatedSeller) : null;
             if (returnState) {
                 const departingState = {
@@ -133,7 +133,12 @@ module.exports = async function(session, parts) {
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
-        session.dataSendToMe(ServerResponse.npcHtml(bot.fetchId(), buildShopHtml(session, bot)));
+        if (soldOut) {
+            session.viewedPrivateStoreSeller = null;
+            session.dataSendToMe(ServerResponse.actionFailed());
+        } else {
+            session.dataSendToMe(ServerResponse.npcHtml(bot.fetchId(), buildShopHtml(session, bot)));
+        }
     } catch (err) {
         utils.infoWarn("BuyMerchantItem", "purchase error: " + err);
         session.dataSendToMe(ServerResponse.actionFailed());
