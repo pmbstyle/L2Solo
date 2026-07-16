@@ -367,6 +367,8 @@ const BackgroundResolver = {
                 fights,
                 wins,
                 died,
+                dropsRolled: materialize.items.length,
+                dropsAwarded: materialize.items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                 spotId: spot.id,
                 route: spot.route || null
             }

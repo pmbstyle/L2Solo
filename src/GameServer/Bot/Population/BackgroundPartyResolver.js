@@ -171,6 +171,8 @@ const BackgroundPartyResolver = {
                         fights,
                         wins,
                         losses,
+                        dropsRolled: items.length,
+                        dropsAwarded: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                         spotId: spot.id,
                         route: spot.route || null,
                         aggregate: true
@@ -207,7 +209,17 @@ const BackgroundPartyResolver = {
                 }
             },
             nextResolveAt: Date.now() + 45000 + Math.round(rng() * 90000),
-            debug: { fights, wins, losses, deaths, resting, spotId: spot.id, route: spot.route || null }
+            debug: {
+                fights,
+                wins,
+                losses,
+                deaths,
+                resting,
+                dropsRolled: rewards.reduce((sum, reward) => sum + reward.items.length, 0),
+                dropsAwarded: rewards.reduce((sum, reward) => sum + reward.items.reduce((itemSum, item) => itemSum + Number(item.amount || 0), 0), 0),
+                spotId: spot.id,
+                route: spot.route || null
+            }
         };
     }
 };

@@ -54,7 +54,8 @@ const SpotService = {
                     maxLevel: 0,
                     levels: {},
                     names: {},
-                    selfIds: {}
+                    selfIds: {},
+                    npcs: {}
                 };
             }
 
@@ -72,6 +73,9 @@ const SpotService = {
             sector.names[name] = (sector.names[name] || 0) + 1;
             const selfId = Number(npc.fetchSelfId?.() || 0);
             if (selfId) sector.selfIds[selfId] = (sector.selfIds[selfId] || 0) + 1;
+            const npcKey = selfId ? `id:${selfId}` : `name:${name}`;
+            sector.npcs[npcKey] = sector.npcs[npcKey] || { selfId, name, level, count: 0 };
+            sector.npcs[npcKey].count++;
         });
 
         this.spots = Object.values(sectors).map((sector) => {
@@ -100,6 +104,10 @@ const SpotService = {
                 density: sector.count,
                 npcNames: nameEntries.slice(0, 3).map((item) => item.name),
                 npcSelfIds: selfIdEntries.slice(0, 8).map((item) => item.selfId),
+                npcEntries: Object.values(sector.npcs)
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 24)
+                    .map((entry) => ({ ...entry })),
                 dominantLevels: levelEntries.slice(0, 3)
             };
 

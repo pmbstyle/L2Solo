@@ -8,10 +8,14 @@ function randInt(rng, min, max) {
 }
 
 function rewardDataForSpot(spot, rng) {
-    const byId = (spot?.npcSelfIds || [])
-        .map((selfId) => (DataCache.npcRewards || []).find((reward) => Number(reward.selfId) === Number(selfId)))
-        .filter((reward) => Array.isArray(reward?.rewards) && reward.rewards.length > 0);
-    const knownIds = new Set(byId.map((reward) => Number(reward.selfId)));
+    const entries = spot?.npcEntries?.length
+        ? spot.npcEntries
+        : (spot?.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    const byId = entries.map((entry) => ({
+        reward: (DataCache.npcRewards || []).find((reward) => Number(reward.selfId) === Number(entry.selfId)),
+        count: Math.max(1, Number(entry.count || 1))
+    })).filter((entry) => Array.isArray(entry.reward?.rewards) && entry.reward.rewards.length > 0);
+    const knownIds = new Set(byId.map((entry) => Number(entry.reward.selfId)));
     const names = new Set((spot?.npcNames || []).map((name) => String(name || '').trim().toLowerCase()).filter(Boolean));
     // World-spawn ids may not be the datapack reward ids. The spot index also
     // carries the monster names, so use that source-backed mapping before
@@ -20,10 +24,15 @@ function rewardDataForSpot(spot, rng) {
         !knownIds.has(Number(reward.selfId))
         && names.has(String(reward.template?.name || '').trim().toLowerCase())
         && Array.isArray(reward.rewards) && reward.rewards.length > 0
-    ));
+    )).map((reward) => ({ reward, count: 1 }));
     const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
-    return candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
+    let roll = rng() * candidates.reduce((sum, candidate) => sum + candidate.count, 0);
+    for (const candidate of candidates) {
+        roll -= candidate.count;
+        if (roll <= 0) return candidate.reward;
+    }
+    return candidates[candidates.length - 1].reward;
 }
 
 function selectItem(items, rng) {
