@@ -31,13 +31,16 @@ const GoalService = {
         if (!state?.characterId || state.phase === 'hot') return Promise.resolve(null);
         const timestamp = Number(options.now) || Date.now();
         const cached = GoalState.snapshot(state.characterId);
-        if (cached?.current?.nextReviewAt > timestamp && cached.current.status === 'active') {
-            return Promise.resolve(cached);
-        }
 
         const choose = (existing) => {
-            if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active') return existing;
             const candidates = NeedsEvaluator.evaluate(state, { spot: options.spot, now: timestamp });
+            const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory'
+                || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
+            const activeMarketGoal = existing?.current?.type === 'sell_inventory'
+                || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
+            if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
+                && !marketCandidate && !activeMarketGoal) return existing;
+
             const goal = GoalPlanner.plan(candidates, timestamp);
             if (!goal) return null;
             if (existing?.current?.type === goal.type) {

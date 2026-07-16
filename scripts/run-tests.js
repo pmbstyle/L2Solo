@@ -16,6 +16,7 @@ const tests = [
     'tests/test_bot_gear_skill_hints.js',
     'tests/test_bot_goal_state.js',
     'tests/test_bot_goal_planner.js',
+    'tests/test_bot_goal_market_priority.js',
     'tests/test_bot_cold_travel.js',
     'tests/test_bot_cold_travel_without_spot.js',
     'tests/test_bot_cold_market_purchase.js',
