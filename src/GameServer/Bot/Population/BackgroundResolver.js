@@ -118,6 +118,37 @@ function resolveTravel(state, timestamp = Date.now()) {
     };
 }
 
+function resolveDeathRecovery(state, timestamp = Date.now()) {
+    const combat = botCombatStats(state, roleProfile(state));
+    const respawnDelayMs = 90000;
+
+    return {
+        patch: {
+            activity: 'resting',
+            vitals: {
+                hp: combat.maxHp,
+                maxHp: combat.maxHp,
+                mp: combat.maxMp,
+                maxMp: combat.maxMp
+            },
+            stats: {
+                ...(state.stats || {}),
+                lastRespawnAt: timestamp,
+                restUntil: timestamp + respawnDelayMs
+            }
+        },
+        events: [{
+            type: 'respawn',
+            summary: `${state.name || 'Bot'} recovered after dying near ${state.currentRegion || 'the hunting area'}`,
+            weight: 2,
+            meta: { spotId: state.spotId || null }
+        }],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + respawnDelayMs,
+        debug: { activity: 'respawning', respawnDelayMs }
+    };
+}
+
 function resolveFight({ state, spot, pressure, rng }) {
     const role = roleProfile(state);
     const bot = botCombatStats(state, role);
@@ -219,6 +250,11 @@ const BackgroundResolver = {
                 nextResolveAt: Date.now() + 60000,
                 debug: { activity: 'merchant' }
             };
+        }
+
+        const reportedHp = Number(state.vitals?.hp);
+        if (state.activity === 'dead' || (Number.isFinite(reportedHp) && reportedHp <= 0)) {
+            return resolveDeathRecovery(state);
         }
 
         if (!spot) {
