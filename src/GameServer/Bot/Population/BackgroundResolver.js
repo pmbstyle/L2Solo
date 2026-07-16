@@ -107,7 +107,7 @@ function resolveTravel(state, timestamp = Date.now()) {
         events: arrived ? [{
             type: travel.arrivalEvent || 'arrived_town',
             summary: arrivalActivity === 'shopping'
-                ? `${state.name || 'Bot'} arrived in ${travel.townName || 'town'} to shop`
+                ? `${state.name || 'Bot'} used SoE via ${travel.viaTown || 'town'} and reached ${travel.townName || 'town'} to shop`
                 : `${state.name || 'Bot'} returned to ${travel.regionName || 'the hunting area'}`,
             weight: 2,
             meta: { townName: travel.townName || null, reason: travel.reason || null }

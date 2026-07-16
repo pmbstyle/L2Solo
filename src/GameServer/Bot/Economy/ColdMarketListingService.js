@@ -14,6 +14,7 @@ const GIRAN_MARKET_PLAZA = Object.freeze({
 });
 const GIRAN_STALL_EDGE_PADDING = 60;
 const GIRAN_COLUMN_CLEARANCE = 80;
+const GIRAN_STALL_MIN_DISTANCE = 40;
 
 function marketTown(name) {
     return TownPathfinder.towns.find((town) => town.name === name)
@@ -43,28 +44,54 @@ function isGiranPlazaStallLocation(loc) {
     return isInRect(loc, safeOuter) && !isInRect(loc, blockedColumn);
 }
 
-function randomGiranPlazaStall(random = Math.random) {
+function distance2d(a, b) {
+    const dx = Number(a?.locX || 0) - Number(b?.locX || 0);
+    const dy = Number(a?.locY || 0) - Number(b?.locY || 0);
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function isFreeGiranPlazaStall(loc, occupied) {
+    return isGiranPlazaStallLocation(loc)
+        && !occupied.some((other) => distance2d(loc, other) < GIRAN_STALL_MIN_DISTANCE);
+}
+
+function occupiedGiranPlazaStalls(characterId) {
+    return LifeState.allStates(2000)
+        .filter((state) => Number(state.characterId) !== Number(characterId)
+            && state.activity === 'merchant'
+            && state.stats?.marketStore?.town === 'Giran'
+            && isGiranPlazaStallLocation(state.stats.marketStore.loc || state.loc))
+        .map((state) => state.stats.marketStore.loc || state.loc);
+}
+
+function chooseGiranPlazaStall(random = Math.random, occupied = []) {
     const { outer, locZ } = GIRAN_MARKET_PLAZA;
     const minX = outer.minX + GIRAN_STALL_EDGE_PADDING;
     const maxX = outer.maxX - GIRAN_STALL_EDGE_PADDING;
     const minY = outer.minY + GIRAN_STALL_EDGE_PADDING;
     const maxY = outer.maxY - GIRAN_STALL_EDGE_PADDING;
-    for (let attempt = 0; attempt < 24; attempt++) {
+    for (let attempt = 0; attempt < 96; attempt++) {
         const loc = {
             locX: Math.round(minX + random() * (maxX - minX)),
             locY: Math.round(minY + random() * (maxY - minY)),
             locZ
         };
-        if (isGiranPlazaStallLocation(loc)) return loc;
+        if (isFreeGiranPlazaStall(loc, occupied)) return loc;
     }
 
-    // The northwest corner is always clear of the column, including if a
-    // deterministic test source keeps proposing a blocked point.
-    return { locX: minX, locY: minY, locZ };
+    // A deterministic grid is the overflow path: it keeps a dense, readable
+    // market rather than allowing two stores to occupy one stall.
+    for (let locX = minX; locX <= maxX; locX += GIRAN_STALL_MIN_DISTANCE) {
+        for (let locY = minY; locY <= maxY; locY += GIRAN_STALL_MIN_DISTANCE) {
+            const loc = { locX, locY, locZ };
+            if (isFreeGiranPlazaStall(loc, occupied)) return loc;
+        }
+    }
+    return null;
 }
 
 function marketLocation(town, options) {
-    if (town?.name === 'Giran') return randomGiranPlazaStall(options.random);
+    if (town?.name === 'Giran') return chooseGiranPlazaStall(options.random, occupiedGiranPlazaStalls(options.state?.characterId));
     return town?.center ? { ...town.center } : { ...(options.state?.loc || {}) };
 }
 
@@ -78,6 +105,7 @@ function open(state, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const town = marketTown(options.town || state.currentRegion || 'Giran');
     const storeLoc = marketLocation(town, { ...options, state });
+    if (!storeLoc) return Promise.resolve({ state, listed: false, reason: 'giran_plaza_full' });
     const nextState = {
         ...state,
         activity: 'merchant',
@@ -167,6 +195,8 @@ module.exports = {
     DEFAULT_LISTING_MS,
     SELL_RETRY_DELAY_MS,
     GIRAN_MARKET_PLAZA,
+    GIRAN_STALL_MIN_DISTANCE,
+    chooseGiranPlazaStall,
     isGiranPlazaStallLocation,
     open,
     resolve,

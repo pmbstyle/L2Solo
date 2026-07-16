@@ -18,6 +18,9 @@ const goal = { type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for
 const started = GoalExecutor.beginMarketTravel(state, goal, Date.now());
 assert.strictEqual(started.activity, 'traveling');
 assert.strictEqual(started.stats.travel.townName, 'Giran');
+assert.strictEqual(started.stats.travel.method, 'soe_gatekeeper');
+assert(started.stats.travel.viaTown, 'market travel should first use SoE to the regional town');
+assert.strictEqual(started.stats.travel.arrivalAt - started.stats.travel.startedAt, GoalExecutor.MARKET_TRAVEL_MS);
 
 const sellStarted = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats: {} }, {
     type: 'sell_inventory',
@@ -46,12 +49,11 @@ assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 
-const followingLead = GoalExecutor.finishMarketVisit({
+const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
     ...shoppingState,
     stats: { ...shoppingState.stats, marketLead: { town: 'Oren', itemId: 354 } }
 }, Date.now());
-assert.strictEqual(followingLead.stats.travel.reason, 'market_lead');
-assert.strictEqual(followingLead.stats.travel.townName, 'Oren');
+assert.strictEqual(ignoringRemoteLead.stats.travel.reason, 'return_after_market');
 
 const returnedState = {
     ...returning,

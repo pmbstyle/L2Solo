@@ -1,4 +1,7 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const TownRespawn = invoke('GameServer/World/TownRespawn');
+
+const MARKET_TRAVEL_MS = 25 * 1000;
 
 function distance2d(a, b) {
     const dx = Number(a?.locX || 0) - Number(b?.locX || 0);
@@ -19,11 +22,13 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (buyingGear && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
-    const town = marketTown(buyingGear ? state.stats?.marketLead?.town : 'Giran');
+    // Dynamic bots share one economic hub. Static merchant bots may remain in
+    // other towns, but players and cold bots travel to Giran to trade.
+    const town = marketTown('Giran');
     if (!town) return null;
     const from = { ...state.loc };
+    const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY);
     const to = { ...town.center };
-    const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
     return {
         ...state,
         activity: 'traveling',
@@ -39,8 +44,10 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
                 from,
                 to,
                 townName: town.name,
+                viaTown: nearestTown.name,
+                method: 'soe_gatekeeper',
                 startedAt: timestamp,
-                arrivalAt: timestamp + durationMs
+                arrivalAt: timestamp + MARKET_TRAVEL_MS
             }
         },
         timing: {
@@ -56,14 +63,7 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     const destination = state.stats?.marketReturn;
     if (!destination?.loc) return null;
 
-    const leadTown = state.stats?.marketLead?.town;
-    const lead = leadTown && leadTown !== state.currentRegion ? marketTown(leadTown) : null;
     const from = { ...state.loc };
-    if (lead) {
-        const to = { ...lead.center };
-        const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
-        return { ...state, activity: 'traveling', stats: { ...(state.stats || {}), travel: { reason: 'market_lead', from, to, townName: lead.name, startedAt: timestamp, arrivalAt: timestamp + durationMs } }, timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 } };
-    }
     const to = { ...destination.loc };
     const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
     return {
@@ -92,4 +92,4 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     };
 }
 
-module.exports = { beginMarketTravel, finishMarketVisit };
+module.exports = { MARKET_TRAVEL_MS, beginMarketTravel, finishMarketVisit };

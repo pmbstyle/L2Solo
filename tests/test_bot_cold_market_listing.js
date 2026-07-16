@@ -70,6 +70,10 @@ async function run() {
     assert.strictEqual(opened.state.activity, 'merchant');
     assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
+    const secondStall = ListingService.chooseGiranPlazaStall(() => 0.1, [opened.state.loc]);
+    const dx = secondStall.locX - opened.state.loc.locX;
+    const dy = secondStall.locY - opened.state.loc.locY;
+    assert(Math.sqrt(dx * dx + dy * dy) >= ListingService.GIRAN_STALL_MIN_DISTANCE, 'stores must not overlap on the Giran plaza');
 
     const ownOffer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 88 });
     assert(!ownOffer || ownOffer.sourceType !== 'cold_store', 'seller must not buy its own listing');
