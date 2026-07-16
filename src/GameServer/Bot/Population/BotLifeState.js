@@ -861,10 +861,24 @@ const BotLifeState = {
     refreshInventory(state) {
         if (!state?.characterId) return Promise.resolve(state || null);
         return Database.fetchItems(state.characterId).then((items) => {
-            const inventory = inventorySummaryFromItems(items || []);
+            // Cold progression owns virtual item counts between hot
+            // materializations. The character inventory remains authoritative
+            // for equip flags, so a stale snapshot cannot sell worn gear.
+            const physicalInventory = inventorySummaryFromItems(items || []);
+            const inventory = { ...(state.inventory || {}) };
+            Object.entries(physicalInventory).forEach(([key, item]) => {
+                const previous = inventory[key] || {};
+                inventory[key] = {
+                    ...previous,
+                    ...item,
+                    amount: Math.max(Number(previous.amount || 0), Number(item.amount || 0)),
+                    equipped: !!previous.equipped || !!item.equipped,
+                    slot: Number(item.slot || previous.slot || 0)
+                };
+            });
             return {
                 ...state,
-                adena: inventoryAdena(inventory) || Number(state.adena || 0),
+                adena: Math.max(Number(state.adena || 0), inventoryAdena(inventory)),
                 inventory,
                 stats: {
                     ...(state.stats || {}),

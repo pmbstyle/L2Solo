@@ -94,6 +94,15 @@ async function run() {
     assert.strictEqual(closed.activity, 'shopping');
     assert.strictEqual(closed.stats.marketStore, null);
 
+    const phantom = {
+        ...opened.state,
+        inventory: { 57: { selfId: 57, name: 'Adena', amount: 500 } }
+    };
+    const reconciled = await ListingService.reconcileInventory(phantom);
+    assert.strictEqual(reconciled.closed, true, 'a store without its listed inventory must close');
+    assert.strictEqual(reconciled.state.activity, 'shopping');
+    assert.strictEqual(reconciled.state.stats.marketStore, null);
+
     const expiredState = { ...state, characterId: 89, name: 'ExpiredSeller' };
     const expiredOpened = await ListingService.open(expiredState, { now: 1000, durationMs: 60000 });
     const expiredResult = await ListingService.resolve(expiredOpened.state, 62000);

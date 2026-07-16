@@ -752,7 +752,8 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
-            return ColdMarketListingService.resolve(updatedState)
+            return ColdMarketListingService.reconcileInventory(updatedState)
+                .then((inventoryLifecycle) => ColdMarketListingService.resolve(inventoryLifecycle.state))
                 .then((marketLifecycle) => {
                     const completedSale = marketLifecycle.closed && marketLifecycle.reason === 'sold_out';
                     const goalReady = completedSale

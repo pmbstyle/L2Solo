@@ -181,6 +181,37 @@ function resolve(state, timestamp = Date.now()) {
         }));
 }
 
+function reconcileInventory(state) {
+    const store = state?.stats?.marketStore;
+    if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, reconciled: false });
+
+    const items = ItemDisposition.saleCandidates(state);
+    if (items.length) {
+        const nextState = {
+            ...state,
+            stats: { ...(state.stats || {}), marketStore: { ...store, items } }
+        };
+        return LifeState.upsertState(nextState, 'cold_market_inventory_reconciled').then((saved) => {
+            if (saved) MarketOpportunity.indexColdStore(saved);
+            return { state: saved || nextState, reconciled: true, closed: false };
+        });
+    }
+
+    const nextState = {
+        ...state,
+        activity: 'shopping',
+        stats: { ...(state.stats || {}), marketStore: null },
+        timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 30000 }
+    };
+    MarketOpportunity.removeColdStore(state.characterId);
+    return LifeState.upsertState(nextState, 'cold_market_inventory_empty').then((saved) => ({
+        state: saved || nextState,
+        reconciled: true,
+        closed: true,
+        reason: 'inventory_empty'
+    }));
+}
+
 function settle(offer, qty = 1) {
     if (offer?.sourceType !== 'cold_store') return Promise.resolve(null);
     const seller = LifeState.snapshot(offer.sourceId) || offer.sellerState;
@@ -199,6 +230,7 @@ module.exports = {
     chooseGiranPlazaStall,
     isGiranPlazaStallLocation,
     open,
+    reconcileInventory,
     resolve,
     settle
 };
