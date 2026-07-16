@@ -527,10 +527,7 @@ const BotManager = {
                         session.coldMarketState = botData.coldMarketState || null;
                         session.actor.state.setSeated(true);
 
-                        // C4 draws a character title above the name. Store
-                        // text belongs in the dedicated private-store packet,
-                        // which the client renders in the black store label.
-                        session.actor.setTitle(runtimeStore ? '' : privateStore.title);
+                        session.actor.setTitle(privateStore.title);
                         session.actor.setPrivateStoreType(privateStore.storeType);
 
                         const storeItems = TradeService.normalizeStoreItems(privateStore);
@@ -559,9 +556,6 @@ const BotManager = {
                     const ServerResponse = invoke('GameServer/Network/Response');
                     session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
                     session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
-                    if (runtimeStore) {
-                        session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
-                    }
 
                     // Start AI loop
                     BotAI.init(session);
