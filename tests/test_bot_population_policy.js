@@ -66,7 +66,8 @@ async function run() {
         { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
         { characterId: 101, name: 'ColdA', level: 10 },
         { characterId: 102, name: 'ColdB', level: 10 },
-        { characterId: 103, name: 'ColdC', level: 10 }
+        { characterId: 103, name: 'ColdC', level: 10 },
+        { characterId: 104, name: 'Traveler', level: 10, activity: 'traveling' }
     ];
     let coldLimit = null;
     LifeState.coldNear = (_loc, _radius, limit) => {

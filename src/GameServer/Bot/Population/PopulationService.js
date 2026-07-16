@@ -313,7 +313,11 @@ const PopulationService = {
 
                 return LifeState.coldNear(loc, Config.activationRadius, remaining)
                     .then((states) => {
-                        const available = states.filter((state) => state.activity !== 'pk_hunting');
+                        // A cold traveller has no hot equivalent for its
+                        // persisted route. Keep it cold until its resolver
+                        // reaches the destination, instead of spawning a
+                        // hunter/resting bot stranded on a road or plaza.
+                        const available = states.filter((state) => !['pk_hunting', 'traveling'].includes(state.activity));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const candidates = [...merchants, ...activationCandidatesForPlayer(
                             available.filter((state) => state.activity !== 'merchant'),

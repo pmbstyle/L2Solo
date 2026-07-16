@@ -82,9 +82,12 @@ function estimateRestMs(vitals, stats) {
 function resolveTravel(state, timestamp = Date.now()) {
     const travel = state.stats?.travel;
     if (!travel?.to || !travel?.arrivalAt) return null;
+    const isLegacyGiranMarketTrip = travel.townName === 'Giran'
+        && ['market_sale_inventory', 'market_search_for_weapon', 'market_search_for_gear'].includes(travel.reason)
+        && travel.method !== 'soe_gatekeeper';
     const startedAt = Number(travel.startedAt || timestamp);
     const arrivalAt = Number(travel.arrivalAt);
-    const progress = Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
+    const progress = isLegacyGiranMarketTrip ? 1 : Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
     const from = travel.from || state.loc || {};
     const to = travel.to;
     const loc = {

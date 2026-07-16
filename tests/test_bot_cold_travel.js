@@ -32,6 +32,13 @@ const midway = BackgroundResolver.resolveSolo({ state: started, spot: null, elap
 assert.strictEqual(midway.patch.activity, 'traveling');
 assert.strictEqual(midway.materialize.exp, 0);
 
+const legacyTravel = {
+    ...started,
+    stats: { ...started.stats, travel: { ...started.stats.travel, method: undefined, arrivalAt: Date.now() + 600000 } }
+};
+const migrated = BackgroundResolver.resolveSolo({ state: legacyTravel, spot: null });
+assert.strictEqual(migrated.patch.activity, 'shopping', 'old long Giran market travel must complete through the fast route');
+
 const arrivedState = { ...started, stats: { ...started.stats, travel: { ...started.stats.travel, arrivalAt: Date.now() - 1, startedAt: Date.now() - 1000 } } };
 const arrived = BackgroundResolver.resolveSolo({ state: arrivedState, spot: null });
 assert.strictEqual(arrived.patch.activity, 'shopping');
