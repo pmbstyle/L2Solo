@@ -78,4 +78,13 @@ const saleGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
 assert.strictEqual(saleGoal.type, 'sell_inventory');
 assert.strictEqual(saleGoal.plan.expectedBenefit, 'market_sale_inventory');
 
+const poorSellerGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    adena: 50,
+    inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(poorSellerGoal.type, 'sell_inventory', 'valuable surplus should fund progress before another low-adena farm loop');
+
 console.log('Bot goal planner checks passed');

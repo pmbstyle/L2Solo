@@ -150,7 +150,11 @@ function evaluate(state = {}, options = {}) {
     if (sale.itemCount >= 3 || sale.marketValue >= 1000) {
         candidates.push({
             type: 'sell_inventory',
-            priority: 54,
+            // A full bag is capital, not a reason to keep grinding with no
+            // adena. Recovery and death still win, but an equipped bot with
+            // useful surplus should reach the market before another generic
+            // earn-adena / upgrade-funding loop.
+            priority: 74,
             target: { itemCount: sale.itemCount, marketValue: sale.marketValue },
             plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0 },
             blockers: [],
