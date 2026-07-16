@@ -24,6 +24,13 @@ assert.strictEqual(direct.length, 1);
 assert.strictEqual(direct[0].selfId, 1121, 'the selected item must come from the real Gremlin rewards');
 assert.strictEqual(direct[0].kind, 'Armor.Wear');
 
+const nameOnly = BackgroundDropResolver.rollForFight({
+    spot: { ...spot, npcSelfIds: [], npcNames: ['Gremlin'] },
+    killerLevel: 1,
+    rng: () => 0
+});
+assert.strictEqual(nameOnly[0].selfId, 1121, 'world spots without reward ids must resolve the real drop list by NPC name');
+
 const state = {
     characterId: 71,
     name: 'ColdHunter',

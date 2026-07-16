@@ -8,9 +8,20 @@ function randInt(rng, min, max) {
 }
 
 function rewardDataForSpot(spot, rng) {
-    const candidates = (spot?.npcSelfIds || [])
+    const byId = (spot?.npcSelfIds || [])
         .map((selfId) => (DataCache.npcRewards || []).find((reward) => Number(reward.selfId) === Number(selfId)))
-        .filter(Boolean);
+        .filter((reward) => Array.isArray(reward?.rewards) && reward.rewards.length > 0);
+    const knownIds = new Set(byId.map((reward) => Number(reward.selfId)));
+    const names = new Set((spot?.npcNames || []).map((name) => String(name || '').trim().toLowerCase()).filter(Boolean));
+    // World-spawn ids may not be the datapack reward ids. The spot index also
+    // carries the monster names, so use that source-backed mapping before
+    // giving up on loot for the fight.
+    const byName = names.size === 0 ? [] : (DataCache.npcRewards || []).filter((reward) => (
+        !knownIds.has(Number(reward.selfId))
+        && names.has(String(reward.template?.name || '').trim().toLowerCase())
+        && Array.isArray(reward.rewards) && reward.rewards.length > 0
+    ));
+    const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
     return candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
 }
