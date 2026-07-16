@@ -399,7 +399,10 @@ function recoverStaleHotStates() {
             nextResolveAt = COALESCE(nextResolveAt, ?),
             updatedAt = ?
         WHERE phase = 'hot'
-        AND activity <> 'merchant'`,
+        -- Static merchant bots are spawned from MerchantConfigs on startup.
+        -- A cold bot's marketStore is different: it has no startup owner, so
+        -- keeping it hot would leave only a database ghost after a restart.
+        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`,
         [timestamp + 30000, timestamp]
     ]).then((result) => {
         const recovered = Number(result?.affectedRows || 0);
