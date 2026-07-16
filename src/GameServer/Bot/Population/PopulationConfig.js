@@ -14,6 +14,7 @@ const DEFAULTS = {
     generatedColdSeedDelayMs: 45000,
     maxResolvesPerTick: 10,
     maxPartyResolvesPerTick: 3,
+    maxMarketGoalReconcilesPerTick: 8,
     partyFormationBatchSize: 3,
     partyFormationCandidateLimit: 80,
     partyMinSize: 2,

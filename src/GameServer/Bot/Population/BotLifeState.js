@@ -835,6 +835,29 @@ const BotLifeState = {
             });
     },
 
+    marketGoalCandidates(limit = 8) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        return Database.execute([
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'dead', 'pk_hunting')
+            AND goals.goalJson LIKE '%"type":"sell_inventory"%'
+            ORDER BY states.updatedAt ASC
+            LIMIT ${safeLimit}`,
+            []
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
+            return [];
+        });
+    },
+
     leaveParty(state, reason = 'party_break') {
         if (!state?.characterId) return Promise.resolve(null);
         const nextState = {

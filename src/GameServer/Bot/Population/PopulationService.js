@@ -541,6 +541,7 @@ const PopulationService = {
         const startedAt = Date.now();
         this.resolving = true;
         return this.resolveDueParties()
+            .then(() => this.reconcileMarketGoals())
             .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
             .then((states) => {
                 if (states.length === 0) return [];
@@ -582,6 +583,31 @@ const PopulationService = {
                         return results;
                     }))
                 ), Promise.resolve([]));
+            });
+    },
+
+    reconcileMarketGoals() {
+        return LifeState.marketGoalCandidates(Config.maxMarketGoalReconcilesPerTick)
+            .then((states) => states.reduce(
+                (chain, state) => chain.then((results) => {
+                    const spot = SpotProfiles.findForState(state);
+                    return GoalService.review(state, { spot }).then((goalSnapshot) => {
+                        const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
+                        if (!travel) return results;
+                        return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
+                            if (saved) {
+                                console.info('BotPopulation :: reconciled market travel for %s', state.name);
+                                results.push(saved);
+                            }
+                            return results;
+                        });
+                    });
+                }),
+                Promise.resolve([])
+            ))
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
+                return [];
             });
     },
 
