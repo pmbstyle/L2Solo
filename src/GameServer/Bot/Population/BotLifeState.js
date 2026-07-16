@@ -605,8 +605,9 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND locX BETWEEN ? AND ?
             AND locY BETWEEN ? AND ?
+            ORDER BY ((locX - ?) * (locX - ?)) + ((locY - ?) * (locY - ?)) ASC
             LIMIT ${safeLimit * 3}`,
-            [minX, maxX, minY, maxY]
+            [minX, maxX, minY, maxY, Number(loc.locX), Number(loc.locX), Number(loc.locY), Number(loc.locY)]
         ]).then((rows) => rows.map((row) => normalize(row))
             .map((state) => {
                 const dx = state.loc.locX - Number(loc.locX);
