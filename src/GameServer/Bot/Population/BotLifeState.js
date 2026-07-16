@@ -971,10 +971,18 @@ const BotLifeState = {
         const count = Math.max(1, Number(qty) || 1);
         const price = Number(offer?.price || 0);
         const currentItem = state?.inventory?.[String(selfId)];
-        if (!state || !selfId || price <= 0 || Number(currentItem?.amount || 0) < count) return Promise.resolve(null);
+        if (!state || !selfId || price <= 0) return Promise.resolve(null);
 
         const inventory = { ...(state.inventory || {}) };
-        inventory[String(selfId)] = { ...currentItem, amount: Number(currentItem.amount) - count };
+        // A hot private store can sell before an older cold snapshot has been
+        // refreshed from the character inventory. The store is authoritative
+        // for the transaction, otherwise sold stock returns after a restart.
+        inventory[String(selfId)] = {
+            ...(currentItem || {}),
+            selfId,
+            name: currentItem?.name || offer?.storeItem?.name || itemName(selfId),
+            amount: Math.max(0, Number(currentItem?.amount || 0) - count)
+        };
         inventory['57'] = {
             ...(inventory['57'] || {}),
             selfId: 57,
