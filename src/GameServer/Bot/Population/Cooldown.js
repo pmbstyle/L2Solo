@@ -2,6 +2,23 @@ const World     = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Metrics   = invoke('GameServer/Bot/Population/PopulationMetrics');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const ServerResponse = invoke('GameServer/Network/Response');
+
+function removeFromClientWorld(session) {
+    const objectId = session?.actor?.fetchId?.();
+    if (!objectId) return;
+
+    // A bot can have been visible to a player before walking out of the
+    // server's 6000-unit visibility radius.  At cooldown time that player is
+    // no longer returned by fetchVisibleUsers(), so broadcasting through the
+    // normal proximity path leaves a stale client-side character behind.
+    const packet = ServerResponse.deleteOb(objectId);
+    World.user.sessions.forEach((viewer) => {
+        if (viewer !== session && typeof viewer.dataSendToMe === 'function') {
+            viewer.dataSendToMe(packet);
+        }
+    });
+}
 
 function isVisibleToRealPlayer(session) {
     if (!session || !session.actor) return false;
@@ -21,6 +38,7 @@ const Cooldown = {
 
             const BotAI = invoke('GameServer/Bot/BotAI');
             BotAI.stop(session);
+            removeFromClientWorld(session);
             if (session.actor && typeof session.actor.destructor === 'function') {
                 session.actor.destructor();
             }
