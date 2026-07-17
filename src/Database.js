@@ -51,6 +51,22 @@ function migrateWarehouse() {
         });
 }
 
+function migrateMacros() {
+    return conn.query(`CREATE TABLE IF NOT EXISTS macros (
+        characterId INT(8) NOT NULL,
+        id INT(8) NOT NULL,
+        icon TINYINT UNSIGNED NOT NULL,
+        name VARCHAR(64) NOT NULL,
+        descr VARCHAR(64) NOT NULL,
+        acronym VARCHAR(16) NOT NULL,
+        commands TEXT NOT NULL,
+        PRIMARY KEY (characterId, id),
+        KEY characterId (characterId)
+    )`).catch((error) => {
+        utils.infoWarn('DB', 'failed to create macros: %s', error.message);
+    });
+}
+
 async function inTransaction(work) {
     const previous = transactionTail;
     let release;
@@ -97,7 +113,8 @@ const Database = {
                 }),
                 migrateCharacterExperience(optn),
                 migrateCharacterStatus(),
-                migrateWarehouse()
+                migrateWarehouse(),
+                migrateMacros()
             ]).finally(callback);
 
         }).catch(error => {
@@ -474,6 +491,46 @@ const Database = {
     deleteShortcuts(characterId) {
         return Database.execute(
             builder.delete('shortcuts', 'characterId = ?', characterId)
+        );
+    },
+
+    setMacro(characterId, macro) {
+        return Database.execute([
+            `INSERT INTO macros (characterId, id, icon, name, descr, acronym, commands)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE icon = VALUES(icon), name = VALUES(name), descr = VALUES(descr),
+                 acronym = VALUES(acronym), commands = VALUES(commands)`,
+            [characterId, macro.id, macro.icon, macro.name, macro.descr, macro.acronym, JSON.stringify(macro.commands)]
+        ]);
+    },
+
+    fetchMacros(characterId) {
+        return Database.execute(
+            builder.select('macros', ['*'], 'characterId = ?', characterId)
+        ).then((rows) => rows.map((row) => ({
+            ...normalizeRowNumbers(row),
+            commands: (() => {
+                try { return JSON.parse(row.commands); }
+                catch (_) { return []; }
+            })()
+        })));
+    },
+
+    deleteMacro(characterId, macroId) {
+        return Database.execute(
+            builder.delete('macros', 'characterId = ? AND id = ?', characterId, macroId)
+        );
+    },
+
+    deleteMacros(characterId) {
+        return Database.execute(
+            builder.delete('macros', 'characterId = ?', characterId)
+        );
+    },
+
+    deleteMacroShortcuts(characterId, macroId) {
+        return Database.execute(
+            builder.delete('shortcuts', 'characterId = ? AND kind = 4 AND id = ?', characterId, macroId)
         );
     },
 
