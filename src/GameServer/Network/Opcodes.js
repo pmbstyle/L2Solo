@@ -35,8 +35,10 @@ const Opcodes = {
         table[0x27] = ClientRequest.requestOustPledgeMember;
         table[0x29] = ClientRequest.askForTeamUp;
         table[0x2a] = ClientRequest.answerForTeamUp;
-        table[0x2b] = ClientRequest.oustPartyMember;
-        table[0x2c] = ClientRequest.dismissParty;
+        // C4: 0x2b is RequestWithDrawalParty (no payload); 0x2c carries the
+        // member name for RequestOustPartyMember.
+        table[0x2b] = ClientRequest.dismissParty;
+        table[0x2c] = ClientRequest.oustPartyMember;
         table[0x2f] = ClientRequest.skillUse;
         table[0x30] = ClientRequest.appeared;
         table[0x31] = ClientRequest.warehouseDeposit;

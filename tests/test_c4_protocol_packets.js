@@ -7,6 +7,7 @@ const GameOpcodes = invoke('GameServer/Network/Opcodes');
 const GameRequest = invoke('GameServer/Network/Request');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ReceivePacket = invoke('Packet/Receive');
+const World = invoke('GameServer/World/World');
 
 function fakePaperdoll() {
     return Array.from({ length: 16 }, (_, slot) => ({
@@ -165,6 +166,28 @@ assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
 
 assert.strictEqual(GameOpcodes.table[0xcd], GameRequest.showMap, 'C4 map request opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x96], GameRequest.privateStoreSell, 'C4 RequestPrivateStoreSell opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0x2b], GameRequest.dismissParty, 'C4 RequestWithDrawalParty should be wired to 0x2b');
+assert.strictEqual(GameOpcodes.table[0x2c], GameRequest.oustPartyMember, 'C4 RequestOustPartyMember should be wired to 0x2c');
+
+const partySession = { actor: { fetchName: () => 'C4Tester' } };
+const originalDismissParty = World.dismissParty;
+const originalOustPartyMember = World.oustPartyMember;
+let partyAction = null;
+World.dismissParty = (session, actor) => { partyAction = { type: 'withdraw', session, actor }; };
+World.oustPartyMember = (session, actor, data) => { partyAction = { type: 'oust', session, actor, data }; };
+try {
+    GameOpcodes.table[0x2b](partySession, Buffer.from([0x2b]));
+    assert.strictEqual(partyAction.type, 'withdraw', 'C4 /leave packet must not attempt to read a member name');
+
+    const oustPacket = Buffer.concat([Buffer.from([0x2c]), Buffer.from('Mina', 'ucs2'), Buffer.alloc(2)]);
+    GameOpcodes.table[0x2c](partySession, oustPacket);
+    assert.deepStrictEqual(partyAction, {
+        type: 'oust', session: partySession, actor: partySession.actor, data: { name: 'Mina' }
+    }, 'C4 oust packet should pass the named party member');
+} finally {
+    World.dismissParty = originalDismissParty;
+    World.oustPartyMember = originalOustPartyMember;
+}
 
 const joinPartyRequest = Buffer.concat([
     Buffer.from([0x29]),
