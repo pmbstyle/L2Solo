@@ -7,6 +7,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const Skillset = invoke('GameServer/Actor/Skillset');
 
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
@@ -151,6 +152,12 @@ function awardBaseSkills(characterId, classId) {
     });
 }
 
+function awardProfileSkills(characterId, classId, level) {
+    const targetLevel = Math.max(1, Number(level) || 1);
+    if (targetLevel <= 1) return Promise.resolve();
+    return new Skillset().awardSkills(characterId, classId, targetLevel);
+}
+
 function ensureAdena(characterId, amount) {
     return Database.fetchItems(characterId).then((existing) => {
         const adena = (existing || []).find((item) => Number(item.selfId) === 57);
@@ -163,9 +170,10 @@ function ensureAdena(characterId, amount) {
     });
 }
 
-function ensureBaseLoadout(characterId, classId, adena) {
+function ensureBaseLoadout(characterId, classId, adena, level = 1) {
     return awardBaseGear(characterId, classId)
         .then(() => awardBaseSkills(characterId, classId))
+        .then(() => awardProfileSkills(characterId, classId, level))
         .then(() => ensureAdena(characterId, adena))
         .then(() => ShotStock.ensureCharacterStock(characterId, {
             classId,
@@ -186,7 +194,7 @@ function ensureCharacter(username, index) {
             const character = characters[0];
             const level = Number(character.level || profileForIndex(index).level);
             const adena = Number(character.adena || Math.round(level * 85));
-            return ensureBaseLoadout(character.id, character.classId, adena)
+            return ensureBaseLoadout(character.id, character.classId, adena, level)
                 .then(() => ({ character: { ...character, adena }, created: false }));
         }
 
@@ -216,7 +224,8 @@ function ensureCharacter(username, index) {
                 sp: Math.round(level * level * 3),
                 adena: Math.round(level * 85)
             };
-            return ensureBaseLoadout(character.id, base.classId, character.adena)
+            return Database.updateCharacterExperience(character.id, level, character.exp, character.sp)
+                .then(() => ensureBaseLoadout(character.id, base.classId, character.adena, level))
                 .then(() => ({ character, created: true, base, spot, levelProfile, vitals, loc }));
         });
     });
@@ -285,6 +294,8 @@ function stateFor(character, index, seedMeta = {}) {
 
 const GeneratedColdSeeder = {
     running: false,
+
+    awardProfileSkills,
 
     seedToTarget(target = Config.generatedColdTarget) {
         const desired = Math.max(0, Number(target || 0));

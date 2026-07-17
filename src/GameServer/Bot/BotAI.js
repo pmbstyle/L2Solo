@@ -455,26 +455,11 @@ const BotAI = {
     },
 
     say(session, text) {
-        if (!session.actor) return;
-        const ServerResponse = invoke('GameServer/Network/Response');
-        session.dataSendToOthers(
-            ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
-            session.actor
-        );
+        invoke('GameServer/Bot/BotManager').botSay(session, text);
     },
 
     tell(session, targetSession, text) {
-        if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
-        const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
-        const lines = BotChatText.splitForTell(text);
-        if (!lines.length) return;
-
-        const ServerResponse = invoke('GameServer/Network/Response');
-        lines.forEach((line) => {
-            targetSession.dataSendToMe(
-                ServerResponse.speak(session.actor, { kind: 2, text: line })
-            );
-        });
+        invoke('GameServer/Bot/BotManager').botTell(session, targetSession, text);
     },
 
     trade(session, text) {

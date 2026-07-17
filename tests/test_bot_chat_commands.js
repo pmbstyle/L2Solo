@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotManager = invoke('GameServer/Bot/BotManager');
+const BotAI = invoke('GameServer/Bot/BotAI');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Generics = invoke(path.actor);
 const SkillModel = invoke('GameServer/Model/Skill');
@@ -123,6 +124,45 @@ try {
     supportCast = null;
     BotManager.handlePlayerSpeak(playerSession, { text: 'heal me' });
     assert.strictEqual(supportCast, null, 'direct support should reject a heal the bot has not learned');
+
+    const partyPackets = [];
+    const partyBot = fakeActor(2000012, 'PartyBot', { locX: 100 });
+    const partyBotSession = fakeSession('bot_party', partyBot);
+    partyBotSession.partyCompanion = true;
+    partyBotSession.followPlayerSession = playerSession;
+    partyBotSession.dataSendToOthers = () => {
+        throw new Error('party companion chat must not use nearby chat');
+    };
+    playerSession.dataSendToMe = (packet) => partyPackets.push(packet);
+    BotManager.sessions = [partyBotSession];
+    BotManager.botSay(partyBotSession, 'Party call');
+    BotManager.botTell(partyBotSession, playerSession, 'Direct party call');
+    BotAI.say(partyBotSession, 'AI party call');
+    BotAI.tell(partyBotSession, playerSession, 'AI direct party call');
+    assert.deepStrictEqual(
+        partyPackets.map((packet) => packet.readInt32LE(5)),
+        [3, 3, 3, 3],
+        'companion messages to its leader must use the party-chat channel, including BotAI messages'
+    );
+    const outsidePackets = [];
+    const outsideSession = fakeSession('outside_player', fakeActor(2000013, 'OutsidePlayer'));
+    outsideSession.dataSendToMe = (packet) => outsidePackets.push(packet);
+    BotManager.botTell(partyBotSession, outsideSession, 'External tell');
+    assert.deepStrictEqual(outsidePackets.map((packet) => packet.readInt32LE(5)), [2], 'a message outside the party must remain a private tell');
+    BotManager.botSay(partyBotSession, 'External reply', outsideSession);
+    assert.deepStrictEqual(outsidePackets.map((packet) => packet.readInt32LE(5)), [2, 2], 'an addressed reply outside the party must remain a private tell');
+
+    const tank = fakeActor(2000011, 'TankWithoutBuffs', { classId: 1, mp: 30, locX: 100 });
+    const tankSession = fakeSession('bot_tank', tank);
+    const tankReplies = [];
+    BotManager.sessions = [tankSession];
+    BotManager.botTell = (_botSession, _playerSession, text) => tankReplies.push(text);
+    player.fetchDestId = () => tank.fetchId();
+    supportCast = null;
+    BotManager.handlePlayerSpeak(playerSession, { text: 'buff me' });
+    assert.strictEqual(supportCast, null, 'a bot without friendly support skills must not cast a buff');
+    assert.deepStrictEqual(tankReplies, [], 'a bot without friendly support skills must ignore a direct buff request');
+    BotManager.botTell = originalBotTell;
 
     const buffer = fakeActor(2000008, 'MageWithBuff', { classId: 25, mp: 30, locX: 100 });
     buffer.skillset.skills.push(new SkillModel({

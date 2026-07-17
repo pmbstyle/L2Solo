@@ -37,6 +37,15 @@ try {
     };
     const targets = new Attack().resolveSkillTargets(casterSession, caster, leader, partyBuff);
     assert.deepStrictEqual(targets.map((target) => target.fetchId()), [1, 2, 3], 'a party buff should fan out to every active companion-party member');
+
+    const newMember = actor(4);
+    World.user.sessions.push({
+        actor: newMember,
+        partyCompanion: true,
+        followPlayerSession: leaderSession
+    });
+    const updatedTargets = new Attack().resolveSkillTargets(casterSession, caster, leader, partyBuff);
+    assert.deepStrictEqual(updatedTargets.map((target) => target.fetchId()), [1, 2, 3, 4], 'a party buff should include a member added after the party was formed');
 } finally {
     World.user = originalUsers;
 }
