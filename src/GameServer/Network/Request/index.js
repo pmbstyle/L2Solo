@@ -53,5 +53,7 @@ module.exports = {
           userCommand: require('./UserCommand'),
      validatePosition: require('./ValidatePosition'),
       oustPartyMember: require('./OustPartyMember'),
-         dismissParty: require('./DismissParty')
+         dismissParty: require('./DismissParty'),
+    warehouseDeposit: require('./WarehouseDeposit'),
+   warehouseWithdraw: require('./WarehouseWithdraw')
 };

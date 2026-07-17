@@ -1,6 +1,7 @@
 const SQL = require('like-sql'), builder = new SQL();
 
 let conn;
+let transactionTail = Promise.resolve();
 
 function normalizeRowNumbers(row) {
     return Object.fromEntries(
@@ -31,6 +32,48 @@ function migrateCharacterStatus() {
         });
 }
 
+function migrateWarehouse() {
+    return conn.query(`CREATE TABLE IF NOT EXISTS warehouse_items (
+        id INT(8) NOT NULL AUTO_INCREMENT,
+        selfId INT(5) NOT NULL,
+        name VARCHAR(48) NOT NULL,
+        amount BIGINT NOT NULL DEFAULT 1,
+        petData TEXT NULL,
+        characterId INT(8) NOT NULL,
+        PRIMARY KEY (id),
+        KEY characterId (characterId)
+    )`).then(() => conn.query('ALTER TABLE warehouse_items ADD COLUMN petData TEXT NULL')
+        .catch((error) => {
+            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add warehouse_items.petData: %s', error.message);
+        }))
+        .catch((error) => {
+            utils.infoWarn('DB', 'failed to create warehouse_items: %s', error.message);
+        });
+}
+
+async function inTransaction(work) {
+    const previous = transactionTail;
+    let release;
+    transactionTail = new Promise((resolve) => { release = resolve; });
+    await previous;
+    try {
+        await conn.beginTransaction();
+        const result = await work();
+        await conn.commit();
+        return result;
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        release();
+    }
+}
+
+function petDataValue(petData) {
+    if (!petData) return null;
+    return typeof petData === 'string' ? petData : JSON.stringify(petData);
+}
+
 const Database = {
     init: (callback) => {
         const optn = options.default.Database;
@@ -53,7 +96,8 @@ const Database = {
                     }
                 }),
                 migrateCharacterExperience(optn),
-                migrateCharacterStatus()
+                migrateCharacterStatus(),
+                migrateWarehouse()
             ]).finally(callback);
 
         }).catch(error => {
@@ -62,7 +106,9 @@ const Database = {
     },
 
     execute: (sql) => {
-        return conn.query(sql[0], sql[1]);
+        // Do not let unrelated queries run inside an active item-transfer transaction
+        // on this shared MariaDB connection.
+        return transactionTail.then(() => conn.query(sql[0], sql[1]));
     },
 
     // Creates a `New Account` in the database with provided credentials
@@ -215,6 +261,113 @@ const Database = {
         return Database.execute(
             builder.delete('items', 'characterId = ?', characterId)
         );
+    },
+
+    fetchWarehouseItems(characterId) {
+        return Database.execute(
+            builder.select('warehouse_items', ['*'], 'characterId = ?', characterId)
+        ).then((rows) => rows.map(normalizeRowNumbers));
+    },
+
+    setWarehouseItem(characterId, item) {
+        const values = {
+            selfId: item.selfId,
+            name: item.name ?? '',
+            amount: item.amount ?? 1,
+            characterId
+        };
+        if (item.petData) values.petData = JSON.stringify(item.petData);
+        return Database.execute(
+            builder.insert('warehouse_items', values)
+        );
+    },
+
+    updateWarehouseItemAmount(characterId, id, amount) {
+        return Database.execute(
+            builder.update('warehouse_items', { amount }, 'id = ? AND characterId = ?', id, characterId)
+        );
+    },
+
+    deleteWarehouseItem(characterId, id) {
+        return Database.execute(
+            builder.delete('warehouse_items', 'id = ? AND characterId = ?', id, characterId)
+        );
+    },
+
+    transferInventoryToWarehouse(characterId, item) {
+        return inTransaction(async () => {
+            const inventory = await conn.query(
+                'SELECT id, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
+                [item.id, characterId]
+            );
+            const source = inventory[0];
+            if (!source || Number(source.amount) < item.amount) throw new Error('inventory item changed');
+
+            // Every warehouse transfer locks the inventory row first, then the
+            // warehouse row. This avoids deposit/withdraw lock inversions.
+            const existing = item.stackable ? await conn.query(
+                'SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? FOR UPDATE',
+                [characterId, item.selfId]
+            ) : [];
+            const target = existing[0];
+            const warehouseAmount = (Number(target?.amount) || 0) + item.amount;
+            let warehouseId = target?.id;
+
+            if (target) {
+                await conn.query('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
+            } else {
+                const inserted = await conn.query(
+                    'INSERT INTO warehouse_items (selfId, name, amount, petData, characterId) VALUES (?, ?, ?, ?, ?)',
+                    [item.selfId, item.name || '', item.amount, petDataValue(item.petData), characterId]
+                );
+                warehouseId = Number(inserted.insertId);
+            }
+
+            const inventoryAmount = Number(source.amount) - item.amount;
+            if (inventoryAmount === 0) {
+                await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            } else {
+                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
+            }
+            return { warehouseId, warehouseAmount, inventoryAmount };
+        });
+    },
+
+    transferWarehouseToInventory(characterId, item) {
+        return inTransaction(async () => {
+            // Keep the same lock order as deposits: inventory first, warehouse second.
+            const existing = item.stackable ? await conn.query(
+                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
+                [characterId, item.selfId]
+            ) : [];
+            const target = existing[0];
+            const warehouse = await conn.query(
+                'SELECT id, amount, petData FROM warehouse_items WHERE id = ? AND characterId = ? FOR UPDATE',
+                [item.id, characterId]
+            );
+            const source = warehouse[0];
+            if (!source || Number(source.amount) < item.amount) throw new Error('warehouse item changed');
+
+            const inventoryAmount = (Number(target?.amount) || 0) + item.amount;
+            let inventoryId = target?.id;
+            if (target) {
+                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, inventoryId, characterId]);
+            } else {
+                const inserted = await conn.query(
+                    'INSERT INTO items (selfId, name, amount, equipped, slot, petData, characterId) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [item.selfId, item.name || '', item.amount, false, 0, source.petData, characterId]
+                );
+                inventoryId = Number(inserted.insertId);
+            }
+
+            const warehouseAmount = Number(source.amount) - item.amount;
+            if (warehouseAmount === 0) {
+                await conn.query('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            } else {
+                await conn.query('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
+            }
+            return { inventoryId, inventoryAmount, warehouseAmount, petData: source.petData };
+        });
     },
 
     updateItemPetData(characterId, id, petData) {
