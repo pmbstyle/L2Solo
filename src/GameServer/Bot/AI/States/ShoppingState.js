@@ -3,6 +3,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
+const BotWarehouse   = invoke('GameServer/Bot/Economy/BotWarehouseService');
 
 function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -99,11 +100,30 @@ module.exports = {
             }
         }
 
+        // Do this before the generic junk-sell bypass: materials and useful
+        // gear that no buyer accepted belong in the bot's own warehouse.
+        let warehouse;
+        try {
+            warehouse = await BotWarehouse.depositActor(bot);
+        } catch (err) {
+            // The generic sell-junk bypass would destroy the very items we
+            // meant to protect, so keep the bag intact and retry next visit.
+            utils.infoWarn('Shopping', 'warehouse deposit failed for %s: %s', bot.fetchName(), err.message);
+            session.lastTradeSummary = 'kept inventory after warehouse deposit failure';
+            BotAI.say(session, 'My warehouse clerk is unavailable. I will keep this bag and try again later.');
+            this.scheduleRestock(session, bot, Generics, BotAI);
+            return;
+        }
+        if (warehouse.count > 0) {
+            const sample = warehouse.items.slice(0, 2).map((item) => `${item.amount}x ${item.name}`).join(', ');
+            BotAI.say(session, `Stored ${sample}${warehouse.items.length > 2 ? ' and more' : ''} in my warehouse.`);
+        }
+
         if (!soldToBuyer) {
             NpcTalkResponse(session, { link: 'sell-junk' });
-            session.lastTradeSummary = `used general sell-junk at ${session.shoppingTarget?.town || 'town'}`;
+            session.lastTradeSummary = `${warehouse.count ? `stored ${warehouse.count}, then ` : ''}used general sell-junk at ${session.shoppingTarget?.town || 'town'}`;
         } else {
-            // Clear leftovers that no local buyer wanted, but keep the market sale as the visible trade event.
+            // Clear only the leftovers that neither a buyer nor the warehouse wanted.
             NpcTalkResponse(session, { link: 'sell-junk' });
         }
 

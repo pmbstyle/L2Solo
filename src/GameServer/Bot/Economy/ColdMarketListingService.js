@@ -1,4 +1,5 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
@@ -172,15 +173,24 @@ function resolve(state, timestamp = Date.now()) {
         timing: { ...(state.timing || {}), nextResolveAt: timestamp + 30000 }
     };
     MarketOpportunity.removeColdStore(state.characterId);
-    const liquidated = hasStock ? ItemDisposition.npcLiquidationCandidates(nextState) : [];
-    return LifeState.applyNpcLiquidation(nextState, liquidated)
-        .then((liquidatedState) => LifeState.upsertState(liquidatedState || nextState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out'))
-        .then((saved) => ({
-            state: saved || nextState,
-            closed: true,
-            reason: hasStock ? 'expired' : 'sold_out',
-            liquidatedCount: liquidated.reduce((sum, item) => sum + Number(item.count || 0), 0)
-        }));
+    return (hasStock ? BotWarehouse.depositCold(nextState) : Promise.resolve({ state: nextState, count: 0 }))
+        .then((warehouse) => {
+            const storedState = warehouse.state || nextState;
+            const liquidated = hasStock ? ItemDisposition.npcLiquidationCandidates(storedState) : [];
+            return LifeState.applyNpcLiquidation(storedState, liquidated).then((liquidatedState) => ({
+                state: liquidatedState || storedState,
+                warehouseCount: warehouse.count || 0,
+                liquidated
+            }));
+        })
+        .then(({ state: liquidatedState, warehouseCount, liquidated }) => LifeState.upsertState(liquidatedState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out')
+            .then((saved) => ({
+                state: saved || liquidatedState,
+                closed: true,
+                reason: hasStock ? 'expired' : 'sold_out',
+                warehouseCount,
+                liquidatedCount: liquidated.reduce((sum, item) => sum + Number(item.count || 0), 0)
+            })));
 }
 
 function reconcileInventory(state) {
