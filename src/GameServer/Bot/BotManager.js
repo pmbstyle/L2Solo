@@ -467,14 +467,21 @@ const BotManager = {
             if (!firstCharacter) return;
 
             const firstStoreCfg = merchantConfigFor(botData, firstCharacter.name);
-            const gearReady = (firstStoreCfg
+            // Cold-generated characters may have been created before their
+            // profile skills were persisted. Reconcile them before loading the
+            // runtime actor so active companions never keep a level-one kit.
+            const skillsReady = this.awardProfileSkills(firstCharacter.id, {
+                classId: firstCharacter.classId,
+                level: firstCharacter.level
+            });
+            const gearReady = skillsReady.then(() => (firstStoreCfg
                 ? Promise.resolve()
                 : BotGear.ensureCharacterGear(firstCharacter, botData))
                 .then(() => ShotStock.ensureCharacterStock(firstCharacter.id, {
                     classId: firstCharacter.classId,
                     targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
                 }))
-                .then(() => Shared.fetchCharacters(username));
+                .then(() => Shared.fetchCharacters(username)));
 
             gearReady.then((readyCharacters) => {
                 const character = readyCharacters[0];
@@ -649,7 +656,7 @@ const BotManager = {
                         `Hello there! Ready to kill some keltirs?`,
                         `Hi! Beautiful day to hunt, isn't it?`
                     ];
-                    this.botSay(session, phrases[Math.floor(Math.random() * phrases.length)]);
+                    this.botSay(session, phrases[Math.floor(Math.random() * phrases.length)], playerSession);
                 }, 1000 + Math.random() * 1000);
             }
 
@@ -661,7 +668,7 @@ const BotManager = {
             )) {
                 handledByRule = true;
                 setTimeout(() => {
-                    this.botSay(session, `I take no orders, ${player.fetchName()}.`);
+                    this.botSay(session, `I take no orders, ${player.fetchName()}.`, playerSession);
                 }, 500 + Math.random() * 500);
             }
 
@@ -669,7 +676,7 @@ const BotManager = {
                 handledByRule = true;
                 setTimeout(() => {
                     if (session.partyCompanion === true && session.followPlayerSession === playerSession) {
-                        this.botSay(session, `Sure! I will follow you and assist in combat.`);
+                        this.botSay(session, `Sure! I will follow you and assist in combat.`, playerSession);
                         session.plan = 'following';
                     } else {
                         this.botTell(session, playerSession, `I can come closer, but invite me if you want party follow.`);
@@ -688,7 +695,7 @@ const BotManager = {
             else if (directCommandTarget && (text.includes("stop") || text.includes("стой") || text.includes("wait"))) {
                 handledByRule = true;
                 setTimeout(() => {
-                    this.botSay(session, `Staying here! Let me know if you need help.`);
+                    this.botSay(session, `Staying here! Let me know if you need help.`, playerSession);
                     session.plan = 'resting';
                     bot.moveTo({
                         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
@@ -700,7 +707,7 @@ const BotManager = {
             else if (directCommandTarget && (text.includes("hunt") || text.includes("иди качайся") || text.includes("кач"))) {
                 handledByRule = true;
                 setTimeout(() => {
-                    this.botSay(session, `Alright, returning to hunt keltirs!`);
+                    this.botSay(session, `Alright, returning to hunt keltirs!`, playerSession);
                     if (session.followPlayerSession === playerSession && session.partyCompanion === true) {
                         BotSocialMemory.recordEvent(playerSession, session, 'party_dismissed', 'chat_hunt');
                     }
@@ -766,6 +773,12 @@ const BotManager = {
         }
 
         if (request.buff) {
+            // A direct "buff" request is not a general conversation prompt.
+            // Classes without a learned friendly/party support skill (for
+            // example tanks) should simply ignore it instead of advertising a
+            // missing buff service.
+            if (BotSupportPlanner.supportSkills(bot).length === 0) return false;
+
             const providers = this.sessions
                 .filter((session) => session?.actor && (
                     session === botSession ||
@@ -817,8 +830,38 @@ const BotManager = {
         return false;
     },
 
-    botSay(session, text) {
+    partyChatRecipients(session, targetSession = null) {
+        const leaderSession = session?.partyCompanion === true ? session.followPlayerSession : null;
+        if (!leaderSession?.actor) return [];
+
+        const companions = this.sessions.filter((candidate) => (
+            candidate?.partyCompanion === true &&
+            candidate.followPlayerSession === leaderSession &&
+            candidate.actor
+        ));
+        if (targetSession && targetSession !== leaderSession && !companions.includes(targetSession)) return [];
+
+        return [leaderSession, ...companions].filter((candidate) => typeof candidate.dataSendToMe === 'function');
+    },
+
+    botPartySay(session, text, targetSession = null) {
+        if (!session?.actor) return false;
+        const recipients = this.partyChatRecipients(session, targetSession);
+        if (recipients.length === 0) return false;
+
+        const ServerResponse = invoke('GameServer/Network/Response');
+        const packet = ServerResponse.speak(session.actor, { kind: 3, text: text });
+        recipients.forEach((recipient) => recipient.dataSendToMe(packet));
+        return true;
+    },
+
+    botSay(session, text, targetSession = null) {
         if (!session.actor) return;
+        if (targetSession && this.partyChatRecipients(session, targetSession).length === 0) {
+            this.botTell(session, targetSession, text);
+            return;
+        }
+        if (this.botPartySay(session, text, targetSession)) return;
         const ServerResponse = invoke('GameServer/Network/Response');
         session.dataSendToOthers(
             ServerResponse.speak(session.actor, { kind: 0x00, text: text }),
@@ -831,6 +874,11 @@ const BotManager = {
         const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
         const lines = BotChatText.splitForTell(text);
         if (!lines.length) return;
+
+        if (this.partyChatRecipients(session, targetSession).length > 0) {
+            lines.forEach((line) => this.botPartySay(session, line, targetSession));
+            return;
+        }
 
         const ServerResponse = invoke('GameServer/Network/Response');
         lines.forEach((line) => {

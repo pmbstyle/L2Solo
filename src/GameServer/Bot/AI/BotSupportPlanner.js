@@ -1,7 +1,37 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 const CAST_RESERVATION_MS = 5000;
+
+const PHYSICAL_ROLES = new Set(['tank', 'dagger', 'archer', 'dps']);
+const CASTER_ROLES = new Set(['mage', 'healer', 'buffer']);
+const DAMAGE_DEALER_ROLES = new Set(['dagger', 'archer', 'dps']);
+
+// These are single-target buffs whose value depends on the recipient's combat
+// role. Defensive, resistance and movement buffs intentionally stay universal.
+const INDIVIDUAL_BUFF_TARGET_ROLES = {
+    power_of_paagrio: PHYSICAL_ROLES,
+    might: PHYSICAL_ROLES,
+    holy_weapon: PHYSICAL_ROLES,
+    focus: PHYSICAL_ROLES,
+    haste: PHYSICAL_ROLES,
+    guidance: PHYSICAL_ROLES,
+    death_whisper: PHYSICAL_ROLES,
+    chant_of_fury: PHYSICAL_ROLES,
+    chant_of_rage: PHYSICAL_ROLES,
+    vampiric_rage: PHYSICAL_ROLES,
+    eye_of_paagrio: PHYSICAL_ROLES,
+    berserker_spirit: DAMAGE_DEALER_ROLES,
+    rage_of_paagrio: DAMAGE_DEALER_ROLES,
+    soul_of_paagrio: CASTER_ROLES,
+    wisdom_of_paagrio: CASTER_ROLES,
+    blessed_soul: CASTER_ROLES,
+    empower: CASTER_ROLES,
+    concentration: CASTER_ROLES,
+    acumen: CASTER_ROLES,
+    wild_magic: CASTER_ROLES
+};
 
 function supportSkills(actor) {
     const skills = actor?.skillset?.fetchSkills?.() || actor?.skillset?.skills || [];
@@ -11,6 +41,16 @@ function supportSkills(actor) {
             const semantic = skill.fetchSemantic?.();
             return semantic?.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target);
         });
+}
+
+function isUsefulForTarget(target, skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    // Party skills retain their native all-members behaviour. The role policy
+    // only prevents wasting individual casts on roles that cannot use them.
+    if (semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party') return true;
+
+    const allowedRoles = INDIVIDUAL_BUFF_TARGET_ROLES[semantic.effect];
+    return !allowedRoles || allowedRoles.has(BotRoles.inferRole(target));
 }
 
 function statKeys(skill) {
@@ -88,7 +128,7 @@ function allActions(members, providers, respectReservations = true) {
     return members
         .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
         .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)
-            .filter((skill) => canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
+            .filter((skill) => isUsefulForTarget(member.actor, skill) && canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
             .map((skill) => ({ provider, target: member.actor, leader: member.leader === true, skill, effect: skill.fetchSemantic().effect }))));
 }
 
@@ -113,6 +153,7 @@ module.exports = {
     REFRESH_THRESHOLD_MS,
     CAST_RESERVATION_MS,
     supportSkills,
+    isUsefulForTarget,
     needsSkill,
     actionCompare,
     reserve,

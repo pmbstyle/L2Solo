@@ -96,4 +96,29 @@ action = BotSupportPlanner.nextAction(
 );
 assert.strictEqual(action.target, newPartyMember, 'a newly added unbuffed member should start the next party-buff pass');
 
+const might = skill(1068, 'Might', 2, 'might', { pAtkMul: 1.12 });
+const concentration = skill(1078, 'Concentration', 3, 'concentration', { cancelAdd: -36 });
+const berserkerSpirit = skill(1062, 'Berserker Spirit', 2, 'berserker_spirit', { pAtkMul: 1.08, pDefMul: 0.92 });
+const blessShield = skill(1243, 'Bless Shield', 1, 'bless_shield', { rShldMul: 1.05 });
+const roleAwareBuffer = actor('RoleAwareBuffer', 49, [might, concentration]);
+const roleMage = actor('RoleMage', 25);
+const roleArcher = actor('RoleArcher', 9);
+const roleTank = actor('RoleTank', 4);
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, might), false, 'Might should not be assigned to a mage');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleArcher, might), true, 'Might should be assigned to an archer');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleArcher, concentration), false, 'Concentration should not be assigned to a physical fighter');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, concentration), true, 'Concentration should be assigned to a caster');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleTank, berserkerSpirit), false, 'Berserker Spirit should not lower a tank\'s defences');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, berserkerSpirit), false, 'Berserker Spirit should not be assigned to a caster');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleArcher, berserkerSpirit), true, 'Berserker Spirit should be assigned to a damage dealer');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, blessShield), true, 'defensive shield buffs should remain available to casters');
+const physicalBuffer = actor('PhysicalBuffer', 49, [might]);
+action = BotSupportPlanner.nextAction(physicalBuffer, [
+    { actor: roleMage, leader: true },
+    { actor: roleArcher, leader: false }
+], [physicalBuffer]);
+assert.strictEqual(action.target, roleArcher, 'the next individual physical buff should skip the mage and target the archer');
+assert.strictEqual(action.skill.fetchSelfId(), 1068, 'the physical buff should be chosen for the physical target');
+assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, partyShield), true, 'party buffs should remain available to every party role');
+
 console.log('Bot support planner checks passed');

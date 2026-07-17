@@ -653,8 +653,13 @@ try {
     bufferSession.followPlayerSession = bufferLeaderSession;
     bufferSession.partyCompanion = true;
     bufferSession.plan = 'following';
+    EffectStore.apply(bufferLeader, {
+        key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000
+    });
+    EffectStore.apply(bufferBot, {
+        key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000
+    });
     const unbuffedCompanion = fakeActor(2000029, { locX: 120, locY: 0 });
-    unbuffedCompanion.activeBuffs.shield = 0;
     const unbuffedCompanionSession = fakeSession('bot_unbuffed_party', unbuffedCompanion);
     unbuffedCompanionSession.followPlayerSession = bufferLeaderSession;
     unbuffedCompanionSession.partyCompanion = true;
