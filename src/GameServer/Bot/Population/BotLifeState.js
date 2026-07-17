@@ -86,6 +86,7 @@ function inventorySummaryFromItems(items = []) {
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
             amount: Number(summary[key]?.amount || 0) + amount,
             equipped: !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped),
+            stackable: !!(item.fetchStackable ? item.fetchStackable() : item.stackable),
             slot: Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
             kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''

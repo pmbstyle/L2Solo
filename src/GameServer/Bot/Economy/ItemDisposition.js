@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
 const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
+const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
 
 function templateFor(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
@@ -54,6 +55,23 @@ function npcLiquidationCandidates(state, options = {}) {
     }));
 }
 
+// Materials remain useful for future crafting/trading regardless of their NPC
+// value. Gear is worth retaining only once it has crossed out of the starter
+// trash band, leaving cheap no-grade drops for liquidation.
+function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
+    const selfId = Number(item?.selfId || 0);
+    const amount = Number(item?.amount || 0);
+    const kind = item?.kind || template?.template?.kind || '';
+    if (!selfId || selfId === 57 || amount <= 0 || item?.equipped) return false;
+    if (kind.startsWith('Other.Material')) return true;
+    return (kind.startsWith('Weapon.') || kind.startsWith('Armor.'))
+        && basePrice(item, template) > WAREHOUSE_GEAR_MIN_BASE_PRICE;
+}
+
+function warehouseCandidates(state) {
+    return Object.values(state?.inventory || {}).filter((item) => isWarehouseCandidate(item));
+}
+
 function saleSummary(state, options = {}) {
     const items = saleCandidates(state, options);
     return {
@@ -63,4 +81,14 @@ function saleSummary(state, options = {}) {
     };
 }
 
-module.exports = { NPC_LIQUIDATION_MAX_UNIT_PRICE, basePrice, npcLiquidationCandidates, priceFor, saleCandidates, saleSummary };
+module.exports = {
+    NPC_LIQUIDATION_MAX_UNIT_PRICE,
+    WAREHOUSE_GEAR_MIN_BASE_PRICE,
+    basePrice,
+    isWarehouseCandidate,
+    npcLiquidationCandidates,
+    priceFor,
+    saleCandidates,
+    saleSummary,
+    warehouseCandidates
+};
