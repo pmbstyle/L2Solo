@@ -36,6 +36,13 @@ const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
 
+target.activeBuffs = { shield: Date.now() + (10 * 60 * 1000) };
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(target, shieldOne),
+    true,
+    'a legacy UI marker without a structured effect must not block a rebuff'
+);
+
 EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
 assert.strictEqual(BotSupportPlanner.needsSkill(target, shieldOne), false, 'do not overwrite an equal-level active buff');
 assert.strictEqual(BotSupportPlanner.needsSkill(target, soulShieldTwo), true, 'upgrade an active defensive buff when the party has a higher level');
@@ -79,5 +86,14 @@ assert.strictEqual(
 );
 action = BotSupportPlanner.nextAction(partyCaster, [{ actor: partyTarget, leader: true }], [singleCaster, partyCaster]);
 assert.strictEqual(action.skill.fetchSelfId(), 3040, 'the mass buff provider should be selected first');
+
+EffectStore.apply(partyTarget, { key: 'party_shield', id: 3040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
+const newPartyMember = actor('NewPartyMember', 0);
+action = BotSupportPlanner.nextAction(
+    partyCaster,
+    [{ actor: partyTarget, leader: true }, { actor: newPartyMember, leader: false }],
+    [partyCaster]
+);
+assert.strictEqual(action.target, newPartyMember, 'a newly added unbuffed member should start the next party-buff pass');
 
 console.log('Bot support planner checks passed');

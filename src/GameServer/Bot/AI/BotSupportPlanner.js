@@ -32,11 +32,9 @@ function needsSkill(target, skill) {
     const current = EffectStore.list(target, { includeDebuffs: false })
         .filter((effect) => overlaps(effect, keys));
 
-    // Older actors may still carry the temporary activeBuffs marker until their
-    // first structured effect update. Treat it as an active equal-or-better buff.
-    if (current.length === 0 && semantic.effect && Number(target?.activeBuffs?.[semantic.effect] || 0) > Date.now()) {
-        return false;
-    }
+    // `activeBuffs` is retained for packet/UI compatibility only. It can outlive
+    // an effect after death, dispel, or an interrupted cast, so support decisions
+    // must be based exclusively on the target's structured effect state.
     if (current.some((effect) => Number(effect.level || 0) > level)) return false;
     if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > REFRESH_THRESHOLD_MS)) {
         return false;
