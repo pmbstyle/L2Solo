@@ -1,5 +1,31 @@
 const Npc       = invoke('GameServer/Npc/Npc');
 const DataCache = invoke('GameServer/DataCache');
+const ServerResponse = invoke('GameServer/Network/Response');
+
+const VISIBILITY_RADIUS = 6000;
+
+function distanceSquared(first, second) {
+    const dx = first.fetchLocX() - second.fetchLocX();
+    const dy = first.fetchLocY() - second.fetchLocY();
+    return (dx * dx) + (dy * dy);
+}
+
+function notifyNearby(world, npc, response = ServerResponse) {
+    if (!world?.user?.sessions || !npc) return;
+    const radiusSquared = VISIBILITY_RADIUS * VISIBILITY_RADIUS;
+    const packet = response.npcInfo(npc);
+
+    world.user.sessions.forEach((session) => {
+        const actor = session?.actor;
+        if (
+            actor?.fetchIsOnline?.() === true &&
+            typeof session.dataSendToMe === 'function' &&
+            distanceSquared(actor, npc) <= radiusSquared
+        ) {
+            session.dataSendToMe(packet);
+        }
+    });
+}
 
 function createNpc(world, npc, coords, spawnDefinition = null) {
     const instance = new Npc(world.npc.nextId++, { ...utils.crushOb(npc), ...coords });
@@ -28,6 +54,10 @@ function randomCoords(definition) {
 function spawnNpc(world, definition) {
     const coords = randomCoords(definition);
     const npc = createNpc(world, definition.npc, coords, definition);
+    // Respawns happen independently of player movement.  Announce the new
+    // object immediately, otherwise it can aggro a nearby player before that
+    // player next crosses UpdateEnvironment's movement refresh threshold.
+    notifyNearby(world, npc);
     return npc;
 }
 
@@ -65,6 +95,7 @@ function spawnNpcs() {
 
 module.exports = spawnNpcs;
 module.exports.spawnNpc = spawnNpc;
+module.exports.notifyNearby = notifyNearby;
 module.exports.shouldRespawn = function shouldRespawn(spawn) {
     return Number(spawn?.respawn) > 0;
 };
