@@ -63,12 +63,13 @@ const Opcodes = {
         table[0xaa] = ClientRequest.userCommand;
         table[0xac] = ClientRequest.recipeBookOpen;
         table[0xc0] = ClientRequest.requestPledgePower;
+        table[0xc1] = ClientRequest.macro;
+        table[0xc2] = ClientRequest.macro;
         table[0xcd] = ClientRequest.showMap;
 
         table[0x57] = (session) => { invoke(path.actor).adminPanel(session, session.actor); }; // Board
         table[0x9d] = () => {}; // Skill Cool Time, not needed?
         table[0xb9] = () => {}; // Recommend button
-        table[0xc1] = () => {}; // Macro
         table[0x4a] = () => {}; // StartRotating
         table[0x4b] = () => {}; // FinishRotating
         table[0xd0] = ClientRequest.extendedRequest;

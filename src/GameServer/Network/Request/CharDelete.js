@@ -23,6 +23,7 @@ function consume(session, data) {
             Database.deleteSkills   (character.id);
             Database.deleteItems    (character.id);
             Database.deleteShortcuts(character.id);
+            Database.deleteMacros   (character.id);
 
             characters.splice(data.characterSlot, 1);
             Shared.enterCharacterHall(session, characters);

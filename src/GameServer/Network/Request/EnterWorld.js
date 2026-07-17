@@ -15,10 +15,13 @@ function sendClanWindow(session) {
 function enterWorld(session, buffer) {
     const continueEnter = () => {
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
-        Database.fetchShortcuts(session.actor.fetchId()).then((shortcuts) => {
-            session.dataSendToMe(
-                ServerResponse.shortcutInit(shortcuts)
-            );
+        Database.fetchMacros(session.actor.fetchId()).then((macros) => {
+            const revision = (session.macroRevision || 0) + 1;
+            session.macroRevision = revision;
+            ServerResponse.macroList(macros, revision).forEach((packet) => session.dataSendToMe(packet));
+            return Database.fetchShortcuts(session.actor.fetchId());
+        }).then((shortcuts) => {
+            session.dataSendToMe(ServerResponse.shortcutInit(shortcuts));
         });
 
         session.actor.enterWorld();

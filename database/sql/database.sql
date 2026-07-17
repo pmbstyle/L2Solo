@@ -115,3 +115,15 @@ CREATE TABLE `shortcuts`(
     `unknown`     int( 5)     NOT NULL,
     `characterId` int( 8)     NOT NULL
 );
+
+CREATE TABLE `macros`(
+    `characterId` int( 8)     NOT NULL,
+    `id`          int( 8)     NOT NULL,
+    `icon`        tinyint unsigned NOT NULL,
+    `name`        varchar(64) NOT NULL,
+    `descr`       varchar(64) NOT NULL,
+    `acronym`     varchar(16) NOT NULL,
+    `commands`    text        NOT NULL,
+    PRIMARY KEY (`characterId`, `id`),
+    KEY `characterId` (`characterId`)
+);

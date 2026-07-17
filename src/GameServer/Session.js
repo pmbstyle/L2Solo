@@ -58,7 +58,8 @@ const CLIENT_PACKET_NAMES = {
     0xaa: 'UserCommand',
     0xb9: 'Recommend',
     0xc0: 'RequestPledgePower',
-    0xc1: 'Macro',
+    0xc1: 'RequestMakeMacro',
+    0xc2: 'RequestDeleteMacro',
     0xcd: 'ShowMap',
     0xd0: 'ExtendedRequest'
 };
@@ -140,7 +141,8 @@ const SERVER_PACKET_NAMES = {
     0xc7: 'NpcHtmlMessage',
     0xc8: 'TutorialShowQuestionMark',
     0xce: 'RelationChanged',
-    0xd0: 'ExtendedPacket'
+    0xd0: 'ExtendedPacket',
+    0xe7: 'SendMacroList'
 };
 
 function packetName(map, opcode) {
