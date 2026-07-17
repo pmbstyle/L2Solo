@@ -66,6 +66,8 @@ module.exports = {
      teleportToLocation: require('./TeleportToLocation'),
                userInfo: require('./UserInfo'),
              walkAndRun: require('./WalkAndRun'),
+     wareHouseDepositList: require('./WareHouseDepositList'),
+  wareHouseWithdrawalList: require('./WareHouseWithdrawalList'),
     partySmallWindowAll: require('./PartySmallWindowAll'),
  partySmallWindowDelete: require('./PartySmallWindowDelete'),
     partySmallWindowDeleteAll: require('./PartySmallWindowDeleteAll'),

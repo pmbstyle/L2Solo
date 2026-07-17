@@ -89,6 +89,17 @@ CREATE TABLE `items`(
 );
 ALTER TABLE `items` AUTO_INCREMENT=4000000;
 
+CREATE TABLE `warehouse_items`(
+    `id`          int( 8)     NOT NULL AUTO_INCREMENT,
+    `selfId`      int( 5)     NOT NULL,
+    `name`        varchar(48) NOT NULL,
+    `amount`      bigint      NOT NULL DEFAULT 1,
+    `petData`     text                 NULL,
+    `characterId` int( 8)     NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `characterId` (`characterId`)
+);
+
 CREATE TABLE `skills`(
     `selfId`      int( 5)     NOT NULL,
     `name`        varchar(48) NOT NULL,
