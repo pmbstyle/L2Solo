@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const recipeBookOpen = invoke('GameServer/Network/Request/RecipeBookOpen');
+const skillUse = invoke('GameServer/Network/Request/SkillUse');
 
 function request(dwarven) {
     const buffer = Buffer.alloc(5);
@@ -41,5 +42,16 @@ recipeBookOpen(common, request(false));
 assert.strictEqual(common.packets[0][0], 0xd6, 'Common craft must use the same recipe book packet');
 assert.strictEqual(common.packets[0].readInt32LE(1), 1, 'Common craft recipe book selector must be 1');
 assert.strictEqual(common.packets[0].readInt32LE(9), 1, 'Recipe book must use the correct common recipe set');
+
+const dwarvenSkill = session();
+dwarvenSkill.actor.skillset = {
+    fetchSkill: (selfId) => Number(selfId) === 1321 ? { fetchPassive: () => false } : null
+};
+const skillPacket = Buffer.alloc(10);
+skillPacket[0] = 0x2f;
+skillPacket.writeInt32LE(1321, 1);
+skillUse(dwarvenSkill, skillPacket);
+assert.strictEqual(dwarvenSkill.packets[0][0], 0xd6, 'Using C4 Dwarven Craft must open the dwarven recipe book');
+assert.strictEqual(dwarvenSkill.packets[0].readInt32LE(1), 0, 'Dwarven Craft must select the dwarven recipe book');
 
 console.log('Recipe book checks passed');

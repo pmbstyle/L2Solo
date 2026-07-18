@@ -16,6 +16,13 @@ function skillUse(session, buffer) {
 }
 
 function consume(session, data) {
+    // In C4 the client activates the recipe book by using the Dwarven Craft
+    // skill icon; it does not send RequestRecipeBookOpen from this UI path.
+    if (Number(data.selfId) === 1321) {
+        invoke('GameServer/Network/Request/RecipeBookOpen').open(session, true);
+        return;
+    }
+
     if (session.actor.skillset.fetchSkill(data.selfId)?.fetchPassive() ?? false) {
         return;
     }
