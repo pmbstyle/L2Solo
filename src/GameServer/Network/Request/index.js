@@ -36,6 +36,8 @@ module.exports = {
       privateStoreSell: require('./PrivateStoreSell'),
        questList: require('./QuestList'),
   recipeBookOpen: require('./RecipeBookOpen'),
+recipeItemMakeInfo: require('./RecipeItemMakeInfo'),
+recipeItemMakeSelf: require('./RecipeItemMakeSelf'),
        removeShortcut: require('./RemoveShortcut'),
               restart: require('./Restart'),
          restartPoint: require('./RestartPoint'),

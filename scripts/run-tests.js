@@ -80,6 +80,7 @@ const tests = [
     'tests/test_player_ranged_combat.js',
     'tests/test_progression_rates.js',
     'tests/test_recipe_book.js',
+    'tests/test_recipe_crafting.js',
     'tests/test_restart_point_revive.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',

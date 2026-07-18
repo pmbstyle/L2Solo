@@ -41,6 +41,7 @@ module.exports = {
            purchaseList: require('./PurchaseList'),
            questList: require('./QuestList'),
    recipeBookItemList: require('./RecipeBookItemList'),
+   recipeItemMakeInfo: require('./RecipeItemMakeInfo'),
             restart: require('./Restart'),
                  revive: require('./Revive'),
            shortcutInit: require('./ShortcutInit'),

@@ -3,6 +3,7 @@ const fs = require('fs');
 const RECIPE_DATA_PATH = 'data/Recipes/recipes.csv';
 
 let recipeItems = null;
+let recipesById = null;
 
 function parseItemList(value) {
     const items = [];
@@ -43,6 +44,7 @@ function loadRecipeItems() {
     }
 
     recipeItems = {};
+    recipesById = {};
     if (!fs.existsSync(RECIPE_DATA_PATH)) {
         return recipeItems;
     }
@@ -55,6 +57,9 @@ function loadRecipeItems() {
             if (!recipeItems[recipe.recipeItemId]) {
                 recipeItems[recipe.recipeItemId] = recipe;
             }
+            if (!recipesById[recipe.recipeId]) {
+                recipesById[recipe.recipeId] = recipe;
+            }
         });
 
     return recipeItems;
@@ -64,8 +69,14 @@ function resolve(selfId) {
     return loadRecipeItems()[Number(selfId)] || null;
 }
 
+function resolveByRecipeId(recipeId) {
+    loadRecipeItems();
+    return recipesById[Number(recipeId)] || null;
+}
+
 module.exports = {
     RECIPE_DATA_PATH,
     loadRecipeItems,
-    resolve
+    resolve,
+    resolveByRecipeId
 };

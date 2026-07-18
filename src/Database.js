@@ -387,6 +387,52 @@ const Database = {
         });
     },
 
+    craftInventoryItems(characterId, { materials, product, mp }) {
+        return inTransaction(async () => {
+            const sources = [];
+            for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
+                const rows = await conn.query(
+                    'SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
+                    [material.id, characterId]
+                );
+                const source = rows[0];
+                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) {
+                    throw new Error('craft material changed');
+                }
+                sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
+            }
+
+            const targets = product?.stackable ? await conn.query(
+                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
+                [characterId, product.selfId]
+            ) : [];
+            const target = targets[0];
+            const productAmount = (Number(target?.amount) || 0) + Number(product?.amount || 0);
+            let productId = Number(target?.id) || 0;
+
+            for (const source of sources) {
+                if (source.amount === 0) {
+                    await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]);
+                } else {
+                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, characterId]);
+                }
+            }
+
+            if (target) {
+                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, characterId]);
+            } else if (product) {
+                const inserted = await conn.query(
+                    'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
+                    [product.selfId, product.name || '', product.amount, false, product.slot || 0, characterId]
+                );
+                productId = Number(inserted.insertId);
+            }
+
+            await conn.query('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
+            return { sources, product: product ? { id: productId, amount: productAmount } : null };
+        });
+    },
+
     updateItemPetData(characterId, id, petData) {
         return Database.execute(
             builder.update('items', {
