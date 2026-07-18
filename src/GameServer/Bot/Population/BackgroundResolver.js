@@ -281,6 +281,16 @@ const BackgroundResolver = {
             };
         }
 
+        if (state.activity === 'crafting') {
+            return {
+                patch: { activity: 'crafting' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { activity: 'crafting' }
+            };
+        }
+
         const reportedHp = Number(state.vitals?.hp);
         if (state.activity === 'dead' || (Number.isFinite(reportedHp) && reportedHp <= 0)) {
             return resolveDeathRecovery(state);

@@ -23,6 +23,7 @@ const tests = [
     'tests/test_bot_cold_travel_without_spot.js',
     'tests/test_bot_cold_market_purchase.js',
     'tests/test_bot_cold_market_listing.js',
+    'tests/test_bot_craft_shop.js',
     'tests/test_bot_warehouse.js',
     'tests/test_bot_cold_market_trade_chat.js',
     'tests/test_bot_background_drops.js',

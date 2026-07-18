@@ -311,7 +311,10 @@ const PopulationService = {
                 );
                 if (remaining <= 0) return [];
 
-                return LifeState.coldNear(loc, Config.activationRadius, remaining)
+                // Fetch beyond the activation budget so town services can be
+                // prioritized even when ordinary cold bots are closer to the player.
+                const candidateLimit = Math.min(100, remaining * 3);
+                return LifeState.coldNear(loc, Config.activationRadius, candidateLimit)
                     .then((states) => {
                         // A cold traveller has no hot equivalent for its
                         // persisted route. Keep it cold until its resolver
@@ -319,8 +322,9 @@ const PopulationService = {
                         // hunter/resting bot stranded on a road or plaza.
                         const available = states.filter((state) => !['pk_hunting', 'traveling'].includes(state.activity));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
-                        const candidates = [...merchants, ...activationCandidatesForPlayer(
-                            available.filter((state) => state.activity !== 'merchant'),
+                        const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
+                        const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
+                            available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
                             actor.fetchLevel()
                         )].slice(0, remaining);
                         return candidates.reduce((stateChain, state) => (
@@ -328,7 +332,8 @@ const PopulationService = {
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
-                                    keepStoreLocation: state.activity === 'merchant' && !!state.stats?.marketStore,
+                                    keepStoreLocation: (state.activity === 'merchant' && !!state.stats?.marketStore)
+                                        || (state.activity === 'crafting' && !!state.stats?.craftShop),
                                     playerLoc: loc
                                 });
                             }).then((result) => {
@@ -350,7 +355,7 @@ const PopulationService = {
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
-                if (session.plan === 'merchant' && !session.coldMarketState) return false;
+                if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return false;
                 // Red-name bots are part of the visible PK population, not
                 // disposable ambient population. Keep them hot until their
                 // karma is genuinely cleared.
@@ -727,7 +732,7 @@ const PopulationService = {
         const staleShopping = state?.activity === 'shopping'
             && !state.stats?.marketReturn
             && state.currentRegion !== 'Giran';
-        const passiveActivity = ['traveling', 'shopping', 'merchant', 'dead'].includes(state?.activity) && !staleShopping;
+        const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const spot = passiveActivity ? null : SpotProfiles.findForState(state);
         if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
@@ -752,6 +757,9 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
+            if (updatedState.activity === 'crafting') {
+                return { ok: true, state: updatedState, debug: result.debug };
+            }
             return ColdMarketListingService.reconcileInventory(updatedState)
                 .then((inventoryLifecycle) => ColdMarketListingService.resolve(inventoryLifecycle.state))
                 .then((marketLifecycle) => {

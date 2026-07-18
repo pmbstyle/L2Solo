@@ -102,7 +102,7 @@ const BotAvailability = {
         if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
-        else if (state.activity === 'merchant') reason = 'merchant_duty';
+        else if (state.activity === 'merchant' || state.activity === 'crafting') reason = 'merchant_duty';
         else if (result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (result.memory.trust <= -6) reason = 'low_trust';
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';

@@ -4,7 +4,8 @@ const ROLE_CLASSES = {
     tank: [4, 5, 6, 19, 20, 32, 33],
     dagger: [7, 8, 23, 35, 36],
     archer: [9, 22, 24, 37],
-    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41, 52]
+    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41, 52],
+    crafter: [56, 57]
 };
 
 function classIdOf(value) {
@@ -23,6 +24,7 @@ function inferRole(value) {
     if (ROLE_CLASSES.dagger.includes(classId)) return 'dagger';
     if (ROLE_CLASSES.archer.includes(classId)) return 'archer';
     if (ROLE_CLASSES.mage.includes(classId)) return 'mage';
+    if (ROLE_CLASSES.crafter.includes(classId)) return 'crafter';
     return 'dps';
 }
 

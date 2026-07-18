@@ -194,6 +194,7 @@ async function craft(session, crafterId, recipeId, random = Math.random) {
         crafter.setMp?.(crafterMp);
         customer.statusUpdateVitals?.(customer);
         crafter.statusUpdateVitals?.(crafter);
+        crafter.automation?.replenishVitals?.(crafter);
         session.dataSendToMe?.(ServerResponse.itemsList(customer.backpack.fetchItems()));
         crafterSession?.dataSendToMe?.(ServerResponse.itemsList(crafter.backpack.fetchItems()));
         session.dataSendToMe?.(ServerResponse.recipeShopItemInfo(crafter, recipe.recipeId, success ? 1 : 0));

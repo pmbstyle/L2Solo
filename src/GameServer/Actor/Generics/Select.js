@@ -133,7 +133,9 @@ function select(session, actor, data) {
             utils.infoWarn('Select', 'Second click on bot "%s" with private store type %d. Plan: %s', user.fetchName(), user.fetchPrivateStoreType(), botSession.plan);
             session.viewedPrivateStoreSeller = user;
             const isMerchantBot = botSession.plan === 'merchant';
-            if (isMerchantBot) {
+            if (user.fetchPrivateStoreType() === 5) {
+                openManufactureWindow(session, user);
+            } else if (isMerchantBot) {
                 utils.infoSuccess('Select', 'Opening native merchant trade window for bot "%s"', user.fetchName());
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
@@ -143,8 +145,6 @@ function select(session, actor, data) {
             } else if (user.fetchPrivateStoreType() === 3) {
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
-            } else if (user.fetchPrivateStoreType() === 5) {
-                openManufactureWindow(session, user);
             }
             return;
         }

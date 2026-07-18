@@ -25,7 +25,9 @@ function session(accountId, value, options = {}) {
         accountId,
         actor: value,
         plan: options.plan || 'hunting',
-        populationHotAt: options.populationHotAt
+        populationHotAt: options.populationHotAt,
+        coldMarketState: options.coldMarketState,
+        coldCraftState: options.coldCraftState
     };
 }
 
@@ -49,6 +51,11 @@ async function run() {
     const nearBotA = session('bot_near_a', actor(2, 1000), { populationHotAt: Date.now() - 300000 });
     const nearBotB = session('bot_near_b', actor(3, 2000), { populationHotAt: Date.now() - 300000 });
     const farBot = session('bot_far', actor(4, 14000), { populationHotAt: Date.now() - 300000 });
+    const farCraftBot = session('bot_far_craft', actor(7, 17000), {
+        plan: 'merchant',
+        coldCraftState: { stats: { craftShop: {} } },
+        populationHotAt: Date.now() - 300000
+    });
     const farPk = session('bot_far_pk', actor(6, 16000, 10, 720), { plan: 'pk_hunting', populationHotAt: Date.now() - 300000 });
     const youngFarBot = session('bot_young_far', actor(5, 15000), { populationHotAt: Date.now() - 1000 });
 
@@ -60,11 +67,12 @@ async function run() {
     Config.cooldownRadius = 11000;
     Config.cooldownBatchSize = 20;
     World.user = { sessions: [playerSession, nearBotA, nearBotB, farBot, youngFarBot] };
-    BotManager.sessions = [nearBotA, nearBotB, farBot, farPk, youngFarBot];
+    BotManager.sessions = [nearBotA, nearBotB, farBot, farCraftBot, farPk, youngFarBot];
 
     const coldStates = [
         { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
         { characterId: 101, name: 'ColdA', level: 10 },
+        { characterId: 105, name: 'ServiceCrafter', level: 20, activity: 'crafting', stats: { craftShop: {} } },
         { characterId: 102, name: 'ColdB', level: 10 },
         { characterId: 103, name: 'ColdC', level: 10 },
         { characterId: 104, name: 'Traveler', level: 10, activity: 'traveling' }
@@ -81,8 +89,8 @@ async function run() {
     };
 
     await PopulationService.activateNearPlayers();
-    assert.strictEqual(coldLimit, 1, 'activation should request only the local density deficit');
-    assert.deepStrictEqual(activated, ['ColdA'], 'activation should stop once the near-player hot target is filled');
+    assert.strictEqual(coldLimit, 3, 'activation should fetch a wider local pool before prioritizing town services');
+    assert.deepStrictEqual(activated, ['ServiceCrafter'], 'a craft service must be selected before ordinary cold population');
 
     const cooled = [];
     PopulationService.cooldownSession = (botSession) => {
@@ -90,7 +98,7 @@ async function run() {
         return Promise.resolve({ ok: true });
     };
     await PopulationService.cooldownEligibleHot();
-    assert.deepStrictEqual(cooled, ['bot_far'], 'cooldown should keep near-player, PK, and newly activated hot bots resident');
+    assert.deepStrictEqual(cooled, ['bot_far_craft', 'bot_far'], 'cooldown should park distant craft services along with normal cold-backed bots');
 }
 
 run()

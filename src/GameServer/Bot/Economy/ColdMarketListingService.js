@@ -60,10 +60,12 @@ function isFreeGiranPlazaStall(loc, occupied) {
 function occupiedGiranPlazaStalls(characterId) {
     return LifeState.allStates(2000)
         .filter((state) => Number(state.characterId) !== Number(characterId)
-            && state.activity === 'merchant'
-            && state.stats?.marketStore?.town === 'Giran'
-            && isGiranPlazaStallLocation(state.stats.marketStore.loc || state.loc))
-        .map((state) => state.stats.marketStore.loc || state.loc);
+            && (
+                (state.activity === 'merchant' && state.stats?.marketStore?.town === 'Giran')
+                || (state.activity === 'crafting' && state.stats?.craftShop?.town === 'Giran')
+            )
+            && isGiranPlazaStallLocation(state.stats.marketStore?.loc || state.stats.craftShop?.loc || state.loc))
+        .map((state) => state.stats.marketStore?.loc || state.stats.craftShop?.loc || state.loc);
 }
 
 function chooseGiranPlazaStall(random = Math.random, occupied = []) {

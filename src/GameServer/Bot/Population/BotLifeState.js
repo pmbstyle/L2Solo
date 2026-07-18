@@ -403,7 +403,8 @@ function recoverStaleHotStates() {
         -- Static merchant bots are spawned from MerchantConfigs on startup.
         -- A cold bot's marketStore is different: it has no startup owner, so
         -- keeping it hot would leave only a database ghost after a restart.
-        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`,
+        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')
+        AND (activity <> 'crafting' OR statsJson LIKE '%"craftShop"%')`,
         [timestamp + 30000, timestamp]
     ]).then((result) => {
         const recovered = Number(result?.affectedRows || 0);
@@ -469,6 +470,7 @@ const BotLifeState = {
 
         const row = recordFromSession(session, 'hot', reason);
         const marketState = session.coldMarketState;
+        const craftState = session.coldCraftState;
         if (marketState?.stats?.marketStore) {
             row.activity = 'merchant';
             row.currentRegion = marketState.currentRegion || row.currentRegion;
@@ -476,6 +478,11 @@ const BotLifeState = {
             row.inventorySummary = safeJson(marketState.inventory || {});
             row.adena = Number(marketState.adena || row.adena || 0);
             row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+        } else if (craftState?.stats?.craftShop) {
+            row.activity = 'crafting';
+            row.currentRegion = craftState.currentRegion || row.currentRegion;
+            row.spotId = craftState.spotId || row.spotId;
+            row.statsJson = safeJson({ ...(craftState.stats || {}), lastReason: reason });
         }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
@@ -507,6 +514,7 @@ const BotLifeState = {
         if (!session || !session.actor) return Promise.resolve(null);
 
         const marketState = session.coldMarketState;
+        const craftState = session.coldCraftState;
         if (marketState?.stats?.marketStore) {
             const actor = session.actor;
             const store = actor.fetchPrivateStore?.();
@@ -528,6 +536,31 @@ const BotLifeState = {
                         }))
                     }
                 }
+            };
+            return this.upsertState(nextState, reason);
+        }
+
+        if (craftState?.stats?.craftShop) {
+            const row = recordFromSession(session, 'cold', reason);
+            const craftShop = craftState.stats.craftShop;
+            const nextState = {
+                ...craftState,
+                level: row.level,
+                exp: row.exp,
+                sp: row.sp,
+                adena: row.adena,
+                phase: 'cold',
+                activity: 'crafting',
+                currentRegion: craftState.currentRegion || craftShop.town || 'Giran',
+                loc: { ...(craftShop.loc || craftState.loc || {}) },
+                vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp },
+                timing: {
+                    ...(craftState.timing || {}),
+                    activityStartedAt: now(),
+                    nextResolveAt: now() + 60000
+                },
+                stats: { ...(craftState.stats || {}), lastReason: reason },
+                inventory: parseJson(row.inventorySummary, {})
             };
             return this.upsertState(nextState, reason);
         }
@@ -570,6 +603,24 @@ const BotLifeState = {
 
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    findByCharacterId(characterId) {
+        const id = Number(characterId);
+        if (!Number.isSafeInteger(id) || id <= 0) return Promise.resolve(null);
+        const cached = cache.get(id);
+        if (cached) return Promise.resolve(cached);
+        if (!initialized) return Promise.resolve(null);
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE} WHERE characterId = ? LIMIT 1`,
+            [id]
+        ]).then((rows) => {
+            if (!rows[0]) return null;
+            const state = normalize(rows[0]);
+            cache.set(state.characterId, state);
+            return state;
+        }).catch(() => null);
     },
 
     findByName(name) {
@@ -639,7 +690,7 @@ const BotLifeState = {
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             ORDER BY CASE
                 WHEN activity = 'dead' THEN 0
-                WHEN activity IN ('traveling', 'shopping', 'merchant') THEN 1
+                WHEN activity IN ('traveling', 'shopping', 'merchant', 'crafting') THEN 1
                 ELSE 2
             END ASC,
                 COALESCE(nextResolveAt, 0) ASC
@@ -848,7 +899,7 @@ const BotLifeState = {
             INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'dead', 'pk_hunting')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND goals.goalJson LIKE '%"type":"sell_inventory"%'
             ORDER BY states.updatedAt ASC
             LIMIT ${safeLimit}`,
