@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
+const ManufactureShop = invoke('GameServer/Crafting/ManufactureShop');
 
 const StriderNpcIds = new Set([12526, 12527, 12528]);
 
@@ -123,6 +124,14 @@ function basicAction(session, actor, data) {
         break;
 
     case 0x28: // Recommend without selection
+        break;
+
+    case 0x25: // Dwarven Manufacture
+        if (!ManufactureShop.open(session, 'dwarven')) session.dataSendToMe(ServerResponse.actionFailed());
+        break;
+
+    case 0x33: // General Manufacture
+        if (!ManufactureShop.open(session, 'common')) session.dataSendToMe(ServerResponse.actionFailed());
         break;
 
     case 0x34: // Servitor unsummon

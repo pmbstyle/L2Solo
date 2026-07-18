@@ -95,7 +95,15 @@ function sendPrivateStoreMessage(session, actor) {
         session.dataSendToMe(ServerResponse.privateStoreBuyMsg(actor, title));
     } else if (storeType === 1) {
         session.dataSendToMe(ServerResponse.privateStoreMsg(actor, title));
+    } else if (storeType === 5) {
+        session.dataSendToMe(ServerResponse.recipeShopMsg(actor));
     }
+}
+
+function openManufactureWindow(session, crafter) {
+    session.viewedPrivateStoreSeller = crafter;
+    sendPrivateStoreMessage(session, crafter);
+    session.dataSendToMe(ServerResponse.recipeShopSellList(crafter, session.actor));
 }
 
 function select(session, actor, data) {
@@ -135,6 +143,8 @@ function select(session, actor, data) {
             } else if (user.fetchPrivateStoreType() === 3) {
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
+            } else if (user.fetchPrivateStoreType() === 5) {
+                openManufactureWindow(session, user);
             }
             return;
         }
@@ -177,6 +187,8 @@ function select(session, actor, data) {
                         } else if (user.fetchPrivateStoreType() === 3) {
                             sendPrivateStoreMessage(session, user);
                             openMerchantTradeWindow(session, user);
+                        } else if (user.fetchPrivateStoreType() === 5) {
+                            openManufactureWindow(session, user);
                         }
                         return;
                     }

@@ -166,6 +166,8 @@ assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
 
 assert.strictEqual(GameOpcodes.table[0xcd], GameRequest.showMap, 'C4 map request opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x96], GameRequest.privateStoreSell, 'C4 RequestPrivateStoreSell opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0xb6], GameRequest.recipeShopMakeItem, 'C4 RequestRecipeShopMakeItem opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0xb7], GameRequest.recipeShopManagePrev, 'C4 RequestRecipeShopManagePrev opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x2b], GameRequest.dismissParty, 'C4 RequestWithDrawalParty should be wired to 0x2b');
 assert.strictEqual(GameOpcodes.table[0x2c], GameRequest.oustPartyMember, 'C4 RequestOustPartyMember should be wired to 0x2c');
 
