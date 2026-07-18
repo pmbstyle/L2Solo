@@ -1,0 +1,218 @@
+[
+    {
+        "selfId": 6364,
+        "template": {
+            "name": "Forgotten Blade",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1300,
+            "price": 48800000,
+            "kind": "Weapon.Sword"
+        },
+        "stats": {
+            "pAtk": 281,
+            "pAtkRnd": 10,
+            "mAtk": 132,
+            "atkSpd": 379,
+            "crit": 8,
+            "accur": 0
+        },
+        "etc": {
+            "slot": 7,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6366,
+        "template": {
+            "name": "Imperial Staff",
+            "class1": 0,
+            "class2": 0,
+            "mass": 910,
+            "price": 48800000,
+            "kind": "Weapon.Blunt"
+        },
+        "stats": {
+            "pAtk": 274,
+            "pAtkRnd": 20,
+            "mAtk": 175,
+            "atkSpd": 325,
+            "crit": 4,
+            "accur": 4
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6367,
+        "template": {
+            "name": "Angel Slayer",
+            "class1": 0,
+            "class2": 0,
+            "mass": 950,
+            "price": 48800000,
+            "kind": "Weapon.Knife"
+        },
+        "stats": {
+            "pAtk": 246,
+            "pAtkRnd": 5,
+            "mAtk": 132,
+            "atkSpd": 433,
+            "crit": 12,
+            "accur": -3
+        },
+        "etc": {
+            "slot": 7,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6370,
+        "template": {
+            "name": "Saint Spear",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1800,
+            "price": 48800000,
+            "kind": "Weapon.Pole"
+        },
+        "stats": {
+            "pAtk": 281,
+            "pAtkRnd": 10,
+            "mAtk": 132,
+            "atkSpd": 325,
+            "crit": 8,
+            "accur": -3
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6371,
+        "template": {
+            "name": "Demon Splinter",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1350,
+            "price": 48800000,
+            "kind": "Weapon.Fist"
+        },
+        "stats": {
+            "pAtk": 342,
+            "pAtkRnd": 5,
+            "mAtk": 132,
+            "atkSpd": 325,
+            "crit": 4,
+            "accur": 4
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6372,
+        "template": {
+            "name": "Heaven's Divider",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1380,
+            "price": 48800000,
+            "kind": "Weapon.GreatSword"
+        },
+        "stats": {
+            "pAtk": 342,
+            "pAtkRnd": 10,
+            "mAtk": 132,
+            "atkSpd": 325,
+            "crit": 8,
+            "accur": 0
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 6579,
+        "template": {
+            "name": "Arcana Mace",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1300,
+            "price": 48800000,
+            "kind": "Weapon.Blunt"
+        },
+        "stats": {
+            "pAtk": 225,
+            "pAtkRnd": 20,
+            "mAtk": 175,
+            "atkSpd": 379,
+            "crit": 4,
+            "accur": 4
+        },
+        "etc": {
+            "slot": 7,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
+        "selfId": 7575,
+        "template": {
+            "name": "Draconic Bow",
+            "class1": 0,
+            "class2": 0,
+            "mass": 1650,
+            "price": 48800000,
+            "kind": "Weapon.Bow"
+        },
+        "stats": {
+            "pAtk": 581,
+            "pAtkRnd": 5,
+            "mAtk": 132,
+            "atkSpd": 293,
+            "crit": 12,
+            "accur": -3
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 11,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    }
+]

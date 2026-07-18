@@ -1,0 +1,842 @@
+[
+    {
+        "selfId": 6330,
+        "template": {
+            "name": "Recipe: Sealed Phoenix Necklace(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 69600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6332,
+        "template": {
+            "name": "Recipe: Sealed Phoenix Earring(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 52400,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6334,
+        "template": {
+            "name": "Recipe: Sealed Phoenix Ring(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 34840,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6341,
+        "template": {
+            "name": "Sealed Phoenix Earring Gemstone",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 7231,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6343,
+        "template": {
+            "name": "Sealed Phoenix Necklace Beads",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 9354,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6345,
+        "template": {
+            "name": "Sealed Phoenix Ring Gemstone",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 5228,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6688,
+        "template": {
+            "name": "Forgotten Blade Edge",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 92529,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6690,
+        "template": {
+            "name": "Imperial Staff Head",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 92353,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6691,
+        "template": {
+            "name": "Angel Slayer Blade",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 92529,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6694,
+        "template": {
+            "name": "Saint Spear Blade",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 90882,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6695,
+        "template": {
+            "name": "Demon Splinter Blade",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 94306,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6696,
+        "template": {
+            "name": "Heavens Divider Edge",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 91082,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6697,
+        "template": {
+            "name": "Arcana Mace Head",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 94306,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6698,
+        "template": {
+            "name": "Sealed Tateossian Earring Part",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 10182,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6699,
+        "template": {
+            "name": "Sealed Tateossian Ring Gem",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 9176,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6700,
+        "template": {
+            "name": "Sealed Tateossian Necklace Chain",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 16706,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6701,
+        "template": {
+            "name": "Sealed Imperial Crusader Breastplate Part",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 37565,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6702,
+        "template": {
+            "name": "Sealed Imperial Crusader Gaiters Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 29182,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6703,
+        "template": {
+            "name": "Sealed Imperial Crusader Gauntlets Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6704,
+        "template": {
+            "name": "Sealed Imperial Crusader Boots Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6705,
+        "template": {
+            "name": "Sealed Imperial Crusader Shield Part",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14341,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6706,
+        "template": {
+            "name": "Sealed Imperial Crusader Helmet Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 12329,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6707,
+        "template": {
+            "name": "Sealed Draconic Leather Armor Part",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 40365,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6708,
+        "template": {
+            "name": "Sealed Draconic Leather Gloves Fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6709,
+        "template": {
+            "name": "Sealed Draconic Leather Boots Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6710,
+        "template": {
+            "name": "Sealed Draconic Leather Helmet Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 12329,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6711,
+        "template": {
+            "name": "Sealed Major Arcana Robe Part",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 40365,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6712,
+        "template": {
+            "name": "Sealed Major Arcana Gloves fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6713,
+        "template": {
+            "name": "Sealed Major Arcana Boots Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 14047,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6714,
+        "template": {
+            "name": "Sealed Major Arcana Circlet Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 12329,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6848,
+        "template": {
+            "name": "Recipe: Sealed Tateossian Earring (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 74000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6850,
+        "template": {
+            "name": "Recipe: Sealed Tateossian Ring(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 49400,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6852,
+        "template": {
+            "name": "Recipe: Sealed Tateossian Necklace(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 98800,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6854,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Breastplate (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 286000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6856,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Gaiters (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 179200,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6858,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Gauntlets (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6860,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Boots (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6862,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Shield (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 75200,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6864,
+        "template": {
+            "name": "Recipe: Sealed Imperial Crusader Helmet (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 107400,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6866,
+        "template": {
+            "name": "Recipe: Sealed Draconic Leather Armor (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 348000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6868,
+        "template": {
+            "name": "Recipe: Sealed Draconic Leather Gloves (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6870,
+        "template": {
+            "name": "Recipe: Sealed Draconic Leather Boots (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6872,
+        "template": {
+            "name": "Recipe: Sealed Draconic Leather Helmet (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 107400,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6874,
+        "template": {
+            "name": "Recipe: Sealed Major Arcana Robe (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 348000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6876,
+        "template": {
+            "name": "Recipe: Sealed Major Arcana Gloves (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6878,
+        "template": {
+            "name": "Recipe: Sealed Major Arcana Boots (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 71600,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6880,
+        "template": {
+            "name": "Recipe: Sealed Major Arcana Circlet (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 107400,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6882,
+        "template": {
+            "name": "Recipe: Forgotten Blade (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6886,
+        "template": {
+            "name": "Recipe: Imperial Staff(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6888,
+        "template": {
+            "name": "Recipe: Angel Slayer (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6894,
+        "template": {
+            "name": "Recipe: Saint Spear (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6896,
+        "template": {
+            "name": "Recipe: Demon Splinter (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6898,
+        "template": {
+            "name": "Recipe: Heavens Divider (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 6900,
+        "template": {
+            "name": "Recipe: Arcana Mace (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 7579,
+        "template": {
+            "name": "Draconic Bow Shaft",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 91471,
+            "kind": "Other.Material"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 7581,
+        "template": {
+            "name": "Recipe: Draconic Bow (100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 976000,
+            "kind": "Other.Recipe"
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    }
+]

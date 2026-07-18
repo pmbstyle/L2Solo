@@ -292,11 +292,11 @@ const PopulationService = {
 
         const BotManager = invoke('GameServer/Bot/BotManager');
         const activated = [];
+        const ambientActivated = [];
         let chain = Promise.resolve();
 
         players.forEach((playerSession) => {
             chain = chain.then(() => {
-                if (activated.length >= Config.maxActivationsPerScan) return [];
                 const actor = playerSession.actor;
                 const loc = {
                     locX: actor.fetchLocX(),
@@ -305,16 +305,10 @@ const PopulationService = {
                 };
                 const existingNearby = nearbyHotCount(BotManager.sessions, actor);
                 const densityDeficit = Math.max(0, Config.nearPlayerHotTarget - existingNearby);
-                const remaining = Math.min(
-                    Config.maxActivationsPerScan - activated.length,
-                    densityDeficit
-                );
-                if (remaining <= 0) return [];
-
-                // Fetch beyond the activation budget so town services can be
-                // prioritized even when ordinary cold bots are closer to the player.
-                const candidateLimit = Math.min(100, remaining * 3);
-                return LifeState.coldNear(loc, Config.activationRadius, candidateLimit)
+                // Craft shops are persistent town infrastructure. They must not
+                // compete with the ambient-density budget, otherwise a full row
+                // of public stations can only appear in several policy ticks.
+                return LifeState.coldNear(loc, Config.activationRadius, 100)
                     .then((states) => {
                         // A cold traveller has no hot equivalent for its
                         // persisted route. Keep it cold until its resolver
@@ -323,10 +317,14 @@ const PopulationService = {
                         const available = states.filter((state) => !['pk_hunting', 'traveling'].includes(state.activity));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
+                        const ambientRemaining = Math.min(
+                            Math.max(0, Config.maxActivationsPerScan - ambientActivated.length),
+                            Math.max(0, densityDeficit - crafters.length)
+                        );
                         const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
                             available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
                             actor.fetchLevel()
-                        )].slice(0, remaining);
+                        )].slice(0, crafters.length + ambientRemaining);
                         return candidates.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 return this.requestActivation(state, 'near_player', {
@@ -337,7 +335,10 @@ const PopulationService = {
                                     playerLoc: loc
                                 });
                             }).then((result) => {
-                                if (result.ok) activated.push(result);
+                                if (result.ok) {
+                                    activated.push(result);
+                                    if (state.activity !== 'crafting' || !state.stats?.craftShop) ambientActivated.push(result);
+                                }
                             })
                         ), Promise.resolve());
                     });

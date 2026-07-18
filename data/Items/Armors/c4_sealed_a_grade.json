@@ -1,0 +1,508 @@
+[
+    {
+        "selfId": 5287,
+        "template": {
+            "kind": "Armor.Chain",
+            "name": "Sealed Dark Crystal breastplate",
+            "class1": 1,
+            "class2": 1,
+            "mass": 7700,
+            "price": 4630000
+        },
+        "stats": {
+            "pDef": 171,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 370
+        }
+    },
+    {
+        "selfId": 5288,
+        "template": {
+            "kind": "Armor.Chain",
+            "name": "Sealed Dark Crystal Gaiters",
+            "class1": 1,
+            "class2": 1,
+            "mass": 3320,
+            "price": 2890000
+        },
+        "stats": {
+            "pDef": 107,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 231
+        }
+    },
+    {
+        "selfId": 5289,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Dark Crystal Helmet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 570,
+            "price": 1740000
+        },
+        "stats": {
+            "pDef": 69,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "a",
+            "cristals": 139
+        }
+    },
+    {
+        "selfId": 5290,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Dark Crystal Gloves",
+            "class1": 1,
+            "class2": 1,
+            "mass": 580,
+            "price": 1160000
+        },
+        "stats": {
+            "pDef": 46,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "a",
+            "cristals": 92
+        }
+    },
+    {
+        "selfId": 5291,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Dark Crystal Boots",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1110,
+            "price": 1160000
+        },
+        "stats": {
+            "pDef": 46,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "a",
+            "cristals": 92
+        }
+    },
+    {
+        "selfId": 5292,
+        "template": {
+            "kind": "Armor.Shield",
+            "name": "Sealed Dark Crystal Shield",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1190,
+            "price": 1220000
+        },
+        "stats": {
+            "pDef": 243,
+            "mDef": 0,
+            "evasion": -8,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 8,
+            "rank": "a",
+            "cristals": 97
+        }
+    },
+    {
+        "selfId": 5293,
+        "template": {
+            "kind": "Armor.Chain",
+            "name": "Sealed Tallum Plate Armor",
+            "class1": 1,
+            "class2": 1,
+            "mass": 9780,
+            "price": 6770000
+        },
+        "stats": {
+            "pDef": 278,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 541
+        }
+    },
+    {
+        "selfId": 5294,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Tallum Helmet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 570,
+            "price": 1740000
+        },
+        "stats": {
+            "pDef": 69,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "a",
+            "cristals": 139
+        }
+    },
+    {
+        "selfId": 5295,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Tallum Gloves",
+            "class1": 1,
+            "class2": 1,
+            "mass": 580,
+            "price": 1160000
+        },
+        "stats": {
+            "pDef": 46,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "a",
+            "cristals": 92
+        }
+    },
+    {
+        "selfId": 5296,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Tallum Boots",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1130,
+            "price": 1160000
+        },
+        "stats": {
+            "pDef": 46,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "a",
+            "cristals": 92
+        }
+    },
+    {
+        "selfId": 5297,
+        "template": {
+            "kind": "Armor.Leather",
+            "name": "Sealed Dark Crystal Leather Armor",
+            "class1": 1,
+            "class2": 1,
+            "mass": 4300,
+            "price": 3470000
+        },
+        "stats": {
+            "pDef": 128,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 277
+        }
+    },
+    {
+        "selfId": 5298,
+        "template": {
+            "kind": "Armor.Leather",
+            "name": "Sealed Dark Crystal Leggings",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1480,
+            "price": 2170000
+        },
+        "stats": {
+            "pDef": 80,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 173
+        }
+    },
+    {
+        "selfId": 5301,
+        "template": {
+            "kind": "Armor.Leather",
+            "name": "Sealed Tallum Leather Armor",
+            "class1": 1,
+            "class2": 1,
+            "mass": 5400,
+            "price": 5080000
+        },
+        "stats": {
+            "pDef": 209,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 406
+        }
+    },
+    {
+        "selfId": 5304,
+        "template": {
+            "kind": "Armor.Fabric",
+            "name": "Sealed Tallum Tunic",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1860,
+            "price": 3470000
+        },
+        "stats": {
+            "pDef": 86,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 409
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 277
+        }
+    },
+    {
+        "selfId": 5305,
+        "template": {
+            "kind": "Armor.Fabric",
+            "name": "Sealed Tallum Stockings",
+            "class1": 1,
+            "class2": 1,
+            "mass": 920,
+            "price": 2170000
+        },
+        "stats": {
+            "pDef": 53,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 256
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 173
+        }
+    },
+    {
+        "selfId": 5308,
+        "template": {
+            "kind": "Armor.Fabric",
+            "name": "Sealed Dark Crystal Robe",
+            "class1": 1,
+            "class2": 1,
+            "mass": 2450,
+            "price": 5080000
+        },
+        "stats": {
+            "pDef": 139,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 665
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 406
+        }
+    },
+    {
+        "selfId": 5311,
+        "template": {
+            "kind": "Armor.Chain",
+            "name": "Sealed Armor of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 9580,
+            "price": 10300000
+        },
+        "stats": {
+            "pDef": 293,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 824
+        }
+    },
+    {
+        "selfId": 5312,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Helm of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 560,
+            "price": 2640000
+        },
+        "stats": {
+            "pDef": 73,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "a",
+            "cristals": 211
+        }
+    },
+    {
+        "selfId": 5313,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Gauntlets of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 550,
+            "price": 1760000
+        },
+        "stats": {
+            "pDef": 49,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "a",
+            "cristals": 140
+        }
+    },
+    {
+        "selfId": 5314,
+        "template": {
+            "kind": "Armor.Wear",
+            "name": "Sealed Boots of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1110,
+            "price": 1760000
+        },
+        "stats": {
+            "pDef": 49,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "a",
+            "cristals": 140
+        }
+    },
+    {
+        "selfId": 5315,
+        "template": {
+            "kind": "Armor.Shield",
+            "name": "Sealed Shield of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1180,
+            "price": 1850000
+        },
+        "stats": {
+            "pDef": 256,
+            "mDef": 0,
+            "evasion": -8,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 8,
+            "rank": "a",
+            "cristals": 148
+        }
+    },
+    {
+        "selfId": 5320,
+        "template": {
+            "kind": "Armor.Leather",
+            "name": "Sealed Leather Armor of Nightmare",
+            "class1": 1,
+            "class2": 1,
+            "mass": 5300,
+            "price": 7730000
+        },
+        "stats": {
+            "pDef": 220,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 618
+        }
+    },
+    {
+        "selfId": 5326,
+        "template": {
+            "kind": "Armor.Fabric",
+            "name": "Sealed Nightmare Robe",
+            "class1": 1,
+            "class2": 1,
+            "mass": 2300,
+            "price": 7730000
+        },
+        "stats": {
+            "pDef": 147,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 718
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "a",
+            "cristals": 618
+        }
+    }
+]

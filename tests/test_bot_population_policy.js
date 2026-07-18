@@ -62,7 +62,7 @@ async function run() {
     Config.activationRadius = 9000;
     Config.activationLevelRange = 5;
     Config.nearPlayerHotTarget = 3;
-    Config.maxActivationsPerScan = 6;
+    Config.maxActivationsPerScan = 1;
     Config.cooldownGraceMs = 120000;
     Config.cooldownRadius = 11000;
     Config.cooldownBatchSize = 20;
@@ -73,6 +73,8 @@ async function run() {
         { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
         { characterId: 101, name: 'ColdA', level: 10 },
         { characterId: 105, name: 'ServiceCrafter', level: 20, activity: 'crafting', stats: { craftShop: {} } },
+        { characterId: 106, name: 'ServiceCrafterTwo', level: 20, activity: 'crafting', stats: { craftShop: {} } },
+        { characterId: 107, name: 'ServiceCrafterThree', level: 20, activity: 'crafting', stats: { craftShop: {} } },
         { characterId: 102, name: 'ColdB', level: 10 },
         { characterId: 103, name: 'ColdC', level: 10 },
         { characterId: 104, name: 'Traveler', level: 10, activity: 'traveling' }
@@ -89,8 +91,8 @@ async function run() {
     };
 
     await PopulationService.activateNearPlayers();
-    assert.strictEqual(coldLimit, 3, 'activation should fetch a wider local pool before prioritizing town services');
-    assert.deepStrictEqual(activated, ['ServiceCrafter'], 'a craft service must be selected before ordinary cold population');
+    assert.strictEqual(coldLimit, 100, 'activation must inspect the complete local service row');
+    assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree'], 'craft services must not be capped by the ambient bot activation budget');
 
     const cooled = [];
     PopulationService.cooldownSession = (botSession) => {

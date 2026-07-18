@@ -2,21 +2,73 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 
-const MAX_PUBLIC_RECIPES = 5;
+const MAX_PUBLIC_RECIPES = 16;
 const GiranCraftStalls = Object.freeze([
     { locX: 81020, locY: 147780, locZ: -3466 },
-    { locX: 81020, locY: 148130, locZ: -3466 },
-    { locX: 81020, locY: 149120, locZ: -3466 },
     { locX: 81380, locY: 147780, locZ: -3466 },
-    { locX: 81380, locY: 148130, locZ: -3466 },
-    { locX: 81380, locY: 149120, locZ: -3466 },
+    { locX: 81740, locY: 147780, locZ: -3466 },
+    { locX: 82100, locY: 147780, locZ: -3466 },
     { locX: 82460, locY: 147780, locZ: -3466 },
+    { locX: 81020, locY: 148130, locZ: -3466 },
+    { locX: 81380, locY: 148130, locZ: -3466 },
+    { locX: 81740, locY: 148130, locZ: -3466 },
+    { locX: 82100, locY: 148130, locZ: -3466 },
     { locX: 82460, locY: 148130, locZ: -3466 },
+    { locX: 81020, locY: 149120, locZ: -3466 },
+    { locX: 81380, locY: 149120, locZ: -3466 },
+    { locX: 81740, locY: 149120, locZ: -3466 },
+    { locX: 82100, locY: 149120, locZ: -3466 },
     { locX: 82460, locY: 149120, locZ: -3466 },
-    { locX: 82780, locY: 147780, locZ: -3466 },
-    { locX: 82780, locY: 148130, locZ: -3466 },
-    { locX: 82780, locY: 149120, locZ: -3466 }
+    { locX: 81020, locY: 149470, locZ: -3466 },
+    { locX: 81380, locY: 149470, locZ: -3466 },
+    { locX: 81740, locY: 149470, locZ: -3466 },
+    { locX: 82100, locY: 149470, locZ: -3466 },
+    { locX: 82460, locY: 149470, locZ: -3466 },
+    { locX: 81020, locY: 149820, locZ: -3466 },
+    { locX: 81380, locY: 149820, locZ: -3466 },
+    { locX: 81740, locY: 149820, locZ: -3466 },
+    { locX: 82100, locY: 149820, locZ: -3466 },
+    { locX: 82460, locY: 149820, locZ: -3466 },
+    { locX: 81020, locY: 150170, locZ: -3466 }
 ]);
+
+const STATION_LAYOUT = [
+    ['d', 'heavy', 'D Heavy: Brigandine Set', [79, 263, 266, 268, 271]],
+    ['d', 'robe', 'D Robe: Mithril Set', [82, 83, 272]],
+    ['d', 'light', 'D Light: Manticore Set', [80, 81, 267]],
+    ['d', 'weapons', 'D Grade Weapons'],
+    ['d', 'jewelry', 'D Jewelry', [50, 51, 52]],
+    ['c', 'heavy', 'C Heavy: Full Plate Set', [124, 303, 305, 307]],
+    ['c', 'robe', 'C Robes: Karmian & Divine', [100, 92, 282, 288, 126, 127, 302, 309]],
+    ['c', 'light', 'C Light: Plated Leather Set', [104, 105, 283]],
+    ['c', 'weapons', 'C Grade Weapons'],
+    ['c', 'jewelry', 'C Jewelry', [59, 63, 261]],
+    ['b', 'heavy', 'B Heavy: Blue Wolf & Doom', [386, 390, 406, 410, 422, 392, 408, 412, 428, 384]],
+    ['b', 'robe', 'B Robes: Avadon, Blue Wolf & Doom', [372, 374, 376, 426, 398, 402, 400, 404]],
+    ['b', 'light', 'B Light: Blue Wolf & Doom', [394, 410, 422, 396, 412, 428]],
+    ['b', 'weapons', 'B Grade Weapons'],
+    ['b', 'jewelry', 'B Jewelry: Black Ore', [335, 337, 339]],
+    ['a', 'heavy', 'A Heavy: Dark Crystal & Tallum', [554, 562, 564, 546, 538, 534, 556, 566, 548, 540]],
+    ['a', 'robe', 'A Robes: DC, Tallum, Nightmare, Majestic', [526, 524, 528, 530]],
+    ['a', 'light', 'A Light: DC, Tallum, Nightmare, Majestic', [514, 516, 518, 520]],
+    ['a', 'weapons', 'A Grade: Core Weapons', [572, 580, 586, 592, 598, 602]],
+    ['a', 'jewelry', 'A Jewelry: Phoenix & Majestic', [614, 616, 618, 620, 622, 624]],
+    ['a', 'heavy', 'A Heavy: Nightmare & Majestic', [558, 568, 550, 542, 536, 560, 570, 552, 544], 'a_heavy_elite'],
+    ['s', 'heavy', 'S Heavy: Imperial Crusader', [653, 655, 657, 659, 661, 663]],
+    ['s', 'robe', 'S Robe: Major Arcana', [673, 675, 677, 679]],
+    ['s', 'light', 'S Light: Draconic', [665, 667, 669, 671]],
+    ['s', 'weapons', 'S Grade: Core Weapons', [627, 631, 633, 639, 641, 643, 645, 775]],
+    ['s', 'jewelry', 'S Jewelry: Tateossian', [647, 649, 651]]
+];
+
+const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title, recipeIds, stationId], index) => Object.freeze({
+    id: stationId || `${grade}_${category}`,
+    grade,
+    category,
+    title,
+    recipeIds: recipeIds ? Object.freeze([...recipeIds]) : null,
+    loc: Object.freeze({ ...GiranCraftStalls[index] })
+})));
 
 function isServiceCrafter(state = {}) {
     const classId = Number(state.classId || state.stats?.classId || 0);
@@ -42,9 +94,28 @@ function craftLevelFor(state = {}) {
     return 0;
 }
 
+function stationForSlot(slot) {
+    const index = Math.abs(Number(slot) || 0) % CraftStations.length;
+    return CraftStations[index];
+}
+
+function stationFor(state = {}) {
+    const stationId = String(state.stats?.craftStationId || '');
+    return CraftStations.find((station) => station.id === stationId)
+        || stationForSlot(state.stats?.generatedIndex ?? state.characterId);
+}
+
+function portfolioStationFor(state = {}) {
+    if (state.stats?.craftStationId || Number(state.stats?.generatedIndex || 0) >= 10000) {
+        return stationFor(state);
+    }
+    const craftLevel = craftLevelFor(state);
+    const grade = craftLevel >= 9 ? 's' : craftLevel >= 7 ? 'a' : craftLevel >= 5 ? 'b' : craftLevel >= 4 ? 'c' : 'd';
+    return CraftStations.find((station) => station.grade === grade && station.category === 'heavy') || CraftStations[0];
+}
+
 function locationFor(characterId) {
-    const index = Math.abs(Number(characterId) || 0) % GiranCraftStalls.length;
-    return { ...GiranCraftStalls[index] };
+    return { ...stationForSlot(characterId).loc };
 }
 
 function productPrice(recipe) {
@@ -68,15 +139,45 @@ function availableRecipes(state) {
     return [...unique.values()].sort((a, b) => Number(a.recipeId) - Number(b.recipeId));
 }
 
-function generatedEntries(state) {
-    const recipes = availableRecipes(state);
-    if (!recipes.length) return [];
-    const start = Math.abs(Number(state.characterId) || 0) % recipes.length;
-    const count = Math.min(MAX_PUBLIC_RECIPES, recipes.length);
-    return Array.from({ length: count }, (_, offset) => {
-        const recipe = recipes[(start + offset) % recipes.length];
-        return { recipeId: Number(recipe.recipeId), price: productPrice(recipe) };
+function compareScores(left, right) {
+    for (let index = 0; index < left.length; index++) {
+        if (left[index] !== right[index]) return left[index] - right[index];
+    }
+    return 0;
+}
+
+function topWeaponRecipes(grade, allowedRecipes) {
+    const bestByKind = new Map();
+    allowedRecipes.forEach((recipe) => {
+        const product = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+        const kind = product?.template?.kind || '';
+        if (String(product?.etc?.rank || '').toLowerCase() !== grade || !kind.startsWith('Weapon.')) return;
+        const current = bestByKind.get(kind);
+        const score = [Number(recipe.level || 0), Number(product?.template?.price || 0), Number(recipe.successRate || 0), Number(recipe.recipeId || 0)];
+        const currentScore = current?.score || [];
+        if (!current || compareScores(score, currentScore) > 0) {
+            bestByKind.set(kind, { recipe, score });
+        }
     });
+    return [...bestByKind.values()]
+        .map((entry) => entry.recipe)
+        .sort((a, b) => Number(a.recipeId) - Number(b.recipeId));
+}
+
+function stationRecipes(station, allowedRecipes) {
+    const allowedById = new Map(allowedRecipes.map((recipe) => [Number(recipe.recipeId), recipe]));
+    if (station.recipeIds) {
+        return station.recipeIds.map((recipeId) => allowedById.get(Number(recipeId))).filter(Boolean);
+    }
+    return station.category === 'weapons' ? topWeaponRecipes(station.grade, allowedRecipes) : [];
+}
+
+function generatedEntries(state) {
+    const recipes = stationRecipes(portfolioStationFor(state), availableRecipes(state));
+    return recipes.slice(0, MAX_PUBLIC_RECIPES).map((recipe) => ({
+        recipeId: Number(recipe.recipeId),
+        price: productPrice(recipe)
+    }));
 }
 
 function normalizeEntries(entries, state) {
@@ -94,14 +195,21 @@ function normalizeEntries(entries, state) {
 
 function profileFor(state = {}) {
     const current = state.stats?.craftShop || {};
-    const entries = normalizeEntries(current.entries, state);
+    const station = stationFor(state);
+    const isStationService = Boolean(state.stats?.craftStationId)
+        || Number(state.stats?.generatedIndex || 0) >= 10000;
+    // Public station configuration is owned by the server.  Do not retain a
+    // persisted snapshot here: it would prevent a changed catalogue, title or
+    // placement from reaching an already-seeded service crafter.
+    const preserveCustomShop = !isStationService;
+    const entries = preserveCustomShop ? normalizeEntries(current.entries, state) : [];
     const published = entries.length ? entries : generatedEntries(state);
-    const craftLevel = craftLevelFor(state);
     return {
         type: 'dwarven',
-        title: String(current.title || `Dwarven Craft Lv. ${craftLevel}`).slice(0, 52),
+        title: String(preserveCustomShop ? current.title || station.title : station.title).slice(0, 52),
         town: 'Giran',
-        loc: current.loc ? { ...current.loc } : locationFor(state.stats?.generatedIndex ?? state.characterId),
+        loc: preserveCustomShop && current.loc ? { ...current.loc } : { ...station.loc },
+        stationId: station.id,
         entries: published
     };
 }
@@ -116,10 +224,14 @@ function ensureRecipes(characterId, profile) {
 module.exports = {
     MAX_PUBLIC_RECIPES,
     GiranCraftStalls,
+    CraftStations,
     isServiceCrafter,
     craftLevelFor,
+    stationForSlot,
+    stationFor,
     locationFor,
     availableRecipes,
+    stationRecipes,
     profileFor,
     ensureRecipes
 };

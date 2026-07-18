@@ -22,8 +22,8 @@ const CLASS_POOL = [
     { race: 4, classId: 53, sex: 0, role: 'dps' }
 ];
 
-const CRAFT_SERVICE_PROFILE = { race: 4, classId: 56, sex: 0, role: 'crafter', serviceCrafter: true };
-const CRAFT_SERVICE_COUNT = 3;
+const CRAFT_SERVICE_PROFILE = { race: 4, classId: 57, sex: 0, role: 'crafter', serviceCrafter: true };
+const CRAFT_SERVICE_COUNT = CraftShopService.CraftStations.length;
 const CRAFT_SERVICE_INDEX_BASE = 10000;
 
 const NAME_STEMS = [
@@ -56,7 +56,7 @@ function baseForIndex(index) {
 
 function profileForIndex(index, base = baseForIndex(index)) {
     if (base.serviceCrafter) {
-        return { level: 20 + ((Math.abs(Number(index) || 0) % CRAFT_SERVICE_COUNT) * 8), band: 'craft_service' };
+        return { level: 70, band: 'craft_service' };
     }
     const roll = index % 20;
     if (roll < 2) return { level: 2 + (index % 2), band: 'newbie' };
@@ -204,10 +204,26 @@ function ensureCharacter(username, index, base = baseForIndex(index)) {
     return Database.fetchCharacters(username).then((characters) => {
         if (characters[0]) {
             const character = characters[0];
-            const level = Number(character.level || profileForIndex(index, base).level);
+            const profile = profileForIndex(index, base);
+            const level = base.serviceCrafter ? profile.level : Number(character.level || profile.level);
             const adena = Number(character.adena || Math.round(level * 85));
-            return ensureBaseLoadout(character.id, character.classId, adena, level)
-                .then(() => ({ character: { ...character, adena }, created: false, base }));
+            const classId = base.serviceCrafter ? base.classId : character.classId;
+            const classChanged = Number(character.classId) !== Number(classId);
+            const classReady = classChanged
+                ? Database.deleteSkills(character.id).then(() => Database.updateCharacterClassId(character.id, classId))
+                : Promise.resolve();
+            const levelReady = base.serviceCrafter
+                ? classReady.then(() => Database.updateCharacterExperience(character.id, level, expForLevel(level), Math.round(level * level * 3)))
+                : classReady;
+            return levelReady
+                .then(() => ensureBaseLoadout(character.id, classId, adena, level))
+                .then(() => ({
+                    character: base.serviceCrafter
+                        ? { ...character, classId, level, adena, exp: expForLevel(level), sp: Math.round(level * level * 3) }
+                        : { ...character, adena },
+                    created: false,
+                    base
+                }));
         }
 
         const template = classInfo(base.classId);
@@ -307,7 +323,7 @@ function stateFor(character, index, seedMeta = {}) {
     return {
         ...initial,
         loc: { ...craftShop.loc },
-        stats: { ...initial.stats, craftShop }
+        stats: { ...initial.stats, craftStationId: craftShop.stationId, craftShop }
     };
 }
 
@@ -340,12 +356,14 @@ const GeneratedColdSeeder = {
                     const seedState = stateFor(result.character, index, { ...result, base: CRAFT_SERVICE_PROFILE });
                     const { state, shouldSeedState } = craftServiceSeedState(existingState, seedState);
                     const craftShop = CraftShopService.profileFor(state);
+                    const needsStationMigration = existingState?.stats?.craftStationId !== craftShop.stationId
+                        || existingState?.stats?.craftShop?.stationId !== craftShop.stationId;
                     return CraftShopService.ensureRecipes(state.characterId, craftShop)
-                        .then(() => (shouldSeedState
+                        .then(() => (shouldSeedState || needsStationMigration
                             ? LifeState.upsertState({
                                 ...state,
                                 loc: state.phase === 'cold' ? { ...craftShop.loc } : state.loc,
-                                stats: { ...(state.stats || {}), craftShop }
+                                stats: { ...(state.stats || {}), craftStationId: craftShop.stationId, craftShop }
                             }, 'generated_craft_service')
                             : state))
                         .then((saved) => {

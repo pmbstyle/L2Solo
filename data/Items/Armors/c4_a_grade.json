@@ -1,0 +1,56 @@
+[
+    {
+        "selfId": 5316,
+        "template": { "kind": "Armor.Chain", "name": "Sealed Majestic Plate Armor", "class1": 1, "class2": 1, "mass": 9200, "price": 10300000 },
+        "stats": { "pDef": 293, "mDef": 0, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 15, "rank": "a", "cristals": 824 }
+    },
+    {
+        "selfId": 5317,
+        "template": { "kind": "Armor.Wear", "name": "Sealed Majestic Circlet", "class1": 1, "class2": 1, "mass": 550, "price": 2640000 },
+        "stats": { "pDef": 73, "mDef": 0, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 6, "rank": "a", "cristals": 211 }
+    },
+    {
+        "selfId": 5318,
+        "template": { "kind": "Armor.Wear", "name": "Sealed Majestic Gauntlets", "class1": 1, "class2": 1, "mass": 540, "price": 1760000 },
+        "stats": { "pDef": 49, "mDef": 0, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 9, "rank": "a", "cristals": 140 }
+    },
+    {
+        "selfId": 5319,
+        "template": { "kind": "Armor.Wear", "name": "Sealed Majestic Boots", "class1": 1, "class2": 1, "mass": 1110, "price": 1760000 },
+        "stats": { "pDef": 49, "mDef": 0, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 12, "rank": "a", "cristals": 140 }
+    },
+    {
+        "selfId": 5323,
+        "template": { "kind": "Armor.Leather", "name": "Sealed Majestic Leather Armor", "class1": 1, "class2": 1, "mass": 5350, "price": 7730000 },
+        "stats": { "pDef": 220, "mDef": 0, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 15, "rank": "a", "cristals": 618 }
+    },
+    {
+        "selfId": 5329,
+        "template": { "kind": "Armor.Fabric", "name": "Sealed Majestic Robe", "class1": 1, "class2": 1, "mass": 2330, "price": 7730000 },
+        "stats": { "pDef": 147, "mDef": 0, "evasion": 0, "maxMp": 718 },
+        "etc": { "slot": 15, "rank": "a", "cristals": 618 }
+    },
+    {
+        "selfId": 6326,
+        "template": { "kind": "Armor.Jewel", "name": "Sealed Majestic Necklace", "class1": 1, "class2": 1, "mass": 150, "price": 2600000 },
+        "stats": { "pDef": 0, "mDef": 80, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 3, "rank": "a", "cristals": 208 }
+    },
+    {
+        "selfId": 6327,
+        "template": { "kind": "Armor.Jewel", "name": "Sealed Majestic Earring", "class1": 1, "class2": 1, "mass": 150, "price": 1950000 },
+        "stats": { "pDef": 0, "mDef": 60, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 1, "rank": "a", "cristals": 156 }
+    },
+    {
+        "selfId": 6328,
+        "template": { "kind": "Armor.Jewel", "name": "Sealed Majestic Ring", "class1": 1, "class2": 1, "mass": 150, "price": 1300000 },
+        "stats": { "pDef": 0, "mDef": 40, "evasion": 0, "maxMp": 0 },
+        "etc": { "slot": 4, "rank": "a", "cristals": 104 }
+    }
+]
