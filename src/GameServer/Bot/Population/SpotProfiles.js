@@ -1,5 +1,6 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 function rewardForLevel(level) {
     const value = Math.max(1, Number(level || 1));
@@ -59,6 +60,14 @@ const SpotProfiles = {
     },
 
     findForState(state, options = {}) {
+        const acquisitionPlan = state?.stats?.equipmentPlan;
+        if (acquisitionPlan?.status === 'active') {
+            const planned = this.ensure()
+                .map((spot) => ({ spot, score: GearAcquisitionPlanner.scoreSpot(spot, acquisitionPlan) }))
+                .filter((candidate) => candidate.score > 0)
+                .sort((a, b) => b.score - a.score)[0];
+            if (planned) return planned.spot;
+        }
         if (state?.spotId) {
             const existing = this.findById(state.spotId);
             if (existing) {

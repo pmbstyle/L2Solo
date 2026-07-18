@@ -1,5 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 function itemTemplate(selfId) {
     return DataCache.items.find((ob) => ob.selfId === selfId);
@@ -15,8 +16,8 @@ function itemBasePrice(selfId) {
 
 function ratedPrice(selfId, rate, fallback = 1) {
     const base = itemBasePrice(selfId);
-    const price = base > 0 ? Math.floor(base * rate) : fallback;
-    return Math.max(1, price);
+    const price = base > 0 ? base * rate : fallback;
+    return BotEconomyPricing.scalePrice(price);
 }
 
 function storeLoc(actor) {

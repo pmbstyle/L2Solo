@@ -1,6 +1,7 @@
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const MAX_PUBLIC_RECIPES = 16;
 const GiranCraftStalls = Object.freeze([
@@ -95,11 +96,32 @@ function craftLevelFor(state = {}) {
 }
 
 function stationForSlot(slot) {
-    const index = Math.abs(Number(slot) || 0) % CraftStations.length;
+    const rawSlot = Math.abs(Number(slot) || 0);
+    // Generated craft services use a reserved index range.  Keep its first
+    // account at the first physical stall instead of rotating it by 10,000.
+    const serviceSlot = rawSlot >= 10000 && rawSlot < 10000 + CraftStations.length
+        ? rawSlot - 10000
+        : rawSlot;
+    const index = serviceSlot % CraftStations.length;
     return CraftStations[index];
 }
 
+function serviceStationSlot(state = {}) {
+    const accountName = String(state.accountName || state.username || '');
+    const accountMatch = /^bot_craft_(\d+)$/i.exec(accountName);
+    if (accountMatch) return Math.max(0, Number(accountMatch[1]) - 1);
+
+    const generatedIndex = Number(state.stats?.generatedIndex);
+    if (generatedIndex >= 10000 && generatedIndex < 10000 + CraftStations.length) {
+        return generatedIndex - 10000;
+    }
+    return null;
+}
+
 function stationFor(state = {}) {
+    const serviceSlot = serviceStationSlot(state);
+    if (serviceSlot !== null) return stationForSlot(serviceSlot);
+
     const stationId = String(state.stats?.craftStationId || '');
     return CraftStations.find((station) => station.id === stationId)
         || stationForSlot(state.stats?.generatedIndex ?? state.characterId);
@@ -124,7 +146,7 @@ function productPrice(recipe) {
     // A manufacture fee must remain a fee, not silently turn a player-supplied
     // recipe into an NPC shop. The cap also keeps malformed item prices from
     // producing unusable C4 dialogs.
-    return Math.max(100, Math.min(100000, Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10));
+    return Math.max(100, Math.min(1000000, BotEconomyPricing.scalePrice(Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10)));
 }
 
 function availableRecipes(state) {

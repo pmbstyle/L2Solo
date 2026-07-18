@@ -59,6 +59,19 @@ async function run() {
 
     assert.strictEqual(CraftShopService.CraftStations.length, 26, 'Giran must expose the full D/C/B/A/S crafting market, including split A-heavy demand');
     CraftShopService.CraftStations.forEach((station, index) => {
+        assert.strictEqual(
+            CraftShopService.stationForSlot(10000 + index).id,
+            station.id,
+            `generated craft service ${index + 1} must stay bound to ${station.id}`
+        );
+        assert.strictEqual(
+            CraftShopService.stationFor({
+                accountName: `bot_craft_${String(index + 1).padStart(2, '0')}`,
+                stats: { generatedIndex: 10000 + index, craftStationId: 'd_heavy' }
+            }).id,
+            station.id,
+            `generated craft service ${index + 1} must repair a stale station id`
+        );
         const service = {
             characterId: 10000 + index,
             level: 70,

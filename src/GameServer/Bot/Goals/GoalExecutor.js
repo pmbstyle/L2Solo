@@ -17,9 +17,10 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     const buyingGear = goal.type === 'upgrade_gear'
         && ['market_search_for_weapon', 'market_search_for_gear'].includes(goal.plan?.expectedBenefit);
+    const buyingMaterial = goal.type === 'buy_craft_material' && goal.plan?.expectedBenefit === 'market_buy_craft_material';
     const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
-    if (!buyingGear && !sellingInventory) return null;
-    if (buyingGear && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
+    if (!buyingGear && !buyingMaterial && !sellingInventory) return null;
+    if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
     // Dynamic bots share one economic hub. Static merchant bots may remain in
@@ -40,7 +41,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
                 spotId: state.spotId || null
             },
             travel: {
-                reason: buyingGear ? goal.plan.expectedBenefit : 'market_sale_inventory',
+                reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
                 from,
                 to,
                 townName: town.name,

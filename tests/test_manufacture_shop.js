@@ -144,6 +144,8 @@ async function run() {
     Select(customerSession, customer, { id: crafter.fetchId() });
     Select(customerSession, customer, { id: crafter.fetchId() });
     assert.strictEqual(customerSession.packets.at(-1)[0], 0xd9, 'A merchant-plan bot with manufacture type must open the C4 recipe list, not a generic sale window');
+    assert.strictEqual(customerSession.packets.at(-2)[0], 0x25, 'Opening a manufacture list must end the interaction before the C4 window opens');
+    assert(!customerSession.packets.some((entry) => entry[0] === 0xdb), 'Opening a manufacture list must not resend its world-state title packet to the customer');
 
     const commonCrafter = actor(300, []);
     commonCrafter.backpack.fetchRecipeBook = (_actor, type) => type === 'common' ? [{ recipeId: 303 }] : [];

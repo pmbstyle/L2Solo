@@ -34,9 +34,9 @@ const GoalService = {
 
         const choose = (existing) => {
             const candidates = NeedsEvaluator.evaluate(state, { spot: options.spot, now: timestamp });
-            const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory'
+            const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory' || candidate?.type === 'buy_craft_material'
                 || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
-            const activeMarketGoal = existing?.current?.type === 'sell_inventory'
+            const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
                 || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
             if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
                 && !marketCandidate && !activeMarketGoal) return existing;

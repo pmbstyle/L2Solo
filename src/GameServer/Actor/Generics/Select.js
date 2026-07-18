@@ -102,7 +102,10 @@ function sendPrivateStoreMessage(session, actor) {
 
 function openManufactureWindow(session, crafter) {
     session.viewedPrivateStoreSeller = crafter;
-    sendPrivateStoreMessage(session, crafter);
+    // C4 treats a manufacture list as an interaction, not a store-state update.
+    // Finish that interaction before opening the list so selecting another target
+    // is not blocked by the client after the window is closed.
+    session.dataSendToMe(ServerResponse.actionFailed());
     session.dataSendToMe(ServerResponse.recipeShopSellList(crafter, session.actor));
 }
 

@@ -95,6 +95,16 @@ async function run() {
     assert(calls.some((call) => call.type === 'insert' && call.item.selfId === 2 && call.item.equipped === true));
     assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
 
+    const noOffer = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 79,
+        stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
+        loc: { locX: 80000, locY: 150000, locZ: -3466 }
+    }, { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material' } });
+    assert.strictEqual(noOffer.purchased, false);
+    assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
+    assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
+
     const armorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,
         characterId: 78,

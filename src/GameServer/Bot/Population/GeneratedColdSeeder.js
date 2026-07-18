@@ -334,6 +334,10 @@ function craftServiceSeedState(existingState, seedState) {
     };
 }
 
+function sameLoc(left, right) {
+    return ['locX', 'locY', 'locZ'].every((key) => Number(left?.[key]) === Number(right?.[key]));
+}
+
 const GeneratedColdSeeder = {
     running: false,
 
@@ -355,11 +359,19 @@ const GeneratedColdSeeder = {
                     // row merely because that background seeding pass ran again.
                     const seedState = stateFor(result.character, index, { ...result, base: CRAFT_SERVICE_PROFILE });
                     const { state, shouldSeedState } = craftServiceSeedState(existingState, seedState);
-                    const craftShop = CraftShopService.profileFor(state);
-                    const needsStationMigration = existingState?.stats?.craftStationId !== craftShop.stationId
-                        || existingState?.stats?.craftShop?.stationId !== craftShop.stationId;
+                    // The account slot is the durable station identity.  Do not
+                    // let a previously rotated craftStationId keep this service
+                    // at the wrong physical stall forever.
+                    const craftShop = CraftShopService.profileFor({
+                        ...state,
+                        stats: { ...(state.stats || {}), craftStationId: CraftShopService.stationForSlot(slot).id }
+                    });
+                    const needsStationRefresh = existingState?.stats?.craftStationId !== craftShop.stationId
+                        || existingState?.stats?.craftShop?.stationId !== craftShop.stationId
+                        || !sameLoc(existingState?.stats?.craftShop?.loc, craftShop.loc)
+                        || (existingState?.phase === 'cold' && !sameLoc(existingState?.loc, craftShop.loc));
                     return CraftShopService.ensureRecipes(state.characterId, craftShop)
-                        .then(() => (shouldSeedState || needsStationMigration
+                        .then(() => (shouldSeedState || needsStationRefresh
                             ? LifeState.upsertState({
                                 ...state,
                                 loc: state.phase === 'cold' ? { ...craftShop.loc } : state.loc,

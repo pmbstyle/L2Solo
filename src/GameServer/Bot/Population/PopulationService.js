@@ -19,18 +19,28 @@ const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListin
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 
 function groupBySpot(states) {
     const grouped = new Map();
     states.forEach((state) => {
-        if (!state.spotId) return;
-        if (!grouped.has(state.spotId)) grouped.set(state.spotId, []);
-        grouped.get(state.spotId).push(state);
+        const planSpotId = state.stats?.equipmentPlan?.status === 'active'
+            ? state.stats.equipmentPlan.next?.spotId
+            : null;
+        const spotId = planSpotId || state.spotId;
+        if (!spotId) return;
+        if (!grouped.has(spotId)) grouped.set(spotId, []);
+        grouped.get(spotId).push(state);
     });
 
     return Array.from(grouped.values())
         .map((group) => group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)))
-        .sort((a, b) => b.length - a.length);
+        .sort((a, b) => {
+            const aPlanned = a.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            const bPlanned = b.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            return bPlanned - aPlanned || b.length - a.length;
+        });
 }
 
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
@@ -445,7 +455,10 @@ const PopulationService = {
                         stats: {
                             formedAt: Date.now(),
                             memberNames: members.map((state) => state.name),
-                            route: partySpot?.route || null
+                            route: partySpot?.route || null,
+                            acquisitionGoal: leader.stats?.equipmentPlan?.status === 'active'
+                                ? leader.stats.equipmentPlan
+                                : null
                         }
                     };
 
@@ -734,7 +747,36 @@ const PopulationService = {
             && !state.stats?.marketReturn
             && state.currentRegion !== 'Giran';
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
-        const spot = passiveActivity ? null : SpotProfiles.findForState(state);
+        const previousPlan = state.stats?.equipmentPlan;
+        const spots = passiveActivity ? [] : SpotProfiles.ensure();
+        const upgradedPlan = GearAcquisitionPlanner.planFor(state, { spots });
+        const previousRefresh = previousPlan?.recipeId
+            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId })
+            : null;
+        const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
+            ? { ...previousRefresh, finishBeforeUpgrade: true }
+            : upgradedPlan;
+        const sameTarget = Number(previousPlan?.target?.selfId || 0) === Number(rawAcquisitionPlan.target?.selfId || 0);
+        const planStartedAt = sameTarget ? Number(previousPlan?.startedAt || startedAt) : startedAt;
+        const acquisitionPlan = {
+            ...rawAcquisitionPlan,
+            startedAt: planStartedAt,
+            marketFallback: rawAcquisitionPlan.status === 'active' && rawAcquisitionPlan.strategy === 'craft'
+                && planStartedAt + 20 * 60 * 1000 <= Date.now()
+        };
+        const plannedState = {
+            ...state,
+            stats: { ...(state.stats || {}), equipmentPlan: acquisitionPlan }
+        };
+        if (plannedState.activity === 'crafting') {
+            return ColdCraftingService.craft(plannedState).then((craft) => LifeState.upsertState(
+                craft.state || plannedState,
+                craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait'
+            ).then((saved) => ({ ok: true, state: saved || craft.state || plannedState, debug: craft })))
+                .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
+        const travellingState = ColdCraftingService.beginTravel(plannedState) || plannedState;
+        const spot = passiveActivity ? null : SpotProfiles.findForState(travellingState);
         if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
             Metrics.recordResolveDuration(Date.now() - startedAt);
@@ -743,13 +785,13 @@ const PopulationService = {
 
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, Date.now() - state.timing.lastResolvedAt) : 60000;
         const result = BackgroundResolver.resolveSolo({
-            state,
+            state: travellingState,
             spot,
             pressure: Director.pressureForState(state),
             elapsedMs
         });
 
-        return LifeState.applyResolve(state, result).then((updatedState) => LifeState.refreshInventory(updatedState)
+        return LifeState.applyResolve(travellingState, result).then((updatedState) => LifeState.refreshInventory(updatedState)
             .then((refreshedState) => LifeState.upsertState(refreshedState, 'inventory_refresh').then((saved) => saved || refreshedState)))
             .then((updatedState) => {
             if (!updatedState) {
