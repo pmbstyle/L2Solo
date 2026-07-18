@@ -23,6 +23,7 @@ const World = invoke('GameServer/World/World');
 
 Database.updateItemAmount = () => Promise.resolve();
 Database.deleteItem = () => Promise.resolve();
+Database.setCharacterRecipe = () => Promise.resolve();
 
 function item(id, data) {
     return new Item(id, {

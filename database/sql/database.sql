@@ -89,6 +89,14 @@ CREATE TABLE `items`(
 );
 ALTER TABLE `items` AUTO_INCREMENT=4000000;
 
+CREATE TABLE `character_recipes`(
+    `characterId` int(8) NOT NULL,
+    `recipeId`    int(8) NOT NULL,
+    `type`        enum('dwarven', 'common') NOT NULL,
+    PRIMARY KEY (`characterId`, `recipeId`, `type`),
+    KEY `characterId` (`characterId`)
+);
+
 CREATE TABLE `warehouse_items`(
     `id`          int( 8)     NOT NULL AUTO_INCREMENT,
     `selfId`      int( 5)     NOT NULL,

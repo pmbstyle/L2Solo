@@ -29,6 +29,8 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
                 session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, storeTitle));
             } else if (visibleStoreType === 3) {
                 session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, storeTitle));
+            } else if (visibleStoreType === 5) {
+                session.dataSendToMe(ServerResponse.recipeShopMsg(user.actor));
             }
 
             user.dataSendToMe(ServerResponse.charInfo(actor));

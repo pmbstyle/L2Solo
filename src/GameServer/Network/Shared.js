@@ -14,8 +14,13 @@ const Shared = {
         return new Promise((success) => {
             const createPaperdoll = (character) => {
                 return new Promise((done) => {
-                    Database.fetchItems(character.id).then((items) => {
+                    Promise.all([
+                        Database.fetchItems(character.id),
+                        Database.fetchCharacterRecipes(character.id)
+                    ]).then(([items, recipes]) => {
                         character.items = items;
+                        character.dwarvenRecipes = recipes.filter((recipe) => recipe.type === 'dwarven');
+                        character.commonRecipes = recipes.filter((recipe) => recipe.type === 'common');
                         character.paperdoll = utils.tupleAlloc(15 + 1, {});
 
                         items.filter((ob) => ob.equipped === 1).forEach((item) => {

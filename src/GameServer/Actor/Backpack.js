@@ -435,7 +435,7 @@ class Backpack extends BackpackModel {
     }
 
     registerRecipe(actor, recipeItem) {
-        this.fetchRecipeBook(actor, recipeItem.type).push({
+        const recipe = {
             recipeId: recipeItem.recipeId,
             recipeItemId: recipeItem.recipeItemId,
             level: recipeItem.level,
@@ -443,6 +443,10 @@ class Backpack extends BackpackModel {
             productCount: recipeItem.productCount,
             successRate: recipeItem.successRate,
             mpCost: recipeItem.mpCost
+        };
+        this.fetchRecipeBook(actor, recipeItem.type).push(recipe);
+        Database.setCharacterRecipe(actor.fetchId(), recipe.recipeId, recipeItem.type).catch((error) => {
+            utils.infoWarn('Crafting', 'failed to persist recipe %d for %s: %s', recipe.recipeId, actor.fetchName?.() || actor.fetchId(), error.message || error);
         });
     }
 

@@ -67,6 +67,18 @@ function migrateMacros() {
     });
 }
 
+function migrateCharacterRecipes() {
+    return conn.query(`CREATE TABLE IF NOT EXISTS character_recipes (
+        characterId INT(8) NOT NULL,
+        recipeId INT(8) NOT NULL,
+        type ENUM('dwarven', 'common') NOT NULL,
+        PRIMARY KEY (characterId, recipeId, type),
+        KEY characterId (characterId)
+    )`).catch((error) => {
+        utils.infoWarn('DB', 'failed to create character_recipes: %s', error.message);
+    });
+}
+
 async function inTransaction(work) {
     const previous = transactionTail;
     let release;
@@ -114,7 +126,8 @@ const Database = {
                 migrateCharacterExperience(optn),
                 migrateCharacterStatus(),
                 migrateWarehouse(),
-                migrateMacros()
+                migrateMacros(),
+                migrateCharacterRecipes()
             ]).finally(callback);
 
         }).catch(error => {
@@ -387,6 +400,20 @@ const Database = {
         });
     },
 
+    fetchCharacterRecipes(characterId) {
+        return Database.execute([
+            'SELECT recipeId, type FROM character_recipes WHERE characterId = ?',
+            [characterId]
+        ]).then((rows) => rows.map(normalizeRowNumbers));
+    },
+
+    setCharacterRecipe(characterId, recipeId, type) {
+        return Database.execute([
+            'INSERT INTO character_recipes (characterId, recipeId, type) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE recipeId = VALUES(recipeId)',
+            [characterId, recipeId, type]
+        ]);
+    },
+
     craftInventoryItems(characterId, { materials, product, mp }) {
         return inTransaction(async () => {
             const sources = [];
@@ -430,6 +457,87 @@ const Database = {
 
             await conn.query('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null };
+        });
+    },
+
+    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena }) {
+        return inTransaction(async () => {
+            const sources = [];
+            for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
+                const rows = await conn.query(
+                    'SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
+                    [material.id, customerId]
+                );
+                const source = rows[0];
+                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) {
+                    throw new Error('customer craft material changed');
+                }
+                sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
+            }
+
+            const fee = Number(price) || 0;
+            let customerAdena = null;
+            let crafterAdena = null;
+            if (fee > 0) {
+                customerAdena = (await conn.query(
+                    'SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 FOR UPDATE', [customerId]
+                ))[0];
+                if (!customerAdena || Number(customerAdena.amount) < fee) throw new Error('customer adena changed');
+                crafterAdena = (await conn.query(
+                    'SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 FOR UPDATE', [crafterId]
+                ))[0];
+            }
+
+            const targets = product?.stackable ? await conn.query(
+                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
+                [customerId, product.selfId]
+            ) : [];
+            const target = targets[0];
+            const productAmount = (Number(target?.amount) || 0) + Number(product?.amount || 0);
+            let productId = Number(target?.id) || 0;
+
+            for (const source of sources) {
+                if (source.amount === 0) {
+                    await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]);
+                } else {
+                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]);
+                }
+            }
+
+            if (target) {
+                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
+            } else if (product) {
+                const inserted = await conn.query(
+                    'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
+                    [product.selfId, product.name || '', product.amount, false, product.slot || 0, customerId]
+                );
+                productId = Number(inserted.insertId);
+            }
+
+            if (fee > 0) {
+                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [
+                    Number(customerAdena.amount) - fee, customerAdena.id, customerId
+                ]);
+                if (crafterAdena) {
+                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [
+                        Number(crafterAdena.amount) + fee, crafterAdena.id, crafterId
+                    ]);
+                } else {
+                    const inserted = await conn.query(
+                        'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
+                        [57, adena?.name || 'Adena', fee, false, 0, crafterId]
+                    );
+                    crafterAdena = { id: Number(inserted.insertId), amount: 0 };
+                }
+            }
+
+            await conn.query('UPDATE characters SET mp = ? WHERE id = ?', [crafterMp, crafterId]);
+            return {
+                sources,
+                product: product ? { id: productId, amount: productAmount } : null,
+                customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null,
+                crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: Number(crafterAdena.amount) + fee } : null
+            };
         });
     },
 
