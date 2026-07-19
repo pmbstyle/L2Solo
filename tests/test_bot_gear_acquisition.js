@@ -56,6 +56,27 @@ assert.strictEqual(travel.stats.craftReturn.spotId, null, 'craft travel must pre
 const readyPlan = GearAcquisitionPlanner.planFor({ ...mage, inventory: readyInventory }, { spots: [] });
 assert.strictEqual(readyPlan.status, 'ready_to_craft', 'a complete material list must become a station visit, not a blocked farming plan');
 
+const oriharkonRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(27);
+const syntheticCokesRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(36);
+const resourceState = {
+    inventory: {
+        1879: { selfId: 1879, amount: 3 },
+        1874: { selfId: 1874, amount: 1 },
+        1873: { selfId: 1873, amount: 12 },
+        1872: { selfId: 1872, amount: 4 }
+    }
+};
+assert.strictEqual(
+    ColdCraftingService.readyRecipeFor(resourceState, oriharkonRecipe).recipeId,
+    syntheticCokesRecipe.recipeId,
+    'a ready crafted component must be manufactured before its parent equipment resource'
+);
+assert.strictEqual(
+    ColdCraftingService.stationForRecipe(syntheticCokesRecipe.recipeId).id,
+    'resource_core',
+    'crafted resources must route bots to the dedicated Giran resource station'
+);
+
 const protectedMaterial = { selfId: 1869, name: 'Iron Ore', amount: 5, kind: 'Other.Material', rank: 'none' };
 const sellable = ItemDisposition.saleCandidates({
     characterId: 1,
@@ -79,7 +100,7 @@ assert.strictEqual(materialGoal.target.itemId, 1869, 'a stalled material route m
 
 const materialPlan = GearAcquisitionPlanner.planFor(mage, { spots: [stoneGolemSpot] });
 if (materialPlan.strategy === 'craft' && materialPlan.next) {
-    assert.strictEqual(materialPlan.next.itemId, materialPlan.materials.find((material) => material.missing > 0).selfId, 'a craft route must persist the material id needed by market fallback');
+    assert(Number.isFinite(materialPlan.next.itemId), 'a craft route must persist the next farmable material for market fallback');
 }
 
 assert.strictEqual(GearAcquisitionPlanner.shouldFinishPreviousPlan(

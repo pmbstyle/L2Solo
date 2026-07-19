@@ -57,7 +57,7 @@ async function run() {
     assert.notStrictEqual(invalid.entries[0]?.recipeId, 999999, 'persisted offers must be revalidated against craft level and recipe data');
     assert.strictEqual(invalid.title, 'Custom smith');
 
-    assert.strictEqual(CraftShopService.CraftStations.length, 26, 'Giran must expose the full D/C/B/A/S crafting market, including split A-heavy demand');
+    assert.strictEqual(CraftShopService.CraftStations.length, 28, 'Giran must expose the full D/C/B/A/S market plus dedicated resource crafting');
     CraftShopService.CraftStations.forEach((station, index) => {
         assert.strictEqual(
             CraftShopService.stationForSlot(10000 + index).id,
@@ -111,9 +111,22 @@ async function run() {
         assert.notStrictEqual(staleProfile.entries[0]?.recipeId, 999999, `${station.id} must refresh a persisted station catalogue`);
     });
 
-    ['a_heavy_elite', 's_heavy', 's_robe', 's_light', 's_weapons', 's_jewelry'].forEach((stationId) => {
+    ['a_heavy_elite', 's_heavy', 's_robe', 's_light', 's_weapons', 's_jewelry', 'resource_core', 'resource_master'].forEach((stationId) => {
         const station = CraftShopService.CraftStations.find((entry) => entry.id === stationId);
         assert(station, `${stationId} must have a dedicated Giran station`);
+    });
+
+    const nonDroppableResources = [1883, 1886, 1887, 1888, 1890, 1891, 1892, 1893, 5220, 5550, 5551, 4045, 4046, 4047, 4048, 5552, 5553, 5554];
+    const resourceRecipeIds = new Set(CraftShopService.CraftStations
+        .filter((station) => station.grade === 'resource')
+        .flatMap((station) => station.recipeIds));
+    nonDroppableResources.forEach((itemId) => {
+        const recipe = C4RecipeItems.resolveByProductId(itemId);
+        assert(recipe && resourceRecipeIds.has(recipe.recipeId), `crafted-only resource ${itemId} must have a Giran crafting station`);
+        const isDropped = (DataCache.npcRewards || []).some((reward) => ['rewards', 'spoils'].some((kind) => (
+            (reward[kind] || []).some((group) => (group.items || []).some((item) => Number(item.selfId) === itemId))
+        )));
+        assert.strictEqual(isDropped, false, `crafted-only resource ${itemId} must not be sourced as a direct NPC drop or spoil`);
     });
 
     const sealedAGradeRecipes = Object.values(C4RecipeItems.loadRecipeItems())
@@ -134,11 +147,18 @@ async function run() {
     };
     const seedSelection = GeneratedColdSeeder.craftServiceSeedState(activeCraftState, {
         characterId: artisan.characterId,
+        level: 70,
+        exp: 123,
+        sp: 456,
         phase: 'cold',
-        activity: 'crafting'
+        activity: 'crafting',
+        currentRegion: 'Giran',
+        stats: { classId: 57, role: 'crafter', generatedIndex: 10000 }
     });
-    assert.strictEqual(seedSelection.state, activeCraftState, 'a repeated seed must retain the active craft service state');
-    assert.strictEqual(seedSelection.shouldSeedState, false, 'an existing craft service must not be reinserted as cold');
+    assert.strictEqual(seedSelection.state.phase, 'hot', 'a repeated seed must retain the active craft service lifecycle');
+    assert.strictEqual(seedSelection.state.level, 70, 'an existing craft service must be upgraded to its canonical level');
+    assert.strictEqual(seedSelection.state.stats.classId, 57, 'an existing craft service must be upgraded to Warsmith');
+    assert.strictEqual(seedSelection.shouldSeedState, false, 'an existing craft service with a shop must not be reinserted as cold');
 
     console.log('Bot craft shop checks passed');
 }

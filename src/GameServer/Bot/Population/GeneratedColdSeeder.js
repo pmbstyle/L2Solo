@@ -262,7 +262,7 @@ function stateFor(character, index, seedMeta = {}) {
     const base = seedMeta.base || baseForIndex(index);
     const classId = Number(character.classId || base.classId);
     const level = Number(character.level || profileForIndex(index, base).level);
-    const spot = seedMeta.spot || targetSpot(level, index, { ...base, classId });
+    const spot = base.serviceCrafter ? null : seedMeta.spot || targetSpot(level, index, { ...base, classId });
     const loc = seedMeta.loc || randomNear(spot?.center || {
         locX: character.locX,
         locY: character.locY,
@@ -328,9 +328,25 @@ function stateFor(character, index, seedMeta = {}) {
 }
 
 function craftServiceSeedState(existingState, seedState) {
+    if (existingState) {
+        // Preserve lifecycle (especially an active hot actor), but never retain
+        // the old Artisan/level-20 profile that predates public craft services.
+        return {
+            state: {
+                ...existingState,
+                level: seedState.level,
+                exp: seedState.exp,
+                sp: seedState.sp,
+                activity: 'crafting',
+                currentRegion: 'Giran',
+                stats: { ...(existingState.stats || {}), ...(seedState.stats || {}) }
+            },
+            shouldSeedState: !existingState.stats?.craftShop
+        };
+    }
     return {
-        state: existingState || seedState,
-        shouldSeedState: !existingState || !existingState.stats?.craftShop
+        state: seedState,
+        shouldSeedState: true
     };
 }
 
@@ -370,8 +386,12 @@ const GeneratedColdSeeder = {
                         || existingState?.stats?.craftShop?.stationId !== craftShop.stationId
                         || !sameLoc(existingState?.stats?.craftShop?.loc, craftShop.loc)
                         || (existingState?.phase === 'cold' && !sameLoc(existingState?.loc, craftShop.loc));
+                    const needsServiceProfile = Number(existingState?.level || 0) !== Number(state.level)
+                        || Number(existingState?.stats?.classId || 0) !== Number(state.stats?.classId || 0)
+                        || existingState?.activity !== 'crafting'
+                        || existingState?.currentRegion !== 'Giran';
                     return CraftShopService.ensureRecipes(state.characterId, craftShop)
-                        .then(() => (shouldSeedState || needsStationRefresh
+                        .then(() => (shouldSeedState || needsStationRefresh || needsServiceProfile
                             ? LifeState.upsertState({
                                 ...state,
                                 loc: state.phase === 'cold' ? { ...craftShop.loc } : state.loc,

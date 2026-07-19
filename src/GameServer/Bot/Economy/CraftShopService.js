@@ -30,7 +30,9 @@ const GiranCraftStalls = Object.freeze([
     { locX: 81740, locY: 149820, locZ: -3466 },
     { locX: 82100, locY: 149820, locZ: -3466 },
     { locX: 82460, locY: 149820, locZ: -3466 },
-    { locX: 81020, locY: 150170, locZ: -3466 }
+    { locX: 81020, locY: 150170, locZ: -3466 },
+    { locX: 81380, locY: 150170, locZ: -3466 },
+    { locX: 81740, locY: 150170, locZ: -3466 }
 ]);
 
 const STATION_LAYOUT = [
@@ -59,7 +61,9 @@ const STATION_LAYOUT = [
     ['s', 'robe', 'S Robe: Major Arcana', [673, 675, 677, 679]],
     ['s', 'light', 'S Light: Draconic', [665, 667, 669, 671]],
     ['s', 'weapons', 'S Grade: Core Weapons', [627, 631, 633, 639, 641, 643, 645, 775]],
-    ['s', 'jewelry', 'S Jewelry: Tateossian', [647, 649, 651]]
+    ['s', 'jewelry', 'S Jewelry: Tateossian', [647, 649, 651]],
+    ['resource', 'core', 'Resources: Molds & Alloys', [32, 34, 35, 36, 38, 39, 40, 27, 497]],
+    ['resource', 'master', 'Resources: Maestro Components', [474, 475, 476, 477, 607, 608, 609, 610, 611, 612]]
 ];
 
 const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title, recipeIds, stationId], index) => Object.freeze({

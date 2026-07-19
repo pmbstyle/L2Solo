@@ -14007,6 +14007,58 @@
     "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 16500 },
     "etc": { "stackable": true, "consumable": false }
 },{
+    "selfId": 5231,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Metal Hardener (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5472,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Metallic Thread (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5473,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Durable Metal Plate (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5474,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Leolin's Mold (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5475,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Warsmith's Mold (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5476,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Arcsmith's Anvil (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5477,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Warsmith's Holder (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
+    "etc": { "stackable": false, "consumable": false }
+},{
+    "selfId": 5549,
+    "template": { "kind": "Other.Material", "name": "Metallic Thread", "class1": 4, "class2": 5, "mass": 2, "price": 2000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5550,
+    "template": { "kind": "Other.Material", "name": "Durable Metal Plate", "class1": 4, "class2": 5, "mass": 2, "price": 15000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5551,
+    "template": { "kind": "Other.Material", "name": "Leolin's Mold", "class1": 4, "class2": 5, "mass": 2, "price": 238000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5552,
+    "template": { "kind": "Other.Material", "name": "Warsmith's Mold", "class1": 4, "class2": 5, "mass": 2, "price": 385000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5553,
+    "template": { "kind": "Other.Material", "name": "Arcsmith's Anvil", "class1": 4, "class2": 5, "mass": 2, "price": 531200 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5554,
+    "template": { "kind": "Other.Material", "name": "Warsmith's Holder", "class1": 4, "class2": 5, "mass": 2, "price": 884000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
     "selfId": 5262,
     "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Blessed Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 38500 },
     "etc": { "stackable": true, "consumable": false }

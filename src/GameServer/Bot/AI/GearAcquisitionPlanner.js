@@ -128,6 +128,46 @@ function sourceForItem(itemId, spots = []) {
     })).filter(Boolean).sort((a, b) => b.chance - a.chance);
 }
 
+function stationRecipeIds() {
+    const service = { level: 70, stats: { classId: 57 } };
+    const allowed = CraftShopService.availableRecipes(service);
+    return new Set(CraftShopService.CraftStations.flatMap((station) => (
+        CraftShopService.stationRecipes(station, allowed).map((recipe) => Number(recipe.recipeId))
+    )));
+}
+
+function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, visited = new Set()) {
+    const direct = sourceForItem(itemId, spots)[0];
+    if (direct) return { ...direct, itemId: Number(itemId) };
+    if (visited.has(Number(itemId))) return null;
+
+    const component = C4RecipeItems.resolveByProductId(itemId);
+    if (!component || !allowedRecipeIds.has(Number(component.recipeId))) return null;
+    const nextVisited = new Set(visited).add(Number(itemId));
+    for (const ingredient of component.materials || []) {
+        const owned = Number(inventoryMap(state.inventory).get(Number(ingredient.selfId)) || 0);
+        if (owned >= Number(ingredient.amount || 0)) continue;
+        const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, nextVisited);
+        if (source) return source;
+    }
+    return null;
+}
+
+function hasReadyCraftComponent(recipe, state, allowedRecipeIds, visited = new Set()) {
+    if (!recipe || visited.has(Number(recipe.recipeId))) return false;
+    const nextVisited = new Set(visited).add(Number(recipe.recipeId));
+    for (const material of recipe.materials || []) {
+        const owned = Number(inventoryMap(state.inventory).get(Number(material.selfId)) || 0);
+        if (owned >= Number(material.amount || 0)) continue;
+        const component = C4RecipeItems.resolveByProductId(material.selfId);
+        if (!component || !allowedRecipeIds.has(Number(component.recipeId))) continue;
+        if ((component.materials || []).every((ingredient) => (
+            Number(inventoryMap(state.inventory).get(Number(ingredient.selfId)) || 0) >= Number(ingredient.amount || 0)
+        )) || hasReadyCraftComponent(component, state, allowedRecipeIds, nextVisited)) return true;
+    }
+    return false;
+}
+
 function missingMaterials(recipe, inventory) {
     const owned = inventoryMap(inventory);
     return (recipe?.materials || []).map((material) => ({
@@ -156,7 +196,13 @@ function planFor(state = {}, options = {}) {
     const directSources = sourceForItem(target.item.selfId, spots);
     const direct = directSources[0] || null;
     const materials = missingMaterials(target.recipe, state.inventory);
-    const materialPlans = materials.map((material) => ({ ...material, source: material.missing > 0 ? sourceForItem(material.selfId, spots)[0] || null : null }));
+    const allowedRecipeIds = stationRecipeIds();
+    const materialPlans = materials.map((material) => ({
+        ...material,
+        source: material.missing > 0
+            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds)
+            : null
+    }));
     const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0);
     const nextMaterial = missingMaterialPlans.slice().sort((a, b) => (
         (b.missing / Math.max(b.source?.chance || 0.000001, 0.000001)) - (a.missing / Math.max(a.source?.chance || 0.000001, 0.000001))
@@ -168,7 +214,9 @@ function planFor(state = {}, options = {}) {
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
         : nextMaterial?.source && { ...nextMaterial.source, itemId: Number(nextMaterial.selfId) };
-    const readyToCraft = strategy === 'craft' && missingMaterialPlans.length === 0;
+    const readyToCraft = strategy === 'craft' && (
+        missingMaterialPlans.length === 0 || hasReadyCraftComponent(target.recipe, state, allowedRecipeIds)
+    );
 
     return {
         status: readyToCraft ? 'ready_to_craft' : next ? 'active' : 'blocked',
