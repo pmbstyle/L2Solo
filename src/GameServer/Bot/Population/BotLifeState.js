@@ -401,10 +401,11 @@ function recoverStaleHotStates() {
             updatedAt = ?
         WHERE phase = 'hot'
         -- Static merchant bots are spawned from MerchantConfigs on startup.
-        -- A cold bot's marketStore is different: it has no startup owner, so
-        -- keeping it hot would leave only a database ghost after a restart.
+        -- Market and craft services stored in the cold population do not have
+        -- a startup owner, so retaining their hot phase would leave a database
+        -- ghost after a restart instead of a visible Giran station.
         AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')
-        AND (activity <> 'crafting' OR statsJson LIKE '%"craftShop"%')`,
+        `,
         [timestamp + 30000, timestamp]
     ]).then((result) => {
         const recovered = Number(result?.affectedRows || 0);

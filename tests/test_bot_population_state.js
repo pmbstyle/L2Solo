@@ -26,6 +26,7 @@ try {
         const recovery = statements.find((entry) => entry.sql.includes("WHERE phase = 'hot'"));
         assert(recovery, 'bot life init should recover stale hot records on startup');
         assert(recovery.sql.includes("activity <> 'merchant' OR statsJson LIKE '%\"marketStore\"%'"), 'only dynamic market merchants should be recovered; configured static merchants remain hot');
+        assert(!recovery.sql.includes('activity <> \'crafting\''), 'craft services must recover as cold because they have no static startup owner');
         assert(recovery.sql.includes("WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'"));
         assert.strictEqual(recovery.params.length, 2, 'recovery query should set next resolve and updated timestamps');
         console.log('Bot population state checks passed');

@@ -58,6 +58,19 @@ async function run() {
     assert.strictEqual(invalid.title, 'Custom smith');
 
     assert.strictEqual(CraftShopService.CraftStations.length, 28, 'Giran must expose the full D/C/B/A/S market plus dedicated resource crafting');
+    assert.strictEqual(new Set(CraftShopService.GiranCraftStalls.map((loc) => `${loc.locX}:${loc.locY}:${loc.locZ}`)).size, 28, 'every craft station must have its own stall');
+    assert(CraftShopService.GiranCraftStalls.every((loc) => (
+        loc.locX >= 81020 && loc.locX <= 83540 && loc.locY >= 147780 && loc.locY <= 149820
+    )), 'every craft station must remain inside the Giran plaza footprint');
+    assert.deepStrictEqual(
+        CraftShopService.GiranCraftStalls.slice(-3),
+        [
+            { locX: 82820, locY: 147780, locZ: -3466 },
+            { locX: 83180, locY: 147780, locZ: -3466 },
+            { locX: 83540, locY: 147780, locZ: -3466 }
+        ],
+        'the three overflow craft services must sit beside the market grid, not south of the plaza'
+    );
     CraftShopService.CraftStations.forEach((station, index) => {
         assert.strictEqual(
             CraftShopService.stationForSlot(10000 + index).id,

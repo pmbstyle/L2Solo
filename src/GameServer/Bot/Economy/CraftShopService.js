@@ -4,36 +4,20 @@ const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const MAX_PUBLIC_RECIPES = 16;
-const GiranCraftStalls = Object.freeze([
-    { locX: 81020, locY: 147780, locZ: -3466 },
-    { locX: 81380, locY: 147780, locZ: -3466 },
-    { locX: 81740, locY: 147780, locZ: -3466 },
-    { locX: 82100, locY: 147780, locZ: -3466 },
-    { locX: 82460, locY: 147780, locZ: -3466 },
-    { locX: 81020, locY: 148130, locZ: -3466 },
-    { locX: 81380, locY: 148130, locZ: -3466 },
-    { locX: 81740, locY: 148130, locZ: -3466 },
-    { locX: 82100, locY: 148130, locZ: -3466 },
-    { locX: 82460, locY: 148130, locZ: -3466 },
-    { locX: 81020, locY: 149120, locZ: -3466 },
-    { locX: 81380, locY: 149120, locZ: -3466 },
-    { locX: 81740, locY: 149120, locZ: -3466 },
-    { locX: 82100, locY: 149120, locZ: -3466 },
-    { locX: 82460, locY: 149120, locZ: -3466 },
-    { locX: 81020, locY: 149470, locZ: -3466 },
-    { locX: 81380, locY: 149470, locZ: -3466 },
-    { locX: 81740, locY: 149470, locZ: -3466 },
-    { locX: 82100, locY: 149470, locZ: -3466 },
-    { locX: 82460, locY: 149470, locZ: -3466 },
-    { locX: 81020, locY: 149820, locZ: -3466 },
-    { locX: 81380, locY: 149820, locZ: -3466 },
-    { locX: 81740, locY: 149820, locZ: -3466 },
-    { locX: 82100, locY: 149820, locZ: -3466 },
-    { locX: 82460, locY: 149820, locZ: -3466 },
-    { locX: 81020, locY: 150170, locZ: -3466 },
-    { locX: 81380, locY: 150170, locZ: -3466 },
-    { locX: 81740, locY: 150170, locZ: -3466 }
+const GIRAN_CRAFT_ROWS = [147780, 148130, 149120, 149470, 149820];
+const GIRAN_CRAFT_COLUMNS = [81020, 81380, 81740, 82100, 82460];
+const GiranCraftGrid = GIRAN_CRAFT_ROWS.flatMap((locY) => (
+    GIRAN_CRAFT_COLUMNS.map((locX) => Object.freeze({ locX, locY, locZ: -3466 }))
+));
+// The final three services sit beside, rather than beyond, the normal grid.
+// These are open Giran market-square points, separated from the grid and the
+// permanent Giran merchants so their models never stack.
+const GiranCraftOverflowStalls = Object.freeze([
+    Object.freeze({ locX: 82820, locY: 147780, locZ: -3466 }),
+    Object.freeze({ locX: 83180, locY: 147780, locZ: -3466 }),
+    Object.freeze({ locX: 83540, locY: 147780, locZ: -3466 })
 ]);
+const GiranCraftStalls = Object.freeze([...GiranCraftGrid, ...GiranCraftOverflowStalls]);
 
 const STATION_LAYOUT = [
     ['d', 'heavy', 'D Heavy: Brigandine Set', [79, 263, 266, 268, 271]],
