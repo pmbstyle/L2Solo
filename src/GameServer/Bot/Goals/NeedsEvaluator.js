@@ -146,6 +146,25 @@ function evaluate(state = {}, options = {}) {
         });
     }
 
+    const craftPlan = state.stats?.equipmentPlan;
+    const wantedMaterial = craftPlan?.marketFallback && craftPlan?.next?.itemId
+        ? craftPlan.materials?.find((material) => Number(material.selfId) === Number(craftPlan.next.itemId))
+        : null;
+    if (wantedMaterial?.missing > 0) {
+        candidates.push({
+            type: 'buy_craft_material',
+            priority: 82,
+            target: {
+                itemId: Number(wantedMaterial.selfId),
+                itemName: (state.inventory?.[String(wantedMaterial.selfId)] || {}).name || `Material ${wantedMaterial.selfId}`,
+                amount: Number(wantedMaterial.missing)
+            },
+            plan: { kind: 'market_buy', expectedBenefit: 'market_buy_craft_material', recipeId: craftPlan.recipeId },
+            blockers: [],
+            nextReviewAt: timestamp + 10 * 60 * 1000
+        });
+    }
+
     const sale = ItemDisposition.saleSummary(state);
     if (sale.itemCount >= 3 || sale.marketValue >= 1000) {
         candidates.push({

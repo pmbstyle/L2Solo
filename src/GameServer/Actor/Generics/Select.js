@@ -102,7 +102,10 @@ function sendPrivateStoreMessage(session, actor) {
 
 function openManufactureWindow(session, crafter) {
     session.viewedPrivateStoreSeller = crafter;
-    sendPrivateStoreMessage(session, crafter);
+    // C4 treats a manufacture list as an interaction, not a store-state update.
+    // Finish that interaction before opening the list so selecting another target
+    // is not blocked by the client after the window is closed.
+    session.dataSendToMe(ServerResponse.actionFailed());
     session.dataSendToMe(ServerResponse.recipeShopSellList(crafter, session.actor));
 }
 
@@ -133,7 +136,9 @@ function select(session, actor, data) {
             utils.infoWarn('Select', 'Second click on bot "%s" with private store type %d. Plan: %s', user.fetchName(), user.fetchPrivateStoreType(), botSession.plan);
             session.viewedPrivateStoreSeller = user;
             const isMerchantBot = botSession.plan === 'merchant';
-            if (isMerchantBot) {
+            if (user.fetchPrivateStoreType() === 5) {
+                openManufactureWindow(session, user);
+            } else if (isMerchantBot) {
                 utils.infoSuccess('Select', 'Opening native merchant trade window for bot "%s"', user.fetchName());
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
@@ -143,8 +148,6 @@ function select(session, actor, data) {
             } else if (user.fetchPrivateStoreType() === 3) {
                 sendPrivateStoreMessage(session, user);
                 openMerchantTradeWindow(session, user);
-            } else if (user.fetchPrivateStoreType() === 5) {
-                openManufactureWindow(session, user);
             }
             return;
         }

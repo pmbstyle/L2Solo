@@ -12,7 +12,10 @@ const DEFAULTS = {
     generatedColdTarget: 100,
     generatedColdBatchSize: 25,
     generatedColdSeedDelayMs: 45000,
-    maxResolvesPerTick: 10,
+    // The persistent world can contain substantially more than the initial
+    // generated target after a restart. Twenty-five sequential resolves still
+    // fit well inside the five-second scheduler interval.
+    maxResolvesPerTick: 25,
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
     partyFormationBatchSize: 3,

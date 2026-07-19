@@ -106,6 +106,7 @@ async function craftSelf(session, recipeId, random = Math.random) {
         else applyCommittedMaterials(actor, consumed, result.sources);
         actor.setMp?.(mp);
         actor.statusUpdateVitals?.(actor);
+        actor.automation?.replenishVitals?.(actor);
         session.dataSendToMe?.(ServerResponse.itemsList(actor.backpack.fetchItems()));
         sendMakeInfo(session, recipe, success ? 1 : 0);
         return success;

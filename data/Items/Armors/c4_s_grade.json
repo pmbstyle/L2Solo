@@ -1,0 +1,442 @@
+[
+    {
+        "selfId": 6323,
+        "template": {
+            "name": "Sealed Phoenix Necklace",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 1740000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 76,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 3,
+            "rank": "a",
+            "cristals": 139
+        }
+    },
+    {
+        "selfId": 6324,
+        "template": {
+            "name": "Sealed Phoenix Earring",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 1310000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 57,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 1,
+            "rank": "a",
+            "cristals": 104
+        }
+    },
+    {
+        "selfId": 6325,
+        "template": {
+            "name": "Sealed Phoenix Ring",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 871000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 38,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 4,
+            "rank": "a",
+            "cristals": 69
+        }
+    },
+    {
+        "selfId": 6674,
+        "template": {
+            "name": "Sealed Imperial Crusader Breastplate",
+            "class1": 1,
+            "class2": 1,
+            "mass": 7620,
+            "price": 14300000,
+            "kind": "Armor.Chain"
+        },
+        "stats": {
+            "pDef": 193,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "s",
+            "cristals": 715
+        }
+    },
+    {
+        "selfId": 6675,
+        "template": {
+            "name": "Sealed Imperial Crusader Gaiters",
+            "class1": 1,
+            "class2": 1,
+            "mass": 3260,
+            "price": 8960000,
+            "kind": "Armor.Chain"
+        },
+        "stats": {
+            "pDef": 121,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "s",
+            "cristals": 448
+        }
+    },
+    {
+        "selfId": 6676,
+        "template": {
+            "name": "Sealed Imperial Crusader Gauntlet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 540,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6677,
+        "template": {
+            "name": "Sealed Imperial Crusader Boots",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1110,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6678,
+        "template": {
+            "name": "Sealed Imperial Crusader Shield",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1170,
+            "price": 3760000,
+            "kind": "Armor.Shield"
+        },
+        "stats": {
+            "pDef": 276,
+            "mDef": 0,
+            "evasion": -8,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 8,
+            "rank": "s",
+            "cristals": 188
+        }
+    },
+    {
+        "selfId": 6679,
+        "template": {
+            "name": "Sealed Imperial Crusader Helmet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 550,
+            "price": 5370000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 83,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "s",
+            "cristals": 268
+        }
+    },
+    {
+        "selfId": 6680,
+        "template": {
+            "name": "Sealed Draconic Leather Armor",
+            "class1": 1,
+            "class2": 1,
+            "mass": 4950,
+            "price": 17400000,
+            "kind": "Armor.Leather"
+        },
+        "stats": {
+            "pDef": 236,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "s",
+            "cristals": 870
+        }
+    },
+    {
+        "selfId": 6681,
+        "template": {
+            "name": "Sealed Draconic Leather Glove",
+            "class1": 1,
+            "class2": 1,
+            "mass": 540,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6682,
+        "template": {
+            "name": "Sealed Draconic Leather Boots",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1110,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6683,
+        "template": {
+            "name": "Sealed Draconic Leather Helmet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 550,
+            "price": 5370000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 83,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "s",
+            "cristals": 268
+        }
+    },
+    {
+        "selfId": 6684,
+        "template": {
+            "name": "Sealed Major Arcana Robe",
+            "class1": 1,
+            "class2": 1,
+            "mass": 2300,
+            "price": 17400000,
+            "kind": "Armor.Fabric"
+        },
+        "stats": {
+            "pDef": 157,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 15,
+            "rank": "s",
+            "cristals": 870
+        }
+    },
+    {
+        "selfId": 6685,
+        "template": {
+            "name": "Sealed Major Arcana Glove",
+            "class1": 1,
+            "class2": 1,
+            "mass": 540,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 9,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6686,
+        "template": {
+            "name": "Sealed Major Arcana Boots",
+            "class1": 1,
+            "class2": 1,
+            "mass": 1110,
+            "price": 3580000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 55,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 12,
+            "rank": "s",
+            "cristals": 179
+        }
+    },
+    {
+        "selfId": 6687,
+        "template": {
+            "name": "Sealed Major Arcana Circlet",
+            "class1": 1,
+            "class2": 1,
+            "mass": 550,
+            "price": 5370000,
+            "kind": "Armor.Wear"
+        },
+        "stats": {
+            "pDef": 83,
+            "mDef": 0,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 6,
+            "rank": "s",
+            "cristals": 268
+        }
+    },
+    {
+        "selfId": 6724,
+        "template": {
+            "name": "Sealed Tateossian Earring",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 3700000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 68,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 1,
+            "rank": "s",
+            "cristals": 185
+        }
+    },
+    {
+        "selfId": 6725,
+        "template": {
+            "name": "Sealed Tateossian Ring",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 2470000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 46,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 4,
+            "rank": "s",
+            "cristals": 123
+        }
+    },
+    {
+        "selfId": 6726,
+        "template": {
+            "name": "Sealed Tateossian Necklace",
+            "class1": 1,
+            "class2": 1,
+            "mass": 150,
+            "price": 4940000,
+            "kind": "Armor.Jewel"
+        },
+        "stats": {
+            "pDef": 0,
+            "mDef": 91,
+            "evasion": 0,
+            "maxMp": 0
+        },
+        "etc": {
+            "slot": 3,
+            "rank": "s",
+            "cristals": 247
+        }
+    }
+]

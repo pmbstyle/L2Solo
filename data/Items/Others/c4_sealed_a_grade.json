@@ -1,0 +1,692 @@
+[
+    {
+        "selfId": 5333,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Leather Armor(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5335,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Leather Armor(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5337,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Leather Armor of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5341,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Leggings(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5347,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Tunic(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5349,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Robe(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5351,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Robe of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5355,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Stockings(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5365,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Shield(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5367,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Shield of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5369,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Boots(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5371,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Boots(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5381,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Boots of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5393,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Gloves(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5395,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Gloves(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5405,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Gauntlets of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5417,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Breastplate(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5419,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Plate Armor(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5421,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Armor of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5425,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Gaiters(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5427,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Dark Crystal Helmet(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5429,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Tallum Helmet(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5431,
+        "template": {
+            "kind": "Other.Recipe",
+            "name": "Recipe: Sealed Helm of Nightmare(100%)",
+            "class1": 4,
+            "class2": 0,
+            "mass": 30,
+            "price": 0
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5478,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 23784
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5479,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 33800
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5480,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 44571
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5482,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Leggings Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 15153
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5485,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Tunic Texture",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 23784
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5486,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Robe Fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 33800
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5487,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Robe of Nightmare Fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 44414
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5489,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Stockings Fabric",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 15153
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5494,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Shield Fragment",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 9523
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5495,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Shield of Nightmare Fragment",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 13171
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5496,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Boots Lining",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 8530
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5497,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Boots Lining",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 8530
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5502,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Boots of Nightmare Lining",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 11842
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5508,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Gloves Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 8530
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5509,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Gloves Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 8530
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5514,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Gauntlets of Nightmare Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 11842
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5520,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Breastplate Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 31015
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5521,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Plate Armor Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 43953
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5522,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Armor of Nightmare Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 58728
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5524,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Gaiters Pattern",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 20292
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5525,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Dark Crystal Helmet Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 12938
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5526,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Tallum Helm Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 12938
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    },
+    {
+        "selfId": 5527,
+        "template": {
+            "kind": "Other.Material",
+            "name": "Sealed Helm of Nightmare Design",
+            "class1": 4,
+            "class2": 0,
+            "mass": 60,
+            "price": 16728
+        },
+        "etc": {
+            "stackable": true,
+            "consumable": false
+        }
+    }
+]

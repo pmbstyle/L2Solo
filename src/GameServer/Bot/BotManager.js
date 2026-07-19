@@ -488,6 +488,7 @@ const BotManager = {
                 if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);
                 const runtimeStore = botData.privateStore || null;
+                const manufactureShop = botData.manufactureShop || null;
 
                 Shared.fetchClassInformation(character.classId).then((classInfo) => {
                     if (botData.locX !== undefined) {
@@ -548,6 +549,21 @@ const BotManager = {
                             town: privateStore.town,
                             items: storeItems
                         });
+                    } else if (manufactureShop) {
+                        session.plan = 'merchant';
+                        session.coldCraftState = botData.coldCraftState || null;
+                        session.actor.state.setSeated(true);
+                        session.actor.setTitle('');
+                        session.actor.setPrivateStoreType(5);
+                        const manufactureStore = session.actor.model || session.actor;
+                        manufactureStore.manufactureShop = {
+                            type: manufactureShop.type === 'common' ? 'common' : 'dwarven',
+                            title: String(manufactureShop.title || '').slice(0, 52),
+                            entries: (manufactureShop.entries || []).map((entry) => ({
+                                recipeId: Number(entry.recipeId),
+                                price: Number(entry.price)
+                            }))
+                        };
                     } else {
                         session.plan = botData.plan || 'hunting';
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
@@ -570,6 +586,8 @@ const BotManager = {
                         session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
                     } else if (privateStore?.storeType === 3) {
                         session.dataSendToOthers(ServerResponse.privateStoreBuyMsg(session.actor, privateStore.title), session.actor);
+                    } else if (manufactureShop) {
+                        session.dataSendToOthers(ServerResponse.recipeShopMsg(session.actor), session.actor);
                     }
 
                     // Start AI loop

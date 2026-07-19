@@ -2,6 +2,7 @@ const Database = invoke('Database');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -110,6 +111,16 @@ function equipmentSummaryFromInventory(inventory = {}) {
 
 function inventoryAdena(inventory) {
     return Number(inventory?.[57]?.amount || inventory?.['57']?.amount || 0);
+}
+
+function refreshCraftShop(state = {}) {
+    if (!state.stats?.craftShop) return state;
+    const craftShop = CraftShopService.profileFor(state);
+    return {
+        ...state,
+        loc: { ...(craftShop.loc || state.loc || {}) },
+        stats: { ...(state.stats || {}), craftStationId: craftShop.stationId, craftShop }
+    };
 }
 
 function syncInventoryItem(characterId, existingItems, item) {
@@ -326,6 +337,9 @@ function save(row) {
             spotId = VALUES(spotId),
             activity = VALUES(activity),
             phase = VALUES(phase),
+            activityStartedAt = VALUES(activityStartedAt),
+            nextResolveAt = VALUES(nextResolveAt),
+            lastResolvedAt = VALUES(lastResolvedAt),
             lastHotAt = VALUES(lastHotAt),
             locX = VALUES(locX),
             locY = VALUES(locY),
@@ -335,7 +349,9 @@ function save(row) {
             mp = VALUES(mp),
             maxMp = VALUES(maxMp),
             targetLevelBand = VALUES(targetLevelBand),
+            deathCount = VALUES(deathCount),
             partyId = VALUES(partyId),
+            inventorySummary = VALUES(inventorySummary),
             statsJson = VALUES(statsJson),
             updatedAt = VALUES(updatedAt)`,
         [
@@ -401,14 +417,38 @@ function recoverStaleHotStates() {
             updatedAt = ?
         WHERE phase = 'hot'
         -- Static merchant bots are spawned from MerchantConfigs on startup.
-        -- A cold bot's marketStore is different: it has no startup owner, so
-        -- keeping it hot would leave only a database ghost after a restart.
-        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`,
+        -- Market and craft services stored in the cold population do not have
+        -- a startup owner, so retaining their hot phase would leave a database
+        -- ghost after a restart instead of a visible Giran station.
+        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')
+        `,
         [timestamp + 30000, timestamp]
     ]).then((result) => {
         const recovered = Number(result?.affectedRows || 0);
         if (recovered > 0) {
             utils.infoWarn('BotLife', 'recovered %d stale hot states as cold on startup', recovered);
+        }
+        return recovered;
+    });
+}
+
+function recoverStaleCraftWaits() {
+    const timestamp = now();
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET activity = 'hunting',
+            activityStartedAt = ?,
+            nextResolveAt = ?,
+            statsJson = JSON_SET(COALESCE(statsJson, '{}'), '$.lastReason', 'startup_craft_wait_recovery'),
+            updatedAt = ?
+        WHERE phase = 'cold'
+        AND activity = 'crafting'
+        AND statsJson LIKE '%"lastReason":"cold_craft_wait"%'`,
+        [timestamp, timestamp, timestamp]
+    ]).then((result) => {
+        const recovered = Number(result?.affectedRows || 0);
+        if (recovered > 0) {
+            utils.infoWarn('BotLife', 'recovered %d stale craft waits as hunting on startup', recovered);
         }
         return recovered;
     });
@@ -452,7 +492,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => hydrateCache()).then((count) => {
+        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => hydrateCache()).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
             return true;
@@ -469,6 +509,7 @@ const BotLifeState = {
 
         const row = recordFromSession(session, 'hot', reason);
         const marketState = session.coldMarketState;
+        const craftState = refreshCraftShop(session.coldCraftState);
         if (marketState?.stats?.marketStore) {
             row.activity = 'merchant';
             row.currentRegion = marketState.currentRegion || row.currentRegion;
@@ -476,6 +517,11 @@ const BotLifeState = {
             row.inventorySummary = safeJson(marketState.inventory || {});
             row.adena = Number(marketState.adena || row.adena || 0);
             row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+        } else if (craftState?.stats?.craftShop) {
+            row.activity = 'crafting';
+            row.currentRegion = craftState.currentRegion || row.currentRegion;
+            row.spotId = craftState.spotId || row.spotId;
+            row.statsJson = safeJson({ ...(craftState.stats || {}), lastReason: reason });
         }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
@@ -507,6 +553,7 @@ const BotLifeState = {
         if (!session || !session.actor) return Promise.resolve(null);
 
         const marketState = session.coldMarketState;
+        const craftState = refreshCraftShop(session.coldCraftState);
         if (marketState?.stats?.marketStore) {
             const actor = session.actor;
             const store = actor.fetchPrivateStore?.();
@@ -528,6 +575,31 @@ const BotLifeState = {
                         }))
                     }
                 }
+            };
+            return this.upsertState(nextState, reason);
+        }
+
+        if (craftState?.stats?.craftShop) {
+            const row = recordFromSession(session, 'cold', reason);
+            const craftShop = craftState.stats.craftShop;
+            const nextState = {
+                ...craftState,
+                level: row.level,
+                exp: row.exp,
+                sp: row.sp,
+                adena: row.adena,
+                phase: 'cold',
+                activity: 'crafting',
+                currentRegion: craftState.currentRegion || craftShop.town || 'Giran',
+                loc: { ...(craftShop.loc || craftState.loc || {}) },
+                vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp },
+                timing: {
+                    ...(craftState.timing || {}),
+                    activityStartedAt: now(),
+                    nextResolveAt: now() + 60000
+                },
+                stats: { ...(craftState.stats || {}), lastReason: reason },
+                inventory: parseJson(row.inventorySummary, {})
             };
             return this.upsertState(nextState, reason);
         }
@@ -570,6 +642,24 @@ const BotLifeState = {
 
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    findByCharacterId(characterId) {
+        const id = Number(characterId);
+        if (!Number.isSafeInteger(id) || id <= 0) return Promise.resolve(null);
+        const cached = cache.get(id);
+        if (cached) return Promise.resolve(cached);
+        if (!initialized) return Promise.resolve(null);
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE} WHERE characterId = ? LIMIT 1`,
+            [id]
+        ]).then((rows) => {
+            if (!rows[0]) return null;
+            const state = normalize(rows[0]);
+            cache.set(state.characterId, state);
+            return state;
+        }).catch(() => null);
     },
 
     findByName(name) {
@@ -637,12 +727,27 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
+            -- Travel and crafting are finite state transitions. They must
+            -- outrank a large resting/hunting backlog, otherwise a bot can
+            -- remain on its way to a station forever after a restart.
             ORDER BY CASE
-                WHEN activity = 'dead' THEN 0
-                WHEN activity IN ('traveling', 'shopping', 'merchant') THEN 1
-                ELSE 2
+                WHEN activity IN ('traveling', 'crafting') THEN 0
+                -- Startup craft recovery is a one-shot replan.  Serve it
+                -- before the normal hunting backlog so a repaired station
+                -- wait immediately selects its missing raw material.
+                WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.lastReason')) = 'startup_craft_wait_recovery' THEN 1
+                WHEN activity = 'dead' THEN 2
+                ELSE 3
             END ASC,
-                COALESCE(nextResolveAt, 0) ASC
+            COALESCE(nextResolveAt, 0) ASC,
+                CASE
+                -- A rate-model rollout must promptly replace persisted kill estimates.
+                WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.expectedKills')) IS NOT NULL
+                    AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.rateModelVersion')) AS UNSIGNED), 0) < 2 THEN 0
+                WHEN activity = 'dead' THEN 1
+                WHEN activity IN ('traveling', 'shopping', 'merchant', 'crafting') THEN 2
+                ELSE 3
+                END ASC
             LIMIT ${safeLimit}`,
             [at]
         ]).then((rows) => rows.map((row) => {
@@ -793,6 +898,7 @@ const BotLifeState = {
             };
         }
 
+        const nextActivity = result.patch?.activity || state.activity;
         const nextState = {
             ...state,
             level,
@@ -800,7 +906,7 @@ const BotLifeState = {
             sp,
             adena,
             phase: 'cold',
-            activity: result.patch?.activity || state.activity,
+            activity: nextActivity,
             spotId: result.patch?.spotId || state.spotId,
             currentRegion: result.patch?.currentRegion || state.currentRegion,
             loc: {
@@ -813,6 +919,9 @@ const BotLifeState = {
             },
             timing: {
                 ...(state.timing || {}),
+                activityStartedAt: nextActivity === state.activity
+                    ? state.timing?.activityStartedAt
+                    : timestamp,
                 lastResolvedAt: timestamp,
                 nextResolveAt: result.nextResolveAt || timestamp + 60000
             },
@@ -848,7 +957,7 @@ const BotLifeState = {
             INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'dead', 'pk_hunting')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND goals.goalJson LIKE '%"type":"sell_inventory"%'
             ORDER BY states.updatedAt ASC
             LIMIT ${safeLimit}`,

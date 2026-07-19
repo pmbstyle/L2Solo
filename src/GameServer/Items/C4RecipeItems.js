@@ -4,6 +4,7 @@ const RECIPE_DATA_PATH = 'data/Recipes/recipes.csv';
 
 let recipeItems = null;
 let recipesById = null;
+let recipesByProductId = null;
 
 function parseItemList(value) {
     const items = [];
@@ -45,6 +46,7 @@ function loadRecipeItems() {
 
     recipeItems = {};
     recipesById = {};
+    recipesByProductId = {};
     if (!fs.existsSync(RECIPE_DATA_PATH)) {
         return recipeItems;
     }
@@ -60,6 +62,9 @@ function loadRecipeItems() {
             if (!recipesById[recipe.recipeId]) {
                 recipesById[recipe.recipeId] = recipe;
             }
+            if (!recipesByProductId[recipe.productId]) {
+                recipesByProductId[recipe.productId] = recipe;
+            }
         });
 
     return recipeItems;
@@ -74,9 +79,15 @@ function resolveByRecipeId(recipeId) {
     return recipesById[Number(recipeId)] || null;
 }
 
+function resolveByProductId(productId) {
+    loadRecipeItems();
+    return recipesByProductId[Number(productId)] || null;
+}
+
 module.exports = {
     RECIPE_DATA_PATH,
     loadRecipeItems,
     resolve,
-    resolveByRecipeId
+    resolveByRecipeId,
+    resolveByProductId
 };

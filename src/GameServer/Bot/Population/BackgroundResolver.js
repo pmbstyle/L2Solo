@@ -85,9 +85,19 @@ function resolveTravel(state, timestamp = Date.now()) {
     const isLegacyGiranMarketTrip = travel.townName === 'Giran'
         && ['market_sale_inventory', 'market_search_for_weapon', 'market_search_for_gear'].includes(travel.reason)
         && travel.method !== 'soe_gatekeeper';
+    // Cold bots model the native SoE/gatekeeper sequence as a short transit,
+    // not a visible straight-line cross-continent walk.  They remain at the
+    // origin while casting/transiting and appear only at the destination.
+    const nativeTransit = ['soe_gatekeeper', 'gatekeeper_spot'].includes(travel.method)
+        // Routes persisted before native cold travel had no method.  Treat the
+        // known long-distance lifecycle reasons as native too, so a restart
+        // does not leave old craft/market travellers visibly map-walking.
+        || ['component_craft', 'equipment_craft', 'equipment_craft_return', 'return_after_market'].includes(travel.reason);
     const startedAt = Number(travel.startedAt || timestamp);
     const arrivalAt = Number(travel.arrivalAt);
-    const progress = isLegacyGiranMarketTrip ? 1 : Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
+    const progress = isLegacyGiranMarketTrip ? 1 : nativeTransit
+        ? (timestamp >= arrivalAt ? 1 : 0)
+        : Math.max(0, Math.min(1, (timestamp - startedAt) / Math.max(1, arrivalAt - startedAt)));
     const from = travel.from || state.loc || {};
     const to = travel.to;
     const loc = {
@@ -108,12 +118,14 @@ function resolveTravel(state, timestamp = Date.now()) {
             stats: nextStats
         },
         events: arrived ? [{
-            type: travel.arrivalEvent || 'arrived_town',
+            type: travel.arrivalEvent || (arrivalActivity === 'crafting' ? 'arrived_craft_station' : 'arrived_town'),
             summary: arrivalActivity === 'shopping'
                 ? `${state.name || 'Bot'} used SoE via ${travel.viaTown || 'town'} and reached ${travel.townName || 'town'} to shop`
-                : `${state.name || 'Bot'} returned to ${travel.regionName || 'the hunting area'}`,
+                : arrivalActivity === 'crafting'
+                    ? `${state.name || 'Bot'} arrived at ${travel.stationId || 'a Giran craft station'} via SoE and gatekeeper`
+                    : `${state.name || 'Bot'} reached ${travel.regionName || 'the hunting area'} via gatekeeper`,
             weight: 2,
-            meta: { townName: travel.townName || null, reason: travel.reason || null }
+            meta: { townName: travel.townName || null, stationId: travel.stationId || null, reason: travel.reason || null }
         }] : [],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
         nextResolveAt: timestamp + (arrived && arrivalActivity === 'shopping' ? 120000 : 30000),
@@ -278,6 +290,16 @@ const BackgroundResolver = {
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 nextResolveAt: Date.now() + 60000,
                 debug: { activity: 'merchant' }
+            };
+        }
+
+        if (state.activity === 'crafting') {
+            return {
+                patch: { activity: 'crafting' },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: Date.now() + 60000,
+                debug: { activity: 'crafting' }
             };
         }
 

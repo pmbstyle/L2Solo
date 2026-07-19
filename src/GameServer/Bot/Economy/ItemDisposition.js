@@ -1,4 +1,5 @@
 const DataCache = invoke('GameServer/DataCache');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
 const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
@@ -14,19 +15,32 @@ function priceFor(state, item, template) {
     const seed = (Number(state.characterId || 0) * 31) + (Number(item.selfId || 0) * 17);
     const percent = 70 + (Math.abs(seed) % 21);
     const adjustment = Math.max(50, Math.min(100, Number(state?.stats?.marketPricing?.[Number(item.selfId)]?.percent || 100)));
-    return Math.max(1, Math.floor(basePrice * percent * adjustment / 10000));
+    return BotEconomyPricing.scalePrice(basePrice * percent * adjustment / 10000);
 }
 
 function basePrice(item, template = templateFor(item?.selfId)) {
     return Math.max(0, Number(template?.template?.price || 0));
 }
 
+function reservedCraftAmounts(state) {
+    const plan = state?.stats?.equipmentPlan;
+    if (!['active', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return {};
+    return (plan.materials || []).reduce((reserved, material) => {
+        const selfId = Number(material.selfId || 0);
+        if (!selfId) return reserved;
+        reserved[selfId] = Math.max(Number(reserved[selfId] || 0), Math.min(Number(material.owned || 0), Number(material.amount || 0)));
+        return reserved;
+    }, {});
+}
+
 function saleCandidates(state, options = {}) {
     const limit = Math.max(1, Math.min(20, Number(options.limit) || 8));
+    const reserved = { ...reservedCraftAmounts(state), ...(options.reserved || {}) };
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const selfId = Number(item?.selfId || 0);
         const amount = Number(item?.amount || 0);
-        if (!selfId || selfId === 57 || amount <= 0 || item.equipped) return [];
+        const sellableAmount = Math.max(0, amount - Number(reserved[selfId] || 0));
+        if (!selfId || selfId === 57 || sellableAmount <= 0 || item.equipped) return [];
 
         const template = templateFor(selfId);
         const kind = item.kind || template?.template?.kind || '';
@@ -40,7 +54,7 @@ function saleCandidates(state, options = {}) {
             name: item.name || template?.template?.name || `Item ${selfId}`,
             kind,
             rank: item.rank || template?.etc?.rank || 'none',
-            count: amount,
+            count: sellableAmount,
             price,
             basePrice: base
         }];
@@ -88,6 +102,7 @@ module.exports = {
     isWarehouseCandidate,
     npcLiquidationCandidates,
     priceFor,
+    reservedCraftAmounts,
     saleCandidates,
     saleSummary,
     warehouseCandidates

@@ -3,13 +3,14 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
-        if (goal?.type !== 'upgrade_gear' || !goal.target?.itemId) return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
+        if (!['upgrade_gear', 'buy_craft_material'].includes(goal?.type) || !goal.target?.itemId) return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
 
         const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
@@ -24,8 +25,12 @@ const ColdMarketService = {
                     marketLead: null }
             };
             const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
-            return LifeState.upsertState(wanted.state, 'market_no_offer').then((saved) => ({
-                state: saved || wanted.state,
+            // A wanted ad is not a reason to idle in Giran.  Keep the demand
+            // and retry window, then return to the material route until the
+            // next market attempt is due.
+            const returnState = GoalExecutor.finishMarketVisit(wanted.state) || wanted.state;
+            return LifeState.upsertState(returnState, 'market_no_offer_return').then((saved) => ({
+                state: saved || returnState,
                 purchased: false,
                 reason: 'no_affordable_offer', wanted: wanted.announced, remoteOffer: null
             }));
