@@ -46,7 +46,7 @@ const STATION_LAYOUT = [
     ['s', 'light', 'S Light: Draconic', [665, 667, 669, 671]],
     ['s', 'weapons', 'S Grade: Core Weapons', [627, 631, 633, 639, 641, 643, 645, 775]],
     ['s', 'jewelry', 'S Jewelry: Tateossian', [647, 649, 651]],
-    ['resource', 'core', 'Resources: Molds & Alloys', [32, 34, 35, 36, 38, 39, 40, 27, 497]],
+    ['resource', 'core', 'Resources: Molds & Alloys', [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 497]],
     ['resource', 'master', 'Resources: Maestro Components', [474, 475, 476, 477, 607, 608, 609, 610, 611, 612]]
 ];
 

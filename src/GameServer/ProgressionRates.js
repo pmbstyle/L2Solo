@@ -54,6 +54,7 @@ function rollGroup(overall, rate, rng = Math.random, minimumChance = 0) {
 
     return {
         hit: chance > 0 && rng() * 100 <= chance,
+        chance,
         amountMultiplier: amountMultiplier(overall, rate)
     };
 }

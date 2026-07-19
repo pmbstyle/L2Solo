@@ -2,12 +2,7 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
 const MARKET_TRAVEL_MS = 25 * 1000;
-
-function distance2d(a, b) {
-    const dx = Number(a?.locX || 0) - Number(b?.locX || 0);
-    const dy = Number(a?.locY || 0) - Number(b?.locY || 0);
-    return Math.sqrt((dx * dx) + (dy * dy));
-}
+const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
 
 function marketTown(name = 'Giran') {
     return TownPathfinder.towns.find((town) => town.name === name) || TownPathfinder.towns.find((town) => town.name === 'Giran') || null;
@@ -66,7 +61,7 @@ function finishMarketVisit(state, timestamp = Date.now()) {
 
     const from = { ...state.loc };
     const to = { ...destination.loc };
-    const durationMs = Math.max(30000, Math.min(20 * 60 * 1000, Math.round((distance2d(from, to) / 180) * 1000)));
+    const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY);
     return {
         ...state,
         activity: 'traveling',
@@ -78,11 +73,14 @@ function finishMarketVisit(state, timestamp = Date.now()) {
                 to,
                 regionName: destination.regionName,
                 spotId: destination.spotId,
+                townName: destinationTown?.name || destination.regionName || 'Hunting Ground',
+                viaTown: destinationTown?.name || null,
+                method: 'gatekeeper_spot',
                 arrivalActivity: 'hunting',
                 arrivalEvent: 'returned_to_spot',
                 clearMarketReturn: true,
                 startedAt: timestamp,
-                arrivalAt: timestamp + durationMs
+                arrivalAt: timestamp + GATEKEEPER_SPOT_TRAVEL_MS
             }
         },
         timing: {
@@ -93,4 +91,4 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     };
 }
 
-module.exports = { MARKET_TRAVEL_MS, beginMarketTravel, finishMarketVisit };
+module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit };

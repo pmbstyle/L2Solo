@@ -354,6 +354,13 @@ function sameLoc(left, right) {
     return ['locX', 'locY', 'locZ'].every((key) => Number(left?.[key]) === Number(right?.[key]));
 }
 
+function sameRecipeEntries(left = [], right = []) {
+    const recipeIds = (entries) => (entries || []).map((entry) => Number(entry.recipeId)).filter(Number.isFinite).sort((a, b) => a - b);
+    const leftIds = recipeIds(left);
+    const rightIds = recipeIds(right);
+    return leftIds.length === rightIds.length && leftIds.every((recipeId, index) => recipeId === rightIds[index]);
+}
+
 const GeneratedColdSeeder = {
     running: false,
 
@@ -385,6 +392,7 @@ const GeneratedColdSeeder = {
                     const needsStationRefresh = existingState?.stats?.craftStationId !== craftShop.stationId
                         || existingState?.stats?.craftShop?.stationId !== craftShop.stationId
                         || !sameLoc(existingState?.stats?.craftShop?.loc, craftShop.loc)
+                        || !sameRecipeEntries(existingState?.stats?.craftShop?.entries, craftShop.entries)
                         || (existingState?.phase === 'cold' && !sameLoc(existingState?.loc, craftShop.loc));
                     const needsServiceProfile = Number(existingState?.level || 0) !== Number(state.level)
                         || Number(existingState?.stats?.classId || 0) !== Number(state.stats?.classId || 0)

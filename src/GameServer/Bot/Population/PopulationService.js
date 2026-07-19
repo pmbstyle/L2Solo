@@ -21,6 +21,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
+const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 
 function groupBySpot(states) {
     const grouped = new Map();
@@ -759,7 +760,10 @@ const PopulationService = {
             && state.currentRegion !== 'Giran';
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const previousPlan = state.stats?.equipmentPlan;
-        const spots = passiveActivity ? [] : SpotProfiles.ensure();
+        // A travelling bot does not fight at a spot during this resolve, but its
+        // gear plan still needs the complete atlas.  Passing [] here turned every
+        // in-progress craft route into `blocked` on its first travel tick.
+        const spots = SpotProfiles.ensure();
         const upgradedPlan = GearAcquisitionPlanner.planFor(state, { spots });
         const previousRefresh = previousPlan?.recipeId
             ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId })
@@ -779,21 +783,66 @@ const PopulationService = {
             ...state,
             stats: { ...(state.stats || {}), equipmentPlan: acquisitionPlan }
         };
+        const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
+        if (acquisitionPlan.requiresParty && !state.party?.partyId) {
+            const partyWaitState = {
+                ...plannedState,
+                activity: 'resting',
+                spotId: acquisitionPlan.next?.spotId || state.spotId,
+                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 30000 }
+            };
+            return LifeState.upsertState(partyWaitState, 'acquisition_party_wait')
+                .then((saved) => Promise.all(planEvents.map((event) => (
+                    LifeEvents.record(state.characterId, event.type, event.summary, event.meta, event.weight)
+                ))).then(() => ({
+                    ok: true,
+                    state: saved || partyWaitState,
+                    debug: { activity: 'acquisition_party_wait', next: acquisitionPlan.next }
+                })))
+                .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
                 const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
                 const reason = craft.reason === 'component_crafted'
                     ? 'cold_component_craft_complete'
                     : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
-                return LifeState.upsertState(craft.state || plannedState, reason).then((saved) => {
-                    if (!completed) return { ok: true, state: saved || craft.state || plannedState, debug: craft };
+                // A persisted plan can say ready_to_craft even when an earlier
+                // component craft consumed the raw inputs for the next batch,
+                // or a station may be temporarily unavailable. Do not pin the
+                // bot at a station: re-enter hunting so the acquisition planner
+                // can select the missing material again.
+                const recoveredState = !completed
+                    ? {
+                        ...(craft.state || plannedState),
+                        activity: 'hunting',
+                        stats: {
+                            ...((craft.state || plannedState).stats || {}),
+                            travel: null
+                        },
+                        timing: {
+                            ...((craft.state || plannedState).timing || {}),
+                            nextResolveAt: Date.now() + 30000
+                        }
+                    }
+                    : craft.state || plannedState;
+                return LifeState.upsertState(recoveredState, reason).then((saved) => {
+                    const supplemented = craft.supplementedMaterials || [];
+                    const supplyEvent = supplemented.length
+                        ? LifeEvents.record(state.characterId, 'craft_supplemented', `${state.name} received ${supplemented.map((item) => `${item.amount} ${item.name}`).join(', ')} for crafting`, {
+                            recipeId: craft.recipeId,
+                            materials: supplemented
+                        }, 2)
+                        : Promise.resolve(null);
+                    if (!completed) return supplyEvent.then(() => ({ ok: true, state: saved || craft.state || plannedState, debug: craft }));
                     const eventType = craft.reason === 'component_crafted' ? 'component_craft' : 'equipment_craft';
-                    const summary = `${state.name} crafted ${craft.productName} at ${craft.stationId}`;
-                    return LifeEvents.record(state.characterId, eventType, summary, {
+                    const quantity = Math.max(1, Number(craft.batchCount || 1));
+                    const summary = `${state.name} crafted ${quantity > 1 ? `${quantity}x ` : ''}${craft.productName} at ${craft.stationId}`;
+                    return supplyEvent.then(() => LifeEvents.record(state.characterId, eventType, summary, {
                         recipeId: craft.recipeId,
                         productId: craft.productId,
                         stationId: craft.stationId
-                    }, craft.reason === 'crafted' ? 3 : 2).then(() => (
+                    }, craft.reason === 'crafted' ? 3 : 2)).then(() => (
                         { ok: true, state: saved || craft.state || plannedState, debug: craft }
                     ));
                 });
@@ -801,6 +850,9 @@ const PopulationService = {
                 .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const travellingState = ColdCraftingService.beginTravel(plannedState) || plannedState;
+        const travelEvents = travellingState !== plannedState
+            ? [CraftTelemetry.stationTravelEvent(plannedState, travellingState.stats?.travel)]
+            : [];
         const spot = passiveActivity ? null : SpotProfiles.findForState(travellingState);
         if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
@@ -863,7 +915,11 @@ const PopulationService = {
                         const travelState = GoalExecutor.beginMarketTravel(marketState, goalSnapshot?.current);
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : marketState;
                     }));
-                }).then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => finalState))
+                }).then((finalState) => {
+                    const craftEvents = CraftTelemetry.progressEvents(state, acquisitionPlan, updatedState);
+                    return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
+                        .then(() => finalState);
+                })
                 .then((finalState) => {
                     GlobalChat.maybeAnnounce(finalState, result.events);
                     return {

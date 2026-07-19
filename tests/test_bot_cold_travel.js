@@ -22,6 +22,21 @@ assert.strictEqual(started.stats.travel.method, 'soe_gatekeeper');
 assert(started.stats.travel.viaTown, 'market travel should first use SoE to the regional town');
 assert.strictEqual(started.stats.travel.arrivalAt - started.stats.travel.startedAt, GoalExecutor.MARKET_TRAVEL_MS);
 
+const nativeMidway = {
+    ...started,
+    stats: {
+        ...started.stats,
+        travel: {
+            ...started.stats.travel,
+            startedAt: Date.now() - 1000,
+            arrivalAt: Date.now() + 10000
+        }
+    }
+};
+const nativeTransit = BackgroundResolver.resolveSolo({ state: nativeMidway, spot: null });
+assert.deepStrictEqual(nativeTransit.patch.loc, state.loc, 'SoE/gatekeeper transit must not visibly interpolate across the map');
+assert.strictEqual(nativeTransit.patch.activity, 'traveling', 'native transit must remain traveling until its short cast/transit completes');
+
 const sellStarted = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats: {} }, {
     type: 'sell_inventory',
     plan: { expectedBenefit: 'market_sale_inventory' }
@@ -55,6 +70,8 @@ const returning = GoalExecutor.finishMarketVisit(shoppingState, Date.now());
 assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
+assert.strictEqual(returning.stats.travel.method, 'gatekeeper_spot', 'returning from Giran must use the destination gatekeeper instead of walking across the world');
+assert.strictEqual(returning.stats.travel.arrivalAt - returning.stats.travel.startedAt, GoalExecutor.GATEKEEPER_SPOT_TRAVEL_MS);
 
 const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
     ...shoppingState,

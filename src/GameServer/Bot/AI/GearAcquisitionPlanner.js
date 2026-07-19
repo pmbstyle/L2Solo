@@ -3,11 +3,13 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
+const RATE_MODEL_VERSION = 2;
 
 function gradeForLevel(level) {
     const value = Number(level || 1);
@@ -108,17 +110,35 @@ function preferredDropTarget(state = {}) {
 }
 
 function itemDropChance(reward, itemId, kind = 'drop') {
-    const rate = kind === 'spoil' ? ProgressionRates.profile().spoil : ProgressionRates.profile().drop;
-    return (reward?.[kind === 'spoil' ? 'spoils' : 'rewards'] || []).reduce((sum, group) => {
-        const groupChance = Math.min(100, Math.max(0, Number(group.overall || 0) * rate)) / 100;
-        const itemChance = (group.items || [])
-            .filter((item) => Number(item.selfId) === Number(itemId))
-            .reduce((itemSum, item) => itemSum + Number(item.chance || 0) / 100, 0);
-        return sum + groupChance * itemChance;
-    }, 0);
+    return itemDropYield(reward, itemId, kind).chance;
 }
 
-function sourceForItem(itemId, spots = []) {
+function itemDropYield(reward, itemId, kind = 'drop', context = {}) {
+    return (reward?.[kind === 'spoil' ? 'spoils' : 'rewards'] || []).reduce((sum, group) => {
+        const roll = ProgressionRates.rewardGroupRoll(group, kind, context, () => 0);
+        const groupChance = Number(roll.chance || 0) / 100;
+        const selectionChance = (group.items || [])
+            .filter((item) => Number(item.selfId) === Number(itemId))
+            .reduce((itemSum, item) => itemSum + Number(item.chance || 0) / 100, 0);
+        const averageAmount = (group.items || [])
+            .filter((item) => Number(item.selfId) === Number(itemId))
+            .reduce((itemSum, item) => itemSum + (Number(item.chance || 0) / 100) * ((Number(item.min || 1) + Number(item.max || item.min || 1)) / 2), 0);
+        return {
+            chance: sum.chance + groupChance * selectionChance,
+            expectedYield: sum.expectedYield + groupChance * averageAmount * Number(roll.amountMultiplier || 1)
+        };
+    }, { chance: 0, expectedYield: 0 });
+}
+
+function soloSafeForSource(state = {}, source = {}) {
+    return Number(state.level || 1) >= Number(source.spotLevel || Infinity) + 2;
+}
+
+function bestSourceForState(sources = [], state = {}) {
+    return sources.find((source) => soloSafeForSource(state, source)) || sources[0] || null;
+}
+
+function sourceForItem(itemId, spots = [], state = {}) {
     const spotByNpc = new Map();
     const spotByName = new Map();
     (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
@@ -126,12 +146,15 @@ function sourceForItem(itemId, spots = []) {
         if (entry.name) spotByName.set(String(entry.name).trim().toLowerCase(), spot);
     }));
     return (DataCache.npcRewards || []).flatMap((reward) => ['drop'].map((kind) => {
-        const chance = itemDropChance(reward, itemId, kind);
         const spot = spotByNpc.get(Number(reward.selfId))
             || spotByName.get(String(reward.template?.name || '').trim().toLowerCase());
+        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, {
+            npcLevel: Number(spot?.avgLevel || 0),
+            killerLevel: Number(state.level || 0)
+        });
         if (!chance || !spot) return null;
-        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind, chance, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1) };
-    })).filter(Boolean).sort((a, b) => b.chance - a.chance);
+        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind, chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1) };
+    })).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
 }
 
 function stationRecipeIds() {
@@ -142,18 +165,20 @@ function stationRecipeIds() {
     )));
 }
 
-function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, visited = new Set()) {
-    const direct = sourceForItem(itemId, spots)[0];
+function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set()) {
+    const direct = bestSourceForState(sourceForItem(itemId, spots, state), state);
     if (direct) return { ...direct, itemId: Number(itemId) };
     if (visited.has(Number(itemId))) return null;
 
     const component = C4RecipeItems.resolveByProductId(itemId);
     if (!component || !allowedRecipeIds.has(Number(component.recipeId))) return null;
     const nextVisited = new Set(visited).add(Number(itemId));
+    const componentCrafts = Math.max(1, Math.ceil(Number(requiredAmount || 1) / Math.max(1, Number(component.productCount || 1))));
     for (const ingredient of component.materials || []) {
         const owned = Number(inventoryMap(state.inventory).get(Number(ingredient.selfId)) || 0);
-        if (owned >= Number(ingredient.amount || 0)) continue;
-        const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, nextVisited);
+        const required = Number(ingredient.amount || 0) * componentCrafts;
+        if (owned >= required || CraftSupplementMaterials.isSupplementalMaterial(ingredient.selfId)) continue;
+        const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited);
         if (source) return source;
     }
     return null;
@@ -190,35 +215,36 @@ function planFor(state = {}, options = {}) {
     }
     if (gradeForLevel(state.level) === 'none' && !options.recipeId) {
         const target = preferredDropTarget(state);
-        const source = target ? sourceForItem(target.selfId, options.spots || [])[0] : null;
+        const source = target ? bestSourceForState(sourceForItem(target.selfId, options.spots || [], state), state) : null;
         return source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: Number(state.level || 1) + 1 >= Number(source.spotLevel || Infinity),
-            expectedKills: Math.ceil(1 / Math.max(source.chance, 0.000001)),
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: soloSafeForSource(state, source), requiresParty: !soloSafeForSource(state, source),
+            rateModelVersion: RATE_MODEL_VERSION,
+            expectedKills: Math.ceil(1 / Math.max(source.expectedYield, 0.000001)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
             recipeId: null, materials: [], next: { ...source, itemId: Number(target.selfId) }
-        } : { status: 'no_grade_drop_only', grade: 'none', role: roleFor(state), strategy: 'direct_drop', recipeId: null, materials: [], next: null };
+        } : { status: 'no_grade_drop_only', grade: 'none', role: roleFor(state), strategy: 'direct_drop', rateModelVersion: RATE_MODEL_VERSION, recipeId: null, materials: [], next: null };
     }
     const target = preferredTarget(state, options);
     if (!target) return { status: 'complete', reason: 'no_missing_craftable_upgrade' };
 
     const spots = options.spots || [];
-    const directSources = sourceForItem(target.item.selfId, spots);
-    const direct = directSources[0] || null;
+    const directSources = sourceForItem(target.item.selfId, spots, state);
+    const direct = bestSourceForState(directSources, state);
     const materials = missingMaterials(target.recipe, state.inventory);
     const allowedRecipeIds = stationRecipeIds();
     const materialPlans = materials.map((material) => ({
         ...material,
         source: material.missing > 0
-            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds)
+            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing)
             : null
     }));
-    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0);
+    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
     const nextMaterial = missingMaterialPlans.slice().sort((a, b) => (
-        (b.missing / Math.max(b.source?.chance || 0.000001, 0.000001)) - (a.missing / Math.max(a.source?.chance || 0.000001, 0.000001))
+        (b.missing / Math.max(b.source?.expectedYield || 0.000001, 0.000001)) - (a.missing / Math.max(a.source?.expectedYield || 0.000001, 0.000001))
     ))[0] || null;
-    const directKills = direct ? 1 / Math.max(direct.chance, 0.000001) : Infinity;
-    const craftKills = missingMaterialPlans.reduce((sum, material) => sum + material.missing / Math.max(material.source?.chance || 0.000001, 0.000001), 0);
-    const soloSafe = direct && Number(state.level || 1) + 1 >= Number(direct.spotLevel || Infinity);
+    const directKills = direct ? 1 / Math.max(direct.expectedYield, 0.000001) : Infinity;
+    const craftKills = missingMaterialPlans.reduce((sum, material) => sum + material.missing / Math.max(material.source?.expectedYield || 0.000001, 0.000001), 0);
+    const soloSafe = direct && soloSafeForSource(state, direct);
     const strategy = soloSafe && directKills <= craftKills * 0.8 ? 'direct_drop' : 'craft';
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
@@ -226,15 +252,18 @@ function planFor(state = {}, options = {}) {
     const readyToCraft = strategy === 'craft' && (
         missingMaterialPlans.length === 0 || hasReadyCraftComponent(target.recipe, state, allowedRecipeIds)
     );
+    const requiresParty = Boolean(next && !soloSafeForSource(state, next));
 
     return {
         status: readyToCraft ? 'ready_to_craft' : next ? 'active' : 'blocked',
         grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
         role: roleFor(state),
+        rateModelVersion: RATE_MODEL_VERSION,
         target: { selfId: Number(target.item.selfId), name: target.item.template?.name || `Item ${target.item.selfId}`, slot: Number(target.item.etc?.slot || 0) },
         recipeId: Number(target.recipe.recipeId),
         strategy,
         soloSafe,
+        requiresParty,
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
         materials: materialPlans.map(({ source, ...material }) => ({ ...material, sourceSpotId: source?.spotId || null })),
         next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null
@@ -262,4 +291,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { gradeForLevel, isCraftService, preferredTarget, preferredDropTarget, sourceForItem, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, preferredTarget, preferredDropTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

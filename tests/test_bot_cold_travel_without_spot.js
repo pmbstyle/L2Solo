@@ -15,6 +15,7 @@ const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const originals = {
+    ensure: SpotProfiles.ensure,
     findForState: SpotProfiles.findForState,
     resolveSolo: BackgroundResolver.resolveSolo,
     applyResolve: LifeState.applyResolve,
@@ -47,7 +48,12 @@ async function run() {
         stats: { travel: { to: { locX: 1, locY: 1, locZ: 1 }, startedAt: Date.now() - 30000, arrivalAt: Date.now() + 30000 } }
     };
     let receivedSpot = 'unset';
+    let planningAtlasRequests = 0;
 
+    SpotProfiles.ensure = () => {
+        planningAtlasRequests += 1;
+        return [];
+    };
     SpotProfiles.findForState = () => null;
     BackgroundResolver.resolveSolo = ({ spot }) => {
         receivedSpot = spot;
@@ -68,10 +74,12 @@ async function run() {
     const result = await PopulationService.resolveColdState(state);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(receivedSpot, null, 'travel must resolve without a hunting spot');
+    assert.strictEqual(planningAtlasRequests, 1, 'travel must still retain the spot atlas while refreshing an equipment plan');
     console.log('Bot cold travel without spot checks passed');
 }
 
 run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() => {
+    SpotProfiles.ensure = originals.ensure;
     SpotProfiles.findForState = originals.findForState;
     BackgroundResolver.resolveSolo = originals.resolveSolo;
     LifeState.applyResolve = originals.applyResolve;

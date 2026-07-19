@@ -10,6 +10,10 @@ const MANUFACTURE_MANAGE = 6;
 const MAX_RECIPES = 100;
 const activeCrafters = new Set();
 
+function isPublicCraftStation(session) {
+    return /^bot_craft_\d+$/i.test(String(session?.accountId || ''));
+}
+
 function shop(actor) {
     const store = actor.model || actor;
     if (!store.manufactureShop) store.manufactureShop = { type: 'dwarven', title: '', entries: [] };
@@ -149,6 +153,7 @@ async function craft(session, crafterId, recipeId, random = Math.random) {
     const entry = shop(crafter || {}).entries.find((candidate) => Number(candidate.recipeId) === Number(recipeId));
     const customerId = Number(customer?.fetchId?.());
     const actorId = Number(crafter?.fetchId?.());
+    const publicStation = isPublicCraftStation(crafterSession);
     const fail = () => {
         if (crafter && recipe) session?.dataSendToMe?.(ServerResponse.recipeShopItemInfo(crafter, recipe.recipeId, 0));
         session?.dataSendToMe?.(ServerResponse.actionFailed());
@@ -158,7 +163,7 @@ async function craft(session, crafterId, recipeId, random = Math.random) {
         Number(customer.fetchPrivateStoreType?.() || 0) !== 0 ||
         Number(crafter.fetchPrivateStoreType?.()) !== MANUFACTURE || recipe.type !== shop(crafter).type ||
         !knownRecipe(crafter, recipe.recipeId, recipe.type) || craftLevel(crafter, recipe.type) < recipe.level ||
-        Number(crafter.fetchMp?.() || 0) < recipe.mpCost || !distanceAllows(customer, crafter) ||
+        (!publicStation && Number(crafter.fetchMp?.() || 0) < recipe.mpCost) || !distanceAllows(customer, crafter) ||
         !Number.isSafeInteger(customerId) || !Number.isSafeInteger(actorId) || activeCrafters.has(actorId)) return fail();
 
     const consumed = materialPlan(customer.backpack, recipe.materials);
@@ -174,7 +179,7 @@ async function craft(session, crafterId, recipeId, random = Math.random) {
         stackable: !!template.etc?.stackable,
         slot: template.etc?.slot || 0
     };
-    const crafterMp = Number(crafter.fetchMp()) - recipe.mpCost;
+    const crafterMp = publicStation ? Number(crafter.fetchMp()) : Number(crafter.fetchMp()) - recipe.mpCost;
     activeCrafters.add(actorId);
     try {
         const success = recipe.successRate >= 100 || (Number(random()) * 100) < recipe.successRate;

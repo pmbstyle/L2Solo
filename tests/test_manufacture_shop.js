@@ -118,6 +118,17 @@ async function run() {
     assert.strictEqual(customerSession.packets.at(-1)[0], 0xda, 'Manufacture result must use C4 RecipeShopItemInfo');
     assert.strictEqual(customerSession.packets.at(-1).readInt32LE(17), 1, 'Successful manufacture must report status 1');
 
+    const stationCrafter = actor(101, [item(31, 57, 50)], { storeType: 5, mp: 1 });
+    const stationCustomer = actor(201, [item(13, 1864, 4), item(14, 1869, 2), item(15, 57, 1000)]);
+    const stationSession = session(stationCrafter);
+    stationSession.accountId = 'bot_craft_27';
+    const stationCustomerSession = session(stationCustomer);
+    World.user = { sessions: [stationSession, stationCustomerSession] };
+    ManufactureShop.shop(stationCrafter).entries = [{ recipeId: 1, price: 100 }];
+    assert.strictEqual(await ManufactureShop.craft(stationCustomerSession, 101, 1, () => 0), true, 'A public craft station must accept orders even when its displayed MP is low');
+    assert.strictEqual(stationCrafter.fetchMp(), 1, 'A public craft station must retain its MP after a customer order');
+    assert.strictEqual(persisted.at(-1).crafterMp, 1, 'A public craft station must persist unchanged MP for the order');
+
     const packet = Buffer.alloc(13);
     packet[0] = 0xb6;
     packet.writeInt32LE(100, 1);
@@ -131,7 +142,7 @@ async function run() {
 
     customer.setPrivateStoreType(1);
     assert.strictEqual(await ManufactureShop.craft(customerSession, 100, 1, () => 0), false, 'A customer with an active private store must not manufacture items');
-    assert.strictEqual(persisted.length, 1, 'Rejected store-mode customer must not enter the durable exchange');
+    assert.strictEqual(persisted.length, 2, 'Rejected store-mode customer must not enter the durable exchange');
     customer.setPrivateStoreType(0);
 
     const list = ServerResponse.recipeShopSellList(crafter, customer);
