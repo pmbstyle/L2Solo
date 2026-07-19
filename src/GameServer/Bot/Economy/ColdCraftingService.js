@@ -154,7 +154,9 @@ async function craft(state, random = Math.random) {
         reason: success ? componentCraft ? 'component_crafted' : 'crafted' : 'craft_failed',
         result,
         stationId: station.id,
-        recipeId: recipe.recipeId
+        recipeId: recipe.recipeId,
+        productId: Number(recipe.productId),
+        productName: template.template?.name || `Item ${recipe.productId}`
     };
 }
 

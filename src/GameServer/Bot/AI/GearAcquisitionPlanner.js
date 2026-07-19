@@ -25,6 +25,12 @@ function roleFor(state = {}) {
     }) || 'dps';
 }
 
+function isCraftService(state = {}) {
+    return state.activity === 'crafting'
+        && !!state.stats?.craftShop
+        && (Boolean(state.stats?.craftStationId) || Number(state.stats?.generatedIndex || 0) >= 10000);
+}
+
 function armorKindFor(role) {
     if (['mage', 'healer', 'buffer'].includes(role)) return 'Armor.Fabric';
     if (['archer', 'dagger'].includes(role)) return 'Armor.Leather';
@@ -179,6 +185,9 @@ function missingMaterials(recipe, inventory) {
 }
 
 function planFor(state = {}, options = {}) {
+    if (isCraftService(state)) {
+        return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
+    }
     if (gradeForLevel(state.level) === 'none' && !options.recipeId) {
         const target = preferredDropTarget(state);
         const source = target ? sourceForItem(target.selfId, options.spots || [])[0] : null;
@@ -253,4 +262,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { gradeForLevel, preferredTarget, preferredDropTarget, sourceForItem, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { gradeForLevel, isCraftService, preferredTarget, preferredDropTarget, sourceForItem, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

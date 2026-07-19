@@ -26,6 +26,15 @@ const noGradePlan = GearAcquisitionPlanner.planFor({ level: 10, stats: { classId
 assert.strictEqual(noGradePlan.strategy, 'direct_drop', 'no-grade bots must use drop goals rather than recipes');
 assert.strictEqual(noGradePlan.recipeId, null, 'no-grade bots must never receive a crafting recipe');
 
+const serviceCrafter = {
+    level: 70,
+    activity: 'crafting',
+    stats: { classId: 57, generatedIndex: 10026, craftStationId: 'resource_core', craftShop: { entries: [] } },
+    inventory: {}
+};
+assert.strictEqual(GearAcquisitionPlanner.isCraftService(serviceCrafter), true, 'public craft stations must be identified as services');
+assert.strictEqual(GearAcquisitionPlanner.planFor(serviceCrafter, { spots: [stoneGolemSpot] }).status, 'service', 'public craft stations must never receive a gear-acquisition plan');
+
 const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');

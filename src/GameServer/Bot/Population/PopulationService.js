@@ -743,6 +743,17 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
+        if (GearAcquisitionPlanner.isCraftService(state)) {
+            const { equipmentPlan, ...serviceStats } = state.stats || {};
+            const serviceState = {
+                ...state,
+                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 60000 },
+                stats: serviceStats
+            };
+            return LifeState.upsertState(serviceState, 'craft_service_idle')
+                .then((saved) => ({ ok: true, state: saved || serviceState, debug: { activity: 'craft_service_idle' } }))
+                .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         const staleShopping = state?.activity === 'shopping'
             && !state.stats?.marketReturn
             && state.currentRegion !== 'Giran';
@@ -769,10 +780,24 @@ const PopulationService = {
             stats: { ...(state.stats || {}), equipmentPlan: acquisitionPlan }
         };
         if (plannedState.activity === 'crafting') {
-            return ColdCraftingService.craft(plannedState).then((craft) => LifeState.upsertState(
-                craft.state || plannedState,
-                craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait'
-            ).then((saved) => ({ ok: true, state: saved || craft.state || plannedState, debug: craft })))
+            return ColdCraftingService.craft(plannedState).then((craft) => {
+                const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
+                const reason = craft.reason === 'component_crafted'
+                    ? 'cold_component_craft_complete'
+                    : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
+                return LifeState.upsertState(craft.state || plannedState, reason).then((saved) => {
+                    if (!completed) return { ok: true, state: saved || craft.state || plannedState, debug: craft };
+                    const eventType = craft.reason === 'component_crafted' ? 'component_craft' : 'equipment_craft';
+                    const summary = `${state.name} crafted ${craft.productName} at ${craft.stationId}`;
+                    return LifeEvents.record(state.characterId, eventType, summary, {
+                        recipeId: craft.recipeId,
+                        productId: craft.productId,
+                        stationId: craft.stationId
+                    }, craft.reason === 'crafted' ? 3 : 2).then(() => (
+                        { ok: true, state: saved || craft.state || plannedState, debug: craft }
+                    ));
+                });
+            })
                 .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const travellingState = ColdCraftingService.beginTravel(plannedState) || plannedState;
