@@ -71,15 +71,18 @@ async function run() {
         activity: 'crafting',
         loc: { locX: 83396, locY: 147904, locZ: -3400 },
         inventory,
-        stats: { equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId } }
+        stats: {
+            equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId },
+            craftReturn: { loc: { locX: -8200, locY: 11300, locZ: -3100 }, spotId: '2_-24', regionName: 'Wandering' }
+        }
     }, () => 0);
 
     assert.strictEqual(result.reason, 'component_crafted', 'the ready nested resource must be crafted before the final equipment');
     assert.strictEqual(exchange.crafterMp, 1, 'a public crafting station must not consume its MP for a cold manufacture');
     assert.strictEqual(exchange.product.amount, 3, 'a ready component batch must produce every prepared unit in one station exchange');
     assert(exchange.materials.every((material) => material.amount % 3 === 0), 'a component batch must consume materials for its full prepared quantity');
-    assert.strictEqual(result.state.activity, 'hunting', 'a component craft without enough raw inputs for the next batch must resume farming instead of idling at the station');
-    assert.strictEqual(result.state.stats.travel, null, 'a component craft must not start a return trip before the final recipe is complete');
+    assert.strictEqual(result.state.activity, 'traveling', 'a component craft without enough raw inputs for the next batch must leave the Giran station');
+    assert.strictEqual(result.state.stats.travel.reason, 'component_craft_return', 'component crafting must return through the gatekeeper before resuming material farming');
 
     Database.fetchItems = async () => [];
     LifeState.refreshInventory = async (state) => {

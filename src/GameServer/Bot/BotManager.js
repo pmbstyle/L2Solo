@@ -568,6 +568,7 @@ const BotManager = {
                         session.plan = botData.plan || 'hunting';
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
                         session.currentSpot = botData.currentSpot || null;
+                        session.coldLifeState = botData.coldLifeState || null;
                         if (botData.spawnReady !== false) {
                             this.prepareBotForSpawn(session, botData);
                         }

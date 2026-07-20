@@ -3,6 +3,7 @@ const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -432,6 +433,57 @@ function recoverStaleHotStates() {
     });
 }
 
+function mergeSessionIntoLifeState(session, state, phase, reason = '', options = {}) {
+    const observed = recordFromSession(session, phase, reason);
+    const observedStats = parseJson(observed.statsJson, {});
+    const observedInventory = parseJson(observed.inventorySummary, {});
+    const timestamp = now();
+    return {
+        ...state,
+        accountName: observed.accountName,
+        name: observed.characterName,
+        level: observed.level,
+        exp: observed.exp,
+        sp: observed.sp,
+        adena: observed.adena,
+        phase,
+        activity: options.activity || state.activity || observed.activity,
+        loc: options.loc || state.loc || { locX: observed.locX, locY: observed.locY, locZ: observed.locZ },
+        vitals: { hp: observed.hp, maxHp: observed.maxHp, mp: observed.mp, maxMp: observed.maxMp },
+        levelBand: observed.targetLevelBand || state.levelBand,
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: options.nextResolveAt ?? state.timing?.nextResolveAt ?? null,
+            lastHotAt: phase === 'hot' ? timestamp : state.timing?.lastHotAt || null
+        },
+        stats: { ...(state.stats || {}), ...observedStats, lastReason: reason },
+        inventory: observedInventory
+    };
+}
+
+function shouldRecoverOrphanedGiranState(state = {}) {
+    if (state.phase !== 'cold' || state.currentRegion !== 'Giran' || !state.spotId) return false;
+    if (['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return false;
+    const stats = state.stats || {};
+    // An ordinary bot may be in Giran only while traveling, shopping, or
+    // running a store. Any remaining market/craft metadata on a resting or
+    // hunting bot is stale context, not an active reason to occupy the plaza.
+    return !stats.marketStore && !stats.craftShop;
+}
+
+function recoverOrphanedGiranState(state = {}) {
+    if (!shouldRecoverOrphanedGiranState(state)) return state;
+    const spot = SpotService.findById(state.spotId);
+    if (!spot?.center) return state;
+    return {
+        ...state,
+        currentRegion: state.homeRegion || state.currentRegion,
+        loc: SpotService.randomPointNear(spot, 400),
+        timing: { ...(state.timing || {}), nextResolveAt: now() + 30000 }
+    };
+}
+
 function recoverStaleCraftWaits() {
     const timestamp = now();
     return Database.execute([
@@ -493,6 +545,13 @@ const BotLifeState = {
             )`,
             []
         ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => hydrateCache()).then((count) => {
+            const repairs = [...cache.values()]
+                .map(recoverOrphanedGiranState)
+                .filter((state) => state !== cache.get(state.characterId));
+            return repairs.reduce((chain, state) => chain.then(() => save(rowFromState(state)).then(() => {
+                cache.set(state.characterId, state);
+            })), Promise.resolve()).then(() => count);
+        }).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
             return true;
@@ -507,7 +566,14 @@ const BotLifeState = {
     markHot(session, reason = 'hot') {
         if (!session || !session.actor) return Promise.resolve(null);
 
-        const row = recordFromSession(session, 'hot', reason);
+        const preservedState = session.coldLifeState;
+        const row = preservedState
+            ? rowFromState(mergeSessionIntoLifeState(session, preservedState, 'hot', reason, {
+                // The activation position can be deliberately near a player.
+                // It is not the bot's durable background location.
+                loc: preservedState.loc
+            }))
+            : recordFromSession(session, 'hot', reason);
         const marketState = session.coldMarketState;
         const craftState = refreshCraftShop(session.coldCraftState);
         if (marketState?.stats?.marketStore) {
@@ -601,6 +667,16 @@ const BotLifeState = {
                 stats: { ...(craftState.stats || {}), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
             };
+            return this.upsertState(nextState, reason);
+        }
+
+        if (session.coldLifeState) {
+            const preserved = recoverOrphanedGiranState(session.coldLifeState);
+            const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
+                loc: preserved.loc,
+                nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+            });
+            session.coldLifeState = nextState;
             return this.upsertState(nextState, reason);
         }
 

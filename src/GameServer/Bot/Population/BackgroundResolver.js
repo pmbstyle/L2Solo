@@ -92,7 +92,7 @@ function resolveTravel(state, timestamp = Date.now()) {
         // Routes persisted before native cold travel had no method.  Treat the
         // known long-distance lifecycle reasons as native too, so a restart
         // does not leave old craft/market travellers visibly map-walking.
-        || ['component_craft', 'equipment_craft', 'equipment_craft_return', 'return_after_market'].includes(travel.reason);
+        || ['component_craft', 'component_craft_return', 'equipment_craft', 'equipment_craft_return', 'return_after_market'].includes(travel.reason);
     const startedAt = Number(travel.startedAt || timestamp);
     const arrivalAt = Number(travel.arrivalAt);
     const progress = isLegacyGiranMarketTrip ? 1 : nativeTransit
