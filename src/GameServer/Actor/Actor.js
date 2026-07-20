@@ -25,6 +25,14 @@ class Actor extends ActorModel {
     }
 
     destructor() {
+        // A player-owned summon retains follow/feed/lifetime timers. Dispose it
+        // while the owner and session are still valid; otherwise a timer can
+        // fire after Session.error() clears session.actor.
+        const SummonControl = invoke('GameServer/Npc/SummonControl');
+        [...new Set([this.summon, this.pet].filter(Boolean))].forEach((summon) => {
+            SummonControl.unsummon(this.session, this, summon);
+        });
+
         invoke(path.actor).unselect(
             this.session, this
         );

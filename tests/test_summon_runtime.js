@@ -211,6 +211,10 @@ async function withFastTimers(callback) {
     session.actor.summon = { state: { fetchDead: () => true } };
     assert.strictEqual(SummonControl.activeSummon(session.actor), actionPet, 'live pet should remain controllable when a stale dead summon reference exists');
 
+    const disconnectedLifetimeSummon = { timer: {}, state: { fetchDead: () => false } };
+    assert.doesNotThrow(() => SummonControl.tickLifetime({ actor: null }, session.actor, disconnectedLifetimeSummon),
+        'a queued summon lifetime tick must be harmless after its owner disconnects');
+
     const originalNpcSkillsForNpc = NpcSkills.forNpc;
     let clearedCooldownSummonTimers = 0;
     NpcSkills.forNpc = () => [{ fetchSelfId: () => 4230 }];
