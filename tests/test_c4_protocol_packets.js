@@ -230,9 +230,20 @@ assert.strictEqual(etcStatusUpdate.readInt32LE(5), 0, 'C4 EtcStatusUpdate should
 
 const userInfo = ServerResponse.userInfo(actor);
 assert.strictEqual(userInfo[0], 0x04);
-assert.deepStrictEqual(actor.paperdollIdSlots, Array.from({ length: 16 }, (_, i) => i));
-assert.deepStrictEqual(actor.paperdollSelfIdSlots, Array.from({ length: 16 }, (_, i) => i));
+assert.deepStrictEqual(actor.paperdollIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
+assert.deepStrictEqual(actor.paperdollSelfIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
 assert.ok(userInfo.includes(0xff), 'C4 UserInfo should include trailing name-color bytes');
+
+const fullBodyActor = fakeActor();
+const fullBodyUserInfo = ServerResponse.userInfo(fullBodyActor);
+assert.ok(fullBodyUserInfo, 'full-body equipment should still produce UserInfo');
+assert.ok(!fullBodyActor.paperdollIdSlots.includes(15), 'internal full-body slot must not be serialized as a C4 equipment field');
+assert.ok(!fullBodyActor.paperdollSelfIdSlots.includes(15), 'internal full-body item slot must not be serialized as a C4 equipment field');
+const userInfoEquipmentOffset = 1 + 20 + Buffer.byteLength('C4Tester\0', 'ucs2') + (19 * 4);
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (14 * 4)), 4000007, 'C4 UserInfo must repeat the right-hand weapon before the hair field');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (15 * 4)), 0, 'C4 UserInfo hair field must not receive a weapon or full-body armor');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (30 * 4)), 1007, 'C4 UserInfo must repeat the right-hand weapon display id before the hair field');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (31 * 4)), 0, 'C4 UserInfo hair display id must remain empty');
 actor.effects = { stun: { key: 'stun', id: 100, type: 'debuff', expiresAt: Date.now() + 10000 } };
 assert.ok(ServerResponse.userInfo(actor).includes(0x40), 'C4 UserInfo should expose the stun abnormal-effect mask');
 

@@ -7,6 +7,10 @@ function userInfo(actor) {
     const packet = new SendPacket(0x04);
     const clan = Pledge.clan(actor);
     const relation = ClanService.isLeader(actor, clan) ? 0x40 : 0x00;
+    const paperdollId = (slot) => actor.backpack.fetchPaperdollId(slot) || 0;
+    const paperdollSelfId = (slot) => actor.backpack.fetchPaperdollSelfId(slot) || 0;
+    const weaponId = paperdollId(7) || paperdollId(14);
+    const weaponSelfId = paperdollSelfId(7) || paperdollSelfId(14);
 
     packet
         .writeD(actor.fetchLocX())
@@ -35,15 +39,17 @@ function userInfo(actor) {
         .writeD(actor.fetchMaxLoad())
         .writeD(0x28); // ?
 
-        for (let i = 0; i < 16; i++) {
-            packet
-                .writeD(actor.backpack.fetchPaperdollId(i));
+        for (let i = 0; i < 14; i++) {
+            packet.writeD(paperdollId(i));
         }
+        packet.writeD(weaponId) // C4 repeats the right-hand weapon here
+            .writeD(0x00); // Hair equipment is not modelled locally
 
-        for (let i = 0; i < 16; i++) {
-            packet
-                .writeD(actor.backpack.fetchPaperdollSelfId(i));
+        for (let i = 0; i < 14; i++) {
+            packet.writeD(paperdollSelfId(i));
         }
+        packet.writeD(weaponSelfId) // C4 repeats the right-hand weapon here
+            .writeD(0x00); // Hair equipment is not modelled locally
 
     packet
         .writeD(actor.fetchCollectivePAtk())

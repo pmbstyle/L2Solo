@@ -1478,14 +1478,16 @@ class Backpack extends BackpackModel {
         }
         else // Check if ear place is taken
         if (slot === equip.earr || slot === equip.earl) {
-            if (this.paperdoll[equip.earr]?.id) {
-                item.setSlot(equip.earl);
+            const otherSlot = slot === equip.earr ? equip.earl : equip.earr;
+            if (this.paperdoll[slot]?.id && !this.paperdoll[otherSlot]?.id) {
+                item.setSlot(otherSlot);
             }
         }
         else // Check if fin place is taken
         if (slot === equip.fr || slot === equip.fl) {
-            if (this.paperdoll[equip.fr]?.id) {
-                item.setSlot(equip.fl);
+            const otherSlot = slot === equip.fr ? equip.fl : equip.fr;
+            if (this.paperdoll[slot]?.id && !this.paperdoll[otherSlot]?.id) {
+                item.setSlot(otherSlot);
             }
         }
 
