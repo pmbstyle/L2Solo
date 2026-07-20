@@ -150,7 +150,10 @@ function startLifetime(session, actor, summon, skill) {
 }
 
 function tickLifetime(session, actor, summon) {
-    if (!summon || (actor.summon !== summon && actor.pet !== summon)) {
+    // Session teardown clears session.actor after actor.destructor(). A timer
+    // already queued by the event loop must become inert instead of touching
+    // Backpack.deleteItem with a disconnected session.
+    if (!session?.actor || session.actor !== actor || !summon || (actor.summon !== summon && actor.pet !== summon)) {
         clearLifetimeTimer(summon);
         return;
     }

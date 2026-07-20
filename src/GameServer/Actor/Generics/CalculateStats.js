@@ -2,6 +2,7 @@ const Formulas = invoke('GameServer/Formulas');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const C4GradePenalty = invoke('GameServer/Items/C4GradePenalty');
 
 function effectiveBaseStat(actor, stat, fallback) {
     const base = Number(fallback()) || 0;
@@ -102,7 +103,8 @@ function setCollectiveTotalAccur(actor) {
 function setCollectiveTotalEvasion(actor) {
     const evasion = actor.backpack.fetchTotalArmorEvasion() ?? actor.fetchEvasion();
     const dex = effectiveBaseStat(actor, 'DEX', () => actor.fetchDex());
-    const base    = Formulas.calcEvasion(actor.fetchLevel(), dex, evasion) + EffectStats.add(actor, 'pEvasionRateAdd');
+    let base = Formulas.calcEvasion(actor.fetchLevel(), dex, evasion) + EffectStats.add(actor, 'pEvasionRateAdd');
+    base = Math.round(base * EffectStats.multiplier(actor, 'pEvasionMul'));
     actor.setCollectiveEvasion(base);
 }
 
@@ -166,6 +168,7 @@ function legacyBuffAdd(actor, typeOrKey, stat, fallback = 0) {
 }
 
 function calculateStats(session, actor) {
+    C4GradePenalty.sync(actor);
     actor.backpack?.syncEquipmentItemSkills?.(actor);
     setCollectiveTotalHp      (actor);
     setCollectiveTotalMp      (actor);

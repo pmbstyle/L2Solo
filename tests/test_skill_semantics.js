@@ -764,7 +764,7 @@ assert.strictEqual(scrollManaRegeneration.fetchSkillType(), C4SkillRules.EFFECT,
 assert.strictEqual(scrollManaRegeneration.fetchSemantic().hitTime, 4000, 'Scroll of Mana Regeneration should preserve sourced hitTime metadata');
 assert.strictEqual(scrollManaRegeneration.fetchSemantic().staticHitTime, true, 'Scroll of Mana Regeneration should preserve sourced staticHitTime metadata');
 assert.strictEqual(scrollManaRegenOutcome.effect.key, 'scroll_of_mana_regeneration', 'Scroll of Mana Regeneration should apply a structured MP regen buff');
-assert.strictEqual(EffectStats.add(scrollManaRegenTarget, 'regMp'), 1.82, 'Scroll of Mana Regeneration should apply sourced regMp +1.82');
+assert.strictEqual(EffectStats.add(scrollManaRegenTarget, 'regMpAdd'), 1.82, 'Scroll of Mana Regeneration should apply sourced regMp +1.82');
 
 const blessEvaData = activeSkills.find((entry) => entry.selfId === 2076);
 assert(blessEvaData, 'Bless of Eva should be present in active skills data');
@@ -1243,7 +1243,7 @@ const partyBuffStatsTarget = statActor();
 });
 calculateStats({}, partyBuffStatsTarget);
 assert.strictEqual(partyBuffStatsTarget.collectivePDef, Math.round(Math.round(Formulas.calcPDef(20, 100)) * 1.25), 'Song of Earth should multiply sourced PDef');
-assert.strictEqual(partyBuffStatsTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) + 3, 'Song of Water should add sourced evasion');
+assert.strictEqual(partyBuffStatsTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) + 3), 'Song of Water should add sourced evasion');
 assert.strictEqual(partyBuffStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 20, 'Song of Wind should add sourced run speed');
 assert.strictEqual(partyBuffStatsTarget.collectiveCritical, Formulas.calcCritical(30, 40) * 2, 'Song of Hunter should apply sourced rCrit basemul 1 as a 2x multiplier');
 assert.strictEqual(partyBuffStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.12), 'Dance of Warrior should multiply sourced PAtk');
@@ -1480,7 +1480,7 @@ const scrollStatsTarget = statActor();
 calculateStats({}, scrollStatsTarget);
 assert.strictEqual(scrollStatsTarget.collectiveAccur, Formulas.calcAccur(20, 30, 5) + 4, 'Scroll of Guidance should add sourced accuracy');
 assert.strictEqual(scrollStatsTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.3), 'Scroll of Greater Acumen should multiply sourced cast speed');
-assert.strictEqual(scrollStatsTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) + 4, 'Scroll of Agility should add sourced evasion');
+assert.strictEqual(scrollStatsTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) + 4), 'Scroll of Agility should add sourced evasion');
 assert.strictEqual(scrollStatsTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.75), 'Scroll of Mystic Empower should multiply sourced MAtk');
 assert.strictEqual(scrollStatsTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.15), 'Scroll of Might should multiply sourced PAtk');
 assert.strictEqual(scrollStatsTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 33, 'Scroll of Wind Walk should add sourced run speed');
@@ -6772,7 +6772,7 @@ const manaRegenOutcome = SkillEffects.execute(session(), caster, manaRegenTarget
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(manaRegenOutcome.effect.key, 'mana_regeneration', 'Mana Regeneration should apply a structured MP regen buff');
-assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMp'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
+assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMpAdd'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
 assert.strictEqual(regenBuffAutomation.fetchRevMpAmount(manaRegenTarget), 13, 'Mana Regeneration should increase runtime MP regeneration by sourced addition');
 
 const magicBarrierTarget = statActor();
@@ -6965,7 +6965,7 @@ assert.strictEqual(berserkerTarget.collectiveMDef, Math.round(Formulas.calcMDef(
 assert.strictEqual(berserkerTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), 'Berserker Spirit should boost PAtkSpd');
 assert.strictEqual(berserkerTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), 'Berserker Spirit should boost MAtkSpd');
 assert.strictEqual(berserkerTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, 'Berserker Spirit should add run speed');
-assert.strictEqual(berserkerTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, 'Berserker Spirit should reduce evasion');
+assert.strictEqual(berserkerTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) - 4), 'Berserker Spirit should reduce evasion');
 
 const agilityTarget = statActor();
 const agility = skill({ selfId: 1087, name: 'Agility', spell: true, power: 1, level: 3, buff: 1200000 });
@@ -6979,7 +6979,7 @@ assert.strictEqual(EffectStats.add(agilityTarget, 'pEvasionRateAdd'), 4, 'Agilit
 calculateStats({}, agilityTarget);
 assert.strictEqual(
     agilityTarget.collectiveEvasion,
-    Formulas.calcEvasion(20, 30, 2) + 4,
+    Math.round(Formulas.calcEvasion(20, 30, 2) + 4),
     'Agility level 3 should apply the sourced L2J evasion addition'
 );
 
@@ -7043,7 +7043,7 @@ assert.strictEqual(EffectStats.add(chantEvasionTarget, 'pEvasionRateAdd'), 4, 'C
 calculateStats({}, chantEvasionTarget);
 assert.strictEqual(
     chantEvasionTarget.collectiveEvasion,
-    Formulas.calcEvasion(20, 30, 2) + 4,
+    Math.round(Formulas.calcEvasion(20, 30, 2) + 4),
     'Chant of Evasion level 3 should apply the sourced L2J evasion addition'
 );
 
@@ -7059,7 +7059,7 @@ assert.strictEqual(EffectStats.add(tactTarget, 'pEvasionRateAdd'), 3, "The Tact 
 calculateStats({}, tactTarget);
 assert.strictEqual(
     tactTarget.collectiveEvasion,
-    Formulas.calcEvasion(20, 30, 2) + 3,
+    Math.round(Formulas.calcEvasion(20, 30, 2) + 3),
     "The Tact of Pa'agrio level 2 should apply the sourced L2J evasion addition"
 );
 
@@ -7087,7 +7087,7 @@ assert.strictEqual(ragePaagrioTarget.collectiveMDef, Math.round(Formulas.calcMDe
 assert.strictEqual(ragePaagrioTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), "The Rage of Pa'agrio should boost PAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), "The Rage of Pa'agrio should boost MAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, "The Rage of Pa'agrio should add run speed");
-assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Formulas.calcEvasion(20, 30, 2) - 4, "The Rage of Pa'agrio should reduce evasion");
+assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) - 4), "The Rage of Pa'agrio should reduce evasion");
 
 const gloomTarget = statActor();
 const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 87, level: 13, buff: 30000 });

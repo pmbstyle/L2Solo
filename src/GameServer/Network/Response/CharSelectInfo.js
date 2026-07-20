@@ -7,6 +7,11 @@ function charSelectInfo(characters) {
         .writeD(utils.size(characters));
 
     characters.forEach((character) => {
+        const paperdollId = (slot) => character.paperdoll[slot]?.id || 0;
+        const paperdollSelfId = (slot) => character.paperdoll[slot]?.selfId || 0;
+        const weaponId = paperdollId(7) || paperdollId(14);
+        const weaponSelfId = paperdollSelfId(7) || paperdollSelfId(14);
+
         packet
             .writeS(character.name)
             .writeD(character.id)
@@ -37,15 +42,17 @@ function charSelectInfo(characters) {
             .writeD(0x00)  // ?
             .writeD(0x00); // ?
 
-        for (let i = 0; i < 16; i++) {
-            packet
-                .writeD(character.paperdoll[i].id);
+        for (let i = 0; i < 14; i++) {
+            packet.writeD(paperdollId(i));
         }
+        packet.writeD(weaponId)
+            .writeD(0x00);
 
-        for (let i = 0; i < 16; i++) {
-            packet
-                .writeD(character.paperdoll[i].selfId);
+        for (let i = 0; i < 14; i++) {
+            packet.writeD(paperdollSelfId(i));
         }
+        packet.writeD(weaponSelfId)
+            .writeD(0x00);
 
         packet
             .writeD(character.hair)

@@ -166,6 +166,23 @@ assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
 
 assert.strictEqual(GameOpcodes.table[0xcd], GameRequest.showMap, 'C4 map request opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x96], GameRequest.privateStoreSell, 'C4 RequestPrivateStoreSell opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0x73], GameRequest.privateStoreManageSell, 'C4 private sell action should open the native manage window');
+assert.strictEqual(GameOpcodes.table[0x74], GameRequest.privateStoreListSell, 'C4 private sell list should publish the configured rows');
+assert.strictEqual(GameOpcodes.table[0x90], GameRequest.privateStoreManageBuy, 'C4 private buy action should open the native manage window');
+assert.strictEqual(GameOpcodes.table[0x91], GameRequest.privateStoreListBuy, 'C4 private buy list should publish the configured rows');
+const privateStoreSellWithC4Tail = Buffer.alloc(22);
+privateStoreSellWithC4Tail[0] = 0x74;
+privateStoreSellWithC4Tail.writeInt32LE(0, 1);
+privateStoreSellWithC4Tail.writeInt32LE(1, 5);
+privateStoreSellWithC4Tail.writeInt32LE(70001, 9);
+privateStoreSellWithC4Tail.writeInt32LE(1, 13);
+privateStoreSellWithC4Tail.writeInt32LE(1000, 17);
+let capturedPrivateStoreSell = null;
+const originalPublishPrivateStoreSell = invoke('GameServer/PrivateStore').publishSell;
+invoke('GameServer/PrivateStore').publishSell = (_session, packaged, rows) => { capturedPrivateStoreSell = { packaged, rows }; return true; };
+GameRequest.privateStoreListSell({}, privateStoreSellWithC4Tail);
+invoke('GameServer/PrivateStore').publishSell = originalPublishPrivateStoreSell;
+assert.deepStrictEqual(capturedPrivateStoreSell, { packaged: false, rows: [{ objectId: 70001, count: 1, price: 1000 }] }, 'C4 private sell publish should accept optional trailing fields');
 assert.strictEqual(GameOpcodes.table[0xb6], GameRequest.recipeShopMakeItem, 'C4 RequestRecipeShopMakeItem opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0xb7], GameRequest.recipeShopManagePrev, 'C4 RequestRecipeShopManagePrev opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x2b], GameRequest.dismissParty, 'C4 RequestWithDrawalParty should be wired to 0x2b');
@@ -230,9 +247,20 @@ assert.strictEqual(etcStatusUpdate.readInt32LE(5), 0, 'C4 EtcStatusUpdate should
 
 const userInfo = ServerResponse.userInfo(actor);
 assert.strictEqual(userInfo[0], 0x04);
-assert.deepStrictEqual(actor.paperdollIdSlots, Array.from({ length: 16 }, (_, i) => i));
-assert.deepStrictEqual(actor.paperdollSelfIdSlots, Array.from({ length: 16 }, (_, i) => i));
+assert.deepStrictEqual(actor.paperdollIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
+assert.deepStrictEqual(actor.paperdollSelfIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
 assert.ok(userInfo.includes(0xff), 'C4 UserInfo should include trailing name-color bytes');
+
+const fullBodyActor = fakeActor();
+const fullBodyUserInfo = ServerResponse.userInfo(fullBodyActor);
+assert.ok(fullBodyUserInfo, 'full-body equipment should still produce UserInfo');
+assert.ok(!fullBodyActor.paperdollIdSlots.includes(15), 'internal full-body slot must not be serialized as a C4 equipment field');
+assert.ok(!fullBodyActor.paperdollSelfIdSlots.includes(15), 'internal full-body item slot must not be serialized as a C4 equipment field');
+const userInfoEquipmentOffset = 1 + 20 + Buffer.byteLength('C4Tester\0', 'ucs2') + (19 * 4);
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (14 * 4)), 4000007, 'C4 UserInfo must repeat the right-hand weapon before the hair field');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (15 * 4)), 0, 'C4 UserInfo hair field must not receive a weapon or full-body armor');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (30 * 4)), 1007, 'C4 UserInfo must repeat the right-hand weapon display id before the hair field');
+assert.strictEqual(userInfo.readInt32LE(userInfoEquipmentOffset + (31 * 4)), 0, 'C4 UserInfo hair display id must remain empty');
 actor.effects = { stun: { key: 'stun', id: 100, type: 'debuff', expiresAt: Date.now() + 10000 } };
 assert.ok(ServerResponse.userInfo(actor).includes(0x40), 'C4 UserInfo should expose the stun abnormal-effect mask');
 

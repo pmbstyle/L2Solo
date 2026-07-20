@@ -25,6 +25,10 @@ class ActorModel extends CreatureModel {
         this.model.charges = data;
     }
 
+    setExpertisePenalty(data) {
+        this.model.expertisePenalty = Math.max(0, Number(data) || 0);
+    }
+
     setPvp(data) {
         this.model.pvp = data;
     }
@@ -169,6 +173,10 @@ class ActorModel extends CreatureModel {
 
     fetchCharges() {
         return this.model.charges || 0;
+    }
+
+    fetchExpertisePenalty() {
+        return this.model.expertisePenalty || 0;
     }
 
     fetchSwim() {

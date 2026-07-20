@@ -81,7 +81,7 @@ class Automation extends SelectedModel {
 
     fetchRevMpAmount(creature) {
         const base = Number(this.fetchRevMp()) || 0;
-        return Math.max(0, Math.round(base + EffectStats.add(creature, 'regMp')));
+        return Math.max(0, Math.round(base * EffectStats.multiplier(creature, 'regMp') + EffectStats.add(creature, 'regMpAdd')));
     }
 
     stopReplenish() {

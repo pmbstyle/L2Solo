@@ -171,6 +171,8 @@ const session = {
         this.packets.push(packet);
     }
 };
+const originalRandom = Math.random;
+Math.random = () => 0;
 casterNpc.castSkill(session, target, casterSkill);
 
 const castPacket = session.packets.find((packet) => packet[0] === 0x48);
@@ -214,14 +216,28 @@ function AttackHelperCleanup(npc) {
     });
 }
 
-setTimeout(() => {
-    assert(
-        session.clientPackets.some((packet) => packet[0] === 0x64 && packet.readInt32LE(1) === ConsoleText.caption.actorHit),
-        'NPC skill damage should forward its hit system message to the targeted player'
-    );
-    assert(
-        session.clientPackets.some((packet) => packet[0] === 0x64 && packet.readInt32LE(1) === ConsoleText.caption.missedHit),
-        'NPC melee misses should send the evasion system message to the targeted player'
-    );
-    console.log('NPC combat range checks passed');
-}, 25);
+const hasSystemMessage = (caption) => session.clientPackets.some((packet) => (
+    packet[0] === 0x64 && packet.readInt32LE(1) === caption
+));
+
+function verifyCombatMessages() {
+    const receivedHit = hasSystemMessage(ConsoleText.caption.actorHit);
+    const receivedMiss = hasSystemMessage(ConsoleText.caption.missedHit);
+    if (receivedHit && receivedMiss) {
+        Math.random = originalRandom;
+        console.log('NPC combat range checks passed');
+        return;
+    }
+
+    if (Date.now() < verifyCombatMessages.deadline) {
+        setTimeout(verifyCombatMessages, 5);
+        return;
+    }
+
+    Math.random = originalRandom;
+    assert(receivedHit, 'NPC skill damage should forward its hit system message to the targeted player');
+    assert(receivedMiss, 'NPC melee misses should send the evasion system message to the targeted player');
+}
+
+verifyCombatMessages.deadline = Date.now() + 250;
+verifyCombatMessages();

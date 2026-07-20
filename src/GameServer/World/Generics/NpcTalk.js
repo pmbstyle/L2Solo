@@ -25,6 +25,14 @@ function npcTalk(session, npc) {
         return;
     }
 
+    const C4GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
+    const gatekeeperHtml = C4GatekeeperTeleports.html(npc.fetchSelfId());
+    if (gatekeeperHtml) {
+        session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), gatekeeperHtml));
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
     session.dataSendToMe(
         ServerResponse.npcHtml(npc.fetchId(), utils.parseRawFile(
             utils.fileExists(filename) ? filename : path + 'noquest.html'

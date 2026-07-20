@@ -460,6 +460,20 @@ const Database = {
         });
     },
 
+    crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount }) {
+        return inTransaction(async () => {
+            const source = (await conn.query('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ? FOR UPDATE', [sourceId, characterId]))[0];
+            if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0) throw new Error('crystallize source changed');
+            const existing = (await conn.query('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE', [characterId, crystalId]))[0];
+            const amount = (Number(existing?.amount) || 0) + crystalAmount;
+            let id = Number(existing?.id) || 0;
+            await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
+            if (existing) await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [amount, id, characterId]);
+            else { const inserted = await conn.query('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [crystalId, crystalName || '', crystalAmount, false, 0, characterId]); id = Number(inserted.insertId); }
+            return { crystalId, id, amount };
+        });
+    },
+
     craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena }) {
         return inTransaction(async () => {
             const sources = [];
