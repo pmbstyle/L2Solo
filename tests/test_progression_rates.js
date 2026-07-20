@@ -21,6 +21,12 @@ assert.strictEqual(profile.exp, Number(options.default.General.expRate) * 10);
 assert.strictEqual(profile.sp, Number(options.default.General.expRate) * 10);
 assert.strictEqual(profile.adena, Number(options.default.General.adenaRate) * 10);
 assert.strictEqual(profile.drop, Number(options.default.General.dropChanceRate) * 10);
+assert.strictEqual(profile.questDrop, Number(options.default.General.dropChanceRate) * 10);
+assert.strictEqual(profile.questReward, 10);
+assert.strictEqual(profile.questAdena, 10);
+assert.strictEqual(profile.questExp, 10);
+assert.strictEqual(profile.questSp, 10);
+assert.strictEqual(profile.questDrop, Number(options.default.General.dropChanceRate) * 10);
 
 assert.strictEqual(ProgressionRates.normalizePreset('x50'), 'x50');
 assert.strictEqual(ProgressionRates.normalizePreset('bad-rate'), 'x1');

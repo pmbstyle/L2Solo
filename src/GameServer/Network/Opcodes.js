@@ -56,6 +56,7 @@ const Opcodes = {
         table[0x53] = ClientRequest.requestSetPledgeCrest;
         table[0x59] = ClientRequest.trashItem;
         table[0x63] = ClientRequest.questList;
+        table[0x64] = ClientRequest.questAbort;
         table[0x66] = ClientRequest.requestPledgeInfo;
         table[0x68] = ClientRequest.requestPledgeCrest;
         table[0x6d] = ClientRequest.restartPoint;

@@ -86,6 +86,12 @@ function npcDied(session, actor, npc) {
     const rewardExp = Math.max(0, Math.floor(npc.fetchAcquiredExp() / Math.max(1, participants.length)));
     const rewardSp = Math.max(0, Math.floor(npc.fetchRewardSp() / Math.max(1, participants.length)));
 
+    // C4's ordinary quest callback is attributed to the actual killer, not to
+    // every party member that receives shared EXP.
+    invoke('GameServer/Quest/QuestService').onKill(session, npc).catch((error) => {
+        utils.infoWarn('Quest', 'kill callback failed: %s', error.message);
+    });
+
     participants.forEach((memberSession) => {
         Generics.experienceReward(memberSession, memberSession.actor, rewardExp, rewardSp);
     });

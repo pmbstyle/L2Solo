@@ -79,6 +79,19 @@ function migrateCharacterRecipes() {
     });
 }
 
+function migrateCharacterQuests() {
+    return conn.query(`CREATE TABLE IF NOT EXISTS character_quests (
+        characterId INT(8) NOT NULL,
+        questId INT(8) NOT NULL,
+        state ENUM('created', 'started', 'completed') NOT NULL DEFAULT 'created',
+        variables TEXT NULL,
+        PRIMARY KEY (characterId, questId),
+        KEY characterId (characterId)
+    )`).catch((error) => {
+        utils.infoWarn('DB', 'failed to create character_quests: %s', error.message);
+    });
+}
+
 async function inTransaction(work) {
     const previous = transactionTail;
     let release;
@@ -127,7 +140,8 @@ const Database = {
                 migrateCharacterStatus(),
                 migrateWarehouse(),
                 migrateMacros(),
-                migrateCharacterRecipes()
+                migrateCharacterRecipes(),
+                migrateCharacterQuests()
             ]).finally(callback);
 
         }).catch(error => {
@@ -398,6 +412,27 @@ const Database = {
             }
             return { inventoryId, inventoryAmount, warehouseAmount, petData: source.petData };
         });
+    },
+
+    fetchCharacterQuests(characterId) {
+        return Database.execute(
+            builder.select('character_quests', ['*'], 'characterId = ?', characterId)
+        ).then((rows) => rows.map(normalizeRowNumbers));
+    },
+
+    setCharacterQuest(characterId, questId, state, variables) {
+        return Database.execute([
+            `INSERT INTO character_quests (characterId, questId, state, variables)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE state = VALUES(state), variables = VALUES(variables)`,
+            [characterId, questId, state, JSON.stringify(variables || {})]
+        ]);
+    },
+
+    deleteCharacterQuest(characterId, questId) {
+        return Database.execute(
+            builder.delete('character_quests', 'characterId = ? AND questId = ?', characterId, questId)
+        );
     },
 
     fetchCharacterRecipes(characterId) {

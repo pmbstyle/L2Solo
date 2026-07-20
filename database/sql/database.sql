@@ -97,6 +97,15 @@ CREATE TABLE `character_recipes`(
     KEY `characterId` (`characterId`)
 );
 
+CREATE TABLE `character_quests`(
+    `characterId` int(8) NOT NULL,
+    `questId` int(8) NOT NULL,
+    `state` enum('created', 'started', 'completed') NOT NULL DEFAULT 'created',
+    `variables` text NULL,
+    PRIMARY KEY (`characterId`, `questId`),
+    KEY `characterId` (`characterId`)
+);
+
 CREATE TABLE `warehouse_items`(
     `id`          int( 8)     NOT NULL AUTO_INCREMENT,
     `selfId`      int( 5)     NOT NULL,

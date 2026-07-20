@@ -1,8 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 
 function npcTalk(session, npc) {
-    const path = 'data/Html/';
-    const filename = path + npc.fetchSelfId() + '.html';
     const title = npc.fetchTitle?.() || '';
 
     session.activeNpcShop = null;
@@ -14,6 +12,26 @@ function npcTalk(session, npc) {
         title
     };
 
+    // Quest dialogue has priority over generic NPC HTML.  The service loads
+    // persistent state before selecting a quest, so an unrelated NPC keeps its
+    // normal dialog while a quest NPC resumes exactly where the player stopped.
+    const QuestService = invoke('GameServer/Quest/QuestService');
+    if (!QuestService.handlesNpc(npc)) {
+        showDefaultTalk(session, npc);
+        return;
+    }
+    QuestService.onTalk(session, npc).then((handled) => {
+        if (!handled) showDefaultTalk(session, npc);
+    }).catch((error) => {
+        utils.infoWarn('Quest', 'failed to open NPC quest dialog: %s', error.message);
+        showDefaultTalk(session, npc);
+    });
+}
+
+function showDefaultTalk(session, npc) {
+    const path = 'data/Html/';
+    const filename = path + npc.fetchSelfId() + '.html';
+    const title = npc.fetchTitle?.() || '';
     if (/^Warehouse (Keeper|Chief|Freightman)$/i.test(title)) {
         session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), [
             '<html><body><center><br>Personal Warehouse<br><br>',
