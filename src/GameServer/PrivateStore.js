@@ -15,9 +15,16 @@ function store(actor, type) {
 }
 
 function broadcast(session, actor, titlePacket) {
-    session.dataSendToMeAndOthers?.(ServerResponse.userInfo(actor), actor);
-    session.dataSendToMeAndOthers?.(ServerResponse.charInfo(actor), actor);
-    if (titlePacket) session.dataSendToMeAndOthers?.(titlePacket, actor);
+    // C4 handles the owner's sit/stand locally. The native private-store
+    // transition only refreshes CharInfo and the shop title for observers;
+    // sending CharInfo/UserInfo back to the owner after both Sell and Buy
+    // transitions corrupts the old client-side status panel.
+    session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+    if (titlePacket) session.dataSendToOthers?.(titlePacket, actor);
+}
+
+function sendSitState(session, actor) {
+    session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
 }
 
 function canManage(actor) {
@@ -30,6 +37,7 @@ function open(session, type) {
     const manageType = type === SELL ? SELL_MANAGE : BUY_MANAGE;
     actor.setPrivateStoreType(manageType);
     actor.state?.setSeated?.(false);
+    sendSitState(session, actor);
     broadcast(session, actor);
     const current = store(actor, type);
     session.dataSendToMe(type === SELL
@@ -59,6 +67,7 @@ function publishSell(session, packageSale, rows) {
     if (items.some((row) => !row)) return false;
     const current = store(actor, SELL); current.items = items; current.packageSale = !!packageSale;
     actor.setPrivateStoreType(SELL); actor.state?.setSeated?.(true);
+    sendSitState(session, actor);
     broadcast(session, actor, ServerResponse.privateStoreMsg(actor, current.title));
     return true;
 }
@@ -75,6 +84,7 @@ function publishBuy(session, rows) {
     if (items.some((row) => !row) || !Number.isSafeInteger(total) || total > actor.backpack.fetchTotalAdena()) return false;
     const current = store(actor, BUY); current.items = items;
     actor.setPrivateStoreType(BUY); actor.state?.setSeated?.(true);
+    sendSitState(session, actor);
     broadcast(session, actor, ServerResponse.privateStoreBuyMsg(actor, current.title));
     return true;
 }
@@ -82,7 +92,7 @@ function publishBuy(session, rows) {
 function quit(session, type) {
     const actor = session?.actor;
     if (!actor || ![type, type === SELL ? SELL_MANAGE : BUY_MANAGE].includes(Number(actor.fetchPrivateStoreType()))) return false;
-    actor.setPrivateStoreType(0); actor.state?.setSeated?.(false); broadcast(session, actor); return true;
+    actor.setPrivateStoreType(0); actor.state?.setSeated?.(false); sendSitState(session, actor); broadcast(session, actor); return true;
 }
 
 module.exports = { SELL, BUY, open, setTitle, publishSell, publishBuy, quit };
