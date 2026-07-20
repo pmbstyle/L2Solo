@@ -69,6 +69,7 @@ const tests = [
     'tests/test_grade_penalty.js',
     'tests/test_equipment_slots.js',
     'tests/test_fall_damage.js',
+    'tests/test_gatekeeper_teleports.js',
     'tests/test_geodata_regions.js',
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
