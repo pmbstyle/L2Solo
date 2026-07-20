@@ -168,6 +168,7 @@ const HotActivation = {
                 locY: placement.loc?.locY,
                 locZ: placement.loc?.locZ,
                 keepStoreLocation: !!marketStore || !!craftShop,
+                coldLifeState: !marketStore && !craftShop ? state : null,
                 coldMarketState: marketStore ? state : null,
                 coldCraftState: craftShop ? state : null,
                 privateStore: marketStore ? {

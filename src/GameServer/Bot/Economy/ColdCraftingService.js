@@ -267,9 +267,30 @@ async function craft(state, random = Math.random) {
         }
     });
     const continueCrafting = componentCraft && !!readyRecipeFor(refreshed, finalRecipe);
+    const returnAfterComponent = componentCraft && !continueCrafting && craftReturn?.loc;
     const settled = continueCrafting
         ? { ...refreshed, activity: 'crafting' }
-        : refreshed;
+        : returnAfterComponent ? {
+            ...refreshed,
+            activity: 'traveling',
+            stats: {
+                ...(refreshed.stats || {}),
+                craftReturn: null,
+                travel: {
+                    from: { ...(state.loc || station.loc) },
+                    to: { ...craftReturn.loc },
+                    startedAt: timestamp,
+                    arrivalAt: timestamp + NATIVE_TRAVEL_MS,
+                    townName: craftReturn.regionName || 'Hunting Ground',
+                    regionName: craftReturn.regionName || state.currentRegion,
+                    viaTown: returnTown?.name || null,
+                    method: 'gatekeeper_spot',
+                    spotId: craftReturn.spotId || null,
+                    arrivalActivity: 'hunting',
+                    reason: 'component_craft_return'
+                }
+            }
+        } : refreshed;
     return {
         state: settled,
         crafted: success,
