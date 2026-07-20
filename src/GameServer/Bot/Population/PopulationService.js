@@ -566,10 +566,20 @@ const PopulationService = {
             .then((states) => {
                 if (states.length === 0) return [];
                 return states.reduce((chain, state) => (
-                    chain.then((results) => this.resolveColdState(state).then((result) => {
-                        results.push(result);
-                        return results;
-                    }))
+                    chain.then((results) => this.resolveColdState(state)
+                        .then((result) => {
+                            results.push(result);
+                            return results;
+                        })
+                        .catch((error) => {
+                            // A single bot may lose a race with a market or
+                            // craft transaction. It must not abort every
+                            // remaining cold resolve in this scheduler tick.
+                            utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
+                            Metrics.recordSkippedResolve();
+                            results.push({ ok: false, reason: 'resolve_rejected', state });
+                            return results;
+                        }))
                 ), Promise.resolve([]));
             })
             .catch((err) => {

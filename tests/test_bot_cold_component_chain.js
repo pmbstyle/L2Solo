@@ -27,6 +27,7 @@ async function run() {
         selfId: material.selfId,
         amount: material.amount * 3
     }));
+    items.push({ id: 99, selfId: 57, amount: 100000 });
     const inventory = Object.fromEntries(items.map((item) => [item.selfId, { ...item }]));
     finalRecipe.materials
         .filter((material) => Number(material.selfId) !== Number(componentRecipe.productId))
@@ -96,6 +97,25 @@ async function run() {
     });
     assert.strictEqual(stale.reason, 'materials_changed', 'a virtual-only material must not be sent to a public station');
     assert.deepStrictEqual(stale.state.inventory, {}, 'the following acquisition plan must see the physical inventory only');
+
+    const adenaItems = componentRecipe.materials.map((material, index) => ({
+        id: index + 1,
+        selfId: material.selfId,
+        amount: material.amount
+    }));
+    adenaItems.push({ id: 99, selfId: 57, amount: 0 });
+    Database.fetchItems = async () => adenaItems;
+    LifeState.refreshInventory = async (state) => ({ ...state, inventory: {} });
+    const unaffordable = await ColdCraftingService.craft({
+        characterId: 42,
+        name: 'UnfundedComponentProbe',
+        phase: 'cold',
+        level: 30,
+        activity: 'crafting',
+        inventory: Object.fromEntries(adenaItems.map((item) => [item.selfId, { ...item }])),
+        stats: { equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId } }
+    });
+    assert.strictEqual(unaffordable.reason, 'insufficient_adena', 'an unaffordable batch must remain a local bot outcome rather than reject the scheduler');
     console.log('Bot cold component chain checks passed');
 }
 

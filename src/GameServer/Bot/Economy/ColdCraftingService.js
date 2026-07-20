@@ -194,21 +194,44 @@ async function craft(state, random = Math.random) {
     const materials = materialRows(supplemental.items, recipe, batchCount);
     if (!materials) return { state, crafted: false, reason: 'materials_changed' };
     const success = Number(recipe.successRate || 0) >= 100 || Number(random()) * 100 < Number(recipe.successRate || 0);
-    const result = await Database.craftForCustomer(crafter.id, state.characterId, {
-        materials,
-        product: success ? {
-            selfId: Number(recipe.productId),
-            name: template.template?.name || '',
-            amount: Number(recipe.productCount || 1) * batchCount,
-            stackable: !!template.etc?.stackable,
-            slot: Number(template.etc?.slot || 0)
-        } : null,
-        // Public server stations are infrastructure, not ordinary players.
-        // They must remain available to the whole cold population indefinitely.
-        crafterMp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0),
-        price: Number(entry.price || 0) * batchCount,
-        adena: { name: 'Adena' }
-    });
+    const price = Number(entry.price || 0) * batchCount;
+    const adena = Number(customerItems.find((item) => Number(item.selfId) === 57)?.amount || 0);
+    if (adena < price) {
+        return {
+            state: await refreshPhysicalInventory(state),
+            crafted: false,
+            reason: 'insufficient_adena',
+            requiredAdena: price,
+            availableAdena: adena
+        };
+    }
+    let result;
+    try {
+        result = await Database.craftForCustomer(crafter.id, state.characterId, {
+            materials,
+            product: success ? {
+                selfId: Number(recipe.productId),
+                name: template.template?.name || '',
+                amount: Number(recipe.productCount || 1) * batchCount,
+                stackable: !!template.etc?.stackable,
+                slot: Number(template.etc?.slot || 0)
+            } : null,
+            // Public server stations are infrastructure, not ordinary players.
+            // They must remain available to the whole cold population indefinitely.
+            crafterMp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0),
+            price,
+            adena: { name: 'Adena' }
+        });
+    } catch (error) {
+        // A concurrent market/craft transaction may invalidate a material or
+        // Adena row. Keep this bot's retry local; never reject the scheduler.
+        return {
+            state: await refreshPhysicalInventory(state),
+            crafted: false,
+            reason: 'craft_rejected',
+            error: String(error?.message || error)
+        };
+    }
     await LifeState.upsertState({
         ...crafterState,
         vitals: { ...(crafterState.vitals || {}), mp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0) }
