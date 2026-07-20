@@ -59,6 +59,7 @@ const Opcodes = {
         table[0x66] = ClientRequest.requestPledgeInfo;
         table[0x68] = ClientRequest.requestPledgeCrest;
         table[0x6d] = ClientRequest.restartPoint;
+        table[0x72] = ClientRequest.crystallizeItem;
         table[0x73] = ClientRequest.privateStoreManageSell;
         table[0x74] = ClientRequest.privateStoreListSell;
         table[0x76] = ClientRequest.privateStoreQuit(1);
