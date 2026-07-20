@@ -764,7 +764,7 @@ assert.strictEqual(scrollManaRegeneration.fetchSkillType(), C4SkillRules.EFFECT,
 assert.strictEqual(scrollManaRegeneration.fetchSemantic().hitTime, 4000, 'Scroll of Mana Regeneration should preserve sourced hitTime metadata');
 assert.strictEqual(scrollManaRegeneration.fetchSemantic().staticHitTime, true, 'Scroll of Mana Regeneration should preserve sourced staticHitTime metadata');
 assert.strictEqual(scrollManaRegenOutcome.effect.key, 'scroll_of_mana_regeneration', 'Scroll of Mana Regeneration should apply a structured MP regen buff');
-assert.strictEqual(EffectStats.add(scrollManaRegenTarget, 'regMp'), 1.82, 'Scroll of Mana Regeneration should apply sourced regMp +1.82');
+assert.strictEqual(EffectStats.add(scrollManaRegenTarget, 'regMpAdd'), 1.82, 'Scroll of Mana Regeneration should apply sourced regMp +1.82');
 
 const blessEvaData = activeSkills.find((entry) => entry.selfId === 2076);
 assert(blessEvaData, 'Bless of Eva should be present in active skills data');
@@ -6772,7 +6772,7 @@ const manaRegenOutcome = SkillEffects.execute(session(), caster, manaRegenTarget
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(manaRegenOutcome.effect.key, 'mana_regeneration', 'Mana Regeneration should apply a structured MP regen buff');
-assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMp'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
+assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMpAdd'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
 assert.strictEqual(regenBuffAutomation.fetchRevMpAmount(manaRegenTarget), 13, 'Mana Regeneration should increase runtime MP regeneration by sourced addition');
 
 const magicBarrierTarget = statActor();
