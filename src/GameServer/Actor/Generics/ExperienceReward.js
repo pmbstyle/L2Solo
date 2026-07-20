@@ -4,6 +4,7 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const Database       = invoke('Database');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const Karma = invoke('GameServer/Karma');
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function resolveLevel(totalExp, maxLevel, experience) {
     const availableLevels = Math.min(Math.max(1, Number(maxLevel) || 1), experience.length);
@@ -22,7 +23,7 @@ function experienceReward(session, actor, exp, sp) {
     const optn = options.default.General;
     const rates = ProgressionRates.profile();
 
-    exp = Math.max(0, Math.round(exp * rates.exp));
+    exp = Math.max(0, Math.round(exp * rates.exp * EffectStats.multiplier(actor, 'expMul')));
     sp = Math.max(0, Math.round(sp * rates.sp));
 
     let totalExp = actor.fetchExp() + exp;
