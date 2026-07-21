@@ -78,6 +78,7 @@ const tests = [
     'tests/test_macros.js',
     'tests/test_npc_combat_range.js',
     'tests/test_npc_interaction_completion.js',
+    'tests/test_newbie_helper_starting_zones.js',
     'tests/test_npc_shop_stock.js',
     'tests/test_npc_sell_shop.js',
     'tests/test_personal_warehouse.js',
