@@ -33,6 +33,8 @@ const quests = [
   require("./quests/Q035_FindGlitteringJewelry"),
   require("./quests/Q036_MakeASewingKit"),
   require("./quests/Q037_MakeFormalWear"),
+  require("./quests/Q038_DragonFangs"),
+  require("./quests/Q039_RedEyedInvaders"),
   require("./quests/Q042_HelpTheUncle"),
   require("./quests/Q043_HelpTheSister"),
   require("./quests/Q044_HelpTheSon"),
