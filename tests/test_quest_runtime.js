@@ -33,6 +33,10 @@ const Q042 = require('../src/GameServer/Quest/quests/Q042_HelpTheUncle');
 const Q043 = require('../src/GameServer/Quest/quests/Q043_HelpTheSister');
 const Q044 = require('../src/GameServer/Quest/quests/Q044_HelpTheSon');
 const Q045 = require('../src/GameServer/Quest/quests/Q045_ToTalkingIsland');
+const Q046 = require('../src/GameServer/Quest/quests/Q046_OnceMoreInTheArmsOfTheMotherTree');
+const Q047 = require('../src/GameServer/Quest/quests/Q047_IntoTheDarkForest');
+const Q048 = require('../src/GameServer/Quest/quests/Q048_ToTheImmortalPlateau');
+const Q049 = require('../src/GameServer/Quest/quests/Q049_TheRoadHome');
 
 async function main() {
     assert.strictEqual(Q001.eventNpc('start'), 7048);
@@ -78,6 +82,10 @@ async function main() {
     assert.strictEqual(Q043.eventNpc('weapon'), 7829);
     assert.strictEqual(Q044.eventNpc('map'), 7827);
     assert.strictEqual(Q045.eventNpc('necklace'), 7116);
+    assert.strictEqual(Q046.eventNpc('reward'), 7097);
+    assert.strictEqual(Q047.eventNpc('hilt'), 7094);
+    assert.strictEqual(Q048.eventNpc('powder'), 7090);
+    assert.strictEqual(Q049.eventNpc('necklace'), 7116);
     assert.strictEqual(Q002.eventNpc('unknown'), null);
     assert.strictEqual(Q004.eventNpc('unknown'), null);
     assert.strictEqual(Q005.eventNpc('unknown'), null);
@@ -106,6 +114,10 @@ async function main() {
     assert.strictEqual(Q043.eventNpc('unknown'), null);
     assert.strictEqual(Q044.eventNpc('unknown'), null);
     assert.strictEqual(Q045.eventNpc('unknown'), null);
+    assert.strictEqual(Q046.eventNpc('unknown'), null);
+    assert.strictEqual(Q047.eventNpc('unknown'), null);
+    assert.strictEqual(Q048.eventNpc('unknown'), null);
+    assert.strictEqual(Q049.eventNpc('unknown'), null);
 
     const session = {};
     const order = [];

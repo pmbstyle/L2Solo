@@ -36,7 +36,11 @@ const quests = [
     require('./quests/Q042_HelpTheUncle'),
     require('./quests/Q043_HelpTheSister'),
     require('./quests/Q044_HelpTheSon'),
-    require('./quests/Q045_ToTalkingIsland')
+    require('./quests/Q045_ToTalkingIsland'),
+    require('./quests/Q046_OnceMoreInTheArmsOfTheMotherTree'),
+    require('./quests/Q047_IntoTheDarkForest'),
+    require('./quests/Q048_ToTheImmortalPlateau'),
+    require('./quests/Q049_TheRoadHome'), require('./quests/Q153_DeliverGoods'), require('./quests/Q154_SacrificeToTheSea'), require('./quests/Q155_FindSirWindawood'), require('./quests/Q161_FruitOfTheMotherTree'), require('./quests/Q165_ShilensHunt'), require('./quests/Q166_MassOfDarkness'), require('./quests/Q168_DeliverSupplies')
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 

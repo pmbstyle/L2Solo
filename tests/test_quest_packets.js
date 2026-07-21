@@ -5,7 +5,7 @@ require('../src/Global');
 const QuestList = invoke('GameServer/Network/Response/QuestList');
 const QuestService = invoke('GameServer/Quest/QuestService');
 
-assert.deepStrictEqual(QuestService.quests().map((quest) => quest.id), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 31, 32, 33, 34, 35, 36, 37, 42, 43, 44, 45], 'early C4 quests register in deterministic order');
+assert.deepStrictEqual(QuestService.quests().map((quest) => quest.id), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 31, 32, 33, 34, 35, 36, 37, 42, 43, 44, 45, 46, 47, 48, 49, 153, 154, 155, 161, 165, 166, 168], 'early C4 quests register in deterministic order');
 assert.deepStrictEqual(QuestService.quests()[0].startNpcs, [7048], 'only Darin starts Q001; Roxxy keeps her normal dialog before it begins');
 
 const empty = QuestList();
