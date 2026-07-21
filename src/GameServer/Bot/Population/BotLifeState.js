@@ -225,6 +225,11 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
+        // A freshly spawned bot may cool before it has gone through a cold
+        // resolve. Persist the completed profile here so it is never picked
+        // up by the one-off legacy migration on a later restart.
+        classProgressionLevel: actor.fetchLevel(),
+        classProgressionClassId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         clanId: actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
@@ -404,6 +409,48 @@ function hydrateCache() {
             cache.set(state.characterId, state);
         });
         return rows.length;
+    });
+}
+
+function classProgressionNeeded(state, classId, level) {
+    const knownLevel = Number(state.stats?.classProgressionLevel || 0);
+    const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
+    return knownLevel < Number(level || 1) || knownClassId !== Number(classId);
+}
+
+function applyClassProgression(state, profile = {}) {
+    const level = Number(profile.level || state.level || 1);
+    const currentClassId = Number(profile.classId ?? state.stats?.classId ?? 0);
+    if (!classProgressionNeeded(state, currentClassId, level)) return Promise.resolve(state);
+
+    return BotClassProgression.reconcile({
+        characterId: state.characterId,
+        classId: currentClassId,
+        level,
+        seed: state.name || state.characterId
+    }).then((resolved) => {
+        const classId = Number(resolved.classId || currentClassId);
+        const role = BotRoles.inferRole(classId);
+        const progressedState = {
+            ...state,
+            level,
+            exp: profile.exp ?? state.exp,
+            sp: profile.sp ?? state.sp,
+            party: { ...(state.party || {}), role },
+            stats: {
+                ...(state.stats || {}),
+                classId,
+                role,
+                build: GearSkillHints.forCharacter({ classId, level }, { role }),
+                classProgressionLevel: level,
+                classProgressionClassId: classId,
+                classTransitions: resolved.transitions?.length
+                    ? [...(state.stats?.classTransitions || []), ...resolved.transitions]
+                    : state.stats?.classTransitions || []
+            }
+        };
+        if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+        return progressedState;
     });
 }
 
@@ -867,6 +914,45 @@ const BotLifeState = {
             utils.infoWarn('BotLife', 'failed to fetch due cold states: %s', err.message);
             return [];
         });
+    },
+
+    migrateLegacyClassProgression(limit = 5) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
+        const candidates = Array.from(cache.values())
+            // Hot bots own a live Actor instance. Their class is reconciled
+            // through activation/level-up, not behind that actor's back.
+            .filter((state) => state.phase === 'cold')
+            .filter((state) => !pendingWrites.has(state.characterId))
+            .filter((state) => classProgressionNeeded(
+                state,
+                Number(state.stats?.classId || 0),
+                Number(state.level || 1)
+            ))
+            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
+            .slice(0, safeLimit);
+
+        return candidates.reduce((chain, state) => chain.then((migrated) => (
+            Database.execute([
+                'SELECT id, classId, level, exp, sp FROM characters WHERE id = ? LIMIT 1',
+                [state.characterId]
+            ]).then((rows) => {
+                const character = rows[0];
+                if (!character) return migrated;
+                return applyClassProgression(state, character).then((progressedState) => {
+                    if (progressedState === state) return migrated;
+                    const row = rowFromState(progressedState);
+                    return save(row).then(() => {
+                        const snapshot = normalize(row);
+                        cache.set(snapshot.characterId, snapshot);
+                        return [...migrated, snapshot];
+                    });
+                });
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'legacy class progression failed for %s: %s', state.name, err.message);
+                return migrated;
+            })
+        )), Promise.resolve([]));
     },
 
     statesForParty(partyId) {
