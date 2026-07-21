@@ -71,11 +71,7 @@ module.exports = {
       return page("Leikar", "Obtain cloth, a jewel box and a sewing kit.");
     }
     if (e === "shoes" && s.getInt("cond") === 6) {
-      if (
-        count(s, BOX) < 1 ||
-        count(s, CLOTH) < 1 ||
-        count(s, KIT) < 1
-      )
+      if (count(s, BOX) < 1 || count(s, CLOTH) < 1 || count(s, KIT) < 1)
         return page("Leikar", "Bring all three components.");
       await Q.takeItem(s, BOX);
       await Q.takeItem(s, CLOTH);

@@ -1,2 +1,86 @@
-const R=7312,C=7051,L=7055,FUR=1032,YARN=1033,DOLL=1034,EAR=113;const Q=()=>invoke('GameServer/Quest/QuestService');const p=(t,x,a='')=>`<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;const n=(s,id)=>s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount()||0;
-module.exports={id:154,name:'Sacrifice to the Sea',npcs:[R,C,L],startNpcs:[R],killNpcs:[481,544,545],eventNpc:e=>e==='start'?R:null,async onEvent(s,e){if(e!=='start'||s.isStarted()||s.isCompleted()||Number(s.session.actor.fetchLevel())<2)return null;await s.setState('started');await s.set('cond',1);s.playSound('ItemSound.quest_accept');return p('Rockswell','Bring 10 Fox Fur to Cristel.');},async onTalk(s,x){const id=Number(x.fetchSelfId()),q=Q();if(s.isCompleted())return p('Quest','You have already completed this quest.');if(!s.isStarted())return id===R&&Number(s.session.actor.fetchLevel())>=2?p('Rockswell','Will you make a sacrifice?','<a action="bypass -h quest 154 start">Accept.</a>'):p('Rockswell','Come back at level 2.');if(id===C&&s.getInt('cond')===2){await q.takeItem(s,FUR,10);await q.giveItem(s.session,YARN,1);await s.set('cond',3);s.playSound('ItemSound.quest_middle');return p('Cristel','Take the yarn to Rolfe.');}if(id===L&&s.getInt('cond')===3){await q.takeItem(s,YARN);await q.giveItem(s.session,DOLL,1);await s.set('cond',4);s.playSound('ItemSound.quest_middle');return p('Rolfe','Return the doll to Rockswell.');}if(id===R&&s.getInt('cond')===4){await q.takeItem(s,DOLL);await q.giveItem(s.session,EAR,1);q.rewardExpSp(s.session,100,0);s.playSound('ItemSound.quest_finish');await s.exit(false);return p('Rockswell','The sacrifice is accepted.');}return p('Quest',s.getInt('cond')===1?`Fox Fur: ${n(s,FUR)}/10.`:'Continue the sacrifice.');},async onKill(s){if(s.getInt('cond')!==1||Math.random()>=.4)return;const cur=n(s,FUR),a=Q().questDropAmount(1,10,cur);if(!a)return;await Q().giveItem(s.session,FUR,a);if(cur+a>=10){await s.set('cond',2);s.playSound('ItemSound.quest_middle');}else s.playSound('ItemSound.quest_itemget');}};
+const R = 7312,
+  C = 7051,
+  L = 7055,
+  FUR = 1032,
+  YARN = 1033,
+  DOLL = 1034,
+  EAR = 113;
+const Q = () => invoke("GameServer/Quest/QuestService");
+const p = (t, x, a = "") =>
+  `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
+const n = (s, id) =>
+  s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
+module.exports = {
+  id: 154,
+  name: "Sacrifice to the Sea",
+  npcs: [R, C, L],
+  startNpcs: [R],
+  killNpcs: [481, 544, 545],
+  eventNpc: (e) => (e === "start" ? R : null),
+  async onEvent(s, e) {
+    if (
+      e !== "start" ||
+      s.isStarted() ||
+      s.isCompleted() ||
+      Number(s.session.actor.fetchLevel()) < 2
+    )
+      return null;
+    await s.setState("started");
+    await s.set("cond", 1);
+    s.playSound("ItemSound.quest_accept");
+    return p("Rockswell", "Bring 10 Fox Fur to Cristel.");
+  },
+  async onTalk(s, x) {
+    const id = Number(x.fetchSelfId()),
+      q = Q();
+    if (s.isCompleted())
+      return p("Quest", "You have already completed this quest.");
+    if (!s.isStarted())
+      return id === R && Number(s.session.actor.fetchLevel()) >= 2
+        ? p(
+            "Rockswell",
+            "Will you make a sacrifice?",
+            '<a action="bypass -h quest 154 start">Accept.</a>',
+          )
+        : p("Rockswell", "Come back at level 2.");
+    if (id === C && s.getInt("cond") === 2) {
+      await q.takeItem(s, FUR, 10);
+      await q.giveItem(s.session, YARN, 1);
+      await s.set("cond", 3);
+      s.playSound("ItemSound.quest_middle");
+      return p("Cristel", "Take the yarn to Rolfe.");
+    }
+    if (id === L && s.getInt("cond") === 3) {
+      await q.takeItem(s, YARN);
+      await q.giveItem(s.session, DOLL, 1);
+      await s.set("cond", 4);
+      s.playSound("ItemSound.quest_middle");
+      return p("Rolfe", "Return the doll to Rockswell.");
+    }
+    if (id === R && s.getInt("cond") === 4) {
+      await q.takeItem(s, DOLL);
+      await q.giveItem(s.session, EAR, 1);
+      q.rewardExpSp(s.session, 100, 0);
+      s.playSound("ItemSound.quest_finish");
+      await s.exit(false);
+      return p("Rockswell", "The sacrifice is accepted.");
+    }
+    return p(
+      "Quest",
+      s.getInt("cond") === 1
+        ? `Fox Fur: ${n(s, FUR)}/10.`
+        : "Continue the sacrifice.",
+    );
+  },
+  async onKill(s) {
+    if (s.getInt("cond") !== 1 || Math.random() >= 0.4) return;
+    const cur = n(s, FUR),
+      a = Q().questDropAmount(1, 10, cur);
+    if (!a) return;
+    await Q().giveItem(s.session, FUR, a);
+    if (cur + a >= 10) {
+      await s.set("cond", 2);
+      s.playSound("ItemSound.quest_middle");
+    } else s.playSound("ItemSound.quest_itemget");
+  },
+};
