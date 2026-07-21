@@ -37,6 +37,10 @@ assert.strictEqual(advanced[0].meta.nextItemId, 1870);
 const ready = CraftTelemetry.planEvents(state, initial, { ...initial, status: 'ready_to_craft', next: null });
 assert.strictEqual(ready[0].type, 'craft_materials_ready');
 
+const component = CraftTelemetry.planEvents(state, initial, { ...initial, status: 'component_ready', next: null });
+assert.strictEqual(component[0].type, 'craft_component_ready');
+assert(component[0].summary.includes('intermediate resource'), 'component readiness must not be reported as final equipment readiness');
+
 const travel = CraftTelemetry.stationTravelEvent({ ...state, stats: { equipmentPlan: initial } }, { stationId: 'resource_core', reason: 'component_craft' });
 assert.strictEqual(travel.type, 'craft_station_travel');
 assert.strictEqual(travel.meta.stationId, 'resource_core');

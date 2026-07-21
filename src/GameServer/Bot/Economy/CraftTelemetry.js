@@ -10,7 +10,7 @@ function itemName(selfId, plan = {}) {
 }
 
 function active(plan) {
-    return ['active', 'ready_to_craft'].includes(plan?.status) && ['craft', 'direct_drop'].includes(plan?.strategy);
+    return ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && ['craft', 'direct_drop'].includes(plan?.strategy);
 }
 
 function planEvents(state, previous = {}, next = {}) {
@@ -47,10 +47,14 @@ function planEvents(state, previous = {}, next = {}) {
         const completedId = Number(previous.next.itemId);
         const nextId = Number(next.next?.itemId || 0);
         events.push({
-            type: next.status === 'ready_to_craft' ? 'craft_materials_ready' : 'craft_material_complete',
+            type: next.status === 'ready_to_craft'
+                ? 'craft_materials_ready'
+                : next.status === 'component_ready' ? 'craft_component_ready' : 'craft_material_complete',
             summary: next.status === 'ready_to_craft'
-                ? `${state.name} collected enough ${itemName(completedId, previous)} and can craft ${next.target?.name}`
-                : `${state.name} collected enough ${itemName(completedId, previous)}; next: ${itemName(nextId, next)}`,
+                ? `${state.name} collected all final materials and can craft ${next.target?.name}`
+                : next.status === 'component_ready'
+                    ? `${state.name} collected enough ${itemName(completedId, previous)} and can craft an intermediate resource for ${next.target?.name}`
+                    : `${state.name} collected enough ${itemName(completedId, previous)}; next: ${itemName(nextId, next)}`,
             weight: 3,
             meta: {
                 recipeId: next.recipeId || null,
