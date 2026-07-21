@@ -68,7 +68,16 @@ function apply(actor, effect) {
     if (!actor) return null;
     const normalized = normalize(effect);
     if (!normalized.key || !normalized.id) return null;
-    ensure(actor)[normalized.key] = normalized;
+    const store = ensure(actor);
+    const existing = store[normalized.key];
+
+    // A key represents one C4 effect/stack slot. Refreshing an equal or higher
+    // level is valid, but a lower-level cast must never downgrade it.
+    if (existing && Number(existing.level || 0) > normalized.level) {
+        return existing;
+    }
+
+    store[normalized.key] = normalized;
     return normalized;
 }
 

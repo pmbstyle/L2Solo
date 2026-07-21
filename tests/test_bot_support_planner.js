@@ -47,6 +47,12 @@ EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', sta
 assert.strictEqual(BotSupportPlanner.needsSkill(target, shieldOne), false, 'do not overwrite an equal-level active buff');
 assert.strictEqual(BotSupportPlanner.needsSkill(target, soulShieldTwo), true, 'upgrade an active defensive buff when the party has a higher level');
 
+EffectStore.apply(target, { key: 'shield', id: 1040, level: 3, type: 'buff', stats: { pDefMul: 1.2 }, durationMs: 10 * 60 * 1000 });
+const rejectedDowngrade = EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
+assert.strictEqual(rejectedDowngrade.level, 3, 'runtime effect storage must reject a lower-level buff over a stronger one');
+assert.strictEqual(EffectStore.list(target).find((effect) => effect.key === 'shield').level, 3, 'a rejected lower-level buff must not replace the active stronger level');
+EffectStore.remove(target, 'shield');
+
 let action = BotSupportPlanner.nextAction(mage, [{ actor: target, leader: true }], [shaman, mage]);
 assert.strictEqual(action, null, 'a non-orc caster should defer an equivalent upgrade to the shaman');
 action = BotSupportPlanner.nextAction(shaman, [{ actor: target, leader: true }], [shaman, mage]);
@@ -120,5 +126,21 @@ action = BotSupportPlanner.nextAction(physicalBuffer, [
 assert.strictEqual(action.target, roleArcher, 'the next individual physical buff should skip the mage and target the archer');
 assert.strictEqual(action.skill.fetchSelfId(), 1068, 'the physical buff should be chosen for the physical target');
 assert.strictEqual(BotSupportPlanner.isUsefulForTarget(roleMage, partyShield), true, 'party buffs should remain available to every party role');
+
+const fullPackageBuffer = actor('FullPackageBuffer', 49, [might, concentration]);
+const packageArcher = actor('PackageArcher', 9);
+const packageMage = actor('PackageMage', 25);
+action = BotSupportPlanner.nextAction(fullPackageBuffer, [
+    { actor: packageArcher, leader: true },
+    { actor: packageMage, leader: false }
+], [fullPackageBuffer]);
+assert.strictEqual(action.skill.fetchSelfId(), 1068, 'an autonomous buffer should start its full package with the first eligible member');
+EffectStore.apply(packageArcher, { key: 'might', id: 1068, level: 2, type: 'buff', stats: { pAtkMul: 1.12 }, durationMs: 10 * 60 * 1000 });
+action = BotSupportPlanner.nextAction(fullPackageBuffer, [
+    { actor: packageArcher, leader: true },
+    { actor: packageMage, leader: false }
+], [fullPackageBuffer]);
+assert.strictEqual(action.skill.fetchSelfId(), 1078, 'after a successful cast, the autonomous buffer should advance to the next needed party buff without another request');
+assert.strictEqual(action.target, packageMage, 'the next planned buff should target its eligible party member');
 
 console.log('Bot support planner checks passed');
