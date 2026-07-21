@@ -56,16 +56,19 @@ const quests = [
   require("./quests/Q155_FindSirWindawood"),
   require("./quests/Q156_MillenniumLove"),
   require("./quests/Q157_RecoverSmuggledGoods"),
+  require("./quests/Q158_SeedOfEvil"),
   require("./quests/Q159_ProtectTheWaterSource"),
   require("./quests/Q160_NerupasRequest"),
   require("./quests/Q161_FruitOfTheMotherTree"),
   require("./quests/Q162_CurseOfTheUndergroundFortress"),
   require("./quests/Q163_LegacyOfThePoet"),
+  require("./quests/Q164_BloodFiend"),
   require("./quests/Q165_ShilensHunt"),
   require("./quests/Q166_MassOfDarkness"),
   require("./quests/Q167_DwarvenKinship"),
   require("./quests/Q168_DeliverSupplies"),
   require("./quests/Q169_OffspringOfNightmares"),
+  require("./quests/Q170_DangerousSeduction"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 
