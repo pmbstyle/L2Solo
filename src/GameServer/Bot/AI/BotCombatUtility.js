@@ -1,4 +1,5 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const Attack = invoke('GameServer/Actor/Attack');
 
 const OFFENSIVE_TYPES = new Set([
     C4SkillRules.DAMAGE,
@@ -27,6 +28,8 @@ function evaluate(bot, target, skill, role) {
     if (!skill || skill.fetchPassive?.()) return null;
     const semantic = skill.fetchSemantic?.() || {};
     if (semantic.notUsedInC4) return null;
+    const allowedWeapons = Number(semantic.requires?.weaponsAllowed) || 0;
+    if (allowedWeapons && (allowedWeapons & Attack.weaponMaskFor(bot)) === 0) return null;
     if (!OFFENSIVE_TYPES.has(skill.fetchSkillType?.())) return null;
     if (skill.fetchTargetKind?.() !== 'enemy') return null;
 

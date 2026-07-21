@@ -21,6 +21,13 @@ const WEAPON_MASK_BY_KIND = Object.freeze({
     'Weapon.BigBlunt': 16384
 });
 
+function weaponMaskFor(actor) {
+    const kind = actor?.backpack?.fetchTotalWeaponKind?.() || '';
+    const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
+        .some((item) => item?.fetchKind?.() === 'Armor.Shield');
+    return WEAPON_MASK_BY_KIND[kind] || (hasShield ? 1048576 : 0);
+}
+
 class Attack {
     constructor() {
         this.timers = new Set();
@@ -408,10 +415,7 @@ class Attack {
 
         const requires = semantic.requires || {};
         if (requires.weaponsAllowed) {
-            const kind = actor?.backpack?.fetchTotalWeaponKind?.() || '';
-            const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
-                .some((item) => item?.fetchKind?.() === 'Armor.Shield');
-            const mask = WEAPON_MASK_BY_KIND[kind] || (hasShield ? 1048576 : 0);
+            const mask = weaponMaskFor(actor);
             if ((Number(requires.weaponsAllowed) & mask) === 0) {
                 return 'Incorrect weapon.';
             }
@@ -777,3 +781,4 @@ function incomingWeaponVulnerabilityModifier(target, { bow = false } = {}) {
 }
 
 module.exports = Attack;
+module.exports.weaponMaskFor = weaponMaskFor;
