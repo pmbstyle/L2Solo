@@ -6,6 +6,9 @@ const KERCHIEF = 688;
 const RECEIPT = 1079;
 const POTION = 1080;
 const NECKLACE = 906;
+const SOUND_ACCEPT = 'ItemSound.quest_accept';
+const SOUND_MIDDLE = 'ItemSound.quest_middle';
+const SOUND_FINISH = 'ItemSound.quest_finish';
 
 function page(title, text, action = '') {
     return `<html><body>${title}:<br>${text}<br><br>${action}</body></html>`;
@@ -29,6 +32,7 @@ module.exports = {
         if (Number(state.session.actor.fetchLevel()) < 2) return null;
         await state.setState('started');
         await state.set('cond', 1);
+        state.playSound(SOUND_ACCEPT);
         await service().giveItem(state.session, LETTER, 1);
         return page('Darin', 'Please deliver this letter to Gatekeeper Roxxy.');
     },
@@ -50,6 +54,7 @@ module.exports = {
                 await service().takeItem(state.session, LETTER);
                 await service().giveItem(state.session, KERCHIEF, 1);
                 await state.set('cond', 2);
+                state.playSound(SOUND_MIDDLE);
                 return page('Roxxy', 'Please give this handkerchief to Darin.');
             }
             return page('Roxxy', 'Please return to Darin.');
@@ -60,12 +65,14 @@ module.exports = {
                 await service().takeItem(state.session, KERCHIEF);
                 await service().giveItem(state.session, RECEIPT, 1);
                 await state.set('cond', 3);
+                state.playSound(SOUND_MIDDLE);
                 return page('Darin', 'Please take this receipt to Baulro.');
             }
             if (cond === 3) return page('Darin', 'Please see Baulro.');
             if (cond === 4) {
                 await service().takeItem(state.session, POTION);
                 await service().giveItem(state.session, NECKLACE, 1);
+                state.playSound(SOUND_FINISH);
                 await state.exit(false);
                 return page('Darin', 'Thank you. Please accept this Necklace of Knowledge.');
             }
@@ -75,6 +82,7 @@ module.exports = {
                 await service().takeItem(state.session, RECEIPT);
                 await service().giveItem(state.session, POTION, 1);
                 await state.set('cond', 4);
+                state.playSound(SOUND_MIDDLE);
                 return page('Baulro', 'Please take this potion back to Darin.');
             }
             return page('Baulro', 'Please deliver the potion to Darin.');

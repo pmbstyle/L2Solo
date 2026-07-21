@@ -4,11 +4,39 @@ const DataCache = invoke('GameServer/DataCache');
 const QuestState = invoke('GameServer/Quest/QuestState');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const ExperienceReward = invoke('GameServer/Actor/Generics/ExperienceReward');
+const ConsoleText = invoke('GameServer/ConsoleText');
 
 const quests = [
     require('./quests/Q001_LettersOfLove'),
     require('./quests/Q002_WhatWomenWant'),
-    require('./quests/Q003_WillTheSealBeBroken')
+    require('./quests/Q003_WillTheSealBeBroken'),
+    require('./quests/Q004_LongLiveThePaagrioLord'),
+    require('./quests/Q005_MinersFavor'),
+    require('./quests/Q006_StepIntoTheFuture'),
+    require('./quests/Q007_ATripBegins'),
+    require('./quests/Q008_AnAdventureBegins'),
+    require('./quests/Q009_IntoTheCityOfHumans'),
+    require('./quests/Q010_IntoTheWorld'),
+    require('./quests/Q011_SecretMeetingWithKetraOrcs'),
+    require('./quests/Q012_SecretMeetingWithVarkaSilenos'),
+    require('./quests/Q013_ParcelDelivery'),
+    require('./quests/Q014_WhereaboutsOfTheArchaeologist'),
+    require('./quests/Q015_SweetWhispers'),
+    require('./quests/Q016_TheComingDarkness'),
+    require('./quests/Q017_LightAndDarkness'),
+    require('./quests/Q018_MeetingWithTheGoldenRam'),
+    require('./quests/Q019_GoToThePastureland'),
+    require('./quests/Q031_SecretBuriedInTheSwamp'),
+    require('./quests/Q032_AnObviousLie'),
+    require('./quests/Q033_MakeAPairOfDressShoes'),
+    require('./quests/Q034_InSearchOfCloth'),
+    require('./quests/Q035_FindGlitteringJewelry'),
+    require('./quests/Q036_MakeASewingKit'),
+    require('./quests/Q037_MakeFormalWear'),
+    require('./quests/Q042_HelpTheUncle'),
+    require('./quests/Q043_HelpTheSister'),
+    require('./quests/Q044_HelpTheSon'),
+    require('./quests/Q045_ToTalkingIsland')
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 
@@ -48,12 +76,23 @@ function stateFor(session, quest) {
 
 function questForNpc(npc, session) {
     const npcId = Number(npc.fetchSelfId());
-    return quests.find((quest) => {
+    const candidates = quests.filter((quest) => {
         if (!quest.npcs.includes(npcId)) return false;
         const state = stateFor(session, quest);
         if (!state.isStarted() && !state.isCompleted() && !(quest.startNpcs || []).includes(npcId)) return false;
         return !quest.canTalk || quest.canTalk(state, npc);
     });
+    return candidates.find((quest) => stateFor(session, quest).isStarted())
+        || candidates.find((quest) => !stateFor(session, quest).isCompleted())
+        || candidates[0];
+}
+
+function availableStartQuests(npc, session) {
+    const npcId = Number(npc.fetchSelfId());
+    return quests.filter((quest) => (quest.startNpcs || []).includes(npcId)
+        && !stateFor(session, quest).isStarted()
+        && !stateFor(session, quest).isCompleted()
+        && (!quest.canTalk || quest.canTalk(stateFor(session, quest), npc)));
 }
 
 function handlesNpc(npc) {
@@ -66,13 +105,54 @@ function render(session, npc, html) {
     session.dataSendToMe(ServerResponse.actionFailed());
 }
 
+function syncActiveQuests(session) {
+    session.dataSendToMe(ServerResponse.questList(active(session)));
+}
+
+function activeQuestSnapshot(session) {
+    return JSON.stringify(active(session));
+}
+
+// QuestState.giveItems in C4 sends an earned-item SystemMessage after the
+// inventory mutation.  Without it the client silently updates its inventory,
+// which makes a completed quest look as if it paid nothing.
+function transmitItemReceived(session, selfId, amount) {
+    const itemId = Number(selfId);
+    const count = Math.max(0, Math.floor(Number(amount) || 0));
+    if (count <= 0) return;
+
+    if (itemId === 57) {
+        ConsoleText.transmit(session, ConsoleText.caption.earnedAdena, [
+            { kind: ConsoleText.kind.number, value: count }
+        ]);
+    } else if (count > 1) {
+        ConsoleText.transmit(session, ConsoleText.caption.earnedAmountOf, [
+            { kind: ConsoleText.kind.item, value: itemId },
+            { kind: ConsoleText.kind.number, value: count }
+        ]);
+    } else {
+        ConsoleText.transmit(session, ConsoleText.caption.earnedItem, [
+            { kind: ConsoleText.kind.item, value: itemId }
+        ]);
+    }
+}
+
 async function onTalk(session, npc) {
     return mutate(session, async () => {
         await ensureLoaded(session);
         const quest = questForNpc(npc, session);
         if (!quest) return false;
-        const html = await quest.onTalk(stateFor(session, quest), npc);
+        const state = stateFor(session, quest);
+        const choices = availableStartQuests(npc, session);
+        if (!state.isStarted() && choices.length > 1) {
+            const html = `<html><body>Available quests:<br><br>${choices.map((quest) => `<a action="bypass -h quest ${quest.id} start">${quest.name}</a><br>`).join('')}</body></html>`;
+            render(session, npc, html);
+            return true;
+        }
+        const before = activeQuestSnapshot(session);
+        const html = await quest.onTalk(state, npc);
         if (!html) return false;
+        if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
         render(session, npc, html);
         return true;
     });
@@ -87,8 +167,10 @@ async function onEvent(session, event) {
         if (!quest || !npc || !quest.npcs.includes(Number(npc.selfId))) return false;
         if (quest.eventNpc?.(eventName) !== Number(npc.selfId)) return false;
         const state = stateFor(session, quest);
+        const before = activeQuestSnapshot(session);
         const html = await quest.onEvent(state, eventName);
         if (!html) return false;
+        if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
         render(session, { fetchId: () => npc.objectId }, html);
         return true;
     });
@@ -109,6 +191,7 @@ async function giveItem(session, selfId, amount) {
         backpack.insertItem(Number(result.insertId), selfId, { amount });
     }
     session.dataSendToMe(ServerResponse.itemsList(backpack.fetchItems()));
+    transmitItemReceived(session, selfId, amount);
 }
 
 async function takeItem(session, selfId, amount = 1) {
@@ -126,12 +209,11 @@ async function takeItem(session, selfId, amount = 1) {
     return true;
 }
 
-// Lisvus keeps quest hand-in items at their authored count.  Only explicit
-// rewardItems calls are multiplied, with Adena using its dedicated rate.
-function rewardItem(session, selfId, amount) {
+// C4's RateQuestRewardAdena is specific to Adena.  Quest item and equipment
+// rewards retain their authored count (for example, one Necklace of Knowledge).
+function rewardAdena(session, amount) {
     const rates = questRates();
-    const rate = Number(selfId) === 57 ? rates.questAdena : rates.questReward;
-    return giveItem(session, selfId, Math.max(0, Math.floor(Number(amount) * rate)));
+    return giveItem(session, 57, Math.max(0, Math.floor(Number(amount) * rates.questAdena)));
 }
 
 function questDropAmount(amount, needed, current) {
@@ -153,12 +235,14 @@ function rewardExpSp(session, exp, sp) {
 async function onKill(session, npc) {
     return mutate(session, async () => {
         await ensureLoaded(session);
+        const before = activeQuestSnapshot(session);
         const npcId = Number(npc.fetchSelfId());
         for (const quest of quests) {
             if (!quest.killNpcs?.includes(npcId)) continue;
             const state = states(session).get(quest.id);
             if (state?.isStarted()) await quest.onKill(state, npc);
         }
+        if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
     });
 }
 
@@ -168,4 +252,4 @@ function active(session) {
 
 function questRates() { return ProgressionRates.profile(); }
 
-module.exports = { ensureLoaded, onTalk, onEvent, onKill, handlesNpc, mutate, stateFor, active, giveItem, takeItem, rewardItem, rewardExpSp, questDropAmount, questRates, quests: () => quests };
+module.exports = { ensureLoaded, onTalk, onEvent, onKill, handlesNpc, mutate, stateFor, active, syncActiveQuests, transmitItemReceived, giveItem, takeItem, rewardAdena, rewardExpSp, questDropAmount, questRates, quests: () => quests };

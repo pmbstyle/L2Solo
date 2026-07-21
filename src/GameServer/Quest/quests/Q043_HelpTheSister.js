@@ -1,0 +1,1 @@
+module.exports=require('./PetTicketQuest')({id:43,name:'Help the Sister!',startNpc:7829,startName:'Cooper',partnerNpc:7097,partnerName:'Galladucci',requiredItem:220,requiredName:'Crafted Dagger',fragment:7550,fragmentName:'Map Piece',map:7551,mapName:'Map',reward:7584,maxLevel:26,killNpcs:[171,197]});

@@ -1,4 +1,5 @@
 const Database = invoke('Database');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 const CREATED = 'created';
 const STARTED = 'started';
@@ -22,6 +23,7 @@ class QuestState {
     setState(state) { this.state = state; return this.save(); }
     isStarted() { return this.state === STARTED; }
     isCompleted() { return this.state === COMPLETED; }
+    playSound(sound) { this.session.dataSendToMe(ServerResponse.playSound(sound)); }
 
     save() {
         return Database.setCharacterQuest(this.session.actor.fetchId(), this.quest.id, this.state, this.variables);
@@ -41,5 +43,9 @@ class QuestState {
 QuestState.CREATED = CREATED;
 QuestState.STARTED = STARTED;
 QuestState.COMPLETED = COMPLETED;
+QuestState.SOUND_ACCEPT = 'ItemSound.quest_accept';
+QuestState.SOUND_ITEMGET = 'ItemSound.quest_itemget';
+QuestState.SOUND_MIDDLE = 'ItemSound.quest_middle';
+QuestState.SOUND_FINISH = 'ItemSound.quest_finish';
 
 module.exports = QuestState;

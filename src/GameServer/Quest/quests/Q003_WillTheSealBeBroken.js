@@ -2,6 +2,10 @@ const TALLOTH = 7141;
 const EYE = 1081;
 const STONE = 1082;
 const BLOOD = 1083;
+const SOUND_ACCEPT = 'ItemSound.quest_accept';
+const SOUND_ITEMGET = 'ItemSound.quest_itemget';
+const SOUND_MIDDLE = 'ItemSound.quest_middle';
+const SOUND_FINISH = 'ItemSound.quest_finish';
 
 function service() { return invoke('GameServer/Quest/QuestService'); }
 function page(title, text, action = '') { return `<html><body>${title}:<br>${text}<br><br>${action}</body></html>`; }
@@ -12,6 +16,7 @@ async function collect(state, itemId) {
     const amount = Quest.questDropAmount(1, 1, current);
     if (amount) await Quest.giveItem(state.session, itemId, amount);
     const complete = [EYE, STONE, BLOOD].every((id) => state.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() >= 1);
+    if (amount) state.playSound(complete ? SOUND_MIDDLE : SOUND_ITEMGET);
     if (complete) await state.set('cond', 2);
 }
 
@@ -29,6 +34,7 @@ module.exports = {
         if (Number(actor.fetchRace()) !== 2 || Number(actor.fetchLevel()) < 16) return null;
         await state.setState('started');
         await state.set('cond', 1);
+        state.playSound(SOUND_ACCEPT);
         return page('Talloth', 'Bring me an Onyx Beast Eye, a Taint Stone, and Succubus Blood.');
     },
 
@@ -49,8 +55,9 @@ module.exports = {
         await Quest.takeItem(state.session, EYE);
         await Quest.takeItem(state.session, STONE);
         await Quest.takeItem(state.session, BLOOD);
-        await Quest.giveItem(state.session, 57, 4900);
+        await Quest.rewardAdena(state.session, 4900);
         Quest.rewardExpSp(state.session, 5000, 0);
+        state.playSound(SOUND_FINISH);
         await state.exit(false);
         return page('Talloth', 'The seal has been broken. You receive 4,900 Adena and 5,000 XP.');
     },

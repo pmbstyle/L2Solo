@@ -8,6 +8,9 @@ const LETTER_3 = 1094;
 const POETRY_BOOK = 689;
 const GREENIS_LETTER = 693;
 const BEGINNERS_POTION = 1073;
+const SOUND_ACCEPT = 'ItemSound.quest_accept';
+const SOUND_MIDDLE = 'ItemSound.quest_middle';
+const SOUND_FINISH = 'ItemSound.quest_finish';
 
 function service() { return invoke('GameServer/Quest/QuestService'); }
 function page(title, text, action = '') { return `<html><body>${title}:<br>${text}<br><br>${action}</body></html>`; }
@@ -27,6 +30,7 @@ module.exports = {
             if (Number(actor.fetchLevel()) < 2 || ![0, 1].includes(Number(actor.fetchRace()))) return null;
             await state.setState('started');
             await state.set('cond', 1);
+            state.playSound(SOUND_ACCEPT);
             await Quest.giveItem(state.session, LETTER_1, 1);
             return page('Arujien', 'Please ask Mirabel about Greenis.');
         }
@@ -34,11 +38,13 @@ module.exports = {
             await state.set('cond', 4);
             await Quest.takeItem(state.session, LETTER_3);
             await Quest.giveItem(state.session, POETRY_BOOK, 1);
+            state.playSound(SOUND_MIDDLE);
             return page('Arujien', 'Please deliver this poetry book to Greenis.');
         }
         if (event === 'reward' && state.getInt('cond') === 3) {
             await Quest.takeItem(state.session, LETTER_3);
-            await Quest.rewardItem(state.session, 57, 450);
+            await Quest.rewardAdena(state.session, 450);
+            state.playSound(SOUND_FINISH);
             await state.exit(false);
             return page('Arujien', 'Thank you for your help.');
         }
@@ -62,6 +68,7 @@ module.exports = {
                 await Quest.takeItem(state.session, LETTER_1);
                 await Quest.giveItem(state.session, LETTER_2, 1);
                 await state.set('cond', 2);
+                state.playSound(SOUND_MIDDLE);
                 return page('Mirabel', 'Herbiel may know where Greenis is.');
             }
             return page('Mirabel', 'Please continue your errand.');
@@ -71,6 +78,7 @@ module.exports = {
                 await Quest.takeItem(state.session, LETTER_2);
                 await Quest.giveItem(state.session, LETTER_3, 1);
                 await state.set('cond', 3);
+                state.playSound(SOUND_MIDDLE);
                 return page('Herbiel', 'Take this reply back to Arujien.');
             }
             return page('Herbiel', 'Please return to Arujien.');
@@ -80,6 +88,7 @@ module.exports = {
                 await Quest.takeItem(state.session, POETRY_BOOK);
                 await Quest.giveItem(state.session, GREENIS_LETTER, 1);
                 await state.set('cond', 5);
+                state.playSound(SOUND_MIDDLE);
                 return page('Greenis', 'Please take my letter to Arujien.');
             }
             return page('Greenis', 'I cannot help you yet.');
@@ -92,6 +101,7 @@ module.exports = {
             if (cond === 5) {
                 await Quest.takeItem(state.session, GREENIS_LETTER);
                 await Quest.giveItem(state.session, BEGINNERS_POTION, 5);
+                state.playSound(SOUND_FINISH);
                 await state.exit(false);
                 return page('Arujien', 'Thank you. Please accept these beginner potions.');
             }
