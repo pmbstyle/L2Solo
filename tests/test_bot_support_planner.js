@@ -49,7 +49,7 @@ assert.strictEqual(BotSupportPlanner.needsSkill(target, soulShieldTwo), true, 'u
 
 EffectStore.apply(target, { key: 'shield', id: 1040, level: 3, type: 'buff', stats: { pDefMul: 1.2 }, durationMs: 10 * 60 * 1000 });
 const rejectedDowngrade = EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
-assert.strictEqual(rejectedDowngrade.level, 3, 'runtime effect storage must reject a lower-level buff over a stronger one');
+assert.strictEqual(rejectedDowngrade, null, 'runtime effect storage must report a lower-level buff as rejected');
 assert.strictEqual(EffectStore.list(target).find((effect) => effect.key === 'shield').level, 3, 'a rejected lower-level buff must not replace the active stronger level');
 EffectStore.remove(target, 'shield');
 

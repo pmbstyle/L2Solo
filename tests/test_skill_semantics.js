@@ -4366,6 +4366,17 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(cursePoison.fetchTargetKind(), 'enemy', 'Curse: Poison should resolve as an enemy poison effect');
 assert.strictEqual(cursePoison.fetchSemantic().baseLandRate, 5, 'Curse: Poison level 4 should use sourced power as land rate');
 assert.strictEqual(curseOutcome.effect.dot.damage, 31, 'Curse: Poison level 4 should use the sourced L2J damage table');
+
+const strongerPoisonTicker = curseTarget.effectTimers.poison;
+const weakerPoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 5, level: 1, buff: 30000 });
+const weakerPoisonOutcome = SkillEffects.execute(session(), caster, curseTarget, weakerPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(weakerPoisonOutcome.effect, null, 'a lower-level poison should be rejected while a stronger poison is active');
+assert.strictEqual(curseTarget.effectTimers.poison, strongerPoisonTicker, 'a rejected poison must not restart the stronger poison ticker');
+assert.strictEqual(EffectStore.list(curseTarget).find((effect) => effect.key === 'poison').level, 4, 'a rejected poison must retain the stronger effect level');
 EffectStore.remove(curseTarget, 'poison');
 
 const curseDiscordData = activeSkills.find((entry) => entry.selfId === 1163);
