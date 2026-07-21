@@ -115,7 +115,7 @@
             "class2": 0,
             "mass": 1350,
             "price": 48800000,
-            "kind": "Weapon.Fist"
+            "kind": "Weapon.DualFist"
         },
         "stats": {
             "pAtk": 342,

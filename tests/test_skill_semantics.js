@@ -7251,6 +7251,12 @@ const fatalCounter = skill({ selfId: 314, name: 'Fatal Counter', spell: false, l
 assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), null, 'Fatal Counter must allow its sourced bow requirement');
 bowUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Sword';
 assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), 'Incorrect weapon.', 'Weapon-restricted skills must reject an incompatible weapon');
+const starterFistUser = creature({ id: 2000310 });
+starterFistUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Fist';
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(starterFistUser, ironPunch), 'Incorrect weapon.', 'Iron Punch must reject the one-handed starter fist');
+const dualFistUser = creature({ id: 2000311 });
+dualFistUser.backpack.fetchTotalWeaponKind = () => 'Weapon.DualFist';
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(dualFistUser, ironPunch), null, 'Iron Punch must allow C4 dual-fist weapons such as Spiked Gloves');
 const focusAttack = C4SkillRules.resolve({ selfId: 317, name: 'Focus Attack', level: 1 });
 assert.deepStrictEqual(focusAttack.stats, { pAccuracyCombatAdd: 5, hitMainTarget: true }, 'Focus Attack must preserve its pole accuracy and main-target behavior');
 assert.strictEqual(focusAttack.toggleMpConsume, 7, 'Focus Attack must consume 7 MP every two seconds');
