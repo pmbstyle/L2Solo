@@ -66,6 +66,7 @@ const tests = [
     'tests/test_cp_stats.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_ticker.js',
+    'tests/test_automation_regeneration.js',
     'tests/test_equipment_item_skills.js',
     'tests/test_grade_penalty.js',
     'tests/test_equipment_slots.js',

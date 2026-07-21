@@ -6692,7 +6692,11 @@ assert.strictEqual(sealDisease.fetchTargetKind(), 'enemy', 'Seal of Disease shou
 assert.strictEqual(sealDiseaseOutcome.effect.key, 'seal_of_disease', 'Seal of Disease should apply a structured regen debuff');
 assert.strictEqual(EffectStats.multiplier(sealDiseaseTarget, 'regHp'), 0.5, 'Seal of Disease should use sourced gainHp 0.5');
 assert.strictEqual(EffectStats.multiplier(sealDiseaseTarget, 'cancelVuln'), 1.3, 'Seal of Disease should use sourced cancelVuln 1.3');
-assert.strictEqual(regenAutomation.fetchRevHpAmount(sealDiseaseTarget), 5, 'Seal of Disease should halve runtime HP regeneration');
+assert.strictEqual(
+    regenAutomation.fetchRevHpAmount(sealDiseaseTarget),
+    regenAutomation.fetchRevHpAmount(statActor()) * 0.5,
+    'Seal of Disease should halve the fully calculated C4 HP regeneration rate'
+);
 
 const curseDiseaseData = activeSkills.find((entry) => entry.selfId === 1269);
 assert(curseDiseaseData, 'Curse Disease should be present in active skills data');
@@ -6707,7 +6711,11 @@ const curseDiseaseOutcome = SkillEffects.execute(session(), caster, diseaseTarge
 });
 assert.strictEqual(curseDiseaseOutcome.effect.key, 'curse_disease', 'Curse Disease should apply a structured regen debuff');
 assert.strictEqual(EffectStats.multiplier(diseaseTarget, 'regHp'), 0.5, 'Curse Disease should use sourced regHp 0.5');
-assert.strictEqual(regenAutomation.fetchRevHpAmount(diseaseTarget), 5, 'Curse Disease should halve runtime HP regeneration');
+assert.strictEqual(
+    regenAutomation.fetchRevHpAmount(diseaseTarget),
+    regenAutomation.fetchRevHpAmount(statActor()) * 0.5,
+    'Curse Disease should halve the fully calculated C4 HP regeneration rate'
+);
 
 const vampiricRageData = activeSkills.find((entry) => entry.selfId === 1268);
 assert(vampiricRageData, 'Vampiric Rage should be present in active skills data');
@@ -6773,7 +6781,11 @@ assert.strictEqual(EffectStats.multiplier(regenerationTarget, 'regHp'), 1.2, 'Re
 const regenBuffAutomation = new Automation();
 regenBuffAutomation.setRevHp(10);
 regenBuffAutomation.setRevMp(10);
-assert.strictEqual(regenBuffAutomation.fetchRevHpAmount(regenerationTarget), 12, 'Regeneration should increase runtime HP regeneration by sourced multiplier');
+assert.strictEqual(
+    regenBuffAutomation.fetchRevHpAmount(regenerationTarget),
+    regenBuffAutomation.fetchRevHpAmount(statActor()) * 1.2,
+    'Regeneration should multiply the fully calculated C4 HP regeneration rate'
+);
 
 const manaRegenTarget = statActor();
 const manaRegeneration = skill({ selfId: 1047, name: 'Mana Regeneration', spell: true, power: 1, level: 4, distance: -1, buff: 1200000 });
@@ -6784,7 +6796,11 @@ const manaRegenOutcome = SkillEffects.execute(session(), caster, manaRegenTarget
 });
 assert.strictEqual(manaRegenOutcome.effect.key, 'mana_regeneration', 'Mana Regeneration should apply a structured MP regen buff');
 assert.strictEqual(EffectStats.add(manaRegenTarget, 'regMpAdd'), 3.09, 'Mana Regeneration level 4 should use sourced regMp +3.09');
-assert.strictEqual(regenBuffAutomation.fetchRevMpAmount(manaRegenTarget), 13, 'Mana Regeneration should increase runtime MP regeneration by sourced addition');
+assert.strictEqual(
+    regenBuffAutomation.fetchRevMpAmount(manaRegenTarget),
+    regenBuffAutomation.fetchRevMpAmount(statActor()) + (3.09 * 1.1),
+    'Mana Regeneration should add its sourced rate before the C4 idle-state multiplier'
+);
 
 const magicBarrierTarget = statActor();
 const magicBarrier = skill({ selfId: 1036, name: 'Magic Barrier', spell: true, power: 1, level: 2, buff: 1200000 });
