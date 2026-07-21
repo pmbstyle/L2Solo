@@ -1,0 +1,17 @@
+module.exports = require("./PetTicketQuest")({
+  id: 42,
+  name: "Help the Uncle!",
+  startNpc: 7828,
+  startName: "Waters",
+  partnerNpc: 7735,
+  partnerName: "Sophya",
+  requiredItem: 291,
+  requiredName: "Trident",
+  fragment: 7548,
+  fragmentName: "Map Piece",
+  map: 7549,
+  mapName: "Map",
+  reward: 7583,
+  maxLevel: 25,
+  killNpcs: [68, 266],
+});

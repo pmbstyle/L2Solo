@@ -1,0 +1,68 @@
+const U = 7130,
+  I = 7135,
+  D = 7139,
+  T = 7143,
+  L = 1088,
+  A = 1089,
+  W = 1090,
+  S = 1091;
+const Q = () => invoke("GameServer/Quest/QuestService");
+const p = (t, x, a = "") =>
+  `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
+const n = (s, id) =>
+  s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
+module.exports = {
+  id: 166,
+  name: "Mass of Darkness",
+  npcs: [U, I, D, T],
+  startNpcs: [U],
+  eventNpc: (e) => (e === "start" ? U : null),
+  async onEvent(s, e) {
+    if (
+      e !== "start" ||
+      s.isStarted() ||
+      s.isCompleted() ||
+      Number(s.session.actor.fetchRace()) !== 2 ||
+      Number(s.session.actor.fetchLevel()) < 2
+    )
+      return null;
+    await s.setState("started");
+    await s.set("cond", 1);
+    await Q().giveItem(s.session, L, 1);
+    s.playSound("ItemSound.quest_accept");
+    return p("Undrias", "Collect the three ceremonial articles.");
+  },
+  async onTalk(s, x) {
+    const id = Number(x.fetchSelfId());
+    if (s.isCompleted())
+      return p("Quest", "You have already completed this quest.");
+    if (!s.isStarted())
+      return id === U &&
+        Number(s.session.actor.fetchRace()) === 2 &&
+        Number(s.session.actor.fetchLevel()) >= 2
+        ? p(
+            "Undrias",
+            "Will you prepare for the Mass?",
+            '<a action="bypass -h quest 166 start">Accept.</a>',
+          )
+        : p("Undrias", "This task is for Dark Elves of level 2 or higher.");
+    if (id === U && s.getInt("cond") === 2) {
+      for (const z of [A, W, S, L]) await Q().takeItem(s, z);
+      await Q().rewardAdena(s.session, 500);
+      Q().rewardExpSp(s.session, 500, 0);
+      s.playSound("ItemSound.quest_finish");
+      await s.exit(false);
+      return p("Undrias", "The Mass is complete.");
+    }
+    const item = id === I ? A : id === D ? W : id === T ? S : 0;
+    if (item && s.getInt("cond") === 1 && !n(s, item)) {
+      await Q().giveItem(s.session, item, 1);
+      if ([A, W, S].every((z) => n(s, z))) {
+        await s.set("cond", 2);
+        s.playSound("ItemSound.quest_middle");
+      } else s.playSound("ItemSound.quest_itemget");
+      return p("Quest", "You receive a ceremonial article.");
+    }
+    return p("Quest", "Continue the ceremony.");
+  },
+};

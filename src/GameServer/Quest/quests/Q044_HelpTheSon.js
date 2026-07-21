@@ -1,0 +1,17 @@
+module.exports = require("./PetTicketQuest")({
+  id: 44,
+  name: "Help the Son!",
+  startNpc: 7827,
+  startName: "Lundy",
+  partnerNpc: 7505,
+  partnerName: "Drikus",
+  requiredItem: 168,
+  requiredName: "Work Hammer",
+  fragment: 7552,
+  fragmentName: "Gemstone Fragment",
+  map: 7553,
+  mapName: "Gemstone",
+  reward: 7585,
+  maxLevel: 24,
+  killNpcs: [919, 920, 921],
+});

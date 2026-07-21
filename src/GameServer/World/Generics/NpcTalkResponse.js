@@ -5,6 +5,15 @@ function npcTalkResponse(session, data) {
     console.log("npcTalkResponse link:", data.link, "parts:", parts);
     if (parts.length === 0 || !parts[0]) return;
 
+    if (parts[0] === 'quest') {
+        const QuestService = invoke('GameServer/Quest/QuestService');
+        QuestService.onEvent(session, { questId: parts[1], name: parts[2] }).catch((error) => {
+            utils.infoWarn('Quest', 'failed to process quest event: %s', error.message);
+            session.dataSendToMe(ServerResponse.actionFailed());
+        });
+        return;
+    }
+
     if (parts[0] === 'html') {
         const path = 'data/Html/';
         const filename = path + parts[1] + '.html';

@@ -1,0 +1,152 @@
+function service() {
+  return invoke("GameServer/Quest/QuestService");
+}
+function count(state, itemId) {
+  return (
+    state.session.actor.backpack.fetchItemFromSelfId(itemId)?.fetchAmount() || 0
+  );
+}
+function page(title, text, action = "") {
+  return `<html><body>${title}:<br>${text}<br><br>${action}</body></html>`;
+}
+const A = "ItemSound.quest_accept",
+  I = "ItemSound.quest_itemget",
+  M = "ItemSound.quest_middle",
+  F = "ItemSound.quest_finish";
+module.exports = function create(config) {
+  return {
+    id: config.id,
+    name: config.name,
+    npcs: [config.startNpc, config.partnerNpc],
+    startNpcs: [config.startNpc],
+    killNpcs: config.killNpcs,
+    eventNpc: (event) =>
+      ({
+        start: config.startNpc,
+        weapon: config.startNpc,
+        map: config.startNpc,
+        partner: config.partnerNpc,
+        reward: config.startNpc,
+      })[event] ?? null,
+    async onEvent(state, event) {
+      const Q = service();
+      const actor = state.session.actor;
+      if (event === "start" && !state.isStarted() && !state.isCompleted()) {
+        if (Number(actor.fetchLevel()) >= config.maxLevel) return null;
+        await state.setState("started");
+        await state.set("cond", 1);
+        state.playSound(A);
+        return page(config.startName, `Bring me a ${config.requiredName}.`);
+      }
+      if (
+        event === "weapon" &&
+        state.isStarted() &&
+        state.getInt("cond") === 1
+      ) {
+        if (count(state, config.requiredItem) < 1)
+          return page(config.startName, `You need a ${config.requiredName}.`);
+        await Q.takeItem(state.session, config.requiredItem);
+        await state.set("cond", 2);
+        state.playSound(M);
+        return page(config.startName, `Collect 30 ${config.fragmentName}.`);
+      }
+      if (event === "map" && state.isStarted() && state.getInt("cond") === 3) {
+        if (!(await Q.takeItem(state.session, config.fragment, 30)))
+          return null;
+        await Q.giveItem(state.session, config.map, 1);
+        await state.set("cond", 4);
+        state.playSound(M);
+        return page(
+          config.startName,
+          `Take the ${config.mapName} to ${config.partnerName}.`,
+        );
+      }
+      if (
+        event === "partner" &&
+        state.isStarted() &&
+        state.getInt("cond") === 4
+      ) {
+        if (!(await Q.takeItem(state.session, config.map))) return null;
+        await state.set("cond", 5);
+        state.playSound(M);
+        return page(config.partnerName, "Return to the person who sent you.");
+      }
+      if (
+        event === "reward" &&
+        state.isStarted() &&
+        state.getInt("cond") === 5
+      ) {
+        await Q.giveItem(state.session, config.reward, 1);
+        state.playSound(F);
+        await state.exit(false);
+        return page(config.startName, "Here is your pet ticket.");
+      }
+      return null;
+    },
+    async onTalk(state, npc) {
+      const id = Number(npc.fetchSelfId()),
+        c = state.getInt("cond");
+      if (state.isCompleted())
+        return page("Quest", "You have already completed this quest.");
+      if (!state.isStarted())
+        return id === config.startNpc &&
+          Number(state.session.actor.fetchLevel()) < config.maxLevel
+          ? page(
+              config.startName,
+              "I need your help.",
+              '<a action="bypass -h quest ' + config.id + ' start">Accept.</a>',
+            )
+          : page(
+              config.startName,
+              `This task is for adventurers below level ${config.maxLevel}.`,
+            );
+      if (id === config.partnerNpc)
+        return c === 4
+          ? page(
+              config.partnerName,
+              "Do you have the item?",
+              '<a action="bypass -h quest ' +
+                config.id +
+                ' partner">Hand it over.</a>',
+            )
+          : page(config.partnerName, "Continue your task.");
+      if (c === 1)
+        return page(
+          config.startName,
+          `Bring a ${config.requiredName}.`,
+          '<a action="bypass -h quest ' +
+            config.id +
+            ' weapon">Hand it over.</a>',
+        );
+      if (c === 2)
+        return page(
+          config.startName,
+          `${config.fragmentName}: ${count(state, config.fragment)}/30.`,
+        );
+      if (c === 3)
+        return page(
+          config.startName,
+          "You have enough fragments.",
+          '<a action="bypass -h quest ' + config.id + ' map">Combine them.</a>',
+        );
+      if (c === 5)
+        return page(
+          config.startName,
+          "You have returned.",
+          '<a action="bypass -h quest ' +
+            config.id +
+            ' reward">Receive the ticket.</a>',
+        );
+      return page(config.startName, "Speak with the other person.");
+    },
+    async onKill(state) {
+      if (state.getInt("cond") !== 2) return;
+      const current = count(state, config.fragment),
+        amount = service().questDropAmount(1, 30, current);
+      if (!amount) return;
+      await service().giveItem(state.session, config.fragment, amount);
+      state.playSound(current + amount >= 30 ? M : I);
+      if (current + amount >= 30) await state.set("cond", 3);
+    },
+  };
+};

@@ -90,6 +90,8 @@ const tests = [
     'tests/test_pathfinder_astar.js',
     'tests/test_player_ranged_combat.js',
     'tests/test_progression_rates.js',
+    'tests/test_quest_packets.js',
+    'tests/test_quest_runtime.js',
     'tests/test_recipe_book.js',
     'tests/test_recipe_crafting.js',
     'tests/test_recipe_persistence.js',

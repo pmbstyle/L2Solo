@@ -42,6 +42,7 @@ module.exports = {
       privateStoreTitle: require('./PrivateStoreTitle'),
        privateStoreQuit: require('./PrivateStoreQuit'),
        questList: require('./QuestList'),
+      questAbort: require('./QuestAbort'),
   recipeBookOpen: require('./RecipeBookOpen'),
 recipeItemMakeInfo: require('./RecipeItemMakeInfo'),
 recipeItemMakeSelf: require('./RecipeItemMakeSelf'),
