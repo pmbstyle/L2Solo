@@ -1,5 +1,6 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 
 const MAX_DROPS_PER_RESOLVE = 4;
@@ -86,7 +87,7 @@ function distributeRewards({ members, spot, wins, pressure, rng }) {
 }
 
 const BackgroundPartyResolver = {
-    resolve({ party, members, spot, pressure = {}, elapsedMs = 60000, rng = Math.random }) {
+    resolve({ party, members, spot, pressure = {}, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!party || !members?.length || !spot) {
             return {
                 memberResults: [],
@@ -94,6 +95,47 @@ const BackgroundPartyResolver = {
                 partyPatch: {},
                 nextResolveAt: Date.now() + 60000,
                 debug: { reason: 'missing_party_members_or_spot' }
+            };
+        }
+
+        // A party shares its hunting cadence.  If even one member is resting,
+        // pause the whole group: otherwise the resolver keeps granting fights
+        // and draining the exhausted member on every cold tick.
+        if (members.some((state) => state.activity === 'resting')) {
+            const memberResults = members.map((state) => ({
+                state,
+                result: BackgroundResolver.resolveRest({
+                    ...state,
+                    activity: 'resting'
+                }, elapsedMs, timestamp)
+            }));
+            const resting = memberResults.filter(({ result }) => result.patch.activity === 'resting').length;
+
+            return {
+                memberResults,
+                events: [],
+                partyPatch: {
+                    cohesion: Number(party.cohesion || 0.65),
+                    risk: Number(party.risk || 0.25),
+                    stats: {
+                        ...(party.stats || {}),
+                        rests: Number(party.stats?.rests || 0) + 1,
+                        lastResolveAt: timestamp
+                    }
+                },
+                nextResolveAt: timestamp + (resting > 0 ? 30000 : 45000),
+                debug: {
+                    activity: resting > 0 ? 'resting' : 'recovered',
+                    fights: 0,
+                    wins: 0,
+                    losses: 0,
+                    deaths: 0,
+                    resting,
+                    dropsRolled: 0,
+                    dropsAwarded: 0,
+                    spotId: spot.id,
+                    route: spot.route || null
+                }
             };
         }
 
@@ -205,10 +247,10 @@ const BackgroundPartyResolver = {
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
-                    lastResolveAt: Date.now()
+                        lastResolveAt: timestamp
                 }
             },
-            nextResolveAt: Date.now() + 45000 + Math.round(rng() * 90000),
+            nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
             debug: {
                 fights,
                 wins,

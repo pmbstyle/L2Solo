@@ -2,11 +2,13 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const RECOVERY_HP_RATIO = 0.35;
 const RECOVERY_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
+const MANA_REGEN_CAST_RETRY_MS = 8000;
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
@@ -27,6 +29,31 @@ function recordWakeDecision(session, bot, action, reason, extra = {}) {
         at: Date.now(),
         ...extra
     };
+}
+
+function sitDown(session, bot) {
+    if (bot.state.fetchSeated()) return false;
+    bot.state.setSeated(true);
+    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    return true;
+}
+
+function maybeCastManaRegeneration(session, bot, Generics) {
+    const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
+    if (mpRatio >= 0.8 || Date.now() < Number(session.nextManaRegenAt || 0)) return false;
+
+    const skill = (bot.skillset?.fetchSkills?.() || [])
+        .find((entry) => !entry.fetchPassive?.()
+            && entry.fetchSemantic?.()?.effect === 'mana_regeneration'
+            && entry.fetchTargetKind?.() === 'self');
+    if (!skill || EffectStore.remainingMs(bot, 'mana_regeneration') > 0) return false;
+    if (Number(bot.fetchMp()) < Number(skill.fetchConsumedMp?.() || 0) || bot.state.fetchCasts?.()) return false;
+
+    standUp(session, bot);
+    session.nextManaRegenAt = Date.now() + MANA_REGEN_CAST_RETRY_MS;
+    Generics.skillExec(session, bot, { id: bot.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
+    recordWakeDecision(session, bot, 'cast_mana_regeneration', 'recover_mp', { skillId: skill.fetchSelfId() });
+    return true;
 }
 
 function needsRecovery(bot) {
@@ -61,6 +88,7 @@ function retreatFromThreat(session, bot, threat) {
 }
 
 module.exports = {
+    maybeCastManaRegeneration,
     tick(session, bot, Generics, BotAI) {
         if (session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
@@ -151,6 +179,11 @@ module.exports = {
                 BotAI.say(session, "Fully rested! Ready to hunt again.");
             }
         } else {
+            // skillExec marks the actor as casting immediately.  Do not sit
+            // on the next brain tick while the native self-cast is still live.
+            if (bot.state.fetchCasts?.()) return;
+            if (maybeCastManaRegeneration(session, bot, Generics)) return;
+            sitDown(session, bot);
             // 3% chance per tick to attempt conversation when resting near other bots
             if (Math.random() < 0.03) {
                 try {

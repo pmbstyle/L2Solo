@@ -79,6 +79,31 @@ assert.strictEqual(
     'Additive MP regeneration must receive the C4 sitting multiplier'
 );
 
+const passiveRecovery = actor({ seated: true });
+passiveRecovery.skillset = {
+    fetchSkills: () => [{
+        fetchPassive: () => true,
+        fetchSelfId: () => 212,
+        fetchName: () => 'Fast HP Recovery',
+        fetchLevel: () => 2
+    }, {
+        fetchPassive: () => true,
+        fetchSelfId: () => 229,
+        fetchName: () => 'Fast Mana Recovery',
+        fetchLevel: () => 2
+    }]
+};
+assert.strictEqual(
+    automation.fetchRevHpAmount(passiveRecovery),
+    ((5.4 * Formulas.calcLevelMod(40) * Formulas.calcBaseMod.CON(30)) + 1.6) * 1.5,
+    'Fast HP Recovery must add its C4 passive value before the sitting multiplier'
+);
+assert.strictEqual(
+    automation.fetchRevMpAmount(passiveRecovery),
+    ((2.1 * Formulas.calcLevelMod(40) * Formulas.calcBaseMod.MEN(30)) + 1.5) * 1.5,
+    'Fast Mana Recovery must add its C4 passive value before the sitting multiplier'
+);
+
 const result = automation.replenishVitalsTick(seated);
 assert(result.hp > 100 && result.mp > 100, 'A regeneration tick must restore both HP and MP while seated');
 

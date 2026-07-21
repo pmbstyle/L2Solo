@@ -81,7 +81,10 @@ class Automation extends SelectedModel {
 
     fetchRevHpAmount(creature) {
         const base = this.fetchPlayerRegenBase(creature, 'CON');
-        return Math.max(0, base * EffectStats.multiplier(creature, 'regHp') * this.fetchRegenStateMultiplier(creature));
+        return Math.max(0, (
+            (base * EffectStats.multiplier(creature, 'regHp'))
+            + EffectStats.add(creature, 'regHpAdd')
+        ) * this.fetchRegenStateMultiplier(creature));
     }
 
     fetchRevMpAmount(creature) {
