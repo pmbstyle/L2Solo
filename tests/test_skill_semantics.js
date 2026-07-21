@@ -4366,6 +4366,17 @@ const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, curseP
 assert.strictEqual(cursePoison.fetchTargetKind(), 'enemy', 'Curse: Poison should resolve as an enemy poison effect');
 assert.strictEqual(cursePoison.fetchSemantic().baseLandRate, 5, 'Curse: Poison level 4 should use sourced power as land rate');
 assert.strictEqual(curseOutcome.effect.dot.damage, 31, 'Curse: Poison level 4 should use the sourced L2J damage table');
+
+const strongerPoisonTicker = curseTarget.effectTimers.poison;
+const weakerPoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 5, level: 1, buff: 30000 });
+const weakerPoisonOutcome = SkillEffects.execute(session(), caster, curseTarget, weakerPoison, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(weakerPoisonOutcome.effect, null, 'a lower-level poison should be rejected while a stronger poison is active');
+assert.strictEqual(curseTarget.effectTimers.poison, strongerPoisonTicker, 'a rejected poison must not restart the stronger poison ticker');
+assert.strictEqual(EffectStore.list(curseTarget).find((effect) => effect.key === 'poison').level, 4, 'a rejected poison must retain the stronger effect level');
 EffectStore.remove(curseTarget, 'poison');
 
 const curseDiscordData = activeSkills.find((entry) => entry.selfId === 1163);
@@ -7251,6 +7262,12 @@ const fatalCounter = skill({ selfId: 314, name: 'Fatal Counter', spell: false, l
 assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), null, 'Fatal Counter must allow its sourced bow requirement');
 bowUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Sword';
 assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(bowUser, fatalCounter), 'Incorrect weapon.', 'Weapon-restricted skills must reject an incompatible weapon');
+const starterFistUser = creature({ id: 2000310 });
+starterFistUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Fist';
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(starterFistUser, ironPunch), 'Incorrect weapon.', 'Iron Punch must reject the one-handed starter fist');
+const dualFistUser = creature({ id: 2000311 });
+dualFistUser.backpack.fetchTotalWeaponKind = () => 'Weapon.DualFist';
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(dualFistUser, ironPunch), null, 'Iron Punch must allow C4 dual-fist weapons such as Spiked Gloves');
 const focusAttack = C4SkillRules.resolve({ selfId: 317, name: 'Focus Attack', level: 1 });
 assert.deepStrictEqual(focusAttack.stats, { pAccuracyCombatAdd: 5, hitMainTarget: true }, 'Focus Attack must preserve its pole accuracy and main-target behavior');
 assert.strictEqual(focusAttack.toggleMpConsume, 7, 'Focus Attack must consume 7 MP every two seconds');

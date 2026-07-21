@@ -21,7 +21,7 @@ function skill(selfId, options = {}) {
     };
 }
 
-function bot(classId, ownedSkills = [], mp = 100) {
+function bot(classId, ownedSkills = [], mp = 100, weaponKind = '') {
     return {
         fetchClassId: () => classId,
         fetchMp: () => mp,
@@ -33,6 +33,10 @@ function bot(classId, ownedSkills = [], mp = 100) {
             fetchSkill(selfId) {
                 return this.skills.find((entry) => entry.selfId === selfId) || null;
             }
+        },
+        backpack: {
+            fetchTotalWeaponKind: () => weaponKind,
+            fetchEquippedArmors: () => []
         }
     };
 }
@@ -70,11 +74,19 @@ try {
     assert.strictEqual(mageGenerics.skills.length, 0, 'mage without learned nuke should not cast an invented skill');
     assert.strictEqual(mageGenerics.attacks.length, 1, 'mage without learned nuke should fall back to a normal attack');
 
-    const archer = bot(9, [skill(56, { mp: 5, range: 700, power: 24 })], 20);
+    const archer = bot(9, [skill(56, { mp: 5, range: 700, power: 24, semantic: { requires: { weaponsAllowed: 32 } } })], 20, 'Weapon.Bow');
     const archerGenerics = generics();
     BotAI.executeCombat({}, archer, npc(1102), archerGenerics);
     assert.deepStrictEqual(archerGenerics.skills[0], { id: 1102, selfId: 56, ctrl: true });
     assert.strictEqual(archerGenerics.attacks.length, 0, 'archer with learned Power Shot should cast it before ranged attack fallback');
+
+    const swordFighter = bot(18, [
+        skill(56, { name: 'Power Shot', mp: 5, range: 700, power: 90, semantic: { requires: { weaponsAllowed: 32 } } }),
+        skill(3, { name: 'Power Strike', mp: 5, range: 40, power: 30 })
+    ], 100, 'Weapon.Sword');
+    const swordFighterGenerics = generics();
+    BotAI.executeCombat({}, swordFighter, npc(1111), swordFighterGenerics);
+    assert.strictEqual(swordFighterGenerics.skills[0].selfId, 3, 'a sword fighter must not prepare Power Shot and should use its valid melee skill');
 
     const fighter = bot(0, [], 20);
     const fighterGenerics = generics();

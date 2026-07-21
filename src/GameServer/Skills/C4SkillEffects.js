@@ -644,6 +644,11 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         durationMs
     });
 
+    // A stronger effect already occupies this C4 stack slot. The rejected cast
+    // must not restart its DoT/HoT ticker, refresh its icon, or interrupt the
+    // target as though the weaker effect had landed.
+    if (!effect) return null;
+
     const buff = BuffCatalog.byTypeOrKey(semantic.effect);
     if (buff && semantic.effectType === 'buff') {
         if (!target.activeBuffs) target.activeBuffs = {};

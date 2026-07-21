@@ -925,92 +925,92 @@
     "etc": { "slot": 7, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
     "selfId": 253,
-    "template": { "kind": "Weapon.Fist", "name": "Spiked Gloves", "class1": 0, "class2": 0, "mass": 1590, "price": 768 },
+    "template": { "kind": "Weapon.DualFist", "name": "Spiked Gloves", "class1": 0, "class2": 0, "mass": 1590, "price": 768 },
     "stats": { "pAtk": 10, "pAtkRnd": 5, "mAtk": 6, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
     "selfId": 254,
-    "template": { "kind": "Weapon.Fist", "name": "Iron Gloves", "class1": 0, "class2": 0, "mass": 1580, "price": 12500 },
+    "template": { "kind": "Weapon.DualFist", "name": "Iron Gloves", "class1": 0, "class2": 0, "mass": 1580, "price": 12500 },
     "stats": { "pAtk": 13, "pAtkRnd": 5, "mAtk": 9, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
     "selfId": 255,
-    "template": { "kind": "Weapon.Fist", "name": "Fox Claw Gloves", "class1": 0, "class2": 0, "mass": 1560, "price": 54100 },
+    "template": { "kind": "Weapon.DualFist", "name": "Fox Claw Gloves", "class1": 0, "class2": 0, "mass": 1560, "price": 54100 },
     "stats": { "pAtk": 21, "pAtkRnd": 5, "mAtk": 12, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
 },{
     "selfId": 256,
-    "template": { "kind": "Weapon.Fist", "name": "Cestus", "class1": 0, "class2": 0, "mass": 1570, "price": 136000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Cestus", "class1": 0, "class2": 0, "mass": 1570, "price": 136000 },
     "stats": { "pAtk": 29, "pAtkRnd": 5, "mAtk": 17, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
 },{
     "selfId": 257,
-    "template": { "kind": "Weapon.Fist", "name": "Viper's Fang", "class1": 0, "class2": 0, "mass": 1560, "price": 244000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Viper's Fang", "class1": 0, "class2": 0, "mass": 1560, "price": 244000 },
     "stats": { "pAtk": 38, "pAtkRnd": 5, "mAtk": 21, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "none", "cristals": 0 }
 },{
     "selfId": 258,
-    "template": { "kind": "Weapon.Fist", "name": "Bagh-Nakh", "class1": 0, "class2": 0, "mass": 1540, "price": 409000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Bagh-Nakh", "class1": 0, "class2": 0, "mass": 1540, "price": 409000 },
     "stats": { "pAtk": 49, "pAtkRnd": 5, "mAtk": 26, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "d", "cristals": 743 }
 },{
     "selfId": 259,
-    "template": { "kind": "Weapon.Fist", "name": "Single-Edged Jamadhr", "class1": 0, "class2": 0, "mass": 1550, "price": 644000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Single-Edged Jamadhr", "class1": 0, "class2": 0, "mass": 1550, "price": 644000 },
     "stats": { "pAtk": 62, "pAtkRnd": 5, "mAtk": 32, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "d", "cristals": 1170 }
 },{
     "selfId": 260,
-    "template": { "kind": "Weapon.Fist", "name": "Triple-Edged Jamadhr", "class1": 0, "class2": 0, "mass": 1540, "price": 967000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Triple-Edged Jamadhr", "class1": 0, "class2": 0, "mass": 1540, "price": 967000 },
     "stats": { "pAtk": 78, "pAtkRnd": 5, "mAtk": 39, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "d", "cristals": 1758 }
 },{
     "selfId": 261,
-    "template": { "kind": "Weapon.Fist", "name": "Bich'Hwa", "class1": 0, "class2": 0, "mass": 1510, "price": 1400000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Bich'Hwa", "class1": 0, "class2": 0, "mass": 1510, "price": 1400000 },
     "stats": { "pAtk": 96, "pAtkRnd": 5, "mAtk": 47, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "d", "cristals": 2545 }
 },{
     "selfId": 262,
-    "template": { "kind": "Weapon.Fist", "name": "Scallop Jamadhr", "class1": 0, "class2": 0, "mass": 1520, "price": 1800000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Scallop Jamadhr", "class1": 0, "class2": 0, "mass": 1520, "price": 1800000 },
     "stats": { "pAtk": 112, "pAtkRnd": 5, "mAtk": 54, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "d", "cristals": 3272 }
 },{
     "selfId": 263,
-    "template": { "kind": "Weapon.Fist", "name": "Chakram", "class1": 0, "class2": 0, "mass": 1490, "price": 2290000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Chakram", "class1": 0, "class2": 0, "mass": 1490, "price": 2290000 },
     "stats": { "pAtk": 130, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 264,
-    "template": { "kind": "Weapon.Fist", "name": "Pata", "class1": 0, "class2": 0, "mass": 1440, "price": 7830000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Pata", "class1": 0, "class2": 0, "mass": 1440, "price": 7830000 },
     "stats": { "pAtk": 204, "pAtkRnd": 5, "mAtk": 89, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1044 }
 },{
     "selfId": 265,
-    "template": { "kind": "Weapon.Fist", "name": "Fisted Blade", "class1": 0, "class2": 0, "mass": 1480, "price": 4300000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Fisted Blade", "class1": 0, "class2": 0, "mass": 1480, "price": 4300000 },
     "stats": { "pAtk": 169, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 266,
-    "template": { "kind": "Weapon.Fist", "name": "Great Pata", "class1": 0, "class2": 0, "mass": 1460, "price": 6130000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Great Pata", "class1": 0, "class2": 0, "mass": 1460, "price": 6130000 },
     "stats": { "pAtk": 190, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 267,
-    "template": { "kind": "Weapon.Fist", "name": "Arthro Nail", "class1": 0, "class2": 0, "mass": 1420, "price": 8680000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Arthro Nail", "class1": 0, "class2": 0, "mass": 1420, "price": 8680000 },
     "stats": { "pAtk": 213, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 268,
-    "template": { "kind": "Weapon.Fist", "name": "Bellion Cestus", "class1": 0, "class2": 0, "mass": 1390, "price": 13100000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Bellion Cestus", "class1": 0, "class2": 0, "mass": 1390, "price": 13100000 },
     "stats": { "pAtk": 236, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 269,
-    "template": { "kind": "Weapon.Fist", "name": "Blood Tornado", "class1": 0, "class2": 0, "mass": 1370, "price": 18300000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Blood Tornado", "class1": 0, "class2": 0, "mass": 1370, "price": 18300000 },
     "stats": { "pAtk": 259, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 270,
-    "template": { "kind": "Weapon.Fist", "name": "Dragon Grinder", "class1": 0, "class2": 0, "mass": 1350, "price": 27000000 },
+    "template": { "kind": "Weapon.DualFist", "name": "Dragon Grinder", "class1": 0, "class2": 0, "mass": 1350, "price": 27000000 },
     "stats": { "pAtk": 282, "pAtkRnd": 5, "mAtk": 114, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
@@ -1570,7 +1570,7 @@
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "d", "cristals": 2545 }
 },{
     "selfId": 2368,
-    "template": { "kind": "Weapon.Fist", "name": "Training Gloves", "class1": 0, "class2": 0, "mass": 1580, "price": 138 },
+    "template": { "kind": "Weapon.DualFist", "name": "Training Gloves", "class1": 0, "class2": 0, "mass": 1580, "price": 138 },
     "stats": { "pAtk": 7, "pAtkRnd": 5, "mAtk": 5, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
@@ -1585,7 +1585,7 @@
     "etc": { "slot": 7, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
     "selfId": 2371,
-    "template": { "kind": "Weapon.Fist", "name": "Fist of Butcher", "class1": 0, "class2": 0, "mass": 1400, "price": 25500 },
+    "template": { "kind": "Weapon.DualFist", "name": "Fist of Butcher", "class1": 0, "class2": 0, "mass": 1400, "price": 25500 },
     "stats": { "pAtk": 16, "pAtkRnd": 5, "mAtk": 10, "atkSpd": 325, "crit": 40, "accur": 4.75 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 0, "spiritshot": 0, "rank": "none", "cristals": 0 }
 },{
