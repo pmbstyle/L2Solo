@@ -249,13 +249,22 @@ function planFor(state = {}, options = {}) {
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
         : nextMaterial?.source && { ...nextMaterial.source, itemId: Number(nextMaterial.selfId) };
-    const readyToCraft = strategy === 'craft' && (
-        missingMaterialPlans.length === 0 || hasReadyCraftComponent(target.recipe, state, allowedRecipeIds)
-    );
-    const requiresParty = Boolean(next && !soloSafeForSource(state, next));
+    // Keep final-equipment readiness distinct from an available intermediate
+    // craft.  Both routes go to a station, but reporting a ready Cokes batch
+    // as "can craft Atuba Mace" made the progression telemetry lie and hid
+    // the remaining work in a long component chain.
+    const readyToCraft = strategy === 'craft' && missingMaterialPlans.length === 0;
+    const componentReady = strategy === 'craft'
+        && !readyToCraft
+        && hasReadyCraftComponent(target.recipe, state, allowedRecipeIds);
+    // A ready final recipe or component is a station action, not a request to
+    // fight at the next (possibly unsafe) material source.  Let it leave the
+    // party gate and finish the prepared manufacture first.
+    const requiresParty = !readyToCraft && !componentReady
+        && Boolean(next && !soloSafeForSource(state, next));
 
     return {
-        status: readyToCraft ? 'ready_to_craft' : next ? 'active' : 'blocked',
+        status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : next ? 'active' : 'blocked',
         grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
         role: roleFor(state),
         rateModelVersion: RATE_MODEL_VERSION,
@@ -272,7 +281,7 @@ function planFor(state = {}, options = {}) {
 
 function shouldFinishPreviousPlan(previous, refreshed) {
     if (!previous || !refreshed || previous.grade === refreshed.grade || previous.strategy !== 'craft') return false;
-    if (!['active', 'ready_to_craft'].includes(refreshed.status)) return false;
+    if (!['active', 'component_ready', 'ready_to_craft'].includes(refreshed.status)) return false;
     const missing = (refreshed.materials || []).filter((material) => Number(material.missing || 0) > 0);
     const total = (refreshed.materials || []).reduce((sum, material) => sum + Number(material.amount || 0), 0);
     const remaining = missing.reduce((sum, material) => sum + Number(material.missing || 0), 0);

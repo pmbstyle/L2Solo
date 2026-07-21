@@ -24,7 +24,7 @@ function basePrice(item, template = templateFor(item?.selfId)) {
 
 function reservedCraftAmounts(state) {
     const plan = state?.stats?.equipmentPlan;
-    if (!['active', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return {};
+    if (!['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return {};
     return (plan.materials || []).reduce((reserved, material) => {
         const selfId = Number(material.selfId || 0);
         if (!selfId) return reserved;

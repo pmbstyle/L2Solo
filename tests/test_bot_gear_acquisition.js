@@ -93,6 +93,28 @@ const oriharkonRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipe
 const syntheticCokesRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(36);
 const atubaMaceRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(189);
 const steelRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(30);
+const crystalSupplement = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
+const atubaWithCokesIngredients = atubaMaceRecipe.materials.reduce((inventory, material) => {
+    if (Number(material.selfId) === 1879 || crystalSupplement.isSupplementalMaterial(material.selfId)) return inventory;
+    inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
+    return inventory;
+}, {
+    1870: { selfId: 1870, amount: 3 },
+    1871: { selfId: 1871, amount: 3 }
+});
+const componentPlan = GearAcquisitionPlanner.planFor({
+    level: 20,
+    stats: { classId: 0, role: 'dps' },
+    inventory: atubaWithCokesIngredients
+}, { spots: [], recipeId: atubaMaceRecipe.recipeId });
+assert.strictEqual(componentPlan.status, 'component_ready', 'a ready Cokes batch must be distinguished from final Atuba Mace readiness');
+assert.strictEqual(componentPlan.requiresParty, false, 'a ready component must go to its station instead of waiting for a party for a later farming source');
+assert(ColdCraftingService.beginTravel({
+    level: 20,
+    activity: 'hunting',
+    inventory: atubaWithCokesIngredients,
+    stats: { equipmentPlan: componentPlan }
+}, 1000), 'a component-ready plan must still travel to its crafting station');
 const resourceStationRecipeIds = new Set(CraftShopService.stationRecipes(
     CraftShopService.CraftStations.find((entry) => entry.id === 'resource_core'),
     CraftShopService.availableRecipes({ level: 70, stats: { classId: 57 } })
@@ -114,7 +136,6 @@ const resourceState = {
         1872: { selfId: 1872, amount: 4 }
     }
 };
-const crystalSupplement = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 assert.strictEqual(crystalSupplement.isSupplementalMaterial(1458), true, 'crystals must be supplemented only at the final manufacture step');
 assert.strictEqual(crystalSupplement.isSupplementalMaterial(2130), true, 'gemstones must be supplemented only at the final manufacture step');
 assert.strictEqual(crystalSupplement.isSupplementalMaterial(1869), false, 'farmable craft resources must never be supplemented');
