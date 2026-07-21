@@ -108,6 +108,7 @@ const componentPlan = GearAcquisitionPlanner.planFor({
     inventory: atubaWithCokesIngredients
 }, { spots: [], recipeId: atubaMaceRecipe.recipeId });
 assert.strictEqual(componentPlan.status, 'component_ready', 'a ready Cokes batch must be distinguished from final Atuba Mace readiness');
+assert.strictEqual(componentPlan.requiresParty, false, 'a ready component must go to its station instead of waiting for a party for a later farming source');
 assert(ColdCraftingService.beginTravel({
     level: 20,
     activity: 'hunting',

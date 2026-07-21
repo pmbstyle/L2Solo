@@ -257,7 +257,11 @@ function planFor(state = {}, options = {}) {
     const componentReady = strategy === 'craft'
         && !readyToCraft
         && hasReadyCraftComponent(target.recipe, state, allowedRecipeIds);
-    const requiresParty = Boolean(next && !soloSafeForSource(state, next));
+    // A ready final recipe or component is a station action, not a request to
+    // fight at the next (possibly unsafe) material source.  Let it leave the
+    // party gate and finish the prepared manufacture first.
+    const requiresParty = !readyToCraft && !componentReady
+        && Boolean(next && !soloSafeForSource(state, next));
 
     return {
         status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : next ? 'active' : 'blocked',
