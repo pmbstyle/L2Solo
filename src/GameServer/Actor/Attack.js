@@ -25,7 +25,7 @@ function weaponMaskFor(actor) {
     const kind = actor?.backpack?.fetchTotalWeaponKind?.() || '';
     const hasShield = (actor?.backpack?.fetchEquippedArmors?.() || [])
         .some((item) => item?.fetchKind?.() === 'Armor.Shield');
-    return WEAPON_MASK_BY_KIND[kind] || (hasShield ? 1048576 : 0);
+    return (WEAPON_MASK_BY_KIND[kind] || 0) | (hasShield ? 1048576 : 0);
 }
 
 class Attack {

@@ -7284,6 +7284,10 @@ assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(starterFistUse
 const dualFistUser = creature({ id: 2000311 });
 dualFistUser.backpack.fetchTotalWeaponKind = () => 'Weapon.DualFist';
 assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(dualFistUser, ironPunch), null, 'Iron Punch must allow C4 dual-fist weapons such as Spiked Gloves');
+const shieldUser = creature({ id: 2000312 });
+shieldUser.backpack.fetchTotalWeaponKind = () => 'Weapon.Blunt';
+shieldUser.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Shield' }];
+assert.strictEqual(restrictedSkillAttack.skillUseConditionFailure(shieldUser, shieldStun), null, 'Shield Stun must allow a shield equipped with a one-handed weapon');
 const focusAttack = C4SkillRules.resolve({ selfId: 317, name: 'Focus Attack', level: 1 });
 assert.deepStrictEqual(focusAttack.stats, { pAccuracyCombatAdd: 5, hitMainTarget: true }, 'Focus Attack must preserve its pole accuracy and main-target behavior');
 assert.strictEqual(focusAttack.toggleMpConsume, 7, 'Focus Attack must consume 7 MP every two seconds');
