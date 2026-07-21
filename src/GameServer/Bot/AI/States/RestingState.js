@@ -4,6 +4,9 @@ const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
+const RECOVERY_HP_RATIO = 0.35;
+const RECOVERY_MP_RATIO = 0.20;
+const EMERGENCY_RETREAT_DISTANCE = 850;
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
@@ -24,6 +27,37 @@ function recordWakeDecision(session, bot, action, reason, extra = {}) {
         at: Date.now(),
         ...extra
     };
+}
+
+function needsRecovery(bot) {
+    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < RECOVERY_HP_RATIO
+        || bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < RECOVERY_MP_RATIO;
+}
+
+function retreatFromThreat(session, bot, threat) {
+    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    const dx = from.locX - threat.fetchLocX();
+    const dy = from.locY - threat.fetchLocY();
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const to = {
+        locX: Math.round(from.locX + (dx / length) * EMERGENCY_RETREAT_DISTANCE),
+        locY: Math.round(from.locY + (dy / length) * EMERGENCY_RETREAT_DISTANCE),
+        locZ: from.locZ
+    };
+
+    standUp(session, bot);
+    session.plan = 'fleeing';
+    session.fleeStart = Date.now();
+    session.currentTargetId = undefined;
+    session.incomingThreatId = undefined;
+    session.incomingThreatAt = undefined;
+    bot.unselect?.();
+    bot.moveTo?.({ from, to });
+    recordWakeDecision(session, bot, 'retreat', 'critical_resources_under_attack', {
+        targetId: threat.fetchId(),
+        hpRatio: bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
+        mpRatio: bot.fetchMp() / Math.max(1, bot.fetchMaxMp())
+    });
 }
 
 module.exports = {
@@ -47,7 +81,13 @@ module.exports = {
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             const recovered = hpRatio >= 0.95 && mpRatio >= 0.95;
 
-            if (threat || leaderTargetId || distance > REST_FOLLOW_WAKE_DISTANCE || (!leaderSeated && recovered)) {
+            // A recovering companion must stay seated even when its leader is
+            // far away.  Otherwise RestingState stands it up to follow, then
+            // FollowingState immediately seats it again for low HP/MP.
+            const shouldFollowLeader = recovered && (
+                distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
+            );
+            if (threat || leaderTargetId || shouldFollowLeader) {
                 session.plan = 'following';
                 session.currentTargetId = threat?.actor?.fetchId?.() || leaderTargetId || undefined;
                 session.townGossip = false;
@@ -68,6 +108,10 @@ module.exports = {
         if (!session.followPlayerSession && session.partyCompanion !== true) {
             const threat = PartyAwareness.recentIncomingNpc(session);
             if (threat) {
+                if (needsRecovery(bot)) {
+                    retreatFromThreat(session, bot, threat);
+                    return;
+                }
                 session.plan = 'hunting';
                 session.currentTargetId = threat.fetchId();
                 session.townGossip = false;

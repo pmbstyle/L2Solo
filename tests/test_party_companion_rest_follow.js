@@ -337,6 +337,22 @@ try {
 
     assert.strictEqual(recoveringCampBot.state.fetchSeated(), true, 'recovering companion should stay seated when leader stands without combat');
 
+    const distantRecoveringBot = fakeActor(2000018, { locX: 1200, locY: 0, hp: 20, maxHp: 100, mp: 10, maxMp: 100 });
+    distantRecoveringBot.state.setSeated(true);
+    const distantRecoveringSession = fakeSession('bot_distant_recovering_companion', distantRecoveringBot);
+    distantRecoveringSession.followPlayerSession = leaderSession;
+    distantRecoveringSession.partyCompanion = true;
+    distantRecoveringSession.plan = 'resting';
+    leader.destId = undefined;
+    World.user = { sessions: [leaderSession, distantRecoveringSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+
+    RestingState.tick(distantRecoveringSession, distantRecoveringBot, {}, { say() {} });
+
+    assert.strictEqual(distantRecoveringSession.plan, 'resting', 'recovering companion should not stand merely because its leader is far away');
+    assert.strictEqual(distantRecoveringBot.state.fetchSeated(), true, 'recovering companion should remain seated until it can actually follow');
+
     const unknownMoveBot = fakeActor(2000008, { locX: 500, locY: 0 });
     unknownMoveBot.state.setTowards('move');
     const unknownMoveSession = fakeSession('bot_unknown_move_follow', unknownMoveBot);
