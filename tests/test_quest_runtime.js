@@ -41,6 +41,12 @@ const Q101 = require("../src/GameServer/Quest/quests/Q101_SwordOfSolidarity");
 const Q104 = require("../src/GameServer/Quest/quests/Q104_SpiritOfMirrors");
 const Q157 = require("../src/GameServer/Quest/quests/Q157_RecoverSmuggledGoods");
 const Q160 = require("../src/GameServer/Quest/quests/Q160_NerupasRequest");
+const Q105 = require("../src/GameServer/Quest/quests/Q105_SkirmishWithTheOrcs");
+const Q107 = require("../src/GameServer/Quest/quests/Q107_MercilessPunishment");
+const Q152 = require("../src/GameServer/Quest/quests/Q152_ShardsOfGolem");
+const Q159 = require("../src/GameServer/Quest/quests/Q159_ProtectTheWaterSource");
+const Q162 = require("../src/GameServer/Quest/quests/Q162_CurseOfTheUndergroundFortress");
+const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
