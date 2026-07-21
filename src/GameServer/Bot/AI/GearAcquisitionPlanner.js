@@ -53,6 +53,15 @@ function inventoryMap(inventory = {}) {
         : new Map(Object.values(inventory).map((item) => [Number(item.selfId), Number(item.amount || 0)]));
 }
 
+function inventoryItems(inventory = {}) {
+    const rows = Array.isArray(inventory) ? inventory : Object.values(inventory);
+    return rows.flatMap((row) => {
+        if (Number(row?.amount || 0) < 1) return [];
+        const item = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(row.selfId));
+        return item ? [item] : [];
+    });
+}
+
 function itemScore(item, role) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
@@ -71,9 +80,34 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
 
+function isSlotUpgrade(item, ownedItems, role) {
+    const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
+    const rank = String(item.etc?.rank || 'none').toLowerCase();
+    const score = itemScore(item, role);
+    const price = Number(item.template?.price || 0);
+    // One item per paperdoll slot is enough. Keep a same-grade replacement
+    // only when it is genuinely stronger, or equally strong but from a more
+    // expensive progression tier.
+    return !ownedItems.some((owned) => (
+        (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
+        && String(owned.etc?.rank || 'none').toLowerCase() === rank
+        && (itemScore(owned, role) > score
+            || (itemScore(owned, role) === score && Number(owned.template?.price || 0) >= price))
+    ));
+}
+
+function cGradePriceCap(level) {
+    const value = Number(level || 1);
+    if (value < 44) return 2290000;
+    if (value < 48) return 2870000;
+    if (value < 50) return 4300000;
+    return Infinity;
+}
+
 function preferredTarget(state = {}, options = {}) {
     const role = roleFor(state);
     const owned = inventoryMap(state.inventory);
+    const ownedItems = inventoryItems(state.inventory);
     const stationService = { level: 70, stats: { classId: 57 } };
     const availableToStations = CraftShopService.availableRecipes(stationService);
     const publishedRecipeIds = new Set(CraftShopService.CraftStations.flatMap((station) => (
@@ -91,13 +125,23 @@ function preferredTarget(state = {}, options = {}) {
         .map((item) => ({ item, recipe: recipesByProduct.get(Number(item.selfId)) }))
         .filter(({ recipe }) => !options.recipeId || Number(recipe.recipeId) === Number(options.recipeId))
         .filter(({ item }) => Number(owned.get(Number(item.selfId)) || 0) < 1)
+        .filter(({ item }) => isSlotUpgrade(item, ownedItems, role))
         .sort((a, b) => {
             const aSlot = Number(a.item.etc?.slot || 0);
             const bSlot = Number(b.item.etc?.slot || 0);
             const priority = (slot) => WEAPON_SLOTS.has(slot) ? 3 : ARMOR_SLOTS.has(slot) ? 2 : 1;
             return priority(bSlot) - priority(aSlot) || itemScore(b.item, role) - itemScore(a.item, role) || Number(b.item.template?.price || 0) - Number(a.item.template?.price || 0);
         });
-    return candidates[0] || null;
+    const requiredRank = recipeRank || gradeForLevel(state.level);
+    // A C-grade character should upgrade in affordable steps rather than
+    // commit all of its material gathering to the final C weapon immediately.
+    // Keep the top tier available from level 50, shortly before B-grade.
+    const affordable = requiredRank === 'c'
+        ? candidates.filter(({ item }) => Number(item.template?.price || 0) <= cGradePriceCap(state.level))
+        : candidates;
+    // At a C-tier cap, wait for the next level band instead of silently
+    // falling through to a top-C weapon once the current band is complete.
+    return requiredRank === 'c' ? affordable[0] || null : candidates[0] || null;
 }
 
 function preferredDropTarget(state = {}) {
