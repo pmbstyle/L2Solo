@@ -32,6 +32,39 @@ const thirdClasses = {
     118: { parentClassId: 57, name: 'Maestro', cp: { baseCpMax: 2634.5, lvlCpAdd: 55.68, lvlCpMod: 0.22 } }
 };
 
+const firstProfMap = {
+    0: [1, 4, 7],
+    10: [11, 15],
+    18: [19, 22],
+    25: [26, 29],
+    31: [32, 35],
+    38: [39, 42],
+    44: [45, 47],
+    49: [50],
+    53: [54, 56]
+};
+
+const secondProfMap = {
+    1: [2, 3],
+    4: [5, 6],
+    7: [8, 9],
+    11: [12, 13, 14],
+    15: [16, 17],
+    19: [20, 21],
+    22: [23, 24],
+    26: [27, 28],
+    29: [30],
+    32: [33, 34],
+    35: [36, 37],
+    39: [40, 41],
+    42: [43],
+    45: [46],
+    47: [48],
+    50: [51, 52],
+    54: [55],
+    56: [57]
+};
+
 function getThirdClass(classId) {
     return thirdClasses[Number(classId)] || null;
 }
@@ -51,4 +84,4 @@ function expandTemplates(templates) {
     });
 }
 
-module.exports = { thirdClasses, getThirdClass, expandTemplates };
+module.exports = { thirdClasses, firstProfMap, secondProfMap, getThirdClass, expandTemplates };

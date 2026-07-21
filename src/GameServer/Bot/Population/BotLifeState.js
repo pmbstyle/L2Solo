@@ -7,6 +7,8 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -1039,12 +1041,44 @@ const BotLifeState = {
             inventory,
             updatedAt: timestamp
         };
-        const row = rowFromState(nextState);
+        const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
+        const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
+        const currentClassId = Number(nextState.stats?.classId || 0);
+        const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
+        const progression = needsClassProgression
+            ? BotClassProgression.reconcile({
+                characterId: nextState.characterId,
+                classId: currentClassId,
+                level,
+                seed: nextState.name || nextState.characterId
+            })
+            : Promise.resolve({ classId: currentClassId, transitions: [] });
 
-        return save(row)
+        return progression.then((resolved) => {
+            const classId = Number(resolved.classId || currentClassId);
+            const role = BotRoles.inferRole(classId);
+            const progressedState = {
+                ...nextState,
+                party: { ...(nextState.party || {}), role },
+                stats: {
+                    ...(nextState.stats || {}),
+                    classId,
+                    role,
+                    build: GearSkillHints.forCharacter({ classId, level }, { role }),
+                    classProgressionLevel: level,
+                    classProgressionClassId: classId,
+                    classTransitions: resolved.transitions?.length
+                        ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
+                        : nextState.stats?.classTransitions || []
+                }
+            };
+            if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+            const row = rowFromState(progressedState);
+
+            return save(row)
             .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => syncInventorySummary(row.characterId, progressedState.inventory))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -1054,6 +1088,7 @@ const BotLifeState = {
                 utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
                 return null;
             });
+        });
     },
 
     marketGoalCandidates(limit = 8) {

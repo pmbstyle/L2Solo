@@ -7,7 +7,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
-const Skillset = invoke('GameServer/Actor/Skillset');
+const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 
 const CLASS_POOL = [
@@ -167,7 +167,7 @@ function awardBaseSkills(characterId, classId) {
 function awardProfileSkills(characterId, classId, level) {
     const targetLevel = Math.max(1, Number(level) || 1);
     if (targetLevel <= 1) return Promise.resolve();
-    return new Skillset().awardSkills(characterId, classId, targetLevel);
+    return BotClassProgression.reconcile({ characterId, classId, level: targetLevel });
 }
 
 function ensureAdena(characterId, amount) {
@@ -300,6 +300,8 @@ function stateFor(character, index, seedMeta = {}) {
             classId,
             route: spot?.route || null,
             build: GearSkillHints.forCharacter({ classId, level }, { role: base.role }),
+            classProgressionLevel: level,
+            classProgressionClassId: classId,
             generatedCold: true,
             generatedIndex: index,
             levelBand: profileForIndex(index, base).band

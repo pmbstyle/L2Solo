@@ -2,6 +2,13 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const DataCache  = invoke('GameServer/DataCache');
 const Database   = invoke('Database');
 
+function definedLevel(skill, requestedLevel) {
+    const levels = skill?.levels || [];
+    return levels.find((entry) => Number(entry.level) === Number(requestedLevel))
+        || levels.filter((entry) => Number(entry.level) <= Number(requestedLevel)).at(-1)
+        || null;
+}
+
 class Skillset {
     constructor() {
         this.resetSkills();
@@ -24,7 +31,7 @@ class Skillset {
         this.resetSkills();
 
         const skillLevelLookup = (skill, level, success) => {
-            const item = skill.levels?.find((ob) => ob.level === level);
+            const item = definedLevel(skill, level);
             item ? success(item) : utils.infoWarn('GameServer', 'unknown Skill Id %d with Level %d', skill.selfId, level);
         };
 
@@ -56,20 +63,30 @@ class Skillset {
                 }
 
                 return new Promise((done) => {
-                    skill.levels = skill.levels.filter((ob) => ob.pLevel <= level).pop();
+                    const requested = skill.levels.filter((ob) => ob.pLevel <= level).pop();
+                    const resolved = definedLevel(skillDetails, requested?.level);
+                    if (!resolved) {
+                        utils.infoWarn('GameServer', 'unknown Skill Id %d with Level %d', skill.selfId, requested?.level);
+                        done();
+                        return;
+                    }
 
                     Database.fetchSkill(id, skill.selfId).then((ownedSkill) => {
                         const storedLevel = ownedSkill[0]?.level;
 
                         // The skill is present in DB, update its level
                         if (storedLevel) {
-                            Database.updateSkillLevel(id, skill.selfId, skill.levels.level).then(() => {
+                            Database.updateSkillLevel(id, skill.selfId, resolved.level).then(() => {
                                 done();
                             });
                         }
                         else {
                             // The skill is a new addition based on character's level
-                            skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
+                            skill = {
+                                ...utils.crushOb(skill),
+                                passive: skillDetails.template?.passive ?? false,
+                                level: resolved.level
+                            };
                             Database.setSkill(skill, id).then(() => {
                                 done();
                             });

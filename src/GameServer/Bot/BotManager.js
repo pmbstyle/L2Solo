@@ -21,6 +21,7 @@ const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
@@ -399,7 +400,7 @@ const BotManager = {
                     : Database.updateCharacterLocation(existing.id, recoveredBotData);
                 recoveredLoc
                     .then(() => this.applyProfileLevel(existing, recoveredBotData))
-                    .then(() => this.awardProfileSkills(existing.id, recoveredBotData))
+                    .then(() => this.awardProfileSkills(existing.id, recoveredBotData, existing.classId))
                     .then(() => this.loadAndSpawnBot(username, recoveredBotData));
                 return;
             }
@@ -462,19 +463,19 @@ const BotManager = {
         if (!character?.id || level <= 1) return Promise.resolve(false);
         const exp = Number(DataCache.experience?.[level - 1] || 0);
         const sp = Math.round(level * level * 3);
-        const classChanged = Number(character.classId) > 0 && Number(character.classId) !== Number(botData.classId);
-        const classReady = classChanged
-            ? Database.deleteSkills(character.id).then(() => Database.updateCharacterClassId(character.id, botData.classId))
-            : Promise.resolve();
-        return classReady.then(() => Database.updateCharacterExperience(character.id, level, exp, sp))
+        return Database.updateCharacterExperience(character.id, level, exp, sp)
             .then(() => true);
     },
 
-    awardProfileSkills(characterId, botData = {}) {
+    awardProfileSkills(characterId, botData = {}, currentClassId = botData.classId) {
         const level = Number(botData.level || 1);
         if (level <= 1) return Promise.resolve();
-        const Skillset = invoke('GameServer/Actor/Skillset');
-        return new Skillset().awardSkills(characterId, botData.classId, level);
+        return BotClassProgression.reconcile({
+            characterId,
+            classId: currentClassId,
+            level,
+            seed: botData.name || characterId
+        });
     },
 
     prepareBotForSpawn(session, botData = {}) {
@@ -507,15 +508,20 @@ const BotManager = {
             const skillsReady = this.awardProfileSkills(firstCharacter.id, {
                 classId: firstCharacter.classId,
                 level: firstCharacter.level
-            });
-            const gearReady = skillsReady.then(() => (firstStoreCfg
-                ? Promise.resolve()
-                : BotGear.ensureCharacterGear(firstCharacter, botData))
-                .then(() => ShotStock.ensureCharacterStock(firstCharacter.id, {
-                    classId: firstCharacter.classId,
+            }, firstCharacter.classId);
+            const gearReady = skillsReady.then(() => Shared.fetchCharacters(username))
+                .then((reconciledCharacters) => {
+                    const reconciledCharacter = reconciledCharacters[0];
+                    if (!reconciledCharacter) return null;
+                    return (firstStoreCfg
+                        ? Promise.resolve()
+                        : BotGear.ensureCharacterGear(reconciledCharacter, botData))
+                        .then(() => ShotStock.ensureCharacterStock(reconciledCharacter.id, {
+                    classId: reconciledCharacter.classId,
                     targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
                 }))
-                .then(() => Shared.fetchCharacters(username)));
+                        .then(() => Shared.fetchCharacters(username));
+                });
 
             gearReady.then((readyCharacters) => {
                 const character = readyCharacters[0];

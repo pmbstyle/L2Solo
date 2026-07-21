@@ -1,3 +1,5 @@
+const ClassProgression = invoke('GameServer/ClassProgression');
+
 const ROLE_CLASSES = {
     healer: [15, 16, 29, 30, 42, 43],
     buffer: [17, 49, 50, 51],
@@ -14,8 +16,14 @@ function classIdOf(value) {
     return null;
 }
 
-function inferRole(value) {
+function roleClassId(value) {
     const classId = classIdOf(value);
+    if (classId === null || classId === undefined) return classId;
+    return Number(ClassProgression.getThirdClass(classId)?.parentClassId || classId);
+}
+
+function inferRole(value) {
+    const classId = roleClassId(value);
     if (classId === null || classId === undefined) return 'dps';
 
     if (ROLE_CLASSES.healer.includes(classId)) return 'healer';
@@ -29,7 +37,7 @@ function inferRole(value) {
 }
 
 function isRole(value, role) {
-    const classId = classIdOf(value);
+    const classId = roleClassId(value);
     const classes = ROLE_CLASSES[role];
     return !!classes && classes.includes(classId);
 }

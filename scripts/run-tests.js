@@ -16,6 +16,7 @@ const tests = [
     'tests/test_bot_economy_pricing.js',
     'tests/test_bot_gear_acquisition.js',
     'tests/test_bot_gear_skill_hints.js',
+    'tests/test_bot_class_progression.js',
     'tests/test_generated_cold_skills.js',
     'tests/test_bot_goal_state.js',
     'tests/test_bot_goal_planner.js',

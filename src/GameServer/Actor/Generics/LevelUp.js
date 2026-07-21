@@ -22,9 +22,32 @@ function levelUp(session, actor, nextLevel) {
     actor.automation.setRevHp(DataCache.revitalize.hp[level]);
     actor.automation.setRevMp(DataCache.revitalize.mp[level]);
 
+    // Bots must advance through professions instead of continuing to receive
+    // starter-class skills after their level has crossed a transfer threshold.
+    const isBot = session.accountId?.startsWith('bot_') === true;
+    const awardSkills = isBot
+        ? invoke('GameServer/Bot/BotClassProgression').reconcile({
+            characterId: id,
+            classId,
+            level,
+            seed: actor.fetchName()
+        }).then((progression) => {
+            if (Number(progression.classId) !== Number(classId)) actor.setClassId(progression.classId);
+            return new Promise((resolve) => actor.skillset.populate(id, resolve));
+        })
+        : actor.skillset.awardSkills(id, classId, level);
+
     // Check for new skills
-    actor.skillset.awardSkills(id, classId, level).then(() => {
+    awardSkills.then(() => {
+        invoke(path.actor).calculateStats(session, actor);
+        actor.fillupVitals();
         session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+        if (isBot) {
+            // A bot has no client of its own, so nearby players and party
+            // members need the normal character refresh after a profession.
+            session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+            Database.updateCharacterVitals(id, actor.fetchHp(), actor.fetchMaxHp(), actor.fetchMp(), actor.fetchMaxMp());
+        }
     })
 
     // Level up effect
