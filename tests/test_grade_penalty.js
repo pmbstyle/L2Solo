@@ -31,6 +31,16 @@ const qualified = actor([item('C')], 2);
 assert.strictEqual(C4GradePenalty.sync(qualified), false);
 assert.strictEqual(EffectStore.list(qualified).length, 0);
 
+// Login first calculates the actor before the asynchronous skillbook load.
+// Once Expertise arrives, the second calculation must remove that temporary
+// penalty instead of leaving movement speed at the penalized value.
+const loginActor = actor([item('C')]);
+assert.strictEqual(C4GradePenalty.sync(loginActor), true);
+loginActor.skillset.fetchSkill = (id) => id === 239 ? { fetchLevel: () => 2 } : null;
+assert.strictEqual(C4GradePenalty.sync(loginActor), true);
+assert.strictEqual(loginActor.fetchExpertisePenalty(), 0);
+assert.strictEqual(EffectStore.list(loginActor).length, 0);
+
 const mixedEquipment = actor([item('D'), item('A'), item('S', false)], 1);
 assert.strictEqual(C4GradePenalty.penalty(mixedEquipment), 3, 'C4 uses the highest equipped item grade');
 C4GradePenalty.sync(mixedEquipment);

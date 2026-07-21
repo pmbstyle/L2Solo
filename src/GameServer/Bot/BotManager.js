@@ -33,11 +33,39 @@ const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
 
 const merchantConfigFor = (botData, characterName) => MerchantConfigs[botData.merchantConfigName || characterName];
 
+function isOnGiranMarketPlaza(loc = {}) {
+    return Number(loc.locX) >= 80911 && Number(loc.locX) <= 83750
+        && Number(loc.locY) >= 147662 && Number(loc.locY) <= 149550;
+}
+
+function stableSpawnLocation(botData = {}) {
+    const spawns = BotAI.newbieSpawnCoords(botData.spawnClassId || botData.classId);
+    const seed = [...String(botData.username || botData.name || '')]
+        .reduce((sum, character) => sum + character.charCodeAt(0), 0);
+    const spawn = spawns[seed % spawns.length] || spawns[0];
+    const offsetX = ((seed * 37) % 301) - 150;
+    const offsetY = ((seed * 71) % 301) - 150;
+    return {
+        locX: Number(spawn.locX) + offsetX,
+        locY: Number(spawn.locY) + offsetY,
+        locZ: Number(spawn.locZ)
+    };
+}
+
+function recoverStarterSpawn(botData = {}, character = {}) {
+    // Static starters are reloaded directly by BotManager, outside the cold
+    // population activation path.  A historical Giran location therefore
+    // used to respawn every starter on top of the craft station after restart.
+    if (botData.merchantConfigName || !botData.homeRegion || !isOnGiranMarketPlaza(character)) return botData;
+    return { ...botData, ...stableSpawnLocation(botData) };
+}
+
 const BotManager = {
     sessions: [],
     pkEncounterTimer: null,
     pkEncounterPending: new Set(),
     pkEncounterBots: [],
+    recoverStarterSpawn,
 
     findSessionByName(name) {
         const lookup = String(name || '').toLowerCase();
@@ -364,9 +392,15 @@ const BotManager = {
     provisionCharacter(username, botData, idx) {
         Database.fetchCharacters(username).then((characters) => {
             if (characters[0]) {
-                this.applyProfileLevel(characters[0], botData)
-                    .then(() => this.awardProfileSkills(characters[0].id, botData))
-                    .then(() => this.loadAndSpawnBot(username, botData));
+                const existing = characters[0];
+                const recoveredBotData = recoverStarterSpawn(botData, existing);
+                const recoveredLoc = recoveredBotData.locX === undefined
+                    ? Promise.resolve()
+                    : Database.updateCharacterLocation(existing.id, recoveredBotData);
+                recoveredLoc
+                    .then(() => this.applyProfileLevel(existing, recoveredBotData))
+                    .then(() => this.awardProfileSkills(existing.id, recoveredBotData))
+                    .then(() => this.loadAndSpawnBot(username, recoveredBotData));
                 return;
             }
 
