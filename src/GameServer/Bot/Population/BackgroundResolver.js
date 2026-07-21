@@ -1,5 +1,8 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const DataCache = invoke('GameServer/DataCache');
+const Formulas = invoke('GameServer/Formulas');
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -68,15 +71,83 @@ function botCombatStats(state, role) {
     };
 }
 
-function estimateRestMs(vitals, stats) {
-    const missingHp = Math.max(0, stats.maxHp - Number(vitals.hp || 0));
-    const missingMp = Math.max(0, stats.maxMp - Number(vitals.mp || 0));
-    const hpRegenPerSecond = Math.max(2, stats.maxHp * 0.035);
-    const mpRegenPerSecond = Math.max(1, stats.maxMp * 0.028);
-    const hpSeconds = missingHp / hpRegenPerSecond;
-    const mpSeconds = missingMp / mpRegenPerSecond;
+function coldPassiveRegenAdd(state, skillId, stat) {
+    const classId = Number(state.stats?.classId ?? state.classId);
+    const skill = (DataCache.skillTree || []).find((tree) => Number(tree.classId) === classId)?.skills
+        ?.find((entry) => Number(entry.selfId) === skillId);
+    const level = Number(state.level || midpointBand(state.levelBand));
+    const skillLevel = (skill?.levels || [])
+        .filter((entry) => Number(entry.pLevel) <= level)
+        .reduce((highest, entry) => Math.max(highest, Number(entry.level) || 0), 0);
+    if (!skillLevel) return 0;
+
+    return Number(C4SkillRules.resolve({ selfId: skillId, level: skillLevel }).stats?.[stat]) || 0;
+}
+
+function coldRestRegenPerTick(state) {
+    const level = Math.max(1, Number(state.level || midpointBand(state.levelBand)) || 1);
+    const classId = Number(state.stats?.classId ?? state.classId);
+    const template = (DataCache.classTemplates || []).find((entry) => Number(entry.classId) === classId) || {};
+    const baseStats = template.base || {};
+    const hpBase = Number(DataCache.revitalize?.hp?.[level]) || 0;
+    const mpBase = Number(DataCache.revitalize?.mp?.[level]) || 0;
+    const hp = ((hpBase * Formulas.calcLevelMod(level) * Formulas.calcBaseMod.CON(Number(baseStats.con) || 1))
+        + coldPassiveRegenAdd(state, 212, 'regHpAdd')) * 1.5;
+    const mp = ((mpBase * Formulas.calcLevelMod(level) * Formulas.calcBaseMod.MEN(Number(baseStats.men) || 1))
+        + coldPassiveRegenAdd(state, 229, 'regMpAdd')) * 1.5;
+
+    return { hp: Math.max(0, hp), mp: Math.max(0, mp) };
+}
+
+function estimateRestMs(state, vitals) {
+    const maxHp = Number(vitals.maxHp || vitals.hp || 1);
+    const maxMp = Number(vitals.maxMp || vitals.mp || 1);
+    const missingHp = Math.max(0, maxHp - Number(vitals.hp || 0));
+    const missingMp = Math.max(0, maxMp - Number(vitals.mp || 0));
+    const regen = coldRestRegenPerTick(state);
+    const hpSeconds = missingHp / Math.max(0.01, regen.hp / 3);
+    const mpSeconds = missingMp / Math.max(0.01, regen.mp / 3);
 
     return Math.round(Math.max(hpSeconds, mpSeconds, 8) * 1000);
+}
+
+function resolveRest(state, elapsedMs, timestamp) {
+    const combat = botCombatStats(state, roleProfile(state));
+    const vitals = {
+        hp: Math.max(0, Number(state.vitals?.hp || 0)),
+        maxHp: combat.maxHp,
+        mp: Math.max(0, Number(state.vitals?.mp || 0)),
+        maxMp: combat.maxMp
+    };
+    const regen = coldRestRegenPerTick(state);
+    const ticks = Math.max(0, Number(elapsedMs) || 0) / 3000;
+    vitals.hp = Math.min(vitals.maxHp, vitals.hp + regen.hp * ticks);
+    vitals.mp = Math.min(vitals.maxMp, vitals.mp + regen.mp * ticks);
+
+    const hpReady = vitals.hp / Math.max(1, vitals.maxHp) >= 0.95;
+    const mpReady = vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
+    const scheduledRemainingMs = Math.max(0, Number(state.stats?.restUntil || 0) - timestamp);
+    const remainingMs = Math.max(estimateRestMs(state, vitals), scheduledRemainingMs);
+    const resting = !hpReady || !mpReady || scheduledRemainingMs > 0;
+    const restUntil = resting ? timestamp + remainingMs : null;
+
+    return {
+        patch: {
+            activity: resting ? 'resting' : 'hunting',
+            vitals,
+            stats: { ...(state.stats || {}), restUntil }
+        },
+        events: resting ? [] : [{
+            type: 'recovered',
+            summary: `${state.name || 'Bot'} finished recovering and returned to hunting`,
+            weight: 1
+        }],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: resting
+            ? timestamp + Math.max(3000, Math.min(30000, remainingMs || 30000))
+            : timestamp + 30000,
+        debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs }
+    };
 }
 
 function resolveTravel(state, timestamp = Date.now()) {
@@ -237,7 +308,8 @@ function resolveFight({ state, spot, pressure, rng }) {
 }
 
 const BackgroundResolver = {
-    resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random }) {
+    resolveRest,
+    resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
                 patch: {},
@@ -305,7 +377,11 @@ const BackgroundResolver = {
 
         const reportedHp = Number(state.vitals?.hp);
         if (state.activity === 'dead' || (Number.isFinite(reportedHp) && reportedHp <= 0)) {
-            return resolveDeathRecovery(state);
+            return resolveDeathRecovery(state, timestamp);
+        }
+
+        if (state.activity === 'resting') {
+            return resolveRest(state, elapsedMs, timestamp);
         }
 
         if (!spot) {
@@ -359,7 +435,10 @@ const BackgroundResolver = {
             const mpPct = patch.vitals.mp / Math.max(1, patch.vitals.maxMp || patch.vitals.mp || 1);
             if (hpPct < 0.35 || mpPct < 0.2) {
                 patch.activity = 'resting';
-                patch.restUntil = Date.now() + estimateRestMs(patch.vitals, botCombatStats(fightState, roleProfile(fightState)));
+                patch.stats = {
+                    ...(state.stats || {}),
+                    restUntil: timestamp + estimateRestMs(fightState, patch.vitals)
+                };
                 events.push({
                     type: 'rest',
                     summary: `${state.name || 'Bot'} sat down to recover near ${spot.name}`,

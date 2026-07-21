@@ -8,6 +8,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 
 DataCache.init();
 
@@ -57,20 +58,25 @@ async function run() {
     assert.notStrictEqual(invalid.entries[0]?.recipeId, 999999, 'persisted offers must be revalidated against craft level and recipe data');
     assert.strictEqual(invalid.title, 'Custom smith');
 
-    assert.strictEqual(CraftShopService.CraftStations.length, 28, 'Giran must expose the full D/C/B/A/S market plus dedicated resource crafting');
-    assert.strictEqual(new Set(CraftShopService.GiranCraftStalls.map((loc) => `${loc.locX}:${loc.locY}:${loc.locZ}`)).size, 28, 'every craft station must have its own stall');
-    assert(CraftShopService.GiranCraftStalls.every((loc) => (
-        loc.locX >= 81020 && loc.locX <= 83540 && loc.locY >= 147780 && loc.locY <= 149820
-    )), 'every craft station must remain inside the Giran plaza footprint');
-    assert.deepStrictEqual(
-        CraftShopService.GiranCraftStalls.slice(-3),
-        [
-            { locX: 82820, locY: 147780, locZ: -3466 },
-            { locX: 83180, locY: 147780, locZ: -3466 },
-            { locX: 83540, locY: 147780, locZ: -3466 }
-        ],
-        'the three overflow craft services must sit beside the market grid, not south of the plaza'
-    );
+    assert.strictEqual(CraftShopService.CraftStations.length, 31, 'Giran must expose the full D/C/B/A/S market, resources and progressive C weapons');
+    assert.strictEqual(new Set(CraftShopService.GiranCraftStalls.map((loc) => `${loc.locX}:${loc.locY}:${loc.locZ}`)).size, 31, 'every craft station must have its own stall');
+    assert(CraftShopService.GiranCraftStalls.every((loc) => ColdMarketListingService.isGiranPlazaStallLocation(loc)), 'every craft station must remain in the actual sellable Giran plaza footprint');
+    const outer = { minX: 80971, maxX: 82887, minY: 147722, maxY: 149490 };
+    const width = outer.maxX - outer.minX;
+    const height = outer.maxY - outer.minY;
+    const perimeter = 2 * (width + height);
+    const perimeterPosition = (loc) => {
+        if (Number(loc.locY) === outer.minY) return Number(loc.locX) - outer.minX;
+        if (Number(loc.locX) === outer.maxX) return width + Number(loc.locY) - outer.minY;
+        if (Number(loc.locY) === outer.maxY) return width + height + outer.maxX - Number(loc.locX);
+        return 2 * width + height + outer.maxY - Number(loc.locY);
+    };
+    const positions = CraftShopService.GiranCraftStalls.map(perimeterPosition);
+    const adjacentDistances = positions.map((position, index) => {
+        const next = positions[(index + 1) % positions.length];
+        return (next - position + perimeter) % perimeter;
+    });
+    assert(Math.max(...adjacentDistances) - Math.min(...adjacentDistances) <= 2, 'craft stations must be evenly spaced around the outer Giran perimeter');
     CraftShopService.CraftStations.forEach((station, index) => {
         assert.strictEqual(
             CraftShopService.stationForSlot(10000 + index).id,
@@ -124,10 +130,17 @@ async function run() {
         assert.notStrictEqual(staleProfile.entries[0]?.recipeId, 999999, `${station.id} must refresh a persisted station catalogue`);
     });
 
-    ['a_heavy_elite', 's_heavy', 's_robe', 's_light', 's_weapons', 's_jewelry', 'resource_core', 'resource_master'].forEach((stationId) => {
+    ['a_heavy_elite', 's_heavy', 's_robe', 's_light', 's_weapons', 's_jewelry', 'resource_core', 'resource_master', 'c_weapons_entry', 'c_weapons_mid', 'c_weapons_late'].forEach((stationId) => {
         const station = CraftShopService.CraftStations.find((entry) => entry.id === stationId);
         assert(station, `${stationId} must have a dedicated Giran station`);
     });
+    const cWeaponStations = ['c_weapons_entry', 'c_weapons_mid', 'c_weapons_late', 'c_weapons_top']
+        .map((stationId) => CraftShopService.CraftStations.find((station) => station.id === stationId));
+    assert(cWeaponStations.every(Boolean), 'every C weapon progression tier must have a visible station');
+    assert(cWeaponStations.slice(1).every((station, index) => {
+        const previous = cWeaponStations[index];
+        return Math.hypot(Number(station.loc.locX) - Number(previous.loc.locX), Number(station.loc.locY) - Number(previous.loc.locY)) < 250;
+    }), 'C weapon progression must remain a contiguous group on the outer market perimeter');
 
     const nonDroppableResources = [1883, 1886, 1887, 1888, 1890, 1891, 1892, 1893, 5220, 5550, 5551, 4045, 4046, 4047, 4048, 5552, 5553, 5554];
     const resourceRecipeIds = new Set(CraftShopService.CraftStations

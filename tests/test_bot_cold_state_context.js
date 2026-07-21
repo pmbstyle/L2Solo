@@ -72,9 +72,13 @@ async function run() {
     SpotService.randomPointNear = () => ({ locX: -7900, locY: 11100, locZ: -3100 });
     session.coldLifeState = {
         ...session.coldLifeState,
-        phase: 'cold',
+        // markCold receives a still-hot snapshot, so this regression covers
+        // the exact cooldown path that used to reintroduce plaza stacks.
+        phase: 'hot',
         activity: 'resting',
-        currentRegion: 'Giran',
+        // The old hunting-region label was what let this exact stale plaza
+        // coordinate bypass the previous Giran-only repair.
+        currentRegion: 'Talking Island',
         loc: { locX: 83180, locY: 147780, locZ: -3466 },
         stats: {
             ...session.coldLifeState.stats,

@@ -52,36 +52,78 @@ class Automation extends SelectedModel {
 
         this.stopReplenish();
         this.timer.replenish = setInterval(() => {
-            const maxHp = creature.fetchMaxHp();
-            const maxMp = creature.fetchMaxMp();
-
-            const minHp = Math.min(creature.fetchHp() + this.fetchRevHpAmount(creature), maxHp);
-            const minMp = Math.min(creature.fetchMp() + this.fetchRevMpAmount(creature), maxMp);
-
-            creature.setHp(minHp);
-            creature.setMp(minMp);
-
-            if (creature.fetchKind === undefined) {
-                creature.statusUpdateVitals(creature);
-            }
-            else {
-                creature.broadcastVitals();
-            }
-
-            if (minHp >= maxHp && minMp >= maxMp) {
-                this.stopReplenish();
-            }
+            this.replenishVitalsTick(creature);
         }, 3000);
     }
 
+    replenishVitalsTick(creature) {
+        const maxHp = creature.fetchMaxHp();
+        const maxMp = creature.fetchMaxMp();
+        const minHp = Math.min(creature.fetchHp() + this.fetchRevHpAmount(creature), maxHp);
+        const minMp = Math.min(creature.fetchMp() + this.fetchRevMpAmount(creature), maxMp);
+
+        creature.setHp(minHp);
+        creature.setMp(minMp);
+
+        if (creature.fetchKind === undefined) {
+            creature.statusUpdateVitals(creature);
+        }
+        else {
+            creature.broadcastVitals();
+        }
+
+        if (minHp >= maxHp && minMp >= maxMp) {
+            this.stopReplenish();
+        }
+
+        return { hp: minHp, mp: minMp };
+    }
+
     fetchRevHpAmount(creature) {
-        const base = Number(this.fetchRevHp()) || 0;
-        return Math.max(0, Math.round(base * EffectStats.multiplier(creature, 'regHp')));
+        const base = this.fetchPlayerRegenBase(creature, 'CON');
+        return Math.max(0, (
+            (base * EffectStats.multiplier(creature, 'regHp'))
+            + EffectStats.add(creature, 'regHpAdd')
+        ) * this.fetchRegenStateMultiplier(creature));
     }
 
     fetchRevMpAmount(creature) {
-        const base = Number(this.fetchRevMp()) || 0;
-        return Math.max(0, Math.round(base * EffectStats.multiplier(creature, 'regMp') + EffectStats.add(creature, 'regMpAdd')));
+        const base = this.fetchPlayerRegenBase(creature, 'MEN');
+        return Math.max(0, (
+            (base * EffectStats.multiplier(creature, 'regMp'))
+            + EffectStats.add(creature, 'regMpAdd')
+        ) * this.fetchRegenStateMultiplier(creature));
+    }
+
+    fetchPlayerRegenBase(creature, stat) {
+        const base = Number(stat === 'CON' ? this.fetchRevHp() : this.fetchRevMp()) || 0;
+
+        // L2J C4 applies the level and CON/MEN modifiers to the template's
+        // level-adjusted regeneration value. NPCs keep their explicit
+        // template regeneration values.
+        if (typeof creature?.fetchClassId !== 'function') return base;
+
+        const rawStat = stat === 'CON'
+            ? Number(creature.fetchCon?.()) || 0
+            : Number(creature.fetchMen?.()) || 0;
+        const adjustedStat = Math.max(1, Math.round(
+            (rawStat + EffectStats.add(creature, stat))
+            * EffectStats.multiplier(creature, `${stat}Mul`)
+        ));
+        const level = Number(creature.fetchLevel?.()) || 1;
+        const statModifier = invoke('GameServer/Formulas').calcBaseMod[stat](adjustedStat);
+        return base * invoke('GameServer/Formulas').calcLevelMod(level) * statModifier;
+    }
+
+    fetchRegenStateMultiplier(creature) {
+        if (typeof creature?.fetchClassId !== 'function') return 1;
+
+        const state = creature.state;
+        return state?.fetchSeated?.() === true
+            ? 1.5
+            : state?.inMotion?.() === true
+                ? 0.7
+                : 1.1;
     }
 
     stopReplenish() {

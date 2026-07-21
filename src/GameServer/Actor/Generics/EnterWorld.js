@@ -1,6 +1,7 @@
 const DataCache   = invoke('GameServer/DataCache');
 const ConsoleText = invoke('GameServer/ConsoleText');
 const CharacterStatus = invoke('GameServer/Actor/CharacterStatus');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 function enterWorld(session, actor) {
     const Generics = invoke(path.actor);
@@ -16,7 +17,15 @@ function enterWorld(session, actor) {
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
     CharacterStatus.restoreVitals(actor, vitals);
-    actor.skillset.populate(actor.fetchId());
+    actor.skillset.populate(actor.fetchId(), () => {
+        // Skill loading is asynchronous.  The first calculation above runs
+        // before Expertise is available and can temporarily apply the C4
+        // grade penalty to correctly equipped characters.  Recalculate and
+        // refresh the client once the real skillset is present.
+        Generics.calculateStats(session, actor);
+        session.dataSendToMe?.(ServerResponse.userInfo(actor));
+        session.dataSendToMe?.(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+    });
 
     // Start vitals replenish
     actor.automation.setRevHp(DataCache.revitalize.hp[actor.fetchLevel()]);

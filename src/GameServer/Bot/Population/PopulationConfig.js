@@ -6,6 +6,10 @@ const DEFAULTS = {
     directorEnabled: true,
     summaryIntervalMs: 30000,
     schedulerIntervalMs: 5000,
+    // Existing cold population predates full class progression. Reconcile it
+    // in small batches so restart never becomes a database migration spike.
+    classProgressionMigrationIntervalMs: 10000,
+    classProgressionMigrationBatchSize: 5,
     partyFormationIntervalMs: 45000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,

@@ -17,6 +17,9 @@ const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const TARGET_SPOT_GRID_SIZE = 6000;
 const TARGET_GEODATA_CHECK_LIMIT = 4;
+const EMERGENCY_RETREAT_HP_RATIO = 0.35;
+const EMERGENCY_RETREAT_MP_RATIO = 0.20;
+const EMERGENCY_RETREAT_DISTANCE = 850;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -147,6 +150,34 @@ function clearTarget(session, bot, targetId, retryCooldown = false) {
     session.targetStallTicks = 0;
     bot.unselect();
     return true;
+}
+
+function needsEmergencyRetreat(bot) {
+    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < EMERGENCY_RETREAT_HP_RATIO
+        || bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < EMERGENCY_RETREAT_MP_RATIO;
+}
+
+function retreatFromThreat(session, bot, threat) {
+    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    const dx = from.locX - threat.fetchLocX();
+    const dy = from.locY - threat.fetchLocY();
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const to = {
+        locX: Math.round(from.locX + (dx / length) * EMERGENCY_RETREAT_DISTANCE),
+        locY: Math.round(from.locY + (dy / length) * EMERGENCY_RETREAT_DISTANCE),
+        locZ: from.locZ
+    };
+
+    if (bot.state.fetchSeated()) {
+        bot.state.setSeated(false);
+        session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    }
+    clearTarget(session, bot, session.currentTargetId);
+    session.plan = 'fleeing';
+    session.fleeStart = Date.now();
+    session.incomingThreatId = undefined;
+    session.incomingThreatAt = undefined;
+    bot.moveTo({ from, to });
 }
 
 function targetProgressing(session, bot, target) {
@@ -299,6 +330,10 @@ module.exports = {
         // actively hitting the bot only turns the recovery state into a death loop.
         const incomingMonster = PartyAwareness.recentIncomingNpc(session);
         if (incomingMonster) {
+            if (needsEmergencyRetreat(bot)) {
+                retreatFromThreat(session, bot, incomingMonster);
+                return;
+            }
             assignTarget(session, bot, incomingMonster);
             if (bot.state.fetchSeated()) {
                 bot.state.setSeated(false);

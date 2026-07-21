@@ -61,8 +61,31 @@ const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
 assert(['Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+assert(Number(target.item.template.price) <= 2290000, 'a new C-grade bot must begin with an entry-tier weapon target');
 const station = ColdCraftingService.stationForRecipe(target.recipe.recipeId);
 assert(station, 'a selected equipment recipe must be published by a Giran crafting station');
+const entryWeaponOnly = {
+    [target.item.selfId]: { selfId: target.item.selfId, amount: 1 }
+};
+const afterEntryWeapon = GearAcquisitionPlanner.preferredTarget({ ...mage, inventory: entryWeaponOnly });
+assert(!['Weapon.Sword', 'Weapon.Blunt'].includes(afterEntryWeapon.item.template.kind), 'a C-grade mage must gear another slot after its entry weapon instead of crafting alternate weapons');
+let entryBandInventory = {};
+for (;;) {
+    const entryBandTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, inventory: entryBandInventory });
+    if (!entryBandTarget) break;
+    assert(Number(entryBandTarget.item.template.price) <= 2290000, 'level-40 bots must stop after their entry C band instead of falling through to top C gear');
+    entryBandInventory = {
+        ...entryBandInventory,
+        [entryBandTarget.item.selfId]: { selfId: entryBandTarget.item.selfId, amount: 1 }
+    };
+}
+const midCMageTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, level: 44 });
+assert(Number(midCMageTarget.item.template.price) <= 2870000, 'mid-C bots must not skip straight to the expensive endgame C weapons');
+const lateCMageTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, level: 48 });
+assert(Number(lateCMageTarget.item.template.price) <= 4300000, 'late-C bots must receive a progression target below top C gear');
+for (const recipeId of [191, 192, 198, 199, 201, 205, 208, 209, 213, 214, 216, 217, 312, 220, 222, 223, 228, 230, 234, 237, 238, 240]) {
+    assert(ColdCraftingService.stationForRecipe(recipeId), `C progression recipe ${recipeId} must be available from a Giran craft station`);
+}
 
 const missing = GearAcquisitionPlanner.missingMaterials(target.recipe, {
     [target.recipe.materials[0].selfId]: { selfId: target.recipe.materials[0].selfId, amount: target.recipe.materials[0].amount - 1 }

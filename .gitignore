@@ -3,3 +3,4 @@ package-lock.json
 data/Geodata/
 config/local.ini
 tmp/
+/.codex-remote-attachments

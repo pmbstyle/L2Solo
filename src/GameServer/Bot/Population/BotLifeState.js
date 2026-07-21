@@ -7,6 +7,8 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -223,6 +225,11 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
+        // A freshly spawned bot may cool before it has gone through a cold
+        // resolve. Persist the completed profile here so it is never picked
+        // up by the one-off legacy migration on a later restart.
+        classProgressionLevel: actor.fetchLevel(),
+        classProgressionClassId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         clanId: actor.fetchClanId ? Number(actor.fetchClanId()) || 0 : 0,
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
@@ -405,6 +412,48 @@ function hydrateCache() {
     });
 }
 
+function classProgressionNeeded(state, classId, level) {
+    const knownLevel = Number(state.stats?.classProgressionLevel || 0);
+    const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
+    return knownLevel < Number(level || 1) || knownClassId !== Number(classId);
+}
+
+function applyClassProgression(state, profile = {}) {
+    const level = Number(profile.level || state.level || 1);
+    const currentClassId = Number(profile.classId ?? state.stats?.classId ?? 0);
+    if (!classProgressionNeeded(state, currentClassId, level)) return Promise.resolve(state);
+
+    return BotClassProgression.reconcile({
+        characterId: state.characterId,
+        classId: currentClassId,
+        level,
+        seed: state.name || state.characterId
+    }).then((resolved) => {
+        const classId = Number(resolved.classId || currentClassId);
+        const role = BotRoles.inferRole(classId);
+        const progressedState = {
+            ...state,
+            level,
+            exp: profile.exp ?? state.exp,
+            sp: profile.sp ?? state.sp,
+            party: { ...(state.party || {}), role },
+            stats: {
+                ...(state.stats || {}),
+                classId,
+                role,
+                build: GearSkillHints.forCharacter({ classId, level }, { role }),
+                classProgressionLevel: level,
+                classProgressionClassId: classId,
+                classTransitions: resolved.transitions?.length
+                    ? [...(state.stats?.classTransitions || []), ...resolved.transitions]
+                    : state.stats?.classTransitions || []
+            }
+        };
+        if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+        return progressedState;
+    });
+}
+
 function recoverStaleHotStates() {
     const timestamp = now();
     return Database.execute([
@@ -462,8 +511,27 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     };
 }
 
+// A stale cold snapshot can retain the previous hunting region while its
+// physical coordinate is still on the Giran trading square.  Coordinates are
+// authoritative here: currentRegion is plan context, not a location proof.
+const GIRAN_MARKET_PLAZA = Object.freeze({
+    minX: 80911,
+    // Public stations and the north-east edge of the actual trading square
+    // extend beyond the conservative stall-placement rectangle.
+    maxX: 83750,
+    minY: 147662,
+    maxY: 149550
+});
+
+function isOnGiranMarketPlaza(loc = {}) {
+    return Number(loc.locX) >= GIRAN_MARKET_PLAZA.minX
+        && Number(loc.locX) <= GIRAN_MARKET_PLAZA.maxX
+        && Number(loc.locY) >= GIRAN_MARKET_PLAZA.minY
+        && Number(loc.locY) <= GIRAN_MARKET_PLAZA.maxY;
+}
+
 function shouldRecoverOrphanedGiranState(state = {}) {
-    if (state.phase !== 'cold' || state.currentRegion !== 'Giran' || !state.spotId) return false;
+    if (!state.spotId || !isOnGiranMarketPlaza(state.loc)) return false;
     if (['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return false;
     const stats = state.stats || {};
     // An ordinary bot may be in Giran only while traveling, shopping, or
@@ -548,9 +616,21 @@ const BotLifeState = {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
-            return repairs.reduce((chain, state) => chain.then(() => save(rowFromState(state)).then(() => {
-                cache.set(state.characterId, state);
-            })), Promise.resolve()).then(() => count);
+            return repairs.reduce((chain, state) => chain.then(() => {
+                const row = rowFromState(state);
+                // The next activation reads characters.loc*, not only the
+                // lifecycle row.  Repair both stores or an old Giran
+                // coordinate brings the visible bot pile back after restart.
+                return save(row)
+                    .then(() => Database.updateCharacterLocation(row.characterId, {
+                        locX: row.locX,
+                        locY: row.locY,
+                        locZ: row.locZ
+                    }))
+                    .then(() => {
+                        cache.set(state.characterId, state);
+                    });
+            }), Promise.resolve()).then(() => count);
         }).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
@@ -836,6 +916,45 @@ const BotLifeState = {
         });
     },
 
+    migrateLegacyClassProgression(limit = 5) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
+        const candidates = Array.from(cache.values())
+            // Hot bots own a live Actor instance. Their class is reconciled
+            // through activation/level-up, not behind that actor's back.
+            .filter((state) => state.phase === 'cold')
+            .filter((state) => !pendingWrites.has(state.characterId))
+            .filter((state) => classProgressionNeeded(
+                state,
+                Number(state.stats?.classId || 0),
+                Number(state.level || 1)
+            ))
+            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
+            .slice(0, safeLimit);
+
+        return candidates.reduce((chain, state) => chain.then((migrated) => (
+            Database.execute([
+                'SELECT id, classId, level, exp, sp FROM characters WHERE id = ? LIMIT 1',
+                [state.characterId]
+            ]).then((rows) => {
+                const character = rows[0];
+                if (!character) return migrated;
+                return applyClassProgression(state, character).then((progressedState) => {
+                    if (progressedState === state) return migrated;
+                    const row = rowFromState(progressedState);
+                    return save(row).then(() => {
+                        const snapshot = normalize(row);
+                        cache.set(snapshot.characterId, snapshot);
+                        return [...migrated, snapshot];
+                    });
+                });
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'legacy class progression failed for %s: %s', state.name, err.message);
+                return migrated;
+            })
+        )), Promise.resolve([]));
+    },
+
     statesForParty(partyId) {
         if (!initialized || !partyId) return Promise.resolve([]);
 
@@ -1008,12 +1127,44 @@ const BotLifeState = {
             inventory,
             updatedAt: timestamp
         };
-        const row = rowFromState(nextState);
+        const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
+        const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
+        const currentClassId = Number(nextState.stats?.classId || 0);
+        const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
+        const progression = needsClassProgression
+            ? BotClassProgression.reconcile({
+                characterId: nextState.characterId,
+                classId: currentClassId,
+                level,
+                seed: nextState.name || nextState.characterId
+            })
+            : Promise.resolve({ classId: currentClassId, transitions: [] });
 
-        return save(row)
+        return progression.then((resolved) => {
+            const classId = Number(resolved.classId || currentClassId);
+            const role = BotRoles.inferRole(classId);
+            const progressedState = {
+                ...nextState,
+                party: { ...(nextState.party || {}), role },
+                stats: {
+                    ...(nextState.stats || {}),
+                    classId,
+                    role,
+                    build: GearSkillHints.forCharacter({ classId, level }, { role }),
+                    classProgressionLevel: level,
+                    classProgressionClassId: classId,
+                    classTransitions: resolved.transitions?.length
+                        ? [...(nextState.stats?.classTransitions || []), ...resolved.transitions]
+                        : nextState.stats?.classTransitions || []
+                }
+            };
+            if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+            const row = rowFromState(progressedState);
+
+            return save(row)
             .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => syncInventorySummary(row.characterId, progressedState.inventory))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -1023,6 +1174,7 @@ const BotLifeState = {
                 utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
                 return null;
             });
+        });
     },
 
     marketGoalCandidates(limit = 8) {

@@ -4,20 +4,25 @@ const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const MAX_PUBLIC_RECIPES = 16;
-const GIRAN_CRAFT_ROWS = [147780, 148130, 149120, 149470, 149820];
-const GIRAN_CRAFT_COLUMNS = [81020, 81380, 81740, 82100, 82460];
-const GiranCraftGrid = GIRAN_CRAFT_ROWS.flatMap((locY) => (
-    GIRAN_CRAFT_COLUMNS.map((locX) => Object.freeze({ locX, locY, locZ: -3466 }))
-));
-// The final three services sit beside, rather than beyond, the normal grid.
-// These are open Giran market-square points, separated from the grid and the
-// permanent Giran merchants so their models never stack.
-const GiranCraftOverflowStalls = Object.freeze([
-    Object.freeze({ locX: 82820, locY: 147780, locZ: -3466 }),
-    Object.freeze({ locX: 83180, locY: 147780, locZ: -3466 }),
-    Object.freeze({ locX: 83540, locY: 147780, locZ: -3466 })
-]);
-const GiranCraftStalls = Object.freeze([...GiranCraftGrid, ...GiranCraftOverflowStalls]);
+const CRAFT_LOC_Z = -3466;
+const craftLoc = (locX, locY) => Object.freeze({ locX, locY, locZ: CRAFT_LOC_Z });
+// These are the captured sellable limits of the Giran plaza, inset by the
+// normal 60-unit store margin.  Keep service crafters on this outer frame:
+// the large central column remains completely free for player movement.
+const GIRAN_CRAFT_OUTER = Object.freeze({ minX: 80971, maxX: 82887, minY: 147722, maxY: 149490 });
+
+function perimeterStalls(bounds, count) {
+    const width = bounds.maxX - bounds.minX;
+    const height = bounds.maxY - bounds.minY;
+    const perimeter = 2 * (width + height);
+    return Object.freeze(Array.from({ length: count }, (_, index) => {
+        const distance = (perimeter * index) / count;
+        if (distance < width) return craftLoc(Math.round(bounds.minX + distance), bounds.minY);
+        if (distance < width + height) return craftLoc(bounds.maxX, Math.round(bounds.minY + distance - width));
+        if (distance < 2 * width + height) return craftLoc(Math.round(bounds.maxX - (distance - width - height)), bounds.maxY);
+        return craftLoc(bounds.minX, Math.round(bounds.maxY - (distance - 2 * width - height)));
+    }));
+}
 
 const STATION_LAYOUT = [
     ['d', 'heavy', 'D Heavy: Brigandine Set', [79, 263, 266, 268, 271]],
@@ -28,7 +33,7 @@ const STATION_LAYOUT = [
     ['c', 'heavy', 'C Heavy: Full Plate Set', [124, 303, 305, 307]],
     ['c', 'robe', 'C Robes: Karmian & Divine', [100, 92, 282, 288, 126, 127, 302, 309]],
     ['c', 'light', 'C Light: Plated Leather Set', [104, 105, 283]],
-    ['c', 'weapons', 'C Grade Weapons'],
+    ['c', 'weapons', 'C Weapons: Top', [246, 247, 248, 249, 250, 252, 313], 'c_weapons_top'],
     ['c', 'jewelry', 'C Jewelry', [59, 63, 261]],
     ['b', 'heavy', 'B Heavy: Blue Wolf & Doom', [386, 390, 406, 410, 422, 392, 408, 412, 428, 384]],
     ['b', 'robe', 'B Robes: Avadon, Blue Wolf & Doom', [372, 374, 376, 426, 398, 402, 400, 404]],
@@ -47,17 +52,45 @@ const STATION_LAYOUT = [
     ['s', 'weapons', 'S Grade: Core Weapons', [627, 631, 633, 639, 641, 643, 645, 775]],
     ['s', 'jewelry', 'S Jewelry: Tateossian', [647, 649, 651]],
     ['resource', 'core', 'Resources: Molds & Alloys', [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 497]],
-    ['resource', 'master', 'Resources: Maestro Components', [474, 475, 476, 477, 607, 608, 609, 610, 611, 612]]
+    ['resource', 'master', 'Resources: Maestro Components', [474, 475, 476, 477, 607, 608, 609, 610, 611, 612]],
+    // Append new services only: generated service slots are persisted, so
+    // inserting these before an existing station would repurpose its bot.
+    // C has a long progression window.  Publishing only each weapon kind's
+    // strongest recipe made a fresh level-40 bot aim at a 6.13m weapon, so
+    // the catalogue intentionally mirrors the entry, mid and late tiers.
+    ['c', 'weapons', 'C Weapons: Entry', [191, 192, 198, 199, 201, 205], 'c_weapons_entry'],
+    ['c', 'weapons', 'C Weapons: Mid', [208, 209, 213, 214, 216, 217, 312], 'c_weapons_mid'],
+    ['c', 'weapons', 'C Weapons: Late', [220, 222, 223, 228, 230, 234, 237, 238, 240], 'c_weapons_late']
 ];
 
-const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title, recipeIds, stationId], index) => Object.freeze({
-    id: stationId || `${grade}_${category}`,
-    grade,
-    category,
-    title,
-    recipeIds: recipeIds ? Object.freeze([...recipeIds]) : null,
-    loc: Object.freeze({ ...GiranCraftStalls[index] })
-})));
+// Position groups independently from generated account slots.  Existing craft
+// accounts retain their slot identity while the visible market can be ordered
+// by grade: D, C (including all C weapon tiers), B, A, S, then resources.
+const STATION_LOCATION_ORDER = Object.freeze([
+    'd_heavy', 'd_robe', 'd_light', 'd_weapons', 'd_jewelry',
+    'c_heavy', 'c_robe', 'c_light', 'c_weapons_entry', 'c_weapons_mid', 'c_weapons_late', 'c_weapons_top', 'c_jewelry',
+    'b_heavy', 'b_robe', 'b_light', 'b_weapons', 'b_jewelry',
+    'a_heavy', 'a_robe', 'a_light', 'a_weapons', 'a_jewelry', 'a_heavy_elite',
+    's_heavy', 's_robe', 's_light', 's_weapons', 's_jewelry',
+    'resource_core', 'resource_master'
+]);
+// 31 offers fit on the outer frame at a regular 238-unit interval.  If the
+// catalogue grows beyond this compact ring, add a second full perimeter around
+// the central column rather than filling its interior in partial rows.
+const GiranCraftStalls = perimeterStalls(GIRAN_CRAFT_OUTER, STATION_LOCATION_ORDER.length);
+const stationLocations = new Map(STATION_LOCATION_ORDER.map((stationId, index) => [stationId, GiranCraftStalls[index]]));
+
+const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title, recipeIds, stationId], index) => {
+    const id = stationId || `${grade}_${category}`;
+    return Object.freeze({
+        id,
+        grade,
+        category,
+        title,
+        recipeIds: recipeIds ? Object.freeze([...recipeIds]) : null,
+        loc: Object.freeze({ ...(stationLocations.get(id) || GiranCraftStalls[index]) })
+    });
+}));
 
 function isServiceCrafter(state = {}) {
     const classId = Number(state.classId || state.stats?.classId || 0);

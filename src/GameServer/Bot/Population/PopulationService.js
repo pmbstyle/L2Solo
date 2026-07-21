@@ -108,7 +108,9 @@ const PopulationService = {
     partyFormationTimer: null,
     phasePolicyTimer: null,
     seedTimer: null,
+    classProgressionMigrationTimer: null,
     resolving: false,
+    classProgressionMigrationRunning: false,
     partyFormationRunning: false,
     phasePolicyRunning: false,
 
@@ -155,6 +157,14 @@ const PopulationService = {
             if (typeof this.schedulerTimer.unref === 'function') {
                 this.schedulerTimer.unref();
             }
+        }
+
+        this.classProgressionMigrationTimer = setInterval(() => {
+            this.migrateLegacyClassProgression();
+        }, Config.classProgressionMigrationIntervalMs);
+
+        if (typeof this.classProgressionMigrationTimer.unref === 'function') {
+            this.classProgressionMigrationTimer.unref();
         }
 
         if (Config.backgroundPartyEnabled !== false) {
@@ -207,6 +217,10 @@ const PopulationService = {
             clearTimeout(this.seedTimer);
             this.seedTimer = null;
         }
+        if (this.classProgressionMigrationTimer) {
+            clearInterval(this.classProgressionMigrationTimer);
+            this.classProgressionMigrationTimer = null;
+        }
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -237,6 +251,28 @@ const PopulationService = {
         if (typeof this.seedTimer.unref === 'function') {
             this.seedTimer.unref();
         }
+    },
+
+    migrateLegacyClassProgression() {
+        // Database uses one ordered connection. Never queue a migration behind
+        // an active resolver: a skipped migration tick is harmless, but a
+        // queued one can stretch the normal world loop into a long backlog.
+        if (this.classProgressionMigrationRunning || this.resolving || Config.enabled === false) return Promise.resolve([]);
+        this.classProgressionMigrationRunning = true;
+        return LifeState.migrateLegacyClassProgression(Config.classProgressionMigrationBatchSize)
+            .then((migrated) => {
+                if (migrated.length) {
+                    console.info('BotPopulation :: migrated class progression for %d cold bot(s)', migrated.length);
+                }
+                return migrated;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'legacy class progression migration failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.classProgressionMigrationRunning = false;
+            });
     },
 
     recordHotTick(session) {
@@ -551,8 +587,8 @@ const PopulationService = {
     },
 
     tickBudgeted() {
-        if (this.resolving || Config.enabled === false || Config.backgroundResolverEnabled === false) {
-            if (this.resolving) {
+        if (this.resolving || this.classProgressionMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            if (this.resolving || this.classProgressionMigrationRunning) {
                 Metrics.recordSchedulerSkip();
             }
             return Promise.resolve([]);
