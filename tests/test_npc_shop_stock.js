@@ -64,6 +64,9 @@ for (const npcId of [7004, 7137, 7150, 7519, 7561]) {
 for (const npcId of [7063, 7254, 7315]) {
     assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.d, `D-grade city merchant ${npcId} must stock Spiritshot D`);
 }
+const laraRows = NpcShopBuyLists.fetchForNpc(7063).map((entry) => entry.selfId);
+assert.strictEqual(laraRows.indexOf(2510), laraRows.indexOf(3947) + 1,
+    'D Spiritshot must appear immediately after the no-grade shot rows, before ordinary supplies');
 assert.deepStrictEqual(shopSpiritshots(7081), spiritshotsThrough.c, 'Giran must stock Spiritshot C');
 for (const npcId of [7180, 7301, 7834]) {
     assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.b, `B-grade city merchant ${npcId} must stock Spiritshot B`);

@@ -23,12 +23,22 @@ function withSpiritshots(entries, grade) {
     const maxIndex = SHOT_GRADE_INDEX[grade];
     const existing = new Set(entries.map((entry) => Array.isArray(entry) ? entry[0] : entry.selfId));
     const asObjects = entries.some((entry) => !Array.isArray(entry));
+    const additions = SPIRITSHOTS_BY_GRADE
+        .slice(0, maxIndex + 1)
+        .filter(([selfId]) => !existing.has(selfId))
+        .map(([selfId, price]) => asObjects ? { selfId, price } : [selfId, price]);
+    const noGradeShotIds = new Set([1835, 2509, 3947]);
+    const lastNoGradeShot = entries.reduce((last, entry, index) => (
+        noGradeShotIds.has(Array.isArray(entry) ? entry[0] : entry.selfId) ? index : last
+    ), -1);
+    const insertionIndex = lastNoGradeShot + 1;
+
+    // BuyList is a scrollable grid: appending shots after dyes makes the
+    // grade upgrade effectively invisible. Keep every grade beside no-grade.
     return [
-        ...entries,
-        ...SPIRITSHOTS_BY_GRADE
-            .slice(0, maxIndex + 1)
-            .filter(([selfId]) => !existing.has(selfId))
-            .map(([selfId, price]) => asObjects ? { selfId, price } : [selfId, price])
+        ...entries.slice(0, insertionIndex),
+        ...additions,
+        ...entries.slice(insertionIndex)
     ];
 }
 
