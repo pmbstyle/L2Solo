@@ -264,13 +264,14 @@ const PopulationService = {
             GeneratedColdSeeder.seedPopulation().then((result) => {
                 if (result.seeded > 0) {
                     console.info(
-                        'BotPopulation :: population wave seeded=%d created=%d total=%d/%d avgLevel=%s unlockedMobLevel=%d eligibleSpots=%d',
+                        'BotPopulation :: population wave=%d seeded=%d created=%d total=%d/%d target=%d avgLevel=%s starterSpots=%d',
+                        result.wave || 1,
                         result.seeded,
                         result.created,
                         result.total,
                         result.limit,
+                        result.targetPopulation || result.limit,
                         Number(result.averageLevel || 0).toFixed(1),
-                        result.maxMobLevel || 1,
                         result.eligible || 0
                     );
                 }

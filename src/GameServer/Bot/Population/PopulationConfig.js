@@ -23,7 +23,7 @@ const DEFAULTS = {
     // waves. This is a cap for adventuring bots only; shop services are not
     // part of the simulated player population.
     maxPlayingPopulation: 1700,
-    initialStarterPopulation: 65,
+    starterBotsPerRace: 30,
     generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
     // The persistent world is resolved in bounded batches so population
@@ -81,7 +81,7 @@ const ENV_KEYS = {
     phasePolicyEnabled: 'BOT_POPULATION_PHASE_POLICY_ENABLED',
     directorEnabled: 'BOT_POPULATION_DIRECTOR_ENABLED',
     maxPlayingPopulation: 'BOT_POPULATION_MAX_PLAYING',
-    initialStarterPopulation: 'BOT_POPULATION_INITIAL_STARTERS',
+    starterBotsPerRace: 'BOT_POPULATION_STARTER_BOTS_PER_RACE',
     generatedColdBatchSize: 'BOT_POPULATION_BATCH_SIZE',
     generatedColdSeedDelayMs: 'BOT_POPULATION_SEED_DELAY_MS',
     cooldownGraceMs: 'BOT_COOLDOWN_GRACE_MS',

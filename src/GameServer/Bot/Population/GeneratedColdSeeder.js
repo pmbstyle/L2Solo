@@ -126,7 +126,10 @@ function usernameFor(index) {
 }
 
 function nameFor(index) {
-    return `${pick(index, NAME_STEMS)}${String(index).padStart(3, '0')}`.slice(0, 35);
+    // Character names are VARCHAR(16). Population-wave indexes are timestamps,
+    // so decimal formatting can no longer fit even though the old small index
+    // format did. Base-36 keeps the durable suffix unique and within the limit.
+    return `${pick(index, NAME_STEMS)}${Math.max(0, Number(index) || 0).toString(36).toUpperCase()}`.slice(0, 16);
 }
 
 function awardBaseGear(characterId, classId) {
@@ -313,7 +316,8 @@ function stateFor(character, index, seedMeta = {}) {
             generatedCold: true,
             generatedIndex: index,
             levelBand: levelProfile.band,
-            populationWave: seedMeta.populationWave || null
+            populationWave: seedMeta.populationWave || null,
+            starterRegion: seedMeta.starterRegion || null
         },
         inventory: {
             57: {
@@ -380,6 +384,7 @@ const GeneratedColdSeeder = {
 
     awardProfileSkills,
     craftServiceSeedState,
+    nameFor,
 
     ensureCraftServices() {
         let created = 0;
@@ -440,7 +445,7 @@ const GeneratedColdSeeder = {
                 SpotProfiles.ensure(),
                 LifeState.allStates(limit + 100),
                 limit,
-                Config.initialStarterPopulation
+                Config.starterBotsPerRace
             );
             const batch = plan.missing.slice(0, SeedPlanner.seedBatchSize(plan, Config.generatedColdBatchSize));
             let created = 0;
@@ -453,7 +458,7 @@ const GeneratedColdSeeder = {
                 const seedProfile = {
                     spot,
                     level: Math.max(1, Number(spot.minLevel || 1)),
-                    band: `wave_${plan.maxMobLevel}`
+                    band: `wave_${plan.wave}`
                 };
                 chain = chain.then(() => ensureAccount(username)
                     .then(() => ensureCharacter(username, index, baseForIndex(index), seedProfile))
@@ -461,7 +466,8 @@ const GeneratedColdSeeder = {
                         const state = stateFor(result.character, index, {
                             ...result,
                             seedProfile,
-                            populationWave: plan.maxMobLevel,
+                            populationWave: plan.wave,
+                            starterRegion: spot.starterRegion,
                             spot,
                             loc: result.loc || randomNear(spot.center, index)
                         });
@@ -478,8 +484,9 @@ const GeneratedColdSeeder = {
                 seeded,
                 total: plan.playing + seeded,
                 limit,
+                targetPopulation: plan.targetPopulation,
                 averageLevel: plan.averageLevel,
-                maxMobLevel: plan.maxMobLevel,
+                wave: plan.wave,
                 eligible: plan.eligible.length,
                 remaining: Math.max(0, plan.missing.length - seeded)
             }));
