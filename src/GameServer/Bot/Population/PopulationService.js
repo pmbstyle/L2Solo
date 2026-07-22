@@ -257,22 +257,27 @@ const PopulationService = {
     },
 
     scheduleGeneratedColdSeed(delayMs = Config.generatedColdSeedDelayMs) {
-        if (Config.enabled === false || Config.generatedColdTarget <= 0 || this.seedTimer) return;
+        if (Config.enabled === false || Config.maxPlayingPopulation <= 0 || this.seedTimer) return;
 
         this.seedTimer = setTimeout(() => {
             this.seedTimer = null;
-            GeneratedColdSeeder.seedToTarget(Config.generatedColdTarget).then((result) => {
+            GeneratedColdSeeder.seedPopulation().then((result) => {
                 if (result.seeded > 0) {
                     console.info(
-                        'BotPopulation :: generated cold seed seeded=%d created=%d total=%d target=%d',
+                        'BotPopulation :: population wave seeded=%d created=%d total=%d/%d avgLevel=%s unlockedMobLevel=%d eligibleSpots=%d',
                         result.seeded,
                         result.created,
                         result.total,
-                        result.desired
+                        result.limit,
+                        Number(result.averageLevel || 0).toFixed(1),
+                        result.maxMobLevel || 1,
+                        result.eligible || 0
                     );
                 }
 
-                if (this.started && result.desired > 0 && result.total < result.desired && !result.error) {
+                // Keep checking the next wave: once the mean bot level crosses
+                // another five-level threshold, newly opened grounds are filled.
+                if (this.started && result.limit > 0 && result.total < result.limit && !result.error) {
                     this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
                 }
             });

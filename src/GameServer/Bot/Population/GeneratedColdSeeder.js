@@ -9,6 +9,7 @@ const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
@@ -54,9 +55,15 @@ function baseForIndex(index) {
     return pick(index, CLASS_POOL);
 }
 
-function profileForIndex(index, base = baseForIndex(index)) {
+function profileForIndex(index, base = baseForIndex(index), seedProfile = null) {
     if (base.serviceCrafter) {
         return { level: 70, band: 'craft_service' };
+    }
+    if (seedProfile?.level) {
+        return {
+            level: Math.max(1, Number(seedProfile.level)),
+            band: seedProfile.band || 'population_wave'
+        };
     }
     const roll = index % 20;
     if (roll < 2) return { level: 2 + (index % 2), band: 'newbie' };
@@ -200,11 +207,11 @@ function ensureAccount(username) {
     });
 }
 
-function ensureCharacter(username, index, base = baseForIndex(index)) {
+function ensureCharacter(username, index, base = baseForIndex(index), seedProfile = null) {
     return Database.fetchCharacters(username).then((characters) => {
         if (characters[0]) {
             const character = characters[0];
-            const profile = profileForIndex(index, base);
+            const profile = profileForIndex(index, base, seedProfile);
             const level = base.serviceCrafter ? profile.level : Number(character.level || profile.level);
             const adena = Number(character.adena || Math.round(level * 85));
             const classId = base.serviceCrafter ? base.classId : character.classId;
@@ -227,9 +234,9 @@ function ensureCharacter(username, index, base = baseForIndex(index)) {
         }
 
         const template = classInfo(base.classId);
-        const levelProfile = profileForIndex(index, base);
+        const levelProfile = profileForIndex(index, base, seedProfile);
         const level = levelProfile.level;
-        const spot = targetSpot(level, index, base);
+        const spot = seedProfile?.spot || targetSpot(level, index, base);
         const loc = randomNear(spot?.center || { locX: 0, locY: 0, locZ: 0 }, index);
         const vitals = vitalsFor(template, level);
         const charData = {
@@ -261,7 +268,8 @@ function ensureCharacter(username, index, base = baseForIndex(index)) {
 function stateFor(character, index, seedMeta = {}) {
     const base = seedMeta.base || baseForIndex(index);
     const classId = Number(character.classId || base.classId);
-    const level = Number(character.level || profileForIndex(index, base).level);
+    const levelProfile = seedMeta.levelProfile || profileForIndex(index, base, seedMeta.seedProfile);
+    const level = Number(character.level || levelProfile.level);
     const spot = base.serviceCrafter ? null : seedMeta.spot || targetSpot(level, index, { ...base, classId });
     const loc = seedMeta.loc || randomNear(spot?.center || {
         locX: character.locX,
@@ -304,7 +312,8 @@ function stateFor(character, index, seedMeta = {}) {
             classProgressionClassId: classId,
             generatedCold: true,
             generatedIndex: index,
-            levelBand: profileForIndex(index, base).band
+            levelBand: levelProfile.band,
+            populationWave: seedMeta.populationWave || null
         },
         inventory: {
             57: {
@@ -365,6 +374,9 @@ function sameRecipeEntries(left = [], right = []) {
 
 const GeneratedColdSeeder = {
     running: false,
+    // Millisecond-based slots keep generated accounts distinct across a
+    // restart; the base-36 form still fits the sixteen-character account name.
+    nextPopulationIndex: Date.now(),
 
     awardProfileSkills,
     craftServiceSeedState,
@@ -418,62 +430,71 @@ const GeneratedColdSeeder = {
         return chain.then(() => ({ created, seeded }));
     },
 
-    seedToTarget(target = Config.generatedColdTarget) {
-        const desired = Math.max(0, Number(target || 0));
-        if (!desired || this.running) return Promise.resolve({ created: 0, desired, total: 0 });
+    seedPopulation() {
+        const limit = Math.max(0, Number(Config.maxPlayingPopulation || 0));
+        if (!limit || this.running) return Promise.resolve({ created: 0, seeded: 0, total: 0, limit });
 
         this.running = true;
-        return LifeState.levelHistogram().then((histogram) => {
-            const total = Number(histogram.total || 0);
-            const needed = Math.max(0, desired - total);
-            const batch = Math.min(needed, Config.generatedColdBatchSize);
-            if (batch <= 0) {
-                return this.ensureCraftServices().then((services) => ({
-                    created: services.created,
-                    seeded: services.seeded,
-                    desired,
-                    total: total + services.seeded
-                }));
-            }
-
+        return Promise.resolve().then(() => {
+            const plan = SeedPlanner.plan(
+                SpotProfiles.ensure(),
+                LifeState.allStates(limit + 100),
+                limit,
+                Config.initialStarterPopulation
+            );
+            const batch = plan.missing.slice(0, SeedPlanner.seedBatchSize(plan, Config.generatedColdBatchSize));
             let created = 0;
             let seeded = 0;
             let chain = Promise.resolve();
-            const startIndex = total + 1;
 
-            for (let offset = 0; offset < batch; offset++) {
-                const index = startIndex + offset;
-                chain = chain.then(() => {
-                    const username = usernameFor(index);
-                    return ensureAccount(username)
-                        .then(() => ensureCharacter(username, index))
-                        .then((result) => {
-                            const state = stateFor(result.character, index, result);
-                            const craftShop = state.stats?.craftShop;
-                            const recipesReady = craftShop
-                                ? CraftShopService.ensureRecipes(state.characterId, craftShop)
-                                : Promise.resolve(null);
-                            return recipesReady.then(() => LifeState.upsertState(state, 'generated_seed')).then((saved) => {
-                                if (saved && result.created) created += 1;
-                                if (saved) seeded += 1;
-                                return saved;
-                            });
+            batch.forEach((spot) => {
+                const index = this.nextPopulationIndex++;
+                const username = `bot_pop_${index.toString(36)}`.slice(0, 16);
+                const seedProfile = {
+                    spot,
+                    level: Math.max(1, Number(spot.minLevel || 1)),
+                    band: `wave_${plan.maxMobLevel}`
+                };
+                chain = chain.then(() => ensureAccount(username)
+                    .then(() => ensureCharacter(username, index, baseForIndex(index), seedProfile))
+                    .then((result) => {
+                        const state = stateFor(result.character, index, {
+                            ...result,
+                            seedProfile,
+                            populationWave: plan.maxMobLevel,
+                            spot,
+                            loc: result.loc || randomNear(spot.center, index)
                         });
-                });
-            }
+                        return LifeState.upsertState(state, 'population_wave_seed').then((saved) => {
+                            if (saved && result.created) created += 1;
+                            if (saved) seeded += 1;
+                            return saved;
+                        });
+                    }));
+            });
 
             return chain.then(() => this.ensureCraftServices()).then((services) => ({
                 created: created + services.created,
-                seeded: seeded + services.seeded,
-                desired,
-                total: total + seeded + services.seeded
+                seeded,
+                total: plan.playing + seeded,
+                limit,
+                averageLevel: plan.averageLevel,
+                maxMobLevel: plan.maxMobLevel,
+                eligible: plan.eligible.length,
+                remaining: Math.max(0, plan.missing.length - seeded)
             }));
         }).catch((err) => {
             utils.infoWarn('BotSeed', 'generated cold seed failed: %s', err.message);
-            return { created: 0, seeded: 0, desired, total: 0, error: err.message };
+            return { created: 0, seeded: 0, total: 0, limit, error: err.message };
         }).finally(() => {
             this.running = false;
         });
+    },
+
+    // Compatibility for callers outside PopulationService. The old target was
+    // a one-shot count; the server now always follows the staged population cap.
+    seedToTarget() {
+        return this.seedPopulation();
     }
 };
 
