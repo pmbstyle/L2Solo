@@ -8,6 +8,7 @@ const World = invoke('GameServer/World/World');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 DataCache.init();
 
@@ -18,7 +19,9 @@ const originals = {
     updateItemEquipState: Database.updateItemEquipState,
     setItem: Database.setItem,
     clearGoal: GoalState.clear,
-    user: World.user
+    user: World.user,
+    bestOffer: MarketOpportunity.bestOffer,
+    reserve: MarketOpportunity.reserve
 };
 
 const calls = [];
@@ -104,6 +107,19 @@ async function run() {
     assert.strictEqual(noOffer.purchased, false);
     assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
     assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
+    assert(noOffer.state.stats.marketRetryAfter > Date.now(), 'a buyer with no offer must wait before retrying the same market trip');
+
+    MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
+    MarketOpportunity.reserve = () => false;
+    const changedOffer = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 80,
+        stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
+        loc: { locX: 80000, locY: 150000, locZ: -3466 }
+    }, { type: 'buy_craft_material', target: { itemId: 2, itemName: 'Changed Offer' } });
+    assert.strictEqual(changedOffer.reason, 'offer_changed');
+    assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
+    assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');
 
     const armorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,
@@ -143,4 +159,6 @@ run().catch((err) => {
     Database.setItem = originals.setItem;
     GoalState.clear = originals.clearGoal;
     World.user = originals.user;
+    MarketOpportunity.bestOffer = originals.bestOffer;
+    MarketOpportunity.reserve = originals.reserve;
 });

@@ -44,6 +44,24 @@ async function run() {
     NeedsEvaluator.evaluate = () => [{ type: 'progress_level', status: 'active', priority: 35, plan: { expectedBenefit: 'experience_and_sp' } }];
     const cleared = await GoalService.review({ characterId: 9, phase: 'cold' }, { now });
     assert.strictEqual(cleared.current.type, 'progress_level', 'an empty stale market goal must be replaced immediately');
+
+    const waitingForMarket = NeedsEvaluator.evaluate({
+        characterId: 10,
+        level: 30,
+        activity: 'hunting',
+        adena: 100000,
+        inventory: {},
+        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
+        stats: {
+            marketRetryAfter: now + 1,
+            equipmentPlan: {
+                marketFallback: true,
+                next: { itemId: 1880 },
+                materials: [{ selfId: 1880, missing: 20 }]
+            }
+        }
+    }, { now, spot: { id: 'test_spot' } });
+    assert(!waitingForMarket.some((goal) => goal.type === 'buy_craft_material'), 'a failed material purchase must not immediately schedule another market trip');
     console.log('Bot market goal priority checks passed');
 }
 

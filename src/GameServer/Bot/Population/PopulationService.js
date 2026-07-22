@@ -109,8 +109,11 @@ const PopulationService = {
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
+    marketTownMigrationTimer: null,
+    nextMarketTownMigrationAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
+    marketTownMigrationRunning: false,
     partyFormationRunning: false,
     phasePolicyRunning: false,
 
@@ -167,6 +170,14 @@ const PopulationService = {
             this.classProgressionMigrationTimer.unref();
         }
 
+        this.marketTownMigrationTimer = setInterval(() => {
+            this.maybeMigrateLegacyMarketTowns();
+        }, Config.marketTownMigrationIntervalMs);
+
+        if (typeof this.marketTownMigrationTimer.unref === 'function') {
+            this.marketTownMigrationTimer.unref();
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
             this.partyFormationTimer = setInterval(() => {
                 this.formBackgroundParties();
@@ -221,6 +232,10 @@ const PopulationService = {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
         }
+        if (this.marketTownMigrationTimer) {
+            clearInterval(this.marketTownMigrationTimer);
+            this.marketTownMigrationTimer = null;
+        }
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -273,6 +288,35 @@ const PopulationService = {
             .finally(() => {
                 this.classProgressionMigrationRunning = false;
             });
+    },
+
+    migrateLegacyMarketTowns() {
+        // This migration is deliberately bounded and serialized. Do not gate
+        // it on `resolving`: both timers share a 10-second cadence, which can
+        // otherwise starve the transition forever while the resolver is live.
+        if (this.marketTownMigrationRunning || Config.enabled === false) return Promise.resolve([]);
+        this.marketTownMigrationRunning = true;
+        return ColdMarketListingService.migrateLegacyMarketTowns(Config.marketTownMigrationBatchSize)
+            .then((migrated) => {
+                const relocated = migrated.filter((entry) => entry.relocated).length;
+                if (migrated.length) {
+                    console.info('BotPopulation :: migrated market towns checked=%d relocated=%d', migrated.length, relocated);
+                }
+                return migrated;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'legacy market-town migration failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.marketTownMigrationRunning = false;
+            });
+    },
+
+    maybeMigrateLegacyMarketTowns(timestamp = Date.now()) {
+        if (this.marketTownMigrationRunning || timestamp < this.nextMarketTownMigrationAt) return Promise.resolve([]);
+        this.nextMarketTownMigrationAt = timestamp + Config.marketTownMigrationIntervalMs;
+        return this.migrateLegacyMarketTowns();
     },
 
     recordHotTick(session) {
@@ -634,6 +678,10 @@ const PopulationService = {
                     );
                 }
                 this.resolving = false;
+                // The scheduler is known to run throughout normal operation;
+                // use its post-resolve edge as a reliable fallback for the
+                // bounded legacy-store transition timer.
+                this.maybeMigrateLegacyMarketTowns();
             });
     },
 
