@@ -5,6 +5,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const BuyShop = invoke('GameServer/World/Generics/NpcBypasses/BuyShop');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 
 DataCache.items = require('../data/Items/Others/others.json');
 
@@ -46,32 +47,30 @@ assert.strictEqual(rows.get(17).amount, 0, 'NPC arrow stock should be unlimited 
 assert.strictEqual(rows.get(1060).amount, 0, 'NPC scroll stock should be unlimited in BuyList');
 assert.strictEqual(rows.get(1835).price, 8, 'NPC shop should preserve audited per-NPC prices');
 
-const spiritshotsThrough = {
-    starter: [2509, 2510, 2511, 2512, 2513, 2514],
-    d: [2509, 2510],
-    c: [2509, 2510, 2511],
-    b: [2509, 2510, 2511, 2512],
-    a: [2509, 2510, 2511, 2512, 2513],
-    s: [2509, 2510, 2511, 2512, 2513, 2514]
-};
 const shopSpiritshots = (npcId) => NpcShopBuyLists.fetchForNpc(npcId)
     .map((entry) => entry.selfId)
     .filter((selfId) => selfId >= 2509 && selfId <= 2514);
 
-for (const npcId of [7004, 7137, 7150, 7519, 7561]) {
-    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.starter, `starter merchant ${npcId} must stock every Spiritshot grade`);
+for (const npcId of [7004, 7137, 7150, 7519, 7561, 7063, 7254, 7315, 7081, 7180, 7301, 7834, 7839, 8256, 8300]) {
+    assert.deepStrictEqual(shopSpiritshots(npcId), [2509], `ordinary NPC merchant ${npcId} must only retain its no-grade Spiritshot`);
 }
-for (const npcId of [7063, 7254, 7315]) {
-    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.d, `D-grade city merchant ${npcId} must stock Spiritshot D`);
-}
-const laraRows = NpcShopBuyLists.fetchForNpc(7063).map((entry) => entry.selfId);
-assert.strictEqual(laraRows.indexOf(2510), laraRows.indexOf(3947) + 1,
-    'D Spiritshot must appear immediately after the no-grade shot rows, before ordinary supplies');
-assert.deepStrictEqual(shopSpiritshots(7081), spiritshotsThrough.c, 'Giran must stock Spiritshot C');
-for (const npcId of [7180, 7301, 7834]) {
-    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.b, `B-grade city merchant ${npcId} must stock Spiritshot B`);
-}
-assert.deepStrictEqual(shopSpiritshots(7839), spiritshotsThrough.a, 'Aden must stock Spiritshot A');
-for (const npcId of [8256, 8300]) {
-    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.s, `late-town merchant ${npcId} must stock Spiritshot S`);
+
+const spiritshotStores = [
+    ['Tia', 'Talking Island', 5], ['Elya', 'Elven Village', 5], ['Dena', 'Dark Elven Village', 5],
+    ['Orik', 'Orc Village', 5], ['Bran', 'Dwarven Village', 5], ['Rolf', 'Gludin', 1],
+    ['Sila', 'Gludio', 1], ['Tara', 'Dion', 1], ['Eris', 'Giran', 2], ['Sera', 'Oren', 3],
+    ['Nora', "Hunter's Village", 3], ['Lina', 'Heine', 3], ['Mila', 'Aden', 4],
+    ['Sven', 'Goddard', 5], ['Runa', 'Rune', 5]
+];
+const spiritshotIds = [2509, 2510, 2511, 2512, 2513, 2514];
+for (const [name, town, grade] of spiritshotStores) {
+    const store = MerchantStoreConfigs[name];
+    assert.ok(store, `${town} must have a dedicated Spiritshot merchant`);
+    assert.strictEqual(store.storeType, 1, `${name} must be a selling private store`);
+    assert.strictEqual(store.town, town, `${name} must be placed in ${town}`);
+    assert.deepStrictEqual(store.items.map((item) => item.selfId), spiritshotIds.slice(0, grade + 1), `${name} must stock Spiritshots through its town grade`);
+    store.items.forEach((item) => {
+        assert.strictEqual(item.priceRate, 1, `${name} must use the standard Spiritshot price`);
+        assert.strictEqual(item.count, 999999, `${name} must have a practical unlimited Spiritshot stock`);
+    });
 }
