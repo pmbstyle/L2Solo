@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const BuyShop = invoke('GameServer/World/Generics/NpcBypasses/BuyShop');
+const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 
 DataCache.items = require('../data/Items/Others/others.json');
 
@@ -44,3 +45,30 @@ assert.strictEqual(rows.get(2509).amount, 0, 'NPC Spiritshot stock should be unl
 assert.strictEqual(rows.get(17).amount, 0, 'NPC arrow stock should be unlimited in BuyList');
 assert.strictEqual(rows.get(1060).amount, 0, 'NPC scroll stock should be unlimited in BuyList');
 assert.strictEqual(rows.get(1835).price, 8, 'NPC shop should preserve audited per-NPC prices');
+
+const spiritshotsThrough = {
+    starter: [2509, 2510, 2511, 2512, 2513, 2514],
+    d: [2509, 2510],
+    c: [2509, 2510, 2511],
+    b: [2509, 2510, 2511, 2512],
+    a: [2509, 2510, 2511, 2512, 2513],
+    s: [2509, 2510, 2511, 2512, 2513, 2514]
+};
+const shopSpiritshots = (npcId) => NpcShopBuyLists.fetchForNpc(npcId)
+    .map((entry) => entry.selfId)
+    .filter((selfId) => selfId >= 2509 && selfId <= 2514);
+
+for (const npcId of [7004, 7137, 7150, 7519, 7561]) {
+    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.starter, `starter merchant ${npcId} must stock every Spiritshot grade`);
+}
+for (const npcId of [7063, 7254, 7315]) {
+    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.d, `D-grade city merchant ${npcId} must stock Spiritshot D`);
+}
+assert.deepStrictEqual(shopSpiritshots(7081), spiritshotsThrough.c, 'Giran must stock Spiritshot C');
+for (const npcId of [7180, 7301, 7834]) {
+    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.b, `B-grade city merchant ${npcId} must stock Spiritshot B`);
+}
+assert.deepStrictEqual(shopSpiritshots(7839), spiritshotsThrough.a, 'Aden must stock Spiritshot A');
+for (const npcId of [8256, 8300]) {
+    assert.deepStrictEqual(shopSpiritshots(npcId), spiritshotsThrough.s, `late-town merchant ${npcId} must stock Spiritshot S`);
+}

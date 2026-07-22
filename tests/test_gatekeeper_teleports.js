@@ -30,6 +30,10 @@ for (const npcId of [8275, 8320]) {
     assert.ok(LateTownGatekeepers.npcs.some((npc) => npc.selfId === npcId), `NPC template ${npcId} must be present`);
     assert.ok(LateTownGatekeepers.spawns.some((group) => group.spawns.some((spawn) => spawn.selfId === npcId)), `NPC ${npcId} must spawn`);
 }
+for (const npcId of [8256, 8300]) {
+    assert.ok(LateTownGatekeepers.npcs.some((npc) => npc.selfId === npcId && npc.template.kind === 'Merchant'), `late-town merchant ${npcId} must be present`);
+    assert.ok(LateTownGatekeepers.spawns.some((group) => group.spawns.some((spawn) => spawn.selfId === npcId)), `late-town merchant ${npcId} must spawn`);
+}
 (async () => {
     const session = {
         actor: { fetchLevel: () => 10, fetchRace: () => 0 },

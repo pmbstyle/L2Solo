@@ -9,6 +9,29 @@ function rangeEntries(start, end, basePrice) {
     return Array.from({ length: end - start + 1 }, (_, index) => [start + index, basePrice]);
 }
 
+const SPIRITSHOTS_BY_GRADE = [
+    [2509, 15],
+    [2510, 18],
+    [2511, 35],
+    [2512, 100],
+    [2513, 120],
+    [2514, 150]
+];
+const SHOT_GRADE_INDEX = { none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 };
+
+function withSpiritshots(entries, grade) {
+    const maxIndex = SHOT_GRADE_INDEX[grade];
+    const existing = new Set(entries.map((entry) => Array.isArray(entry) ? entry[0] : entry.selfId));
+    const asObjects = entries.some((entry) => !Array.isArray(entry));
+    return [
+        ...entries,
+        ...SPIRITSHOTS_BY_GRADE
+            .slice(0, maxIndex + 1)
+            .filter(([selfId]) => !existing.has(selfId))
+            .map(([selfId, price]) => asObjects ? { selfId, price } : [selfId, price])
+    ];
+}
+
 const ADVANCED_GROCER_BASE = [
     [1835, 7],
     [2509, 15],
@@ -127,6 +150,12 @@ const ADEN_GROCER_BASE = [
     [1830, 500],
     [5195, 400]
 ];
+
+const D_GROCER_BASE = withSpiritshots(ADVANCED_GROCER_BASE, 'd');
+const C_GROCER_BASE = withSpiritshots(ADVANCED_GROCER_BASE, 'c');
+const B_GROCER_BASE = withSpiritshots(ADVANCED_GROCER_BASE, 'b');
+const A_GROCER_BASE = withSpiritshots(ADEN_GROCER_BASE, 'a');
+const S_GROCER_BASE = withSpiritshots(ADVANCED_GROCER_BASE, 's');
 
 const CEMA_GROCER_BASE = [
     [1835, 7],
@@ -820,10 +849,10 @@ const LISTS = {
         { selfId: 4492, price: 14400 }
     ],
 
-    gludioGrocer: withTax(ADVANCED_GROCER_BASE, 1.2),
-    floranGrocer: withTax(ADVANCED_GROCER_BASE, 1.5),
-    hunterGrocer: withTax(ADVANCED_GROCER_BASE, 1.3),
-    dwarvenGrocer: withTax(DWARVEN_GROCER_BASE, 1.15),
+    gludioGrocer: withTax(D_GROCER_BASE, 1.2),
+    floranGrocer: withTax(D_GROCER_BASE, 1.5),
+    hunterGrocer: withTax(B_GROCER_BASE, 1.3),
+    dwarvenGrocer: withTax(withSpiritshots(DWARVEN_GROCER_BASE, 's'), 1.15),
     dwarvenArmor: withTax(DWARVEN_ARMOR_BASE, 1.15),
     hunterWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.3),
     hunterMysticWeapons: withTax(MYSTIC_WEAPON_BASE, 1.3),
@@ -839,20 +868,20 @@ const LISTS = {
     giranBodyArmor: withTax(GIRAN_BODY_ARMOR_BASE, 1.1),
     giranRobeAndAccessoryArmor: withTax(GIRAN_ROBE_AND_ACCESSORY_ARMOR_BASE, 1.1),
     giranJewelry: withTax(GIRAN_JEWELRY_BASE, 1.1),
-    giranGrocer: withTax(ADVANCED_GROCER_BASE, 1.1),
+    giranGrocer: withTax(C_GROCER_BASE, 1.1),
     giranDyes: withTax(GIRAN_DYE_BASE, 1.1),
     giranMagicBooks: withTax(GIRAN_MAGIC_BOOK_BASE, 1.1),
     orenWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.15),
     orenMysticWeapons: withTax(MYSTIC_WEAPON_BASE, 1.15),
     orenArmor: withTax(GLUDIO_ARMOR_BASE, 1.15),
-    orenGrocer: withTax(ADVANCED_GROCER_BASE, 1.15),
+    orenGrocer: withTax(B_GROCER_BASE, 1.15),
     orenDyes: withTax(BASIC_DYE_BASE, 1.15),
     orenJewelry: withTax(ADVANCED_JEWELRY_BASE, 1.15),
     orenMagicBooks: withTax(MAGIC_BOOK_BASE, 1.15),
     adenWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.2),
     adenMysticWeapons: withTax(MYSTIC_WEAPON_BASE, 1.2),
     adenArmor: withTax(GLUDIO_ARMOR_BASE, 1.2),
-    adenGrocer: withTax(ADEN_GROCER_BASE, 1.2),
+    adenGrocer: withTax(A_GROCER_BASE, 1.2),
     adenDyes: withTax(BASIC_DYE_BASE, 1.2),
     adenJewelry: withTax(ADVANCED_JEWELRY_BASE, 1.2),
     adenMagicBooks: withTax(MAGIC_BOOK_BASE, 1.2),
@@ -861,9 +890,11 @@ const LISTS = {
     giranPetSupplies: withTax(GIRAN_PET_SUPPLY_BASE, 1.2),
     cemaMysticWeapons: withTax(GIRAN_MYSTIC_WEAPON_BASE, 1.2),
     cemaRobeAndAccessoryArmor: withTax(GIRAN_ROBE_AND_ACCESSORY_ARMOR_BASE, 1.2),
-    cemaGrocer: withTax(CEMA_GROCER_BASE, 1.2),
+    cemaGrocer: withTax(withSpiritshots(CEMA_GROCER_BASE, 'b'), 1.2),
+    goddardGrocer: withTax(S_GROCER_BASE, 1.2),
+    runeGrocer: withTax(S_GROCER_BASE, 1.2),
 
-    talkingIslandGrocer: [
+    talkingIslandGrocer: withSpiritshots([
         { selfId: 1835, price: 8 },
         { selfId: 2509, price: 17 },
         { selfId: 3947, price: 40 },
@@ -890,9 +921,9 @@ const LISTS = {
         { selfId: 4626, price: 575 },
         { selfId: 4627, price: 575 },
         { selfId: 4628, price: 575 }
-    ],
+    ], 's'),
 
-    grocery: [1060, 1061, 1831, 1833, 736, 737, 1835, 2509, 3947, 735, 1062, 1863, 17],
+    grocery: [...withSpiritshots([[1060], [1061], [1831], [1833], [736], [737], [1835], [3947], [735], [1062], [1863], [17]], 's')],
 
     talkingIslandJewelry: [
         { selfId: 118, price: 76 },
@@ -1074,6 +1105,8 @@ const NPC_LISTS = {
     7684: ['hunterWeapons', 'hunterMysticWeapons'],
     7831: ['petSupplies'],
     7834: ['cemaMysticWeapons', 'cemaRobeAndAccessoryArmor', 'cemaGrocer'],
+    8256: ['goddardGrocer'],
+    8300: ['runeGrocer'],
 
     7253: ['gludinArmor'],
     7254: ['gludioGrocer', 'gludinDyes'],
