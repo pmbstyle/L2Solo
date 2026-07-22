@@ -145,6 +145,14 @@ function handlesNpc(npc) {
   return quests.some((quest) => quest.npcs.includes(npcId));
 }
 
+// Gatekeepers can offer both travel and quest progress.  The caller needs to
+// decide whether to expose the quest branch without opening it (talking to a
+// quest NPC may itself advance a quest), so keep this check read-only.
+async function hasTalk(session, npc) {
+  await ensureLoaded(session);
+  return Boolean(questForNpc(npc, session));
+}
+
 function render(session, npc, html) {
   session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), html));
   session.dataSendToMe(ServerResponse.actionFailed());
@@ -334,6 +342,7 @@ module.exports = {
   onEvent,
   onKill,
   handlesNpc,
+  hasTalk,
   mutate,
   stateFor,
   active,

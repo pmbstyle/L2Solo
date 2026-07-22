@@ -4,6 +4,7 @@ require('../src/Global');
 
 const GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
 const LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
+const QuestService = invoke('GameServer/Quest/QuestService');
 
 const cityGatekeepers = [7006, 7059, 7080, 7134, 7146, 7162, 7177, 7233, 7256, 7320, 7540, 7576, 7848, 8275, 8320];
 for (const npcId of cityGatekeepers) {
@@ -12,6 +13,10 @@ for (const npcId of cityGatekeepers) {
     for (const [id] of GatekeeperTeleports.lists[npcId]) {
         assert.ok(GatekeeperTeleports.destination(npcId, id), `gatekeeper ${npcId} destination ${id} must resolve`);
     }
+    assert.match(GatekeeperTeleports.menu(npcId, false), /gatekeeper-teleport/, `gatekeeper ${npcId} must always offer teleport from its main dialog`);
+    assert.doesNotMatch(GatekeeperTeleports.menu(npcId, false), /gatekeeper-quest/, `gatekeeper ${npcId} must not offer an unavailable quest`);
+    assert.match(GatekeeperTeleports.menu(npcId, true), /gatekeeper-teleport/, `quest-capable gatekeeper ${npcId} must keep teleport in its main dialog`);
+    assert.match(GatekeeperTeleports.menu(npcId, true), /gatekeeper-quest/, `quest-capable gatekeeper ${npcId} must offer the quest branch`);
 }
 
 assert.strictEqual(GatekeeperTeleports.destination(7006, 18), null, 'a gatekeeper must not expose another city’s route by raw id');
@@ -25,4 +30,16 @@ for (const npcId of [8275, 8320]) {
     assert.ok(LateTownGatekeepers.npcs.some((npc) => npc.selfId === npcId), `NPC template ${npcId} must be present`);
     assert.ok(LateTownGatekeepers.spawns.some((group) => group.spawns.some((spawn) => spawn.selfId === npcId)), `NPC ${npcId} must spawn`);
 }
-console.log('gatekeeper teleport checks passed');
+(async () => {
+    const session = {
+        actor: { fetchLevel: () => 10, fetchRace: () => 0 },
+        questStatesLoaded: true,
+        questStates: new Map()
+    };
+    assert.strictEqual(await QuestService.hasTalk(session, { fetchSelfId: () => 7006 }), true, 'Roxxy must expose the quest branch when Step into the Future can start');
+    assert.strictEqual(await QuestService.hasTalk(session, { fetchSelfId: () => 7059 }), false, 'a gatekeeper without a relevant quest must stay teleport-only');
+    console.log('gatekeeper teleport checks passed');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

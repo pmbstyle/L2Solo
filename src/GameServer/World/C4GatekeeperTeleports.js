@@ -47,4 +47,12 @@ function html(npcId) {
     return `<html><body>Region where teleporting is possible<br>${links.join('')}<br></body></html>`;
 }
 
-module.exports = { destination, html, lists: LISTS };
+function menu(npcId, hasQuest) {
+    if (!LISTS[npcId]) return null;
+    const quest = hasQuest
+        ? '<a action="bypass -h gatekeeper-quest">Quest</a><br1>'
+        : '';
+    return `<html><body>How can I help you?<br><br><a action="bypass -h gatekeeper-teleport">Teleport</a><br1>${quest}</body></html>`;
+}
+
+module.exports = { destination, html, menu, lists: LISTS };
