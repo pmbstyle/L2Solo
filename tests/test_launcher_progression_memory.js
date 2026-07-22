@@ -50,6 +50,29 @@ function request(port, method, pathname, payload) {
     });
 }
 
+function requestFailure(port, method, pathname, payload) {
+    return request(port, method, pathname, payload)
+        .then(() => { throw new Error('expected request to fail'); })
+        .catch((error) => error);
+}
+
+function requestText(port, pathname) {
+    return new Promise((resolve, reject) => {
+        http.get({ hostname: '127.0.0.1', port, path: pathname }, (res) => {
+            let data = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode !== 200) {
+                    reject(new Error(data || `HTTP ${res.statusCode}`));
+                    return;
+                }
+                resolve(data);
+            });
+        }).on('error', reject);
+    });
+}
+
 async function waitForStatus(port) {
     let lastError = null;
 
@@ -103,6 +126,14 @@ async function stopLauncher(child) {
         child = startLauncher(port, settingsPath);
         let status = await waitForStatus(port);
         assert.strictEqual(status.progressionRate, 'x1');
+
+        const launcherHtml = await requestText(port, '/');
+        assert.match(launcherHtml, /<details class="wipe-panel">/);
+        assert.match(launcherHtml, /<div class="wipe-content">/);
+        assert.match(launcherHtml, /logAutoScroll/);
+
+        const confirmationError = await requestFailure(port, 'POST', '/api/wipe', { scope: 'bots', confirmation: 'wipe bots' });
+        assert.match(confirmationError.message, /Type WIPE BOTS/);
 
         status = await request(port, 'POST', '/api/progression-rate', { progressionRate: 'x50' });
         assert.strictEqual(status.progressionRate, 'x50');
