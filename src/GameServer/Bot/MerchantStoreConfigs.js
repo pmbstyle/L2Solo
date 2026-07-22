@@ -55,7 +55,7 @@ module.exports = {
         title: "D mats and gear",
         town: "Gludio",
         storeType: 1,
-        locX: -12522, locY: 122926, locZ: -3118,
+        locX: -14590, locY: 123650, locZ: -3117,
         items: [
             s(1867, 0.70, 5000), s(1869, 0.72, 5000), s(1870, 0.70, 4000),
             s(1871, 0.68, 4000), s(1872, 0.70, 5000), s(1873, 0.74, 2500),
@@ -66,7 +66,7 @@ module.exports = {
         title: "Gludio stock",
         town: "Gludio",
         storeType: 1,
-        locX: -12470, locY: 123020, locZ: -3118,
+        locX: -14370, locY: 123650, locZ: -3117,
         items: [
             s(22, 0.68, 20), s(24, 0.68, 10), s(31, 0.68, 10),
             s(38, 0.72, 12), s(50, 0.72, 12), s(43, 0.70, 10),
@@ -77,7 +77,7 @@ module.exports = {
         title: "Buy D mats",
         town: "Gludio",
         storeType: 3,
-        locX: -12480, locY: 122950, locZ: -3118,
+        locX: -14590, locY: 123360, locZ: -3117,
         items: [
             b(1867, 0.64), b(1868, 0.62), b(1869, 0.62), b(1870, 0.62),
             b(1871, 0.62), b(1872, 0.64), b(1873, 0.66), b(1880, 0.66),
@@ -88,7 +88,7 @@ module.exports = {
         title: "Buy plains drops",
         town: "Gludio",
         storeType: 3,
-        locX: -12582, locY: 122850, locZ: -3118,
+        locX: -14370, locY: 123360, locZ: -3117,
         items: [
             b(1921, 0.70), b(1922, 0.70), b(1923, 0.70), b(1924, 0.70),
             b(1925, 0.70), b(2011, 0.68), b(2012, 0.68), b(2013, 0.68),

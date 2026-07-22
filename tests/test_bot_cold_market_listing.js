@@ -114,6 +114,16 @@ async function run() {
     assert.strictEqual(expiredResult.state.adena, 884, 'NPC payout should use the normal 50% sale price');
     assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
 
+    const misplacedExpired = await ListingService.open(
+        { ...state, characterId: 90, name: 'MisplacedExpiredSeller' },
+        { now: 1000, durationMs: 60000 }
+    );
+    const misplacedExpiredResult = await ListingService.resolve({
+        ...misplacedExpired.state,
+        stats: { ...misplacedExpired.state.stats, marketStore: { ...misplacedExpired.state.stats.marketStore, town: 'Dion' } }
+    }, 62000);
+    assert.strictEqual(misplacedExpiredResult.closed, true, 'an expired store must close instead of being relocated to another market');
+
     assert.strictEqual(
         ListingService.marketStoreTitle([
             { name: 'Animal Bone', count: 20 },

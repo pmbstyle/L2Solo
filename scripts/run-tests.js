@@ -30,6 +30,7 @@ const tests = [
     'tests/test_bot_craft_telemetry.js',
     'tests/test_bot_cold_market_purchase.js',
     'tests/test_bot_cold_market_listing.js',
+    'tests/test_bot_market_town_routing.js',
     'tests/test_bot_craft_shop.js',
     'tests/test_bot_warehouse.js',
     'tests/test_bot_cold_market_trade_chat.js',

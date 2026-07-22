@@ -150,7 +150,7 @@ function evaluate(state = {}, options = {}) {
     const wantedMaterial = craftPlan?.marketFallback && craftPlan?.next?.itemId
         ? craftPlan.materials?.find((material) => Number(material.selfId) === Number(craftPlan.next.itemId))
         : null;
-    if (wantedMaterial?.missing > 0) {
+    if (wantedMaterial?.missing > 0 && Number(state.stats?.marketRetryAfter || 0) <= timestamp) {
         candidates.push({
             type: 'buy_craft_material',
             priority: 82,

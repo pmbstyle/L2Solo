@@ -7,6 +7,33 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
+function retryAfterFailedPurchase(state, goal, reason) {
+    const timestamp = Date.now();
+    const retryState = {
+        ...state,
+        stats: {
+            ...(state.stats || {}),
+            marketRetryAfter: timestamp + RETRY_DELAY_MS,
+            marketWanted: {
+                ...(state.stats?.marketWanted || {}),
+                itemId: goal.target.itemId,
+                itemName: goal.target.itemName,
+                lastMissingAt: timestamp
+            },
+            marketLead: null
+        }
+    };
+    const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
+    const returnState = GoalExecutor.finishMarketVisit(wanted.state) || wanted.state;
+    return LifeState.upsertState(returnState, 'market_no_offer_return').then((saved) => ({
+        state: saved || returnState,
+        purchased: false,
+        reason,
+        wanted: wanted.announced,
+        remoteOffer: null
+    }));
+}
+
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
@@ -18,30 +45,18 @@ const ColdMarketService = {
             buyerCharacterId: state.characterId
         });
         if (!offer) {
-            const retryState = {
-                ...state,
-                stats: { ...(state.stats || {}), marketRetryAfter: Date.now() + RETRY_DELAY_MS,
-                    marketWanted: { ...(state.stats?.marketWanted || {}), itemId: goal.target.itemId, itemName: goal.target.itemName, lastMissingAt: Date.now() },
-                    marketLead: null }
-            };
-            const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
             // A wanted ad is not a reason to idle in Giran.  Keep the demand
             // and retry window, then return to the material route until the
             // next market attempt is due.
-            const returnState = GoalExecutor.finishMarketVisit(wanted.state) || wanted.state;
-            return LifeState.upsertState(returnState, 'market_no_offer_return').then((saved) => ({
-                state: saved || returnState,
-                purchased: false,
-                reason: 'no_affordable_offer', wanted: wanted.announced, remoteOffer: null
-            }));
+            return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
         }
-        if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ state, purchased: false, reason: 'offer_changed' });
+        if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
         offer.buyerCharacterId = Number(state.characterId);
 
         return LifeState.applyMarketPurchase(state, offer).then((updated) => {
             if (!updated) {
                 MarketOpportunity.release(offer, 1);
-                return { state, purchased: false, reason: 'persist_failed' };
+                return retryAfterFailedPurchase(state, goal, 'persist_failed');
             }
             const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
             return settlement.then((sellerState) => GoalState.clear(state.characterId, 'completed').then(() => ({
@@ -53,7 +68,7 @@ const ColdMarketService = {
         }).catch((err) => {
             MarketOpportunity.release(offer, 1);
             utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);
-            return { state, purchased: false, reason: 'purchase_failed' };
+            return retryAfterFailedPurchase(state, goal, 'purchase_failed');
         });
     }
 };

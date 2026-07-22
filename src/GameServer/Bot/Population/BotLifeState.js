@@ -717,7 +717,8 @@ const BotLifeState = {
                         ...(marketState.stats.marketStore || {}),
                         loc: { ...storeLoc },
                         items: (store?.items || []).map((item) => ({
-                            selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId)
+                            selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId),
+                            rank: item.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
                         }))
                     }
                 }
@@ -912,6 +913,52 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch due cold states: %s', err.message);
+            return [];
+        });
+    },
+
+    legacyMarketTownCandidates(limit = 10, routingVersion = 1) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        const version = Math.max(1, Number(routingVersion) || 1);
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND activity = 'merchant'
+            AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL
+            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.marketTownRoutingVersion')) AS UNSIGNED), 0) < ?
+            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.expiresAt')) AS UNSIGNED), 0) > ?
+            ORDER BY updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [version, Date.now()]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch legacy market-town candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    expiredMarketStoreCandidates(limit = 10, timestamp = Date.now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND activity = 'merchant'
+            AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL
+            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.expiresAt')) AS UNSIGNED), 0) <= ?
+            ORDER BY updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [Number(timestamp) || Date.now()]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch expired market stores: %s', err.message);
             return [];
         });
     },

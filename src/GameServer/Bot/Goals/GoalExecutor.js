@@ -1,11 +1,15 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 
 const MARKET_TRAVEL_MS = 25 * 1000;
 const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
 
 function marketTown(name = 'Giran') {
-    return TownPathfinder.towns.find((town) => town.name === name) || TownPathfinder.towns.find((town) => town.name === 'Giran') || null;
+    return TownPathfinder.towns.find((town) => town.name === name)
+        || MarketTownPolicy.marketTown(name)
+        || TownPathfinder.towns.find((town) => town.name === 'Giran')
+        || null;
 }
 
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
@@ -18,9 +22,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
-    // Dynamic bots share one economic hub. Static merchant bots may remain in
-    // other towns, but players and cold bots travel to Giran to trade.
-    const town = marketTown('Giran');
+    const town = sellingInventory ? marketTown(MarketTownPolicy.targetTownForSale(state)) : marketTown('Giran');
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY);
@@ -91,4 +93,4 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     };
 }
 
-module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit };
+module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
