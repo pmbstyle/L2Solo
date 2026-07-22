@@ -78,6 +78,7 @@ const tests = [
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',
+    'tests/test_world_wipe.js',
     'tests/test_macros.js',
     'tests/test_npc_combat_range.js',
     'tests/test_npc_interaction_completion.js',

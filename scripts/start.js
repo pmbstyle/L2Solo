@@ -5,6 +5,7 @@ const { spawn, spawnSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const WorldWipe = require('./world-wipe');
 
 const rootDir = path.resolve(__dirname, '..');
 const isWindows = process.platform === 'win32';
@@ -27,7 +28,14 @@ const state = {
     lastExit: null,
     logFilePath: latestLogPath,
     progressionRate: initialProgressionRate(),
+    lastWipe: null,
     logs: []
+};
+
+const wipeConfirmations = {
+    bots: 'WIPE BOTS',
+    players: 'WIPE PLAYERS',
+    all: 'WIPE ALL'
 };
 
 function log(message) {
@@ -232,6 +240,7 @@ function publicState() {
         logFilePath: state.logFilePath,
         progressionRate: state.progressionRate,
         progressionRates: Array.from(progressionPresets),
+        lastWipe: state.lastWipe,
         logs: state.logs.slice(-40)
     };
 }
@@ -428,6 +437,57 @@ function sendHtml(response) {
             text-transform: uppercase;
         }
 
+        .wipe-panel {
+            margin-top: 20px;
+            border: 1px solid #71413b;
+            border-radius: 6px;
+            background: #241a19;
+            overflow: hidden;
+        }
+
+        .wipe-panel summary {
+            color: #efb1a8;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 14px;
+            text-transform: uppercase;
+        }
+
+        .wipe-panel[open] summary {
+            border-bottom: 1px solid #71413b;
+        }
+
+        .wipe-content {
+            display: grid;
+            gap: 10px;
+            padding: 14px;
+        }
+
+        .wipe-panel p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        input {
+            width: 100%;
+            height: 42px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 14px;
+            padding: 0 12px;
+        }
+
+        button.danger {
+            border-color: #9c5148;
+            background: #9c5148;
+            color: #fff8f5;
+        }
+
         select {
             width: 100%;
             height: 42px;
@@ -554,6 +614,21 @@ function sendHtml(response) {
             <div class="row"><span class="label">Log</span><span id="logPath" class="value">-</span></div>
         </section>
 
+        <details class="wipe-panel">
+            <summary>World reset</summary>
+            <div class="wipe-content">
+                <p>Only available while the server is stopped. This permanently removes the selected accounts and their characters.</p>
+                <select id="wipeScope">
+                    <option value="bots">Bots only</option>
+                    <option value="players">Players only</option>
+                    <option value="all">Bots and players</option>
+                </select>
+                <p id="wipePrompt">Type WIPE BOTS to confirm.</p>
+                <input id="wipeConfirmation" type="text" autocomplete="off" spellcheck="false" placeholder="Confirmation">
+                <button id="wipe" class="danger" type="button">Permanently wipe selected data</button>
+            </div>
+        </details>
+
         <pre id="log">Launcher ready.</pre>
     </main>
 
@@ -571,10 +646,16 @@ function sendHtml(response) {
         const mapButton = document.getElementById('map');
         const logFileButton = document.getElementById('logFile');
         const progressionRateSelect = document.getElementById('progressionRate');
+        const wipeScopeSelect = document.getElementById('wipeScope');
+        const wipeConfirmationInput = document.getElementById('wipeConfirmation');
+        const wipePromptEl = document.getElementById('wipePrompt');
+        const wipeButton = document.getElementById('wipe');
+        const wipeConfirmations = { bots: 'WIPE BOTS', players: 'WIPE PLAYERS', all: 'WIPE ALL' };
         let mapUrl = '';
         let logUrl = '';
         let pendingProgressionRate = progressionRateSelect.value || 'x1';
         let hasPendingProgressionRate = false;
+        let logAutoScroll = true;
 
         function titleCase(value) {
             return value.charAt(0).toUpperCase() + value.slice(1);
@@ -587,6 +668,19 @@ function sendHtml(response) {
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
             return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
+        }
+
+        function updateWipeControls(phase) {
+            const expected = wipeConfirmations[wipeScopeSelect.value] || '';
+            wipePromptEl.textContent = 'Type ' + expected + ' to confirm.';
+            const stopped = phase === 'stopped';
+            wipeScopeSelect.disabled = !stopped;
+            wipeConfirmationInput.disabled = !stopped;
+            wipeButton.disabled = !stopped || wipeConfirmationInput.value.trim() !== expected;
+        }
+
+        function isLogAtBottom() {
+            return logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 6;
         }
 
         async function request(path, options) {
@@ -618,10 +712,16 @@ function sendHtml(response) {
             startButton.disabled = locked;
             stopButton.disabled = phase === 'stopped' || phase === 'stopping';
             progressionRateSelect.disabled = locked;
+            updateWipeControls(phase);
             logEl.textContent = data.logs && data.logs.length
                 ? data.logs.map((entry) => entry.line).join('\\n')
                 : 'Launcher ready.';
-            logEl.scrollTop = logEl.scrollHeight;
+            if (phase === 'stopped') {
+                logAutoScroll = false;
+            }
+            if (logAutoScroll) {
+                logEl.scrollTop = logEl.scrollHeight;
+            }
         }
 
         async function refresh() {
@@ -633,6 +733,7 @@ function sendHtml(response) {
         }
 
         startButton.addEventListener('click', async () => {
+            logAutoScroll = true;
             render(await request('/api/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -655,8 +756,39 @@ function sendHtml(response) {
             });
         });
 
+        wipeScopeSelect.addEventListener('change', () => {
+            wipeConfirmationInput.value = '';
+            updateWipeControls(statusEl.classList.contains('stopped') ? 'stopped' : 'running');
+        });
+
+        wipeConfirmationInput.addEventListener('input', () => {
+            updateWipeControls(statusEl.classList.contains('stopped') ? 'stopped' : 'running');
+        });
+
+        wipeButton.addEventListener('click', async () => {
+            const scope = wipeScopeSelect.value;
+            const confirmation = wipeConfirmationInput.value.trim();
+            if (!window.confirm('Permanently wipe ' + scope + '? This cannot be undone.')) return;
+            try {
+                const data = await request('/api/wipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope, confirmation })
+                });
+                wipeConfirmationInput.value = '';
+                render(data);
+            } catch (err) {
+                logEl.textContent = err.message;
+            }
+        });
+
         stopButton.addEventListener('click', async () => {
+            logAutoScroll = false;
             render(await request('/api/stop', { method: 'POST' }));
+        });
+
+        logEl.addEventListener('scroll', () => {
+            logAutoScroll = isLogAtBottom();
         });
 
         mapButton.addEventListener('click', () => {
@@ -732,6 +864,40 @@ async function route(request, response) {
     if (request.method === 'POST' && url.pathname === '/api/stop') {
         await readBody(request);
         sendJson(response, stopServer());
+        return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/wipe') {
+        const body = await readBody(request);
+        let payload = {};
+        try {
+            payload = body ? JSON.parse(body) : {};
+        } catch {
+            payload = {};
+        }
+
+        if (state.phase !== 'stopped' || state.child) {
+            sendJson(response, { error: 'Stop the server before wiping world data.' }, 409);
+            return;
+        }
+
+        let scope;
+        try {
+            scope = WorldWipe.validateScope(payload.scope);
+        } catch (error) {
+            sendJson(response, { error: error.message }, 400);
+            return;
+        }
+
+        if (String(payload.confirmation || '').trim() !== wipeConfirmations[scope]) {
+            sendJson(response, { error: `Type ${wipeConfirmations[scope]} to confirm this wipe.` }, 400);
+            return;
+        }
+
+        const result = await WorldWipe.wipe(scope);
+        state.lastWipe = { ...result, at: Date.now() };
+        appendLog('launcher', `world wipe completed: scope=${scope}, characters=${result.characters}, accounts=${result.accounts}`);
+        sendJson(response, publicState());
         return;
     }
 
