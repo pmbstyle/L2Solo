@@ -14,6 +14,8 @@ const DEFAULTS = {
     // It is deliberately independent from the normal cold-resolve budget.
     marketTownMigrationIntervalMs: 10000,
     marketTownMigrationBatchSize: 10,
+    marketExpiryCleanupIntervalMs: 10000,
+    marketExpiryCleanupBatchSize: 10,
     partyFormationIntervalMs: 45000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,

@@ -111,9 +111,12 @@ const PopulationService = {
     classProgressionMigrationTimer: null,
     marketTownMigrationTimer: null,
     nextMarketTownMigrationAt: 0,
+    marketExpiryCleanupTimer: null,
+    nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
     marketTownMigrationRunning: false,
+    marketExpiryCleanupRunning: false,
     partyFormationRunning: false,
     phasePolicyRunning: false,
 
@@ -178,6 +181,14 @@ const PopulationService = {
             this.marketTownMigrationTimer.unref();
         }
 
+        this.marketExpiryCleanupTimer = setInterval(() => {
+            this.maybeExpireStaleMarketStores();
+        }, Config.marketExpiryCleanupIntervalMs);
+
+        if (typeof this.marketExpiryCleanupTimer.unref === 'function') {
+            this.marketExpiryCleanupTimer.unref();
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
             this.partyFormationTimer = setInterval(() => {
                 this.formBackgroundParties();
@@ -235,6 +246,10 @@ const PopulationService = {
         if (this.marketTownMigrationTimer) {
             clearInterval(this.marketTownMigrationTimer);
             this.marketTownMigrationTimer = null;
+        }
+        if (this.marketExpiryCleanupTimer) {
+            clearInterval(this.marketExpiryCleanupTimer);
+            this.marketExpiryCleanupTimer = null;
         }
         Director.stop();
         Metrics.stopEventLoopMonitor();
@@ -317,6 +332,29 @@ const PopulationService = {
         if (this.marketTownMigrationRunning || timestamp < this.nextMarketTownMigrationAt) return Promise.resolve([]);
         this.nextMarketTownMigrationAt = timestamp + Config.marketTownMigrationIntervalMs;
         return this.migrateLegacyMarketTowns();
+    },
+
+    expireStaleMarketStores(timestamp = Date.now()) {
+        if (this.marketExpiryCleanupRunning || Config.enabled === false) return Promise.resolve([]);
+        this.marketExpiryCleanupRunning = true;
+        return ColdMarketListingService.expireStaleMarketStores(Config.marketExpiryCleanupBatchSize, timestamp)
+            .then((expired) => {
+                if (expired.length) console.info('BotPopulation :: expired market stores closed=%d', expired.length);
+                return expired;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'expired market cleanup failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.marketExpiryCleanupRunning = false;
+            });
+    },
+
+    maybeExpireStaleMarketStores(timestamp = Date.now()) {
+        if (this.marketExpiryCleanupRunning || timestamp < this.nextMarketExpiryCleanupAt) return Promise.resolve([]);
+        this.nextMarketExpiryCleanupAt = timestamp + Config.marketExpiryCleanupIntervalMs;
+        return this.expireStaleMarketStores(timestamp);
     },
 
     recordHotTick(session) {
@@ -678,6 +716,7 @@ const PopulationService = {
                     );
                 }
                 this.resolving = false;
+                this.maybeExpireStaleMarketStores();
                 // The scheduler is known to run throughout normal operation;
                 // use its post-resolve edge as a reliable fallback for the
                 // bounded legacy-store transition timer.

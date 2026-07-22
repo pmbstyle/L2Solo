@@ -552,27 +552,28 @@ function open(state, options = {}) {
 function resolve(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
     if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, closed: false });
-    const targetTownName = targetMarketTownName(state, store.items || []);
-    if (store.town !== targetTownName) {
-        const town = marketTown(targetTownName);
-        const loc = marketLocation(town, { state });
-        if (!loc) return Promise.resolve({ state, closed: false, reason: 'market_plaza_full' });
-        const relocated = {
-            ...state,
-            currentRegion: town.name,
-            loc,
-            stats: {
-                ...(state.stats || {}),
-                marketStore: { ...store, marketTownRoutingVersion: MARKET_TOWN_ROUTING_VERSION, town: town.name, loc }
-            }
-        };
-        return LifeState.upsertState(relocated, 'cold_market_town_rebalanced').then((saved) => {
-            if (saved) MarketOpportunity.indexColdStore(saved);
-            return { state: saved || relocated, closed: false, relocated: true };
-        });
-    }
     const hasStock = (store.items || []).some((item) => Number(item.count) > 0);
-    if (hasStock && Number(store.expiresAt || 0) > timestamp) {
+    const isActive = hasStock && Number(store.expiresAt || 0) > timestamp;
+    if (isActive) {
+        const targetTownName = targetMarketTownName(state, store.items || []);
+        if (store.town !== targetTownName) {
+            const town = marketTown(targetTownName);
+            const loc = marketLocation(town, { state });
+            if (!loc) return Promise.resolve({ state, closed: false, reason: 'market_plaza_full' });
+            const relocated = {
+                ...state,
+                currentRegion: town.name,
+                loc,
+                stats: {
+                    ...(state.stats || {}),
+                    marketStore: { ...store, marketTownRoutingVersion: MARKET_TOWN_ROUTING_VERSION, town: town.name, loc }
+                }
+            };
+            return LifeState.upsertState(relocated, 'cold_market_town_rebalanced').then((saved) => {
+                if (saved) MarketOpportunity.indexColdStore(saved);
+                return { state: saved || relocated, closed: false, relocated: true };
+            });
+        }
         MarketOpportunity.indexColdStore(state);
         return Promise.resolve({ state, closed: false });
     }
@@ -669,6 +670,15 @@ function migrateLegacyMarketTowns(limit = 10) {
     });
 }
 
+function expireStaleMarketStores(limit = 10, timestamp = Date.now()) {
+    return LifeState.expiredMarketStoreCandidates(limit, timestamp).then((states) => states.reduce((chain, state) => (
+        chain.then((expired) => resolve(state, timestamp).then((result) => {
+            if (result.closed) expired.push(result);
+            return expired;
+        }))
+    ), Promise.resolve([])));
+}
+
 function reconcileInventory(state) {
     const store = state?.stats?.marketStore;
     if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, reconciled: false });
@@ -744,6 +754,7 @@ module.exports = {
     targetMarketTownName,
     legacyMarketTownCandidates,
     migrateLegacyMarketTowns,
+    expireStaleMarketStores,
     chooseGiranPlazaStall,
     chooseGludioDMarketStall,
     chooseDionDMarketStall,

@@ -211,19 +211,33 @@ assert(ListingService.isDwarvenVillageNoGradeStallLocation(dwarvenStall), 'Dwarv
 const originalMigrateLegacyMarketTowns = PopulationService.migrateLegacyMarketTowns;
 const originalMigrationRunning = PopulationService.marketTownMigrationRunning;
 const originalNextMigrationAt = PopulationService.nextMarketTownMigrationAt;
+const originalExpireStaleMarketStores = PopulationService.expireStaleMarketStores;
+const originalExpiryRunning = PopulationService.marketExpiryCleanupRunning;
+const originalNextExpiryAt = PopulationService.nextMarketExpiryCleanupAt;
 let migrationCalls = 0;
+let expiryCalls = 0;
 PopulationService.migrateLegacyMarketTowns = () => {
     migrationCalls++;
     return Promise.resolve([]);
 };
 PopulationService.marketTownMigrationRunning = false;
 PopulationService.nextMarketTownMigrationAt = 0;
+PopulationService.expireStaleMarketStores = () => {
+    expiryCalls++;
+    return Promise.resolve([]);
+};
+PopulationService.marketExpiryCleanupRunning = false;
+PopulationService.nextMarketExpiryCleanupAt = 0;
 Promise.resolve()
     .then(() => PopulationService.maybeMigrateLegacyMarketTowns(1000))
     .then(() => PopulationService.maybeMigrateLegacyMarketTowns(1001))
     .then(() => PopulationService.maybeMigrateLegacyMarketTowns(11000))
+    .then(() => PopulationService.maybeExpireStaleMarketStores(1000))
+    .then(() => PopulationService.maybeExpireStaleMarketStores(1001))
+    .then(() => PopulationService.maybeExpireStaleMarketStores(11000))
     .then(() => {
         assert.strictEqual(migrationCalls, 2, 'the post-resolve migration fallback must run initially and then respect its cadence');
+        assert.strictEqual(expiryCalls, 2, 'the post-resolve expiry cleanup must run initially and then respect its cadence');
         console.log('Bot market town routing checks passed');
     })
     .catch((err) => {
@@ -234,4 +248,7 @@ Promise.resolve()
         PopulationService.migrateLegacyMarketTowns = originalMigrateLegacyMarketTowns;
         PopulationService.marketTownMigrationRunning = originalMigrationRunning;
         PopulationService.nextMarketTownMigrationAt = originalNextMigrationAt;
+        PopulationService.expireStaleMarketStores = originalExpireStaleMarketStores;
+        PopulationService.marketExpiryCleanupRunning = originalExpiryRunning;
+        PopulationService.nextMarketExpiryCleanupAt = originalNextExpiryAt;
     });
