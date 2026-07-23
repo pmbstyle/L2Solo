@@ -6,6 +6,7 @@ const Actor = invoke('GameServer/Actor/Actor');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const ChangeClass = invoke('GameServer/World/Generics/NpcBypasses/ChangeClass');
+const ClassTransfer = invoke('GameServer/ClassTransfer');
 
 DataCache.init();
 
@@ -13,6 +14,22 @@ const thirdClassTrees = DataCache.skillTree.filter((tree) => tree.classId >= 88 
 assert.strictEqual(thirdClassTrees.length, 31, 'all C4 third-class skill trees must be present');
 assert.strictEqual(DataCache.classTemplates.filter((template) => template.classId >= 88 && template.classId <= 118).length, 31, 'all C4 third classes must have login templates');
 assert.ok(thirdClassTrees.every((tree) => tree.skills.every((skill) => DataCache.skills.some((definition) => definition.selfId === skill.selfId))), 'every third-class tree skill must have a loaded definition');
+
+const firstProfessionRoutes = [
+    [0, 1], [0, 4], [0, 7], [10, 11], [10, 15],
+    [18, 19], [18, 22], [25, 26], [25, 29],
+    [31, 32], [31, 35], [38, 39], [38, 42],
+    [44, 45], [44, 47], [49, 50], [53, 54], [53, 56]
+];
+firstProfessionRoutes.forEach(([from, target]) => {
+    assert.ok(DataCache.classTemplates.some((template) => template.classId === target), `class ${target} needs a login template`);
+    assert.ok(DataCache.skillTree.some((tree) => tree.classId === target), `class ${target} needs a skill tree`);
+    assert.deepStrictEqual(
+        ClassTransfer.eligibility({ fetchClassId: () => from, isDead: () => false }, target, { firstProfessionOnly: true }).ok,
+        true,
+        `${from} -> ${target} must remain a valid first-profession quest result`
+    );
+});
 
 let storedSkills = [{ selfId: 194, level: 1, passive: true }];
 Database.updateCharacterClassId = (id, classId) => {
@@ -94,6 +111,22 @@ function createSession({ level = 20, classId = 0 } = {}) {
     assert.ok(session.packets.some((packet) => packet[0] === 0x0e), 'class change should send StatusUpdate');
     assert.ok(session.packets.some((packet) => packet[0] === 0x03), 'class change should refresh the character class for nearby clients');
     assert.strictEqual(session.packets.at(-1)[0], 0x0f, 'class change success should render NPC HTML without htmlPacket');
+
+    const questFinishSession = createSession({ level: 20, classId: 0 });
+    const profession = await ClassTransfer.transfer(questFinishSession, 1, { firstProfessionOnly: true });
+    assert.deepStrictEqual(
+        { ok: profession.ok, targetClassId: profession.targetClassId },
+        { ok: true, targetClassId: 1 },
+        'a profession quest final must use the same persisted and client-refreshed class transfer'
+    );
+    assert.strictEqual(questFinishSession.actor.fetchClassId(), 1);
+    assert.ok(questFinishSession.packets.some((packet) => packet[0] === 0x58), 'quest profession transfer must send SkillsList');
+    assert.ok(questFinishSession.packets.some((packet) => packet[0] === 0x04), 'quest profession transfer must send UserInfo');
+    assert.strictEqual(
+        (await ClassTransfer.transfer(createSession({ level: 20, classId: 0 }), 2, { firstProfessionOnly: true })).reason,
+        'wrong_profession',
+        'a quest cannot award a class outside its first-profession branch'
+    );
 
     const incompleteDataSession = createSession({ level: 20, classId: 18 });
     await ChangeClass(incompleteDataSession, ['change-class', '22', 'Elven', 'Scout']);

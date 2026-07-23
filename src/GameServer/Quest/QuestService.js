@@ -6,6 +6,7 @@ const ProgressionRates = invoke("GameServer/ProgressionRates");
 const ExperienceReward = invoke("GameServer/Actor/Generics/ExperienceReward");
 const ConsoleText = invoke("GameServer/ConsoleText");
 const World = invoke("GameServer/World/World");
+const ClassTransfer = invoke("GameServer/ClassTransfer");
 
 const quests = [
   require("./quests/Q001_LettersOfLove"),
@@ -342,6 +343,15 @@ function spawnQuestNpc(state, selfId, options = {}) {
   });
 }
 
+// Profession quests call this only from their verified final hand-in. The
+// shared transfer commits classId and target skills before the quest can mark
+// itself completed, so a database failure cannot consume the final objective.
+function awardFirstProfession(state, targetClassId) {
+  return ClassTransfer.transfer(state?.session, targetClassId, {
+    firstProfessionOnly: true,
+  });
+}
+
 function rewardExpSp(session, exp, sp) {
   const rates = questRates();
   // ExperienceReward owns UI, persistence, and level-up. Counter its normal
@@ -403,6 +413,7 @@ module.exports = {
   removeRadar,
   clearRadars,
   spawnQuestNpc,
+  awardFirstProfession,
   questRates,
   quests: () => quests,
 };
