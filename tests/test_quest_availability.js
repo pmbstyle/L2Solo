@@ -50,4 +50,8 @@ for (const itemId of [1138, 1139, 1140, 1141, 1142, 1143, 1144, 1145, 1161, 1162
   assert(itemIds.has(itemId), `Q401 requires missing quest item ${itemId}`);
 }
 
+for (const itemId of [1245, 1246, 1247, 1248, 1250, 1251, 1252]) {
+  assert(itemIds.has(itemId), `Q411 requires missing quest item ${itemId}`);
+}
+
 console.log("registered quest NPCs and kill targets are available");

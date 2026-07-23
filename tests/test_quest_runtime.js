@@ -57,6 +57,7 @@ const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
 const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
 const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
 const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
+const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -133,6 +134,8 @@ async function main() {
   assert.strictEqual(Q409.eventNpc("tamato"), 7428);
   assert.strictEqual(Q410.eventNpc("start"), 7329);
   assert.strictEqual(Q410.eventNpc("morte"), 7422);
+  assert.strictEqual(Q411.eventNpc("start"), 7416);
+  assert.strictEqual(Q411.eventNpc("arkenia"), 7419);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -703,6 +706,20 @@ async function main() {
     assert.strictEqual(awardedClassId, 32, "Q410 must award the Palus Knight class");
     assert.strictEqual(questState.completed, true, "Q410 must complete after the coffin hand-in");
     assert.strictEqual(items.get(1244), 1, "Q410 must retain the source Gaze of Abyss reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 31; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q411.onEvent(questState, "start");
+    await Q411.onEvent(questState, "arkenia");
+    await Q411.onEvent(questState, "leikan");
+    setItem(1248, 9); await Q411.onKill(questState, { fetchSelfId: () => 369 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7382 });
+    await Q411.onKill(questState, { fetchSelfId: () => 5036 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7419 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7416 });
+    assert.strictEqual(awardedClassId, 35, "Q411 must award the Assassin class");
+    assert.strictEqual(questState.completed, true, "Q411 must complete after Arkenia's recommendation is returned");
+    assert.strictEqual(items.get(1252), 1, "Q411 must retain the source Iron Heart reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
