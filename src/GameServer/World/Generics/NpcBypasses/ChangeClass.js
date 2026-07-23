@@ -1,97 +1,44 @@
-const Database = invoke('Database');
-const CalculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ServerResponse = invoke('GameServer/Network/Response');
-const ClassProgression = invoke('GameServer/ClassProgression');
+const ClassTransfer = invoke('GameServer/ClassTransfer');
 
 function html(session, body) {
     session.dataSendToMe(ServerResponse.npcHtml(7070, body));
 }
 
-function statusParams(actor) {
-    const d = (value) => Math.round(Number(value) || 0);
-
-    return [
-        { id: 0x01, value: d(actor.fetchLevel()) },
-        { id: 0x09, value: d(actor.fetchHp()) },
-        { id: 0x0a, value: d(actor.fetchMaxHp()) },
-        { id: 0x0b, value: d(actor.fetchMp()) },
-        { id: 0x0c, value: d(actor.fetchMaxMp()) },
-        { id: 0x11, value: d(actor.fetchCollectivePAtk()) },
-        { id: 0x12, value: d(actor.fetchCollectiveAtkSpd()) },
-        { id: 0x13, value: d(actor.fetchCollectivePDef()) },
-        { id: 0x14, value: d(actor.fetchCollectiveEvasion()) },
-        { id: 0x15, value: d(actor.fetchCollectiveAccur()) },
-        { id: 0x16, value: d(actor.fetchCollectiveCritical()) },
-        { id: 0x17, value: d(actor.fetchCollectiveMAtk()) },
-        { id: 0x18, value: d(actor.fetchCollectiveCastSpd()) },
-        { id: 0x19, value: d(actor.fetchCollectiveMDef()) }
-    ];
-}
-
-module.exports = async function(session, parts) {
-    const actor = session.actor;
-    if (!actor || actor.isDead()) return;
-
+module.exports = async function changeClass(session, parts) {
     const targetClassId = Number(parts[1]);
-    if (isNaN(targetClassId)) return;
+    if (!Number.isFinite(targetClassId)) return;
 
-    const currentClassId = actor.fetchClassId();
-    const currentLevel = actor.fetchLevel();
-
-    const { firstProfMap, secondProfMap } = ClassProgression;
-
-    const thirdClass = ClassProgression.getThirdClass(targetClassId);
-
-    let isAllowed = false;
-    let requiredLevel = 20;
-
-    if (firstProfMap[currentClassId] && firstProfMap[currentClassId].includes(targetClassId)) {
-        isAllowed = true;
-        requiredLevel = 20;
-    } else if (secondProfMap[currentClassId] && secondProfMap[currentClassId].includes(targetClassId)) {
-        isAllowed = true;
-        requiredLevel = 40;
-    } else if (thirdClass?.parentClassId === currentClassId) {
-        isAllowed = true;
-        requiredLevel = 76;
+    // Keep ordinary bypass rejections immediate. NpcTalkResponse deliberately
+    // does not await handlers, while the actual persisted transfer remains
+    // asynchronous below.
+    const preflight = ClassTransfer.eligibility(session?.actor, targetClassId);
+    if (!preflight.ok) {
+        if (preflight.reason === 'wrong_profession') {
+            html(session, '<html><body>Gatekeeper Sylvain:<br>This class transfer is not available for your current profession.</body></html>');
+        }
+        return preflight;
+    }
+    if (Number(session.actor.fetchLevel()) < preflight.requiredLevel) {
+        html(session, `<html><body>Gatekeeper Sylvain:<br>You must be at least level <font color="LEVEL">${preflight.requiredLevel}</font> to perform this class transfer.</body></html>`);
+        return { ok: false, reason: 'level', requiredLevel: preflight.requiredLevel };
     }
 
-    if (!isAllowed) {
-        html(session, `<html><body>Gatekeeper Sylvain:<br>This class transfer is not available for your current profession.</body></html>`);
-        return;
+    const result = await ClassTransfer.transfer(session, targetClassId);
+    if (!result.ok) {
+        if (result.reason === 'level') {
+            html(session, `<html><body>Gatekeeper Sylvain:<br>You must be at least level <font color="LEVEL">${result.requiredLevel}</font> to perform this class transfer.</body></html>`);
+        } else if (result.reason === 'wrong_profession') {
+            html(session, '<html><body>Gatekeeper Sylvain:<br>This class transfer is not available for your current profession.</body></html>');
+        } else if (result.reason === 'persistence') {
+            html(session, '<html><body>Gatekeeper Sylvain:<br>The class transfer could not be completed. Your previous profession was restored.</body></html>');
+        }
+        return result;
     }
 
-    if (currentLevel < requiredLevel) {
-        html(session, `<html><body>Gatekeeper Sylvain:<br>You must be at least level <font color="LEVEL">${requiredLevel}</font> to perform this class transfer. You are currently level ${currentLevel}.</body></html>`);
-        return;
-    }
-
-    // Execute class change
-    actor.setClassId(targetClassId);
-
-    try {
-        await Database.updateCharacterClassId(actor.fetchId(), targetClassId);
-        await actor.skillset.awardSkills(actor.fetchId(), targetClassId, currentLevel);
-        CalculateStats(session, actor);
-        actor.fillupVitals();
-
-        // Send social effect (Social ID 15 is Level Up, very shiny and appropriate)
-        session.dataSendToMeAndOthers(ServerResponse.socialAction(actor.fetchId(), 15), actor);
-        session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
-        session.dataSendToMe(ServerResponse.userInfo(actor));
-        session.dataSendToMe(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));
-        session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
-
-        // Notify
-        const className = parts.slice(2).join(' ') || 'new profession';
-        const html = `<html><body>Gatekeeper Sylvain:<br>Congratulations! You have successfully advanced your path and became a <font color="LEVEL">${className}</font>!<br><br><a action="bypass -h html 7070">Return</a></body></html>`;
-        session.dataSendToMe(ServerResponse.npcHtml(7070, html));
-    } catch (err) {
-        actor.setClassId(currentClassId);
-        await Database.updateCharacterClassId(actor.fetchId(), currentClassId).catch(() => {});
-        utils.infoWarn('Character', 'class change failed for %s: %s', actor.fetchName(), err.message);
-        html(session, '<html><body>Gatekeeper Sylvain:<br>The class transfer could not be completed. Your previous profession was restored.</body></html>');
-    }
+    const className = parts.slice(2).join(' ') || 'new profession';
+    html(session, `<html><body>Gatekeeper Sylvain:<br>Congratulations! You have successfully advanced your path and became a <font color="LEVEL">${className}</font>!<br><br><a action="bypass -h html 7070">Return</a></body></html>`);
+    return result;
 };
 
-module.exports.statusParams = statusParams;
+module.exports.statusParams = ClassTransfer.statusParams;

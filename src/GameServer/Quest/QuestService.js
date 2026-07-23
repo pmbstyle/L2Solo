@@ -5,6 +5,8 @@ const QuestState = invoke("GameServer/Quest/QuestState");
 const ProgressionRates = invoke("GameServer/ProgressionRates");
 const ExperienceReward = invoke("GameServer/Actor/Generics/ExperienceReward");
 const ConsoleText = invoke("GameServer/ConsoleText");
+const World = invoke("GameServer/World/World");
+const ClassTransfer = invoke("GameServer/ClassTransfer");
 
 const quests = [
   require("./quests/Q001_LettersOfLove"),
@@ -17,27 +19,10 @@ const quests = [
   require("./quests/Q008_AnAdventureBegins"),
   require("./quests/Q009_IntoTheCityOfHumans"),
   require("./quests/Q010_IntoTheWorld"),
-  require("./quests/Q011_SecretMeetingWithKetraOrcs"),
-  require("./quests/Q012_SecretMeetingWithVarkaSilenos"),
-  require("./quests/Q013_ParcelDelivery"),
-  require("./quests/Q014_WhereaboutsOfTheArchaeologist"),
-  require("./quests/Q015_SweetWhispers"),
-  require("./quests/Q016_TheComingDarkness"),
-  require("./quests/Q017_LightAndDarkness"),
-  require("./quests/Q018_MeetingWithTheGoldenRam"),
-  require("./quests/Q019_GoToThePastureland"),
-  require("./quests/Q031_SecretBuriedInTheSwamp"),
-  require("./quests/Q032_AnObviousLie"),
-  require("./quests/Q033_MakeAPairOfDressShoes"),
   require("./quests/Q034_InSearchOfCloth"),
-  require("./quests/Q035_FindGlitteringJewelry"),
   require("./quests/Q036_MakeASewingKit"),
-  require("./quests/Q037_MakeFormalWear"),
-  require("./quests/Q038_DragonFangs"),
-  require("./quests/Q039_RedEyedInvaders"),
   require("./quests/Q042_HelpTheUncle"),
   require("./quests/Q043_HelpTheSister"),
-  require("./quests/Q044_HelpTheSon"),
   require("./quests/Q045_ToTalkingIsland"),
   require("./quests/Q046_OnceMoreInTheArmsOfTheMotherTree"),
   require("./quests/Q047_IntoTheDarkForest"),
@@ -71,6 +56,24 @@ const quests = [
   require("./quests/Q168_DeliverSupplies"),
   require("./quests/Q169_OffspringOfNightmares"),
   require("./quests/Q170_DangerousSeduction"),
+  require("./quests/Q401_PathToWarrior"),
+  require("./quests/Q402_PathToKnight"),
+  require("./quests/Q403_PathToRogue"),
+  require("./quests/Q404_PathToWizard"),
+  require("./quests/Q405_PathToCleric"),
+  require("./quests/Q406_PathToElvenKnight"),
+  require("./quests/Q407_PathToElvenScout"),
+  require("./quests/Q408_PathToElvenWizard"),
+  require("./quests/Q409_PathToElvenOracle"),
+  require("./quests/Q410_PathToPalusKnight"),
+  require("./quests/Q411_PathToAssassin"),
+  require("./quests/Q412_PathToDarkWizard"),
+  require("./quests/Q413_PathToShillienOracle"),
+  require("./quests/Q414_PathToOrcRaider"),
+  require("./quests/Q415_PathToOrcMonk"),
+  require("./quests/Q416_PathToOrcShaman"),
+  require("./quests/Q417_PathToScavenger"),
+  require("./quests/Q418_PathToArtisan"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 
@@ -260,8 +263,14 @@ async function giveItem(session, selfId, amount) {
 
 async function takeItem(session, selfId, amount = 1) {
   const item = session.actor.backpack.fetchItemFromSelfId(selfId);
-  if (!item || item.fetchAmount() < amount) return false;
-  const remaining = item.fetchAmount() - amount;
+  if (!item) return false;
+  // L2J's QuestState.takeItems(id, -1) consumes the entire stack. Several
+  // source-backed quest hand-ins use that sentinel; subtracting -1 would
+  // silently duplicate a quest item instead of clearing it.
+  const requested = Number(amount) === -1 ? item.fetchAmount() : Number(amount);
+  if (!Number.isFinite(requested) || requested <= 0 || item.fetchAmount() < requested)
+    return false;
+  const remaining = item.fetchAmount() - requested;
   if (remaining > 0) {
     await Database.updateItemAmount(
       session.actor.fetchId(),
@@ -300,6 +309,67 @@ function questDropAmount(amount, needed, current) {
   return Math.min(scaled, needed - current);
 }
 
+function waypointKey(locX, locY, locZ) {
+  return `${Number(locX)}:${Number(locY)}:${Number(locZ)}`;
+}
+
+// Source QuestState.addRadar sends an arming packet followed by a visible
+// waypoint marker. Keep the marker session-local; it is client UI state, not
+// durable quest progress.
+function addRadar(session, locX, locY, locZ) {
+  const coords = [locX, locY, locZ].map(Number);
+  if (!session?.dataSendToMe || !coords.every(Number.isFinite)) return false;
+  const key = waypointKey(...coords);
+  session.questWaypoints ||= new Map();
+  session.questWaypoints.set(key, coords);
+  session.dataSendToMe(ServerResponse.radarControl(2, 2, ...coords));
+  session.dataSendToMe(ServerResponse.radarControl(0, 1, ...coords));
+  return true;
+}
+
+function removeRadar(session, locX, locY, locZ) {
+  const coords = [locX, locY, locZ].map(Number);
+  if (!session?.dataSendToMe || !coords.every(Number.isFinite)) return false;
+  session.questWaypoints?.delete(waypointKey(...coords));
+  session.dataSendToMe(ServerResponse.radarControl(1, 1, ...coords));
+  return true;
+}
+
+function clearRadars(session) {
+  const waypoints = [...(session?.questWaypoints?.values() || [])];
+  waypoints.forEach((coords) => removeRadar(session, ...coords));
+  return waypoints.length;
+}
+
+// Mirrors the source QuestState.addSpawn default: spawn at the player's
+// location, with no automatic despawn unless a quest explicitly requests it.
+function spawnQuestNpc(state, selfId, options = {}) {
+  const actor = state?.session?.actor;
+  if (!actor?.fetchId) return null;
+  const locX = options.locX ?? actor.fetchLocX?.();
+  const locY = options.locY ?? actor.fetchLocY?.();
+  const locZ = options.locZ ?? actor.fetchLocZ?.();
+  return World.spawnQuestNpc({
+    selfId,
+    locX,
+    locY,
+    locZ,
+    head: options.head ?? actor.fetchHead?.() ?? 0,
+    ownerId: actor.fetchId(),
+    questId: state.quest?.id,
+    despawnDelay: options.despawnDelay ?? 0,
+  });
+}
+
+// Profession quests call this only from their verified final hand-in. The
+// shared transfer commits classId and target skills before the quest can mark
+// itself completed, so a database failure cannot consume the final objective.
+function awardFirstProfession(state, targetClassId) {
+  return ClassTransfer.transfer(state?.session, targetClassId, {
+    firstProfessionOnly: true,
+  });
+}
+
 function rewardExpSp(session, exp, sp) {
   const rates = questRates();
   // ExperienceReward owns UI, persistence, and level-up. Counter its normal
@@ -315,9 +385,13 @@ function rewardExpSp(session, exp, sp) {
 async function onKill(session, npc) {
   return mutate(session, async () => {
     await ensureLoaded(session);
+    const ownerId = Number(npc.questSpawn?.ownerId) || 0;
+    if (ownerId && ownerId !== Number(session.actor.fetchId())) return;
+    const spawnedQuestId = Number(npc.questSpawn?.questId) || 0;
     const before = activeQuestSnapshot(session);
     const npcId = Number(npc.fetchSelfId());
     for (const quest of quests) {
+      if (spawnedQuestId && spawnedQuestId !== quest.id) continue;
       if (!quest.killNpcs?.includes(npcId)) continue;
       const state = states(session).get(quest.id);
       if (state?.isStarted()) await quest.onKill(state, npc);
@@ -353,6 +427,11 @@ module.exports = {
   rewardAdena,
   rewardExpSp,
   questDropAmount,
+  addRadar,
+  removeRadar,
+  clearRadars,
+  spawnQuestNpc,
+  awardFirstProfession,
   questRates,
   quests: () => quests,
 };

@@ -47,6 +47,24 @@ const Q152 = require("../src/GameServer/Quest/quests/Q152_ShardsOfGolem");
 const Q159 = require("../src/GameServer/Quest/quests/Q159_ProtectTheWaterSource");
 const Q162 = require("../src/GameServer/Quest/quests/Q162_CurseOfTheUndergroundFortress");
 const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
+const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
+const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
+const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
+const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
+const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
+const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
+const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
+const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
+const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
+const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
+const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
+const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
+const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle");
+const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
+const Q415 = require("../src/GameServer/Quest/quests/Q415_PathToOrcMonk");
+const Q416 = require("../src/GameServer/Quest/quests/Q416_PathToOrcShaman");
+const Q417 = require("../src/GameServer/Quest/quests/Q417_PathToScavenger");
+const Q418 = require("../src/GameServer/Quest/quests/Q418_PathToArtisan");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -100,6 +118,43 @@ async function main() {
   assert.strictEqual(Q104.eventNpc("start"), 7017);
   assert.strictEqual(Q157.eventNpc("start"), 7005);
   assert.strictEqual(Q160.eventNpc("start"), 7370);
+  assert.strictEqual(Q401.eventNpc("start"), 7010);
+  assert.strictEqual(Q401.eventNpc("guild"), 7253);
+  assert.strictEqual(Q401.eventNpc("forge"), 7010);
+  assert.strictEqual(Q402.eventNpc("start"), 7417);
+  assert.strictEqual(Q402.eventNpc("aron"), 7332);
+  assert.strictEqual(Q402.eventNpc("herod"), 7031);
+  assert.strictEqual(Q403.eventNpc("start"), 7379);
+  assert.strictEqual(Q403.eventNpc("neti"), 7425);
+  assert.strictEqual(Q404.eventNpc("start"), 7391);
+  assert.strictEqual(Q404.eventNpc("feather"), 7410);
+  assert.strictEqual(Q405.eventNpc("start"), 7022);
+  assert.strictEqual(Q406.eventNpc("start"), 7327);
+  assert.strictEqual(Q406.eventNpc("kluto"), 7317);
+  assert.strictEqual(Q407.eventNpc("start"), 7328);
+  assert.strictEqual(Q407.eventNpc("moretti"), 7337);
+  assert.strictEqual(Q408.eventNpc("start"), 7414);
+  assert.strictEqual(Q408.eventNpc("grain"), 7157);
+  assert.strictEqual(Q408.eventNpc("sap"), 7371);
+  assert.strictEqual(Q409.eventNpc("start"), 7293);
+  assert.strictEqual(Q409.eventNpc("lizardmen"), 7424);
+  assert.strictEqual(Q409.eventNpc("tamato"), 7428);
+  assert.strictEqual(Q410.eventNpc("start"), 7329);
+  assert.strictEqual(Q410.eventNpc("morte"), 7422);
+  assert.strictEqual(Q411.eventNpc("start"), 7416);
+  assert.strictEqual(Q411.eventNpc("arkenia"), 7419);
+  assert.strictEqual(Q412.eventNpc("start"), 7421);
+  assert.strictEqual(Q412.eventNpc("key"), 7415);
+  assert.strictEqual(Q413.eventNpc("start"), 7330);
+  assert.strictEqual(Q413.eventNpc("sheets"), 7377);
+  assert.strictEqual(Q414.eventNpc("start"), 7570);
+  assert.strictEqual(Q415.eventNpc("start"), 7587);
+  assert.strictEqual(Q416.eventNpc("start"), 7585);
+  assert.strictEqual(Q416.eventNpc("net"), 7593);
+  assert.strictEqual(Q417.eventNpc("start"), 7524);
+  assert.strictEqual(Q417.eventNpc("mion"), 7519);
+  assert.strictEqual(Q418.eventNpc("start"), 7527);
+  assert.strictEqual(Q418.eventNpc("letter"), 7317);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -181,12 +236,41 @@ async function main() {
   const originalTake = QuestService.takeItem;
   const originalGive = QuestService.giveItem;
   const originalRewardAdena = QuestService.rewardAdena;
+  const originalAwardFirstProfession = QuestService.awardFirstProfession;
   const calls = [];
   QuestService.takeItem = async (_, itemId) => calls.push(["take", itemId]);
   QuestService.giveItem = async (_, itemId, amount) =>
     calls.push(["give", itemId, amount]);
   QuestService.rewardAdena = async (_, amount) => calls.push(["adena", amount]);
   try {
+    let q002Condition = 1;
+    const q002State = {
+      session: { actor: { fetchLevel: () => 2, fetchRace: () => 1 } },
+      isCompleted: () => false,
+      isStarted: () => true,
+      getInt: () => q002Condition,
+      set: async (key, value) => {
+        assert.strictEqual(key, "cond");
+        q002Condition = Number(value);
+      },
+      playSound: (sound) => calls.push(["sound", sound]),
+    };
+    await Q002.onTalk(q002State, { fetchSelfId: () => 7146 });
+    await Q002.onTalk(q002State, { fetchSelfId: () => 7150 });
+    assert.deepStrictEqual(
+      calls,
+      [
+        ["take", 1092],
+        ["give", 1093, 1],
+        ["sound", "ItemSound.quest_middle"],
+        ["take", 1093],
+        ["give", 1094, 1],
+        ["sound", "ItemSound.quest_middle"],
+      ],
+      "Q002 must replace the gatekeeper letter and issue Herbiel's church letter",
+    );
+    calls.length = 0;
+
     let completed = false;
     await Q001.onTalk(
       {
@@ -210,10 +294,591 @@ async function main() {
       ],
       "Q001 must grant one unscaled Necklace of Knowledge and the completion sound",
     );
+
+    calls.length = 0;
+    const items = new Map();
+    let equippedWeapon = 0;
+    let classId = 0;
+    const setItem = (id, amount) => items.set(id, Math.max(0, amount));
+    const questState = {
+      session: {
+        actor: {
+          fetchClassId: () => classId,
+          fetchLevel: () => 20,
+          backpack: {
+            fetchItemFromSelfId: (id) => {
+              const amount = items.get(id) || 0;
+              return amount ? { fetchAmount: () => amount } : null;
+            },
+            fetchPaperdollSelfId: () => equippedWeapon,
+          },
+        },
+      },
+      isStarted: () => questState.started,
+      isCompleted: () => questState.completed,
+      started: false,
+      completed: false,
+      cond: 0,
+      values: {},
+      getInt: (key) => key === "cond" ? questState.cond : Number(questState.values[key]) || 0,
+      setState: async () => { questState.started = true; },
+      set: async (key, value) => { if (key === "cond") questState.cond = Number(value); else questState.values[key] = value; },
+      exit: async () => { questState.completed = true; },
+      playSound: (sound) => calls.push(["sound", sound]),
+    };
+    QuestService.giveItem = async (_, id, amount) => setItem(id, (items.get(id) || 0) + amount);
+    QuestService.takeItem = async (_, id, amount = 1) => {
+      const current = items.get(id) || 0;
+      const remove = amount === -1 ? current : amount;
+      if (current < remove) return false;
+      setItem(id, current - remove);
+      return true;
+    };
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 1 });
+    await Q401.onEvent(questState, "start");
+    assert.strictEqual(items.get(1138), 1, "Q401 must issue Auron's Letter");
+    await Q401.onEvent(questState, "guild");
+    assert.strictEqual(items.get(1139), 1, "Q401 must issue the Warrior Guild Mark");
+    setItem(1140, 9);
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q401.onKill(questState, { fetchSelfId: () => 35 });
+    } finally {
+      Math.random = originalRandom;
+    }
+    assert.strictEqual(items.get(1140), 10, "Q401 must drop the tenth rusted sword from a Tracker Skeleton");
+    assert.strictEqual(questState.cond, 3, "Q401 must advance when all ten rusted swords are collected");
+    await Q401.onTalk(questState, { fetchSelfId: () => 7253 });
+    assert.strictEqual(items.get(1143), 1, "Q401 must issue Simplon's Letter after the sword hand-in");
+    await Q401.onEvent(questState, "forge");
+    assert.strictEqual(items.get(1142), 1, "Q401 must issue the equipped Rusted Bronze Sword");
+    setItem(1144, 19);
+    await Q401.onKill(questState, { fetchSelfId: () => 38 });
+    assert.strictEqual(items.get(1144), 19, "Q401 must not drop spider legs while the Rusted Bronze Sword is unequipped");
+    equippedWeapon = 1142;
+    await Q401.onKill(questState, { fetchSelfId: () => 38 });
+    assert.strictEqual(items.get(1144), 20, "Q401 must drop spider legs with the Rusted Bronze Sword equipped");
+    await Q401.onTalk(questState, { fetchSelfId: () => 7010 });
+    assert.strictEqual(questState.completed, true, "Q401 must complete after the final spider-leg hand-in");
+    assert.strictEqual(items.get(1145), 1, "Q401 must retain the source Medallion of Warrior reward");
+    assert.strictEqual(items.get(1144), 0, "Q401 must consume all collected Poison Spider's Legs");
+    assert.strictEqual(items.get(1142), 0, "Q401 must consume the Rusted Bronze Sword");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 4 });
+    await Q402.onEvent(questState, "start");
+    assert.strictEqual(items.get(1271), 1, "Q402 must issue the Mark of Esquire");
+    const knightAssignments = [
+      ["aron", 7332, 1169, 10, 1162],
+      ["collin", 7289, 1171, 12, 1163],
+      ["kyle", 7379, 1173, 20, 1164],
+      ["drystan", 7037, 1175, 20, 1165],
+      ["jeremy", 7039, 1177, 20, 1166],
+      ["herod", 7031, 1179, 10, 1167],
+    ];
+    for (const [event, npcId, trophy, needed, coin] of knightAssignments) {
+      await Q402.onEvent(questState, event);
+      if (event === "drystan") {
+        setItem(trophy, needed - 1);
+        const originalRandom = Math.random;
+        Math.random = () => 0;
+        try {
+          await Q402.onKill(questState, { fetchSelfId: () => 24 });
+        } finally {
+          Math.random = originalRandom;
+        }
+        assert.strictEqual(items.get(trophy), needed, "Q402 must drop the final Lizardman Totem from its source mob");
+      } else if (event === "jeremy") {
+        setItem(trophy, needed - 1);
+        const originalRandom = Math.random;
+        Math.random = () => 0.5;
+        try {
+          await Q402.onKill(questState, { fetchSelfId: () => 103 });
+          assert.strictEqual(items.get(trophy), needed - 1, "Q402 must preserve the source 40% Giant Spider Husk drop chance");
+          Math.random = () => 0;
+          await Q402.onKill(questState, { fetchSelfId: () => 103 });
+        } finally {
+          Math.random = originalRandom;
+        }
+        assert.strictEqual(items.get(trophy), needed, "Q402 must collect the final Giant Spider Husk on a successful roll");
+      } else setItem(trophy, needed);
+      await Q402.onTalk(questState, { fetchSelfId: () => npcId });
+      assert.strictEqual(items.get(coin), 1, `Q402 must exchange ${event}'s trophies for its Coin of Lords`);
+    }
+    await Q402.onTalk(questState, { fetchSelfId: () => 7417 });
+    assert.strictEqual(questState.completed, true, "Q402 must complete after all six Coins of Lords are returned");
+    assert.strictEqual(items.get(1161), 1, "Q402 must retain the source Sword of Ritual reward");
+    assert.strictEqual(items.get(1271), 0, "Q402 must consume the Mark of Esquire at completion");
+    assert.deepStrictEqual([1162, 1163, 1164, 1165, 1166, 1167].map((id) => items.get(id) || 0), [0, 0, 0, 0, 0, 0], "Q402 must consume every Coin of Lords");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    equippedWeapon = 0;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 7 });
+    await Q403.onEvent(questState, "start");
+    assert.strictEqual(items.get(1180), 1, "Q403 must issue Bezique's Letter");
+    await Q403.onEvent(questState, "neti");
+    assert.strictEqual(items.get(1181), 1, "Q403 must issue Neti's Bow");
+    assert.strictEqual(items.get(1182), 1, "Q403 must issue Neti's Dagger");
+    setItem(1183, 9);
+    equippedWeapon = 1181;
+    const originalRandomForRogue = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q403.onKill(questState, { fetchSelfId: () => 54 });
+    } finally {
+      Math.random = originalRandomForRogue;
+    }
+    assert.strictEqual(items.get(1183), 10, "Q403 must drop the tenth Spartoi Bone with Neti's weapon equipped");
+    assert.strictEqual(questState.cond, 3, "Q403 must advance after all Spartoi Bones are collected");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7425 });
+    assert.strictEqual(items.get(1184), 1, "Q403 must exchange bones for the Horseshoe of Light");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7379 });
+    assert.strictEqual(items.get(1185), 1, "Q403 must issue the Wanted Bill after the Horseshoe hand-in");
+    const stolenRolls = [0, 0, 0.25, 0.5, 0.75];
+    for (const roll of stolenRolls) {
+      const originalRandom = Math.random;
+      Math.random = () => roll;
+      try {
+        await Q403.onKill(questState, { fetchSelfId: () => 5038 });
+      } finally {
+        Math.random = originalRandom;
+      }
+    }
+    assert.deepStrictEqual([1186, 1187, 1188, 1189].map((id) => items.get(id) || 0), [1, 1, 1, 1], "Q403 must award each stolen item only when Cat's Eye Bandit's source roll selects it");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7379 });
+    assert.strictEqual(questState.completed, true, "Q403 must complete after all stolen items are returned");
+    assert.strictEqual(items.get(1190), 1, "Q403 must retain Bezique's Recommendation as the source reward");
+    assert.strictEqual(items.get(1185), 0, "Q403 must consume the Wanted Bill at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 10;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 11 });
+    await Q404.onEvent(questState, "start");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7411 });
+    assert.strictEqual(items.get(1280), 1, "Q404 must issue the Map of Luster");
+    await Q404.onKill(questState, { fetchSelfId: () => 359 });
+    assert.strictEqual(items.get(1281), 1, "Q404 must drop the Key of Flame from Ratman Warriors");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7411 });
+    assert.strictEqual(items.get(1282), 1, "Q404 must exchange the fire proof for the Flame Earring");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7412 });
+    assert.strictEqual(items.get(1283), 1, "Q404 must issue the Broken Bronze Mirror");
+    await Q404.onEvent(questState, "feather");
+    assert.strictEqual(items.get(1284), 1, "Q404 must issue the Wind Feather after the mirror dialogue");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7412 });
+    assert.strictEqual(items.get(1285), 1, "Q404 must exchange the wind proof for the Wind Bangle");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7413 });
+    assert.strictEqual(items.get(1286), 1, "Q404 must issue Rama's Diary");
+    await Q404.onKill(questState, { fetchSelfId: () => 5030 });
+    await Q404.onKill(questState, { fetchSelfId: () => 5030 });
+    assert.strictEqual(items.get(1287), 2, "Q404 must collect two Sparkle Pebbles from Water Seers");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7413 });
+    assert.strictEqual(items.get(1288), 1, "Q404 must exchange the water proof for the Water Necklace");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7409 });
+    assert.strictEqual(items.get(1289), 1, "Q404 must issue the Rust Gold Coin");
+    await Q404.onKill(questState, { fetchSelfId: () => 21 });
+    assert.strictEqual(items.get(1290), 1, "Q404 must drop Red Soil from Red Bears");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7409 });
+    assert.strictEqual(items.get(1291), 1, "Q404 must exchange the earth proof for the Earth Ring");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7391 });
+    assert.strictEqual(questState.completed, true, "Q404 must complete after all four elemental signs are returned");
+    assert.strictEqual(items.get(1292), 1, "Q404 must retain the source Bead of Season reward");
+    assert.deepStrictEqual([1282, 1285, 1288, 1291].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q404 must consume every elemental sign at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 10;
+    let awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q405.onEvent(questState, "start");
+    assert.strictEqual(items.get(1191), 1, "Q405 must issue the first Letter of Order");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7253 });
+    assert.strictEqual(items.get(1195), 3, "Q405 must issue all three Books of Simplon");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7030 });
+    assert.strictEqual(items.get(1194), 1, "Q405 must issue the Book of Vivyan");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7333 });
+    assert.strictEqual(items.get(1199), 1, "Q405 must issue the Necklace of Mother");
+    await Q405.onKill(questState, { fetchSelfId: () => 26 });
+    assert.strictEqual(items.get(1198), 1, "Q405 must drop the Pendant of Mother from Ruin Zombies");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7333 });
+    assert.strictEqual(items.get(1196), 1, "Q405 must exchange Praga's pendant and necklace for her book");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7022 });
+    assert.strictEqual(items.get(1192), 1, "Q405 must exchange the three books for the second Letter of Order");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7408 });
+    assert.strictEqual(items.get(1193), 1, "Q405 must issue Lionel's Book");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7017 });
+    assert.strictEqual(items.get(1197), 1, "Q405 must exchange Lionel's Book for Gallint's certificate");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7408 });
+    assert.strictEqual(items.get(1200), 1, "Q405 must exchange Gallint's certificate for Lionel's Covenant");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7022 });
+    assert.strictEqual(awardedClassId, 15, "Q405 must award the Human Cleric class");
+    assert.strictEqual(questState.completed, true, "Q405 must complete after Lionel's Covenant is returned");
+    assert.strictEqual(items.get(1201), 1, "Q405 must retain the source Mark of Faith reward");
+    assert.strictEqual(items.get(1192), 0, "Q405 must consume the second Letter of Order at completion");
+    assert.strictEqual(items.get(1200), 0, "Q405 must consume Lionel's Covenant at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 18;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q406.onEvent(questState, "start");
+    setItem(1205, 19);
+    const originalRandomForKnight = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q406.onKill(questState, { fetchSelfId: () => 35 });
+    } finally {
+      Math.random = originalRandomForKnight;
+    }
+    assert.strictEqual(items.get(1205), 20, "Q406 must drop the final Topaz Piece from the source skeletons");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7327 });
+    assert.strictEqual(items.get(1202), 1, "Q406 must issue Sorius's Letter after the topaz hand-in");
+    await Q406.onEvent(questState, "kluto");
+    assert.strictEqual(items.get(1276), 1, "Q406 must issue Kluto's Memo after accepting his request");
+    setItem(1206, 19);
+    const originalRandomForEmerald = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q406.onKill(questState, { fetchSelfId: () => 782 });
+    } finally {
+      Math.random = originalRandomForEmerald;
+    }
+    assert.strictEqual(items.get(1206), 20, "Q406 must drop the final Emerald Piece from Ol Mahum Novices");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7317 });
+    assert.strictEqual(items.get(1203), 1, "Q406 must exchange both gem sets for Kluto's Box");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7327 });
+    assert.strictEqual(awardedClassId, 19, "Q406 must award the Elven Knight class");
+    assert.strictEqual(questState.completed, true, "Q406 must complete after Kluto's Box is returned");
+    assert.strictEqual(items.get(1204), 1, "Q406 must retain the source Elven Knight Brooch reward");
+    assert.strictEqual(items.get(1203), 0, "Q406 must consume Kluto's Box at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 18;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q407.onEvent(questState, "start");
+    assert.strictEqual(items.get(1207), 1, "Q407 must issue Reisa's Letter");
+    await Q407.onEvent(questState, "moretti");
+    for (let i = 0; i < 4; i += 1) await Q407.onKill(questState, { fetchSelfId: () => 53 });
+    assert.deepStrictEqual([1208, 1209, 1210, 1211].map((id) => items.get(id) || 0), [1, 1, 1, 1], "Q407 must recover each distinct torn letter from Ol Mahum Patrols");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7337 });
+    assert.strictEqual(items.get(1212), 1, "Q407 must exchange the torn letters for Moretti's Herb");
+    assert.strictEqual(items.get(1214), 1, "Q407 must issue Moretti's Letter");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7426 });
+    const originalRandomForScout = Math.random;
+    Math.random = () => 0.9;
+    try {
+      await Q407.onKill(questState, { fetchSelfId: () => 5031 });
+      assert.strictEqual(items.get(1293) || 0, 0, "Q407 must preserve the source 60% Rusted Key drop chance");
+      Math.random = () => 0;
+      await Q407.onKill(questState, { fetchSelfId: () => 5031 });
+    } finally {
+      Math.random = originalRandomForScout;
+    }
+    assert.strictEqual(items.get(1293), 1, "Q407 must drop the Rusted Key from Ol Mahum Sentries");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7426 });
+    assert.strictEqual(items.get(1215), 1, "Q407 must exchange the Rusted Key for Prias's Letter");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7337 });
+    assert.strictEqual(items.get(1216), 1, "Q407 must exchange Prias's Letter for the Honorary Guard");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7328 });
+    assert.strictEqual(awardedClassId, 22, "Q407 must award the Elven Scout class");
+    assert.strictEqual(questState.completed, true, "Q407 must complete after the Honorary Guard is returned");
+    assert.strictEqual(items.get(1217), 1, "Q407 must retain Reisa's Recommendation as the source reward");
+    assert.strictEqual(items.get(1216), 0, "Q407 must consume the Honorary Guard at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 25;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q408.onEvent(questState, "start");
+    assert.strictEqual(items.get(1229), 1, "Q408 must issue the Fertility Peridot");
+    await Q408.onEvent(questState, "ruby");
+    await Q408.onEvent(questState, "grain");
+    setItem(1219, 4);
+    const originalRandomForRuby = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 466 });
+    } finally {
+      Math.random = originalRandomForRuby;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7157 });
+    assert.strictEqual(items.get(1220), 1, "Q408 must exchange Red Down for the Magical Powers Ruby");
+    await Q408.onEvent(questState, "aquamarine");
+    await Q408.onEvent(questState, "sap");
+    setItem(1223, 4);
+    const originalRandomForAquamarine = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 19 });
+    } finally {
+      Math.random = originalRandomForAquamarine;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7371 });
+    assert.strictEqual(items.get(1221), 1, "Q408 must exchange Gold Leaves for the Pure Aquamarine");
+    await Q408.onEvent(questState, "amethyst");
+    await Q408.onTalk(questState, { fetchSelfId: () => 7423 });
+    setItem(1225, 1);
+    const originalRandomForAmethyst = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 47 });
+    } finally {
+      Math.random = originalRandomForAmethyst;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7423 });
+    assert.strictEqual(items.get(1226), 1, "Q408 must exchange Amethysts for the Nobility Amethyst");
+    await Q408.onTalk(questState, { fetchSelfId: () => 7414 });
+    assert.strictEqual(awardedClassId, 26, "Q408 must award the Elven Wizard class");
+    assert.strictEqual(questState.completed, true, "Q408 must complete after all three gems are returned");
+    assert.strictEqual(items.get(1230), 1, "Q408 must retain the source Eternity Diamond reward");
+    assert.deepStrictEqual([1220, 1221, 1226, 1229].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q408 must consume every required gem and the Fertility Peridot");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 25;
+    const spawnedQuestNpcs = [];
+    questState.addSpawn = (selfId) => spawnedQuestNpcs.push(selfId);
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q409.onEvent(questState, "start");
+    assert.strictEqual(items.get(1231), 1, "Q409 must issue the Crystal Medallion");
+    await Q409.onEvent(questState, "lizardmen");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034], "Q409 must spawn Allana's personal lizardman encounter");
+    await Q409.onEvent(questState, "lizardmen");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5032, 5033, 5034], "Q409 must allow the personal lizardman encounter to be retried until the captain order is obtained");
+    await Q409.onKill(questState, { fetchSelfId: () => 5032 });
+    assert.strictEqual(items.get(1234), 1, "Q409 must drop the Lizard Captain Order from the spawned warrior");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7424 });
+    assert.strictEqual(items.get(1236), 1, "Q409 must issue Half of Diary after the lizard encounter");
+    await Q409.onEvent(questState, "tamato");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5032, 5033, 5034, 5035], "Q409 must spawn Tamato as a personal quest encounter");
+    await Q409.onKill(questState, { fetchSelfId: () => 5035 });
+    assert.strictEqual(items.get(1275), 1, "Q409 must drop Tamato's Necklace from the spawned Tamato");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7428 });
+    assert.strictEqual(items.get(1232), 1, "Q409 must exchange Tamato's Necklace for Perrin's money");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7424 });
+    assert.strictEqual(items.get(1233), 1, "Q409 must exchange Half of Diary for Allana's Diary");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7293 });
+    assert.strictEqual(awardedClassId, 29, "Q409 must award the Elven Oracle class");
+    assert.strictEqual(questState.completed, true, "Q409 must complete after the evidence is returned to Manuel");
+    assert.strictEqual(items.get(1235), 1, "Q409 must retain the source Leaf of Oracle reward");
+    assert.deepStrictEqual([1231, 1232, 1233, 1234].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q409 must consume every final hand-in item");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 31;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q410.onEvent(questState, "start");
+    setItem(1238, 12);
+    await Q410.onKill(questState, { fetchSelfId: () => 49 });
+    assert.strictEqual(items.get(1238), 13, "Q410 must collect the thirteenth Lycanthrope Skull");
+    await Q410.onEvent(questState, "skulls");
+    await Q410.onEvent(questState, "morte");
+    setItem(1242, 4);
+    await Q410.onKill(questState, { fetchSelfId: () => 43 });
+    await Q410.onKill(questState, { fetchSelfId: () => 38 });
+    assert.deepStrictEqual([items.get(1242), items.get(1241)], [5, 1], "Q410 must collect both Kalinta trophies");
+    await Q410.onEvent(questState, "coffin");
+    assert.strictEqual(items.get(1243), 1, "Q410 must exchange the trophies for the Coffin of Eternal Rest");
+    await Q410.onTalk(questState, { fetchSelfId: () => 7329 });
+    assert.strictEqual(awardedClassId, 32, "Q410 must award the Palus Knight class");
+    assert.strictEqual(questState.completed, true, "Q410 must complete after the coffin hand-in");
+    assert.strictEqual(items.get(1244), 1, "Q410 must retain the source Gaze of Abyss reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 31; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q411.onEvent(questState, "start");
+    await Q411.onEvent(questState, "arkenia");
+    await Q411.onEvent(questState, "leikan");
+    setItem(1248, 9); await Q411.onKill(questState, { fetchSelfId: () => 369 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7382 });
+    await Q411.onKill(questState, { fetchSelfId: () => 5036 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7419 });
+    await Q411.onTalk(questState, { fetchSelfId: () => 7416 });
+    assert.strictEqual(awardedClassId, 35, "Q411 must award the Assassin class");
+    assert.strictEqual(questState.completed, true, "Q411 must complete after Arkenia's recommendation is returned");
+    assert.strictEqual(items.get(1252), 1, "Q411 must retain the source Iron Heart reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 38; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q412.onEvent(questState, "start");
+    await Q412.onEvent(questState, "key"); setItem(1257, 3); await Q412.onTalk(questState, { fetchSelfId: () => 7415 });
+    await Q412.onEvent(questState, "candle"); setItem(1259, 2); await Q412.onTalk(questState, { fetchSelfId: () => 7418 });
+    await Q412.onEvent(questState, "lunacy"); setItem(1260, 3); await Q412.onTalk(questState, { fetchSelfId: () => 7419 });
+    await Q412.onTalk(questState, { fetchSelfId: () => 7421 });
+    assert.strictEqual(awardedClassId, 39, "Q412 must award the Dark Wizard class");
+    assert.strictEqual(questState.completed, true, "Q412 must complete after all four Seeds are returned");
+    assert.strictEqual(items.get(1261), 1, "Q412 must retain the source Jewel of Darkness reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 38; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q413.onEvent(questState, "start");
+    await Q413.onEvent(questState, "sheets");
+    setItem(1263, 1); setItem(1264, 4); await Q413.onKill(questState, { fetchSelfId: () => 776 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7377 });
+    await Q413.onEvent(questState, "mark");
+    setItem(1268, 9); await Q413.onKill(questState, { fetchSelfId: () => 514 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7375 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7330 });
+    assert.strictEqual(awardedClassId, 42, "Q413 must award the Shillien Oracle class");
+    assert.strictEqual(questState.completed, true, "Q413 must complete after both books are returned");
+    assert.strictEqual(items.get(1270), 1, "Q413 must retain the source Orb of Abyss reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 44; awardedClassId = null;
+    const raiderSpawns = [], raiderRadars = [];
+    questState.addSpawn = (selfId) => raiderSpawns.push(selfId);
+    questState.addRadar = (...coords) => raiderRadars.push(["add", ...coords]);
+    questState.removeRadar = (...coords) => raiderRadars.push(["remove", ...coords]);
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q414.onEvent(questState, "start");
+    setItem(1578, 21);
+    const originalRandomForRaider = Math.random; Math.random = () => 0;
+    try { await Q414.onKill(questState, { fetchSelfId: () => 320 }); } finally { Math.random = originalRandomForRaider; }
+    assert.deepStrictEqual(raiderSpawns, [5045], "Q414 must spawn the personal Kuruka Ratman Leader after the source Green Blood roll");
+    setItem(1580, 9); await Q414.onKill(questState, { fetchSelfId: () => 5045 });
+    await Q414.onTalk(questState, { fetchSelfId: () => 7570 });
+    assert.deepStrictEqual(raiderRadars[0], ["add", -16760, 78268, -3480], "Q414 must mark the source Umbar location");
+    await Q414.onKill(questState, { fetchSelfId: () => 5054 }); await Q414.onKill(questState, { fetchSelfId: () => 5054 });
+    await Q414.onTalk(questState, { fetchSelfId: () => 7501 });
+    assert.strictEqual(awardedClassId, 45, "Q414 must award the Orc Raider class");
+    assert.strictEqual(questState.completed, true, "Q414 must complete after both Umbar heads are returned");
+    assert.strictEqual(items.get(1592), 1, "Q414 must retain the source Mark of Raider reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 44; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q415.onEvent(questState, "start"); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1600, 4); await Q415.onKill(questState, { fetchSelfId: () => 479 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1601, 4); await Q415.onKill(questState, { fetchSelfId: () => 478 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1602, 4); await Q415.onKill(questState, { fetchSelfId: () => 415 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    await Q415.onTalk(questState, { fetchSelfId: () => 7587 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 }); await Q415.onTalk(questState, { fetchSelfId: () => 7591 });
+    for (let i = 0; i < 12; i += 1) await Q415.onKill(questState, { fetchSelfId: () => 14 });
+    assert.strictEqual(items.get(1612), 3, "Q415 must cap each fourth-pouch trophy at three");
+    assert.strictEqual(items.get(1608) || 0, 0, "Q415 must require trophies from all four fourth-pouch targets");
+    setItem(1609, 3); setItem(1610, 3); setItem(1611, 3); setItem(1612, 2); await Q415.onKill(questState, { fetchSelfId: () => 14 });
+    await Q415.onTalk(questState, { fetchSelfId: () => 7591 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 });
+    assert.strictEqual(awardedClassId, 47, "Q415 must award the Monk class");
+    assert.strictEqual(questState.completed, true, "Q415 must complete after Kasman receives both scrolls and Toruku's Letter");
+    assert.strictEqual(items.get(1615), 1, "Q415 must retain the source Khavatari Totem reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 49; awardedClassId = null;
+    const shamanSpawns = []; questState.addSpawn = (selfId) => shamanSpawns.push(selfId);
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q416.onEvent(questState, "start"); await Q416.onKill(questState, { fetchSelfId: () => 479 }); await Q416.onKill(questState, { fetchSelfId: () => 478 }); await Q416.onKill(questState, { fetchSelfId: () => 415 });
+    await Q416.onTalk(questState, { fetchSelfId: () => 7585 }); await Q416.onEvent(questState, "claw"); await Q416.onEvent(questState, "letter");
+    await Q416.onTalk(questState, { fetchSelfId: () => 7502 }); setItem(1625, 2); await Q416.onKill(questState, { fetchSelfId: () => 335 }); await Q416.onTalk(questState, { fetchSelfId: () => 7502 });
+    await Q416.onEvent(questState, "net"); setItem(1629, 7); await Q416.onKill(questState, { fetchSelfId: () => 38 });
+    assert.deepStrictEqual(shamanSpawns, [5056], "Q416 must spawn the personal Durka Spirit after the source parasite threshold");
+    await Q416.onKill(questState, { fetchSelfId: () => 5056 }); await Q416.onTalk(questState, { fetchSelfId: () => 7593 }); await Q416.onTalk(questState, { fetchSelfId: () => 7502 });
+    assert.strictEqual(awardedClassId, 50, "Q416 must award the Orc Shaman class");
+    assert.strictEqual(questState.completed, true, "Q416 must complete after Totem Spirit Blood is returned to Umos");
+    assert.strictEqual(items.get(1631), 1, "Q416 must retain the source Mask of Medium reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; questState.values = {}; classId = 53; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    const originalRandomForScavenger = Math.random; Math.random = () => 0;
+    try {
+      await Q417.onEvent(questState, "start");
+      for (let i = 0; i < 3; i += 1) { await Q417.onEvent(questState, "mion"); await Q417.onTalk(questState, { fetchSelfId: () => 7525 }); await Q417.onTalk(questState, { fetchSelfId: () => 7519 }); }
+      await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      setItem(1655, 4); await Q417.onKill(questState, { fetchSelfId: () => 5058, isSpoil: () => true }); await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      setItem(1656, 19); await Q417.onKill(questState, { fetchSelfId: () => 403, isSpoil: () => true }); await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      await Q417.onEvent(questState, "raut"); await Q417.onEvent(questState, "torai"); await Q417.onTalk(questState, { fetchSelfId: () => 7316 });
+    } finally { Math.random = originalRandomForScavenger; }
+    assert.strictEqual(awardedClassId, 54, "Q417 must award the Scavenger class");
+    assert.strictEqual(questState.completed, true, "Q417 must complete after the Succubus Undies are returned");
+    assert.strictEqual(items.get(1642), 1, "Q417 must retain the source Ring of Raven reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; questState.values = {}; classId = 53; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q418.onEvent(questState, "start");
+    setItem(1636, 9); setItem(1637, 2); const originalRandomForArtisan = Math.random; Math.random = () => 0;
+    try { await Q418.onKill(questState, { fetchSelfId: () => 389 }); } finally { Math.random = originalRandomForArtisan; }
+    await Q418.onTalk(questState, { fetchSelfId: () => 7527 }); await Q418.onEvent(questState, "letter"); await Q418.onEvent(questState, "footprint");
+    const originalRandomForBox = Math.random; Math.random = () => 0;
+    try { await Q418.onKill(questState, { fetchSelfId: () => 17 }); } finally { Math.random = originalRandomForBox; }
+    await Q418.onEvent(questState, "box"); await Q418.onTalk(questState, { fetchSelfId: () => 7317 });
+    assert.strictEqual(awardedClassId, 56, "Q418 must award the Artisan class");
+    assert.strictEqual(questState.completed, true, "Q418 must complete after both pass certificates and Secret Box are returned");
+    assert.strictEqual(items.get(1635), 1, "Q418 must retain the source Final Pass Certificate reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
     QuestService.rewardAdena = originalRewardAdena;
+    QuestService.awardFirstProfession = originalAwardFirstProfession;
+  }
+
+  const deleted = [];
+  const allStackItem = {
+    fetchId: () => 41,
+    fetchAmount: () => 7,
+  };
+  const allStackSession = {
+    actor: {
+      fetchId: () => 8,
+      backpack: {
+        items: [allStackItem],
+        fetchItemFromSelfId: () => allStackItem,
+        fetchItems: () => [],
+      },
+    },
+    dataSendToMe: () => {},
+  };
+  const originalDeleteItem = invoke("Database").deleteItem;
+  invoke("Database").deleteItem = async (...args) => deleted.push(args);
+  try {
+    assert.strictEqual(
+      await QuestService.takeItem(allStackSession, 1094, -1),
+      true,
+      "takeItem(-1) must consume an existing quest-item stack",
+    );
+    assert.deepStrictEqual(deleted, [[8, 41]]);
+    assert.deepStrictEqual(allStackSession.actor.backpack.items, []);
+  } finally {
+    invoke("Database").deleteItem = originalDeleteItem;
   }
 }
 
