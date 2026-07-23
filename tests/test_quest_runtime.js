@@ -54,6 +54,7 @@ const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
 const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
 const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
 const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
+const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -122,6 +123,9 @@ async function main() {
   assert.strictEqual(Q406.eventNpc("kluto"), 7317);
   assert.strictEqual(Q407.eventNpc("start"), 7328);
   assert.strictEqual(Q407.eventNpc("moretti"), 7337);
+  assert.strictEqual(Q408.eventNpc("start"), 7414);
+  assert.strictEqual(Q408.eventNpc("grain"), 7157);
+  assert.strictEqual(Q408.eventNpc("sap"), 7371);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -577,6 +581,60 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q407 must complete after the Honorary Guard is returned");
     assert.strictEqual(items.get(1217), 1, "Q407 must retain Reisa's Recommendation as the source reward");
     assert.strictEqual(items.get(1216), 0, "Q407 must consume the Honorary Guard at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 25;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q408.onEvent(questState, "start");
+    assert.strictEqual(items.get(1229), 1, "Q408 must issue the Fertility Peridot");
+    await Q408.onEvent(questState, "ruby");
+    await Q408.onEvent(questState, "grain");
+    setItem(1219, 4);
+    const originalRandomForRuby = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 466 });
+    } finally {
+      Math.random = originalRandomForRuby;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7157 });
+    assert.strictEqual(items.get(1220), 1, "Q408 must exchange Red Down for the Magical Powers Ruby");
+    await Q408.onEvent(questState, "aquamarine");
+    await Q408.onEvent(questState, "sap");
+    setItem(1223, 4);
+    const originalRandomForAquamarine = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 19 });
+    } finally {
+      Math.random = originalRandomForAquamarine;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7371 });
+    assert.strictEqual(items.get(1221), 1, "Q408 must exchange Gold Leaves for the Pure Aquamarine");
+    await Q408.onEvent(questState, "amethyst");
+    await Q408.onTalk(questState, { fetchSelfId: () => 7423 });
+    setItem(1225, 1);
+    const originalRandomForAmethyst = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q408.onKill(questState, { fetchSelfId: () => 47 });
+    } finally {
+      Math.random = originalRandomForAmethyst;
+    }
+    await Q408.onTalk(questState, { fetchSelfId: () => 7423 });
+    assert.strictEqual(items.get(1226), 1, "Q408 must exchange Amethysts for the Nobility Amethyst");
+    await Q408.onTalk(questState, { fetchSelfId: () => 7414 });
+    assert.strictEqual(awardedClassId, 26, "Q408 must award the Elven Wizard class");
+    assert.strictEqual(questState.completed, true, "Q408 must complete after all three gems are returned");
+    assert.strictEqual(items.get(1230), 1, "Q408 must retain the source Eternity Diamond reward");
+    assert.deepStrictEqual([1220, 1221, 1226, 1229].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q408 must consume every required gem and the Fertility Peridot");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
