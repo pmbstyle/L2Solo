@@ -56,6 +56,7 @@ const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
 const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
 const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
 const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
+const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -130,6 +131,8 @@ async function main() {
   assert.strictEqual(Q409.eventNpc("start"), 7293);
   assert.strictEqual(Q409.eventNpc("lizardmen"), 7424);
   assert.strictEqual(Q409.eventNpc("tamato"), 7428);
+  assert.strictEqual(Q410.eventNpc("start"), 7329);
+  assert.strictEqual(Q410.eventNpc("morte"), 7422);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -673,6 +676,33 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q409 must complete after the evidence is returned to Manuel");
     assert.strictEqual(items.get(1235), 1, "Q409 must retain the source Leaf of Oracle reward");
     assert.deepStrictEqual([1231, 1232, 1233, 1234].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q409 must consume every final hand-in item");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 31;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q410.onEvent(questState, "start");
+    setItem(1238, 12);
+    await Q410.onKill(questState, { fetchSelfId: () => 49 });
+    assert.strictEqual(items.get(1238), 13, "Q410 must collect the thirteenth Lycanthrope Skull");
+    await Q410.onEvent(questState, "skulls");
+    await Q410.onEvent(questState, "morte");
+    setItem(1242, 4);
+    await Q410.onKill(questState, { fetchSelfId: () => 43 });
+    await Q410.onKill(questState, { fetchSelfId: () => 38 });
+    assert.deepStrictEqual([items.get(1242), items.get(1241)], [5, 1], "Q410 must collect both Kalinta trophies");
+    await Q410.onEvent(questState, "coffin");
+    assert.strictEqual(items.get(1243), 1, "Q410 must exchange the trophies for the Coffin of Eternal Rest");
+    await Q410.onTalk(questState, { fetchSelfId: () => 7329 });
+    assert.strictEqual(awardedClassId, 32, "Q410 must award the Palus Knight class");
+    assert.strictEqual(questState.completed, true, "Q410 must complete after the coffin hand-in");
+    assert.strictEqual(items.get(1244), 1, "Q410 must retain the source Gaze of Abyss reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
