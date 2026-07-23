@@ -61,6 +61,7 @@ const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
 const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
 const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle");
 const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
+const Q415 = require("../src/GameServer/Quest/quests/Q415_PathToOrcMonk");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -144,6 +145,7 @@ async function main() {
   assert.strictEqual(Q413.eventNpc("start"), 7330);
   assert.strictEqual(Q413.eventNpc("sheets"), 7377);
   assert.strictEqual(Q414.eventNpc("start"), 7570);
+  assert.strictEqual(Q415.eventNpc("start"), 7587);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -773,6 +775,19 @@ async function main() {
     assert.strictEqual(awardedClassId, 45, "Q414 must award the Orc Raider class");
     assert.strictEqual(questState.completed, true, "Q414 must complete after both Umbar heads are returned");
     assert.strictEqual(items.get(1592), 1, "Q414 must retain the source Mark of Raider reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 44; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q415.onEvent(questState, "start"); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1600, 4); await Q415.onKill(questState, { fetchSelfId: () => 479 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1601, 4); await Q415.onKill(questState, { fetchSelfId: () => 478 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    setItem(1602, 4); await Q415.onKill(questState, { fetchSelfId: () => 415 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
+    await Q415.onTalk(questState, { fetchSelfId: () => 7587 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 }); await Q415.onTalk(questState, { fetchSelfId: () => 7591 });
+    setItem(1609, 3); setItem(1610, 3); setItem(1611, 3); setItem(1612, 2); await Q415.onKill(questState, { fetchSelfId: () => 14 });
+    await Q415.onTalk(questState, { fetchSelfId: () => 7591 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 });
+    assert.strictEqual(awardedClassId, 47, "Q415 must award the Monk class");
+    assert.strictEqual(questState.completed, true, "Q415 must complete after Kasman receives both scrolls and Toruku's Letter");
+    assert.strictEqual(items.get(1615), 1, "Q415 must retain the source Khavatari Totem reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
