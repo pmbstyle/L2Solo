@@ -419,6 +419,11 @@ const npcInfo = ServerResponse.npcInfo(fakeNpc());
 assert.strictEqual(npcInfo[0], 0x16);
 assert.ok(npcInfo.length >= 208, 'C4 NpcInfo should include team/collision tail fields');
 
+const deleteObject = ServerResponse.deleteOb(3000001);
+assert.strictEqual(deleteObject[0], 0x12, 'C4 DeleteObject opcode should be 0x12');
+assert.strictEqual(deleteObject.readInt32LE(1), 3000001, 'C4 DeleteObject should include object id');
+assert.strictEqual(deleteObject.readInt32LE(5), 0, 'C4 DeleteObject should include the required zero c2 field');
+
 const charSelectInfo = ServerResponse.charSelectInfo([{
     name: 'C4Tester',
     id: 2000001,
