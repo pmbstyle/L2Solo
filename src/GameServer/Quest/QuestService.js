@@ -5,6 +5,7 @@ const QuestState = invoke("GameServer/Quest/QuestState");
 const ProgressionRates = invoke("GameServer/ProgressionRates");
 const ExperienceReward = invoke("GameServer/Actor/Generics/ExperienceReward");
 const ConsoleText = invoke("GameServer/ConsoleText");
+const World = invoke("GameServer/World/World");
 
 const quests = [
   require("./quests/Q001_LettersOfLove"),
@@ -289,6 +290,58 @@ function questDropAmount(amount, needed, current) {
   return Math.min(scaled, needed - current);
 }
 
+function waypointKey(locX, locY, locZ) {
+  return `${Number(locX)}:${Number(locY)}:${Number(locZ)}`;
+}
+
+// Source QuestState.addRadar sends an arming packet followed by a visible
+// waypoint marker. Keep the marker session-local; it is client UI state, not
+// durable quest progress.
+function addRadar(session, locX, locY, locZ) {
+  const coords = [locX, locY, locZ].map(Number);
+  if (!session?.dataSendToMe || !coords.every(Number.isFinite)) return false;
+  const key = waypointKey(...coords);
+  session.questWaypoints ||= new Map();
+  session.questWaypoints.set(key, coords);
+  session.dataSendToMe(ServerResponse.radarControl(2, 2, ...coords));
+  session.dataSendToMe(ServerResponse.radarControl(0, 1, ...coords));
+  return true;
+}
+
+function removeRadar(session, locX, locY, locZ) {
+  const coords = [locX, locY, locZ].map(Number);
+  if (!session?.dataSendToMe || !coords.every(Number.isFinite)) return false;
+  session.questWaypoints?.delete(waypointKey(...coords));
+  session.dataSendToMe(ServerResponse.radarControl(1, 1, ...coords));
+  return true;
+}
+
+function clearRadars(session) {
+  const waypoints = [...(session?.questWaypoints?.values() || [])];
+  waypoints.forEach((coords) => removeRadar(session, ...coords));
+  return waypoints.length;
+}
+
+// Mirrors the source QuestState.addSpawn default: spawn at the player's
+// location, with no automatic despawn unless a quest explicitly requests it.
+function spawnQuestNpc(state, selfId, options = {}) {
+  const actor = state?.session?.actor;
+  if (!actor?.fetchId) return null;
+  const locX = options.locX ?? actor.fetchLocX?.();
+  const locY = options.locY ?? actor.fetchLocY?.();
+  const locZ = options.locZ ?? actor.fetchLocZ?.();
+  return World.spawnQuestNpc({
+    selfId,
+    locX,
+    locY,
+    locZ,
+    head: options.head ?? actor.fetchHead?.() ?? 0,
+    ownerId: actor.fetchId(),
+    questId: state.quest?.id,
+    despawnDelay: options.despawnDelay ?? 0,
+  });
+}
+
 function rewardExpSp(session, exp, sp) {
   const rates = questRates();
   // ExperienceReward owns UI, persistence, and level-up. Counter its normal
@@ -304,9 +357,13 @@ function rewardExpSp(session, exp, sp) {
 async function onKill(session, npc) {
   return mutate(session, async () => {
     await ensureLoaded(session);
+    const ownerId = Number(npc.questSpawn?.ownerId) || 0;
+    if (ownerId && ownerId !== Number(session.actor.fetchId())) return;
+    const spawnedQuestId = Number(npc.questSpawn?.questId) || 0;
     const before = activeQuestSnapshot(session);
     const npcId = Number(npc.fetchSelfId());
     for (const quest of quests) {
+      if (spawnedQuestId && spawnedQuestId !== quest.id) continue;
       if (!quest.killNpcs?.includes(npcId)) continue;
       const state = states(session).get(quest.id);
       if (state?.isStarted()) await quest.onKill(state, npc);
@@ -342,6 +399,10 @@ module.exports = {
   rewardAdena,
   rewardExpSp,
   questDropAmount,
+  addRadar,
+  removeRadar,
+  clearRadars,
+  spawnQuestNpc,
   questRates,
   quests: () => quests,
 };

@@ -43,6 +43,15 @@ class QuestState {
   playSound(sound) {
     this.session.dataSendToMe(ServerResponse.playSound(sound));
   }
+  addRadar(locX, locY, locZ) {
+    return invoke("GameServer/Quest/QuestService").addRadar(this.session, locX, locY, locZ);
+  }
+  removeRadar(locX, locY, locZ) {
+    return invoke("GameServer/Quest/QuestService").removeRadar(this.session, locX, locY, locZ);
+  }
+  addSpawn(selfId, options = {}) {
+    return invoke("GameServer/Quest/QuestService").spawnQuestNpc(this, selfId, options);
+  }
 
   save() {
     return Database.setCharacterQuest(

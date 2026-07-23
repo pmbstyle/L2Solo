@@ -373,6 +373,12 @@ const World = {
     fetchNpc        : invoke(path.world + 'FetchNpc'),
     spawnNpcs       : invoke(path.world + 'SpawnNpcs'),
     spawnNpc        : invoke(path.world + 'SpawnNpcs').spawnNpc,
+    spawnQuestNpc(options) {
+        return invoke(path.world + 'SpawnNpcs').spawnQuestNpc(this, options);
+    },
+    despawnQuestNpc(npc, sourceSession = null) {
+        return invoke(path.world + 'SpawnNpcs').despawnQuestNpc(this, npc, sourceSession);
+    },
     removeNpc       : invoke(path.world + 'RemoveNpc'),
     npcRewards      : invoke(path.world + 'NpcRewards'),
     npcTalk         : invoke(path.world + 'NpcTalk'),

@@ -4,6 +4,7 @@ const NpcVisibility  = invoke('GameServer/World/NpcVisibility');
 
 function removeNpc(session, npc) {
     const npcId = npc.fetchId();
+    SpawnNpcs.clearQuestSpawn(npc);
     this.npcRewards(session, npc);
 
     // Datapack respawn is measured from the death event, independently of

@@ -1,6 +1,7 @@
 const Npc       = invoke('GameServer/Npc/Npc');
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
+const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 
 const VISIBILITY_RADIUS = 6000;
 
@@ -61,6 +62,63 @@ function spawnNpc(world, definition) {
     return npc;
 }
 
+function templateFor(selfId) {
+    const id = Number(selfId);
+    const template = DataCache.npcs?.find((npc) => Number(npc.selfId) === id);
+    return template ? structuredClone(template) : null;
+}
+
+// Dynamic quest NPCs intentionally have no spawnDefinition: they never enter
+// the ordinary respawn loop. Ownership is checked by QuestService on kill so
+// one player's personal objective cannot advance another player's quest.
+function spawnQuestNpc(world, {
+    selfId,
+    locX,
+    locY,
+    locZ,
+    head = 0,
+    ownerId = 0,
+    questId = 0,
+    despawnDelay = 0
+} = {}) {
+    if (!world?.npc?.spawns || !Number.isFinite(Number(world.npc.nextId))) return null;
+    const template = templateFor(selfId);
+    const coords = { locX: Number(locX), locY: Number(locY), locZ: Number(locZ), head: Number(head) || 0 };
+    if (!template || !Object.values(coords).slice(0, 3).every(Number.isFinite)) return null;
+
+    const npc = createNpc(world, template, coords);
+    npc.questSpawn = {
+        ownerId: Number(ownerId) || 0,
+        questId: Number(questId) || 0,
+        timer: undefined
+    };
+    if (Number(despawnDelay) > 0) {
+        npc.questSpawn.timer = setTimeout(() => despawnQuestNpc(world, npc), Number(despawnDelay));
+    }
+    world.indexSpawnsInGrid?.();
+    notifyNearby(world, npc);
+    return npc;
+}
+
+function clearQuestSpawn(npc) {
+    if (!npc?.questSpawn) return;
+    clearTimeout(npc.questSpawn.timer);
+    npc.questSpawn.timer = undefined;
+}
+
+function despawnQuestNpc(world, npc, sourceSession = null) {
+    if (!world?.npc?.spawns || !npc) return false;
+    const objectId = npc.fetchId?.();
+    if (!world.npc.spawns.some((entry) => entry.fetchId?.() === objectId)) return false;
+
+    clearQuestSpawn(npc);
+    npc.destructor?.(sourceSession || { dataSendToMeAndOthers: () => {}, dataSendToMe: () => {} });
+    NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);
+    world.npc.spawns = world.npc.spawns.filter((entry) => entry.fetchId?.() !== objectId);
+    world.indexSpawnsInGrid?.();
+    return true;
+}
+
 function spawnNpcs() {
     DataCache.npcSpawns.forEach((item) => {
         const bounds = item.bounds;
@@ -95,6 +153,9 @@ function spawnNpcs() {
 
 module.exports = spawnNpcs;
 module.exports.spawnNpc = spawnNpc;
+module.exports.spawnQuestNpc = spawnQuestNpc;
+module.exports.despawnQuestNpc = despawnQuestNpc;
+module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
 module.exports.shouldRespawn = function shouldRespawn(spawn) {
     return Number(spawn?.respawn) > 0;
