@@ -1,3 +1,5 @@
+const ProgressionRates = invoke('GameServer/ProgressionRates');
+
 function number(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -11,6 +13,15 @@ const STARTER_REGIONS = [
     { id: 'dwarf', center: { locX: 108000, locY: -175000 }, radius: 30000 }
 ];
 
+function regionalTargetCounts(targetPopulation) {
+    const base = Math.floor(Math.max(0, number(targetPopulation)) / STARTER_REGIONS.length);
+    const remainder = Math.max(0, number(targetPopulation)) % STARTER_REGIONS.length;
+    return STARTER_REGIONS.reduce((counts, region, index) => ({
+        ...counts,
+        [region.id]: base + (index < remainder ? 1 : 0)
+    }), {});
+}
+
 function distanceSquared(left = {}, right = {}) {
     const dx = number(left.locX) - number(right.locX);
     const dy = number(left.locY) - number(right.locY);
@@ -23,9 +34,21 @@ function isPlaying(state = {}) {
 
 function snapshot(states = []) {
     const playing = states.filter(isPlaying);
-    const population = playing.filter((state) => Number(state.stats?.populationWave || 0) > 0);
+    // Wave pacing deliberately follows hunting bots: a bot that opens a
+    // private store has left its farming spot and should be backfilled there.
+    // The hard cap, however, covers every generated character, including the
+    // ones temporarily selling in town.
+    const population = states.filter((state) => Number(state.stats?.populationWave || 0) > 0);
+    const playingPopulation = playing.filter((state) => Number(state.stats?.populationWave || 0) > 0);
+    const populationByStarterRegion = playingPopulation.reduce((counts, state) => {
+        const region = String(state.stats?.starterRegion || '');
+        if (STARTER_REGIONS.some((entry) => entry.id === region)) {
+            counts[region] = number(counts[region]) + 1;
+        }
+        return counts;
+    }, {});
     const latestWave = population.reduce((highest, state) => Math.max(highest, Number(state.stats?.populationWave || 0)), 0);
-    const latestCohort = population.filter((state) => Number(state.stats?.populationWave || 0) === latestWave);
+    const latestCohort = playingPopulation.filter((state) => Number(state.stats?.populationWave || 0) === latestWave);
     const levelTotal = playing.reduce((sum, state) => sum + Math.max(1, number(state.level, 1)), 0);
     const spots = playing.reduce((counts, state) => {
         if (!state.spotId) return counts;
@@ -35,22 +58,29 @@ function snapshot(states = []) {
 
     return {
         playing: playing.length,
+        playingPopulation: playingPopulation.length,
         averageLevel: playing.length ? levelTotal / playing.length : 0,
         population: population.length,
         latestWave,
         latestCohortAverageLevel: latestCohort.length
             ? latestCohort.reduce((sum, state) => sum + Math.max(1, number(state.level, 1)), 0) / latestCohort.length
             : 0,
+        populationByStarterRegion,
+        hasRegionalPopulation: Object.keys(populationByStarterRegion).length > 0,
         spots,
         hasPopulationSeed: population.length > 0
     };
 }
 
-function nextWave(snapshot = {}) {
+function waveLevelThreshold(multiplier = ProgressionRates.profile().multiplier) {
+    return number(multiplier, 1) >= 50 ? 10 : 5;
+}
+
+function nextWave(snapshot = {}, levelThreshold = waveLevelThreshold()) {
     if (!snapshot.hasPopulationSeed) return 1;
     // Advance exactly one cohort at a time. Legacy/static bots must neither
     // suppress the first wave nor jump several waves on server restart.
-    return snapshot.latestCohortAverageLevel >= 5
+    return snapshot.latestCohortAverageLevel >= levelThreshold
         ? snapshot.latestWave + 1
         : snapshot.latestWave;
 }
@@ -86,32 +116,46 @@ function seedBatchSize(plan = {}, configuredBatch = 1) {
     return Math.max(normalBatch, Number(plan.newBotsNeeded || plan.missing?.length || 0));
 }
 
-function plan(profiles = [], states = [], maxPopulation = 1700, botsPerRace = 30) {
+function plan(profiles = [], states = [], maxPopulation = 1700, botsPerRace = 30, options = {}) {
     const current = snapshot(states);
     const limit = Math.max(0, number(maxPopulation));
-    const wave = nextWave(current);
+    const levelThreshold = waveLevelThreshold(options.progressionMultiplier);
+    const wave = nextWave(current, levelThreshold);
     const eligible = eligibleSpots(profiles, 1);
-    const available = Math.max(0, limit - current.playing);
+    const available = Math.max(0, limit - current.population);
     const plannedSlots = starterSlots(eligible, botsPerRace, wave);
     const targetPopulation = Math.min(limit, STARTER_REGIONS.length * Math.max(0, number(botsPerRace, 30)) * wave);
-    // The hard server cap includes everyone, but legacy/static bots do not
-    // replace the requested 30-per-race generated cohort.
-    const newBotsNeeded = Math.max(0, targetPopulation - current.population);
+    // Static merchant and craft services are outside the generated-population
+    // cap, and do not replace the requested 30-per-race starter cohort.
+    const regionalTargets = regionalTargetCounts(targetPopulation);
+    const regionalMissing = STARTER_REGIONS.reduce((counts, region) => ({
+        ...counts,
+        [region.id]: Math.max(0, number(regionalTargets[region.id]) - number(current.populationByStarterRegion[region.id]))
+    }), {});
+    const newBotsNeeded = current.hasRegionalPopulation
+        ? Object.values(regionalMissing).reduce((sum, count) => sum + number(count), 0)
+        : Math.max(0, targetPopulation - current.population);
     const occupied = { ...current.spots };
     const missing = plannedSlots
         .filter((spot) => {
+            if (current.hasRegionalPopulation && number(regionalMissing[spot.starterRegion]) <= 0) return false;
             const count = number(occupied[spot.id]);
             occupied[spot.id] = count + 1;
-            return count < plannedSlots.filter((candidate) => candidate.id === spot.id).length;
+            const available = count < plannedSlots.filter((candidate) => candidate.id === spot.id).length;
+            if (available && current.hasRegionalPopulation) regionalMissing[spot.starterRegion] -= 1;
+            return available;
         })
         .slice(0, Math.min(available, newBotsNeeded));
 
     return {
         ...current,
         maxPopulation: limit,
+        levelThreshold,
         wave,
         targetPopulation,
         newBotsNeeded,
+        regionalTargets,
+        regionalMissing,
         eligible,
         plannedSlots,
         missing
@@ -122,6 +166,7 @@ module.exports = {
     isPlaying,
     snapshot,
     STARTER_REGIONS,
+    waveLevelThreshold,
     nextWave,
     eligibleSpots,
     starterSlots,

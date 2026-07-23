@@ -412,6 +412,17 @@ function hydrateCache() {
     });
 }
 
+function preserveStarterLootProvenance(previousInventory = {}, observedInventory = {}) {
+    return Object.entries(observedInventory).reduce((inventory, [key, item]) => {
+        const protectedAmount = Math.min(
+            Number(item?.amount || 0),
+            Math.max(0, Number(previousInventory?.[key]?.starterMobLootAmount || 0))
+        );
+        inventory[key] = protectedAmount > 0 ? { ...item, starterMobLootAmount: protectedAmount } : item;
+        return inventory;
+    }, {});
+}
+
 function classProgressionNeeded(state, classId, level) {
     const knownLevel = Number(state.stats?.classProgressionLevel || 0);
     const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
@@ -507,7 +518,7 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
             lastHotAt: phase === 'hot' ? timestamp : state.timing?.lastHotAt || null
         },
         stats: { ...(state.stats || {}), ...observedStats, lastReason: reason },
-        inventory: observedInventory
+        inventory: preserveStarterLootProvenance(state.inventory, observedInventory)
     };
 }
 
@@ -1124,12 +1135,25 @@ const BotLifeState = {
         const inventory = { ...(state.inventory || {}) };
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
+            const amount = Number(item.amount || 0);
+            const kind = item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '';
+            const protectedStarterLoot = Number(item.sourceMobLevel || 0) > 0
+                && Number(item.sourceMobLevel) <= 5
+                && !String(kind).startsWith('Other.Material')
+                ? amount
+                : 0;
+            const nextAmount = Number(inventory[key]?.amount || 0) + amount;
+            const starterMobLootAmount = Math.min(
+                nextAmount,
+                Number(inventory[key]?.starterMobLootAmount || 0) + protectedStarterLoot
+            );
             inventory[key] = {
                 selfId: item.selfId,
                 name: item.name || inventory[key]?.name || itemName(item.selfId),
-                amount: Number(inventory[key]?.amount || 0) + Number(item.amount || 0),
-                kind: item.kind || inventory[key]?.kind || itemTemplate(item.selfId)?.template?.kind || '',
-                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
+                amount: nextAmount,
+                kind,
+                rank: item.rank || inventory[key]?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none',
+                ...(starterMobLootAmount > 0 ? { starterMobLootAmount } : {})
             };
         });
         if (adena > 0) {

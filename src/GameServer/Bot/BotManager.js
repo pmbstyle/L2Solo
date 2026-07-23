@@ -275,17 +275,23 @@ const BotManager = {
             register: (registry) => registry.statusProvider(() => ({ initialized: GoalService.initialized }))
         });
         
-        const bots = [...BOTS_TO_SPAWN.filter((bot) => bot.plan !== 'pk_hunting'), ...MERCHANT_BOTS];
-        console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
+        // Adventurers now belong exclusively to the persistent population
+        // seeder. Keeping the old static starters here doubled the fresh-world
+        // population before wave one had even begun.
+        const bots = [...MERCHANT_BOTS];
+        console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
         
         // Wait 5 seconds after startup to let world finish loading
         setTimeout(() => {
             bots.forEach((botData, idx) => {
                 this.provisionAndSpawn(botData, idx);
             });
-            this.pkEncounterBots = BotPopulation.pkEncounters();
-            this.hydratePkEncounterAnchors().finally(() => {
-                this.startPkEncounterMonitor();
+            // PK encounter profiles were part of the old static population as
+            // well. Do not introduce high-level hunters into a newly seeded
+            // level-one world; they can be reintroduced as a later population
+            // phase with an explicit lifecycle rule.
+            this.pkEncounterBots = [];
+            Promise.resolve().finally(() => {
                 this.startDynamicScalingMonitor();
                 this.startStatusLogMonitor();
                 PopulationService.start();

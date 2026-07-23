@@ -500,7 +500,9 @@ const GeneratedColdSeeder = {
             return chain.then(() => this.ensureCraftServices()).then((services) => ({
                 created: created + services.created,
                 seeded,
-                total: plan.playing + seeded,
+                // `population` includes generated merchants, unlike the
+                // hunting-only count used to pace and backfill each wave.
+                total: plan.population + seeded,
                 limit,
                 targetPopulation: plan.targetPopulation,
                 averageLevel: plan.averageLevel,

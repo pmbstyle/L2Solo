@@ -19,9 +19,9 @@ const DEFAULTS = {
     partyFormationIntervalMs: 45000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,
-    // Start with every level-one hunting sector, then grow in five-level
-    // waves. This is a cap for adventuring bots only; shop services are not
-    // part of the simulated player population.
+    // Start with every level-one hunting sector. Waves open every five levels
+    // at x1-x10, or every ten levels at x50 and above. This is a cap for
+    // generated adventurers only; shop services are not part of it.
     maxPlayingPopulation: 1700,
     starterBotsPerRace: 30,
     generatedColdBatchSize: 50,

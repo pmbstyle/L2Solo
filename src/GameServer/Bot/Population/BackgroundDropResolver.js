@@ -45,7 +45,7 @@ function selectItem(items, rng) {
     return null;
 }
 
-function itemSnapshot(item, amount) {
+function itemSnapshot(item, amount, sourceMobLevel = 0) {
     const template = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId));
     if (!template || template.template?.kind === 'Other.Quest') return null;
     return {
@@ -53,8 +53,14 @@ function itemSnapshot(item, amount) {
         name: item.name || template.template?.name || `Item ${item.selfId}`,
         amount,
         kind: template.template?.kind || '',
-        rank: template.etc?.rank || 'none'
+        rank: template.etc?.rank || 'none',
+        sourceMobLevel: Math.max(0, Number(sourceMobLevel) || 0)
     };
+}
+
+function sourceMobLevel(rewardData, spot) {
+    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(rewardData?.selfId));
+    return Math.max(0, Number(npc?.template?.level || spot?.avgLevel || 0));
 }
 
 function rollForFight({ spot, killerLevel, rng = Math.random, maxItems = 1 } = {}) {
@@ -75,7 +81,7 @@ function rollForFight({ spot, killerLevel, rng = Math.random, maxItems = 1 } = {
         const item = selectItem(group.items, rng);
         if (!item || Number(item.selfId) === 57) continue;
         const amount = ProgressionRates.scaleAmount(randInt(rng, item.min, item.max), groupRoll.amountMultiplier, rng);
-        const snapshot = itemSnapshot(item, amount);
+        const snapshot = itemSnapshot(item, amount, sourceMobLevel(rewardData, spot));
         if (snapshot) drops.push(snapshot);
     }
     return drops;
