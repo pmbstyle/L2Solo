@@ -28,19 +28,21 @@ Clean C4 client protocol 656
 - Character creation
 - Variable server rates for each server start: (x1/x10/x50) XP, SP, party XP/SP, drop/adena/spoil multipliers
 - Real-time player web map that shows bots and players
+- Partial or full wipe anytime
 
 **World:**
 - Complete geodata for all locations
 - Teleports via NPC or .admin menu
-- Live world / local / trade chats
+- Live world / local / party / trade chats
 - NPC shops in towns
-- SoE, other TP scrolls
-- Profession change
+- Profession change (first to third)
 - Auto-learn skills (no books or NPC needed)
+- Quests (0-20lvl)
+- Private trade or craft
 
 **Character:**
 - Progression depending on chosen rates
-- Broad C4 skill coverage: self, targeted, AoE, effects, items, and class skills
+- Full C4 skill coverage: self, targeted, AoE, effects, items, and class skills
 - Potions, scrolls, spoil, SA, manor, etc
 - Party with bots with native (/invite, /leave), plus .botpaty to find nearby bots and invite to the party
 - All armor sets
@@ -56,24 +58,21 @@ Clean C4 client protocol 656
 - Party loot
 
 **Bots:**
-- World population based on a character level. Hundreds of bots on start.
-- Farming
-- Drop pick up
-- Rest/Regen
-- Join bot parties
-- In-party roles (tank, dps, healer, etc)
-- Trade with a bot
-- Communication in chat
-- Custom communication (not-scripted) via AI (OpenRouter LLM) - you can chat with a bot like a real player
-- Bots will ask for loot if you have something they need
-- Bot traders in towns (sell/buy)
+- Dynamic bot population with a smart new bot seeding up to 1700
+- Bots are farming solo and in party
+- In-party roles (tank, dps, healer, buffer, etc)
+- In-party buff control
+- Bot farm goals: craft or drop equipment for bot progression
+- Craft using recipes and craft stations
+- Selling loot in towns using a private store
+- Buying needed resources or equipment
 - PK bots
-- Bots will attack a PK or run away
-- Bots will go for NPC (Nobie guide) buff
-- Bots changing their farming location based on lvl or number of mobs around
+- Bots attack a PK or run away
+- Communication in chat (LFP, LFG, PK alert, etc)
+- Bots ask for loot if you have something they need
+- Bots go for NPC (Nobie guide) buff
+- Bots changing their farming location based on lvl, number of mobs around, or a crafting goal
 - Bots join and fight in a party with a player
-- Bot's equipment scales with a lvl
-- Some bots will be higher lvl than a player, most of them will keep around the same lvl as a player, and some will be noobs
 - Bots have a memory about interaction with a player; they act correspondingly 
 
 
@@ -84,11 +83,10 @@ Clean C4 client protocol 656
 - Clan wars
 - Wars for a farm spot
 - Olympiad, heroes
-- Siages (bot or player driven)
+- Siages (bot or player -driven)
 - Raids (Raid/World bosses)
-- Live economy (bots will sell, craft, buy)
-- Full craft
-- Full quests
+- Complete live economy
+- Full quests, including profession change
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
 - One-click installer
