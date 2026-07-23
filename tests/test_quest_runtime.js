@@ -64,6 +64,7 @@ const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
 const Q415 = require("../src/GameServer/Quest/quests/Q415_PathToOrcMonk");
 const Q416 = require("../src/GameServer/Quest/quests/Q416_PathToOrcShaman");
 const Q417 = require("../src/GameServer/Quest/quests/Q417_PathToScavenger");
+const Q418 = require("../src/GameServer/Quest/quests/Q418_PathToArtisan");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -152,6 +153,8 @@ async function main() {
   assert.strictEqual(Q416.eventNpc("net"), 7593);
   assert.strictEqual(Q417.eventNpc("start"), 7524);
   assert.strictEqual(Q417.eventNpc("mion"), 7519);
+  assert.strictEqual(Q418.eventNpc("start"), 7527);
+  assert.strictEqual(Q418.eventNpc("letter"), 7317);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -823,6 +826,19 @@ async function main() {
     assert.strictEqual(awardedClassId, 54, "Q417 must award the Scavenger class");
     assert.strictEqual(questState.completed, true, "Q417 must complete after the Succubus Undies are returned");
     assert.strictEqual(items.get(1642), 1, "Q417 must retain the source Ring of Raven reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; questState.values = {}; classId = 53; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q418.onEvent(questState, "start");
+    setItem(1636, 9); setItem(1637, 2); const originalRandomForArtisan = Math.random; Math.random = () => 0;
+    try { await Q418.onKill(questState, { fetchSelfId: () => 389 }); } finally { Math.random = originalRandomForArtisan; }
+    await Q418.onTalk(questState, { fetchSelfId: () => 7527 }); await Q418.onEvent(questState, "letter"); await Q418.onEvent(questState, "footprint");
+    const originalRandomForBox = Math.random; Math.random = () => 0;
+    try { await Q418.onKill(questState, { fetchSelfId: () => 17 }); } finally { Math.random = originalRandomForBox; }
+    await Q418.onEvent(questState, "box"); await Q418.onTalk(questState, { fetchSelfId: () => 7317 });
+    assert.strictEqual(awardedClassId, 56, "Q418 must award the Artisan class");
+    assert.strictEqual(questState.completed, true, "Q418 must complete after both pass certificates and Secret Box are returned");
+    assert.strictEqual(items.get(1635), 1, "Q418 must retain the source Final Pass Certificate reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
