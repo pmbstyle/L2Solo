@@ -37,7 +37,7 @@ Clean C4 client protocol 656
 - NPC shops in towns
 - Profession change (first to third)
 - Auto-learn skills (no books or NPC needed)
-- Quests (0-20lvl)
+- Quests (0-20lvl + 1st profession change)
 - Private trade or craft
 
 **Character:**
