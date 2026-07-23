@@ -50,6 +50,7 @@ const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
 const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
 const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
 const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
+const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -111,6 +112,8 @@ async function main() {
   assert.strictEqual(Q402.eventNpc("herod"), 7031);
   assert.strictEqual(Q403.eventNpc("start"), 7379);
   assert.strictEqual(Q403.eventNpc("neti"), 7425);
+  assert.strictEqual(Q404.eventNpc("start"), 7391);
+  assert.strictEqual(Q404.eventNpc("feather"), 7410);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -254,11 +257,12 @@ async function main() {
     calls.length = 0;
     const items = new Map();
     let equippedWeapon = 0;
+    let classId = 0;
     const setItem = (id, amount) => items.set(id, Math.max(0, amount));
     const questState = {
       session: {
         actor: {
-          fetchClassId: () => 0,
+          fetchClassId: () => classId,
           fetchLevel: () => 20,
           backpack: {
             fetchItemFromSelfId: (id) => {
@@ -410,6 +414,43 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q403 must complete after all stolen items are returned");
     assert.strictEqual(items.get(1190), 1, "Q403 must retain Bezique's Recommendation as the source reward");
     assert.strictEqual(items.get(1185), 0, "Q403 must consume the Wanted Bill at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 10;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 11 });
+    await Q404.onEvent(questState, "start");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7411 });
+    assert.strictEqual(items.get(1280), 1, "Q404 must issue the Map of Luster");
+    await Q404.onKill(questState, { fetchSelfId: () => 359 });
+    assert.strictEqual(items.get(1281), 1, "Q404 must drop the Key of Flame from Ratman Warriors");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7411 });
+    assert.strictEqual(items.get(1282), 1, "Q404 must exchange the fire proof for the Flame Earring");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7412 });
+    assert.strictEqual(items.get(1283), 1, "Q404 must issue the Broken Bronze Mirror");
+    await Q404.onEvent(questState, "feather");
+    assert.strictEqual(items.get(1284), 1, "Q404 must issue the Wind Feather after the mirror dialogue");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7412 });
+    assert.strictEqual(items.get(1285), 1, "Q404 must exchange the wind proof for the Wind Bangle");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7413 });
+    assert.strictEqual(items.get(1286), 1, "Q404 must issue Rama's Diary");
+    await Q404.onKill(questState, { fetchSelfId: () => 5030 });
+    await Q404.onKill(questState, { fetchSelfId: () => 5030 });
+    assert.strictEqual(items.get(1287), 2, "Q404 must collect two Sparkle Pebbles from Water Seers");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7413 });
+    assert.strictEqual(items.get(1288), 1, "Q404 must exchange the water proof for the Water Necklace");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7409 });
+    assert.strictEqual(items.get(1289), 1, "Q404 must issue the Rust Gold Coin");
+    await Q404.onKill(questState, { fetchSelfId: () => 21 });
+    assert.strictEqual(items.get(1290), 1, "Q404 must drop Red Soil from Red Bears");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7409 });
+    assert.strictEqual(items.get(1291), 1, "Q404 must exchange the earth proof for the Earth Ring");
+    await Q404.onTalk(questState, { fetchSelfId: () => 7391 });
+    assert.strictEqual(questState.completed, true, "Q404 must complete after all four elemental signs are returned");
+    assert.strictEqual(items.get(1292), 1, "Q404 must retain the source Bead of Season reward");
+    assert.deepStrictEqual([1282, 1285, 1288, 1291].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q404 must consume every elemental sign at completion");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
