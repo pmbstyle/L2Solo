@@ -53,6 +53,7 @@ const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
 const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
 const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
 const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
+const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -119,6 +120,8 @@ async function main() {
   assert.strictEqual(Q405.eventNpc("start"), 7022);
   assert.strictEqual(Q406.eventNpc("start"), 7327);
   assert.strictEqual(Q406.eventNpc("kluto"), 7317);
+  assert.strictEqual(Q407.eventNpc("start"), 7328);
+  assert.strictEqual(Q407.eventNpc("moretti"), 7337);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -534,6 +537,46 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q406 must complete after Kluto's Box is returned");
     assert.strictEqual(items.get(1204), 1, "Q406 must retain the source Elven Knight Brooch reward");
     assert.strictEqual(items.get(1203), 0, "Q406 must consume Kluto's Box at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 18;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q407.onEvent(questState, "start");
+    assert.strictEqual(items.get(1207), 1, "Q407 must issue Reisa's Letter");
+    await Q407.onEvent(questState, "moretti");
+    for (let i = 0; i < 4; i += 1) await Q407.onKill(questState, { fetchSelfId: () => 53 });
+    assert.deepStrictEqual([1208, 1209, 1210, 1211].map((id) => items.get(id) || 0), [1, 1, 1, 1], "Q407 must recover each distinct torn letter from Ol Mahum Patrols");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7337 });
+    assert.strictEqual(items.get(1212), 1, "Q407 must exchange the torn letters for Moretti's Herb");
+    assert.strictEqual(items.get(1214), 1, "Q407 must issue Moretti's Letter");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7426 });
+    const originalRandomForScout = Math.random;
+    Math.random = () => 0.9;
+    try {
+      await Q407.onKill(questState, { fetchSelfId: () => 5031 });
+      assert.strictEqual(items.get(1293) || 0, 0, "Q407 must preserve the source 60% Rusted Key drop chance");
+      Math.random = () => 0;
+      await Q407.onKill(questState, { fetchSelfId: () => 5031 });
+    } finally {
+      Math.random = originalRandomForScout;
+    }
+    assert.strictEqual(items.get(1293), 1, "Q407 must drop the Rusted Key from Ol Mahum Sentries");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7426 });
+    assert.strictEqual(items.get(1215), 1, "Q407 must exchange the Rusted Key for Prias's Letter");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7337 });
+    assert.strictEqual(items.get(1216), 1, "Q407 must exchange Prias's Letter for the Honorary Guard");
+    await Q407.onTalk(questState, { fetchSelfId: () => 7328 });
+    assert.strictEqual(awardedClassId, 22, "Q407 must award the Elven Scout class");
+    assert.strictEqual(questState.completed, true, "Q407 must complete after the Honorary Guard is returned");
+    assert.strictEqual(items.get(1217), 1, "Q407 must retain Reisa's Recommendation as the source reward");
+    assert.strictEqual(items.get(1216), 0, "Q407 must consume the Honorary Guard at completion");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
