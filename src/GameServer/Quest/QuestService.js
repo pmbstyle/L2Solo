@@ -58,6 +58,7 @@ const quests = [
   require("./quests/Q170_DangerousSeduction"),
   require("./quests/Q401_PathToWarrior"),
   require("./quests/Q402_PathToKnight"),
+  require("./quests/Q403_PathToRogue"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 

@@ -49,6 +49,7 @@ const Q162 = require("../src/GameServer/Quest/quests/Q162_CurseOfTheUndergroundF
 const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
 const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
 const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
+const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -108,6 +109,8 @@ async function main() {
   assert.strictEqual(Q402.eventNpc("start"), 7417);
   assert.strictEqual(Q402.eventNpc("aron"), 7332);
   assert.strictEqual(Q402.eventNpc("herod"), 7031);
+  assert.strictEqual(Q403.eventNpc("start"), 7379);
+  assert.strictEqual(Q403.eventNpc("neti"), 7425);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -365,6 +368,48 @@ async function main() {
     assert.strictEqual(items.get(1161), 1, "Q402 must retain the source Sword of Ritual reward");
     assert.strictEqual(items.get(1271), 0, "Q402 must consume the Mark of Esquire at completion");
     assert.deepStrictEqual([1162, 1163, 1164, 1165, 1166, 1167].map((id) => items.get(id) || 0), [0, 0, 0, 0, 0, 0], "Q402 must consume every Coin of Lords");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    equippedWeapon = 0;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 7 });
+    await Q403.onEvent(questState, "start");
+    assert.strictEqual(items.get(1180), 1, "Q403 must issue Bezique's Letter");
+    await Q403.onEvent(questState, "neti");
+    assert.strictEqual(items.get(1181), 1, "Q403 must issue Neti's Bow");
+    assert.strictEqual(items.get(1182), 1, "Q403 must issue Neti's Dagger");
+    setItem(1183, 9);
+    equippedWeapon = 1181;
+    const originalRandomForRogue = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q403.onKill(questState, { fetchSelfId: () => 54 });
+    } finally {
+      Math.random = originalRandomForRogue;
+    }
+    assert.strictEqual(items.get(1183), 10, "Q403 must drop the tenth Spartoi Bone with Neti's weapon equipped");
+    assert.strictEqual(questState.cond, 3, "Q403 must advance after all Spartoi Bones are collected");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7425 });
+    assert.strictEqual(items.get(1184), 1, "Q403 must exchange bones for the Horseshoe of Light");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7379 });
+    assert.strictEqual(items.get(1185), 1, "Q403 must issue the Wanted Bill after the Horseshoe hand-in");
+    const stolenRolls = [0, 0, 0.25, 0.5, 0.75];
+    for (const roll of stolenRolls) {
+      const originalRandom = Math.random;
+      Math.random = () => roll;
+      try {
+        await Q403.onKill(questState, { fetchSelfId: () => 5038 });
+      } finally {
+        Math.random = originalRandom;
+      }
+    }
+    assert.deepStrictEqual([1186, 1187, 1188, 1189].map((id) => items.get(id) || 0), [1, 1, 1, 1], "Q403 must award each stolen item only when Cat's Eye Bandit's source roll selects it");
+    await Q403.onTalk(questState, { fetchSelfId: () => 7379 });
+    assert.strictEqual(questState.completed, true, "Q403 must complete after all stolen items are returned");
+    assert.strictEqual(items.get(1190), 1, "Q403 must retain Bezique's Recommendation as the source reward");
+    assert.strictEqual(items.get(1185), 0, "Q403 must consume the Wanted Bill at completion");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
