@@ -4,6 +4,7 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
 const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
+const TRADE_MIN_LEVEL = 10;
 
 function templateFor(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
@@ -33,7 +34,26 @@ function reservedCraftAmounts(state) {
     }, {});
 }
 
+function isTradeEligible(state = {}) {
+    // Purpose-built static merchant/craft services are not adventurers and
+    // retain their normal storefronts. Generated characters start selling
+    // only once their first leveling/gear loop has had time to produce useful
+    // surplus.
+    if (!state.stats?.generatedCold) return true;
+    return Number(state.level || 1) >= TRADE_MIN_LEVEL;
+}
+
+function protectedStarterLootAmount(item, kind) {
+    // Low-level resources remain sellable once the character reaches the
+    // trading phase: they are a legitimate early Adena source. Ordinary gear
+    // and drops from level 1-5 mobs are retained instead of becoming instant
+    // private-store/NPC-liquidation stock.
+    if (String(kind || '').startsWith('Other.Material')) return 0;
+    return Math.max(0, Math.min(Number(item?.amount || 0), Number(item?.starterMobLootAmount || 0)));
+}
+
 function saleCandidates(state, options = {}) {
+    if (!isTradeEligible(state)) return [];
     const limit = Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedCraftAmounts(state), ...(options.reserved || {}) };
     return Object.values(state?.inventory || {}).flatMap((item) => {
@@ -46,15 +66,17 @@ function saleCandidates(state, options = {}) {
         const kind = item.kind || template?.template?.kind || '';
         if (!SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
+        const protectedAmount = protectedStarterLootAmount(item, kind);
+        const sellableCount = Math.max(0, sellableAmount - protectedAmount);
         const base = basePrice(item, template);
         const price = priceFor(state, item, template);
-        if (price <= 0) return [];
+        if (price <= 0 || sellableCount <= 0) return [];
         return [{
             selfId,
             name: item.name || template?.template?.name || `Item ${selfId}`,
             kind,
             rank: item.rank || template?.etc?.rank || 'none',
-            count: sellableAmount,
+            count: sellableCount,
             price,
             basePrice: base
         }];
@@ -97,11 +119,14 @@ function saleSummary(state, options = {}) {
 
 module.exports = {
     NPC_LIQUIDATION_MAX_UNIT_PRICE,
+    TRADE_MIN_LEVEL,
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
+    isTradeEligible,
     isWarehouseCandidate,
     npcLiquidationCandidates,
     priceFor,
+    protectedStarterLootAmount,
     reservedCraftAmounts,
     saleCandidates,
     saleSummary,

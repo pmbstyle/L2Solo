@@ -44,9 +44,23 @@ if (previousProgressionRate === undefined) delete process.env.L2NODE_PROGRESSION
 else process.env.L2NODE_PROGRESSION_RATE = previousProgressionRate;
 
 const noGradePlan = GearAcquisitionPlanner.planFor({ level: 10, stats: { classId: 0, role: 'dps' }, inventory: {} }, { spots: [stoneGolemSpot] });
-assert.strictEqual(noGradePlan.strategy, 'direct_drop', 'no-grade bots must use drop goals rather than recipes');
+assert(['direct_drop', 'market'].includes(noGradePlan.strategy), 'no-grade bots must choose a drop or market route, never recipes');
 assert.strictEqual(noGradePlan.recipeId, null, 'no-grade bots must never receive a crafting recipe');
 assert.strictEqual(noGradePlan.rateModelVersion, GearAcquisitionPlanner.RATE_MODEL_VERSION, 'all acquisition plans must persist the drop-rate model used for their estimates');
+
+const preFocusPlan = GearAcquisitionPlanner.planFor({ level: 4, stats: { classId: 0, role: 'dps' }, inventory: {} }, { spots: [stoneGolemSpot] });
+assert.strictEqual(preFocusPlan.status, 'deferred', 'starter bots must level naturally before gear acquisition begins');
+assert.strictEqual(preFocusPlan.strategy, 'none');
+
+const forcedRecipeBeforeTwenty = GearAcquisitionPlanner.planFor({ level: 19, stats: { classId: 0, role: 'dps' }, inventory: {} }, { spots: [stoneGolemSpot], recipeId: 189 });
+assert.notStrictEqual(forcedRecipeBeforeTwenty.strategy, 'craft', 'no-grade bots must never enter a craft route before level twenty');
+
+const marketNoGradePlan = GearAcquisitionPlanner.planFor({ level: 5, stats: { classId: 0, role: 'dps' }, inventory: {} }, {
+    spots: [],
+    findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' })
+});
+assert.strictEqual(marketNoGradePlan.strategy, 'market', 'an affordable no-grade market offer must beat an unavailable drop route');
+assert.strictEqual(marketNoGradePlan.recipeId, null, 'no-grade market purchases must never request crafting');
 
 const serviceCrafter = {
     level: 70,
@@ -61,6 +75,12 @@ const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
 assert(['Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+
+const dMarketPlan = GearAcquisitionPlanner.planFor({ ...mage, level: 20 }, {
+    spots: [],
+    findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' })
+});
+assert.strictEqual(dMarketPlan.strategy, 'market', 'D-grade bots must compare a ready market offer with crafting and drops');
 assert(Number(target.item.template.price) <= 2290000, 'a new C-grade bot must begin with an entry-tier weapon target');
 const station = ColdCraftingService.stationForRecipe(target.recipe.recipeId);
 assert(station, 'a selected equipment recipe must be published by a Giran crafting station');

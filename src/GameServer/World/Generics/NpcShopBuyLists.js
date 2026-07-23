@@ -128,6 +128,12 @@ const ADEN_GROCER_BASE = [
     [5195, 400]
 ];
 
+const D_GROCER_BASE = ADVANCED_GROCER_BASE;
+const C_GROCER_BASE = ADVANCED_GROCER_BASE;
+const B_GROCER_BASE = ADVANCED_GROCER_BASE;
+const A_GROCER_BASE = ADEN_GROCER_BASE;
+const S_GROCER_BASE = ADVANCED_GROCER_BASE;
+
 const CEMA_GROCER_BASE = [
     [1835, 7],
     [2509, 15],
@@ -820,9 +826,9 @@ const LISTS = {
         { selfId: 4492, price: 14400 }
     ],
 
-    gludioGrocer: withTax(ADVANCED_GROCER_BASE, 1.2),
-    floranGrocer: withTax(ADVANCED_GROCER_BASE, 1.5),
-    hunterGrocer: withTax(ADVANCED_GROCER_BASE, 1.3),
+    gludioGrocer: withTax(D_GROCER_BASE, 1.2),
+    floranGrocer: withTax(D_GROCER_BASE, 1.5),
+    hunterGrocer: withTax(B_GROCER_BASE, 1.3),
     dwarvenGrocer: withTax(DWARVEN_GROCER_BASE, 1.15),
     dwarvenArmor: withTax(DWARVEN_ARMOR_BASE, 1.15),
     hunterWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.3),
@@ -839,20 +845,20 @@ const LISTS = {
     giranBodyArmor: withTax(GIRAN_BODY_ARMOR_BASE, 1.1),
     giranRobeAndAccessoryArmor: withTax(GIRAN_ROBE_AND_ACCESSORY_ARMOR_BASE, 1.1),
     giranJewelry: withTax(GIRAN_JEWELRY_BASE, 1.1),
-    giranGrocer: withTax(ADVANCED_GROCER_BASE, 1.1),
+    giranGrocer: withTax(C_GROCER_BASE, 1.1),
     giranDyes: withTax(GIRAN_DYE_BASE, 1.1),
     giranMagicBooks: withTax(GIRAN_MAGIC_BOOK_BASE, 1.1),
     orenWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.15),
     orenMysticWeapons: withTax(MYSTIC_WEAPON_BASE, 1.15),
     orenArmor: withTax(GLUDIO_ARMOR_BASE, 1.15),
-    orenGrocer: withTax(ADVANCED_GROCER_BASE, 1.15),
+    orenGrocer: withTax(B_GROCER_BASE, 1.15),
     orenDyes: withTax(BASIC_DYE_BASE, 1.15),
     orenJewelry: withTax(ADVANCED_JEWELRY_BASE, 1.15),
     orenMagicBooks: withTax(MAGIC_BOOK_BASE, 1.15),
     adenWeapons: withTax(STANDARD_PHYSICAL_WEAPON_BASE, 1.2),
     adenMysticWeapons: withTax(MYSTIC_WEAPON_BASE, 1.2),
     adenArmor: withTax(GLUDIO_ARMOR_BASE, 1.2),
-    adenGrocer: withTax(ADEN_GROCER_BASE, 1.2),
+    adenGrocer: withTax(A_GROCER_BASE, 1.2),
     adenDyes: withTax(BASIC_DYE_BASE, 1.2),
     adenJewelry: withTax(ADVANCED_JEWELRY_BASE, 1.2),
     adenMagicBooks: withTax(MAGIC_BOOK_BASE, 1.2),
@@ -862,6 +868,8 @@ const LISTS = {
     cemaMysticWeapons: withTax(GIRAN_MYSTIC_WEAPON_BASE, 1.2),
     cemaRobeAndAccessoryArmor: withTax(GIRAN_ROBE_AND_ACCESSORY_ARMOR_BASE, 1.2),
     cemaGrocer: withTax(CEMA_GROCER_BASE, 1.2),
+    goddardGrocer: withTax(S_GROCER_BASE, 1.2),
+    runeGrocer: withTax(S_GROCER_BASE, 1.2),
 
     talkingIslandGrocer: [
         { selfId: 1835, price: 8 },
@@ -892,7 +900,7 @@ const LISTS = {
         { selfId: 4628, price: 575 }
     ],
 
-    grocery: [1060, 1061, 1831, 1833, 736, 737, 1835, 2509, 3947, 735, 1062, 1863, 17],
+    grocery: [[1060], [1061], [1831], [1833], [736], [737], [1835], [3947], [735], [1062], [1863], [17]],
 
     talkingIslandJewelry: [
         { selfId: 118, price: 76 },
@@ -1074,6 +1082,8 @@ const NPC_LISTS = {
     7684: ['hunterWeapons', 'hunterMysticWeapons'],
     7831: ['petSupplies'],
     7834: ['cemaMysticWeapons', 'cemaRobeAndAccessoryArmor', 'cemaGrocer'],
+    8256: ['goddardGrocer'],
+    8300: ['runeGrocer'],
 
     7253: ['gludinArmor'],
     7254: ['gludioGrocer', 'gludinDyes'],

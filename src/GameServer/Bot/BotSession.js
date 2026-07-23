@@ -1,5 +1,6 @@
 const Actor = invoke('GameServer/Actor/Actor');
 const World = invoke('GameServer/World/World');
+const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 
 class BotSession {
     constructor(username) {
@@ -26,6 +27,7 @@ class BotSession {
         const packet = this.packData(data);
         World.fetchVisibleUsers(this, creature).forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function' && user.accountId !== this.accountId) {
+                NpcVisibility.trackNpcPacket(user, data);
                 if (user.recordOutboundPacket) {
                     user.recordOutboundPacket(data);
                 }

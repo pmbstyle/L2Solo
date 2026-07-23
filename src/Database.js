@@ -748,6 +748,14 @@ const Database = {
         );
     },
 
+    updateCharacterName(id, name) {
+        return Database.execute(
+            builder.update('characters', {
+                name: name
+            }, 'id = ? LIMIT 1', id)
+        );
+    },
+
     updateCharacterExperience(id, level, exp, sp) {
         return Database.execute(
             builder.update('characters', {

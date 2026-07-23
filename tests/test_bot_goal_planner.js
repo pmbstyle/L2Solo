@@ -52,6 +52,7 @@ assert.strictEqual(equipmentGoal.target.itemId, expectedWeapon.selfId);
 assert.strictEqual(equipmentGoal.plan.expectedBenefit, 'adena_for_weapon_upgrade');
 
 const expectedChest = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 0, level: 40 }).items.find((item) => Number(item.slot) === 10);
+const expectedChestPrice = Number((DataCache.items || []).find((item) => Number(item.selfId) === Number(expectedChest.selfId))?.template?.price || 0);
 const armorGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,
     adena: 1000000,
@@ -66,8 +67,41 @@ assert.strictEqual(armorGoal.target.equipmentSlot, 'chest');
 assert.strictEqual(armorGoal.target.itemId, expectedChest.selfId);
 assert.strictEqual(armorGoal.plan.expectedBenefit, 'market_search_for_gear');
 
+const staleMarketPlanGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    adena: 1000000,
+    stats: {
+        classId: 0,
+        build: { grade: 'c', classId: 0, level: 40 },
+        // The weapon was just purchased. The resolver has not rebuilt the
+        // equipment plan yet, so the next goal must use the chest's own
+        // template data instead of the completed weapon offer.
+        equipment: [{ selfId: expectedWeapon.selfId, slot: 7, rank: 'c', name: expectedWeapon.name }],
+        equipmentPlan: {
+            status: 'active',
+            strategy: 'market',
+            target: { selfId: expectedWeapon.selfId },
+            market: { town: 'Dion', price: 7 }
+        }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(staleMarketPlanGoal.target.itemId, expectedChest.selfId, 'the next build slot must replace a completed market target');
+assert.strictEqual(staleMarketPlanGoal.target.adena, expectedChestPrice, 'the next item must use its own price rather than the completed offer');
+assert.strictEqual(staleMarketPlanGoal.plan.marketTown, null, 'the next item must be replanned before choosing a market town');
+
 const noSnapshot = GoalPlanner.plan(NeedsEvaluator.evaluate({ ...base, stats: { classId: 0, build: { grade: 'c' } } }, { spot, now: timestamp }), timestamp);
 assert.notStrictEqual(noSnapshot.type, 'upgrade_gear', 'missing equipment data must not invent a gear deficit');
+
+const preFocusGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    level: 4,
+    stats: {
+        classId: 0,
+        build: { grade: 'none', classId: 0, level: 4 },
+        equipment: []
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(preFocusGoal.type, 'progress_level', 'bots below level five must not abandon starter leveling for equipment goals');
 
 const saleGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,

@@ -23,6 +23,7 @@ const direct = BackgroundDropResolver.rollForFight({ spot, killerLevel: 1, rng: 
 assert.strictEqual(direct.length, 1);
 assert.strictEqual(direct[0].selfId, 1121, 'the selected item must come from the real Gremlin rewards');
 assert.strictEqual(direct[0].kind, 'Armor.Wear');
+assert.strictEqual(direct[0].sourceMobLevel, 1, 'background loot must retain the source-mob level for sale policy');
 
 const nameOnly = BackgroundDropResolver.rollForFight({
     spot: { ...spot, npcSelfIds: [], npcNames: ['Gremlin'] },

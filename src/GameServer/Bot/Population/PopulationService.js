@@ -26,7 +26,8 @@ const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 function groupBySpot(states) {
     const grouped = new Map();
     states.forEach((state) => {
-        const planSpotId = state.stats?.equipmentPlan?.status === 'active'
+        const planSpotId = !SpotProfiles.isProtectedStarterCohort(state)
+            && state.stats?.equipmentPlan?.status === 'active'
             ? state.stats.equipmentPlan.next?.spotId
             : null;
         const spotId = planSpotId || state.spotId;
@@ -42,6 +43,23 @@ function groupBySpot(states) {
             const bPlanned = b.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
             return bPlanned - aPlanned || b.length - a.length;
         });
+}
+
+function partySpotForLeader(leader) {
+    const preserveStarterSpot = SpotProfiles.isProtectedStarterCohort(leader);
+    return SpotProfiles.findForState({
+        ...leader,
+        spotId: preserveStarterSpot ? leader.spotId : null,
+        party: {
+            ...(leader.party || {}),
+            partyId: 'forming',
+            role: PartyComposition.roleForState(leader)
+        },
+        stats: {
+            ...(leader.stats || {}),
+            routeMode: 'party'
+        }
+    }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
 }
 
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
@@ -100,6 +118,8 @@ function nearbyHotCount(sessions, player) {
 }
 
 const PopulationService = {
+    groupBySpot,
+    partySpotForLeader,
     initialized: false,
     started: false,
     summaryTimer: null,
@@ -257,22 +277,28 @@ const PopulationService = {
     },
 
     scheduleGeneratedColdSeed(delayMs = Config.generatedColdSeedDelayMs) {
-        if (Config.enabled === false || Config.generatedColdTarget <= 0 || this.seedTimer) return;
+        if (Config.enabled === false || Config.maxPlayingPopulation <= 0 || this.seedTimer) return;
 
         this.seedTimer = setTimeout(() => {
             this.seedTimer = null;
-            GeneratedColdSeeder.seedToTarget(Config.generatedColdTarget).then((result) => {
+            GeneratedColdSeeder.seedPopulation().then((result) => {
                 if (result.seeded > 0) {
                     console.info(
-                        'BotPopulation :: generated cold seed seeded=%d created=%d total=%d target=%d',
+                        'BotPopulation :: population wave=%d seeded=%d created=%d total=%d/%d target=%d avgLevel=%s starterSpots=%d',
+                        result.wave || 1,
                         result.seeded,
                         result.created,
                         result.total,
-                        result.desired
+                        result.limit,
+                        result.targetPopulation || result.limit,
+                        Number(result.averageLevel || 0).toFixed(1),
+                        result.eligible || 0
                     );
                 }
 
-                if (this.started && result.desired > 0 && result.total < result.desired && !result.error) {
+                // Keep checking the next wave: once the mean bot level crosses
+                // another five-level threshold, newly opened grounds are filled.
+                if (this.started && result.limit > 0 && result.total < result.limit && !result.error) {
                     this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
                 }
             });
@@ -546,19 +572,7 @@ const PopulationService = {
                     if (members.length < Config.partyMinSize) return null;
 
                     const leader = PartyComposition.chooseLeader(members);
-                    const partySpot = SpotProfiles.findForState({
-                        ...leader,
-                        spotId: null,
-                        party: {
-                            ...(leader.party || {}),
-                            partyId: 'forming',
-                            role: PartyComposition.roleForState(leader)
-                        },
-                        stats: {
-                            ...(leader.stats || {}),
-                            routeMode: 'party'
-                        }
-                    }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
+                    const partySpot = partySpotForLeader(leader);
                     const partyId = `bgp_${Date.now().toString(36)}_${leader.characterId}`;
                     const nextResolveAt = Date.now() + 45000 + Math.round(Math.random() * 90000);
                     const party = {

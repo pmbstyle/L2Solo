@@ -14,7 +14,6 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
-const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
@@ -276,17 +275,23 @@ const BotManager = {
             register: (registry) => registry.statusProvider(() => ({ initialized: GoalService.initialized }))
         });
         
-        const bots = [...BOTS_TO_SPAWN.filter((bot) => bot.plan !== 'pk_hunting'), ...MERCHANT_BOTS];
-        console.info("BotManager :: Starter population: %s", BotPopulation.summarize(BOTS_TO_SPAWN));
+        // Adventurers now belong exclusively to the persistent population
+        // seeder. Keeping the old static starters here doubled the fresh-world
+        // population before wave one had even begun.
+        const bots = [...MERCHANT_BOTS];
+        console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
         
         // Wait 5 seconds after startup to let world finish loading
         setTimeout(() => {
             bots.forEach((botData, idx) => {
                 this.provisionAndSpawn(botData, idx);
             });
-            this.pkEncounterBots = BotPopulation.pkEncounters();
-            this.hydratePkEncounterAnchors().finally(() => {
-                this.startPkEncounterMonitor();
+            // PK encounter profiles were part of the old static population as
+            // well. Do not introduce high-level hunters into a newly seeded
+            // level-one world; they can be reintroduced as a later population
+            // phase with an explicit lifecycle rule.
+            this.pkEncounterBots = [];
+            Promise.resolve().finally(() => {
                 this.startDynamicScalingMonitor();
                 this.startStatusLogMonitor();
                 PopulationService.start();
@@ -509,21 +514,18 @@ const BotManager = {
                 classId: firstCharacter.classId,
                 level: firstCharacter.level
             }, firstCharacter.classId);
-            const gearReady = skillsReady.then(() => Shared.fetchCharacters(username))
+            const spawnReady = skillsReady.then(() => Shared.fetchCharacters(username))
                 .then((reconciledCharacters) => {
                     const reconciledCharacter = reconciledCharacters[0];
                     if (!reconciledCharacter) return null;
-                    return (firstStoreCfg
-                        ? Promise.resolve()
-                        : BotGear.ensureCharacterGear(reconciledCharacter, botData))
-                        .then(() => ShotStock.ensureCharacterStock(reconciledCharacter.id, {
+                    return ShotStock.ensureCharacterStock(reconciledCharacter.id, {
                     classId: reconciledCharacter.classId,
                     targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
-                }))
+                })
                         .then(() => Shared.fetchCharacters(username));
                 });
 
-            gearReady.then((readyCharacters) => {
+            spawnReady.then((readyCharacters) => {
                 const character = readyCharacters[0];
                 if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);

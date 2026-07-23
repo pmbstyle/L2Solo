@@ -1,6 +1,6 @@
-const ServerResponse = invoke('GameServer/Network/Response');
 const SpoilSweep     = invoke('GameServer/Npc/SpoilSweep');
 const SpawnNpcs      = invoke('GameServer/World/Generics/SpawnNpcs');
+const NpcVisibility  = invoke('GameServer/World/NpcVisibility');
 
 function removeNpc(session, npc) {
     const npcId = npc.fetchId();
@@ -19,7 +19,7 @@ function removeNpc(session, npc) {
 
     // Delete NPC from world
     setTimeout(() => {
-        session.dataSendToMeAndOthers(ServerResponse.deleteOb(npcId), npc);
+        NpcVisibility.deleteKnownNpc(this, session, npcId);
         this.npc.spawns = this.npc.spawns.filter(ob => ob.fetchId() !== npcId);
         this.indexSpawnsInGrid();
     }, SpoilSweep.corpseTime(npc));

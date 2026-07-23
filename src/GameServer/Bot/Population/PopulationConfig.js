@@ -19,12 +19,15 @@ const DEFAULTS = {
     partyFormationIntervalMs: 45000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,
-    generatedColdTarget: 100,
-    generatedColdBatchSize: 25,
+    // Start with every level-one hunting sector. Waves open every five levels
+    // at x1-x10, or every ten levels at x50 and above. This is a cap for
+    // generated adventurers only; shop services are not part of it.
+    maxPlayingPopulation: 1700,
+    starterBotsPerRace: 30,
+    generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
-    // The persistent world can contain substantially more than the initial
-    // generated target after a restart. Twenty-five sequential resolves still
-    // fit well inside the five-second scheduler interval.
+    // The persistent world is resolved in bounded batches so population
+    // expansion never becomes a database spike after a restart.
     maxResolvesPerTick: 25,
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
@@ -77,7 +80,8 @@ const ENV_KEYS = {
     backgroundPartyEnabled: 'BOT_BACKGROUND_PARTY_ENABLED',
     phasePolicyEnabled: 'BOT_POPULATION_PHASE_POLICY_ENABLED',
     directorEnabled: 'BOT_POPULATION_DIRECTOR_ENABLED',
-    generatedColdTarget: 'BOT_POPULATION_TARGET',
+    maxPlayingPopulation: 'BOT_POPULATION_MAX_PLAYING',
+    starterBotsPerRace: 'BOT_POPULATION_STARTER_BOTS_PER_RACE',
     generatedColdBatchSize: 'BOT_POPULATION_BATCH_SIZE',
     generatedColdSeedDelayMs: 'BOT_POPULATION_SEED_DELAY_MS',
     cooldownGraceMs: 'BOT_COOLDOWN_GRACE_MS',

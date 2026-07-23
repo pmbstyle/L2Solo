@@ -53,7 +53,10 @@ async function run() {
         timing: {},
         inventory: {
             57: { selfId: 57, name: 'Adena', amount: 500 },
-            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword' },
+            // Keep this as a C-grade listing: the fixture exercises the Giran
+            // plaza, while no-grade stock is deliberately routed to the
+            // nearest starter village.
+            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword', rank: 'c' },
             2: { selfId: 2, name: 'Long Sword', amount: 1, equipped: true, slot: 7, kind: 'Weapon.Sword' }
         },
         stats: {
@@ -64,6 +67,30 @@ async function run() {
 
     const candidates = ItemDisposition.saleCandidates(state);
     assert.deepStrictEqual(candidates.map((item) => item.selfId), [1], 'equipped gear must never be listed');
+
+    const preTradeState = {
+        ...state,
+        level: 9,
+        stats: { ...state.stats, generatedCold: true }
+    };
+    assert.deepStrictEqual(ItemDisposition.saleCandidates(preTradeState), [], 'generated bots must not sell before level ten');
+    const preTradeListing = await ListingService.open(preTradeState, { now: 1000 });
+    assert.strictEqual(preTradeListing.reason, 'nothing_to_sell', 'pre-ten generated bots must never open a private store');
+
+    const starterMobLootState = {
+        ...state,
+        stats: { ...state.stats, generatedCold: true },
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 500 },
+            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword', starterMobLootAmount: 1 },
+            1864: { selfId: 1864, name: 'Stem', amount: 4, kind: 'Other.Material', starterMobLootAmount: 4 }
+        }
+    };
+    assert.deepStrictEqual(
+        ItemDisposition.saleCandidates(starterMobLootState).map((item) => item.selfId),
+        [1864],
+        'ordinary level-one-to-five loot must stay out of sales while materials remain sellable'
+    );
 
     const opened = await ListingService.open(state, { now: 1000, durationMs: 60000, random: () => 0.1 });
     assert.strictEqual(opened.listed, true);
