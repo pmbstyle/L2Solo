@@ -22,7 +22,9 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
-    const town = sellingInventory ? marketTown(MarketTownPolicy.targetTownForSale(state)) : marketTown('Giran');
+    const town = sellingInventory
+        ? marketTown(MarketTownPolicy.targetTownForSale(state))
+        : marketTown(goal.plan?.marketTown || 'Giran');
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY);

@@ -9,6 +9,11 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 DataCache.init();
 
+const firstProfessionChoices = new Set(Array.from({ length: 30 }, (_, index) => (
+    BotClassProgression.nextClass(0, 20, `starter_${index}`)
+)));
+assert(firstProfessionChoices.size > 1, 'first-profession choices must vary across a generated fighter cohort');
+
 const original = {
     fetchSkill: Database.fetchSkill,
     fetchSkills: Database.fetchSkills,

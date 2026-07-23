@@ -1,6 +1,7 @@
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 // Weapons make the largest immediate difference, then core armour.  The two
@@ -31,6 +32,7 @@ function rankIndex(rank) {
 }
 
 function equipmentNeed(state) {
+    if (!GearLifecycle.isGearFocusActive(state)) return null;
     const equipment = state.stats?.equipment;
     if (!Array.isArray(equipment)) return null;
 
@@ -45,23 +47,40 @@ function equipmentNeed(state) {
             const desiredRank = String(item.rank || build.grade || 'none').toLowerCase();
             return !currentItem || rankIndex(currentItem.rank) < rankIndex(desiredRank);
         }) || null;
-    if (!desiredItem) return null;
+    const acquisitionPlan = state.stats?.equipmentPlan;
+    if (['direct_drop', 'craft'].includes(acquisitionPlan?.strategy) && acquisitionPlan?.status === 'active') return null;
+    const plannedTarget = acquisitionPlan?.strategy === 'market' && acquisitionPlan?.target
+        ? (DataCache.items || []).find((item) => Number(item.selfId) === Number(acquisitionPlan.target.selfId))
+        : null;
+    const plannedSlot = Number(plannedTarget?.etc?.slot || 0);
+    const plannedAlreadyEquipped = plannedSlot > 0 && equipment.some((item) => (
+        Number(item.slot) === plannedSlot && Number(item.selfId) === Number(plannedTarget.selfId)
+    ));
+    const selectedItem = plannedTarget && !plannedAlreadyEquipped ? plannedTarget : desiredItem;
+    if (!selectedItem) return null;
 
-    const currentItem = equipment.find((item) => Number(item.slot) === Number(desiredItem.slot)) || null;
-    const desiredRank = String(desiredItem.rank || build.grade || 'none').toLowerCase();
+    const currentItem = equipment.find((item) => Number(item.slot) === Number(selectedItem.etc?.slot || selectedItem.slot)) || null;
+    const desiredRank = String(selectedItem.etc?.rank || selectedItem.rank || build.grade || 'none').toLowerCase();
 
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(desiredItem.selfId));
-    const price = Math.max(1, Number(template?.template?.price || 0));
+    // A just-completed market plan remains on the state until the next
+    // resolver pass.  Once its target is equipped, the generic build may pick
+    // a different next slot; do not send that new purchase to the old offer's
+    // town or fund it with the old price.
+    const usingPlannedTarget = Number(selectedItem.selfId) === Number(plannedTarget?.selfId);
+    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(selectedItem.selfId));
+    const plannedMarket = usingPlannedTarget ? acquisitionPlan?.market : null;
+    const price = Math.max(1, Number(plannedMarket?.price || template?.template?.price || 0));
     return {
         currentItem,
         desiredRank,
-        slot: Number(desiredItem.slot),
-        slotName: EQUIPMENT_SLOT_NAMES[Number(desiredItem.slot)] || `slot_${desiredItem.slot}`,
+        slot: Number(selectedItem.etc?.slot || selectedItem.slot),
+        slotName: EQUIPMENT_SLOT_NAMES[Number(selectedItem.etc?.slot || selectedItem.slot)] || `slot_${selectedItem.etc?.slot || selectedItem.slot}`,
         desiredItem: {
-            selfId: Number(desiredItem.selfId),
-            name: desiredItem.name || template?.template?.name || `Item ${desiredItem.selfId}`,
+            selfId: Number(selectedItem.selfId),
+            name: selectedItem.name || selectedItem.template?.name || template?.template?.name || `Item ${selectedItem.selfId}`,
             price
-        }
+        },
+        marketTown: plannedMarket?.town || null
     };
 }
 
@@ -116,7 +135,8 @@ function evaluate(state = {}, options = {}) {
                     ? weaponUpgrade ? 'adena_for_weapon_upgrade' : 'adena_for_gear_upgrade'
                     : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
                 estimatedCost: gear.desiredItem.price,
-                requiredAdena
+                requiredAdena,
+                marketTown: gear.marketTown
             },
             blockers: spot ? [] : ['missing_spot'],
             nextReviewAt: timestamp + 10 * 60 * 1000

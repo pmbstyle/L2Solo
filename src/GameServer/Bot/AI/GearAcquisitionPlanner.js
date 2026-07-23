@@ -4,6 +4,9 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
+const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -153,6 +156,51 @@ function preferredDropTarget(state = {}) {
         .sort((a, b) => itemScore(b, role) - itemScore(a, role) || Number(b.template?.price || 0) - Number(a.template?.price || 0))[0] || null;
 }
 
+function preferredNoGradeTarget(state = {}) {
+    const role = roleFor(state);
+    const ownedItems = inventoryItems(state.inventory);
+    const classId = Number(state.stats?.classId || state.classId || 0);
+    const planned = BotGear.planFor({ classId, level: Math.max(GearLifecycle.GEAR_FOCUS_LEVEL, Number(state.level || 1)) });
+    const uniqueItems = new Set();
+
+    return planned.items
+        .map((desired) => (DataCache.items || []).find((item) => Number(item.selfId) === Number(desired.selfId)))
+        .filter(Boolean)
+        .filter((item) => {
+            if (uniqueItems.has(Number(item.selfId))) return false;
+            uniqueItems.add(Number(item.selfId));
+            return isSlotUpgrade(item, ownedItems, role);
+        })
+        .sort((a, b) => GearLifecycle.slotPriority(b.etc?.slot) - GearLifecycle.slotPriority(a.etc?.slot)
+            || Number(a.template?.price || 0) - Number(b.template?.price || 0))[0] || null;
+}
+
+function marketOfferForTarget(target, state = {}, options = {}) {
+    if (!target) return null;
+    if (typeof options.findMarketOffer === 'function') return options.findMarketOffer(target, state) || null;
+    const towns = [...new Set([
+        state.currentRegion,
+        ...Object.keys(MarketOpportunity.TOWN_NPC_SELLERS || {}),
+        'Giran'
+    ].filter(Boolean))];
+    return towns
+        .map((town) => MarketOpportunity.bestOffer(target.selfId, {
+            town,
+            budget: Infinity,
+            buyerCharacterId: state.characterId
+        }))
+        .filter(Boolean)
+        .sort((left, right) => Number(left.price) - Number(right.price))[0] || null;
+}
+
+function expectedAdenaPerKill(state = {}) {
+    return Math.max(20, Number(state.level || 1) * 25);
+}
+
+function marketEffort(offer, state) {
+    return offer ? Number(offer.price || Infinity) / expectedAdenaPerKill(state) : Infinity;
+}
+
 function itemDropChance(reward, itemId, kind = 'drop') {
     return itemDropYield(reward, itemId, kind).chance;
 }
@@ -257,10 +305,30 @@ function planFor(state = {}, options = {}) {
     if (isCraftService(state)) {
         return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
     }
-    if (gradeForLevel(state.level) === 'none' && !options.recipeId) {
-        const target = preferredDropTarget(state);
+    if (!GearLifecycle.isGearFocusActive(state)) {
+        return {
+            status: 'deferred',
+            phase: GearLifecycle.phaseFor(state),
+            strategy: 'none',
+            recipeId: null,
+            materials: [],
+            next: null
+        };
+    }
+    if (!GearLifecycle.allowsCrafting(state) || gradeForLevel(state.level) === 'none') {
+        const target = preferredNoGradeTarget(state) || preferredDropTarget(state);
         const source = target ? bestSourceForState(sourceForItem(target.selfId, options.spots || [], state), state) : null;
-        return source ? {
+        const offer = marketOfferForTarget(target, state, options);
+        const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
+        const buy = offer && marketEffort(offer, state) <= directKills;
+        return target && buy ? {
+            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
+            rateModelVersion: RATE_MODEL_VERSION,
+            expectedKills: Math.ceil(marketEffort(offer, state)),
+            target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
+            market: { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType },
+            recipeId: null, materials: [], next: null
+        } : source ? {
             status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: soloSafeForSource(state, source), requiresParty: !soloSafeForSource(state, source),
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(1 / Math.max(source.expectedYield, 0.000001)),
@@ -288,11 +356,13 @@ function planFor(state = {}, options = {}) {
     ))[0] || null;
     const directKills = direct ? 1 / Math.max(direct.expectedYield, 0.000001) : Infinity;
     const craftKills = missingMaterialPlans.reduce((sum, material) => sum + material.missing / Math.max(material.source?.expectedYield || 0.000001, 0.000001), 0);
+    const offer = marketOfferForTarget(target.item, state, options);
+    const buy = offer && marketEffort(offer, state) <= Math.min(directKills, craftKills);
     const soloSafe = direct && soloSafeForSource(state, direct);
-    const strategy = soloSafe && directKills <= craftKills * 0.8 ? 'direct_drop' : 'craft';
+    const strategy = buy ? 'market' : soloSafe && directKills <= craftKills * 0.8 ? 'direct_drop' : 'craft';
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
-        : nextMaterial?.source && { ...nextMaterial.source, itemId: Number(nextMaterial.selfId) };
+        : strategy === 'craft' ? nextMaterial?.source && { ...nextMaterial.source, itemId: Number(nextMaterial.selfId) } : null;
     // Keep final-equipment readiness distinct from an available intermediate
     // craft.  Both routes go to a station, but reporting a ready Cokes batch
     // as "can craft Atuba Mace" made the progression telemetry lie and hid
@@ -308,7 +378,8 @@ function planFor(state = {}, options = {}) {
         && Boolean(next && !soloSafeForSource(state, next));
 
     return {
-        status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : next ? 'active' : 'blocked',
+        status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : strategy === 'market' || next ? 'active' : 'blocked',
+        phase: GearLifecycle.phaseFor(state),
         grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
         role: roleFor(state),
         rateModelVersion: RATE_MODEL_VERSION,
@@ -318,6 +389,7 @@ function planFor(state = {}, options = {}) {
         soloSafe,
         requiresParty,
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
+        market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
         materials: materialPlans.map(({ source, ...material }) => ({ ...material, sourceSpotId: source?.spotId || null })),
         next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null
     };
@@ -344,4 +416,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, preferredTarget, preferredDropTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

@@ -42,8 +42,16 @@ function profileFromSpot(spot) {
     };
 }
 
+function isProtectedStarterCohort(state) {
+    return Number(state?.level || 1) < 5
+        && Number(state?.stats?.populationWave || 0) > 0
+        && !!state?.stats?.starterRegion;
+}
+
 const SpotProfiles = {
     cache: null,
+
+    isProtectedStarterCohort,
 
     reset() {
         this.cache = null;
@@ -61,9 +69,7 @@ const SpotProfiles = {
 
     findForState(state, options = {}) {
         const acquisitionPlan = state?.stats?.equipmentPlan;
-        const protectedStarterCohort = Number(state?.level || 1) < 5
-            && Number(state?.stats?.populationWave || 0) > 0
-            && !!state?.stats?.starterRegion;
+        const protectedStarterCohort = isProtectedStarterCohort(state);
         const keepCurrentSpot = state?.spotId && (!acquisitionPlan || protectedStarterCohort);
 
         // Fresh racial cohorts stay at their physical level-one spot until
