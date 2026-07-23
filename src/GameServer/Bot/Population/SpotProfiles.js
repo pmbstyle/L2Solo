@@ -61,6 +61,22 @@ const SpotProfiles = {
 
     findForState(state, options = {}) {
         const acquisitionPlan = state?.stats?.equipmentPlan;
+        const protectedStarterCohort = Number(state?.level || 1) < 5
+            && Number(state?.stats?.populationWave || 0) > 0
+            && !!state?.stats?.starterRegion;
+        const keepCurrentSpot = state?.spotId && (!acquisitionPlan || protectedStarterCohort);
+
+        // Fresh racial cohorts stay at their physical level-one spot until
+        // they advance. A gear plan otherwise remains the normal route choice
+        // for established bots.
+        if (keepCurrentSpot) {
+            const existing = this.findById(state.spotId);
+            if (existing) {
+                const match = LevelingRoutes.scoreSpot(existing, state, options);
+                return LevelingRoutes.decorateSpot(existing, match);
+            }
+        }
+
         if (acquisitionPlan?.status === 'active') {
             const planned = this.ensure()
                 .map((spot) => ({ spot, score: GearAcquisitionPlanner.scoreSpot(spot, acquisitionPlan) }))
@@ -68,6 +84,7 @@ const SpotProfiles = {
                 .sort((a, b) => b.score - a.score)[0];
             if (planned) return planned.spot;
         }
+
         if (state?.spotId) {
             const existing = this.findById(state.spotId);
             if (existing) {

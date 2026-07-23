@@ -14,8 +14,8 @@ const STARTER_REGIONS = [
             { name: 'Serra', race: 0, classId: 10, sex: 1 }
         ],
         visitors: [
-            { name: 'Tovin', race: 4, classId: 53, sex: 0 },
-            { name: 'Elandor', race: 1, classId: 18, sex: 0 }
+            { name: 'Tovin', race: 0, classId: 0, sex: 0 },
+            { name: 'Elandor', race: 0, classId: 10, sex: 0 }
         ],
         apprentices: [
             { name: 'Nolan', race: 0, classId: 0, sex: 0 },
@@ -38,8 +38,8 @@ const STARTER_REGIONS = [
             { name: 'Velion', race: 1, classId: 18, sex: 0 }
         ],
         visitors: [
-            { name: 'Borik', race: 4, classId: 53, sex: 0 },
-            { name: 'Rowan', race: 0, classId: 0, sex: 0 }
+            { name: 'Borik', race: 1, classId: 18, sex: 0 },
+            { name: 'Rowan', race: 1, classId: 25, sex: 0 }
         ],
         apprentices: [
             { name: 'Eirlys', race: 1, classId: 18, sex: 1 },
@@ -62,8 +62,8 @@ const STARTER_REGIONS = [
             { name: 'Vorn', race: 2, classId: 31, sex: 0 }
         ],
         visitors: [
-            { name: 'Korrin', race: 4, classId: 53, sex: 0 },
-            { name: 'Selwyn', race: 1, classId: 18, sex: 1 }
+            { name: 'Korrin', race: 2, classId: 31, sex: 0 },
+            { name: 'Selwyn', race: 2, classId: 38, sex: 1 }
         ],
         apprentices: [
             { name: 'Velyra', race: 2, classId: 31, sex: 1 },
@@ -86,8 +86,8 @@ const STARTER_REGIONS = [
             { name: 'Urta', race: 3, classId: 49, sex: 0 }
         ],
         visitors: [
-            { name: 'Hedin', race: 4, classId: 53, sex: 0 },
-            { name: 'Calder', race: 0, classId: 0, sex: 0 }
+            { name: 'Hedin', race: 3, classId: 44, sex: 0 },
+            { name: 'Calder', race: 3, classId: 49, sex: 0 }
         ],
         apprentices: [
             { name: 'Rugor', race: 3, classId: 44, sex: 0 },
@@ -110,8 +110,8 @@ const STARTER_REGIONS = [
             { name: 'Toma', race: 4, classId: 53, sex: 0 }
         ],
         visitors: [
-            { name: 'Jalen', race: 0, classId: 0, sex: 0 },
-            { name: 'Aerin', race: 1, classId: 25, sex: 1 }
+            { name: 'Jalen', race: 4, classId: 53, sex: 0 },
+            { name: 'Aerin', race: 4, classId: 53, sex: 1 }
         ],
         apprentices: [
             { name: 'Berta', race: 4, classId: 53, sex: 1 },

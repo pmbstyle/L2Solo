@@ -10,6 +10,7 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
+const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
 
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
@@ -23,15 +24,17 @@ const CLASS_POOL = [
     { race: 4, classId: 53, sex: 0, role: 'dps' }
 ];
 
+const STARTER_REGION_RACES = Object.freeze({
+    human: 0,
+    elf: 1,
+    dark_elf: 2,
+    orc: 3,
+    dwarf: 4
+});
+
 const CRAFT_SERVICE_PROFILE = { race: 4, classId: 57, sex: 0, role: 'crafter', serviceCrafter: true };
 const CRAFT_SERVICE_COUNT = CraftShopService.CraftStations.length;
 const CRAFT_SERVICE_INDEX_BASE = 10000;
-
-const NAME_STEMS = [
-    'Arin', 'Bren', 'Cail', 'Dorin', 'Elen', 'Faren', 'Garin', 'Halen',
-    'Irin', 'Joren', 'Kael', 'Lorin', 'Miren', 'Noren', 'Orin', 'Pavel',
-    'Quen', 'Ralen', 'Saren', 'Tarin', 'Ulric', 'Varen', 'Welyn', 'Yorin'
-];
 
 function pick(index, list) {
     return list[index % list.length];
@@ -51,8 +54,12 @@ function expForLevel(level) {
     return Number(table[Math.max(0, Number(level || 1) - 1)] || 0);
 }
 
-function baseForIndex(index) {
-    return pick(index, CLASS_POOL);
+function baseForIndex(index, starterRegion = null) {
+    const race = STARTER_REGION_RACES[starterRegion];
+    const pool = Number.isInteger(race)
+        ? CLASS_POOL.filter((entry) => entry.race === race)
+        : CLASS_POOL;
+    return pick(index, pool);
 }
 
 function profileForIndex(index, base = baseForIndex(index), seedProfile = null) {
@@ -126,10 +133,17 @@ function usernameFor(index) {
 }
 
 function nameFor(index) {
-    // Character names are VARCHAR(16). Population-wave indexes are timestamps,
-    // so decimal formatting can no longer fit even though the old small index
-    // format did. Base-36 keeps the durable suffix unique and within the limit.
-    return `${pick(index, NAME_STEMS)}${Math.max(0, Number(index) || 0).toString(36).toUpperCase()}`.slice(0, 16);
+    return BotNameGenerator.nameFor(index);
+}
+
+function uniqueNameFor(index, attempt = 0) {
+    // Keep retry names natural too: a collision must not reintroduce a visible
+    // population counter on an otherwise player-like nickname.
+    const candidate = nameFor(Math.max(0, Number(index) || 0) + attempt * 2654435761);
+    return Database.fetchCharacterName(candidate).then((rows) => {
+        if (!rows[0]) return candidate;
+        return uniqueNameFor(index, attempt + 1);
+    });
 }
 
 function awardBaseGear(characterId, classId) {
@@ -242,28 +256,30 @@ function ensureCharacter(username, index, base = baseForIndex(index), seedProfil
         const spot = seedProfile?.spot || targetSpot(level, index, base);
         const loc = randomNear(spot?.center || { locX: 0, locY: 0, locZ: 0 }, index);
         const vitals = vitalsFor(template, level);
-        const charData = {
-            name: nameFor(index),
-            race: base.race,
-            classId: base.classId,
-            ...appearance(index, base.sex),
-            ...vitals,
-            ...loc
-        };
-
-        return Database.createCharacter(username, charData).then((packet) => {
-            const character = {
-                id: Number(packet.insertId),
-                username,
-                ...charData,
-                level,
-                exp: expForLevel(level),
-                sp: Math.round(level * level * 3),
-                adena: Math.round(level * 85)
+        return uniqueNameFor(index).then((name) => {
+            const charData = {
+                name,
+                race: base.race,
+                classId: base.classId,
+                ...appearance(index, base.sex),
+                ...vitals,
+                ...loc
             };
-            return Database.updateCharacterExperience(character.id, level, character.exp, character.sp)
-                .then(() => ensureBaseLoadout(character.id, base.classId, character.adena, level))
-                .then(() => ({ character, created: true, base, spot, levelProfile, vitals, loc }));
+
+            return Database.createCharacter(username, charData).then((packet) => {
+                const character = {
+                    id: Number(packet.insertId),
+                    username,
+                    ...charData,
+                    level,
+                    exp: expForLevel(level),
+                    sp: Math.round(level * level * 3),
+                    adena: Math.round(level * 85)
+                };
+                return Database.updateCharacterExperience(character.id, level, character.exp, character.sp)
+                    .then(() => ensureBaseLoadout(character.id, base.classId, character.adena, level))
+                    .then(() => ({ character, created: true, base, spot, levelProfile, vitals, loc }));
+            });
         });
     });
 }
@@ -384,6 +400,7 @@ const GeneratedColdSeeder = {
 
     awardProfileSkills,
     craftServiceSeedState,
+    baseForIndex,
     nameFor,
 
     ensureCraftServices() {
@@ -455,13 +472,14 @@ const GeneratedColdSeeder = {
             batch.forEach((spot) => {
                 const index = this.nextPopulationIndex++;
                 const username = `bot_pop_${index.toString(36)}`.slice(0, 16);
+                const base = baseForIndex(index, spot.starterRegion);
                 const seedProfile = {
                     spot,
                     level: Math.max(1, Number(spot.minLevel || 1)),
                     band: `wave_${plan.wave}`
                 };
                 chain = chain.then(() => ensureAccount(username)
-                    .then(() => ensureCharacter(username, index, baseForIndex(index), seedProfile))
+                    .then(() => ensureCharacter(username, index, base, seedProfile))
                     .then((result) => {
                         const state = stateFor(result.character, index, {
                             ...result,

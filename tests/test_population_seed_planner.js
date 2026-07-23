@@ -4,6 +4,7 @@ require('../src/Global');
 
 const Planner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
+const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 
 const profiles = Planner.STARTER_REGIONS.map((region) => ({
     id: `starter_${region.id}`,
@@ -23,6 +24,28 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(Planner.seedBatchSize(initial, 2), 150,
     'the first wave must not be split by the normal seed batch limit');
+
+const starterRaces = { human: 0, elf: 1, dark_elf: 2, orc: 3, dwarf: 4 };
+Object.entries(starterRaces).forEach(([starterRegion, race]) => {
+    Array.from({ length: 20 }, (_, index) => index).forEach((index) => {
+        assert.strictEqual(GeneratedColdSeeder.baseForIndex(index, starterRegion).race, race,
+            `${starterRegion} population slots must use only that race`);
+    });
+});
+
+const staticStarterRaces = {
+    'Talking Island': 0,
+    'Elven Village': 1,
+    'Dark Elven Village': 2,
+    'Orc Village': 3,
+    'Dwarven Village': 4
+};
+BotPopulation.buildStarterBots()
+    .filter((bot) => Object.hasOwn(staticStarterRaces, bot.homeRegion))
+    .forEach((bot) => {
+        assert.strictEqual(bot.race, staticStarterRaces[bot.homeRegion],
+            `${bot.homeRegion} static starter cohort must use the local race`);
+    });
 
 const legacyPopulation = Planner.plan(profiles, Array.from({ length: 132 }, (_, index) => ({
     characterId: index + 1,
@@ -75,7 +98,10 @@ const capped = Planner.plan(profiles, [
 ], 1700, 30);
 assert.strictEqual(capped.missing.length, 10, 'the final partial wave must stop exactly at the hard population cap');
 
-const generatedName = GeneratedColdSeeder.nameFor(Date.now());
-assert.ok(generatedName.length <= 16, 'timestamp-based population slots must fit the character-name column');
+const generatedNames = Array.from({ length: 5000 }, (_, index) => GeneratedColdSeeder.nameFor(Date.now() + index));
+assert.ok(generatedNames.every((name) => name.length >= 3 && name.length <= 16), 'generated names must fit the character-name column');
+assert.ok(generatedNames.every((name) => /^[A-Za-z]+$/.test(name)), 'generated names must remain client-safe alphabetic nicknames');
+assert.ok(new Set(generatedNames).size > 4500, 'the local nickname corpus must provide a varied population');
+assert.ok(generatedNames.every((name) => !/[0-9]/.test(name)), 'ordinary generated names must not expose population counters');
 
 console.log('Population seed planner checks passed');
