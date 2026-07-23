@@ -60,6 +60,7 @@ const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
 const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
 const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
 const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle");
+const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -142,6 +143,7 @@ async function main() {
   assert.strictEqual(Q412.eventNpc("key"), 7415);
   assert.strictEqual(Q413.eventNpc("start"), 7330);
   assert.strictEqual(Q413.eventNpc("sheets"), 7377);
+  assert.strictEqual(Q414.eventNpc("start"), 7570);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -751,6 +753,26 @@ async function main() {
     assert.strictEqual(awardedClassId, 42, "Q413 must award the Shillien Oracle class");
     assert.strictEqual(questState.completed, true, "Q413 must complete after both books are returned");
     assert.strictEqual(items.get(1270), 1, "Q413 must retain the source Orb of Abyss reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 44; awardedClassId = null;
+    const raiderSpawns = [], raiderRadars = [];
+    questState.addSpawn = (selfId) => raiderSpawns.push(selfId);
+    questState.addRadar = (...coords) => raiderRadars.push(["add", ...coords]);
+    questState.removeRadar = (...coords) => raiderRadars.push(["remove", ...coords]);
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q414.onEvent(questState, "start");
+    setItem(1578, 21);
+    const originalRandomForRaider = Math.random; Math.random = () => 0;
+    try { await Q414.onKill(questState, { fetchSelfId: () => 320 }); } finally { Math.random = originalRandomForRaider; }
+    assert.deepStrictEqual(raiderSpawns, [5045], "Q414 must spawn the personal Kuruka Ratman Leader after the source Green Blood roll");
+    setItem(1580, 9); await Q414.onKill(questState, { fetchSelfId: () => 5045 });
+    await Q414.onTalk(questState, { fetchSelfId: () => 7570 });
+    assert.deepStrictEqual(raiderRadars[0], ["add", -16760, 78268, -3480], "Q414 must mark the source Umbar location");
+    await Q414.onKill(questState, { fetchSelfId: () => 5054 }); await Q414.onKill(questState, { fetchSelfId: () => 5054 });
+    await Q414.onTalk(questState, { fetchSelfId: () => 7501 });
+    assert.strictEqual(awardedClassId, 45, "Q414 must award the Orc Raider class");
+    assert.strictEqual(questState.completed, true, "Q414 must complete after both Umbar heads are returned");
+    assert.strictEqual(items.get(1592), 1, "Q414 must retain the source Mark of Raider reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
