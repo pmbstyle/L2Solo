@@ -51,7 +51,11 @@ module.exports = {
       state.playSound(ACCEPT);
       return page("Manuel", "Investigate the false prophet Allana.");
     }
-    if (event === "lizardmen" && state.getInt("cond") === 1 && count(state, CRYSTAL_MEDALLION)) {
+    // The spawned captain can be killed by another player before its owner
+    // reaches it.  Keep the encounter retryable until the captain's order is
+    // actually obtained (as in the source quest), rather than stranding the
+    // owner at condition 2.
+    if (event === "lizardmen" && state.isStarted() && count(state, CRYSTAL_MEDALLION) && !count(state, LIZARD_CAPTAIN_ORDER)) {
       for (const selfId of [LIZARDMAN_WARRIOR, LIZARDMAN_SCOUT, LIZARDMAN]) state.addSpawn(selfId);
       await state.set("cond", 2);
       return page("Allana", "The lizardmen have appeared. Defend Allana.");

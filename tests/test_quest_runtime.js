@@ -682,12 +682,14 @@ async function main() {
     assert.strictEqual(items.get(1231), 1, "Q409 must issue the Crystal Medallion");
     await Q409.onEvent(questState, "lizardmen");
     assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034], "Q409 must spawn Allana's personal lizardman encounter");
+    await Q409.onEvent(questState, "lizardmen");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5032, 5033, 5034], "Q409 must allow the personal lizardman encounter to be retried until the captain order is obtained");
     await Q409.onKill(questState, { fetchSelfId: () => 5032 });
     assert.strictEqual(items.get(1234), 1, "Q409 must drop the Lizard Captain Order from the spawned warrior");
     await Q409.onTalk(questState, { fetchSelfId: () => 7424 });
     assert.strictEqual(items.get(1236), 1, "Q409 must issue Half of Diary after the lizard encounter");
     await Q409.onEvent(questState, "tamato");
-    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5035], "Q409 must spawn Tamato as a personal quest encounter");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5032, 5033, 5034, 5035], "Q409 must spawn Tamato as a personal quest encounter");
     await Q409.onKill(questState, { fetchSelfId: () => 5035 });
     assert.strictEqual(items.get(1275), 1, "Q409 must drop Tamato's Necklace from the spawned Tamato");
     await Q409.onTalk(questState, { fetchSelfId: () => 7428 });
@@ -793,6 +795,9 @@ async function main() {
     setItem(1601, 4); await Q415.onKill(questState, { fetchSelfId: () => 478 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
     setItem(1602, 4); await Q415.onKill(questState, { fetchSelfId: () => 415 }); await Q415.onTalk(questState, { fetchSelfId: () => 7590 });
     await Q415.onTalk(questState, { fetchSelfId: () => 7587 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 }); await Q415.onTalk(questState, { fetchSelfId: () => 7591 });
+    for (let i = 0; i < 12; i += 1) await Q415.onKill(questState, { fetchSelfId: () => 14 });
+    assert.strictEqual(items.get(1612), 3, "Q415 must cap each fourth-pouch trophy at three");
+    assert.strictEqual(items.get(1608) || 0, 0, "Q415 must require trophies from all four fourth-pouch targets");
     setItem(1609, 3); setItem(1610, 3); setItem(1611, 3); setItem(1612, 2); await Q415.onKill(questState, { fetchSelfId: () => 14 });
     await Q415.onTalk(questState, { fetchSelfId: () => 7591 }); await Q415.onTalk(questState, { fetchSelfId: () => 7501 });
     assert.strictEqual(awardedClassId, 47, "Q415 must award the Monk class");
