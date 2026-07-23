@@ -51,6 +51,7 @@ const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
 const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
 const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
 const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
+const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -114,6 +115,7 @@ async function main() {
   assert.strictEqual(Q403.eventNpc("neti"), 7425);
   assert.strictEqual(Q404.eventNpc("start"), 7391);
   assert.strictEqual(Q404.eventNpc("feather"), 7410);
+  assert.strictEqual(Q405.eventNpc("start"), 7022);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -451,6 +453,43 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q404 must complete after all four elemental signs are returned");
     assert.strictEqual(items.get(1292), 1, "Q404 must retain the source Bead of Season reward");
     assert.deepStrictEqual([1282, 1285, 1288, 1291].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q404 must consume every elemental sign at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 10;
+    let awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q405.onEvent(questState, "start");
+    assert.strictEqual(items.get(1191), 1, "Q405 must issue the first Letter of Order");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7253 });
+    assert.strictEqual(items.get(1195), 3, "Q405 must issue all three Books of Simplon");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7030 });
+    assert.strictEqual(items.get(1194), 1, "Q405 must issue the Book of Vivyan");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7333 });
+    assert.strictEqual(items.get(1199), 1, "Q405 must issue the Necklace of Mother");
+    await Q405.onKill(questState, { fetchSelfId: () => 26 });
+    assert.strictEqual(items.get(1198), 1, "Q405 must drop the Pendant of Mother from Ruin Zombies");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7333 });
+    assert.strictEqual(items.get(1196), 1, "Q405 must exchange Praga's pendant and necklace for her book");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7022 });
+    assert.strictEqual(items.get(1192), 1, "Q405 must exchange the three books for the second Letter of Order");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7408 });
+    assert.strictEqual(items.get(1193), 1, "Q405 must issue Lionel's Book");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7017 });
+    assert.strictEqual(items.get(1197), 1, "Q405 must exchange Lionel's Book for Gallint's certificate");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7408 });
+    assert.strictEqual(items.get(1200), 1, "Q405 must exchange Gallint's certificate for Lionel's Covenant");
+    await Q405.onTalk(questState, { fetchSelfId: () => 7022 });
+    assert.strictEqual(awardedClassId, 15, "Q405 must award the Human Cleric class");
+    assert.strictEqual(questState.completed, true, "Q405 must complete after Lionel's Covenant is returned");
+    assert.strictEqual(items.get(1201), 1, "Q405 must retain the source Mark of Faith reward");
+    assert.strictEqual(items.get(1192), 0, "Q405 must consume the second Letter of Order at completion");
+    assert.strictEqual(items.get(1200), 0, "Q405 must consume Lionel's Covenant at completion");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
