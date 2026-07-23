@@ -59,6 +59,7 @@ const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
 const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
 const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
 const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
+const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -139,6 +140,8 @@ async function main() {
   assert.strictEqual(Q411.eventNpc("arkenia"), 7419);
   assert.strictEqual(Q412.eventNpc("start"), 7421);
   assert.strictEqual(Q412.eventNpc("key"), 7415);
+  assert.strictEqual(Q413.eventNpc("start"), 7330);
+  assert.strictEqual(Q413.eventNpc("sheets"), 7377);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -734,6 +737,20 @@ async function main() {
     assert.strictEqual(awardedClassId, 39, "Q412 must award the Dark Wizard class");
     assert.strictEqual(questState.completed, true, "Q412 must complete after all four Seeds are returned");
     assert.strictEqual(items.get(1261), 1, "Q412 must retain the source Jewel of Darkness reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 38; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q413.onEvent(questState, "start");
+    await Q413.onEvent(questState, "sheets");
+    setItem(1263, 1); setItem(1264, 4); await Q413.onKill(questState, { fetchSelfId: () => 776 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7377 });
+    await Q413.onEvent(questState, "mark");
+    setItem(1268, 9); await Q413.onKill(questState, { fetchSelfId: () => 514 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7375 });
+    await Q413.onTalk(questState, { fetchSelfId: () => 7330 });
+    assert.strictEqual(awardedClassId, 42, "Q413 must award the Shillien Oracle class");
+    assert.strictEqual(questState.completed, true, "Q413 must complete after both books are returned");
+    assert.strictEqual(items.get(1270), 1, "Q413 must retain the source Orb of Abyss reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
