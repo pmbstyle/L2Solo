@@ -2,9 +2,15 @@ const BUY_CAP = 999999;
 
 const s = (selfId, priceRate, count) => ({ selfId, priceRate, count });
 const b = (selfId, priceRate, count = BUY_CAP) => ({ selfId, priceRate, count });
-const SPIRITSHOT_IDS = [2509, 2510, 2511, 2512, 2513, 2514];
-const spiritshotsThrough = (grade) => SPIRITSHOT_IDS
-    .slice(0, grade + 1)
+const SHOT_IDS_BY_GRADE = [
+    [1835, 2509, 3947], // No Grade: Soulshot, Spiritshot, Blessed Spiritshot
+    [1463, 2510, 3948], // D
+    [1464, 2511, 3949], // C
+    [1465, 2512, 3950], // B
+    [1466, 2513, 3951], // A
+    [1467, 2514, 3952]  // S
+];
+const shotsForGrade = (grade) => (SHOT_IDS_BY_GRADE[grade] || SHOT_IDS_BY_GRADE[0])
     .map((selfId) => s(selfId, 1, BUY_CAP));
 
 module.exports = {
@@ -238,110 +244,111 @@ module.exports = {
         ]
     },
 
-    // Spiritshots: dedicated private stores keep ordinary NPC grocery lists focused.
+    // Dedicated shot stores sell every player shot type at the town's exact
+    // progression grade. They deliberately do not carry lower grades.
     "Tia": {
-        title: "Spiritshots: all grades",
+        title: "Shots: No Grade",
         town: "Talking Island",
         storeType: 1,
         locX: -84250, locY: 244680, locZ: -3730,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(0)
     },
     "Elya": {
-        title: "Spiritshots: all grades",
+        title: "Shots: No Grade",
         town: "Elven Village",
         storeType: 1,
         locX: 42700, locY: 50130, locZ: -2984,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(0)
     },
     "Dena": {
-        title: "Spiritshots: all grades",
+        title: "Shots: No Grade",
         town: "Dark Elven Village",
         storeType: 1,
         locX: 12060, locY: 15740, locZ: -4554,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(0)
     },
     "Orik": {
-        title: "Spiritshots: all grades",
+        title: "Shots: No Grade",
         town: "Orc Village",
         storeType: 1,
         locX: -44080, locY: -115380, locZ: -194,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(0)
     },
     "Bran": {
-        title: "Spiritshots: all grades",
+        title: "Shots: No Grade",
         town: "Dwarven Village",
         storeType: 1,
         locX: 116360, locY: -177600, locZ: -914,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(0)
     },
     "Rolf": {
-        title: "Spiritshots: D grade",
+        title: "Shots: D Grade",
         town: "Gludin",
         storeType: 1,
-        locX: -79320, locY: 153900, locZ: -3160,
-        items: spiritshotsThrough(1)
+        locX: -80620, locY: 150020, locZ: -3040,
+        items: shotsForGrade(1)
     },
     "Sila": {
-        title: "Spiritshots: D grade",
+        title: "Shots: D Grade",
         town: "Gludio",
         storeType: 1,
         locX: -14480, locY: 123730, locZ: -3117,
-        items: spiritshotsThrough(1)
+        items: shotsForGrade(1)
     },
     "Tara": {
-        title: "Spiritshots: D grade",
+        title: "Shots: D Grade",
         town: "Dion",
         storeType: 1,
         locX: 15910, locY: 143200, locZ: -2707,
-        items: spiritshotsThrough(1)
+        items: shotsForGrade(1)
     },
     "Eris": {
-        title: "Spiritshots: C grade",
+        title: "Shots: C Grade",
         town: "Giran",
         storeType: 1,
         locX: 83600, locY: 148300, locZ: -3406,
-        items: spiritshotsThrough(2)
+        items: shotsForGrade(2)
     },
     "Sera": {
-        title: "Spiritshots: B grade",
+        title: "Shots: B Grade",
         town: "Oren",
         storeType: 1,
         locX: 83200, locY: 53380, locZ: -1497,
-        items: spiritshotsThrough(3)
+        items: shotsForGrade(3)
     },
     "Nora": {
-        title: "Spiritshots: B grade",
+        title: "Shots: B Grade",
         town: "Hunter's Village",
         storeType: 1,
         locX: 116760, locY: 74880, locZ: -2581,
-        items: spiritshotsThrough(3)
+        items: shotsForGrade(3)
     },
     "Lina": {
-        title: "Spiritshots: B grade",
+        title: "Shots: B Grade",
         town: "Heine",
         storeType: 1,
         locX: 111500, locY: 219500, locZ: -3544,
-        items: spiritshotsThrough(3)
+        items: shotsForGrade(3)
     },
     "Mila": {
-        title: "Spiritshots: A grade",
+        title: "Shots: A Grade",
         town: "Aden",
         storeType: 1,
         locX: 148980, locY: 28060, locZ: -2253,
-        items: spiritshotsThrough(4)
+        items: shotsForGrade(4)
     },
     "Sven": {
-        title: "Spiritshots: S grade",
+        title: "Shots: S Grade",
         town: "Goddard",
         storeType: 1,
         locX: 148050, locY: -55340, locZ: -2728,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(5)
     },
     "Runa": {
-        title: "Spiritshots: S grade",
+        title: "Shots: S Grade",
         town: "Rune",
         storeType: 1,
         locX: 43950, locY: -47720, locZ: -792,
-        items: spiritshotsThrough(5)
+        items: shotsForGrade(5)
     }
 };

@@ -55,22 +55,28 @@ for (const npcId of [7004, 7137, 7150, 7519, 7561, 7063, 7254, 7315, 7081, 7180,
     assert.deepStrictEqual(shopSpiritshots(npcId), [2509], `ordinary NPC merchant ${npcId} must only retain its no-grade Spiritshot`);
 }
 
-const spiritshotStores = [
-    ['Tia', 'Talking Island', 5], ['Elya', 'Elven Village', 5], ['Dena', 'Dark Elven Village', 5],
-    ['Orik', 'Orc Village', 5], ['Bran', 'Dwarven Village', 5], ['Rolf', 'Gludin', 1],
+const shotStores = [
+    ['Tia', 'Talking Island', 0], ['Elya', 'Elven Village', 0], ['Dena', 'Dark Elven Village', 0],
+    ['Orik', 'Orc Village', 0], ['Bran', 'Dwarven Village', 0], ['Rolf', 'Gludin', 1],
     ['Sila', 'Gludio', 1], ['Tara', 'Dion', 1], ['Eris', 'Giran', 2], ['Sera', 'Oren', 3],
     ['Nora', "Hunter's Village", 3], ['Lina', 'Heine', 3], ['Mila', 'Aden', 4],
     ['Sven', 'Goddard', 5], ['Runa', 'Rune', 5]
 ];
-const spiritshotIds = [2509, 2510, 2511, 2512, 2513, 2514];
-for (const [name, town, grade] of spiritshotStores) {
+const shotIdsByGrade = [
+    [1835, 2509, 3947], [1463, 2510, 3948], [1464, 2511, 3949],
+    [1465, 2512, 3950], [1466, 2513, 3951], [1467, 2514, 3952]
+];
+for (const [name, town, grade] of shotStores) {
     const store = MerchantStoreConfigs[name];
-    assert.ok(store, `${town} must have a dedicated Spiritshot merchant`);
+    assert.ok(store, `${town} must have a dedicated shot merchant`);
     assert.strictEqual(store.storeType, 1, `${name} must be a selling private store`);
     assert.strictEqual(store.town, town, `${name} must be placed in ${town}`);
-    assert.deepStrictEqual(store.items.map((item) => item.selfId), spiritshotIds.slice(0, grade + 1), `${name} must stock Spiritshots through its town grade`);
+    assert.deepStrictEqual(store.items.map((item) => item.selfId), shotIdsByGrade[grade], `${name} must stock every shot type at its town grade only`);
     store.items.forEach((item) => {
-        assert.strictEqual(item.priceRate, 1, `${name} must use the standard Spiritshot price`);
-        assert.strictEqual(item.count, 999999, `${name} must have a practical unlimited Spiritshot stock`);
+        assert.strictEqual(item.priceRate, 1, `${name} must use the standard shot price`);
+        assert.strictEqual(item.count, 999999, `${name} must have a practical unlimited shot stock`);
     });
 }
+
+assert(Math.hypot(MerchantStoreConfigs.Rolf.locX + 80826, MerchantStoreConfigs.Rolf.locY - 149775) < 1000,
+    'Gludin shot merchant must be placed inside the town square');
