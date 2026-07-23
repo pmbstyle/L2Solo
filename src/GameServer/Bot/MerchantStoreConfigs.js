@@ -203,7 +203,7 @@ module.exports = {
         title: "B/A materials",
         town: "Oren",
         storeType: 1,
-        locX: 83110, locY: 53327, locZ: -1497,
+        locX: 82600, locY: 53400, locZ: -1488,
         items: [
             s(1885, 0.66, 2500), s(1886, 0.62, 600), s(1887, 0.62, 1200),
             s(1888, 0.62, 1200), s(1889, 0.64, 2200), s(1890, 0.60, 700),
@@ -214,7 +214,7 @@ module.exports = {
         title: "Oren gear",
         town: "Oren",
         storeType: 1,
-        locX: 83020, locY: 53245, locZ: -1497,
+        locX: 82700, locY: 53400, locZ: -1488,
         items: [
             s(79, 0.60, 3), s(97, 0.60, 3), s(98, 0.60, 2),
             s(442, 0.61, 3), s(473, 0.61, 3), s(603, 0.62, 5),
@@ -225,7 +225,7 @@ module.exports = {
         title: "Buy Oren mats",
         town: "Oren",
         storeType: 3,
-        locX: 83150, locY: 53300, locZ: -1497,
+        locX: 82800, locY: 53400, locZ: -1488,
         items: [
             b(1885, 0.62), b(1886, 0.58), b(1887, 0.60), b(1888, 0.60),
             b(1889, 0.62), b(1890, 0.58), b(1893, 0.56), b(1894, 0.60),
@@ -236,7 +236,7 @@ module.exports = {
         title: "Buy Oren drops",
         town: "Oren",
         storeType: 3,
-        locX: 83245, locY: 53270, locZ: -1497,
+        locX: 82900, locY: 53400, locZ: -1488,
         items: [
             b(1830, 0.60), b(1343, 0.55), b(1539, 0.62), b(91, 0.56),
             b(212, 0.56), b(284, 0.56), b(79, 0.56), b(97, 0.56),
@@ -257,28 +257,28 @@ module.exports = {
         title: "Shots: No Grade",
         town: "Elven Village",
         storeType: 1,
-        locX: 42700, locY: 50130, locZ: -2984,
+        locX: 47166, locY: 51511, locZ: -2992,
         items: shotsForGrade(0)
     },
     "Dena": {
         title: "Shots: No Grade",
         town: "Dark Elven Village",
         storeType: 1,
-        locX: 12060, locY: 15740, locZ: -4554,
+        locX: 9550, locY: 15717, locZ: -4568,
         items: shotsForGrade(0)
     },
     "Orik": {
         title: "Shots: No Grade",
         town: "Orc Village",
         storeType: 1,
-        locX: -44080, locY: -115380, locZ: -194,
+        locX: -45264, locY: -112292, locZ: -240,
         items: shotsForGrade(0)
     },
     "Bran": {
         title: "Shots: No Grade",
         town: "Dwarven Village",
         storeType: 1,
-        locX: 116360, locY: -177600, locZ: -914,
+        locX: 115072, locY: -177956, locZ: -880,
         items: shotsForGrade(0)
     },
     "Rolf": {
@@ -313,14 +313,14 @@ module.exports = {
         title: "Shots: B Grade",
         town: "Oren",
         storeType: 1,
-        locX: 83200, locY: 53380, locZ: -1497,
+        locX: 83000, locY: 53400, locZ: -1488,
         items: shotsForGrade(3)
     },
     "Nora": {
         title: "Shots: B Grade",
         town: "Hunter's Village",
         storeType: 1,
-        locX: 116760, locY: 74880, locZ: -2581,
+        locX: 117129, locY: 77137, locZ: -2688,
         items: shotsForGrade(3)
     },
     "Lina": {
@@ -334,7 +334,7 @@ module.exports = {
         title: "Shots: A Grade",
         town: "Aden",
         storeType: 1,
-        locX: 148980, locY: 28060, locZ: -2253,
+        locX: 146497, locY: 25807, locZ: -2008,
         items: shotsForGrade(4)
     },
     "Sven": {

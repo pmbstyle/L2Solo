@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 const BuyShop = invoke('GameServer/World/Generics/NpcBypasses/BuyShop');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 DataCache.items = require('../data/Items/Others/others.json');
 
@@ -80,3 +81,15 @@ for (const [name, town, grade] of shotStores) {
 
 assert(Math.hypot(MerchantStoreConfigs.Rolf.locX + 80826, MerchantStoreConfigs.Rolf.locY - 149775) < 1000,
     'Gludin shot merchant must be placed inside the town square');
+
+// These stalls were captured beside each town's gatekeeper and checked against
+// the loaded geodata. Keeping the Z value on the actual floor prevents private
+// stores from being hidden in a building or on another vertical layer.
+const accessibleStalls = [
+    'Elya', 'Dena', 'Orik', 'Bran', 'Iris', 'Helga', 'Oskar', 'Selin', 'Sera', 'Nora', 'Mila'
+];
+for (const name of accessibleStalls) {
+    const store = MerchantStoreConfigs[name];
+    const ground = GeodataEngine.getHeight(store.locX, store.locY, store.locZ);
+    assert.strictEqual(store.locZ, ground, `${name} must stand on the visible geodata floor`);
+}
