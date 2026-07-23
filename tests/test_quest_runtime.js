@@ -48,6 +48,7 @@ const Q159 = require("../src/GameServer/Quest/quests/Q159_ProtectTheWaterSource"
 const Q162 = require("../src/GameServer/Quest/quests/Q162_CurseOfTheUndergroundFortress");
 const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
 const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
+const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -104,6 +105,9 @@ async function main() {
   assert.strictEqual(Q401.eventNpc("start"), 7010);
   assert.strictEqual(Q401.eventNpc("guild"), 7253);
   assert.strictEqual(Q401.eventNpc("forge"), 7010);
+  assert.strictEqual(Q402.eventNpc("start"), 7417);
+  assert.strictEqual(Q402.eventNpc("aron"), 7332);
+  assert.strictEqual(Q402.eventNpc("herod"), 7031);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -311,6 +315,56 @@ async function main() {
     assert.strictEqual(items.get(1145), 1, "Q401 must retain the source Medallion of Warrior reward");
     assert.strictEqual(items.get(1144), 0, "Q401 must consume all collected Poison Spider's Legs");
     assert.strictEqual(items.get(1142), 0, "Q401 must consume the Rusted Bronze Sword");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 4 });
+    await Q402.onEvent(questState, "start");
+    assert.strictEqual(items.get(1271), 1, "Q402 must issue the Mark of Esquire");
+    const knightAssignments = [
+      ["aron", 7332, 1169, 10, 1162],
+      ["collin", 7289, 1171, 12, 1163],
+      ["kyle", 7379, 1173, 20, 1164],
+      ["drystan", 7037, 1175, 20, 1165],
+      ["jeremy", 7039, 1177, 20, 1166],
+      ["herod", 7031, 1179, 10, 1167],
+    ];
+    for (const [event, npcId, trophy, needed, coin] of knightAssignments) {
+      await Q402.onEvent(questState, event);
+      if (event === "drystan") {
+        setItem(trophy, needed - 1);
+        const originalRandom = Math.random;
+        Math.random = () => 0;
+        try {
+          await Q402.onKill(questState, { fetchSelfId: () => 24 });
+        } finally {
+          Math.random = originalRandom;
+        }
+        assert.strictEqual(items.get(trophy), needed, "Q402 must drop the final Lizardman Totem from its source mob");
+      } else if (event === "jeremy") {
+        setItem(trophy, needed - 1);
+        const originalRandom = Math.random;
+        Math.random = () => 0.5;
+        try {
+          await Q402.onKill(questState, { fetchSelfId: () => 103 });
+          assert.strictEqual(items.get(trophy), needed - 1, "Q402 must preserve the source 40% Giant Spider Husk drop chance");
+          Math.random = () => 0;
+          await Q402.onKill(questState, { fetchSelfId: () => 103 });
+        } finally {
+          Math.random = originalRandom;
+        }
+        assert.strictEqual(items.get(trophy), needed, "Q402 must collect the final Giant Spider Husk on a successful roll");
+      } else setItem(trophy, needed);
+      await Q402.onTalk(questState, { fetchSelfId: () => npcId });
+      assert.strictEqual(items.get(coin), 1, `Q402 must exchange ${event}'s trophies for its Coin of Lords`);
+    }
+    await Q402.onTalk(questState, { fetchSelfId: () => 7417 });
+    assert.strictEqual(questState.completed, true, "Q402 must complete after all six Coins of Lords are returned");
+    assert.strictEqual(items.get(1161), 1, "Q402 must retain the source Sword of Ritual reward");
+    assert.strictEqual(items.get(1271), 0, "Q402 must consume the Mark of Esquire at completion");
+    assert.deepStrictEqual([1162, 1163, 1164, 1165, 1166, 1167].map((id) => items.get(id) || 0), [0, 0, 0, 0, 0, 0], "Q402 must consume every Coin of Lords");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;

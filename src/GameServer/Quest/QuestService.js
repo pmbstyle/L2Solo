@@ -57,6 +57,7 @@ const quests = [
   require("./quests/Q169_OffspringOfNightmares"),
   require("./quests/Q170_DangerousSeduction"),
   require("./quests/Q401_PathToWarrior"),
+  require("./quests/Q402_PathToKnight"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 
