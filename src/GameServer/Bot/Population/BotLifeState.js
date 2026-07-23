@@ -9,6 +9,7 @@ const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -1164,6 +1165,11 @@ const BotLifeState = {
             };
         }
 
+        const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+            ...state,
+            level,
+            stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
+        }, inventory);
         const nextActivity = result.patch?.activity || state.activity;
         const nextState = {
             ...state,
@@ -1193,9 +1199,10 @@ const BotLifeState = {
             },
             stats: {
                 ...stats,
-                ...(result.patch?.stats || {})
+                ...(result.patch?.stats || {}),
+                equipment: equipmentSummaryFromInventory(equippedInventory)
             },
-            inventory,
+            inventory: equippedInventory,
             updatedAt: timestamp
         };
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
@@ -1271,7 +1278,7 @@ const BotLifeState = {
         });
     },
 
-    refreshInventory(state) {
+    refreshInventory(state, options = {}) {
         if (!state?.characterId) return Promise.resolve(state || null);
         return Database.fetchItems(state.characterId).then((items) => {
             // Cold progression owns virtual item counts between hot
@@ -1289,15 +1296,21 @@ const BotLifeState = {
                     slot: Number(item.slot || previous.slot || 0)
                 };
             });
-            return {
+            const equipped = options.equip === true
+                ? GearAcquisitionPlanner.equipInventoryUpgrades(state, inventory)
+                : inventory;
+            const refreshed = {
                 ...state,
-                adena: Math.max(Number(state.adena || 0), inventoryAdena(inventory)),
-                inventory,
+                adena: Math.max(Number(state.adena || 0), inventoryAdena(equipped)),
+                inventory: equipped,
                 stats: {
                     ...(state.stats || {}),
-                    equipment: equipmentSummaryFromInventory(inventory)
+                    equipment: equipmentSummaryFromInventory(equipped)
                 }
             };
+            return options.equip === true
+                ? syncInventorySummary(state.characterId, equipped).then(() => refreshed)
+                : refreshed;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to refresh inventory for %s: %s', state.name, err.message);
             return state;

@@ -2,6 +2,7 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
+const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 
 const MAX_DROPS_PER_RESOLVE = 4;
 
@@ -223,6 +224,9 @@ const BackgroundPartyResolver = {
             });
         });
 
+        const lootDistribution = PartyLootAllocator.transferGearDrops(memberResults);
+        const distributedMemberResults = lootDistribution.memberResults;
+
         if (wins > 0) {
             events.push({
                 characterId: party.leaderId,
@@ -232,12 +236,24 @@ const BackgroundPartyResolver = {
                 meta: { partyId: party.partyId, spotId: spot.id, fights, wins, losses }
             });
         }
-
+        lootDistribution.transfers.forEach((transfer) => {
+            events.push({
+                characterId: transfer.to.characterId,
+                type: 'party_gear_share',
+                summary: `${transfer.from.name || 'A party member'} gave ${transfer.item.name || `Item ${transfer.item.selfId}`} to ${transfer.to.name || 'a party member'} who needed it`,
+                weight: 2,
+                meta: {
+                    partyId: party.partyId,
+                    fromCharacterId: transfer.from.characterId,
+                    itemId: transfer.item.selfId
+                }
+            });
+        });
         const cohesionDelta = wins >= losses ? 0.015 : -0.035;
         const riskDelta = deaths > 0 ? 0.05 : losses > wins ? 0.02 : -0.01;
 
         return {
-            memberResults,
+            memberResults: distributedMemberResults,
             events,
             partyPatch: {
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
