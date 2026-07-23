@@ -56,6 +56,7 @@ const quests = [
   require("./quests/Q168_DeliverSupplies"),
   require("./quests/Q169_OffspringOfNightmares"),
   require("./quests/Q170_DangerousSeduction"),
+  require("./quests/Q401_PathToWarrior"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 

@@ -8,12 +8,15 @@ const npcTemplates = JSON.parse(fs.readFileSync("data/Npcs/npcs.json", "utf8"));
 const otherItems = JSON.parse(
   fs.readFileSync("data/Items/Others/others.json", "utf8"),
 );
+const weapons = JSON.parse(
+  fs.readFileSync("data/Items/Weapons/weapons.json", "utf8"),
+);
 const spawnGroups = JSON.parse(
   fs.readFileSync("data/Npcs/Spawns/spawns.json", "utf8"),
 );
 
 const templateIds = new Set(npcTemplates.map((npc) => Number(npc.selfId)));
-const itemIds = new Set(otherItems.map((item) => Number(item.selfId)));
+const itemIds = new Set([...otherItems, ...weapons].map((item) => Number(item.selfId)));
 const spawnedIds = new Set();
 function collectSpawnIds(value) {
   if (Array.isArray(value)) return value.forEach(collectSpawnIds);
@@ -41,6 +44,10 @@ for (const itemId of [5789, 5790]) {
     itemIds.has(itemId),
     `source-backed starter quest reward ${itemId} is missing from the item datapack`,
   );
+}
+
+for (const itemId of [1138, 1139, 1140, 1141, 1142, 1143, 1144, 1145]) {
+  assert(itemIds.has(itemId), `Q401 requires missing quest item ${itemId}`);
 }
 
 console.log("registered quest NPCs and kill targets are available");

@@ -47,6 +47,7 @@ const Q152 = require("../src/GameServer/Quest/quests/Q152_ShardsOfGolem");
 const Q159 = require("../src/GameServer/Quest/quests/Q159_ProtectTheWaterSource");
 const Q162 = require("../src/GameServer/Quest/quests/Q162_CurseOfTheUndergroundFortress");
 const Q163 = require("../src/GameServer/Quest/quests/Q163_LegacyOfThePoet");
+const Q401 = require("../src/GameServer/Quest/quests/Q401_PathToWarrior");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -100,6 +101,9 @@ async function main() {
   assert.strictEqual(Q104.eventNpc("start"), 7017);
   assert.strictEqual(Q157.eventNpc("start"), 7005);
   assert.strictEqual(Q160.eventNpc("start"), 7370);
+  assert.strictEqual(Q401.eventNpc("start"), 7010);
+  assert.strictEqual(Q401.eventNpc("guild"), 7253);
+  assert.strictEqual(Q401.eventNpc("forge"), 7010);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -181,6 +185,7 @@ async function main() {
   const originalTake = QuestService.takeItem;
   const originalGive = QuestService.giveItem;
   const originalRewardAdena = QuestService.rewardAdena;
+  const originalAwardFirstProfession = QuestService.awardFirstProfession;
   const calls = [];
   QuestService.takeItem = async (_, itemId) => calls.push(["take", itemId]);
   QuestService.giveItem = async (_, itemId, amount) =>
@@ -238,10 +243,79 @@ async function main() {
       ],
       "Q001 must grant one unscaled Necklace of Knowledge and the completion sound",
     );
+
+    calls.length = 0;
+    const items = new Map();
+    let equippedWeapon = 0;
+    const setItem = (id, amount) => items.set(id, Math.max(0, amount));
+    const questState = {
+      session: {
+        actor: {
+          fetchClassId: () => 0,
+          fetchLevel: () => 20,
+          backpack: {
+            fetchItemFromSelfId: (id) => {
+              const amount = items.get(id) || 0;
+              return amount ? { fetchAmount: () => amount } : null;
+            },
+            fetchPaperdollSelfId: () => equippedWeapon,
+          },
+        },
+      },
+      isStarted: () => questState.started,
+      isCompleted: () => questState.completed,
+      started: false,
+      completed: false,
+      cond: 0,
+      getInt: () => questState.cond,
+      setState: async () => { questState.started = true; },
+      set: async (key, value) => { if (key === "cond") questState.cond = Number(value); },
+      exit: async () => { questState.completed = true; },
+      playSound: (sound) => calls.push(["sound", sound]),
+    };
+    QuestService.giveItem = async (_, id, amount) => setItem(id, (items.get(id) || 0) + amount);
+    QuestService.takeItem = async (_, id, amount = 1) => {
+      const current = items.get(id) || 0;
+      const remove = amount === -1 ? current : amount;
+      if (current < remove) return false;
+      setItem(id, current - remove);
+      return true;
+    };
+    QuestService.awardFirstProfession = async () => ({ ok: true, targetClassId: 1 });
+    await Q401.onEvent(questState, "start");
+    assert.strictEqual(items.get(1138), 1, "Q401 must issue Auron's Letter");
+    await Q401.onEvent(questState, "guild");
+    assert.strictEqual(items.get(1139), 1, "Q401 must issue the Warrior Guild Mark");
+    setItem(1140, 9);
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q401.onKill(questState, { fetchSelfId: () => 35 });
+    } finally {
+      Math.random = originalRandom;
+    }
+    assert.strictEqual(items.get(1140), 10, "Q401 must drop the tenth rusted sword from a Tracker Skeleton");
+    assert.strictEqual(questState.cond, 3, "Q401 must advance when all ten rusted swords are collected");
+    await Q401.onTalk(questState, { fetchSelfId: () => 7253 });
+    assert.strictEqual(items.get(1143), 1, "Q401 must issue Simplon's Letter after the sword hand-in");
+    await Q401.onEvent(questState, "forge");
+    assert.strictEqual(items.get(1142), 1, "Q401 must issue the equipped Rusted Bronze Sword");
+    setItem(1144, 19);
+    await Q401.onKill(questState, { fetchSelfId: () => 38 });
+    assert.strictEqual(items.get(1144), 19, "Q401 must not drop spider legs while the Rusted Bronze Sword is unequipped");
+    equippedWeapon = 1142;
+    await Q401.onKill(questState, { fetchSelfId: () => 38 });
+    assert.strictEqual(items.get(1144), 20, "Q401 must drop spider legs with the Rusted Bronze Sword equipped");
+    await Q401.onTalk(questState, { fetchSelfId: () => 7010 });
+    assert.strictEqual(questState.completed, true, "Q401 must complete after the final spider-leg hand-in");
+    assert.strictEqual(items.get(1145), 1, "Q401 must retain the source Medallion of Warrior reward");
+    assert.strictEqual(items.get(1144), 0, "Q401 must consume all collected Poison Spider's Legs");
+    assert.strictEqual(items.get(1142), 0, "Q401 must consume the Rusted Bronze Sword");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
     QuestService.rewardAdena = originalRewardAdena;
+    QuestService.awardFirstProfession = originalAwardFirstProfession;
   }
 
   const deleted = [];
