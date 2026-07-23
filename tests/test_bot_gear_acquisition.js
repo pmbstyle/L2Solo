@@ -81,6 +81,49 @@ const dMarketPlan = GearAcquisitionPlanner.planFor({ ...mage, level: 20 }, {
     findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' })
 });
 assert.strictEqual(dMarketPlan.strategy, 'market', 'D-grade bots must compare a ready market offer with crafting and drops');
+const atubaMace = DataCache.items.find((item) => item.template?.name === 'Atuba Mace');
+const entryDSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd' && item.template?.kind === 'Weapon.Sword');
+const noGradeSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'none' && item.template?.kind === 'Weapon.Sword');
+const equippedUpgrade = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20, stats: { role: 'tank' } }, {
+    [noGradeSword.selfId]: { selfId: noGradeSword.selfId, amount: 1, equipped: true, slot: 7 },
+    [entryDSword.selfId]: { selfId: entryDSword.selfId, amount: 1, equipped: false, slot: 7 }
+});
+assert.strictEqual(equippedUpgrade[entryDSword.selfId].equipped, true, 'a useful D drop must equip immediately in the cold inventory');
+assert.strictEqual(equippedUpgrade[noGradeSword.selfId].equipped, false, 'the replaced no-grade weapon must be unequipped');
+const entryDTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} });
+assert(entryDTarget, 'a new D-grade bot must receive an attainable equipment target');
+assert(Number(entryDTarget.item.template.price) < Number(atubaMace.template.price), 'a fresh D-grade bot must not begin by chasing the top D weapon');
+const entryDArcherTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 3, role: 'archer' }, inventory: {} });
+assert(entryDArcherTarget, 'an archer must retain a D-grade target when every entry bow is above the early cap');
+assert.strictEqual(entryDArcherTarget.item.template.kind, 'Weapon.Bow', 'an archer must keep weapon-first progression even when its entry bow exceeds the cap');
+assert(Number.isFinite(GearAcquisitionPlanner.progressionPriceCap('d', 39)), 'D-grade planning must retain an adequate-kit ceiling through the whole grade band');
+assert(Number.isFinite(GearAcquisitionPlanner.progressionPriceCap('c', 51)), 'C-grade planning must retain an adequate-kit ceiling through the whole grade band');
+const fullLeather = DataCache.items.find((item) => item.etc?.rank === 'd' && item.template?.kind === 'Armor.Leather' && Number(item.etc?.slot) === 15);
+const leatherChest = DataCache.items.find((item) => item.etc?.rank === 'd' && item.template?.kind === 'Armor.Leather' && Number(item.etc?.slot) === 10);
+const leatherLegs = DataCache.items.find((item) => item.etc?.rank === 'd' && item.template?.kind === 'Armor.Leather' && Number(item.etc?.slot) === 11);
+assert(fullLeather && leatherChest && leatherLegs, 'the datapack must expose D leather full and separate body armour for equip arbitration');
+const equipInventory = (items) => GearAcquisitionPlanner.equipInventoryUpgrades(
+    { level: 20, stats: { role: 'archer' } },
+    Object.fromEntries(items.map((item) => [item.selfId, { selfId: item.selfId, amount: 1, slot: item.etc.slot }]))
+);
+const equippedIds = (inventory) => Object.values(inventory)
+    .filter((item) => item.equipped)
+    .map((item) => Number(item.selfId))
+    .sort((left, right) => left - right);
+const fullFirst = equippedIds(equipInventory([fullLeather, leatherChest, leatherLegs]));
+const separateFirst = equippedIds(equipInventory([leatherChest, leatherLegs, fullLeather]));
+assert.deepStrictEqual(fullFirst, separateFirst, 'full-body and chest/legs equipment must resolve identically regardless of inventory insertion order');
+assert(!(fullFirst.includes(fullLeather.selfId) && (fullFirst.includes(leatherChest.selfId) || fullFirst.includes(leatherLegs.selfId))), 'a full-body item must never equip alongside a conflicting chest or legs item');
+const lowDSource = { spotLevel: 18 };
+const tankReadiness = GearAcquisitionPlanner.combatReadiness({
+    level: 20,
+    stats: { role: 'tank' },
+    inventory: { 1: { selfId: 1, amount: 1, equipped: true }, 10: { selfId: 10, amount: 1, equipped: true } }
+});
+const healerReadiness = GearAcquisitionPlanner.combatReadiness({ level: 20, stats: { role: 'healer' }, inventory: {} });
+assert(tankReadiness.effectiveLevel > healerReadiness.effectiveLevel, 'readiness must recognise that a geared tank can take safer solo routes than an unprepared support');
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20, stats: { role: 'tank' }, inventory: { 1: { selfId: 1, amount: 1, equipped: true } } }, lowDSource), true, 'a tank may solo an entry D route when its actual kit supports it');
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20, stats: { role: 'healer' }, inventory: {} }, lowDSource), false, 'an unprepared support must wait for party help at the same route');
 assert(Number(target.item.template.price) <= 2290000, 'a new C-grade bot must begin with an entry-tier weapon target');
 const station = ColdCraftingService.stationForRecipe(target.recipe.recipeId);
 assert(station, 'a selected equipment recipe must be published by a Giran crafting station');

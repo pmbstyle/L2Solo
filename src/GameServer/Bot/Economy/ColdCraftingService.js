@@ -128,7 +128,7 @@ async function supplementMaterials(characterId, items, recipe, multiplier = 1) {
 // latter after either path, otherwise consumed inputs can linger in the
 // summary and send a bot back to a station with phantom materials.
 function refreshPhysicalInventory(state) {
-    return LifeState.refreshInventory({ ...state, inventory: {} });
+    return LifeState.refreshInventory({ ...state, inventory: {} }, { equip: true });
 }
 
 function craftableBatchCount(items, recipe, requested = 1) {
