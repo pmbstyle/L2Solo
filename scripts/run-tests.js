@@ -88,6 +88,7 @@ const tests = [
     'tests/test_npc_sell_shop.js',
     'tests/test_personal_warehouse.js',
     'tests/test_npc_social_aggro.js',
+    'tests/test_npc_known_object_lifecycle.js',
     'tests/test_npc_respawn.js',
     'tests/test_party_companion_rest_follow.js',
     'tests/test_party_buff_targets.js',

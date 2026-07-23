@@ -1,6 +1,7 @@
 const Opcodes = invoke('GameServer/Network/Opcodes');
 const Actor   = invoke('GameServer/Actor/Actor');
 const World   = invoke('GameServer/World/World');
+const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 
 const TRACE_LIMIT = 40;
 
@@ -194,6 +195,7 @@ class Session {
     }
 
     dataSendToMe(data) {
+        NpcVisibility.trackNpcPacket(this, data);
         this.recordOutboundPacket(data);
         const packet = this.packData(data);
         this.socket.write(packet);
@@ -202,6 +204,7 @@ class Session {
     dataSendToOthers(data, creature) {
         const packet = this.packData(data);
         World.fetchVisibleUsers(this, creature).forEach((user) => {
+            NpcVisibility.trackNpcPacket(user, data);
             if (user.recordOutboundPacket) {
                 user.recordOutboundPacket(data);
             }
