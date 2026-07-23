@@ -74,4 +74,8 @@ for (const itemId of Array.from({ length: 16 }, (_, index) => 1616 + index)) {
   assert(itemIds.has(itemId), `Q416 requires missing quest item ${itemId}`);
 }
 
+for (const itemId of Array.from({ length: 16 }, (_, index) => 1642 + index)) {
+  assert(itemIds.has(itemId), `Q417 requires missing quest item ${itemId}`);
+}
+
 console.log("registered quest NPCs and kill targets are available");

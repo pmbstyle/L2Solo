@@ -63,6 +63,7 @@ const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle")
 const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
 const Q415 = require("../src/GameServer/Quest/quests/Q415_PathToOrcMonk");
 const Q416 = require("../src/GameServer/Quest/quests/Q416_PathToOrcShaman");
+const Q417 = require("../src/GameServer/Quest/quests/Q417_PathToScavenger");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -149,6 +150,8 @@ async function main() {
   assert.strictEqual(Q415.eventNpc("start"), 7587);
   assert.strictEqual(Q416.eventNpc("start"), 7585);
   assert.strictEqual(Q416.eventNpc("net"), 7593);
+  assert.strictEqual(Q417.eventNpc("start"), 7524);
+  assert.strictEqual(Q417.eventNpc("mion"), 7519);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -313,9 +316,10 @@ async function main() {
       started: false,
       completed: false,
       cond: 0,
-      getInt: () => questState.cond,
+      values: {},
+      getInt: (key) => key === "cond" ? questState.cond : Number(questState.values[key]) || 0,
       setState: async () => { questState.started = true; },
-      set: async (key, value) => { if (key === "cond") questState.cond = Number(value); },
+      set: async (key, value) => { if (key === "cond") questState.cond = Number(value); else questState.values[key] = value; },
       exit: async () => { questState.completed = true; },
       playSound: (sound) => calls.push(["sound", sound]),
     };
@@ -804,6 +808,21 @@ async function main() {
     assert.strictEqual(awardedClassId, 50, "Q416 must award the Orc Shaman class");
     assert.strictEqual(questState.completed, true, "Q416 must complete after Totem Spirit Blood is returned to Umos");
     assert.strictEqual(items.get(1631), 1, "Q416 must retain the source Mask of Medium reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; questState.values = {}; classId = 53; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    const originalRandomForScavenger = Math.random; Math.random = () => 0;
+    try {
+      await Q417.onEvent(questState, "start");
+      for (let i = 0; i < 3; i += 1) { await Q417.onEvent(questState, "mion"); await Q417.onTalk(questState, { fetchSelfId: () => 7525 }); await Q417.onTalk(questState, { fetchSelfId: () => 7519 }); }
+      await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      setItem(1655, 4); await Q417.onKill(questState, { fetchSelfId: () => 5058, isSpoil: () => true }); await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      setItem(1656, 19); await Q417.onKill(questState, { fetchSelfId: () => 403, isSpoil: () => true }); await Q417.onTalk(questState, { fetchSelfId: () => 7556 });
+      await Q417.onEvent(questState, "raut"); await Q417.onEvent(questState, "torai"); await Q417.onTalk(questState, { fetchSelfId: () => 7316 });
+    } finally { Math.random = originalRandomForScavenger; }
+    assert.strictEqual(awardedClassId, 54, "Q417 must award the Scavenger class");
+    assert.strictEqual(questState.completed, true, "Q417 must complete after the Succubus Undies are returned");
+    assert.strictEqual(items.get(1642), 1, "Q417 must retain the source Ring of Raven reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
