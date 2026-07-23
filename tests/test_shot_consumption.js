@@ -92,6 +92,7 @@ const daggerTemplate = DataCache.items.find((entry) => entry.selfId === 10);
 const trainingGlovesTemplate = DataCache.items.find((entry) => entry.selfId === 2368);
 const squireSwordTemplate = DataCache.items.find((entry) => entry.selfId === 2369);
 const guildMemberClubTemplate = DataCache.items.find((entry) => entry.selfId === 2370);
+const buffaloHornTemplate = DataCache.items.find((entry) => entry.selfId === 308);
 const apprenticeRodTemplate = DataCache.items.find((entry) => entry.selfId === 7);
 const willowStaffTemplate = DataCache.items.find((entry) => entry.selfId === 8);
 assert.strictEqual(apprenticeWandTemplate.etc.spiritshot, 1, 'Apprentice Wand should preserve Lisvus spiritshot cost');
@@ -105,6 +106,15 @@ assert.strictEqual(squireSwordTemplate.etc.soulshot, 1, 'Squire\'s Sword should 
 assert.strictEqual(squireSwordTemplate.etc.spiritshot, 1, 'Squire\'s Sword should consume one Spiritshot');
 assert.strictEqual(guildMemberClubTemplate.etc.soulshot, 1, 'Guild Member\'s Club should consume one Soulshot');
 assert.strictEqual(guildMemberClubTemplate.etc.spiritshot, 1, 'Guild Member\'s Club should consume one Spiritshot');
+assert.strictEqual(buffaloHornTemplate.etc.soulshot, 1, 'Buffalo\'s Horn should preserve Lisvus Soulshot cost');
+assert.strictEqual(buffaloHornTemplate.etc.spiritshot, 1, 'Buffalo\'s Horn should preserve Lisvus Spiritshot cost');
+
+const weaponTemplates = DataCache.items.filter((entry) => entry.template?.kind?.startsWith('Weapon.'));
+assert(weaponTemplates.length > 0, 'datapack should contain weapons');
+for (const weapon of weaponTemplates) {
+    assert(weapon.etc.soulshot >= 1, `${weapon.template.name} (${weapon.selfId}) should consume at least one Soulshot`);
+    assert(weapon.etc.spiritshot >= 1, `${weapon.template.name} (${weapon.selfId}) should consume at least one Spiritshot`);
+}
 
 const starterMageBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 starterMageBackpack.items = [
