@@ -9,6 +9,9 @@ const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const Item = invoke('GameServer/Item/Item');
 
+assert.strictEqual(BotGear.ensureCharacterGear, undefined,
+    'level-based gear plans must guide acquisition, not create free equipment on spawn');
+
 function bySlot(plan, slot) {
     return plan.items.find((item) => Number(item.slot) === Number(slot));
 }

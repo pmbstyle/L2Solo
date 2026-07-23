@@ -1,4 +1,3 @@
-const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -30,7 +29,6 @@ const GRADE_BANDS = [
 ];
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
-const WEARABLE_SLOTS = new Set(Object.values(ARMOR_SLOTS));
 const NO_GRADE_PRICE_CAPS = [
     { maxLevel: 5, price: 1000 },
     { maxLevel: 10, price: 12500 },
@@ -314,105 +312,8 @@ function planFor(character) {
     };
 }
 
-function templateFor(selfId) {
-    return allItems().find((item) => Number(item.selfId) === Number(selfId)) || null;
-}
-
-function isWearableRow(row) {
-    const template = templateFor(row.selfId);
-    return !!template && WEARABLE_SLOTS.has(Number(row.slot || template.slot || 0));
-}
-
-function desiredKey(item, index) {
-    return `${item.selfId}:${item.slot}:${index}`;
-}
-
-function assignExistingItems(existing, desired) {
-    const available = new Map();
-    existing.forEach((row) => {
-        const selfId = Number(row.selfId || 0);
-        if (!available.has(selfId)) available.set(selfId, []);
-        available.get(selfId).push(row);
-    });
-
-    return desired.map((item, index) => {
-        const rows = available.get(Number(item.selfId)) || [];
-        const existingRow = rows.shift() || null;
-        return {
-            key: desiredKey(item, index),
-            desired: item,
-            existing: existingRow
-        };
-    });
-}
-
-function createMissingItem(characterId, desired) {
-    return Database.setItem(characterId, {
-        selfId: desired.selfId,
-        name: desired.name,
-        amount: desired.amount || 1,
-        equipped: false,
-        slot: desired.slot
-    }).then((result) => ({
-        id: Number(result.insertId),
-        selfId: desired.selfId,
-        slot: desired.slot,
-        equipped: false
-    }));
-}
-
-function syncAssignments(characterId, existing, assignments) {
-    const assignedIds = new Map();
-    let chain = Promise.resolve();
-    let changed = false;
-
-    assignments.forEach((assignment) => {
-        chain = chain.then(() => {
-            if (assignment.existing) return assignment.existing;
-            changed = true;
-            return createMissingItem(characterId, assignment.desired);
-        }).then((row) => {
-            assignedIds.set(Number(row.id), assignment.desired);
-            if (Number(row.slot) !== Number(assignment.desired.slot) || Number(row.equipped) !== 1) {
-                changed = true;
-                return Database.updateItemEquipState(characterId, row.id, true, assignment.desired.slot);
-            }
-            return null;
-        });
-    });
-
-    existing.filter(isWearableRow).forEach((row) => {
-        chain = chain.then(() => {
-            if (assignedIds.has(Number(row.id))) return null;
-            if (Number(row.equipped) !== 1) return null;
-            changed = true;
-            return Database.updateItemEquipState(characterId, row.id, false, row.slot || 0);
-        });
-    });
-
-    return chain.then(() => changed);
-}
-
 const BotGear = {
-    planFor,
-
-    ensureCharacterGear(character, options = {}) {
-        if (!character || !character.id || options.disabled === true) {
-            return Promise.resolve({ changed: false, plan: null });
-        }
-
-        const plan = planFor(character);
-        if (!plan.items.length) return Promise.resolve({ changed: false, plan });
-
-        return Database.fetchItems(character.id).then((existing) => {
-            const assignments = assignExistingItems(existing || [], plan.items);
-            return syncAssignments(character.id, existing || [], assignments)
-                .then((changed) => ({ changed, plan }));
-        }).catch((err) => {
-            utils.infoWarn('BotGear', 'failed to gear %s: %s', character.name || character.id, err.message);
-            return { changed: false, plan, error: err.message };
-        });
-    }
+    planFor
 };
 
 module.exports = BotGear;

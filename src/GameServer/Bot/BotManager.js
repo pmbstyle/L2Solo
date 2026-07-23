@@ -14,7 +14,6 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
-const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
@@ -509,21 +508,18 @@ const BotManager = {
                 classId: firstCharacter.classId,
                 level: firstCharacter.level
             }, firstCharacter.classId);
-            const gearReady = skillsReady.then(() => Shared.fetchCharacters(username))
+            const spawnReady = skillsReady.then(() => Shared.fetchCharacters(username))
                 .then((reconciledCharacters) => {
                     const reconciledCharacter = reconciledCharacters[0];
                     if (!reconciledCharacter) return null;
-                    return (firstStoreCfg
-                        ? Promise.resolve()
-                        : BotGear.ensureCharacterGear(reconciledCharacter, botData))
-                        .then(() => ShotStock.ensureCharacterStock(reconciledCharacter.id, {
+                    return ShotStock.ensureCharacterStock(reconciledCharacter.id, {
                     classId: reconciledCharacter.classId,
                     targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
-                }))
+                })
                         .then(() => Shared.fetchCharacters(username));
                 });
 
-            gearReady.then((readyCharacters) => {
+            spawnReady.then((readyCharacters) => {
                 const character = readyCharacters[0];
                 if (!character) return;
                 const storeCfg = merchantConfigFor(botData, character.name);
