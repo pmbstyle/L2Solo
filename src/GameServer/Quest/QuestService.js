@@ -71,6 +71,7 @@ const quests = [
   require("./quests/Q413_PathToShillienOracle"),
   require("./quests/Q414_PathToOrcRaider"),
   require("./quests/Q415_PathToOrcMonk"),
+  require("./quests/Q416_PathToOrcShaman"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 

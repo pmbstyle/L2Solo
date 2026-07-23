@@ -62,6 +62,7 @@ const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
 const Q413 = require("../src/GameServer/Quest/quests/Q413_PathToShillienOracle");
 const Q414 = require("../src/GameServer/Quest/quests/Q414_PathToOrcRaider");
 const Q415 = require("../src/GameServer/Quest/quests/Q415_PathToOrcMonk");
+const Q416 = require("../src/GameServer/Quest/quests/Q416_PathToOrcShaman");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -146,6 +147,8 @@ async function main() {
   assert.strictEqual(Q413.eventNpc("sheets"), 7377);
   assert.strictEqual(Q414.eventNpc("start"), 7570);
   assert.strictEqual(Q415.eventNpc("start"), 7587);
+  assert.strictEqual(Q416.eventNpc("start"), 7585);
+  assert.strictEqual(Q416.eventNpc("net"), 7593);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -788,6 +791,19 @@ async function main() {
     assert.strictEqual(awardedClassId, 47, "Q415 must award the Monk class");
     assert.strictEqual(questState.completed, true, "Q415 must complete after Kasman receives both scrolls and Toruku's Letter");
     assert.strictEqual(items.get(1615), 1, "Q415 must retain the source Khavatari Totem reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 49; awardedClassId = null;
+    const shamanSpawns = []; questState.addSpawn = (selfId) => shamanSpawns.push(selfId);
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q416.onEvent(questState, "start"); await Q416.onKill(questState, { fetchSelfId: () => 479 }); await Q416.onKill(questState, { fetchSelfId: () => 478 }); await Q416.onKill(questState, { fetchSelfId: () => 415 });
+    await Q416.onTalk(questState, { fetchSelfId: () => 7585 }); await Q416.onEvent(questState, "claw"); await Q416.onEvent(questState, "letter");
+    await Q416.onTalk(questState, { fetchSelfId: () => 7502 }); setItem(1625, 2); await Q416.onKill(questState, { fetchSelfId: () => 335 }); await Q416.onTalk(questState, { fetchSelfId: () => 7502 });
+    await Q416.onEvent(questState, "net"); setItem(1629, 7); await Q416.onKill(questState, { fetchSelfId: () => 38 });
+    assert.deepStrictEqual(shamanSpawns, [5056], "Q416 must spawn the personal Durka Spirit after the source parasite threshold");
+    await Q416.onKill(questState, { fetchSelfId: () => 5056 }); await Q416.onTalk(questState, { fetchSelfId: () => 7593 }); await Q416.onTalk(questState, { fetchSelfId: () => 7502 });
+    assert.strictEqual(awardedClassId, 50, "Q416 must award the Orc Shaman class");
+    assert.strictEqual(questState.completed, true, "Q416 must complete after Totem Spirit Blood is returned to Umos");
+    assert.strictEqual(items.get(1631), 1, "Q416 must retain the source Mask of Medium reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
