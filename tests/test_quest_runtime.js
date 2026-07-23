@@ -52,6 +52,7 @@ const Q402 = require("../src/GameServer/Quest/quests/Q402_PathToKnight");
 const Q403 = require("../src/GameServer/Quest/quests/Q403_PathToRogue");
 const Q404 = require("../src/GameServer/Quest/quests/Q404_PathToWizard");
 const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
+const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -116,6 +117,8 @@ async function main() {
   assert.strictEqual(Q404.eventNpc("start"), 7391);
   assert.strictEqual(Q404.eventNpc("feather"), 7410);
   assert.strictEqual(Q405.eventNpc("start"), 7022);
+  assert.strictEqual(Q406.eventNpc("start"), 7327);
+  assert.strictEqual(Q406.eventNpc("kluto"), 7317);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -490,6 +493,47 @@ async function main() {
     assert.strictEqual(items.get(1201), 1, "Q405 must retain the source Mark of Faith reward");
     assert.strictEqual(items.get(1192), 0, "Q405 must consume the second Letter of Order at completion");
     assert.strictEqual(items.get(1200), 0, "Q405 must consume Lionel's Covenant at completion");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 18;
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q406.onEvent(questState, "start");
+    setItem(1205, 19);
+    const originalRandomForKnight = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q406.onKill(questState, { fetchSelfId: () => 35 });
+    } finally {
+      Math.random = originalRandomForKnight;
+    }
+    assert.strictEqual(items.get(1205), 20, "Q406 must drop the final Topaz Piece from the source skeletons");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7327 });
+    assert.strictEqual(items.get(1202), 1, "Q406 must issue Sorius's Letter after the topaz hand-in");
+    await Q406.onEvent(questState, "kluto");
+    assert.strictEqual(items.get(1276), 1, "Q406 must issue Kluto's Memo after accepting his request");
+    setItem(1206, 19);
+    const originalRandomForEmerald = Math.random;
+    Math.random = () => 0;
+    try {
+      await Q406.onKill(questState, { fetchSelfId: () => 782 });
+    } finally {
+      Math.random = originalRandomForEmerald;
+    }
+    assert.strictEqual(items.get(1206), 20, "Q406 must drop the final Emerald Piece from Ol Mahum Novices");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7317 });
+    assert.strictEqual(items.get(1203), 1, "Q406 must exchange both gem sets for Kluto's Box");
+    await Q406.onTalk(questState, { fetchSelfId: () => 7327 });
+    assert.strictEqual(awardedClassId, 19, "Q406 must award the Elven Knight class");
+    assert.strictEqual(questState.completed, true, "Q406 must complete after Kluto's Box is returned");
+    assert.strictEqual(items.get(1204), 1, "Q406 must retain the source Elven Knight Brooch reward");
+    assert.strictEqual(items.get(1203), 0, "Q406 must consume Kluto's Box at completion");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
