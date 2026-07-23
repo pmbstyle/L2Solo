@@ -33,7 +33,7 @@ for (const quest of QuestService.quests()) {
       `Q${quest.id} references NPC ${npcId}, but its template is absent`,
     );
     assert(
-      spawnedIds.has(npcId),
+      spawnedIds.has(npcId) || quest.questSpawns?.includes(npcId),
       `Q${quest.id} references NPC ${npcId}, but it has no world spawn`,
     );
   }

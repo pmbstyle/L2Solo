@@ -55,6 +55,7 @@ const Q405 = require("../src/GameServer/Quest/quests/Q405_PathToCleric");
 const Q406 = require("../src/GameServer/Quest/quests/Q406_PathToElvenKnight");
 const Q407 = require("../src/GameServer/Quest/quests/Q407_PathToElvenScout");
 const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
+const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -126,6 +127,9 @@ async function main() {
   assert.strictEqual(Q408.eventNpc("start"), 7414);
   assert.strictEqual(Q408.eventNpc("grain"), 7157);
   assert.strictEqual(Q408.eventNpc("sap"), 7371);
+  assert.strictEqual(Q409.eventNpc("start"), 7293);
+  assert.strictEqual(Q409.eventNpc("lizardmen"), 7424);
+  assert.strictEqual(Q409.eventNpc("tamato"), 7428);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -635,6 +639,40 @@ async function main() {
     assert.strictEqual(questState.completed, true, "Q408 must complete after all three gems are returned");
     assert.strictEqual(items.get(1230), 1, "Q408 must retain the source Eternity Diamond reward");
     assert.deepStrictEqual([1220, 1221, 1226, 1229].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q408 must consume every required gem and the Fertility Peridot");
+
+    items.clear();
+    questState.started = false;
+    questState.completed = false;
+    questState.cond = 0;
+    classId = 25;
+    const spawnedQuestNpcs = [];
+    questState.addSpawn = (selfId) => spawnedQuestNpcs.push(selfId);
+    awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => {
+      awardedClassId = targetClassId;
+      return { ok: true, targetClassId };
+    };
+    await Q409.onEvent(questState, "start");
+    assert.strictEqual(items.get(1231), 1, "Q409 must issue the Crystal Medallion");
+    await Q409.onEvent(questState, "lizardmen");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034], "Q409 must spawn Allana's personal lizardman encounter");
+    await Q409.onKill(questState, { fetchSelfId: () => 5032 });
+    assert.strictEqual(items.get(1234), 1, "Q409 must drop the Lizard Captain Order from the spawned warrior");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7424 });
+    assert.strictEqual(items.get(1236), 1, "Q409 must issue Half of Diary after the lizard encounter");
+    await Q409.onEvent(questState, "tamato");
+    assert.deepStrictEqual(spawnedQuestNpcs, [5032, 5033, 5034, 5035], "Q409 must spawn Tamato as a personal quest encounter");
+    await Q409.onKill(questState, { fetchSelfId: () => 5035 });
+    assert.strictEqual(items.get(1275), 1, "Q409 must drop Tamato's Necklace from the spawned Tamato");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7428 });
+    assert.strictEqual(items.get(1232), 1, "Q409 must exchange Tamato's Necklace for Perrin's money");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7424 });
+    assert.strictEqual(items.get(1233), 1, "Q409 must exchange Half of Diary for Allana's Diary");
+    await Q409.onTalk(questState, { fetchSelfId: () => 7293 });
+    assert.strictEqual(awardedClassId, 29, "Q409 must award the Elven Oracle class");
+    assert.strictEqual(questState.completed, true, "Q409 must complete after the evidence is returned to Manuel");
+    assert.strictEqual(items.get(1235), 1, "Q409 must retain the source Leaf of Oracle reward");
+    assert.deepStrictEqual([1231, 1232, 1233, 1234].map((id) => items.get(id) || 0), [0, 0, 0, 0], "Q409 must consume every final hand-in item");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
