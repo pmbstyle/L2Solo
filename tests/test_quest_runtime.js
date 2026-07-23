@@ -58,6 +58,7 @@ const Q408 = require("../src/GameServer/Quest/quests/Q408_PathToElvenWizard");
 const Q409 = require("../src/GameServer/Quest/quests/Q409_PathToElvenOracle");
 const Q410 = require("../src/GameServer/Quest/quests/Q410_PathToPalusKnight");
 const Q411 = require("../src/GameServer/Quest/quests/Q411_PathToAssassin");
+const Q412 = require("../src/GameServer/Quest/quests/Q412_PathToDarkWizard");
 
 async function main() {
   assert.strictEqual(Q001.eventNpc("start"), 7048);
@@ -136,6 +137,8 @@ async function main() {
   assert.strictEqual(Q410.eventNpc("morte"), 7422);
   assert.strictEqual(Q411.eventNpc("start"), 7416);
   assert.strictEqual(Q411.eventNpc("arkenia"), 7419);
+  assert.strictEqual(Q412.eventNpc("start"), 7421);
+  assert.strictEqual(Q412.eventNpc("key"), 7415);
   assert.strictEqual(Q002.eventNpc("unknown"), null);
   assert.strictEqual(Q004.eventNpc("unknown"), null);
   assert.strictEqual(Q005.eventNpc("unknown"), null);
@@ -720,6 +723,17 @@ async function main() {
     assert.strictEqual(awardedClassId, 35, "Q411 must award the Assassin class");
     assert.strictEqual(questState.completed, true, "Q411 must complete after Arkenia's recommendation is returned");
     assert.strictEqual(items.get(1252), 1, "Q411 must retain the source Iron Heart reward");
+
+    items.clear(); questState.started = false; questState.completed = false; questState.cond = 0; classId = 38; awardedClassId = null;
+    QuestService.awardFirstProfession = async (_, targetClassId) => { awardedClassId = targetClassId; return { ok: true, targetClassId }; };
+    await Q412.onEvent(questState, "start");
+    await Q412.onEvent(questState, "key"); setItem(1257, 3); await Q412.onTalk(questState, { fetchSelfId: () => 7415 });
+    await Q412.onEvent(questState, "candle"); setItem(1259, 2); await Q412.onTalk(questState, { fetchSelfId: () => 7418 });
+    await Q412.onEvent(questState, "lunacy"); setItem(1260, 3); await Q412.onTalk(questState, { fetchSelfId: () => 7419 });
+    await Q412.onTalk(questState, { fetchSelfId: () => 7421 });
+    assert.strictEqual(awardedClassId, 39, "Q412 must award the Dark Wizard class");
+    assert.strictEqual(questState.completed, true, "Q412 must complete after all four Seeds are returned");
+    assert.strictEqual(items.get(1261), 1, "Q412 must retain the source Jewel of Darkness reward");
   } finally {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
