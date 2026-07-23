@@ -122,8 +122,8 @@ const noGradeOverflowState = {
 };
 assert.strictEqual(
     ListingService.targetMarketTownName(noGradeOverflowState, [{ rank: 'none' }]),
-    'Giran',
-    'a level-appropriate no-grade-only listing must not be mistaken for D-grade overflow'
+    'Elven Village',
+    'a no-grade-only listing must use the nearest starter market even when its farming spot is outside the village radius'
 );
 assert.strictEqual(
     ListingService.targetMarketTownName({

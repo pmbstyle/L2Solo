@@ -53,7 +53,10 @@ async function run() {
         timing: {},
         inventory: {
             57: { selfId: 57, name: 'Adena', amount: 500 },
-            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword' },
+            // Keep this as a C-grade listing: the fixture exercises the Giran
+            // plaza, while no-grade stock is deliberately routed to the
+            // nearest starter village.
+            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword', rank: 'c' },
             2: { selfId: 2, name: 'Long Sword', amount: 1, equipped: true, slot: 7, kind: 'Weapon.Sword' }
         },
         stats: {

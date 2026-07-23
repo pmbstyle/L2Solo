@@ -10,7 +10,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
-const MARKET_TOWN_ROUTING_VERSION = 4;
+const MARKET_TOWN_ROUTING_VERSION = 5;
 // Captured in-game from the Giran trading square. The inner rectangle is the
 // central column: it is walkable around, but a private store cannot sit there.
 const GIRAN_MARKET_PLAZA = Object.freeze({

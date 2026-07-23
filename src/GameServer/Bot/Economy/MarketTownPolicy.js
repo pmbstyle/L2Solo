@@ -6,9 +6,6 @@ let rankIndexSource = null;
 let rankIndexSize = -1;
 let rankBySelfId = new Map();
 
-// Add a town here only after its sellable no-grade plaza has been captured.
-// This prevents cheap local loot from silently falling back to the Giran hub.
-const NO_GRADE_MARKET_TOWNS = new Set(['Talking Island', 'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village']);
 const NO_GRADE_MARKETS = Object.freeze([
     { name: 'Talking Island', locX: -84700, locY: 244200, radius: 12000 },
     { name: 'Elven Village', locX: 46600, locY: 49700, radius: 12000 },
@@ -28,12 +25,12 @@ function marketTown(name) {
     };
 }
 
-function nearbyNoGradeMarket(loc = {}) {
+function nearestNoGradeMarket(loc = {}) {
     const x = Number(loc.locX || 0);
     const y = Number(loc.locY || 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || (x === 0 && y === 0)) return null;
     return NO_GRADE_MARKETS
         .map((market) => ({ ...market, distance: Math.hypot(x - market.locX, y - market.locY) }))
-        .filter((market) => market.distance <= market.radius)
         .sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
@@ -64,9 +61,13 @@ function targetTownForItems(state, items = []) {
     // A listed bot now stands at the market, so use its saved departure point
     // to preserve local no-grade routing during legacy-store migrations.
     const saleOrigin = state?.stats?.marketReturn?.loc || state?.loc;
-    const localTown = nearbyNoGradeMarket(saleOrigin)?.name || null;
+    const localTown = nearestNoGradeMarket(saleOrigin)?.name || null;
 
-    if (onlyNoGrade) return NO_GRADE_MARKET_TOWNS.has(localTown) ? localTown : 'Giran';
+    // No-grade stock belongs to the starter village nearest the bot's actual
+    // farming location. Early hunting routes legitimately extend beyond a
+    // village's immediate square, so a small-radius check funnels Elven,
+    // Dark Elven, and Talking Island sellers into Giran incorrectly.
+    if (onlyNoGrade) return localTown || 'Giran';
     if (!hasHigherGrade && hasDGrade) return dGradeMarketFor(state);
     return 'Giran';
 }
@@ -77,11 +78,10 @@ function targetTownForSale(state) {
 
 module.exports = {
     GLUDIO_D_GRADE_SHARE_PERCENT,
-    NO_GRADE_MARKET_TOWNS,
     NO_GRADE_MARKETS,
     dGradeMarketFor,
     marketTown,
-    nearbyNoGradeMarket,
+    nearestNoGradeMarket,
     targetTownForItems,
     targetTownForSale
 };
