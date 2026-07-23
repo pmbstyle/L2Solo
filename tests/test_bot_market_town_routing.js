@@ -90,7 +90,7 @@ const dionStall = ListingService.chooseDionDMarketStall(() => 0.5, []);
 assert(ListingService.isDionDMarketStallLocation(dionStall), 'Dion D-grade listings must remain inside the captured trading square');
 
 const gludioStaticStalls = ListingService.staticMerchantStalls('Gludio', ListingService.isGludioDMarketStallLocation);
-assert.strictEqual(gludioStaticStalls.length, 4, 'all fixed Gludio merchants must reserve their market stalls');
+assert.strictEqual(gludioStaticStalls.length, 5, 'all fixed Gludio merchants must reserve their market stalls');
 const gludioCandidateNearLysa = ListingService.chooseGludioDMarketStall(
     (() => {
         const values = [60 / 390, 970 / 1080];
@@ -142,7 +142,7 @@ const talkingIslandStall = ListingService.chooseTalkingIslandNoGradeStall(() => 
 assert(ListingService.isTalkingIslandNoGradeStallLocation(talkingIslandStall), 'Talking Island no-grade listings must remain inside the captured trading square');
 assert.strictEqual(
     ListingService.staticMerchantStalls('Talking Island', ListingService.isTalkingIslandNoGradeStallLocation).length,
-    4,
+    5,
     'fixed Talking Island merchants must reserve their market stalls'
 );
 
