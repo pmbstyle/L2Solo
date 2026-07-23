@@ -152,5 +152,7 @@ assert.ok(generatedNames.every((name) => name.length >= 3 && name.length <= 16),
 assert.ok(generatedNames.every((name) => /^[A-Za-z]+$/.test(name)), 'generated names must remain client-safe alphabetic nicknames');
 assert.ok(new Set(generatedNames).size > 4500, 'the local nickname corpus must provide a varied population');
 assert.ok(generatedNames.every((name) => !/[0-9]/.test(name)), 'ordinary generated names must not expose population counters');
+assert.ok(generatedNames.every((name) => /^[A-Z][a-z]+[A-Z][a-z]+$/.test(name)), 'generated names must remain readable CamelCase name pairs');
+assert.strictEqual(new Set(generatedNames).size, generatedNames.length, 'readable names must remain unique across a full population sample');
 
 console.log('Population seed planner checks passed');

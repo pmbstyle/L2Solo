@@ -1,56 +1,45 @@
-// Generated population names intentionally come from a local, original corpus.
-// It captures the short fantasy and player-style nicknames common in MMORPGs
-// without distributing or impersonating names taken from player accounts.
-const STARTS = [
-    'Ael', 'Aer', 'Ari', 'Ash', 'Astra', 'Bren', 'Cael', 'Cind', 'Cor', 'Dae',
-    'Dra', 'Eli', 'Ery', 'Fen', 'Galen', 'Iri', 'Kael', 'Kira', 'Lio', 'Lun',
-    'Mira', 'Ner', 'Nyx', 'Ori', 'Rae', 'Rav', 'Sera', 'Syl', 'Tae', 'Thorn',
-    'Vale', 'Vex', 'Wyn', 'Xan', 'Yara', 'Zer'
+// Generated population names use readable CamelCase pairs.  The account id
+// remains the durable technical identity; display names should look like
+// player nicknames rather than a syllable hash with a collision suffix.
+const GIVEN_NAMES = [
+    'Aelina', 'Aerin', 'Alira', 'Amara', 'Arlen', 'Arwyn', 'Asher', 'Astrid',
+    'Brenna', 'Brina', 'Caelan', 'Carys', 'Cedric', 'Celine', 'Corin', 'Cyra',
+    'Daria', 'Dorian', 'Eira', 'Elara', 'Elian', 'Elora', 'Emrys', 'Eryn',
+    'Faris', 'Fenna', 'Galen', 'Garen', 'Halen', 'Ilyra', 'Irena', 'Isolde',
+    'Jaren', 'Kaela', 'Kieran', 'Liora', 'Lucan', 'Lyra', 'Maelin', 'Mara',
+    'Nadia', 'Naren', 'Neris', 'Orin', 'Raina', 'Riven', 'Rowan', 'Sable',
+    'Seren', 'Silas', 'Sylva', 'Talia', 'Taren', 'Thalia', 'Torin', 'Vaela',
+    'Valen', 'Varyn', 'Vela', 'Wren', 'Xara', 'Yara', 'Zorin'
 ];
 
-const ENDS = [
-    'a', 'ae', 'an', 'ar', 'ara', 'as', 'el', 'en', 'er', 'eth', 'ia', 'ian',
-    'iel', 'in', 'ira', 'is', 'on', 'or', 'os', 'ra', 'ren', 'ric', 'ris', 'ros',
-    'yn', 'ys'
+const BYNAMES = [
+    'Amber', 'Arbor', 'Ash', 'Birch', 'Bloom', 'Bramble', 'Bright', 'Brook',
+    'Cedar', 'Cinder', 'Cloud', 'Clover', 'Coast', 'Crest', 'Dawn', 'Drift',
+    'Dusk', 'Echo', 'Ember', 'Falcon', 'Fern', 'Field', 'Flame', 'Frost',
+    'Gale', 'Glimmer', 'Grove', 'Harbor', 'Haven', 'Hearth', 'Hill', 'Ivy',
+    'Juniper', 'Lake', 'Lantern', 'Lark', 'Light', 'Linden', 'Maple', 'Marsh',
+    'Meadow', 'Mist', 'Moon', 'Moss', 'Night', 'North', 'Oak', 'Onyx', 'Pearl',
+    'Quartz', 'Rain', 'Raven', 'Reed', 'Ridge', 'River', 'Rose', 'Rowan',
+    'Rune', 'Saffron', 'Sage', 'Sand', 'Shore', 'Silver', 'Sky', 'Snow', 'Sol',
+    'Sparrow', 'Spring', 'Star', 'Stone', 'Storm', 'Summer', 'Thorn', 'Tide',
+    'Umber', 'Vale', 'Velvet', 'Vesper', 'Wave', 'West', 'Wild', 'Willow',
+    'Wind', 'Winter', 'Wisp', 'Wolf', 'Wood'
 ];
 
-const MIDDLES = [
-    'a', 'ae', 'an', 'ar', 'ava', 'dra', 'el', 'en', 'eth', 'ia', 'iel', 'in',
-    'ira', 'ka', 'or', 'ra', 'ren', 'ri', 'ryn', 'sa', 'sha', 'th', 'va', 'ver', 'wyn'
-];
+const NAME_SPACE = GIVEN_NAMES.length * BYNAMES.length;
 
-function mix(value) {
-    let hash = Number(value) >>> 0;
-    hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
-    hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
-    return (hash ^ (hash >>> 16)) >>> 0;
-}
-
-function normalize(name) {
-    return name.slice(0, 16);
-}
-
-function alphabeticToken(seed, length = 3) {
-    const modulus = 26 ** length;
-    // This is a permutation of the alphabetic token space, so nearby
-    // population slots do not collide while generated names remain digit-free.
-    let value = Number((BigInt(Math.trunc(seed)) * 7919n) % BigInt(modulus));
-    let token = '';
-    for (let index = 0; index < length; index++) {
-        token += String.fromCharCode(97 + (value % 26));
-        value = Math.floor(value / 26);
-    }
-    return token;
+function normalizedIndex(value) {
+    const parsed = Math.trunc(Number(value) || 0);
+    // 7919 is coprime with the 5,481 available pairs.  This keeps the mapping
+    // one-to-one while spreading adjacent population slots across surnames.
+    return Number((BigInt(Math.abs(parsed)) * 7919n) % BigInt(NAME_SPACE));
 }
 
 function nameFor(index) {
-    const seed = Math.max(0, Number(index) || 0);
-    const slot = mix(seed);
-    const nameSlot = slot;
-    const start = STARTS[nameSlot % STARTS.length];
-    const end = ENDS[Math.floor(nameSlot / STARTS.length) % ENDS.length];
-    const middle = MIDDLES[Math.floor(nameSlot / (STARTS.length * ENDS.length)) % MIDDLES.length];
-    return normalize(`${start}${middle}${end}${alphabeticToken(seed)}`);
+    const slot = normalizedIndex(index);
+    const given = GIVEN_NAMES[slot % GIVEN_NAMES.length];
+    const byname = BYNAMES[Math.floor(slot / GIVEN_NAMES.length)];
+    return `${given}${byname}`;
 }
 
 module.exports = { nameFor };

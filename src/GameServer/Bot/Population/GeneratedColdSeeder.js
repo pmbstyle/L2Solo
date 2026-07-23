@@ -12,6 +12,8 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
 
+const NAME_GENERATOR_VERSION = 2;
+
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
     { race: 0, classId: 10, sex: 1, role: 'mage' },
@@ -136,14 +138,34 @@ function nameFor(index) {
     return BotNameGenerator.nameFor(index);
 }
 
-function uniqueNameFor(index, attempt = 0) {
-    // Keep retry names natural too: a collision must not reintroduce a visible
-    // population counter on an otherwise player-like nickname.
-    const candidate = nameFor(Math.max(0, Number(index) || 0) + attempt * 2654435761);
+function uniqueNameFor(index, attempt = 0, characterId = null) {
+    // A collision advances to the next readable pair instead of appending a
+    // technical suffix to the visible character name.
+    const candidate = nameFor(Math.max(0, Number(index) || 0) + attempt);
     return Database.fetchCharacterName(candidate).then((rows) => {
-        if (!rows[0]) return candidate;
-        return uniqueNameFor(index, attempt + 1);
+        if (!rows[0] || Number(rows[0].id) === Number(characterId)) return candidate;
+        return uniqueNameFor(index, attempt + 1, characterId);
     });
+}
+
+function migratePopulationNames(states = []) {
+    const candidates = states.filter((state) => state.accountName?.startsWith('bot_pop_')
+        && state.stats?.generatedCold
+        && Number(state.stats?.nameGeneratorVersion || 0) < NAME_GENERATOR_VERSION
+        && Number.isFinite(Number(state.stats?.generatedIndex)));
+    return candidates.reduce((chain, state) => chain.then(() => (
+        uniqueNameFor(state.stats.generatedIndex, 0, state.characterId).then((name) => {
+            const nextState = {
+                ...state,
+                name,
+                stats: { ...(state.stats || {}), nameGeneratorVersion: NAME_GENERATOR_VERSION }
+            };
+            const rename = name === state.name
+                ? Promise.resolve()
+                : Database.updateCharacterName(state.characterId, name);
+            return rename.then(() => LifeState.upsertState(nextState, 'generated_name_migration'));
+        })
+    )), Promise.resolve()).then(() => candidates.length);
 }
 
 function awardBaseGear(characterId, classId) {
@@ -331,6 +353,7 @@ function stateFor(character, index, seedMeta = {}) {
             classProgressionClassId: classId,
             generatedCold: true,
             generatedIndex: index,
+            nameGeneratorVersion: NAME_GENERATOR_VERSION,
             levelBand: levelProfile.band,
             populationWave: seedMeta.populationWave || null,
             starterRegion: seedMeta.starterRegion || null
@@ -457,7 +480,7 @@ const GeneratedColdSeeder = {
         if (!limit || this.running) return Promise.resolve({ created: 0, seeded: 0, total: 0, limit });
 
         this.running = true;
-        return Promise.resolve().then(() => {
+        return Promise.resolve().then(() => migratePopulationNames(LifeState.allStates(limit + 100))).then(() => {
             const plan = SeedPlanner.plan(
                 SpotProfiles.ensure(),
                 LifeState.allStates(limit + 100),
