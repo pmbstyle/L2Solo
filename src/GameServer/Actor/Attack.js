@@ -107,7 +107,8 @@ class Attack {
         }
 
         // Soulshots are only reloaded after the player enables their hotbar toggle.
-        if (!actor.soulshotLoaded && actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot') && typeof actor.backpack.consumeSoulshot === 'function') {
+        const autoSoulshotId = actor.backpack?.fetchAutoShot?.(actor, 'soulshot');
+        if (!actor.soulshotLoaded && (autoSoulshotId || actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot')) && typeof actor.backpack.consumeSoulshot === 'function') {
             actor.backpack.consumeSoulshot(session, (success) => {
                 if (success) {
                     actor.soulshotLoaded = true;
@@ -122,7 +123,7 @@ class Attack {
                         actor
                     );
                 }
-            });
+            }, autoSoulshotId);
         }
 
         const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
@@ -375,7 +376,8 @@ class Attack {
         }
 
         if (magicSkill) {
-            const shotKind = actor.backpack?.fetchAutoSpiritshotKind?.(actor);
+            const autoShot = actor.backpack?.fetchAutoSpiritshot?.(actor);
+            const shotKind = autoShot?.kind || actor.backpack?.fetchAutoSpiritshotKind?.(actor);
             if (!actor.spiritshotLoaded && shotKind && typeof actor.backpack.consumeSpiritshot === 'function') {
                 actor.backpack.consumeSpiritshot(session, (success, shot = {}) => {
                     if (success) {
@@ -383,18 +385,19 @@ class Attack {
                         actor.blessedSpiritshotLoaded = !!shot.blessedSpiritshot;
                         this.broadcastShotCharge(session, actor, shot.skillId || 2047);
                     }
-                }, shotKind);
+                }, shotKind, autoShot?.selfId);
             }
             return;
         }
 
-        if (!actor.soulshotLoaded && actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot') && typeof actor.backpack.consumeSoulshot === 'function') {
+        const autoSoulshotId = actor.backpack?.fetchAutoShot?.(actor, 'soulshot');
+        if (!actor.soulshotLoaded && (autoSoulshotId || actor.backpack?.isAutoShotEnabled?.(actor, 'soulshot')) && typeof actor.backpack.consumeSoulshot === 'function') {
             actor.backpack.consumeSoulshot(session, (success, shot = {}) => {
                 if (success) {
                     actor.soulshotLoaded = true;
                     this.broadcastShotCharge(session, actor, shot.skillId || 2039);
                 }
-            });
+            }, autoSoulshotId);
         }
     }
 

@@ -32,10 +32,14 @@ const BLESSED_SPIRITSHOT_BY_RANK = {
     s: 3952
 };
 
+// Quest rewards use these no-grade variants. They carry the same charge
+// skills as the shop shots, but are separate item ids and must remain usable.
+const BEGINNER_SOULSHOT_IDS = [5789];
+const BEGINNER_SPIRITSHOT_IDS = [5790];
 const SOULSHOT_IDS = Object.values(SOULSHOT_BY_RANK);
 const SPIRITSHOT_IDS = Object.values(SPIRITSHOT_BY_RANK);
 const BLESSED_SPIRITSHOT_IDS = Object.values(BLESSED_SPIRITSHOT_BY_RANK);
-const SHOT_IDS = [...SOULSHOT_IDS, ...SPIRITSHOT_IDS, ...BLESSED_SPIRITSHOT_IDS];
+const SHOT_IDS = [...SOULSHOT_IDS, ...SPIRITSHOT_IDS, ...BLESSED_SPIRITSHOT_IDS, ...BEGINNER_SOULSHOT_IDS, ...BEGINNER_SPIRITSHOT_IDS];
 
 function normalizeRank(rank) {
     const value = String(rank || 'none').toLowerCase();
@@ -121,6 +125,24 @@ function planForActor(actor) {
 
 function planForActorKind(kind, actor) {
     return planForKind(kind, weaponRankFromActor(actor));
+}
+
+function kindForSelfId(selfId) {
+    const id = Number(selfId);
+    if (SOULSHOT_IDS.includes(id) || BEGINNER_SOULSHOT_IDS.includes(id)) return 'soulshot';
+    if (SPIRITSHOT_IDS.includes(id) || BEGINNER_SPIRITSHOT_IDS.includes(id)) return 'spiritshot';
+    if (BLESSED_SPIRITSHOT_IDS.includes(id)) return 'blessedSpiritshot';
+    return null;
+}
+
+function isCompatibleWithActor(kind, selfId, actor) {
+    const id = Number(selfId);
+    const rank = weaponRankFromActor(actor);
+    if (planForActorKind(kind, actor).selfId === id) return true;
+    return rank === 'none' && (
+        (kind === 'soulshot' && BEGINNER_SOULSHOT_IDS.includes(id)) ||
+        (kind === 'spiritshot' && BEGINNER_SPIRITSHOT_IDS.includes(id))
+    );
 }
 
 function planForRows(rows, classId) {
@@ -260,6 +282,8 @@ module.exports = {
     planForKind,
     planForActor,
     planForActorKind,
+    kindForSelfId,
+    isCompatibleWithActor,
     planForRows,
     shotAmount,
     ensureActorStock,

@@ -23,7 +23,30 @@ const Shared = {
                         character.commonRecipes = recipes.filter((recipe) => recipe.type === 'common');
                         character.paperdoll = utils.tupleAlloc(15 + 1, {});
 
-                        items.filter((ob) => ob.equipped === 1).forEach((item) => {
+                        // Keep one persistent item per paperdoll slot. Earlier versions could
+                        // leave an old weapon equipped in the DB, making it reappear after the
+                        // visible weapon was removed. Prefer the newest record and repair losers.
+                        const equippedBySlot = new Map();
+                        const repaired = [];
+                        items.filter((item) => item.equipped === 1).forEach((item) => {
+                            const current = equippedBySlot.get(item.slot);
+                            if (!current || Number(item.id) > Number(current.id)) {
+                                if (current) {
+                                    current.equipped = 0;
+                                    repaired.push(current);
+                                }
+                                equippedBySlot.set(item.slot, item);
+                            }
+                            else {
+                                item.equipped = 0;
+                                repaired.push(item);
+                            }
+                        });
+
+                        Promise.all(repaired.map((item) => Database.updateItemEquipState(character.id, item.id, false, item.slot)))
+                            .catch((error) => utils.infoWarn('Character', 'failed to repair equipment state for %s: %s', character.name, error.message));
+
+                        [...equippedBySlot.values()].forEach((item) => {
                             if (item.slot === 15) { // FB Armor, stupid implementation
                                 character.paperdoll[10] = { id: item.id, selfId: item.selfId };
                             }

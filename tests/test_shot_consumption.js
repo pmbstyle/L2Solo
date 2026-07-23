@@ -88,11 +88,23 @@ assert.strictEqual(consumed, true, 'spiritshot should consume for magic skills e
 assert.strictEqual(spiritBackpack.fetchItemFromSelfId(2509).fetchAmount(), 2, 'spiritshot consume should use weapon shot cost');
 
 const apprenticeWandTemplate = DataCache.items.find((entry) => entry.selfId === 6);
+const daggerTemplate = DataCache.items.find((entry) => entry.selfId === 10);
+const trainingGlovesTemplate = DataCache.items.find((entry) => entry.selfId === 2368);
+const squireSwordTemplate = DataCache.items.find((entry) => entry.selfId === 2369);
+const guildMemberClubTemplate = DataCache.items.find((entry) => entry.selfId === 2370);
 const apprenticeRodTemplate = DataCache.items.find((entry) => entry.selfId === 7);
 const willowStaffTemplate = DataCache.items.find((entry) => entry.selfId === 8);
 assert.strictEqual(apprenticeWandTemplate.etc.spiritshot, 1, 'Apprentice Wand should preserve Lisvus spiritshot cost');
 assert.strictEqual(apprenticeRodTemplate.etc.spiritshot, 1, 'Apprentice Rod should preserve Lisvus spiritshot cost');
 assert.strictEqual(willowStaffTemplate.etc.spiritshot, 1, 'Willow Staff should preserve Lisvus spiritshot cost');
+assert.strictEqual(daggerTemplate.etc.soulshot, 1, 'starter Dagger should consume one Soulshot');
+assert.strictEqual(daggerTemplate.etc.spiritshot, 1, 'starter Dagger should consume one Spiritshot');
+assert.strictEqual(trainingGlovesTemplate.etc.soulshot, 1, 'Training Gloves should consume one Soulshot');
+assert.strictEqual(trainingGlovesTemplate.etc.spiritshot, 1, 'Training Gloves should consume one Spiritshot');
+assert.strictEqual(squireSwordTemplate.etc.soulshot, 1, 'Squire\'s Sword should consume one Soulshot');
+assert.strictEqual(squireSwordTemplate.etc.spiritshot, 1, 'Squire\'s Sword should consume one Spiritshot');
+assert.strictEqual(guildMemberClubTemplate.etc.soulshot, 1, 'Guild Member\'s Club should consume one Soulshot');
+assert.strictEqual(guildMemberClubTemplate.etc.spiritshot, 1, 'Guild Member\'s Club should consume one Spiritshot');
 
 const starterMageBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
 starterMageBackpack.items = [
@@ -126,5 +138,26 @@ bGradeSpiritBackpack.useItem(bGradeSpiritSession, 16);
 assert.strictEqual(bGradeSpiritSession.actor.spiritshotLoaded, true, 'B-grade spiritshot should manually load on a matching weapon');
 assert.strictEqual(bGradeSpiritBackpack.fetchItemFromSelfId(2512).fetchAmount(), 1, 'B-grade spiritshot use should consume weapon shot cost');
 assert(bGradeSpiritSession.packets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2157), 'B-grade spiritshot use should broadcast sourced charge animation');
+
+const blessedSpiritBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+blessedSpiritBackpack.items = [
+    item(17, { selfId: 238, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1, rank: 'b' }),
+    item(18, { selfId: 3950, kind: 'Other.Shot', amount: 2 })
+];
+const blessedSpiritSession = sessionFor(blessedSpiritBackpack, 0);
+blessedSpiritBackpack.useItem(blessedSpiritSession, 18);
+assert.strictEqual(blessedSpiritSession.actor.spiritshotLoaded, true, 'Blessed Spiritshot should manually load on a matching weapon');
+assert.strictEqual(blessedSpiritSession.actor.blessedSpiritshotLoaded, true, 'Blessed Spiritshot should retain its damage modifier when manually loaded');
+assert.strictEqual(blessedSpiritBackpack.fetchItemFromSelfId(3950).fetchAmount(), 1, 'Blessed Spiritshot should consume weapon shot cost');
+
+const beginnerSoulshotBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+beginnerSoulshotBackpack.items = [
+    item(19, { selfId: 1, kind: 'Weapon.Sword', equipped: true, slot: 7, soulshot: 1, rank: 'none' }),
+    item(20, { selfId: 5789, kind: 'Other.Shot', amount: 2 })
+];
+const beginnerSoulshotSession = sessionFor(beginnerSoulshotBackpack, 0);
+beginnerSoulshotBackpack.useItem(beginnerSoulshotSession, 20);
+assert.strictEqual(beginnerSoulshotSession.actor.soulshotLoaded, true, 'quest beginner Soulshot should load on a no-grade weapon');
+assert.strictEqual(beginnerSoulshotBackpack.fetchItemFromSelfId(5789).fetchAmount(), 1, 'quest beginner Soulshot should consume weapon shot cost');
 
 console.log('Shot consumption checks passed');

@@ -76,6 +76,18 @@ try {
     assert.strictEqual(fullBody.fetchPaperdollSelfId(10), 356, 'full-body armor should render through the chest slot');
     assert.strictEqual(fullBody.fetchPaperdollSelfId(11), undefined, 'full-body armor must not be duplicated into the pants slot');
 
+    const duplicateWeapons = backpack([
+        item(7, 2369, 'Weapon.Sword', 7),
+        item(8, 2370, 'Weapon.Blunt', 7)
+    ]);
+    duplicateWeapons.fetchItemRaw(7).setEquipped(true);
+    duplicateWeapons.fetchItemRaw(8).setEquipped(true);
+    duplicateWeapons.equipPaperdoll(7, 8, 2370);
+    duplicateWeapons.unequipGear(sessionFor(duplicateWeapons), 7);
+    assert.strictEqual(duplicateWeapons.fetchItemRaw(7).fetchEquipped(), false, 'unequipping a conflicted weapon slot must clear the hidden weapon too');
+    assert.strictEqual(duplicateWeapons.fetchItemRaw(8).fetchEquipped(), false, 'unequipping a conflicted weapon slot must clear the visible weapon');
+    assert.strictEqual(duplicateWeapons.fetchPaperdollId(7), undefined, 'unequipping a conflicted weapon slot must clear paperdoll state');
+
     console.log('Equipment slot checks passed');
 } finally {
     ActorGenerics.calculateStats = originalCalculateStats;

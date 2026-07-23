@@ -100,14 +100,14 @@ class Backpack extends BackpackModel {
         });
     }
 
-    consumeSoulshot(session, callback = () => {}) {
+    consumeSoulshot(session, callback = () => {}, selfId = null) {
         if (session.actor.isDead()) {
             return callback(false);
         }
 
         const plan = ShotStock.planForActorKind('soulshot', session.actor);
 
-        const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
+        const found = this.items.find(item => item.fetchSelfId() === (selfId || plan.selfId));
         const cost = this.fetchShotCost('soulshot');
         if (cost > 0 && found && found.fetchAmount() >= cost) {
             this.deleteItem(session, found.fetchId(), cost, () => {
@@ -118,14 +118,14 @@ class Backpack extends BackpackModel {
         }
     }
 
-    consumeSpiritshot(session, callback = () => {}, kind = 'spiritshot') {
+    consumeSpiritshot(session, callback = () => {}, kind = 'spiritshot', selfId = null) {
         if (session.actor.isDead()) {
             return callback(false);
         }
 
         const plan = ShotStock.planForActorKind(kind, session.actor);
 
-        const found = this.items.find(item => item.fetchSelfId() === plan.selfId);
+        const found = this.items.find(item => item.fetchSelfId() === (selfId || plan.selfId));
         const cost = this.fetchShotCost('spiritshot');
         if (cost > 0 && found && found.fetchAmount() >= cost) {
             this.deleteItem(session, found.fetchId(), cost, () => {
@@ -146,21 +146,28 @@ class Backpack extends BackpackModel {
     }
 
     isAutoShotEnabled(actor, kind) {
-        const selfId = ShotStock.planForActorKind(kind, actor).selfId;
-        return !!actor.autoSoulshots?.has(selfId);
+        return !!this.fetchAutoShot(actor, kind);
+    }
+
+    fetchAutoShot(actor, kind) {
+        const enabled = actor.autoSoulshots;
+        if (!enabled) return null;
+        for (const selfId of enabled) {
+            if (ShotStock.isCompatibleWithActor(kind, selfId, actor)) return selfId;
+        }
+        return null;
+    }
+
+    fetchAutoSpiritshot(actor) {
+        for (const kind of ['spiritshot', 'blessedSpiritshot']) {
+            const selfId = this.fetchAutoShot(actor, kind);
+            if (selfId) return { kind, selfId };
+        }
+        return null;
     }
 
     fetchAutoSpiritshotKind(actor) {
-        const enabled = actor.autoSoulshots;
-        if (!enabled) return null;
-
-        const spiritshot = ShotStock.planForActorKind('spiritshot', actor).selfId;
-        const blessedSpiritshot = ShotStock.planForActorKind('blessedSpiritshot', actor).selfId;
-        for (const selfId of enabled) {
-            if (selfId === spiritshot) return 'spiritshot';
-            if (selfId === blessedSpiritshot) return 'blessedSpiritshot';
-        }
-        return null;
+        return this.fetchAutoSpiritshot(actor)?.kind || null;
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {
@@ -183,40 +190,18 @@ class Backpack extends BackpackModel {
                 this.equipGear(session, item);
             }
             else {
-                if (ShotStock.SOULSHOT_IDS.includes(item.fetchSelfId())) {
-                    if (session.actor.soulshotLoaded) {
-                        return; // Already loaded
-                    }
-                    const cost = this.fetchShotCost('soulshot');
-                    if (cost <= 0 || item.fetchAmount() < cost) {
-                        return;
-                    }
-                    this.deleteItem(session, id, cost, () => {
-                        session.actor.soulshotLoaded = true;
-                        const shot = this.shotChargeInfo(item.fetchSelfId());
-                        session.dataSendToMeAndOthers(
-                            ServerResponse.skillStarted(session.actor, session.actor.fetchId(), {
-                                fetchSelfId: () => shot.skillId,
-                                fetchCalculatedHitTime: () => 0,
-                                fetchReuseTime: () => 0
-                            }), 
-                            session.actor
-                        );
-                    });
-                    return;
-                }
-                else
-                if (ShotStock.SPIRITSHOT_IDS.includes(item.fetchSelfId())) {
-                    if (session.actor.spiritshotLoaded) {
-                        return; // Already loaded
-                    }
-                    const cost = this.fetchShotCost('spiritshot');
-                    if (cost <= 0 || item.fetchAmount() < cost) {
-                        return;
-                    }
-                    this.deleteItem(session, id, cost, () => {
-                        session.actor.spiritshotLoaded = true;
-                        const shot = this.shotChargeInfo(item.fetchSelfId());
+                const shotKind = ShotStock.kindForSelfId(item.fetchSelfId());
+                if (shotKind) {
+                    if (!ShotStock.isCompatibleWithActor(shotKind, item.fetchSelfId(), session.actor)) return;
+                    if ((shotKind === 'soulshot' && session.actor.soulshotLoaded) ||
+                        (shotKind !== 'soulshot' && session.actor.spiritshotLoaded)) return;
+                    const charge = (success, shot = {}) => {
+                        if (!success) return;
+                        if (shotKind === 'soulshot') session.actor.soulshotLoaded = true;
+                        else {
+                            session.actor.spiritshotLoaded = true;
+                            session.actor.blessedSpiritshotLoaded = !!shot.blessedSpiritshot;
+                        }
                         session.dataSendToMeAndOthers(
                             ServerResponse.skillStarted(session.actor, session.actor.fetchId(), {
                                 fetchSelfId: () => shot.skillId,
@@ -225,7 +210,9 @@ class Backpack extends BackpackModel {
                             }),
                             session.actor
                         );
-                    });
+                    };
+                    if (shotKind === 'soulshot') this.consumeSoulshot(session, charge, item.fetchSelfId());
+                    else this.consumeSpiritshot(session, charge, shotKind, item.fetchSelfId());
                     return;
                 }
 
@@ -1509,25 +1496,38 @@ class Backpack extends BackpackModel {
             return;
         }
 
+        // Old saves can contain more than one equipped item in a single slot.
+        // Clear every conflicting row, not only the one currently represented
+        // in paperdoll, so a hidden weapon cannot reappear after relogging.
+        const equippedItems = this.fetchItems().filter((item) =>
+            item.isWearable() && item.fetchEquipped() && item.fetchSlot() === slot
+        );
+        if (equippedItems.length === 0) {
+            return;
+        }
+
         // Start a database timer to update equipped state
         this.updateDatabaseTimer(session.actor.fetchId());
 
-        this.fetchItem(this.fetchPaperdollId(slot), (item) => {
-            // Unequip from actor
-            this.unequipPaperdoll(slot);
+        // Unequip from actor
+        this.unequipPaperdoll(slot);
+        equippedItems.forEach((item) => {
             item.setEquipped(false);
 
             ConsoleText.transmit(session, ConsoleText.caption.unequipped, [
                 { kind: ConsoleText.kind.item, value: item.fetchSelfId() }
             ]);
-
-            // Move item to the end (not official?)
-            this.items = this.items.filter(ob => ob.fetchId() !== item?.fetchId());
-            this.items.unshift(item);
-
-            // Recalculate
-            invoke(path.actor).calculateStats(session, session.actor);
         });
+
+        // Move removed gear to the beginning of inventory (legacy behavior).
+        const removedIds = new Set(equippedItems.map((item) => item.fetchId()));
+        this.items = [
+            ...equippedItems,
+            ...this.items.filter((item) => !removedIds.has(item.fetchId()))
+        ];
+
+        // Recalculate once for the complete slot change.
+        invoke(path.actor).calculateStats(session, session.actor);
     }
 
     updateDatabaseTimer(characterId) {

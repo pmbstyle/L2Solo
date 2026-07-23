@@ -18,7 +18,8 @@ function autoSoulShot(session, buffer) {
         return;
     }
 
-    if (!ShotStock.SHOT_IDS.includes(selfId) || !session.actor.backpack.fetchItemFromSelfId(selfId)) {
+    const kind = ShotStock.kindForSelfId(selfId);
+    if (!kind || !ShotStock.isCompatibleWithActor(kind, selfId, session.actor) || !session.actor.backpack.fetchItemFromSelfId(selfId)) {
         return;
     }
 
@@ -38,13 +39,8 @@ function autoSoulShot(session, buffer) {
 
 function chargeFirstShot(session, selfId) {
     const actor = session.actor;
-    const kind = ShotStock.SOULSHOT_IDS.includes(selfId)
-        ? 'soulshot'
-        : ShotStock.BLESSED_SPIRITSHOT_IDS.includes(selfId)
-            ? 'blessedSpiritshot'
-            : 'spiritshot';
-    const expectedId = ShotStock.planForActorKind(kind, actor).selfId;
-    if (expectedId !== selfId) return;
+    const kind = ShotStock.kindForSelfId(selfId);
+    if (!kind || !ShotStock.isCompatibleWithActor(kind, selfId, actor)) return;
 
     const charge = (success, shot = {}) => {
         if (!success) return;
@@ -66,10 +62,10 @@ function chargeFirstShot(session, selfId) {
     };
 
     if (kind === 'soulshot' && !actor.soulshotLoaded) {
-        actor.backpack.consumeSoulshot(session, charge);
+        actor.backpack.consumeSoulshot(session, charge, selfId);
     }
     else if (kind !== 'soulshot' && !actor.spiritshotLoaded) {
-        actor.backpack.consumeSpiritshot(session, charge, kind);
+        actor.backpack.consumeSpiritshot(session, charge, kind, selfId);
     }
 }
 

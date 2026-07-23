@@ -109,6 +109,24 @@ assert.strictEqual(bssBackpack.fetchAutoSpiritshotKind(bssSession.actor), 'bless
 assert.strictEqual(bssBackpack.fetchItemFromSelfId(3950).fetchAmount(), 2, 'enabling Blessed Spiritshot should consume the weapon cost immediately');
 assert.strictEqual(bssSession.actor.blessedSpiritshotLoaded, true, 'Blessed Spiritshot auto-charge should retain its damage modifier');
 
+const beginnerBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+beginnerBackpack.items = [
+    item(5, { selfId: 1, kind: 'Weapon.Sword', equipped: true, slot: 7, soulshot: 1 }),
+    item(6, { selfId: 5789, kind: 'Other.Shot', amount: 3 })
+];
+const beginnerSession = {
+    actor: { backpack: beginnerBackpack, isDead: () => false, fetchId: () => 2000003, fetchLocX: () => 100, fetchLocY: () => 200, fetchLocZ: () => -300 },
+    dataSendToMe() {}, dataSendToMeAndOthers() {}
+};
+const beginnerPacket = Buffer.alloc(11);
+beginnerPacket[0] = 0xd0;
+beginnerPacket.writeInt16LE(5, 1);
+beginnerPacket.writeInt32LE(5789, 3);
+beginnerPacket.writeInt32LE(1, 7);
+ExtendedRequest(beginnerSession, beginnerPacket);
+assert.strictEqual(beginnerBackpack.isAutoShotEnabled(beginnerSession.actor, 'soulshot'), true, 'quest beginner Soulshot should support the C4 hotbar toggle');
+assert.strictEqual(beginnerBackpack.fetchItemFromSelfId(5789).fetchAmount(), 2, 'enabling a quest beginner Soulshot should charge it immediately');
+
 const attack = new Attack();
 let consumeCalls = 0;
 const combatActor = {
