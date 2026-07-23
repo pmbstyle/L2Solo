@@ -14059,6 +14059,14 @@
     "template": { "kind": "Other.Material", "name": "Warsmith's Holder", "class1": 4, "class2": 5, "mass": 2, "price": 884000 },
     "etc": { "stackable": true, "consumable": false }
 },{
+    "selfId": 5789,
+    "template": { "kind": "Other.Shot", "name": "Soulshot: No Grade for Beginners", "class1": 4, "class2": 5, "mass": 1, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 5790,
+    "template": { "kind": "Other.Shot", "name": "Spiritshot: No Grade for Beginners", "class1": 4, "class2": 5, "mass": 1, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
     "selfId": 5262,
     "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Blessed Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 38500 },
     "etc": { "stackable": true, "consumable": false }

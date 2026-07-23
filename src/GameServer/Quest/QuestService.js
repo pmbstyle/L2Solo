@@ -17,27 +17,10 @@ const quests = [
   require("./quests/Q008_AnAdventureBegins"),
   require("./quests/Q009_IntoTheCityOfHumans"),
   require("./quests/Q010_IntoTheWorld"),
-  require("./quests/Q011_SecretMeetingWithKetraOrcs"),
-  require("./quests/Q012_SecretMeetingWithVarkaSilenos"),
-  require("./quests/Q013_ParcelDelivery"),
-  require("./quests/Q014_WhereaboutsOfTheArchaeologist"),
-  require("./quests/Q015_SweetWhispers"),
-  require("./quests/Q016_TheComingDarkness"),
-  require("./quests/Q017_LightAndDarkness"),
-  require("./quests/Q018_MeetingWithTheGoldenRam"),
-  require("./quests/Q019_GoToThePastureland"),
-  require("./quests/Q031_SecretBuriedInTheSwamp"),
-  require("./quests/Q032_AnObviousLie"),
-  require("./quests/Q033_MakeAPairOfDressShoes"),
   require("./quests/Q034_InSearchOfCloth"),
-  require("./quests/Q035_FindGlitteringJewelry"),
   require("./quests/Q036_MakeASewingKit"),
-  require("./quests/Q037_MakeFormalWear"),
-  require("./quests/Q038_DragonFangs"),
-  require("./quests/Q039_RedEyedInvaders"),
   require("./quests/Q042_HelpTheUncle"),
   require("./quests/Q043_HelpTheSister"),
-  require("./quests/Q044_HelpTheSon"),
   require("./quests/Q045_ToTalkingIsland"),
   require("./quests/Q046_OnceMoreInTheArmsOfTheMotherTree"),
   require("./quests/Q047_IntoTheDarkForest"),
@@ -260,8 +243,14 @@ async function giveItem(session, selfId, amount) {
 
 async function takeItem(session, selfId, amount = 1) {
   const item = session.actor.backpack.fetchItemFromSelfId(selfId);
-  if (!item || item.fetchAmount() < amount) return false;
-  const remaining = item.fetchAmount() - amount;
+  if (!item) return false;
+  // L2J's QuestState.takeItems(id, -1) consumes the entire stack. Several
+  // source-backed quest hand-ins use that sentinel; subtracting -1 would
+  // silently duplicate a quest item instead of clearing it.
+  const requested = Number(amount) === -1 ? item.fetchAmount() : Number(amount);
+  if (!Number.isFinite(requested) || requested <= 0 || item.fetchAmount() < requested)
+    return false;
+  const remaining = item.fetchAmount() - requested;
   if (remaining > 0) {
     await Database.updateItemAmount(
       session.actor.fetchId(),

@@ -187,6 +187,34 @@ async function main() {
     calls.push(["give", itemId, amount]);
   QuestService.rewardAdena = async (_, amount) => calls.push(["adena", amount]);
   try {
+    let q002Condition = 1;
+    const q002State = {
+      session: { actor: { fetchLevel: () => 2, fetchRace: () => 1 } },
+      isCompleted: () => false,
+      isStarted: () => true,
+      getInt: () => q002Condition,
+      set: async (key, value) => {
+        assert.strictEqual(key, "cond");
+        q002Condition = Number(value);
+      },
+      playSound: (sound) => calls.push(["sound", sound]),
+    };
+    await Q002.onTalk(q002State, { fetchSelfId: () => 7146 });
+    await Q002.onTalk(q002State, { fetchSelfId: () => 7150 });
+    assert.deepStrictEqual(
+      calls,
+      [
+        ["take", 1092],
+        ["give", 1093, 1],
+        ["sound", "ItemSound.quest_middle"],
+        ["take", 1093],
+        ["give", 1094, 1],
+        ["sound", "ItemSound.quest_middle"],
+      ],
+      "Q002 must replace the gatekeeper letter and issue Herbiel's church letter",
+    );
+    calls.length = 0;
+
     let completed = false;
     await Q001.onTalk(
       {
@@ -214,6 +242,36 @@ async function main() {
     QuestService.takeItem = originalTake;
     QuestService.giveItem = originalGive;
     QuestService.rewardAdena = originalRewardAdena;
+  }
+
+  const deleted = [];
+  const allStackItem = {
+    fetchId: () => 41,
+    fetchAmount: () => 7,
+  };
+  const allStackSession = {
+    actor: {
+      fetchId: () => 8,
+      backpack: {
+        items: [allStackItem],
+        fetchItemFromSelfId: () => allStackItem,
+        fetchItems: () => [],
+      },
+    },
+    dataSendToMe: () => {},
+  };
+  const originalDeleteItem = invoke("Database").deleteItem;
+  invoke("Database").deleteItem = async (...args) => deleted.push(args);
+  try {
+    assert.strictEqual(
+      await QuestService.takeItem(allStackSession, 1094, -1),
+      true,
+      "takeItem(-1) must consume an existing quest-item stack",
+    );
+    assert.deepStrictEqual(deleted, [[8, 41]]);
+    assert.deepStrictEqual(allStackSession.actor.backpack.items, []);
+  } finally {
+    invoke("Database").deleteItem = originalDeleteItem;
   }
 }
 
