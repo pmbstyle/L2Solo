@@ -39,6 +39,8 @@ try {
         assert(craftRecovery, 'bot life init must release stale craft waits after a restart');
         assert(craftRecovery.sql.includes("AND activity = 'crafting'"), 'only stale station waits should be recovered as hunters');
         assert.strictEqual(craftRecovery.params[1], craftRecovery.params[0], 'recovered craft waits must be due immediately for their replan');
+        const partyWaitMigration = statements.find((entry) => entry.sql.includes("migrated %d acquisition party waits") || entry.sql.includes("activity = 'party_wait'"));
+        assert(partyWaitMigration, 'startup must move legacy acquisition waits out of the rest scheduler');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
@@ -61,6 +63,24 @@ try {
             assert(due.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 0"), 'due cold states must promptly finish travel and crafting transitions');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
+            return BotLifeState.assignParty({
+                characterId: 43,
+                name: 'PartyWaitAssignmentProbe',
+                phase: 'cold',
+                activity: 'party_wait',
+                timing: { nextResolveAt: 9000 },
+                vitals: {},
+                stats: { lastReason: 'acquisition_party_wait', partyWaitUntil: 9000 },
+                inventory: {}
+            }, 'bgp_probe', 'healer', 42).then((assigned) => {
+                assert.strictEqual(assigned.activity, 'grouped', 'a formed party must release its waiting member into the group lifecycle');
+                assert.strictEqual(assigned.stats.partyWaitUntil, null, 'assigned members must not retain an obsolete wait deadline');
+                return BotLifeState.coldPartyCandidates(5);
+            }).then(() => {
+                const candidates = statements.find((entry) => entry.sql.includes("activity IN ('hunting', 'resting', 'party_wait')"));
+                assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
+            });
+        }).then(() => {
             console.log('Bot population state checks passed');
         });
     }).catch((err) => {

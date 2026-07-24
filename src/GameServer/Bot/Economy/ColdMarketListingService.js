@@ -536,7 +536,9 @@ function open(state, options = {}) {
         timing: {
             ...(state.timing || {}),
             activityStartedAt: timestamp,
-            nextResolveAt: timestamp + 60000
+            // Sales settle through the market event path.  A listed store only
+            // needs a scheduled wake-up when its offer expires.
+            nextResolveAt: timestamp + (Number(options.durationMs) || DEFAULT_LISTING_MS)
         }
     };
     return LifeState.upsertState(nextState, 'cold_market_listing').then((saved) => {
@@ -592,7 +594,9 @@ function resolve(state, timestamp = Date.now()) {
                 return pricing;
             }, { ...(state.stats?.marketPricing || {}) }) : state.stats?.marketPricing || {}
         },
-        timing: { ...(state.timing || {}), nextResolveAt: timestamp + 30000 }
+        // Closing a store is an event.  The following shopping/return action
+        // should be available on the next scheduler pass, not after polling.
+        timing: { ...(state.timing || {}), nextResolveAt: timestamp }
     };
     MarketOpportunity.removeColdStore(state.characterId);
     return (hasStock ? BotWarehouse.depositCold(nextState) : Promise.resolve({ state: nextState, count: 0 }))
@@ -708,7 +712,7 @@ function reconcileInventory(state) {
         ...state,
         activity: 'shopping',
         stats: { ...(state.stats || {}), marketStore: null },
-        timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 30000 }
+        timing: { ...(state.timing || {}), nextResolveAt: Date.now() }
     };
     MarketOpportunity.removeColdStore(state.characterId);
     return LifeState.upsertState(nextState, 'cold_market_inventory_empty').then((saved) => ({
@@ -724,7 +728,12 @@ function settle(offer, qty = 1) {
     const seller = LifeState.snapshot(offer.sourceId) || offer.sellerState;
     if (!seller) return Promise.resolve(null);
     return LifeState.applyMarketSale(seller, offer, qty).then((saved) => {
-        if (saved) MarketOpportunity.indexColdStore(saved);
+        if (!saved) return null;
+        const hasStock = (saved.stats?.marketStore?.items || []).some((item) => Number(item.count) > 0);
+        // Empty stock is a transaction event too; close immediately instead
+        // of keeping a dead merchant until the original listing expiry.
+        if (!hasStock) return resolve(saved).then((result) => result.state || saved);
+        MarketOpportunity.indexColdStore(saved);
         return saved;
     });
 }

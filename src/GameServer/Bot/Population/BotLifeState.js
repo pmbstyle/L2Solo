@@ -586,6 +586,36 @@ function recoverStaleCraftWaits() {
     });
 }
 
+function migrateAcquisitionPartyWaits() {
+    const timestamp = now();
+    const replanAt = timestamp + Config.partyWaitReplanMs;
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET activity = 'party_wait',
+            activityStartedAt = ?,
+            nextResolveAt = ?,
+            statsJson = JSON_SET(
+                COALESCE(statsJson, '{}'),
+                '$.partyWaitUntil', CAST(? AS UNSIGNED),
+                '$.restUntil', NULL,
+                '$.lastReason', 'acquisition_party_wait'
+            ),
+            updatedAt = ?
+        WHERE phase = 'cold'
+        AND activity = 'resting'
+        AND (partyId IS NULL OR partyId = '')
+        AND JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.lastReason')) = 'acquisition_party_wait'
+        AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.restUntil')) AS UNSIGNED), 0) = 0`,
+        [timestamp, replanAt, replanAt, timestamp]
+    ]).then((result) => {
+        const migrated = Number(result?.affectedRows || 0);
+        if (migrated > 0) {
+            utils.infoWarn('BotLife', 'migrated %d acquisition party waits to event scheduling', migrated);
+        }
+        return migrated;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -624,7 +654,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => hydrateCache()).then((count) => {
+        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
@@ -722,7 +752,11 @@ const BotLifeState = {
                 phase: 'cold',
                 activity: 'merchant',
                 loc: { ...storeLoc },
-                timing: { ...(marketState.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 60000 },
+                timing: {
+                    ...(marketState.timing || {}),
+                    activityStartedAt: timestamp,
+                    nextResolveAt: Number(marketState.stats?.marketStore?.expiresAt || 0) || timestamp + 60000
+                },
                 stats: {
                     ...(marketState.stats || {}),
                     marketStore: {
@@ -755,7 +789,7 @@ const BotLifeState = {
                 timing: {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
-                    nextResolveAt: now() + 60000
+                    nextResolveAt: null
                 },
                 stats: { ...(craftState.stats || {}), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
@@ -895,6 +929,11 @@ const BotLifeState = {
             WHERE phase = 'cold'
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
+            -- Cold stores settle on trade/expiry events, and craft-service
+            -- stations are materialized on demand.  Neither belongs in the
+            -- combat scheduler's periodic queue.
+            AND NOT (activity = 'merchant' AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL)
+            AND NOT (activity = 'crafting' AND JSON_EXTRACT(statsJson, '$.craftShop') IS NOT NULL)
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             -- Travel and crafting are finite state transitions. They must
             -- outrank a large resting/hunting backlog, otherwise a bot can
@@ -1045,13 +1084,13 @@ const BotLifeState = {
                 WHERE phase = 'cold'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
-                AND activity IN ('hunting', 'resting')
+                AND activity IN ('hunting', 'resting', 'party_wait')
                 GROUP BY spotId
             ) party_spots ON party_spots.spotId = states.spotId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
-            AND states.activity IN ('hunting', 'resting')
+            AND states.activity IN ('hunting', 'resting', 'party_wait')
             ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
@@ -1068,8 +1107,12 @@ const BotLifeState = {
     assignParty(state, partyId, role = 'dps', leaderId = 0) {
         if (!state || !partyId) return Promise.resolve(null);
 
+        const wasWaitingForParty = state.activity === 'party_wait'
+            || state.stats?.lastReason === 'acquisition_party_wait';
+        const timestamp = now();
         const nextState = {
             ...state,
+            activity: wasWaitingForParty ? 'grouped' : state.activity,
             party: {
                 ...(state.party || {}),
                 partyId,
@@ -1080,9 +1123,17 @@ const BotLifeState = {
                 ...(state.stats || {}),
                 role,
                 leaderId,
-                backgroundPartyId: partyId
+                backgroundPartyId: partyId,
+                partyWaitUntil: wasWaitingForParty ? null : state.stats?.partyWaitUntil || null,
+                restUntil: wasWaitingForParty ? null : state.stats?.restUntil || null,
+                lastReason: wasWaitingForParty ? 'party_assigned' : state.stats?.lastReason
             },
-            updatedAt: now()
+            timing: {
+                ...(state.timing || {}),
+                activityStartedAt: wasWaitingForParty ? timestamp : state.timing?.activityStartedAt,
+                nextResolveAt: wasWaitingForParty ? null : state.timing?.nextResolveAt
+            },
+            updatedAt: timestamp
         };
         const row = rowFromState(nextState);
 

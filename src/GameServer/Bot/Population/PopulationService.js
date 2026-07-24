@@ -891,11 +891,35 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
+        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
+        // These transitions have no planning, market search, or inventory work
+        // between their persisted deadline and the next state change.
+        if (state.activity === 'traveling' || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
+            const result = BackgroundResolver.resolveSolo({
+                state,
+                spot: null,
+                pressure: Director.pressureForState(state),
+                elapsedMs,
+                timestamp: startedAt
+            });
+            return LifeState.applyResolve(state, result).then((updatedState) => {
+                if (!updatedState) {
+                    Metrics.recordSkippedResolve();
+                    return { ok: false, reason: 'apply_failed', state };
+                }
+                Metrics.recordBackgroundResolve();
+                return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
+                    ok: true,
+                    state: updatedState,
+                    debug: result.debug
+                }));
+            }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         if (GearAcquisitionPlanner.isCraftService(state)) {
             const { equipmentPlan, ...serviceStats } = state.stats || {};
             const serviceState = {
                 ...state,
-                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 60000 },
+                timing: { ...(state.timing || {}), nextResolveAt: null },
                 stats: serviceStats
             };
             return LifeState.upsertState(serviceState, 'craft_service_idle')
@@ -932,11 +956,16 @@ const PopulationService = {
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
         if (acquisitionPlan.requiresParty && !state.party?.partyId) {
+            const partyWaitUntil = Date.now() + Config.partyWaitReplanMs;
             const partyWaitState = {
                 ...plannedState,
-                activity: 'resting',
+                // Party formation reads these candidates independently of the
+                // combat scheduler.  Do not disguise the wait as recovery and
+                // consume a resolve every 30 seconds.
+                activity: 'party_wait',
                 spotId: acquisitionPlan.next?.spotId || state.spotId,
-                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 30000 }
+                timing: { ...(state.timing || {}), nextResolveAt: partyWaitUntil },
+                stats: { ...(plannedState.stats || {}), partyWaitUntil, restUntil: null }
             };
             return LifeState.upsertState(partyWaitState, 'acquisition_party_wait')
                 .then((saved) => Promise.all(planEvents.map((event) => (
@@ -1007,7 +1036,6 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
 
-        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, Date.now() - state.timing.lastResolvedAt) : 60000;
         const result = BackgroundResolver.resolveSolo({
             state: travellingState,
             spot,

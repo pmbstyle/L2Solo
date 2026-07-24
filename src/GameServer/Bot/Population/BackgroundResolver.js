@@ -143,9 +143,10 @@ function resolveRest(state, elapsedMs, timestamp) {
             weight: 1
         }],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: resting
-            ? timestamp + Math.max(3000, Math.min(30000, remainingMs || 30000))
-            : timestamp + 30000,
+        // Sleeping is not an active simulation state.  Persist the exact
+        // recovery deadline so the scheduler can leave this bot alone until
+        // HP/MP should have changed.
+        nextResolveAt: resting ? restUntil : timestamp + 30000,
         debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs }
     };
 }
@@ -199,7 +200,12 @@ function resolveTravel(state, timestamp = Date.now()) {
             meta: { townName: travel.townName || null, stationId: travel.stationId || null, reason: travel.reason || null }
         }] : [],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: timestamp + (arrived && arrivalActivity === 'shopping' ? 120000 : 30000),
+        // Until arrival nothing changes.  On arrival, schedule the finite
+        // shopping/crafting transition for the next scheduler pass instead of
+        // parking the bot for another arbitrary polling interval.
+        nextResolveAt: arrived && ['shopping', 'crafting'].includes(arrivalActivity)
+            ? timestamp
+            : arrived ? timestamp + 30000 : arrivalAt,
         debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null, arrivalActivity }
     };
 }
@@ -321,7 +327,7 @@ const BackgroundResolver = {
         }
 
         if (state.activity === 'traveling') {
-            const travelResult = resolveTravel(state);
+            const travelResult = resolveTravel(state, timestamp);
             if (travelResult) return travelResult;
         }
 
@@ -462,7 +468,7 @@ const BackgroundResolver = {
             patch,
             events,
             materialize,
-            nextResolveAt: Date.now() + 30000 + Math.round(rng() * 90000),
+            nextResolveAt: patch.stats?.restUntil || timestamp + 30000 + Math.round(rng() * 90000),
             debug: {
                 elapsedMs,
                 fights,

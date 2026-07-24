@@ -74,7 +74,7 @@ async function run() {
     const result = await PopulationService.resolveColdState(state);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(receivedSpot, null, 'travel must resolve without a hunting spot');
-    assert.strictEqual(planningAtlasRequests, 1, 'travel must still retain the spot atlas while refreshing an equipment plan');
+    assert.strictEqual(planningAtlasRequests, 0, 'in-flight travel must not build an equipment plan or load the spot atlas');
     console.log('Bot cold travel without spot checks passed');
 }
 

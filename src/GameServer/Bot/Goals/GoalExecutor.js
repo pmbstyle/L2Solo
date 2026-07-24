@@ -53,7 +53,9 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         timing: {
             ...(state.timing || {}),
             activityStartedAt: timestamp,
-            nextResolveAt: timestamp + 30000
+            // Travel is a finite transition.  There is no state to simulate
+            // while a cold bot is casting SoE / waiting for gatekeeper travel.
+            nextResolveAt: timestamp + MARKET_TRAVEL_MS
         }
     };
 }
@@ -90,7 +92,7 @@ function finishMarketVisit(state, timestamp = Date.now()) {
         timing: {
             ...(state.timing || {}),
             activityStartedAt: timestamp,
-            nextResolveAt: timestamp + 30000
+            nextResolveAt: timestamp + GATEKEEPER_SPOT_TRAVEL_MS
         }
     };
 }

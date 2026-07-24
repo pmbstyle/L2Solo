@@ -17,6 +17,10 @@ const DEFAULTS = {
     marketExpiryCleanupIntervalMs: 10000,
     marketExpiryCleanupBatchSize: 10,
     partyFormationIntervalMs: 45000,
+    // Waiting for a compatible party is not rest.  Formation sees these
+    // candidates independently every 45 seconds; this is only the rare
+    // fallback that rebuilds a stale acquisition plan.
+    partyWaitReplanMs: 5 * 60 * 1000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,
     // Start with every level-one hunting sector. Waves open every five levels

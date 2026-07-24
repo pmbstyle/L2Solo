@@ -38,7 +38,7 @@ async function run() {
     assert.strictEqual(result.debug.activity, 'craft_service_idle');
     assert.strictEqual(saved.reason, 'craft_service_idle');
     assert.strictEqual(saved.state.stats.equipmentPlan, undefined);
-    assert.ok(Number(saved.state.timing.nextResolveAt) > Date.now());
+    assert.strictEqual(saved.state.timing.nextResolveAt, null, 'idle craft stations must not poll through the cold scheduler');
     console.log('Bot craft service idle checks passed');
 }
 
