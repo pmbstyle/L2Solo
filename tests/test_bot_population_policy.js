@@ -45,6 +45,11 @@ const originalConfig = {
     cooldownRadius: Config.cooldownRadius,
     cooldownBatchSize: Config.cooldownBatchSize
 };
+const originalLifecycleFlags = {
+    resolving: PopulationService.resolving,
+    partyFormationRunning: PopulationService.partyFormationRunning,
+    partyFormationPending: PopulationService.partyFormationPending
+};
 
 async function run() {
     const playerSession = session('player_policy', actor(1, 0));
@@ -101,6 +106,13 @@ async function run() {
     };
     await PopulationService.cooldownEligibleHot();
     assert.deepStrictEqual(cooled, ['bot_far_craft', 'bot_far'], 'cooldown should park distant craft services along with normal cold-backed bots');
+
+    PopulationService.resolving = true;
+    assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
+    assert.strictEqual(PopulationService.partyFormationPending, true, 'a formation tick that collides with the scheduler must be queued rather than discarded');
+    PopulationService.resolving = false;
+    PopulationService.partyFormationRunning = true;
+    assert.deepStrictEqual(await PopulationService.tickBudgeted(), [], 'the scheduler must wait for an in-flight party formation pass');
 }
 
 run()
@@ -115,5 +127,6 @@ run()
         LifeState.coldNear = originalColdNear;
         PopulationService.requestActivation = originalRequestActivation;
         PopulationService.cooldownSession = originalCooldownSession;
+        Object.assign(PopulationService, originalLifecycleFlags);
         Object.assign(Config, originalConfig);
     });

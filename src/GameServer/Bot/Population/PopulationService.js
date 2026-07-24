@@ -79,6 +79,20 @@ function partySpotForLeader(leader) {
     }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
 }
 
+function directDropTargetNpcId(...plans) {
+    for (const plan of plans) {
+        if (plan?.status !== 'active' || plan?.strategy !== 'direct_drop') continue;
+        const npcId = Number(plan.next?.npcId || 0);
+        if (npcId > 0) return npcId;
+    }
+    return 0;
+}
+
+function joinedBackgroundParty(state) {
+    const current = LifeState.cachedState(state?.characterId);
+    return !!current?.party?.partyId;
+}
+
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
     if (timestamp - Number(party.stats?.formedAt || party.startedAt || timestamp) < Config.partyMarketBreakMinSessionMs) return false;
     if (Number(party.stats?.fightsResolved || 0) < Config.partyMarketBreakMinFights) return false;
@@ -157,6 +171,7 @@ const PopulationService = {
     marketTownMigrationRunning: false,
     marketExpiryCleanupRunning: false,
     partyFormationRunning: false,
+    partyFormationPending: false,
     phasePolicyRunning: false,
 
     init() {
@@ -593,7 +608,16 @@ const PopulationService = {
     },
 
     formBackgroundParties() {
+        // Formation rewrites party membership.  It must not overlap with the
+        // scheduler after that scheduler has already selected solo candidates.
         if (this.partyFormationRunning || Config.enabled === false || Config.backgroundPartyEnabled === false) {
+            return Promise.resolve([]);
+        }
+        if (this.resolving) {
+            // The intervals are intentionally aligned (45s and 5s), so
+            // dropping this tick would starve party formation indefinitely.
+            // Let the scheduler launch it from its safe completion edge.
+            this.partyFormationPending = true;
             return Promise.resolve([]);
         }
 
@@ -772,8 +796,8 @@ const PopulationService = {
     },
 
     tickBudgeted() {
-        if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
-            if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
+        if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
                 Metrics.recordSchedulerSkip();
             }
             return Promise.resolve([]);
@@ -828,6 +852,10 @@ const PopulationService = {
                 // scheduler slot. An independent timer can otherwise make a
                 // normal five-second tick look busy and skip its resolves.
                 this.maybeMigrateLegacyColdCombatProfiles();
+                if (this.partyFormationPending) {
+                    this.partyFormationPending = false;
+                    this.formBackgroundParties();
+                }
             });
     },
 
@@ -900,11 +928,13 @@ const PopulationService = {
             }
 
             const elapsedMs = party.stats?.lastResolveAt ? Math.max(1000, Date.now() - party.stats.lastResolveAt) : 60000;
+            const targetNpcId = directDropTargetNpcId(leader.stats?.equipmentPlan, party.stats?.acquisitionGoal);
             const result = BackgroundPartyResolver.resolve({
                 party,
                 members,
                 spot,
                 pressure: Director.pressureForState(leader),
+                targetNpcId,
                 elapsedMs
             });
             const deadMemberIds = new Set();
@@ -985,6 +1015,10 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
+        if (joinedBackgroundParty(state)) {
+            Metrics.recordSkippedResolve();
+            return Promise.resolve({ ok: false, reason: 'joined_party', state });
+        }
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
@@ -996,6 +1030,10 @@ const PopulationService = {
                 elapsedMs,
                 timestamp: startedAt
             });
+            if (joinedBackgroundParty(state)) {
+                Metrics.recordSkippedResolve();
+                return Promise.resolve({ ok: false, reason: 'joined_party', state });
+            }
             return LifeState.applyResolve(state, result).then((updatedState) => {
                 if (!updatedState) {
                     Metrics.recordSkippedResolve();
@@ -1135,8 +1173,14 @@ const PopulationService = {
             state: travellingState,
             spot,
             pressure: Director.pressureForState(state),
+            targetNpcId: directDropTargetNpcId(acquisitionPlan),
             elapsedMs
         });
+
+        if (joinedBackgroundParty(state)) {
+            Metrics.recordSkippedResolve();
+            return Promise.resolve({ ok: false, reason: 'joined_party', state });
+        }
 
         return LifeState.applyResolve(travellingState, result).then((updatedState) => LifeState.refreshInventory(updatedState)
             .then((refreshedState) => LifeState.upsertState(refreshedState, 'inventory_refresh').then((saved) => saved || refreshedState)))
