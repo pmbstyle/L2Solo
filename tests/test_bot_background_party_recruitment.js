@@ -12,10 +12,15 @@ const originals = {
     active: PartyState.active,
     statesForParty: LifeState.statesForParty,
     assignParty: LifeState.assignParty,
+    partyRequirementCounts: LifeState.partyRequirementCounts,
+    clearParty: LifeState.clearParty,
     createOrUpdate: PartyState.createOrUpdate,
+    setStatus: PartyState.setStatus,
     record: LifeEvents.record,
     partyMinSize: Config.partyMinSize,
-    partyMaxSize: Config.partyMaxSize
+    partyMaxSize: Config.partyMaxSize,
+    maxBackgroundParties: Config.maxBackgroundParties,
+    partyFormationBatchSize: Config.partyFormationBatchSize
 };
 
 async function run() {
@@ -57,6 +62,27 @@ async function run() {
     assert.deepStrictEqual(saved.memberIds, [1, 2, 3, 4]);
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
     assert.strictEqual(events.length, 1);
+
+    const electiveParty = { partyId: 'bgp_elective', leaderId: 11, memberIds: [11, 12], spotId: 'cruma', startedAt: 1 };
+    const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
+    const reclaimed = [];
+    PartyState.active = () => [electiveParty, requiredParty];
+    PartyState.setStatus = (partyId, status) => {
+        reclaimed.push({ partyId, status });
+        return Promise.resolve({ partyId, status });
+    };
+    LifeState.clearParty = () => Promise.resolve(2);
+    LifeState.partyRequirementCounts = () => Promise.resolve([
+        { partyId: 'bgp_elective', requiredMembers: 0 },
+        { partyId: 'bgp_required', requiredMembers: 2 }
+    ]);
+    Config.maxBackgroundParties = 2;
+    Config.partyFormationBatchSize = 2;
+    const released = await PopulationService.reclaimBackgroundPartyCapacity([
+        { characterId: 31 }, { characterId: 32 }, { characterId: 33 }, { characterId: 34 }
+    ]);
+    assert.deepStrictEqual(released.map((party) => party.partyId), ['bgp_elective']);
+    assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
     console.log('Bot background party recruitment checks passed');
 }
 
@@ -67,8 +93,13 @@ run().catch((err) => {
     PartyState.active = originals.active;
     LifeState.statesForParty = originals.statesForParty;
     LifeState.assignParty = originals.assignParty;
+    LifeState.partyRequirementCounts = originals.partyRequirementCounts;
+    LifeState.clearParty = originals.clearParty;
     PartyState.createOrUpdate = originals.createOrUpdate;
+    PartyState.setStatus = originals.setStatus;
     LifeEvents.record = originals.record;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;
+    Config.maxBackgroundParties = originals.maxBackgroundParties;
+    Config.partyFormationBatchSize = originals.partyFormationBatchSize;
 });

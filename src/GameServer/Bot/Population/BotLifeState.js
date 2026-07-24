@@ -1114,9 +1114,12 @@ const BotLifeState = {
         });
     },
 
-    coldPartyCandidates(limit = 80) {
+    coldPartyCandidates(limit = 80, partyRequiredOnly = false) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
+        const activityClause = partyRequiredOnly
+            ? "activity = 'party_wait'"
+            : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
             `SELECT states.* FROM ${TABLE} states
@@ -1126,13 +1129,13 @@ const BotLifeState = {
                 WHERE phase = 'cold'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
-                AND activity IN ('hunting', 'resting', 'party_wait')
+                AND ${activityClause}
                 GROUP BY spotId
             ) party_spots ON party_spots.spotId = states.spotId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
-            AND states.activity IN ('hunting', 'resting', 'party_wait')
+            AND states.${activityClause}
             ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
@@ -1142,6 +1145,33 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch party candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    partyRequirementCounts(partyIds = []) {
+        if (!initialized) return Promise.resolve([]);
+        const ids = Array.from(new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean)));
+        if (!ids.length) return Promise.resolve([]);
+        const placeholders = ids.map(() => '?').join(', ');
+
+        return Database.execute([
+            `SELECT partyId,
+                COUNT(*) AS memberCount,
+                SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.requiresParty')) = 'true' THEN 1 ELSE 0 END) AS requiredMembers,
+                MIN(updatedAt) AS oldestAt
+            FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND partyId IN (${placeholders})
+            GROUP BY partyId`,
+            ids
+        ]).then((rows) => rows.map((row) => ({
+            partyId: String(row.partyId || ''),
+            memberCount: Number(row.memberCount || 0),
+            requiredMembers: Number(row.requiredMembers || 0),
+            oldestAt: Number(row.oldestAt || 0)
+        }))).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to count party requirements: %s', err.message);
             return [];
         });
     },

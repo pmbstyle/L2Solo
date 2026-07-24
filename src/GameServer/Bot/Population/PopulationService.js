@@ -584,10 +584,15 @@ const PopulationService = {
         }
 
         this.partyFormationRunning = true;
-        return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-            .then((states) => this.recruitBackgroundMembers(states).then((recruitedIds) => ({
-                states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
-            })))
+        return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit, true)
+            .then((partyWaitStates) => (partyWaitStates.length
+                ? { states: partyWaitStates, partyWaitBacklog: true }
+                : LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+                    .then((states) => ({ states, partyWaitBacklog: false }))))
+            .then(({ states, partyWaitBacklog }) => this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? states : [])
+                .then(() => this.recruitBackgroundMembers(states)).then((recruitedIds) => ({
+                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
+                })))
             .then(({ states }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
                 const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
@@ -667,6 +672,31 @@ const PopulationService = {
             .finally(() => {
                 this.partyFormationRunning = false;
             });
+    },
+
+    reclaimBackgroundPartyCapacity(partyWaitStates = []) {
+        if (!partyWaitStates.length) return Promise.resolve([]);
+        const activeParties = BackgroundPartyState.active();
+        const availableSlots = Math.max(0, Config.maxBackgroundParties - activeParties.length);
+        const wantedSlots = Math.min(
+            Config.partyFormationBatchSize,
+            Math.floor(partyWaitStates.length / Math.max(1, Config.partyMinSize))
+        );
+        const reclaimCount = Math.max(0, wantedSlots - availableSlots);
+        if (!reclaimCount || !activeParties.length) return Promise.resolve([]);
+
+        return LifeState.partyRequirementCounts(activeParties.map((party) => party.partyId))
+            .then((counts) => {
+                const countByPartyId = new Map(counts.map((count) => [count.partyId, count]));
+                return activeParties
+                    .filter((party) => Number(countByPartyId.get(party.partyId)?.requiredMembers || 0) === 0)
+                    .sort((a, b) => Number(a.startedAt || 0) - Number(b.startedAt || 0))
+                    .slice(0, reclaimCount);
+            })
+            .then((parties) => parties.reduce((chain, party) => (
+                chain.then((reclaimed) => dissolveBackgroundParty(party, 'party_capacity_reclaimed', party.memberIds?.length || 0)
+                    .then(() => [...reclaimed, party]))
+            ), Promise.resolve([])));
     },
 
     recruitBackgroundMembers(candidates = []) {

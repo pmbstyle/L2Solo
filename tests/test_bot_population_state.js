@@ -79,6 +79,10 @@ try {
             }).then(() => {
                 const candidates = statements.find((entry) => entry.sql.includes("activity IN ('hunting', 'resting', 'party_wait')"));
                 assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
+                return BotLifeState.coldPartyCandidates(5, true);
+            }).then(() => {
+                const requiredCandidates = statements.find((entry) => entry.sql.includes("states.activity = 'party_wait'"));
+                assert(requiredCandidates, 'a real party-wait backlog must reserve formation capacity ahead of elective hunting parties');
             });
         }).then(() => {
             console.log('Bot population state checks passed');
