@@ -10,6 +10,8 @@ const DEFAULTS = {
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
+    coldCombatProfileMigrationIntervalMs: 10000,
+    coldCombatProfileMigrationBatchSize: 5,
     // One-off migration for stores created before market towns were split.
     // It is deliberately independent from the normal cold-resolve budget.
     marketTownMigrationIntervalMs: 10000,

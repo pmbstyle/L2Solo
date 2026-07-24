@@ -129,12 +129,14 @@ const PopulationService = {
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
+    coldCombatProfileMigrationTimer: null,
     marketTownMigrationTimer: null,
     nextMarketTownMigrationAt: 0,
     marketExpiryCleanupTimer: null,
     nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
+    coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
     marketExpiryCleanupRunning: false,
     partyFormationRunning: false,
@@ -191,6 +193,14 @@ const PopulationService = {
 
         if (typeof this.classProgressionMigrationTimer.unref === 'function') {
             this.classProgressionMigrationTimer.unref();
+        }
+
+        this.coldCombatProfileMigrationTimer = setInterval(() => {
+            this.migrateLegacyColdCombatProfiles();
+        }, Config.coldCombatProfileMigrationIntervalMs);
+
+        if (typeof this.coldCombatProfileMigrationTimer.unref === 'function') {
+            this.coldCombatProfileMigrationTimer.unref();
         }
 
         this.marketTownMigrationTimer = setInterval(() => {
@@ -263,6 +273,10 @@ const PopulationService = {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
         }
+        if (this.coldCombatProfileMigrationTimer) {
+            clearInterval(this.coldCombatProfileMigrationTimer);
+            this.coldCombatProfileMigrationTimer = null;
+        }
         if (this.marketTownMigrationTimer) {
             clearInterval(this.marketTownMigrationTimer);
             this.marketTownMigrationTimer = null;
@@ -328,6 +342,27 @@ const PopulationService = {
             })
             .finally(() => {
                 this.classProgressionMigrationRunning = false;
+            });
+    },
+
+    migrateLegacyColdCombatProfiles() {
+        if (this.coldCombatProfileMigrationRunning || this.resolving || this.classProgressionMigrationRunning || Config.enabled === false) {
+            return Promise.resolve([]);
+        }
+        this.coldCombatProfileMigrationRunning = true;
+        return LifeState.migrateLegacyColdCombatProfiles(Config.coldCombatProfileMigrationBatchSize)
+            .then((migrated) => {
+                if (migrated.length) {
+                    console.info('BotPopulation :: migrated cold combat profiles for %d bot(s)', migrated.length);
+                }
+                return migrated;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'legacy cold combat profile migration failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.coldCombatProfileMigrationRunning = false;
             });
     },
 
@@ -683,8 +718,8 @@ const PopulationService = {
     },
 
     tickBudgeted() {
-        if (this.resolving || this.classProgressionMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
-            if (this.resolving || this.classProgressionMigrationRunning) {
+        if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
                 Metrics.recordSchedulerSkip();
             }
             return Promise.resolve([]);

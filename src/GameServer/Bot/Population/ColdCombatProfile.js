@@ -143,6 +143,43 @@ function skillsFromTree(classId, level) {
     }).filter(Boolean);
 }
 
+function skillSnapshotsFromRecords(records = []) {
+    return records.map((record) => {
+        const selfId = number(record.selfId);
+        const requestedLevel = number(record.level, 1);
+        const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === selfId);
+        if (!skill) return null;
+        const definition = (skill.levels || []).find((row) => number(row.level) === requestedLevel)
+            || (skill.levels || []).filter((row) => number(row.level) <= requestedLevel).at(-1);
+        if (!definition) return null;
+        return {
+            selfId,
+            level: number(definition.level, requestedLevel),
+            passive: record.passive === true || skill.template?.passive === true,
+            spell: definition.spell === true,
+            power: number(definition.power),
+            mp: number(definition.mp),
+            hp: number(definition.hp),
+            hitTime: number(definition.hitTime),
+            reuse: number(definition.reuse),
+            buffTime: number(definition.buff)
+        };
+    }).filter(Boolean);
+}
+
+function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
+    const existing = state.stats?.coldCombat || {};
+    return {
+        ...existing,
+        version: 1,
+        skillSource: 'database',
+        capturedAt: number(existing.capturedAt, timestamp),
+        classId: number(existing.classId, number(state.stats?.classId, number(state.classId))),
+        effects: existing.effects || [],
+        skills: skillSnapshotsFromRecords(records)
+    };
+}
+
 function capture(actor, timestamp = Date.now()) {
     const backpack = actor.backpack;
     const equipment = {
@@ -163,6 +200,7 @@ function capture(actor, timestamp = Date.now()) {
     };
     return {
         version: 1,
+        skillSource: 'hot',
         capturedAt: timestamp,
         classId: number(actor.fetchClassId?.()),
         base: {
@@ -268,4 +306,4 @@ function npcForSpot(spot = {}, rng = Math.random) {
     };
 }
 
-module.exports = { capture, profileFor, offensiveSkills, npcForSpot };
+module.exports = { capture, legacySnapshot, profileFor, offensiveSkills, npcForSpot, skillSnapshotsFromRecords };

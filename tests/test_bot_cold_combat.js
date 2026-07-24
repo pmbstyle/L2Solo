@@ -40,6 +40,14 @@ const legacyBuffed = ColdCombatProfile.profileFor({
     stats: { ...fighter.stats, coldCombat: { ...fighter.stats.coldCombat, effects: [{ key: 'might', id: 1068, type: 'buff', expiresAt: timestamp + 60000, stats: {} }] } }
 }, timestamp);
 assert(legacyBuffed.pAtk > expired.pAtk, 'legacy catalog buffs with an empty effect payload must retain their C4 stat bonus');
+const persistedSkills = ColdCombatProfile.skillSnapshotsFromRecords([
+    { selfId: 3, level: 4, passive: false },
+    { selfId: 999999, level: 1, passive: false }
+]);
+assert.deepStrictEqual(persistedSkills.map((skill) => [skill.selfId, skill.level]), [[3, 4]], 'legacy migration must use persisted skill rows and ignore only unknown datapack entries');
+const migratedSnapshot = ColdCombatProfile.legacySnapshot(fighter, [{ selfId: 3, level: 4 }], timestamp);
+assert.strictEqual(migratedSnapshot.skills[0].level, 4, 'legacy snapshot must preserve the stored skill level');
+assert.strictEqual(migratedSnapshot.skillSource, 'database', 'legacy snapshot must prevent a later fallback from replacing persisted skills');
 
 const changedGear = ColdCombatProfile.profileFor({
     ...fighter,
