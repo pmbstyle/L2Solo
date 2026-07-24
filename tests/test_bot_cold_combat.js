@@ -7,6 +7,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
 DataCache.init();
 
@@ -116,6 +117,21 @@ const partyResult = BackgroundPartyResolver.resolve({
 });
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
+
+const originalMetrics = {
+    counters: PopulationMetrics.counters,
+    lastSummaryCounters: PopulationMetrics.lastSummaryCounters
+};
+PopulationMetrics.counters = Object.fromEntries(Object.keys(PopulationMetrics.counters).map((key) => [key, 0]));
+PopulationMetrics.lastSummaryCounters = { ...PopulationMetrics.counters };
+PopulationMetrics.recordCombat(result.debug);
+PopulationMetrics.recordCombat(partyResult.debug);
+const combatMetrics = PopulationMetrics.snapshot().delta;
+assert.strictEqual(combatMetrics.combatActions, result.debug.combatActions + partyResult.debug.combatActions, 'population telemetry must aggregate solo and party combat actions');
+assert.strictEqual(combatMetrics.skillUses, result.debug.skillUses + partyResult.debug.skillUses, 'population telemetry must aggregate cold skill casts');
+assert.strictEqual(combatMetrics.heals, partyResult.debug.heals, 'population telemetry must aggregate party healing casts');
+PopulationMetrics.counters = originalMetrics.counters;
+PopulationMetrics.lastSummaryCounters = originalMetrics.lastSummaryCounters;
 
 const originalMigrateLegacyColdCombatProfiles = PopulationService.migrateLegacyColdCombatProfiles;
 const originalMigrationRunning = PopulationService.coldCombatProfileMigrationRunning;

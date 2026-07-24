@@ -956,6 +956,7 @@ const PopulationService = {
                 });
             }).then((updatedParty) => {
                 Metrics.recordPartyResolve();
+                Metrics.recordCombat(result.debug);
                 const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
                 const persistedParty = recruitment.announced
                     ? BackgroundPartyState.createOrUpdate(recruitment.party)
@@ -1001,6 +1002,7 @@ const PopulationService = {
                     return { ok: false, reason: 'apply_failed', state };
                 }
                 Metrics.recordBackgroundResolve();
+                Metrics.recordCombat(result.debug);
                 return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
                     ok: true,
                     state: updatedState,
@@ -1145,6 +1147,7 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
+            Metrics.recordCombat(result.debug);
             if (updatedState.activity === 'crafting') {
                 return { ok: true, state: updatedState, debug: result.debug };
             }

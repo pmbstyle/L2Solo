@@ -9,6 +9,9 @@ function emptyCounters() {
         hotTicks: 0,
         backgroundResolves: 0,
         partyResolves: 0,
+        combatActions: 0,
+        skillUses: 0,
+        heals: 0,
         skippedResolves: 0,
         activations: 0,
         cooldowns: 0,
@@ -100,6 +103,12 @@ const PopulationMetrics = {
 
     recordPartyResolve() {
         this.counters.partyResolves += 1;
+    },
+
+    recordCombat(debug = {}) {
+        this.counters.combatActions += Math.max(0, Number(debug.combatActions) || 0);
+        this.counters.skillUses += Math.max(0, Number(debug.skillUses) || 0);
+        this.counters.heals += Math.max(0, Number(debug.heals) || 0);
     },
 
     recordSkippedResolve() {
