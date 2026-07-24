@@ -146,8 +146,8 @@ const PopulationService = {
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
-    coldCombatProfileMigrationTimer: null,
     marketTownMigrationTimer: null,
+    nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     marketExpiryCleanupTimer: null,
     nextMarketExpiryCleanupAt: 0,
@@ -210,14 +210,6 @@ const PopulationService = {
 
         if (typeof this.classProgressionMigrationTimer.unref === 'function') {
             this.classProgressionMigrationTimer.unref();
-        }
-
-        this.coldCombatProfileMigrationTimer = setInterval(() => {
-            this.migrateLegacyColdCombatProfiles();
-        }, Config.coldCombatProfileMigrationIntervalMs);
-
-        if (typeof this.coldCombatProfileMigrationTimer.unref === 'function') {
-            this.coldCombatProfileMigrationTimer.unref();
         }
 
         this.marketTownMigrationTimer = setInterval(() => {
@@ -290,10 +282,7 @@ const PopulationService = {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
         }
-        if (this.coldCombatProfileMigrationTimer) {
-            clearInterval(this.coldCombatProfileMigrationTimer);
-            this.coldCombatProfileMigrationTimer = null;
-        }
+        this.nextColdCombatProfileMigrationAt = 0;
         if (this.marketTownMigrationTimer) {
             clearInterval(this.marketTownMigrationTimer);
             this.marketTownMigrationTimer = null;
@@ -381,6 +370,14 @@ const PopulationService = {
             .finally(() => {
                 this.coldCombatProfileMigrationRunning = false;
             });
+    },
+
+    maybeMigrateLegacyColdCombatProfiles(timestamp = Date.now()) {
+        if (this.coldCombatProfileMigrationRunning || timestamp < this.nextColdCombatProfileMigrationAt) {
+            return Promise.resolve([]);
+        }
+        this.nextColdCombatProfileMigrationAt = timestamp + Config.coldCombatProfileMigrationIntervalMs;
+        return this.migrateLegacyColdCombatProfiles();
     },
 
     migrateLegacyMarketTowns() {
@@ -827,6 +824,10 @@ const PopulationService = {
                 // use its post-resolve edge as a reliable fallback for the
                 // bounded legacy-store transition timer.
                 this.maybeMigrateLegacyMarketTowns();
+                // Keep the bounded profile migration outside the active
+                // scheduler slot. An independent timer can otherwise make a
+                // normal five-second tick look busy and skip its resolves.
+                this.maybeMigrateLegacyColdCombatProfiles();
             });
     },
 

@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 DataCache.init();
 
@@ -116,4 +117,30 @@ const partyResult = BackgroundPartyResolver.resolve({
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
 
-console.log('Cold combat profile checks passed');
+const originalMigrateLegacyColdCombatProfiles = PopulationService.migrateLegacyColdCombatProfiles;
+const originalMigrationRunning = PopulationService.coldCombatProfileMigrationRunning;
+const originalNextMigrationAt = PopulationService.nextColdCombatProfileMigrationAt;
+let profileMigrationCalls = 0;
+PopulationService.migrateLegacyColdCombatProfiles = () => {
+    profileMigrationCalls++;
+    return Promise.resolve([]);
+};
+PopulationService.coldCombatProfileMigrationRunning = false;
+PopulationService.nextColdCombatProfileMigrationAt = 0;
+Promise.resolve()
+    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(1000))
+    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(1001))
+    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(11000))
+    .then(() => {
+        assert.strictEqual(profileMigrationCalls, 2, 'the post-resolve cold-profile migration must run initially and respect its cadence');
+        console.log('Cold combat profile checks passed');
+    })
+    .catch((err) => {
+        console.error(err);
+        process.exitCode = 1;
+    })
+    .finally(() => {
+        PopulationService.migrateLegacyColdCombatProfiles = originalMigrateLegacyColdCombatProfiles;
+        PopulationService.coldCombatProfileMigrationRunning = originalMigrationRunning;
+        PopulationService.nextColdCombatProfileMigrationAt = originalNextMigrationAt;
+    });
