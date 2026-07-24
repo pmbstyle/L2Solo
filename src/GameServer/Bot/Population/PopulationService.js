@@ -23,7 +23,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 
-function groupBySpot(states) {
+function groupBySpot(states, options = {}) {
     const grouped = new Map();
     states.forEach((state) => {
         const planSpotId = !SpotProfiles.isProtectedStarterCohort(state)
@@ -36,13 +36,30 @@ function groupBySpot(states) {
         grouped.get(spotId).push(state);
     });
 
-    return Array.from(grouped.values())
-        .map((group) => group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)))
+    const activePartiesBySpot = options.activePartiesBySpot || new Map();
+    return Array.from(grouped.entries())
+        .map(([spotId, group]) => ({
+            spotId,
+            states: group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)),
+            partyWaiters: group.filter((state) => state.activity === 'party_wait').length,
+            oldestPartyWaitAt: Math.min(...group
+                .filter((state) => state.activity === 'party_wait')
+                .map((state) => Number(state.timing?.activityStartedAt || state.updatedAt || Date.now())))
+        }))
         .sort((a, b) => {
-            const aPlanned = a.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
-            const bPlanned = b.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
-            return bPlanned - aPlanned || b.length - a.length;
-        });
+            if (options.prioritizePartyWait) {
+                const aDeficit = a.partyWaiters / (1 + Number(activePartiesBySpot.get(a.spotId) || 0));
+                const bDeficit = b.partyWaiters / (1 + Number(activePartiesBySpot.get(b.spotId) || 0));
+                if (aDeficit !== bDeficit) return bDeficit - aDeficit;
+                if (a.oldestPartyWaitAt !== b.oldestPartyWaitAt) return a.oldestPartyWaitAt - b.oldestPartyWaitAt;
+            }
+            const aGroup = a.states;
+            const bGroup = b.states;
+            const aPlanned = aGroup.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            const bPlanned = bGroup.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            return bPlanned - aPlanned || bGroup.length - aGroup.length;
+        })
+        .map((group) => group.states);
 }
 
 function partySpotForLeader(leader) {
@@ -130,11 +147,13 @@ const PopulationService = {
     seedTimer: null,
     classProgressionMigrationTimer: null,
     marketTownMigrationTimer: null,
+    nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     marketExpiryCleanupTimer: null,
     nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
+    coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
     marketExpiryCleanupRunning: false,
     partyFormationRunning: false,
@@ -263,6 +282,7 @@ const PopulationService = {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
         }
+        this.nextColdCombatProfileMigrationAt = 0;
         if (this.marketTownMigrationTimer) {
             clearInterval(this.marketTownMigrationTimer);
             this.marketTownMigrationTimer = null;
@@ -329,6 +349,35 @@ const PopulationService = {
             .finally(() => {
                 this.classProgressionMigrationRunning = false;
             });
+    },
+
+    migrateLegacyColdCombatProfiles() {
+        if (this.coldCombatProfileMigrationRunning || this.resolving || this.classProgressionMigrationRunning || Config.enabled === false) {
+            return Promise.resolve([]);
+        }
+        this.coldCombatProfileMigrationRunning = true;
+        return LifeState.migrateLegacyColdCombatProfiles(Config.coldCombatProfileMigrationBatchSize)
+            .then((migrated) => {
+                if (migrated.length) {
+                    console.info('BotPopulation :: migrated cold combat profiles for %d bot(s)', migrated.length);
+                }
+                return migrated;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'legacy cold combat profile migration failed: %s', err.message);
+                return [];
+            })
+            .finally(() => {
+                this.coldCombatProfileMigrationRunning = false;
+            });
+    },
+
+    maybeMigrateLegacyColdCombatProfiles(timestamp = Date.now()) {
+        if (this.coldCombatProfileMigrationRunning || timestamp < this.nextColdCombatProfileMigrationAt) {
+            return Promise.resolve([]);
+        }
+        this.nextColdCombatProfileMigrationAt = timestamp + Config.coldCombatProfileMigrationIntervalMs;
+        return this.migrateLegacyColdCombatProfiles();
     },
 
     migrateLegacyMarketTowns() {
@@ -549,16 +598,27 @@ const PopulationService = {
         }
 
         this.partyFormationRunning = true;
-        return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-            .then((states) => this.recruitBackgroundMembers(states).then((recruitedIds) => ({
-                states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
-            })))
-            .then(({ states }) => {
+        return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit, true)
+            .then((partyWaitStates) => (partyWaitStates.length
+                ? { states: partyWaitStates, partyWaitBacklog: true }
+                : LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+                    .then((states) => ({ states, partyWaitBacklog: false }))))
+            .then(({ states, partyWaitBacklog }) => this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? states : [])
+                .then(() => this.recruitBackgroundMembers(states)).then((recruitedIds) => ({
+                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId))),
+                    partyWaitBacklog
+                })))
+            .then(({ states, partyWaitBacklog }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
                 const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
                 if (slots <= 0) return [];
                 const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
-                const groups = groupBySpot(states);
+                const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
+                    const spotId = String(party.spotId || '');
+                    if (spotId) counts.set(spotId, Number(counts.get(spotId) || 0) + 1);
+                    return counts;
+                }, new Map());
+                const groups = this.groupPartyCandidatesBySpot(states, { prioritizePartyWait: partyWaitBacklog, activePartiesBySpot });
                 const created = [];
 
                 return groups.reduce((chain, group) => chain.then(() => {
@@ -634,6 +694,35 @@ const PopulationService = {
             });
     },
 
+    groupPartyCandidatesBySpot(states = [], options = {}) {
+        return groupBySpot(states, options);
+    },
+
+    reclaimBackgroundPartyCapacity(partyWaitStates = []) {
+        if (!partyWaitStates.length) return Promise.resolve([]);
+        const activeParties = BackgroundPartyState.active();
+        const availableSlots = Math.max(0, Config.maxBackgroundParties - activeParties.length);
+        const wantedSlots = Math.min(
+            Config.partyFormationBatchSize,
+            Math.floor(partyWaitStates.length / Math.max(1, Config.partyMinSize))
+        );
+        const reclaimCount = Math.max(0, wantedSlots - availableSlots);
+        if (!reclaimCount || !activeParties.length) return Promise.resolve([]);
+
+        return LifeState.partyRequirementCounts(activeParties.map((party) => party.partyId))
+            .then((counts) => {
+                const countByPartyId = new Map(counts.map((count) => [count.partyId, count]));
+                return activeParties
+                    .filter((party) => Number(countByPartyId.get(party.partyId)?.requiredMembers || 0) === 0)
+                    .sort((a, b) => Number(a.startedAt || 0) - Number(b.startedAt || 0))
+                    .slice(0, reclaimCount);
+            })
+            .then((parties) => parties.reduce((chain, party) => (
+                chain.then((reclaimed) => dissolveBackgroundParty(party, 'party_capacity_reclaimed', party.memberIds?.length || 0)
+                    .then(() => [...reclaimed, party]))
+            ), Promise.resolve([])));
+    },
+
     recruitBackgroundMembers(candidates = []) {
         const claimed = new Set();
         const parties = BackgroundPartyState.active()
@@ -683,8 +772,8 @@ const PopulationService = {
     },
 
     tickBudgeted() {
-        if (this.resolving || this.classProgressionMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
-            if (this.resolving || this.classProgressionMigrationRunning) {
+        if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            if (this.resolving || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
                 Metrics.recordSchedulerSkip();
             }
             return Promise.resolve([]);
@@ -735,6 +824,10 @@ const PopulationService = {
                 // use its post-resolve edge as a reliable fallback for the
                 // bounded legacy-store transition timer.
                 this.maybeMigrateLegacyMarketTowns();
+                // Keep the bounded profile migration outside the active
+                // scheduler slot. An independent timer can otherwise make a
+                // normal five-second tick look busy and skip its resolves.
+                this.maybeMigrateLegacyColdCombatProfiles();
             });
     },
 
@@ -863,6 +956,7 @@ const PopulationService = {
                 });
             }).then((updatedParty) => {
                 Metrics.recordPartyResolve();
+                Metrics.recordCombat(result.debug);
                 const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
                 const persistedParty = recruitment.announced
                     ? BackgroundPartyState.createOrUpdate(recruitment.party)
@@ -891,11 +985,36 @@ const PopulationService = {
 
     resolveColdState(state) {
         const startedAt = Date.now();
+        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
+        // These transitions have no planning, market search, or inventory work
+        // between their persisted deadline and the next state change.
+        if (state.activity === 'traveling' || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
+            const result = BackgroundResolver.resolveSolo({
+                state,
+                spot: null,
+                pressure: Director.pressureForState(state),
+                elapsedMs,
+                timestamp: startedAt
+            });
+            return LifeState.applyResolve(state, result).then((updatedState) => {
+                if (!updatedState) {
+                    Metrics.recordSkippedResolve();
+                    return { ok: false, reason: 'apply_failed', state };
+                }
+                Metrics.recordBackgroundResolve();
+                Metrics.recordCombat(result.debug);
+                return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
+                    ok: true,
+                    state: updatedState,
+                    debug: result.debug
+                }));
+            }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         if (GearAcquisitionPlanner.isCraftService(state)) {
             const { equipmentPlan, ...serviceStats } = state.stats || {};
             const serviceState = {
                 ...state,
-                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 60000 },
+                timing: { ...(state.timing || {}), nextResolveAt: null },
                 stats: serviceStats
             };
             return LifeState.upsertState(serviceState, 'craft_service_idle')
@@ -932,11 +1051,16 @@ const PopulationService = {
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
         if (acquisitionPlan.requiresParty && !state.party?.partyId) {
+            const partyWaitUntil = Date.now() + Config.partyWaitReplanMs;
             const partyWaitState = {
                 ...plannedState,
-                activity: 'resting',
+                // Party formation reads these candidates independently of the
+                // combat scheduler.  Do not disguise the wait as recovery and
+                // consume a resolve every 30 seconds.
+                activity: 'party_wait',
                 spotId: acquisitionPlan.next?.spotId || state.spotId,
-                timing: { ...(state.timing || {}), nextResolveAt: Date.now() + 30000 }
+                timing: { ...(state.timing || {}), nextResolveAt: partyWaitUntil },
+                stats: { ...(plannedState.stats || {}), partyWaitUntil, restUntil: null }
             };
             return LifeState.upsertState(partyWaitState, 'acquisition_party_wait')
                 .then((saved) => Promise.all(planEvents.map((event) => (
@@ -1007,7 +1131,6 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
 
-        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, Date.now() - state.timing.lastResolvedAt) : 60000;
         const result = BackgroundResolver.resolveSolo({
             state: travellingState,
             spot,
@@ -1024,6 +1147,7 @@ const PopulationService = {
             }
 
             Metrics.recordBackgroundResolve();
+            Metrics.recordCombat(result.debug);
             if (updatedState.activity === 'crafting') {
                 return { ok: true, state: updatedState, debug: result.debug };
             }

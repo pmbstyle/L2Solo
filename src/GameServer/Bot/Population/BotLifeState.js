@@ -10,6 +10,7 @@ const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -235,6 +236,11 @@ function recordFromSession(session, phase, reason = '') {
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
         equipment: equipmentSummaryFromInventory(inventory),
+        // Cold combat must start from the exact same character model as the
+        // hot session: equipped item totals, learned skills and live effects.
+        // The resolver rebuilds those values deterministically after effects
+        // expire, rather than retaining a stale buffed total indefinitely.
+        coldCombat: ColdCombatProfile.capture(actor, timestamp),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
@@ -430,6 +436,19 @@ function classProgressionNeeded(state, classId, level) {
     return knownLevel < Number(level || 1) || knownClassId !== Number(classId);
 }
 
+function refreshColdCombatProfile(state) {
+    return Database.fetchSkills(state.characterId).then((skills) => ({
+        ...state,
+        stats: {
+            ...(state.stats || {}),
+            // Class progression writes skills directly to the character
+            // table. Keep the cold model in lockstep so its next fight uses
+            // the same ranks and newly learned abilities as a hot bot.
+            coldCombat: ColdCombatProfile.legacySnapshot(state, skills, now())
+        }
+    }));
+}
+
 function applyClassProgression(state, profile = {}) {
     const level = Number(profile.level || state.level || 1);
     const currentClassId = Number(profile.classId ?? state.stats?.classId ?? 0);
@@ -462,7 +481,7 @@ function applyClassProgression(state, profile = {}) {
             }
         };
         if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-        return progressedState;
+        return refreshColdCombatProfile(progressedState);
     });
 }
 
@@ -586,6 +605,36 @@ function recoverStaleCraftWaits() {
     });
 }
 
+function migrateAcquisitionPartyWaits() {
+    const timestamp = now();
+    const replanAt = timestamp + Config.partyWaitReplanMs;
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET activity = 'party_wait',
+            activityStartedAt = ?,
+            nextResolveAt = ?,
+            statsJson = JSON_SET(
+                COALESCE(statsJson, '{}'),
+                '$.partyWaitUntil', CAST(? AS UNSIGNED),
+                '$.restUntil', NULL,
+                '$.lastReason', 'acquisition_party_wait'
+            ),
+            updatedAt = ?
+        WHERE phase = 'cold'
+        AND activity = 'resting'
+        AND (partyId IS NULL OR partyId = '')
+        AND JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.lastReason')) = 'acquisition_party_wait'
+        AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.restUntil')) AS UNSIGNED), 0) = 0`,
+        [timestamp, replanAt, replanAt, timestamp]
+    ]).then((result) => {
+        const migrated = Number(result?.affectedRows || 0);
+        if (migrated > 0) {
+            utils.infoWarn('BotLife', 'migrated %d acquisition party waits to event scheduling', migrated);
+        }
+        return migrated;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -624,7 +673,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => hydrateCache()).then((count) => {
+        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
@@ -722,7 +771,11 @@ const BotLifeState = {
                 phase: 'cold',
                 activity: 'merchant',
                 loc: { ...storeLoc },
-                timing: { ...(marketState.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 60000 },
+                timing: {
+                    ...(marketState.timing || {}),
+                    activityStartedAt: timestamp,
+                    nextResolveAt: Number(marketState.stats?.marketStore?.expiresAt || 0) || timestamp + 60000
+                },
                 stats: {
                     ...(marketState.stats || {}),
                     marketStore: {
@@ -755,7 +808,7 @@ const BotLifeState = {
                 timing: {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
-                    nextResolveAt: now() + 60000
+                    nextResolveAt: null
                 },
                 stats: { ...(craftState.stats || {}), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
@@ -895,6 +948,11 @@ const BotLifeState = {
             WHERE phase = 'cold'
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
+            -- Cold stores settle on trade/expiry events, and craft-service
+            -- stations are materialized on demand.  Neither belongs in the
+            -- combat scheduler's periodic queue.
+            AND NOT (activity = 'merchant' AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL)
+            AND NOT (activity = 'crafting' AND JSON_EXTRACT(statsJson, '$.craftShop') IS NOT NULL)
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             -- Travel and crafting are finite state transitions. They must
             -- outrank a large resting/hunting backlog, otherwise a bot can
@@ -1014,6 +1072,42 @@ const BotLifeState = {
         )), Promise.resolve([]));
     },
 
+    migrateLegacyColdCombatProfiles(limit = 5) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
+        const candidates = Array.from(cache.values())
+            .filter((state) => state.phase === 'cold')
+            // Profiles made by the first cold resolver used the class tree
+            // before this migration existed.  They have a profile but not an
+            // authoritative skill source, so replace their skills once too.
+            .filter((state) => ColdCombatProfile.needsDatabaseBackfill(state.stats?.coldCombat))
+            .filter((state) => !pendingWrites.has(state.characterId))
+            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
+            .slice(0, safeLimit);
+
+        return candidates.reduce((chain, state) => chain.then((migrated) => (
+            Database.fetchSkills(state.characterId).then((skills) => {
+                const nextState = {
+                    ...state,
+                    stats: {
+                        ...(state.stats || {}),
+                        coldCombat: ColdCombatProfile.legacySnapshot(state, skills, now())
+                    },
+                    updatedAt: now()
+                };
+                const row = rowFromState(nextState);
+                return save(row).then(() => {
+                    const snapshot = normalize(row);
+                    cache.set(snapshot.characterId, snapshot);
+                    return [...migrated, snapshot];
+                });
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'legacy cold combat profile failed for %s: %s', state.name, err.message);
+                return migrated;
+            })
+        )), Promise.resolve([]));
+    },
+
     statesForParty(partyId) {
         if (!initialized || !partyId) return Promise.resolve([]);
 
@@ -1033,9 +1127,12 @@ const BotLifeState = {
         });
     },
 
-    coldPartyCandidates(limit = 80) {
+    coldPartyCandidates(limit = 80, partyRequiredOnly = false) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
+        const activityClause = partyRequiredOnly
+            ? "activity = 'party_wait'"
+            : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
             `SELECT states.* FROM ${TABLE} states
@@ -1045,13 +1142,13 @@ const BotLifeState = {
                 WHERE phase = 'cold'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
-                AND activity IN ('hunting', 'resting')
+                AND ${activityClause}
                 GROUP BY spotId
             ) party_spots ON party_spots.spotId = states.spotId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
-            AND states.activity IN ('hunting', 'resting')
+            AND states.${activityClause}
             ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
@@ -1065,11 +1162,42 @@ const BotLifeState = {
         });
     },
 
+    partyRequirementCounts(partyIds = []) {
+        if (!initialized) return Promise.resolve([]);
+        const ids = Array.from(new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean)));
+        if (!ids.length) return Promise.resolve([]);
+        const placeholders = ids.map(() => '?').join(', ');
+
+        return Database.execute([
+            `SELECT partyId,
+                COUNT(*) AS memberCount,
+                SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.requiresParty')) = 'true' THEN 1 ELSE 0 END) AS requiredMembers,
+                MIN(updatedAt) AS oldestAt
+            FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND partyId IN (${placeholders})
+            GROUP BY partyId`,
+            ids
+        ]).then((rows) => rows.map((row) => ({
+            partyId: String(row.partyId || ''),
+            memberCount: Number(row.memberCount || 0),
+            requiredMembers: Number(row.requiredMembers || 0),
+            oldestAt: Number(row.oldestAt || 0)
+        }))).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to count party requirements: %s', err.message);
+            return [];
+        });
+    },
+
     assignParty(state, partyId, role = 'dps', leaderId = 0) {
         if (!state || !partyId) return Promise.resolve(null);
 
+        const wasWaitingForParty = state.activity === 'party_wait'
+            || state.stats?.lastReason === 'acquisition_party_wait';
+        const timestamp = now();
         const nextState = {
             ...state,
+            activity: wasWaitingForParty ? 'grouped' : state.activity,
             party: {
                 ...(state.party || {}),
                 partyId,
@@ -1080,9 +1208,17 @@ const BotLifeState = {
                 ...(state.stats || {}),
                 role,
                 leaderId,
-                backgroundPartyId: partyId
+                backgroundPartyId: partyId,
+                partyWaitUntil: wasWaitingForParty ? null : state.stats?.partyWaitUntil || null,
+                restUntil: wasWaitingForParty ? null : state.stats?.restUntil || null,
+                lastReason: wasWaitingForParty ? 'party_assigned' : state.stats?.lastReason
             },
-            updatedAt: now()
+            timing: {
+                ...(state.timing || {}),
+                activityStartedAt: wasWaitingForParty ? timestamp : state.timing?.activityStartedAt,
+                nextResolveAt: wasWaitingForParty ? null : state.timing?.nextResolveAt
+            },
+            updatedAt: timestamp
         };
         const row = rowFromState(nextState);
 
@@ -1237,20 +1373,25 @@ const BotLifeState = {
                 }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-            const row = rowFromState(progressedState);
+            const profileReady = needsClassProgression
+                ? refreshColdCombatProfile(progressedState)
+                : Promise.resolve(progressedState);
 
-            return save(row)
-            .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
-            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => syncInventorySummary(row.characterId, progressedState.inventory))
-            .then(() => {
-                const snapshot = normalize(row);
-                cache.set(snapshot.characterId, snapshot);
-                return snapshot;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
-                return null;
+            return profileReady.then((profiledState) => {
+                const row = rowFromState(profiledState);
+                return save(row)
+                    .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory))
+                    .then(() => {
+                        const snapshot = normalize(row);
+                        cache.set(snapshot.characterId, snapshot);
+                        return snapshot;
+                    })
+                    .catch((err) => {
+                        utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
+                        return null;
+                    });
             });
         });
     },

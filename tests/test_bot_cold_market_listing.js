@@ -114,14 +114,10 @@ async function run() {
     const sold = await ListingService.settle(offer);
     assert.strictEqual(sold.adena, 500 + offer.price);
     assert.strictEqual(sold.inventory['1'].amount, 0);
-    assert.strictEqual(sold.stats.marketStore.items[0].count, 0);
+    assert.strictEqual(sold.activity, 'shopping', 'selling the final item must close the store as part of the trade event');
+    assert.strictEqual(sold.stats.marketStore, null);
     assert(calls.some((call) => call.type === 'amount' && call.id === 21 && call.amount === 0));
     assert(calls.some((call) => call.type === 'amount' && call.id === 20 && call.amount === 500 + offer.price));
-
-    const closedResult = await ListingService.resolve(sold, 2000);
-    const closed = closedResult.state;
-    assert.strictEqual(closed.activity, 'shopping');
-    assert.strictEqual(closed.stats.marketStore, null);
 
     const phantom = {
         ...opened.state,

@@ -3,6 +3,7 @@ const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropR
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -19,56 +20,8 @@ function midpointBand(levelBand) {
     return Math.round((parts[0] + parts[1]) / 2);
 }
 
-function roleProfile(state = {}) {
-    const role = state.party?.role || state.stats?.role || 'dps';
-    const base = {
-        role,
-        damageMultiplier: 1,
-        defenseMultiplier: 1,
-        manaPerFight: 2,
-        deathMultiplier: 1
-    };
-
-    if (role === 'tank') {
-        base.damageMultiplier = 0.85;
-        base.defenseMultiplier = 1.35;
-        base.deathMultiplier = 0.65;
-    } else if (role === 'healer') {
-        base.damageMultiplier = 0.72;
-        base.defenseMultiplier = 0.95;
-        base.manaPerFight = 7;
-        base.deathMultiplier = 0.75;
-    } else if (role === 'buffer') {
-        base.damageMultiplier = 0.85;
-        base.defenseMultiplier = 1.05;
-        base.manaPerFight = 5;
-    } else if (role === 'archer' || role === 'mage') {
-        base.damageMultiplier = 1.18;
-        base.defenseMultiplier = 0.85;
-        base.manaPerFight = role === 'mage' ? 9 : 3;
-    } else if (role === 'dagger') {
-        base.damageMultiplier = 1.12;
-        base.defenseMultiplier = 0.9;
-        base.manaPerFight = 4;
-    }
-
-    return base;
-}
-
-function botCombatStats(state, role) {
-    const level = midpointBand(state.levelBand);
-    const vitals = state.vitals || {};
-    const maxHp = Number(vitals.maxHp || vitals.hp || 100 + level * 35);
-    const maxMp = Number(vitals.maxMp || vitals.mp || 50 + level * 18);
-
-    return {
-        level,
-        maxHp,
-        maxMp,
-        damage: Math.max(4, Math.round((8 + level * 4.3) * role.damageMultiplier)),
-        defense: Math.max(1, (1 + level * 0.06) * role.defenseMultiplier),
-        manaPerFight: role.manaPerFight
-    };
+function botCombatStats(state, timestamp = Date.now()) {
+    return ColdCombatProfile.profileFor(state, timestamp);
 }
 
 function coldPassiveRegenAdd(state, skillId, stat) {
@@ -112,7 +65,7 @@ function estimateRestMs(state, vitals) {
 }
 
 function resolveRest(state, elapsedMs, timestamp) {
-    const combat = botCombatStats(state, roleProfile(state));
+    const combat = botCombatStats(state, timestamp);
     const vitals = {
         hp: Math.max(0, Number(state.vitals?.hp || 0)),
         maxHp: combat.maxHp,
@@ -143,9 +96,10 @@ function resolveRest(state, elapsedMs, timestamp) {
             weight: 1
         }],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: resting
-            ? timestamp + Math.max(3000, Math.min(30000, remainingMs || 30000))
-            : timestamp + 30000,
+        // Sleeping is not an active simulation state.  Persist the exact
+        // recovery deadline so the scheduler can leave this bot alone until
+        // HP/MP should have changed.
+        nextResolveAt: resting ? restUntil : timestamp + 30000,
         debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs }
     };
 }
@@ -199,7 +153,12 @@ function resolveTravel(state, timestamp = Date.now()) {
             meta: { townName: travel.townName || null, stationId: travel.stationId || null, reason: travel.reason || null }
         }] : [],
         materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: timestamp + (arrived && arrivalActivity === 'shopping' ? 120000 : 30000),
+        // Until arrival nothing changes.  On arrival, schedule the finite
+        // shopping/crafting transition for the next scheduler pass instead of
+        // parking the bot for another arbitrary polling interval.
+        nextResolveAt: arrived && ['shopping', 'crafting'].includes(arrivalActivity)
+            ? timestamp
+            : arrived ? timestamp + 30000 : arrivalAt,
         debug: { activity: 'traveling', arrived, progress, townName: travel.townName || null, arrivalActivity }
     };
 }
@@ -211,7 +170,7 @@ function staleShopping(state) {
 }
 
 function resolveDeathRecovery(state, timestamp = Date.now()) {
-    const combat = botCombatStats(state, roleProfile(state));
+    const combat = botCombatStats(state, timestamp);
     const respawnDelayMs = 90000;
 
     return {
@@ -241,50 +200,111 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
     };
 }
 
-function resolveFight({ state, spot, pressure, rng }) {
-    const role = roleProfile(state);
-    const bot = botCombatStats(state, role);
+function hitSucceeds(accuracy, evasion, rng) {
+    const chance = clamp((80 + (2 * (Number(accuracy) - Number(evasion)))) / 100, 0.2, 0.98);
+    return rng() < chance;
+}
+
+function actionDelayMs(profile, skill = null) {
+    if (skill?.spell) {
+        return Math.max(250, Formulas.calcRemoteAtkTime(Math.max(1, Number(skill.hitTime) || 1000), profile.castSpd));
+    }
+    if (skill) {
+        return Math.max(250, Formulas.calcRemoteAtkTime(Math.max(1, Number(skill.hitTime) || 600), profile.atkSpd));
+    }
+    return Math.max(250, Formulas.calcMeleeAtkTime(profile.atkSpd));
+}
+
+function chooseSkill(profile, mp, cooldowns, time) {
+    return ColdCombatProfile.offensiveSkills(profile)
+        .filter((skill) => Number(skill.mp || 0) <= mp && Number(cooldowns[skill.selfId] || 0) <= time)
+        .map((skill) => {
+            const magic = skill.spell === true;
+            const rawDamage = magic
+                ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, Number(skill.power) || 1), 1)
+                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, Number(skill.power) || 0);
+            return { skill, magic, score: rawDamage / actionDelayMs(profile, skill) };
+        })
+        .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function resolveFight({ state, spot, pressure, rng, timestamp = Date.now() }) {
+    const bot = botCombatStats(state, timestamp);
+    const mob = ColdCombatProfile.npcForSpot(spot, rng) || {
+        level: Number(spot.avgLevel || bot.level), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
+        pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
+        accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333
+    };
     const vitals = {
         hp: Number(state.vitals?.hp || bot.maxHp),
         mp: Number(state.vitals?.mp || bot.maxMp),
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
-    const mobHp = Math.max(1, spot.mob.hp);
-    const mobDamage = Math.max(1, Math.round(spot.mob.damage / bot.defense));
-    const botHitsToKill = Math.ceil(mobHp / bot.damage);
-    const mobHitsToKill = Math.ceil(vitals.hp / mobDamage);
-    const pressureDeath = pressure?.deathChanceMultiplier || 1;
+    let botReadyAt = 0;
+    let mobReadyAt = 0;
+    let time = 0;
+    let mobHp = mob.maxHp;
+    let actions = 0;
+    let skillUses = 0;
+    const cooldowns = { ...(state.stats?.coldCombat?.cooldowns || {}) };
+    const fightLimitMs = 12000;
 
-    if (mobHitsToKill < botHitsToKill) {
-        const deathChance = clamp(0.35 * role.deathMultiplier * pressureDeath, 0.05, 0.95);
-        if (rng() < deathChance) {
-            return {
-                won: false,
-                died: true,
-                hp: 0,
-                mp: Math.max(0, vitals.mp - bot.manaPerFight),
-                exp: 0,
-                sp: 0,
-                adena: 0,
-                loot: []
-            };
+    // A resolve contains only a handful of fights, and a fight itself is
+    // bounded by time and actions. This is deliberately cheaper than a live
+    // Actor while retaining its hit, critical, damage and speed formulas.
+    while (vitals.hp > 0 && mobHp > 0 && time < fightLimitMs && actions < 48) {
+        const botActs = botReadyAt <= mobReadyAt;
+        time = botActs ? botReadyAt : mobReadyAt;
+        if (time >= fightLimitMs) break;
+        actions += 1;
+
+        if (botActs) {
+            const selected = chooseSkill(bot, vitals.mp, cooldowns, timestamp + time);
+            const skill = selected?.skill || null;
+            const magic = selected?.magic === true;
+            let damage = 0;
+            if (magic) {
+                const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
+                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+            } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
+                const critical = Formulas.rollCritical(bot.critical, rng);
+                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, { critical });
+            }
+            mobHp -= Math.max(0, damage);
+            if (skill) {
+                vitals.mp = Math.max(0, vitals.mp - Number(skill.mp || 0));
+                cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
+                skillUses += 1;
+            }
+            botReadyAt += actionDelayMs(bot, skill);
+        } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
+            const critical = Formulas.rollCritical(mob.critical, rng);
+            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical });
+            vitals.hp -= Math.max(0, damage);
+            mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
+        } else {
+            mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
+    }
 
+    const died = vitals.hp <= 0;
+    const won = mobHp <= 0;
+    if (!won) {
         return {
             won: false,
-            died: false,
-            hp: Math.max(1, Math.round(vitals.maxHp * 0.18)),
-            mp: Math.max(0, vitals.mp - bot.manaPerFight),
+            died,
+            hp: Math.max(0, Math.round(vitals.hp)),
+            mp: Math.max(0, Math.round(vitals.mp)),
             exp: 0,
             sp: 0,
             adena: 0,
-            loot: []
+            loot: [],
+            cooldowns,
+            debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
-    const hitsTaken = Math.max(0, botHitsToKill - 1);
-    const remainingHp = Math.max(1, vitals.hp - hitsTaken * mobDamage);
     const rewards = spot.rewards;
     const expMultiplier = pressure?.expMultiplier || 1;
     const rates = ProgressionRates.profile();
@@ -298,17 +318,126 @@ function resolveFight({ state, spot, pressure, rng }) {
     return {
         won: true,
         died: false,
-        hp: remainingHp,
-        mp: Math.max(0, vitals.mp - bot.manaPerFight),
+        hp: Math.max(1, Math.round(vitals.hp)),
+        mp: Math.max(0, Math.round(vitals.mp)),
         exp: Math.round(rewards.exp * expMultiplier * rates.exp),
         sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
-        loot
+        loot,
+        cooldowns,
+        debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: false }
+    };
+}
+
+function chooseHeal(profile, allies, mp, cooldowns, time) {
+    const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < 0.7)
+        .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
+    if (!injured) return null;
+    const skill = (profile.skills || []).filter((candidate) => {
+        if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
+        const semantic = C4SkillRules.resolve(candidate);
+        return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT].includes(semantic.skillType)
+            && ['self', 'party', 'ally', 'friendly'].includes(semantic.target);
+    }).sort((a, b) => Number(b.power || 0) - Number(a.power || 0))[0];
+    return skill ? { skill, target: injured } : null;
+}
+
+function resolvePartyFight({ members, spot, rng = Math.random, timestamp = Date.now() }) {
+    const mob = ColdCombatProfile.npcForSpot(spot, rng) || {
+        level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
+        pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
+        accur: 1, evasion: 0, critical: 0, atkSpd: 253
+    };
+    const fighters = members.map((state) => {
+        const profile = botCombatStats(state, timestamp);
+        return {
+            state,
+            profile,
+            role: state.party?.role || state.stats?.role || 'dps',
+            vitals: {
+                hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp || profile.maxHp))),
+                maxHp: profile.maxHp,
+                mp: Math.min(profile.maxMp, Math.max(0, Number(state.vitals?.mp || profile.maxMp))),
+                maxMp: profile.maxMp
+            },
+            cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
+            readyAt: 0,
+            actions: 0,
+            skillUses: 0,
+            heals: 0
+        };
+    });
+    let mobHp = mob.maxHp;
+    let mobReadyAt = 0;
+    let time = 0;
+    let actions = 0;
+    const fightLimitMs = 15000;
+
+    while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
+        const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
+        const next = alive.sort((a, b) => a.readyAt - b.readyAt)[0];
+        const botActs = next && next.readyAt <= mobReadyAt;
+        time = botActs ? next.readyAt : mobReadyAt;
+        if (time >= fightLimitMs) break;
+        actions += 1;
+
+        if (botActs) {
+            next.actions += 1;
+            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
+            if (heal) {
+                const amount = Formulas.calcHealAmount(heal.skill.power);
+                heal.target.vitals.hp = Math.min(heal.target.vitals.maxHp, heal.target.vitals.hp + amount);
+                next.vitals.mp = Math.max(0, next.vitals.mp - Number(heal.skill.mp || 0));
+                next.cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
+                next.skillUses += 1;
+                next.heals += 1;
+                next.readyAt += actionDelayMs(next.profile, heal.skill);
+                continue;
+            }
+
+            const selected = chooseSkill(next.profile, next.vitals.mp, next.cooldowns, timestamp + time);
+            const skill = selected?.skill || null;
+            let damage = 0;
+            if (selected?.magic) {
+                const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
+                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+            } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
+                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, {
+                    critical: Formulas.rollCritical(next.profile.critical, rng)
+                });
+            }
+            mobHp -= Math.max(0, damage);
+            if (skill) {
+                next.vitals.mp = Math.max(0, next.vitals.mp - Number(skill.mp || 0));
+                next.cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
+                next.skillUses += 1;
+            }
+            next.readyAt += actionDelayMs(next.profile, skill);
+        } else {
+            const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
+            const tank = targets.find((fighter) => fighter.role === 'tank');
+            const target = tank || targets[Math.floor(rng() * targets.length)];
+            if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
+                const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
+                    critical: Formulas.rollCritical(mob.critical, rng)
+                });
+                target.vitals.hp = Math.max(0, target.vitals.hp - damage);
+            }
+            mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
+        }
+    }
+
+    return {
+        won: mobHp <= 0,
+        timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
+        members: fighters,
+        debug: { actions, mobSelfId: mob.selfId || null }
     };
 }
 
 const BackgroundResolver = {
     resolveRest,
+    resolvePartyFight,
     resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
@@ -321,7 +450,7 @@ const BackgroundResolver = {
         }
 
         if (state.activity === 'traveling') {
-            const travelResult = resolveTravel(state);
+            const travelResult = resolveTravel(state, timestamp);
             if (travelResult) return travelResult;
         }
 
@@ -406,16 +535,27 @@ const BackgroundResolver = {
 
         let wins = 0;
         let died = false;
+        let combatActions = 0;
+        let skillUses = 0;
 
         for (let i = 0; i < fights; i++) {
             const fightState = { ...state, vitals: patch.vitals };
-            const result = resolveFight({ state: fightState, spot, pressure, rng });
+            const result = resolveFight({ state: fightState, spot, pressure, rng, timestamp });
             patch.vitals.hp = result.hp;
             patch.vitals.mp = result.mp;
+            patch.stats = {
+                ...(patch.stats || state.stats || {}),
+                coldCombat: {
+                    ...(state.stats?.coldCombat || ColdCombatProfile.profileFor(fightState, timestamp)),
+                    cooldowns: result.cooldowns || {}
+                }
+            };
             materialize.exp += result.exp;
             materialize.sp += result.sp;
             materialize.adena += result.adena;
             materialize.items.push(...result.loot);
+            combatActions += Number(result.debug?.actions || 0);
+            skillUses += Number(result.debug?.skillUses || 0);
 
             if (result.won) wins += 1;
             if (result.died) {
@@ -462,7 +602,7 @@ const BackgroundResolver = {
             patch,
             events,
             materialize,
-            nextResolveAt: Date.now() + 30000 + Math.round(rng() * 90000),
+            nextResolveAt: patch.stats?.restUntil || timestamp + 30000 + Math.round(rng() * 90000),
             debug: {
                 elapsedMs,
                 fights,
@@ -471,7 +611,9 @@ const BackgroundResolver = {
                 dropsRolled: materialize.items.length,
                 dropsAwarded: materialize.items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                 spotId: spot.id,
-                route: spot.route || null
+                route: spot.route || null,
+                combatActions,
+                skillUses
             }
         };
     }

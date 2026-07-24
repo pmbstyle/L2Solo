@@ -14,10 +14,6 @@ function randInt(rng, min, max) {
     return Math.floor(rng() * (max - min + 1)) + min;
 }
 
-function roleCount(party, role) {
-    return Number(party.roleCoverage?.[role] || 0);
-}
-
 function memberVitals(state) {
     const level = Number(state.level || 1);
     const vitals = state.vitals || {};
@@ -38,26 +34,13 @@ function avgLevel(members) {
 }
 
 function estimateFightCount({ party, members, spot, elapsedMs }) {
-    const baseWindows = Math.max(1, Math.floor(elapsedMs / 10000));
-    const memberFactor = Math.max(1, members.length * 0.75);
+    const baseWindows = Math.max(1, Math.floor(elapsedMs / 12000));
     const densityFactor = clamp(Number(spot.density || 1) / 3, 0.7, 2.2);
     const cohesionFactor = clamp(Number(party.cohesion || 0.65), 0.35, 1.15);
 
-    return Math.max(1, Math.min(24, Math.round(baseWindows * memberFactor * densityFactor * cohesionFactor)));
-}
-
-function estimateWinRate({ party, members, spot, pressure }) {
-    const partyLevel = avgLevel(members);
-    const levelDelta = partyLevel - Number(spot.avgLevel || partyLevel);
-    const tank = roleCount(party, 'tank') > 0;
-    const healer = roleCount(party, 'healer') > 0;
-    const buffer = roleCount(party, 'buffer') > 0;
-    const support = (tank ? 0.05 : 0) + (healer ? 0.07 : 0) + (buffer ? 0.06 : 0);
-    const size = clamp((members.length - 2) * 0.035, 0, 0.12);
-    const risk = Number(party.risk || 0.25) * 0.18 + Number(spot.risk || 0) * 0.025;
-    const pressureDeath = Number(pressure?.deathChanceMultiplier || 1);
-
-    return clamp(0.63 + levelDelta * 0.035 + support + size - risk * pressureDeath, 0.18, 0.96);
+    // Party actions are individually simulated, so party size must not
+    // multiply work.  Keep the same short active window as solo combat.
+    return Math.max(1, Math.min(4, Math.round(baseWindows * densityFactor * cohesionFactor)));
 }
 
 function distributeRewards({ members, spot, wins, pressure, rng }) {
@@ -103,17 +86,42 @@ const BackgroundPartyResolver = {
         // pause the whole group: otherwise the resolver keeps granting fights
         // and draining the exhausted member on every cold tick.
         if (members.some((state) => state.activity === 'resting')) {
+            const partyRestUntil = Math.max(
+                Number(party.stats?.restUntil || 0),
+                ...members.map((state) => Number(state.stats?.restUntil || 0))
+            );
             const memberResults = members.map((state) => ({
                 state,
                 result: BackgroundResolver.resolveRest({
                     ...state,
-                    activity: 'resting'
+                    activity: 'resting',
+                    // A party sits down together.  Members already ready do
+                    // not wake and consume solo capacity while the healer is
+                    // still recovering.
+                    stats: { ...(state.stats || {}), restUntil: partyRestUntil || null }
                 }, elapsedMs, timestamp)
             }));
             const resting = memberResults.filter(({ result }) => result.patch.activity === 'resting').length;
+            const nextRestUntil = resting
+                ? Math.max(...memberResults.map(({ result }) => Number(result.patch.stats?.restUntil || 0)))
+                : null;
+            const synchronizedMemberResults = resting
+                ? memberResults.map(({ state, result }) => ({
+                    state,
+                    result: {
+                        ...result,
+                        patch: {
+                            ...result.patch,
+                            activity: 'resting',
+                            stats: { ...(result.patch.stats || {}), restUntil: nextRestUntil }
+                        },
+                        nextResolveAt: nextRestUntil
+                    }
+                }))
+                : memberResults;
 
             return {
-                memberResults,
+                memberResults: synchronizedMemberResults,
                 events: [],
                 partyPatch: {
                     cohesion: Number(party.cohesion || 0.65),
@@ -121,10 +129,11 @@ const BackgroundPartyResolver = {
                     stats: {
                         ...(party.stats || {}),
                         rests: Number(party.stats?.rests || 0) + 1,
+                        restUntil: nextRestUntil,
                         lastResolveAt: timestamp
                     }
                 },
-                nextResolveAt: timestamp + (resting > 0 ? 30000 : 45000),
+                nextResolveAt: resting ? nextRestUntil : timestamp + 45000,
                 debug: {
                     activity: resting > 0 ? 'resting' : 'recovered',
                     fights: 0,
@@ -141,35 +150,45 @@ const BackgroundPartyResolver = {
         }
 
         const fights = estimateFightCount({ party, members, spot, elapsedMs });
-        const winRate = estimateWinRate({ party, members, spot, pressure });
         let wins = 0;
+        let losses = 0;
+        let combatActions = 0;
+        let skillUses = 0;
+        let heals = 0;
+        let combatMembers = members.map((state) => ({ ...state }));
         for (let i = 0; i < fights; i++) {
-            if (rng() <= winRate) wins += 1;
+            const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, rng, timestamp });
+            combatActions += Number(encounter.debug?.actions || 0);
+            skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
+            heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
+            combatMembers = encounter.members.map((member) => ({
+                ...member.state,
+                vitals: { ...member.vitals },
+                stats: {
+                    ...(member.state.stats || {}),
+                    coldCombat: { ...(member.state.stats?.coldCombat || member.profile), cooldowns: member.cooldowns }
+                }
+            }));
+            if (encounter.won) wins += 1;
+            else losses += 1;
+            if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
         }
 
-        const losses = fights - wins;
-        const hasTank = roleCount(party, 'tank') > 0;
-        const hasHealer = roleCount(party, 'healer') > 0;
-        const damageScale = clamp(0.18 + losses * 0.08 - (hasTank ? 0.05 : 0) - (hasHealer ? 0.06 : 0), 0.05, 0.75);
-        const deathChance = clamp((losses / Math.max(1, fights)) * (hasHealer ? 0.12 : 0.22) * (hasTank ? 0.75 : 1), 0, 0.45);
         const rewards = distributeRewards({ members, spot, wins, pressure, rng });
         const memberResults = [];
         const events = [];
         let deaths = 0;
         let resting = 0;
 
-        rewards.forEach(({ state, exp, sp, adena, items }) => {
-            const vitals = memberVitals(state);
-            const role = state.party?.role || state.stats?.role || 'dps';
-            const mpUse = role === 'healer' ? wins * 5 + losses * 4 : role === 'buffer' ? wins * 3 : wins * 2;
-            const hpLoss = Math.round(vitals.maxHp * damageScale * (0.65 + rng() * 0.45));
-            let hp = Math.max(1, vitals.hp - hpLoss);
-            let mp = Math.max(0, vitals.mp - mpUse);
+        rewards.forEach(({ state, exp, sp, adena, items }, index) => {
+            const resolved = combatMembers[index] || state;
+            const vitals = resolved.vitals || memberVitals(state);
+            const hp = Math.max(0, Number(vitals.hp || 0));
+            const mp = Math.max(0, Number(vitals.mp || 0));
             let activity = 'grouped';
             let deathCount = state.stats?.deaths || 0;
 
-            if (losses > 0 && rng() < deathChance) {
-                hp = 0;
+            if (hp <= 0) {
                 activity = 'dead';
                 deathCount += 1;
                 deaths += 1;
@@ -203,12 +222,13 @@ const BackgroundPartyResolver = {
                             maxMp: vitals.maxMp
                         },
                         stats: {
+                            ...(resolved.stats || {}),
                             partyHistory: PartyAffinity.recordRun(state, members)
                         }
                     },
                     events: [],
                     materialize: { exp, sp, adena, items },
-                    nextResolveAt: Date.now() + 45000 + Math.round(rng() * 90000),
+                    nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
                     debug: {
                         partyId: party.partyId,
                         fights,
@@ -225,7 +245,60 @@ const BackgroundPartyResolver = {
         });
 
         const lootDistribution = PartyLootAllocator.transferGearDrops(memberResults);
-        const distributedMemberResults = lootDistribution.memberResults;
+        let distributedMemberResults = lootDistribution.memberResults;
+        let partyRestUntil = null;
+
+        // The combat result can make one party member exhausted.  Convert the
+        // whole group to one recovery event immediately, rather than letting
+        // its next ordinary hunt tick discover the rest state 45-135 seconds
+        // later and then poll all members every 30 seconds.
+        if (resting > 0) {
+            const restResults = distributedMemberResults.map(({ state, result }) => ({
+                state,
+                result: result.patch.activity === 'dead'
+                    ? result
+                    : (() => {
+                        const rest = BackgroundResolver.resolveRest({
+                            ...state,
+                            activity: 'resting',
+                            vitals: result.patch.vitals,
+                            stats: { ...(state.stats || {}), ...(result.patch.stats || {}) }
+                        }, 0, timestamp);
+                        // The fights have already completed before the party
+                        // decides to rest. Keep their rewards (and any gear
+                        // redistribution) while replacing only the next
+                        // lifecycle state with recovery.
+                        return {
+                            ...result,
+                            patch: {
+                                ...result.patch,
+                                ...rest.patch,
+                                stats: { ...(result.patch.stats || {}), ...(rest.patch.stats || {}) }
+                            },
+                            events: [...(result.events || []), ...(rest.events || [])],
+                            nextResolveAt: rest.nextResolveAt,
+                            debug: { ...(result.debug || {}), rest: rest.debug }
+                        };
+                    })()
+            }));
+            partyRestUntil = Math.max(...restResults
+                .filter(({ result }) => result.patch.activity !== 'dead')
+                .map(({ result }) => Number(result.patch.stats?.restUntil || 0)));
+            distributedMemberResults = restResults.map(({ state, result }) => ({
+                state,
+                result: result.patch.activity === 'dead'
+                    ? { ...result, nextResolveAt: partyRestUntil }
+                    : {
+                        ...result,
+                        patch: {
+                            ...result.patch,
+                            activity: 'resting',
+                            stats: { ...(result.patch.stats || {}), restUntil: partyRestUntil }
+                        },
+                        nextResolveAt: partyRestUntil
+                    }
+            }));
+        }
 
         if (wins > 0) {
             events.push({
@@ -263,10 +336,11 @@ const BackgroundPartyResolver = {
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
-                        lastResolveAt: timestamp
+                    restUntil: partyRestUntil,
+                    lastResolveAt: timestamp
                 }
             },
-            nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
+            nextResolveAt: partyRestUntil || timestamp + 45000 + Math.round(rng() * 90000),
             debug: {
                 fights,
                 wins,
@@ -276,7 +350,10 @@ const BackgroundPartyResolver = {
                 dropsRolled: rewards.reduce((sum, reward) => sum + reward.items.length, 0),
                 dropsAwarded: rewards.reduce((sum, reward) => sum + reward.items.reduce((itemSum, item) => itemSum + Number(item.amount || 0), 0), 0),
                 spotId: spot.id,
-                route: spot.route || null
+                route: spot.route || null,
+                combatActions,
+                skillUses,
+                heals
             }
         };
     }

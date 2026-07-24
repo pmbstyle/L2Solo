@@ -21,6 +21,7 @@ assert.strictEqual(started.stats.travel.townName, 'Giran');
 assert.strictEqual(started.stats.travel.method, 'soe_gatekeeper');
 assert(started.stats.travel.viaTown, 'market travel should first use SoE to the regional town');
 assert.strictEqual(started.stats.travel.arrivalAt - started.stats.travel.startedAt, GoalExecutor.MARKET_TRAVEL_MS);
+assert.strictEqual(started.timing.nextResolveAt, started.stats.travel.arrivalAt, 'travel must sleep until its arrival event');
 
 const nativeMidway = {
     ...started,
@@ -33,9 +34,10 @@ const nativeMidway = {
         }
     }
 };
-const nativeTransit = BackgroundResolver.resolveSolo({ state: nativeMidway, spot: null });
+const nativeTransit = BackgroundResolver.resolveSolo({ state: nativeMidway, spot: null, timestamp: nativeMidway.stats.travel.startedAt + 1 });
 assert.deepStrictEqual(nativeTransit.patch.loc, state.loc, 'SoE/gatekeeper transit must not visibly interpolate across the map');
 assert.strictEqual(nativeTransit.patch.activity, 'traveling', 'native transit must remain traveling until its short cast/transit completes');
+assert.strictEqual(nativeTransit.nextResolveAt, nativeMidway.stats.travel.arrivalAt, 'in-flight travel must retain its exact arrival deadline');
 
 const sellStarted = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats: {} }, {
     type: 'sell_inventory',
@@ -58,6 +60,7 @@ const arrivedState = { ...started, stats: { ...started.stats, travel: { ...start
 const arrived = BackgroundResolver.resolveSolo({ state: arrivedState, spot: null });
 assert.strictEqual(arrived.patch.activity, 'shopping');
 assert.strictEqual(arrived.events[0].type, 'arrived_town');
+assert(arrived.nextResolveAt <= Date.now(), 'arrival must make the shopping event due without another polling delay');
 
 const shoppingState = {
     ...arrivedState,
@@ -72,6 +75,7 @@ assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 assert.strictEqual(returning.stats.travel.method, 'gatekeeper_spot', 'returning from Giran must use the destination gatekeeper instead of walking across the world');
 assert.strictEqual(returning.stats.travel.arrivalAt - returning.stats.travel.startedAt, GoalExecutor.GATEKEEPER_SPOT_TRAVEL_MS);
+assert.strictEqual(returning.timing.nextResolveAt, returning.stats.travel.arrivalAt, 'return travel must sleep until its arrival event');
 
 const ignoringRemoteLead = GoalExecutor.finishMarketVisit({
     ...shoppingState,

@@ -10,6 +10,8 @@ const DEFAULTS = {
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
+    coldCombatProfileMigrationIntervalMs: 10000,
+    coldCombatProfileMigrationBatchSize: 5,
     // One-off migration for stores created before market towns were split.
     // It is deliberately independent from the normal cold-resolve budget.
     marketTownMigrationIntervalMs: 10000,
@@ -17,6 +19,10 @@ const DEFAULTS = {
     marketExpiryCleanupIntervalMs: 10000,
     marketExpiryCleanupBatchSize: 10,
     partyFormationIntervalMs: 45000,
+    // Waiting for a compatible party is not rest.  Formation sees these
+    // candidates independently every 45 seconds; this is only the rare
+    // fallback that rebuilds a stale acquisition plan.
+    partyWaitReplanMs: 5 * 60 * 1000,
     phasePolicyIntervalMs: 10000,
     directorIntervalMs: 30000,
     // Start with every level-one hunting sector. Waves open every five levels
@@ -32,10 +38,16 @@ const DEFAULTS = {
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
     partyFormationBatchSize: 3,
-    partyFormationCandidateLimit: 80,
+    // Forming is an infrequent event. Read enough waiting candidates to let
+    // the three available slots reach distinct crowded grounds instead of
+    // letting the two largest queues consume the whole selection window.
+    partyFormationCandidateLimit: 250,
     partyMinSize: 2,
     partyMaxSize: 5,
-    maxBackgroundParties: 20,
+    // At roughly one party resolve per 90 seconds, forty parties consume
+    // about 27 of the 36 bounded resolves available each minute.  This opens
+    // enough party-wait capacity without increasing work in a scheduler tick.
+    maxBackgroundParties: 40,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
