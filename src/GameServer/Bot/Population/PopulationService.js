@@ -23,7 +23,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 
-function groupBySpot(states) {
+function groupBySpot(states, options = {}) {
     const grouped = new Map();
     states.forEach((state) => {
         const planSpotId = !SpotProfiles.isProtectedStarterCohort(state)
@@ -36,13 +36,30 @@ function groupBySpot(states) {
         grouped.get(spotId).push(state);
     });
 
-    return Array.from(grouped.values())
-        .map((group) => group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)))
+    const activePartiesBySpot = options.activePartiesBySpot || new Map();
+    return Array.from(grouped.entries())
+        .map(([spotId, group]) => ({
+            spotId,
+            states: group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)),
+            partyWaiters: group.filter((state) => state.activity === 'party_wait').length,
+            oldestPartyWaitAt: Math.min(...group
+                .filter((state) => state.activity === 'party_wait')
+                .map((state) => Number(state.timing?.activityStartedAt || state.updatedAt || Date.now())))
+        }))
         .sort((a, b) => {
-            const aPlanned = a.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
-            const bPlanned = b.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
-            return bPlanned - aPlanned || b.length - a.length;
-        });
+            if (options.prioritizePartyWait) {
+                const aDeficit = a.partyWaiters / (1 + Number(activePartiesBySpot.get(a.spotId) || 0));
+                const bDeficit = b.partyWaiters / (1 + Number(activePartiesBySpot.get(b.spotId) || 0));
+                if (aDeficit !== bDeficit) return bDeficit - aDeficit;
+                if (a.oldestPartyWaitAt !== b.oldestPartyWaitAt) return a.oldestPartyWaitAt - b.oldestPartyWaitAt;
+            }
+            const aGroup = a.states;
+            const bGroup = b.states;
+            const aPlanned = aGroup.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            const bPlanned = bGroup.filter((state) => state.stats?.equipmentPlan?.status === 'active').length;
+            return bPlanned - aPlanned || bGroup.length - aGroup.length;
+        })
+        .map((group) => group.states);
 }
 
 function partySpotForLeader(leader) {
@@ -591,14 +608,20 @@ const PopulationService = {
                     .then((states) => ({ states, partyWaitBacklog: false }))))
             .then(({ states, partyWaitBacklog }) => this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? states : [])
                 .then(() => this.recruitBackgroundMembers(states)).then((recruitedIds) => ({
-                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId)))
+                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId))),
+                    partyWaitBacklog
                 })))
-            .then(({ states }) => {
+            .then(({ states, partyWaitBacklog }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
                 const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
                 if (slots <= 0) return [];
                 const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
-                const groups = groupBySpot(states);
+                const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
+                    const spotId = String(party.spotId || '');
+                    if (spotId) counts.set(spotId, Number(counts.get(spotId) || 0) + 1);
+                    return counts;
+                }, new Map());
+                const groups = this.groupPartyCandidatesBySpot(states, { prioritizePartyWait: partyWaitBacklog, activePartiesBySpot });
                 const created = [];
 
                 return groups.reduce((chain, group) => chain.then(() => {
@@ -672,6 +695,10 @@ const PopulationService = {
             .finally(() => {
                 this.partyFormationRunning = false;
             });
+    },
+
+    groupPartyCandidatesBySpot(states = [], options = {}) {
+        return groupBySpot(states, options);
     },
 
     reclaimBackgroundPartyCapacity(partyWaitStates = []) {

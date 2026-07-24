@@ -63,6 +63,18 @@ async function run() {
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
     assert.strictEqual(events.length, 1);
 
+    const fairGroups = PopulationService.groupPartyCandidatesBySpot([
+        { characterId: 101, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
+        { characterId: 102, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
+        { characterId: 103, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
+        { characterId: 104, level: 10, spotId: 'under_served', activity: 'party_wait', timing: { activityStartedAt: 10 } },
+        { characterId: 105, level: 10, spotId: 'under_served', activity: 'party_wait', timing: { activityStartedAt: 10 } }
+    ], {
+        prioritizePartyWait: true,
+        activePartiesBySpot: new Map([['crowded', 5]])
+    });
+    assert.strictEqual(fairGroups[0][0].spotId, 'under_served', 'party-wait groups must prefer a ground with no existing party over a larger but already saturated queue');
+
     const electiveParty = { partyId: 'bgp_elective', leaderId: 11, memberIds: [11, 12], spotId: 'cruma', startedAt: 1 };
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
     const reclaimed = [];
