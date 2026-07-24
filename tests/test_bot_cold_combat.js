@@ -50,7 +50,7 @@ const migratedSnapshot = ColdCombatProfile.legacySnapshot(fighter, [{ selfId: 3,
 assert.strictEqual(migratedSnapshot.skills[0].level, 4, 'legacy snapshot must preserve the stored skill level');
 assert.strictEqual(migratedSnapshot.skillSource, 'database', 'legacy snapshot must prevent a later fallback from replacing persisted skills');
 assert.strictEqual(migratedSnapshot.version, ColdCombatProfile.PROFILE_VERSION, 'a database snapshot must record the current completeness contract');
-assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'database', version: 1 }), true, 'a truncated version-one database snapshot must be repaired once');
+assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'database', version: ColdCombatProfile.PROFILE_VERSION - 1 }), true, 'a previous-version database snapshot must be repaired once');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill(migratedSnapshot), false, 'a current database snapshot must not be rescanned on every migration tick');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ version: ColdCombatProfile.PROFILE_VERSION }), true, 'a class-tree fallback without a database source must still be migrated');
 

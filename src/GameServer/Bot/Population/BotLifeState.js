@@ -436,6 +436,19 @@ function classProgressionNeeded(state, classId, level) {
     return knownLevel < Number(level || 1) || knownClassId !== Number(classId);
 }
 
+function refreshColdCombatProfile(state) {
+    return Database.fetchSkills(state.characterId).then((skills) => ({
+        ...state,
+        stats: {
+            ...(state.stats || {}),
+            // Class progression writes skills directly to the character
+            // table. Keep the cold model in lockstep so its next fight uses
+            // the same ranks and newly learned abilities as a hot bot.
+            coldCombat: ColdCombatProfile.legacySnapshot(state, skills, now())
+        }
+    }));
+}
+
 function applyClassProgression(state, profile = {}) {
     const level = Number(profile.level || state.level || 1);
     const currentClassId = Number(profile.classId ?? state.stats?.classId ?? 0);
@@ -468,7 +481,7 @@ function applyClassProgression(state, profile = {}) {
             }
         };
         if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-        return progressedState;
+        return refreshColdCombatProfile(progressedState);
     });
 }
 
@@ -1360,20 +1373,25 @@ const BotLifeState = {
                 }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-            const row = rowFromState(progressedState);
+            const profileReady = needsClassProgression
+                ? refreshColdCombatProfile(progressedState)
+                : Promise.resolve(progressedState);
 
-            return save(row)
-            .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
-            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => syncInventorySummary(row.characterId, progressedState.inventory))
-            .then(() => {
-                const snapshot = normalize(row);
-                cache.set(snapshot.characterId, snapshot);
-                return snapshot;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
-                return null;
+            return profileReady.then((profiledState) => {
+                const row = rowFromState(profiledState);
+                return save(row)
+                    .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory))
+                    .then(() => {
+                        const snapshot = normalize(row);
+                        cache.set(snapshot.characterId, snapshot);
+                        return snapshot;
+                    })
+                    .catch((err) => {
+                        utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
+                        return null;
+                    });
             });
         });
     },

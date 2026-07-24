@@ -4,7 +4,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 
-const PROFILE_VERSION = 2;
+const PROFILE_VERSION = 3;
 
 const WEAPON_MASK_BY_KIND = Object.freeze({
     'Weapon.Sword': 4,
