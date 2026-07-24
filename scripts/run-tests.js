@@ -37,6 +37,7 @@ const tests = [
     'tests/test_bot_craft_shop.js',
     'tests/test_bot_warehouse.js',
     'tests/test_bot_cold_market_trade_chat.js',
+    'tests/test_bot_cold_combat.js',
     'tests/test_bot_background_drops.js',
     'tests/test_bot_party_gear_loot.js',
     'tests/test_bot_background_respawn.js',

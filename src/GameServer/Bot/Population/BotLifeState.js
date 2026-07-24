@@ -10,6 +10,7 @@ const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -235,6 +236,11 @@ function recordFromSession(session, phase, reason = '') {
         route: currentSpot?.route || null,
         build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
         equipment: equipmentSummaryFromInventory(inventory),
+        // Cold combat must start from the exact same character model as the
+        // hot session: equipped item totals, learned skills and live effects.
+        // The resolver rebuilds those values deterministically after effects
+        // expire, rather than retaining a stale buffed total indefinitely.
+        coldCombat: ColdCombatProfile.capture(actor, timestamp),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
