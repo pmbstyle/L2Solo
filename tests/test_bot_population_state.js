@@ -83,6 +83,44 @@ try {
             }).then(() => {
                 const requiredCandidates = statements.find((entry) => entry.sql.includes("states.activity = 'party_wait'"));
                 assert(requiredCandidates, 'a real party-wait backlog must reserve formation capacity ahead of elective hunting parties');
+                const member = {
+                    characterId: 44,
+                    name: 'PartyTelemetryProbe',
+                    level: 20,
+                    phase: 'cold',
+                    activity: 'grouped',
+                    party: { partyId: 'bgp_probe' },
+                    timing: { nextResolveAt: 9000 },
+                    vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
+                    stats: {
+                        lastResolveDebug: { targetNpcId: null },
+                        targetCombat: { targets: {}, populationTargets: {} }
+                    },
+                    inventory: {}
+                };
+                return BotLifeState.applyResolve(member, {
+                    patch: {
+                        activity: 'grouped',
+                        vitals: member.vitals,
+                        // This mirrors the projected snapshot that a party
+                        // resolver returns after a fight.
+                        stats: { ...member.stats, coldCombat: { cooldowns: {} } }
+                    },
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                    nextResolveAt: 10000,
+                    debug: {
+                        partyId: 'bgp_probe',
+                        aggregate: true,
+                        populationTelemetryOwner: true,
+                        targetNpcId: 93,
+                        defeatedNpcIds: [93]
+                    }
+                });
+            }).then(() => {
+                const partySave = statements.filter((entry) => entry.sql.includes('ON DUPLICATE KEY UPDATE')).at(-1);
+                const persistedStats = JSON.parse(partySave.params[27]);
+                assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
+                assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
             });
         }).then(() => {
             console.log('Bot population state checks passed');

@@ -43,7 +43,7 @@ function estimateFightCount({ party, members, spot, elapsedMs }) {
     return Math.max(1, Math.min(4, Math.round(baseWindows * densityFactor * cohesionFactor)));
 }
 
-function distributeRewards({ members, spot, wins, pressure, rng }) {
+function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure, rng }) {
     const rewards = spot.rewards;
     const expMultiplier = Number(pressure?.expMultiplier || 1);
     const rates = ProgressionRates.profile();
@@ -55,6 +55,7 @@ function distributeRewards({ members, spot, wins, pressure, rng }) {
         const drops = BackgroundDropResolver.rollForFight({
             spot,
             killerLevel: Math.round(avgLevel(members)),
+            npcSelfId: defeatedNpcIds[win],
             rng
         });
         if (!drops.length) continue;
@@ -71,7 +72,7 @@ function distributeRewards({ members, spot, wins, pressure, rng }) {
 }
 
 const BackgroundPartyResolver = {
-    resolve({ party, members, spot, pressure = {}, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
+    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!party || !members?.length || !spot) {
             return {
                 memberResults: [],
@@ -155,9 +156,10 @@ const BackgroundPartyResolver = {
         let combatActions = 0;
         let skillUses = 0;
         let heals = 0;
+        const defeatedNpcIds = [];
         let combatMembers = members.map((state) => ({ ...state }));
         for (let i = 0; i < fights; i++) {
-            const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, rng, timestamp });
+            const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, targetNpcId, rng, timestamp });
             combatActions += Number(encounter.debug?.actions || 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
@@ -169,12 +171,15 @@ const BackgroundPartyResolver = {
                     coldCombat: { ...(member.state.stats?.coldCombat || member.profile), cooldowns: member.cooldowns }
                 }
             }));
-            if (encounter.won) wins += 1;
+            if (encounter.won) {
+                wins += 1;
+                if (Number(encounter.debug?.mobSelfId) > 0) defeatedNpcIds.push(Number(encounter.debug.mobSelfId));
+            }
             else losses += 1;
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
         }
 
-        const rewards = distributeRewards({ members, spot, wins, pressure, rng });
+        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, pressure, rng });
         const memberResults = [];
         const events = [];
         let deaths = 0;
@@ -238,7 +243,14 @@ const BackgroundPartyResolver = {
                         dropsAwarded: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                         spotId: spot.id,
                         route: spot.route || null,
-                        aggregate: true
+                        aggregate: true,
+                        targetNpcId: Number(targetNpcId) || null,
+                        defeatedNpcIds: [...defeatedNpcIds],
+                        // A party resolve represents one shared encounter.  Its
+                        // leader may be replaced or leave while the resulting
+                        // state updates are persisted, so use the stable local
+                        // result order to nominate exactly one aggregate owner.
+                        populationTelemetryOwner: index === 0
                     }
                 }
             });
@@ -353,7 +365,9 @@ const BackgroundPartyResolver = {
                 route: spot.route || null,
                 combatActions,
                 skillUses,
-                heals
+                heals,
+                targetNpcId: Number(targetNpcId) || null,
+                defeatedNpcIds
             }
         };
     }
