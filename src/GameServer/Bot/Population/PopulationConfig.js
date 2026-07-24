@@ -38,7 +38,10 @@ const DEFAULTS = {
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
     partyFormationBatchSize: 3,
-    partyFormationCandidateLimit: 80,
+    // Forming is an infrequent event. Read enough waiting candidates to let
+    // the three available slots reach distinct crowded grounds instead of
+    // letting the two largest queues consume the whole selection window.
+    partyFormationCandidateLimit: 250,
     partyMinSize: 2,
     partyMaxSize: 5,
     maxBackgroundParties: 20,
