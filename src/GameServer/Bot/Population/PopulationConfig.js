@@ -44,7 +44,10 @@ const DEFAULTS = {
     partyFormationCandidateLimit: 250,
     partyMinSize: 2,
     partyMaxSize: 5,
-    maxBackgroundParties: 20,
+    // At roughly one party resolve per 90 seconds, forty parties consume
+    // about 27 of the 36 bounded resolves available each minute.  This opens
+    // enough party-wait capacity without increasing work in a scheduler tick.
+    maxBackgroundParties: 40,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
