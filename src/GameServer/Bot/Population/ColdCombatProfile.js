@@ -4,6 +4,8 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 
+const PROFILE_VERSION = 2;
+
 const WEAPON_MASK_BY_KIND = Object.freeze({
     'Weapon.Sword': 4,
     'Weapon.Blunt': 8,
@@ -171,7 +173,7 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
     const existing = state.stats?.coldCombat || {};
     return {
         ...existing,
-        version: 1,
+        version: PROFILE_VERSION,
         skillSource: 'database',
         capturedAt: number(existing.capturedAt, timestamp),
         classId: number(existing.classId, number(state.stats?.classId, number(state.classId))),
@@ -199,7 +201,7 @@ function capture(actor, timestamp = Date.now()) {
         armorKinds: (backpack?.fetchEquippedArmors?.() || []).map((item) => item.fetchKind?.()).filter(Boolean)
     };
     return {
-        version: 1,
+        version: PROFILE_VERSION,
         skillSource: 'hot',
         capturedAt: timestamp,
         classId: number(actor.fetchClassId?.()),
@@ -215,6 +217,11 @@ function capture(actor, timestamp = Date.now()) {
             .map((effect) => ({ ...effect, stats: { ...(effect.stats || {}) } })),
         skills: (actor.skillset?.fetchSkills?.() || []).map(skillSnapshot)
     };
+}
+
+function needsDatabaseBackfill(snapshot = {}) {
+    return snapshot?.skillSource !== 'hot'
+        && (snapshot?.skillSource !== 'database' || number(snapshot?.version) < PROFILE_VERSION);
 }
 
 function profileFor(state = {}, timestamp = Date.now()) {
@@ -306,4 +313,4 @@ function npcForSpot(spot = {}, rng = Math.random) {
     };
 }
 
-module.exports = { capture, legacySnapshot, profileFor, offensiveSkills, npcForSpot, skillSnapshotsFromRecords };
+module.exports = { PROFILE_VERSION, capture, legacySnapshot, needsDatabaseBackfill, profileFor, offensiveSkills, npcForSpot, skillSnapshotsFromRecords };

@@ -1067,7 +1067,7 @@ const BotLifeState = {
             // Profiles made by the first cold resolver used the class tree
             // before this migration existed.  They have a profile but not an
             // authoritative skill source, so replace their skills once too.
-            .filter((state) => !['database', 'hot'].includes(state.stats?.coldCombat?.skillSource))
+            .filter((state) => ColdCombatProfile.needsDatabaseBackfill(state.stats?.coldCombat))
             .filter((state) => !pendingWrites.has(state.characterId))
             .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
             .slice(0, safeLimit);

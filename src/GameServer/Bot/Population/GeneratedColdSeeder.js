@@ -11,6 +11,7 @@ const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
 const NAME_GENERATOR_VERSION = 2;
 
@@ -381,6 +382,20 @@ function stateFor(character, index, seedMeta = {}) {
     };
 }
 
+function hydrateColdCombatProfile(state) {
+    return LifeState.refreshInventory(state, { equip: true })
+        .then((refreshed) => Database.fetchSkills(refreshed.characterId).then((skills) => ({
+            ...refreshed,
+            stats: {
+                ...(refreshed.stats || {}),
+                // A generated cold bot has no hot actor to snapshot. Its DB
+                // skills and equipped inventory are its authoritative model
+                // from the first resolve, not a class-tree approximation.
+                coldCombat: ColdCombatProfile.legacySnapshot(refreshed, skills)
+            }
+        })));
+}
+
 function craftServiceSeedState(existingState, seedState) {
     if (existingState) {
         // Preserve lifecycle (especially an active hot actor), but never retain
@@ -512,11 +527,13 @@ const GeneratedColdSeeder = {
                             spot,
                             loc: result.loc || randomNear(spot.center, index)
                         });
-                        return LifeState.upsertState(state, 'population_wave_seed').then((saved) => {
-                            if (saved && result.created) created += 1;
-                            if (saved) seeded += 1;
-                            return saved;
-                        });
+                        return hydrateColdCombatProfile(state)
+                            .then((profiledState) => LifeState.upsertState(profiledState, 'population_wave_seed'))
+                            .then((saved) => {
+                                if (saved && result.created) created += 1;
+                                if (saved) seeded += 1;
+                                return saved;
+                            });
                     }));
             });
 
