@@ -15,6 +15,7 @@ const PopulationStatus = {
         const merchants = sessions.filter((session) => isBotSession(session) && session.actor && session.plan === 'merchant').length;
         const lifeCounts = LifeState.counts();
         const partyCounts = PartyState.counts();
+        const targetCombat = LifeState.targetCombatSummary();
 
         return {
             hot,
@@ -23,7 +24,8 @@ const PopulationStatus = {
             parties: partyCounts.active || 0,
             merchants,
             total: Math.max(hot, lifeCounts.total || 0),
-            persisted: lifeCounts.total || 0
+            persisted: lifeCounts.total || 0,
+            targetCombat
         };
     },
 

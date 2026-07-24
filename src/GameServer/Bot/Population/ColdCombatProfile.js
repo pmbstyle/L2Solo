@@ -293,14 +293,31 @@ function offensiveSkills(profile) {
     });
 }
 
-function npcForSpot(spot = {}, rng = Math.random) {
+function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const entries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
-    const total = entries.reduce((sum, entry) => sum + Math.max(1, number(entry.count, 1)), 0);
-    let needle = rng() * total;
-    const selected = entries.find((entry) => {
-        needle -= Math.max(1, number(entry.count, 1));
-        return needle <= 0;
-    }) || entries[0];
+    const pickEntry = (candidates) => {
+        const total = candidates.reduce((sum, entry) => sum + Math.max(1, number(entry.count, 1)), 0);
+        let needle = rng() * total;
+        return candidates.find((entry) => {
+            needle -= Math.max(1, number(entry.count, 1));
+            return needle <= 0;
+        }) || candidates[0];
+    };
+    const preferredNpcId = number(options.preferredNpcId);
+    const preferred = preferredNpcId > 0
+        ? entries.find((entry) => number(entry.selfId) === preferredNpcId)
+        : null;
+    // A direct-drop plan travels to the intended monster, but it is still a
+    // real hunting ground. Nearby aggressive mobs can engage first instead of
+    // making the bot immune to the rest of the encounter table.
+    const aggressive = preferred
+        ? entries.filter((entry) => number(entry.selfId) !== preferredNpcId
+            && (DataCache.npcs || []).find((npc) => number(npc.selfId) === number(entry.selfId))?.template?.hostile === true)
+        : [];
+    const interruptionChance = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
+    const selected = preferred && (!aggressive.length || rng() >= interruptionChance)
+        ? preferred
+        : pickEntry(aggressive.length ? aggressive : entries);
     const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(selected?.selfId));
     if (!npc) return null;
     return {

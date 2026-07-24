@@ -7,7 +7,7 @@ function randInt(rng, min, max) {
     return Math.floor(rng() * (high - low + 1)) + low;
 }
 
-function rewardDataForSpot(spot, rng) {
+function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const entries = spot?.npcEntries?.length
         ? spot.npcEntries
         : (spot?.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
@@ -27,6 +27,16 @@ function rewardDataForSpot(spot, rng) {
     )).map((reward) => ({ reward, count: 1 }));
     const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
+    const defeatedNpcId = Number(npcSelfId || 0);
+    if (defeatedNpcId > 0) {
+        const exact = candidates.find((candidate) => Number(candidate.reward.selfId) === defeatedNpcId)?.reward;
+        if (exact) return exact;
+        const defeatedNpcName = String((DataCache.npcs || []).find((npc) => Number(npc.selfId) === defeatedNpcId)?.template?.name || '')
+            .trim().toLowerCase();
+        return candidates.find((candidate) => (
+            defeatedNpcName && String(candidate.reward.template?.name || '').trim().toLowerCase() === defeatedNpcName
+        ))?.reward || null;
+    }
     let roll = rng() * candidates.reduce((sum, candidate) => sum + candidate.count, 0);
     for (const candidate of candidates) {
         roll -= candidate.count;
@@ -58,14 +68,15 @@ function itemSnapshot(item, amount, sourceMobLevel = 0) {
     };
 }
 
-function sourceMobLevel(rewardData, spot) {
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(rewardData?.selfId));
+function sourceMobLevel(rewardData, spot, npcSelfId = 0) {
+    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcSelfId || rewardData?.selfId));
     return Math.max(0, Number(npc?.template?.level || spot?.avgLevel || 0));
 }
 
-function rollForFight({ spot, killerLevel, rng = Math.random, maxItems = 1 } = {}) {
-    const rewardData = rewardDataForSpot(spot, rng);
+function rollForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = 1 } = {}) {
+    const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
     if (!rewardData) return [];
+    const defeatedNpcLevel = sourceMobLevel(rewardData, spot, npcSelfId);
 
     const drops = [];
     for (const group of rewardData.rewards || []) {
@@ -73,7 +84,7 @@ function rollForFight({ spot, killerLevel, rng = Math.random, maxItems = 1 } = {
         if ((group.items || []).every((item) => Number(item.selfId) === 57)) continue;
 
         const groupRoll = ProgressionRates.rewardGroupRoll(group, 'drop', {
-            npcLevel: Number(spot?.avgLevel || 0),
+            npcLevel: defeatedNpcLevel,
             killerLevel: Number(killerLevel || 0)
         }, rng);
         if (!groupRoll.hit) continue;
@@ -81,7 +92,7 @@ function rollForFight({ spot, killerLevel, rng = Math.random, maxItems = 1 } = {
         const item = selectItem(group.items, rng);
         if (!item || Number(item.selfId) === 57) continue;
         const amount = ProgressionRates.scaleAmount(randInt(rng, item.min, item.max), groupRoll.amountMultiplier, rng);
-        const snapshot = itemSnapshot(item, amount, sourceMobLevel(rewardData, spot));
+        const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
         if (snapshot) drops.push(snapshot);
     }
     return drops;

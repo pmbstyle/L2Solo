@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
@@ -24,6 +25,16 @@ assert.strictEqual(direct.length, 1);
 assert.strictEqual(direct[0].selfId, 1121, 'the selected item must come from the real Gremlin rewards');
 assert.strictEqual(direct[0].kind, 'Armor.Wear');
 assert.strictEqual(direct[0].sourceMobLevel, 1, 'background loot must retain the source-mob level for sale policy');
+
+const originalRewardGroupRoll = ProgressionRates.rewardGroupRoll;
+let rolledNpcLevel = null;
+ProgressionRates.rewardGroupRoll = (group, kind, context, rng) => {
+    rolledNpcLevel = context.npcLevel;
+    return originalRewardGroupRoll(group, kind, context, rng);
+};
+BackgroundDropResolver.rollForFight({ spot: { ...spot, avgLevel: 99 }, killerLevel: 1, npcSelfId: 1, rng: () => 0 });
+ProgressionRates.rewardGroupRoll = originalRewardGroupRoll;
+assert.strictEqual(rolledNpcLevel, 1, 'deep-blue rules must use the defeated NPC level, not the spot average');
 
 const nameOnly = BackgroundDropResolver.rollForFight({
     spot: { ...spot, npcSelfIds: [], npcNames: ['Gremlin'] },

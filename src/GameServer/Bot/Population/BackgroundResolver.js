@@ -228,9 +228,9 @@ function chooseSkill(profile, mp, cooldowns, time) {
         .sort((a, b) => b.score - a.score)[0] || null;
 }
 
-function resolveFight({ state, spot, pressure, rng, timestamp = Date.now() }) {
+function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now() }) {
     const bot = botCombatStats(state, timestamp);
-    const mob = ColdCombatProfile.npcForSpot(spot, rng) || {
+    const mob = ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId }) || {
         level: Number(spot.avgLevel || bot.level), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
         accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333
@@ -312,6 +312,7 @@ function resolveFight({ state, spot, pressure, rng, timestamp = Date.now() }) {
     const loot = BackgroundDropResolver.rollForFight({
         spot,
         killerLevel: Number(state.level || bot.level),
+        npcSelfId: mob.selfId,
         rng
     });
 
@@ -342,8 +343,8 @@ function chooseHeal(profile, allies, mp, cooldowns, time) {
     return skill ? { skill, target: injured } : null;
 }
 
-function resolvePartyFight({ members, spot, rng = Math.random, timestamp = Date.now() }) {
-    const mob = ColdCombatProfile.npcForSpot(spot, rng) || {
+function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now() }) {
+    const mob = ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId }) || {
         level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
         accur: 1, evasion: 0, critical: 0, atkSpd: 253
@@ -438,7 +439,7 @@ function resolvePartyFight({ members, spot, rng = Math.random, timestamp = Date.
 const BackgroundResolver = {
     resolveRest,
     resolvePartyFight,
-    resolveSolo({ state, spot, pressure = {}, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
+    resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
                 patch: {},
@@ -537,10 +538,11 @@ const BackgroundResolver = {
         let died = false;
         let combatActions = 0;
         let skillUses = 0;
+        const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
             const fightState = { ...state, vitals: patch.vitals };
-            const result = resolveFight({ state: fightState, spot, pressure, rng, timestamp });
+            const result = resolveFight({ state: fightState, spot, pressure, targetNpcId, rng, timestamp });
             patch.vitals.hp = result.hp;
             patch.vitals.mp = result.mp;
             patch.stats = {
@@ -557,7 +559,10 @@ const BackgroundResolver = {
             combatActions += Number(result.debug?.actions || 0);
             skillUses += Number(result.debug?.skillUses || 0);
 
-            if (result.won) wins += 1;
+            if (result.won) {
+                wins += 1;
+                if (Number(result.debug?.mobSelfId) > 0) foughtNpcIds.push(Number(result.debug.mobSelfId));
+            }
             if (result.died) {
                 died = true;
                 patch.activity = 'dead';
@@ -613,7 +618,9 @@ const BackgroundResolver = {
                 spotId: spot.id,
                 route: spot.route || null,
                 combatActions,
-                skillUses
+                skillUses,
+                targetNpcId: Number(targetNpcId) || null,
+                foughtNpcIds
             }
         };
     }

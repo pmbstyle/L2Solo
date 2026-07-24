@@ -18,6 +18,7 @@ const originals = {
     ensure: SpotProfiles.ensure,
     findForState: SpotProfiles.findForState,
     resolveSolo: BackgroundResolver.resolveSolo,
+    cachedState: LifeState.cachedState,
     applyResolve: LifeState.applyResolve,
     refreshInventory: LifeState.refreshInventory,
     upsertState: LifeState.upsertState,
@@ -59,6 +60,7 @@ async function run() {
         receivedSpot = spot;
         return { patch: { activity: 'traveling' }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 30000, debug: { activity: 'traveling' } };
     };
+    LifeState.cachedState = () => null;
     LifeState.applyResolve = () => Promise.resolve(state);
     LifeState.refreshInventory = (value) => Promise.resolve(value);
     LifeState.upsertState = (value) => Promise.resolve(value);
@@ -75,6 +77,21 @@ async function run() {
     assert.strictEqual(result.ok, true);
     assert.strictEqual(receivedSpot, null, 'travel must resolve without a hunting spot');
     assert.strictEqual(planningAtlasRequests, 0, 'in-flight travel must not build an equipment plan or load the spot atlas');
+
+    let joinedDuringResolve = false;
+    let applyCalled = false;
+    BackgroundResolver.resolveSolo = () => {
+        joinedDuringResolve = true;
+        return { patch: { activity: 'traveling' }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 30000, debug: { activity: 'traveling' } };
+    };
+    LifeState.cachedState = () => (joinedDuringResolve ? { ...state, party: { partyId: 'fresh_party' } } : null);
+    LifeState.applyResolve = () => {
+        applyCalled = true;
+        return Promise.resolve(state);
+    };
+    const joinedResult = await PopulationService.resolveColdState(state);
+    assert.strictEqual(joinedResult.reason, 'joined_party', 'a stale solo resolve must stop when the bot joins a party');
+    assert.strictEqual(applyCalled, false, 'a stale solo resolve must not overwrite the new party state');
     console.log('Bot cold travel without spot checks passed');
 }
 
@@ -82,6 +99,7 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     SpotProfiles.ensure = originals.ensure;
     SpotProfiles.findForState = originals.findForState;
     BackgroundResolver.resolveSolo = originals.resolveSolo;
+    LifeState.cachedState = originals.cachedState;
     LifeState.applyResolve = originals.applyResolve;
     LifeState.refreshInventory = originals.refreshInventory;
     LifeState.upsertState = originals.upsertState;

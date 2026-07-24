@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 
@@ -73,11 +74,51 @@ const spot = {
     // real NPC profile from the datapack when npcSelfIds are available.
     mob: { hp: 1, damage: 9999 }
 };
+const mixedSpot = {
+    ...spot,
+    npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
+    npcSelfIds: [1, 12]
+};
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot(mixedSpot, () => 0.9, { preferredNpcId: 1 }).selfId,
+    1,
+    'a direct-drop plan must prefer its intended NPC when the encounter is not interrupted'
+);
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot(mixedSpot, () => 0, { preferredNpcId: 1 }).selfId,
+    12,
+    'a hostile NPC in the same spot must still be able to interrupt focused farming'
+);
+const focusedLoot = BackgroundDropResolver.rollForFight({
+    spot: mixedSpot,
+    killerLevel: fighter.level,
+    npcSelfId: 1,
+    maxItems: 4,
+    rng: () => 0
+});
+assert(focusedLoot.length > 0 && focusedLoot.every((item) => item.sourceMobLevel === 1), 'focused farming must roll the killed target NPC loot table');
+const interruptedLoot = BackgroundDropResolver.rollForFight({
+    spot: mixedSpot,
+    killerLevel: fighter.level,
+    npcSelfId: 12,
+    maxItems: 4,
+    rng: () => 0
+});
+assert(interruptedLoot.length > 0 && interruptedLoot.every((item) => item.sourceMobLevel === 16), 'an aggressive interruption must roll the interrupting NPC loot table');
 const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
 assert(result.debug.skillUses > 0, 'a usable learned skill must be cast during cold combat');
 assert(result.patch.stats.coldCombat.cooldowns[3] > timestamp, 'skill reuse must survive a cold resolve');
 assert(result.patch.vitals.hp > 0, 'datapack Gremlin damage must be used instead of the synthetic spot damage');
+const focusedResult = BackgroundResolver.resolveSolo({
+    state: fighter,
+    spot: mixedSpot,
+    targetNpcId: 1,
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.9
+});
+assert.deepStrictEqual(focusedResult.debug.foughtNpcIds, [1], 'solo direct-drop farming must fight the requested NPC, not a random spot entry');
 
 const injuredTank = {
     ...fighter,
@@ -106,6 +147,14 @@ const partyFight = BackgroundResolver.resolvePartyFight({
 });
 assert(partyFight.debug.actions > 0, 'party cold combat must execute one shared NPC encounter');
 assert(partyFight.members[1].heals > 0, 'a learned friendly heal must be applied to an injured party member');
+const focusedPartyFight = BackgroundResolver.resolvePartyFight({
+    members: [injuredTank, healer],
+    spot: mixedSpot,
+    targetNpcId: 1,
+    timestamp,
+    rng: () => 0.9
+});
+assert.strictEqual(focusedPartyFight.debug.mobSelfId, 1, 'party direct-drop farming must use the party target NPC');
 
 const partyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_combat_party', cohesion: 1, risk: 0, roleCoverage: { tank: 1, healer: 1 }, stats: {} },
@@ -117,6 +166,28 @@ const partyResult = BackgroundPartyResolver.resolve({
 });
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
+const focusedPartyResult = BackgroundPartyResolver.resolve({
+    party: {
+        partyId: 'focused_cold_combat_party',
+        leaderId: healer.characterId,
+        cohesion: 1,
+        risk: 0,
+        roleCoverage: { tank: 1, healer: 1 },
+        stats: {}
+    },
+    members: [injuredTank, healer],
+    spot: mixedSpot,
+    targetNpcId: 1,
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.9
+});
+assert.strictEqual(focusedPartyResult.debug.targetNpcId, 1, 'party aggregate telemetry must retain its focused NPC');
+assert.deepStrictEqual(focusedPartyResult.debug.defeatedNpcIds, [1], 'party aggregate telemetry must retain the NPC actually defeated');
+assert.strictEqual(focusedPartyResult.memberResults[0].result.debug.targetNpcId, 1, 'each party member must persist the shared target telemetry');
+assert.deepStrictEqual(focusedPartyResult.memberResults[0].result.debug.defeatedNpcIds, [1], 'each party member must persist the shared defeated NPC telemetry');
+assert.strictEqual(focusedPartyResult.memberResults[0].result.debug.populationTelemetryOwner, true, 'one stable party result must contribute the shared encounter to population totals');
+assert.strictEqual(focusedPartyResult.memberResults[1].result.debug.populationTelemetryOwner, false, 'other party members must retain personal telemetry without duplicating encounter totals');
 
 const originalMetrics = {
     counters: PopulationMetrics.counters,

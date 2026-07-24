@@ -170,6 +170,40 @@ function syncInventorySummary(characterId, inventory) {
     ));
 }
 
+function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
+    const targetNpcId = Number(debug?.targetNpcId || 0);
+    if (targetNpcId <= 0) return null;
+    const targetKey = String(targetNpcId);
+    const defeatedNpcIds = (Array.isArray(debug.foughtNpcIds) ? debug.foughtNpcIds : debug.defeatedNpcIds || [])
+        .map(Number)
+        .filter((npcId) => npcId > 0);
+    const targetKills = defeatedNpcIds.filter((npcId) => npcId === targetNpcId).length;
+    const interruptions = defeatedNpcIds.length - targetKills;
+    const add = (current = {}) => ({
+        resolves: Number(current.resolves || 0) + 1,
+        defeated: Number(current.defeated || 0) + defeatedNpcIds.length,
+        targetKills: Number(current.targetKills || 0) + targetKills,
+        interruptions: Number(current.interruptions || 0) + interruptions,
+        lastDefeatedNpcIds: defeatedNpcIds,
+        lastResolvedAt: timestamp
+    });
+    const targets = { ...(previous.targets || {}) };
+    const current = add(targets[targetKey]);
+    targets[targetKey] = current;
+    const populationTargets = { ...(previous.populationTargets || {}) };
+    if (!debug.aggregate || debug.populationTelemetryOwner === true) {
+        populationTargets[targetKey] = add(populationTargets[targetKey]);
+    }
+
+    return {
+        ...(previous || {}),
+        targetNpcId,
+        ...current,
+        targets,
+        populationTargets
+    };
+}
+
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
     const inventory = parseJson(row.inventorySummary, {});
@@ -1258,6 +1292,7 @@ const BotLifeState = {
             .filter((item) => Number(item.selfId) === 57)
             .reduce((sum, item) => sum + Number(item.amount || 0), 0);
         const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems;
+        const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
         const stats = {
             ...(state.stats || {}),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
@@ -1267,7 +1302,8 @@ const BotLifeState = {
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             route: result.debug?.route || state.stats?.route || null,
-            lastResolveDebug: result.debug || null
+            lastResolveDebug: result.debug || null,
+            ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
@@ -1336,6 +1372,11 @@ const BotLifeState = {
             stats: {
                 ...stats,
                 ...(result.patch?.stats || {}),
+                // Party combat carries a projected combat snapshot in patch.stats.
+                // Keep lifecycle telemetry from this resolve authoritative over
+                // that snapshot, which still contains the previous tick's data.
+                ...(targetCombat ? { targetCombat } : {}),
+                lastResolveDebug: result.debug || null,
                 equipment: equipmentSummaryFromInventory(equippedInventory)
             },
             inventory: equippedInventory,
@@ -1697,6 +1738,26 @@ const BotLifeState = {
             counts.total += 1;
         });
         return counts;
+    },
+
+    targetCombatSummary() {
+        return Array.from(cache.values()).reduce((summary, state) => {
+            const targets = state.stats?.targetCombat?.populationTargets || {};
+            const values = Object.values(targets);
+            if (!values.length) return summary;
+            summary.bots += 1;
+            values.forEach((telemetry) => {
+                summary.resolves += Number(telemetry.resolves || 0);
+                summary.defeated += Number(telemetry.defeated || 0);
+                summary.targetKills += Number(telemetry.targetKills || 0);
+                summary.interruptions += Number(telemetry.interruptions || 0);
+            });
+            return summary;
+        }, { bots: 0, resolves: 0, defeated: 0, targetKills: 0, interruptions: 0 });
+    },
+
+    cachedState(characterId) {
+        return cache.get(Number(characterId)) || null;
     },
 
     allStates(limit = 500) {
