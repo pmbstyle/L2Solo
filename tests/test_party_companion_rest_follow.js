@@ -14,6 +14,7 @@ const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
@@ -196,6 +197,7 @@ const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
 const originalBotSessions = BotManager.sessions;
 const originalApplySupportBuff = BotBuffs.applySupportBuff;
+const originalFindOffers = MarketOpportunity.findOffers;
 
 function lastPartyAllPacket(session) {
     return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
@@ -694,18 +696,79 @@ try {
     assert.strictEqual(buffedTargetId, unbuffedCompanion.fetchId(), 'buffer should refresh buffs on party companions');
     assert.strictEqual(appliedBuffSkillId, 1040, 'buffer should cast its learned Shield skill');
 
-    const refreshLeader = fakeActor(2000034, { locX: 0, locY: 0, level: 10 });
+    const fieldRefreshLeader = fakeActor(2000033, { locX: 0, locY: 0, level: 10 });
+    const fieldRefreshLeaderSession = fakeSession('player_field_refresh_party', fieldRefreshLeader);
+    const fieldRefreshBot = fakeActor(2000036, { locX: 80, locY: 0, level: 10 });
+    Object.keys(fieldRefreshBot.activeBuffs).forEach((key) => { fieldRefreshBot.activeBuffs[key] = 0; });
+    const fieldRefreshSession = fakeSession('bot_field_refresh_party', fieldRefreshBot);
+    fieldRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
+    fieldRefreshSession.partyCompanion = true;
+    fieldRefreshSession.plan = 'following';
+    World.user = { sessions: [fieldRefreshLeaderSession, fieldRefreshSession] };
+    FollowingState.tick(fieldRefreshSession, fieldRefreshBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
+    assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
+
+    const refreshLeader = fakeActor(2000034, { locX: -84081, locY: 243227, locZ: -3723, level: 10 });
     const refreshLeaderSession = fakeSession('player_refresh_party', refreshLeader);
-    const refreshBot = fakeActor(2000035, { locX: 80, locY: 0, level: 10 });
+    const refreshBot = fakeActor(2000035, { locX: -84001, locY: 243227, locZ: -3723, level: 10 });
     Object.keys(refreshBot.activeBuffs).forEach((key) => { refreshBot.activeBuffs[key] = 0; });
     const refreshSession = fakeSession('bot_refresh_party', refreshBot);
     refreshSession.followPlayerSession = refreshLeaderSession;
     refreshSession.partyCompanion = true;
     refreshSession.plan = 'following';
     World.user = { sessions: [refreshLeaderSession, refreshSession] };
-    FollowingState.tick(refreshSession, refreshBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
-    assert.strictEqual(refreshSession.plan, 'getting_buffed', 'safe companion should leave briefly to refresh expired newbie buffs');
+    FollowingState.tick(refreshSession, refreshBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(refreshSession.plan, 'getting_buffed', 'safe companion should leave briefly for a Newbie Guide when the player is in its town');
     assert.strictEqual(refreshSession.resumeAfterBuff?.plan, 'following', 'buff refresh should preserve the companion return plan');
+
+    const errandLeader = fakeActor(2000037, { locX: 83396, locY: 147904, locZ: -3404 });
+    const errandLeaderSession = fakeSession('player_town_errand_party', errandLeader);
+    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404 });
+    const errandSession = fakeSession('bot_town_errand_party', errandBot);
+    errandSession.followPlayerSession = errandLeaderSession;
+    errandSession.partyCompanion = true;
+    errandSession.plan = 'following';
+    const errandLines = [];
+    BotManager.sessions = [];
+    World.user = { sessions: [errandLeaderSession, errandSession] };
+    FollowingState.tick(errandSession, errandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say(_session, text) { errandLines.push(text); }, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(errandSession.plan, 'shopping', 'companion with no shots should make a brief errand only after the party reaches town');
+    assert.strictEqual(errandSession.companionShopping?.kind, 'restock_shots', 'town errand should describe the actual missing supply');
+    assert.strictEqual(errandSession.shoppingTarget?.town, 'Giran', 'companion errand should stay in the player town');
+    assert(errandLines.some((line) => line.includes("then I'll return")), 'companion should tell the player it will return before shopping');
+    assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
+
+    const marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
+    const marketBot = fakeActor(2000040, { locX: 83456, locY: 147904, locZ: -3404 });
+    const marketSession = fakeSession('bot_market_errand_party', marketBot);
+    marketSession.followPlayerSession = errandLeaderSession;
+    marketSession.partyCompanion = true;
+    marketSession.plan = 'following';
+    marketSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
+    MarketOpportunity.findOffers = () => ([{
+        sourceType: 'private_store', sourceId: marketSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
+        town: 'Giran', session: { accountId: 'bot_market_seller', actor: marketSeller }
+    }]);
+    World.user = { sessions: [errandLeaderSession, marketSession, { accountId: 'seller', actor: marketSeller }] };
+    FollowingState.tick(marketSession, marketBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(marketSession.companionShopping?.kind, 'market_purchase', 'companion should prefer an available planned market upgrade in town');
+    assert.strictEqual(marketSession.shoppingTarget?.actorId, marketSeller.fetchId(), 'companion market errand should walk to the live seller');
+    MarketOpportunity.findOffers = originalFindOffers;
 
     World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
 
@@ -1076,6 +1139,7 @@ try {
     DataCache.experience = originalExperience;
     BotManager.sessions = originalBotSessions;
     BotBuffs.applySupportBuff = originalApplySupportBuff;
+    MarketOpportunity.findOffers = originalFindOffers;
 }
 
 console.log('Party companion rest/follow regression checks passed');

@@ -4,14 +4,46 @@ const TradeService   = invoke('GameServer/Bot/TradeService');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotWarehouse   = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
+const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
+const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
+
+function findStoreSession(actorId) {
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    return BotManager.findSessionById(actorId)
+        || (invoke('GameServer/World/World').user?.sessions || []).find((session) => session.actor?.fetchId?.() === actorId)
+        || null;
+}
 
 function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+function clearCompletedMarketPlan(session, bot, purchase) {
+    const state = session.coldLifeState;
+    if (!state) return;
+
+    const { equipmentPlan, ...stats } = state.stats || {};
+    session.coldLifeState = {
+        ...state,
+        adena: Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || state.adena || 0),
+        stats: {
+            ...stats,
+            lastMarketPurchase: {
+                selfId: Number(purchase.selfId),
+                price: Number(purchase.price),
+                sourceType: 'private_store',
+                sourceId: Number(purchase.sellerId),
+                at: Date.now()
+            }
+        }
+    };
+}
+
 module.exports = {
     tick(session, bot, Generics, BotAI) {
-        if (session.partyCompanion === true && session.followPlayerSession) {
+        if (session.partyCompanion === true && session.followPlayerSession && !session.companionShopping) {
             session.plan = 'following';
             session.shoppingTarget = undefined;
             session.shoppingDoneAnnounced = false;
@@ -77,11 +109,58 @@ module.exports = {
 
     async sellAndRestock(session, bot, Generics, BotAI) {
         const NpcTalkResponse = invoke(path.world + 'NpcTalkResponse');
-        const BotManager = invoke('GameServer/Bot/BotManager');
+        const companionErrand = session.companionShopping;
+
+        if (companionErrand?.kind === 'market_purchase') {
+            const sellerSession = findStoreSession(companionErrand.target.actorId);
+            const seller = sellerSession?.actor;
+            const store = seller?.fetchPrivateStore?.();
+            try {
+                const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1);
+                if (sellerSession?.coldMarketState) {
+                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
+                        selfId: companionErrand.itemId,
+                        price: bought.totalAdena / bought.qty,
+                        buyerCharacterId: bot.fetchId(),
+                        storeItem: store.items.find((item) => Number(item.selfId) === Number(companionErrand.itemId))
+                    }, bought.qty);
+                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
+                }
+                clearCompletedMarketPlan(session, bot, {
+                    selfId: companionErrand.itemId,
+                    price: bought.totalAdena / bought.qty,
+                    sellerId: seller.fetchId()
+                });
+                BotEquipmentUpgrade.applyBestUpgrades(session);
+                session.lastTradeSummary = `bought ${bought.qty}x ${bought.name} from ${seller.fetchName()} for ${formatAdena(bought.totalAdena)}a`;
+                BotAI.say(session, `Bought ${bought.name} from ${seller.fetchName()}.`);
+
+                if (!store.items.some((item) => Number(item.count || 0) > 0) && sellerSession?.coldMarketState) {
+                    const returnState = GoalExecutor.finishMarketVisit(sellerSession.coldMarketState);
+                    if (returnState) {
+                        await Cooldown.transitionToColdState(sellerSession, {
+                            ...returnState,
+                            stats: { ...(returnState.stats || {}), marketStore: null }
+                        }, 'market_sold_out');
+                    }
+                }
+            } catch (err) {
+                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                BotAI.say(session, 'That market offer is gone already. I will keep looking later.');
+            }
+            this.scheduleRestock(session, bot, Generics, BotAI);
+            return;
+        }
+
+        if (companionErrand?.kind === 'restock_shots') {
+            this.scheduleRestock(session, bot, Generics, BotAI);
+            return;
+        }
+
         let soldToBuyer = false;
 
         if (session.shoppingTarget?.actorId) {
-            const buyerSession = BotManager.findSessionById(session.shoppingTarget.actorId);
+            const buyerSession = findStoreSession(session.shoppingTarget.actorId);
             const buyer = buyerSession?.actor;
             const store = buyer && buyer.fetchPrivateStore ? buyer.fetchPrivateStore() : null;
 
@@ -158,13 +237,22 @@ module.exports = {
         }, 4000);
 
         setTimeout(() => {
-            BotAI.say(session, "All stocked up! Returning to the hunting spot.");
+            const companionResume = session.resumeAfterShopping;
+            const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
+            BotAI.say(session, returningToCompanion ? "All set. Returning to you." : "All stocked up! Returning to the hunting spot.");
             session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
+            session.companionShopping = undefined;
 
             let returnTarget = null;
-            if (session.partyCompanion === true && session.followPlayerSession) {
+            if (returningToCompanion) {
+                const leader = companionResume.followPlayerSession.actor;
+                returnTarget = {
+                    locX: leader.fetchLocX(),
+                    locY: leader.fetchLocY(),
+                    locZ: leader.fetchLocZ()
+                };
                 session.preShopLocation = undefined;
             } else if (session.preShopLocation) {
                 returnTarget = session.preShopLocation;
@@ -174,6 +262,7 @@ module.exports = {
             } else {
                 returnTarget = { locX: -81174, locY: 246037, locZ: -3719 };
             }
+            session.resumeAfterShopping = undefined;
 
             if (returnTarget) {
                 bot.moveTo({

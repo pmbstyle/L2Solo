@@ -8,11 +8,19 @@ const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
+const ShotStock      = invoke('GameServer/Inventory/ShotStock');
+const TradeService   = invoke('GameServer/Bot/TradeService');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
 const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
+// Newbie Guides only exist in the starter villages.  A companion should not
+// abandon a player in the field just because its starter buffs have expired.
+const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
+const COMPANION_TOWN_ERRAND_RADIUS = 7500;
+const COMPANION_TOWN_ERRAND_COOLDOWN_MS = 60000;
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -35,6 +43,130 @@ function distance2d(a, b) {
     const dx = a.locX - b.locX;
     const dy = a.locY - b.locY;
     return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function isAtNewbieGuideTown(player, BotAI) {
+    const guide = BotAI.getClosestNewbieGuide?.(player.fetchLocX(), player.fetchLocY());
+    if (!guide) return false;
+
+    return distance2d(
+        { locX: player.fetchLocX(), locY: player.fetchLocY() },
+        guide
+    ) <= NEWBIE_GUIDE_TOWN_RADIUS;
+}
+
+function townForCompanionErrand(player, BotAI) {
+    const town = BotAI.getClosestTown?.(player.fetchLocX(), player.fetchLocY());
+    if (!town) return null;
+
+    return distance2d(
+        { locX: player.fetchLocX(), locY: player.fetchLocY() },
+        { locX: town.x, locY: town.y }
+    ) <= COMPANION_TOWN_ERRAND_RADIUS ? town : null;
+}
+
+function actorAdena(bot) {
+    const adena = bot.backpack?.fetchItemFromSelfId?.(57);
+    return Number(adena?.fetchAmount?.() || 0);
+}
+
+function plannedMarketPurchase(session, bot, town) {
+    const plan = session.coldLifeState?.stats?.equipmentPlan;
+    const selfId = Number(plan?.strategy === 'market' ? plan.target?.selfId : 0);
+    if (!selfId) return null;
+    if (bot.backpack?.fetchItemFromSelfId?.(selfId)) return null;
+
+    const offer = MarketOpportunity.findOffers(selfId, {
+        town: town.name,
+        buyerCharacterId: bot.fetchId()
+    }).find((candidate) => (
+        Number(candidate.price) <= actorAdena(bot) &&
+        candidate.sourceType === 'private_store' &&
+        candidate.session?.actor &&
+        String(candidate.session.accountId || '').startsWith('bot_')
+    ));
+    // Hot companions can transact only with a live bot merchant. Cold
+    // listings have no world actor to walk to, while player-store settlement
+    // still belongs to the native client request path.
+    if (!offer) return null;
+
+    return {
+        kind: 'market_purchase',
+        itemId: selfId,
+        itemName: offer.itemName,
+        price: Number(offer.price),
+        target: {
+            actorId: offer.session.actor.fetchId(),
+            name: offer.session.actor.fetchName(),
+            locX: offer.session.actor.fetchLocX(),
+            locY: offer.session.actor.fetchLocY(),
+            locZ: offer.session.actor.fetchLocZ(),
+            town: offer.town || town.name
+        }
+    };
+}
+
+function companionTownErrand(session, bot, player, BotAI) {
+    if (Date.now() - Number(session.lastCompanionTownErrandAt || 0) < COMPANION_TOWN_ERRAND_COOLDOWN_MS) return null;
+    const town = townForCompanionErrand(player, BotAI);
+    if (!town) return null;
+
+    const purchase = plannedMarketPurchase(session, bot, town);
+    if (purchase) return purchase;
+
+    const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], { town });
+    if (buyer) {
+        return {
+            kind: 'sell_resources',
+            target: {
+                actorId: buyer.actor.fetchId(),
+                name: buyer.actor.fetchName(),
+                locX: buyer.actor.fetchLocX(),
+                locY: buyer.actor.fetchLocY(),
+                locZ: buyer.actor.fetchLocZ(),
+                town: buyer.store.town || town.name
+            }
+        };
+    }
+
+    if (!ShotStock.needsActorRestock(bot, 0)) return null;
+    return {
+        kind: 'restock_shots',
+        target: {
+            actorId: null,
+            name: `${town.name} general shop`,
+            locX: town.x,
+            locY: town.y,
+            locZ: town.z,
+            town: town.name
+        }
+    };
+}
+
+function beginCompanionTownErrand(session, bot, playerSession, errand, BotAI) {
+    session.lastCompanionTownErrandAt = Date.now();
+    session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    session.resumeAfterShopping = {
+        plan: 'following',
+        followPlayerSession: playerSession,
+        partyCompanion: true,
+        botStay: session.botStay === true,
+        stayLocation: session.stayLocation ? { ...session.stayLocation } : null
+    };
+    session.companionShopping = errand;
+    session.shoppingTarget = errand.target;
+    session.shoppingDoneAnnounced = false;
+    session.plan = 'shopping';
+    session.currentTargetId = undefined;
+    bot.unselect();
+    bot.automation.abortAll(bot);
+
+    const detail = errand.kind === 'market_purchase'
+        ? `${errand.itemName} from ${errand.target.name}`
+        : errand.kind === 'sell_resources'
+            ? `sell these resources to ${errand.target.name}`
+            : 'restock my shots';
+    BotAI.say(session, `I can ${detail} here. Give me a moment, then I'll return.`);
 }
 
 function shouldKeepCurrentFollowMove(session, bot, player, leaderDistance) {
@@ -341,6 +473,11 @@ module.exports = {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 keepRoleDecision = true;
+            } else if (!isAtNewbieGuideTown(player, BotAI)) {
+                recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_newbie_guide_town', {
+                    missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
+                });
+                keepRoleDecision = true;
             } else {
                 session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
                 session.preBuffPlan = 'following';
@@ -360,6 +497,18 @@ module.exports = {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 BotAI.say(session, "My newbie buffs are fading. Refreshing quickly, then I'll return.");
+                return;
+            }
+        }
+
+        if (!partyThreat && !leaderTargetId && !isBusy(bot)) {
+            const errand = companionTownErrand(session, bot, player, BotAI);
+            if (errand) {
+                beginCompanionTownErrand(session, bot, playerSession, errand, BotAI);
+                recordRoleDecision(session, bot, 'town_errand', errand.kind, {
+                    town: errand.target.town,
+                    itemId: errand.itemId || null
+                });
                 return;
             }
         }

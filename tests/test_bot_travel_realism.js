@@ -78,6 +78,60 @@ try {
     assert.deepStrictEqual(buffBot.moves[0].to, { locX: -83000, locY: 242000, locZ: -3700 });
     assert.strictEqual(buffSession.plan, 'hunting');
 
+    const companionLeader = {
+        fetchIsOnline: () => true,
+        fetchLocX: () => -84150,
+        fetchLocY: () => 243180,
+        fetchLocZ: () => -3723
+    };
+    const companionBot = bot({ locX: -84081, locY: 243227, locZ: -3723 });
+    const companionSession = {
+        plan: 'getting_buffed',
+        partyCompanion: true,
+        resumeAfterBuff: {
+            plan: 'following',
+            followPlayerSession: { actor: companionLeader },
+            partyCompanion: true,
+            botStay: false,
+            stayLocation: null,
+            role: 'dps'
+        }
+    };
+    GettingBuffedState.tick(companionSession, companionBot, noTeleportGenerics, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}
+    });
+
+    assert.strictEqual(companionSession.plan, 'following', 'companion should resume following after the Newbie Guide buffs it');
+    assert.strictEqual(companionBot.moves.length, 1, 'buffed companion should move back to the player');
+    assert(Math.abs(companionBot.moves[0].to.locX - companionLeader.fetchLocX()) <= 60, 'companion return should target the player vicinity');
+    assert(Math.abs(companionBot.moves[0].to.locY - companionLeader.fetchLocY()) <= 60, 'companion return should target the player vicinity');
+    assert.strictEqual(companionBot.moves[0].to.locZ, companionLeader.fetchLocZ());
+
+    const shoppingLeader = {
+        fetchIsOnline: () => true,
+        fetchLocX: () => -84020,
+        fetchLocY: () => 243150,
+        fetchLocZ: () => -3723
+    };
+    const shoppingBot = bot({ locX: -84081, locY: 243227, locZ: -3723 });
+    const shoppingCompanionSession = {
+        plan: 'shopping',
+        partyCompanion: true,
+        followPlayerSession: { actor: shoppingLeader },
+        companionShopping: { kind: 'restock_shots' },
+        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: shoppingLeader } },
+        dataSendToOthers() {}
+    };
+    ShoppingState.scheduleRestock(shoppingCompanionSession, shoppingBot, noTeleportGenerics, { say() {} });
+
+    assert.strictEqual(shoppingCompanionSession.plan, 'following', 'companion should resume following after its town errand');
+    assert.strictEqual(shoppingCompanionSession.companionShopping, undefined, 'completed town errand should not leave a shopping state behind');
+    assert.strictEqual(shoppingBot.moves.length, 1, 'companion should walk back to the player after its town errand');
+    assert.deepStrictEqual(shoppingBot.moves[0].to, {
+        locX: shoppingLeader.fetchLocX(), locY: shoppingLeader.fetchLocY(), locZ: shoppingLeader.fetchLocZ()
+    });
+
     console.log('Bot travel realism checks passed');
 } finally {
     global.setTimeout = originalSetTimeout;
