@@ -54,7 +54,7 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 
 const World = {
     init() {
-        this.user  = { sessions : [] };
+        this.user  = { sessions : [], revision: 0 };
         this.npc   = { spawns   : [], grid: {}, nextId: 1000000 };
         this.items = { spawns   : [], nextId: 5000000 };
 
@@ -76,10 +76,12 @@ const World = {
         else {
             this.user.sessions.push(session);
         }
+        this.user.revision += 1;
     },
 
     removeUser(session) {
         this.user.sessions = this.user.sessions.filter((ob) => ob !== session);
+        this.user.revision += 1;
     },
 
     fetchUser(id) {

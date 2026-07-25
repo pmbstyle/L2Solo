@@ -34,6 +34,8 @@ const CHAT_PHRASES = {
         "Ready to rumble!"
     ]
 };
+const REAL_PLAYER_CACHE_MS = 250;
+let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
 function getRandomPhrase(category, ...args) {
     const list = CHAT_PHRASES[category];
@@ -58,6 +60,23 @@ function isRealPlayerSession(session) {
         session.accountId &&
         !String(session.accountId).startsWith('bot_')
     );
+}
+
+function realPlayerSessions(World) {
+    const sessions = World?.user?.sessions;
+    if (!Array.isArray(sessions)) return null;
+    const timestamp = Date.now();
+    const revision = Number(World.user.revision || 0);
+    if (realPlayerCache.world === World && realPlayerCache.revision === revision && timestamp - realPlayerCache.checkedAt < REAL_PLAYER_CACHE_MS) {
+        return realPlayerCache.sessions;
+    }
+    realPlayerCache = {
+        world: World,
+        revision,
+        checkedAt: timestamp,
+        sessions: sessions.filter(isRealPlayerSession)
+    };
+    return realPlayerCache.sessions;
 }
 
 const States = {
@@ -149,7 +168,7 @@ const BotAI = {
         }
 
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
+        const onlinePlayers = realPlayerSessions(World) || [];
 
         if (onlinePlayers.length === 0) {
             return 30000;
@@ -300,7 +319,7 @@ const BotAI = {
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = World.user.sessions.filter(isRealPlayerSession);
+        const onlinePlayers = realPlayerSessions(World) || [];
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
         if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
@@ -476,7 +495,19 @@ const BotAI = {
     },
 
     visibleRealPlayers(session, bot, World = invoke('GameServer/World/World')) {
-        if (!session || !bot || !World || typeof World.fetchVisibleUsers !== 'function') return [];
+        if (!session || !bot || !World) return [];
+        const players = realPlayerSessions(World);
+        if (players && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
+            const x = bot.fetchLocX();
+            const y = bot.fetchLocY();
+            return players.filter((candidate) => {
+                if (candidate === session || !candidate.actor || typeof candidate.actor.fetchLocX !== 'function' || typeof candidate.actor.fetchLocY !== 'function') return false;
+                const dx = candidate.actor.fetchLocX() - x;
+                const dy = candidate.actor.fetchLocY() - y;
+                return dx * dx + dy * dy <= 6000 * 6000;
+            });
+        }
+        if (typeof World.fetchVisibleUsers !== 'function') return [];
         return World.fetchVisibleUsers(session, bot).filter(isRealPlayerSession);
     },
 

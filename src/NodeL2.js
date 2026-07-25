@@ -67,5 +67,8 @@ Database.init(() => {
         BotManager.init();
         WorldObserver.init();
         DevConsole.init();
+        if (process.env.L2NODE_HOT_LOAD_TEST === '1') {
+            invoke('GameServer/Bot/LoadTest/HotBotLoadTest').start();
+        }
     });
 });
