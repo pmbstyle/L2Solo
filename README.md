@@ -131,16 +131,6 @@ OpenRouter can also read the key/model from environment variables:
 OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 ```
 
-## Hot Bot Load Test
-
-The isolated load runner provisions real bot characters in a temporary SQLite world, drives the normal hot bot AI and persistence paths, and writes a JSON summary under `tmp/hot-load-tests/`. It does not change the normal server database or its population.
-
-```bash
-node scripts/hot-bot-load-test.js --counts=100,200,300 --duration=60 --tick=1000 --spread=100
-```
-
-The runner starts each scenario with its own database and disabled network ports. It reports AI tick duration, event-loop lag, SQLite queue activity, database failures, and memory use. Use it to compare changes under the same workload; it does not simulate hundreds of connected game clients or the full cold bot scheduler.
-
 ## In-Game Commands
 
 - `.admin` - open the admin menu.
