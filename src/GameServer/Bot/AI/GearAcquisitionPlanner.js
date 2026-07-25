@@ -14,6 +14,19 @@ const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
 const RATE_MODEL_VERSION = 3;
 
+function isRealCatalogItem(item = {}) {
+    const selfId = Number(item.selfId || 0);
+    const name = String(item.template?.name || '').trim();
+    // A loaded row is not automatically a usable game item.  The datapack has
+    // legacy placeholder rows (for example, the D-grade weapon named "0").
+    // Do not let an anonymous or malformed catalog record become a bot goal,
+    // party-loot candidate, or equipped item just because its combat stats are
+    // otherwise present.
+    return Number.isInteger(selfId) && selfId > 0
+        && name.length > 0
+        && name !== '0';
+}
+
 function gradeForLevel(level) {
     const value = Number(level || 1);
     if (value >= 76) return 's';
@@ -114,6 +127,7 @@ function combatReadiness(state = {}) {
 }
 
 function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) {
+    if (!isRealCatalogItem(item)) return false;
     const rank = String(item.etc?.rank || 'none').toLowerCase();
     if (rank !== requiredRank) return false;
     const kind = item.template?.kind || '';
@@ -364,7 +378,7 @@ function preferredNoGradeTarget(state = {}) {
 
     return planned.items
         .map((desired) => (DataCache.items || []).find((item) => Number(item.selfId) === Number(desired.selfId)))
-        .filter(Boolean)
+        .filter(isRealCatalogItem)
         .filter((item) => {
             if (uniqueItems.has(Number(item.selfId))) return false;
             uniqueItems.add(Number(item.selfId));
@@ -619,4 +633,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, roleFor, itemScore, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
