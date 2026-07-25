@@ -53,6 +53,7 @@ const tests = [
     'tests/test_bot_market_opportunity.js',
     'tests/test_bot_population_state.js',
     'tests/test_bot_population_policy.js',
+    'tests/test_bot_population_scheduler_slices.js',
     'tests/test_bot_population_cooldown_cleanup.js',
     'tests/test_bot_cold_state_context.js',
     'tests/test_bot_pvp_risk.js',

@@ -6,6 +6,11 @@ let connection;
 let queryTail = Promise.resolve();
 let databasePath;
 let flushPendingCharacterWrites = null;
+const cooperative = {
+    depth: 0,
+    sliceStartedAt: 0,
+    sliceMs: 0
+};
 
 const metrics = {
     pending: 0,
@@ -22,6 +27,10 @@ const metrics = {
 
 function now() {
     return Date.now();
+}
+
+function yieldToEventLoop() {
+    return new Promise((resolve) => setImmediate(resolve));
 }
 
 function normalizeValue(value) {
@@ -93,7 +102,17 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
             metrics.pending -= 1;
         }
     };
-    const result = queryTail.then(execute, execute);
+    const queued = queryTail.then(execute, execute);
+    const cooperativeQueue = cooperative.depth > 0;
+    const result = cooperativeQueue
+        ? queued.then((value) => {
+            if (cooperative.depth <= 0 || now() - cooperative.sliceStartedAt < cooperative.sliceMs) return value;
+            return yieldToEventLoop().then(() => {
+                cooperative.sliceStartedAt = now();
+                return value;
+            });
+        })
+        : queued;
     queryTail = result.catch(() => null);
     return result;
 }
@@ -255,6 +274,22 @@ const Database = {
 
     registerCharacterWriteFlush(flush) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+    },
+
+    cooperatively(work, sliceMs = 12) {
+        const outermost = cooperative.depth === 0;
+        if (outermost) {
+            cooperative.sliceStartedAt = now();
+            cooperative.sliceMs = Math.max(1, Number(sliceMs) || 12);
+        }
+        cooperative.depth += 1;
+        return Promise.resolve().then(work).finally(() => {
+            cooperative.depth -= 1;
+            if (cooperative.depth === 0) {
+                cooperative.sliceStartedAt = 0;
+                cooperative.sliceMs = 0;
+            }
+        });
     },
 
     stats({ resetPeak = false } = {}) {

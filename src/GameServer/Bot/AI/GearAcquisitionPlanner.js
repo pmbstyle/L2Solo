@@ -4,6 +4,7 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
+let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -443,23 +444,47 @@ function bestSourceForState(sources = [], state = {}) {
     return sources.find((source) => soloSafeForSource(state, source)) || sources[0] || null;
 }
 
-function sourceForItem(itemId, spots = [], state = {}) {
+function sourceIndexFor(spots = []) {
+    const rewards = DataCache.npcRewards || [];
+    if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards) {
+        return sourceIndexCache.byItemId;
+    }
+
     const spotByNpc = new Map();
     const spotByName = new Map();
     (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
         if (entry.selfId) spotByNpc.set(Number(entry.selfId), spot);
         if (entry.name) spotByName.set(String(entry.name).trim().toLowerCase(), spot);
     }));
-    return (DataCache.npcRewards || []).flatMap((reward) => ['drop'].map((kind) => {
+
+    const byItemId = new Map();
+    rewards.forEach((reward) => {
         const spot = spotByNpc.get(Number(reward.selfId))
             || spotByName.get(String(reward.template?.name || '').trim().toLowerCase());
-        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, {
+        if (!spot) return;
+        const itemIds = new Set((reward.rewards || []).flatMap((group) => (
+            (group.items || []).map((item) => Number(item.selfId || 0)).filter(Boolean)
+        )));
+        itemIds.forEach((id) => {
+            const entries = byItemId.get(id) || [];
+            entries.push({ reward, spot });
+            byItemId.set(id, entries);
+        });
+    });
+
+    sourceIndexCache = { spots, rewards, byItemId };
+    return byItemId;
+}
+
+function sourceForItem(itemId, spots = [], state = {}) {
+    return (sourceIndexFor(spots).get(Number(itemId)) || []).map(({ reward, spot }) => {
+        const { chance, expectedYield } = itemDropYield(reward, itemId, 'drop', {
             npcLevel: Number(spot?.avgLevel || 0),
             killerLevel: Number(state.level || 0)
         });
-        if (!chance || !spot) return null;
-        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind, chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1) };
-    })).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
+        if (!chance) return null;
+        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind: 'drop', chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1) };
+    }).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
 }
 
 function stationRecipeIds() {

@@ -1,5 +1,6 @@
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const Database = invoke('Database');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -805,28 +806,18 @@ const PopulationService = {
 
         const startedAt = Date.now();
         this.resolving = true;
-        return this.resolveDueParties()
+        return Database.cooperatively(() => this.resolveDueParties()
             .then(() => this.reconcileMarketGoals())
             .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
-            .then((states) => {
-                if (states.length === 0) return [];
-                return states.reduce((chain, state) => (
-                    chain.then((results) => this.resolveColdState(state)
-                        .then((result) => {
-                            results.push(result);
-                            return results;
-                        })
+            .then((states) => this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
                         .catch((error) => {
                             // A single bot may lose a race with a market or
                             // craft transaction. It must not abort every
                             // remaining cold resolve in this scheduler tick.
                             utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
                             Metrics.recordSkippedResolve();
-                            results.push({ ok: false, reason: 'resolve_rejected', state });
-                            return results;
-                        }))
-                ), Promise.resolve([]));
-            })
+                            return { ok: false, reason: 'resolve_rejected', state };
+                        }))), Config.schedulerSliceMs)
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'background scheduler failed: %s', err.message);
                 return [];
@@ -863,40 +854,49 @@ const PopulationService = {
         if (Config.backgroundPartyEnabled === false) return Promise.resolve([]);
 
         return BackgroundPartyState.due(Config.maxPartyResolvesPerTick)
-            .then((parties) => {
-                if (parties.length === 0) return [];
-                return parties.reduce((chain, party) => (
-                    chain.then((results) => this.resolveBackgroundParty(party).then((result) => {
-                        results.push(result);
-                        return results;
-                    }))
-                ), Promise.resolve([]));
-            });
+            .then((parties) => this.runInSchedulerSlices(parties, (party) => this.resolveBackgroundParty(party)));
     },
 
     reconcileMarketGoals() {
         return LifeState.marketGoalCandidates(Config.maxMarketGoalReconcilesPerTick)
-            .then((states) => states.reduce(
-                (chain, state) => chain.then((results) => {
+            .then((states) => this.runInSchedulerSlices(states, (state) => {
                     const spot = SpotProfiles.findForState(state);
                     return GoalService.review(state, { spot }).then((goalSnapshot) => {
                         const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
-                        if (!travel) return results;
+                        if (!travel) return null;
                         return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
                             if (saved) {
                                 console.info('BotPopulation :: reconciled market travel for %s', state.name);
-                                results.push(saved);
                             }
-                            return results;
+                            return saved;
                         });
                     });
-                }),
-                Promise.resolve([])
-            ))
+                }).then((results) => results.filter(Boolean)))
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
                 return [];
             });
+    },
+
+    yieldSchedulerSlice(sliceStartedAt) {
+        Metrics.recordSchedulerYield(Date.now() - sliceStartedAt);
+        return new Promise((resolve) => setImmediate(resolve));
+    },
+
+    async runInSchedulerSlices(items, work) {
+        const results = [];
+        let sliceStartedAt = Date.now();
+        const sliceMs = Math.max(1, Number(Config.schedulerSliceMs) || 12);
+
+        for (const item of items || []) {
+            results.push(await work(item));
+            if (Date.now() - sliceStartedAt >= sliceMs) {
+                await this.yieldSchedulerSlice(sliceStartedAt);
+                sliceStartedAt = Date.now();
+            }
+        }
+
+        return results;
     },
 
     resolveBackgroundParty(party) {
