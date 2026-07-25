@@ -18,7 +18,8 @@ const originals = {
     updateItemEquipState: Database.updateItemEquipState,
     updateCharacterLocation: Database.updateCharacterLocation,
     updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals
+    updateCharacterVitals: Database.updateCharacterVitals,
+    syncInventorySummary: Database.syncInventorySummary
 };
 const calls = [];
 
@@ -37,6 +38,10 @@ async function run() {
     Database.updateCharacterLocation = () => Promise.resolve();
     Database.updateCharacterExperience = () => Promise.resolve();
     Database.updateCharacterVitals = () => Promise.resolve();
+    Database.syncInventorySummary = (characterId, inventory) => {
+        calls.push({ type: 'inventory-sync', characterId, inventory });
+        return Promise.resolve();
+    };
 
     const state = {
         characterId: 88,
@@ -116,8 +121,9 @@ async function run() {
     assert.strictEqual(sold.inventory['1'].amount, 0);
     assert.strictEqual(sold.activity, 'shopping', 'selling the final item must close the store as part of the trade event');
     assert.strictEqual(sold.stats.marketStore, null);
-    assert(calls.some((call) => call.type === 'amount' && call.id === 21 && call.amount === 0));
-    assert(calls.some((call) => call.type === 'amount' && call.id === 20 && call.amount === 500 + offer.price));
+    const soldSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 88);
+    assert.strictEqual(soldSync.inventory['1'].amount, 0, 'the optimized sync must persist removal of sold stock');
+    assert.strictEqual(soldSync.inventory['57'].amount, 500 + offer.price, 'the optimized sync must persist the adena payout');
 
     const phantom = {
         ...opened.state,
@@ -171,6 +177,7 @@ run().catch((err) => {
     Database.updateCharacterLocation = originals.updateCharacterLocation;
     Database.updateCharacterExperience = originals.updateCharacterExperience;
     Database.updateCharacterVitals = originals.updateCharacterVitals;
+    Database.syncInventorySummary = originals.syncInventorySummary;
     LifeState.reset?.();
     MarketOpportunity.resetColdStores();
 });

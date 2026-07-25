@@ -278,7 +278,7 @@ const BotManager = {
         // Adventurers now belong exclusively to the persistent population
         // seeder. Keeping the old static starters here doubled the fresh-world
         // population before wave one had even begun.
-        const bots = [...MERCHANT_BOTS];
+        const bots = process.env.L2NODE_HOT_LOAD_TEST === '1' ? [] : [...MERCHANT_BOTS];
         console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
         
         // Wait 5 seconds after startup to let world finish loading

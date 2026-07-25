@@ -1,7 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
-const Database       = invoke('Database');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const Karma = invoke('GameServer/Karma');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
@@ -47,9 +47,9 @@ function experienceReward(session, actor, exp, sp) {
     session.dataSendToMe(ServerResponse.userInfo(actor));
 
     // Update database with new exp, sp
-    Database.updateCharacterExperience(actor.fetchId(), actor.fetchLevel(), totalExp, totalSp);
+    CharacterWriteQueue.experience(actor.fetchId(), actor.fetchLevel(), totalExp, totalSp);
     if (karmaLost > 0) {
-        Database.updateCharacterPvpPkKarma(actor.fetchId(), actor.fetchPvp(), actor.fetchPk(), actor.fetchKarma());
+        CharacterWriteQueue.karma(actor.fetchId(), actor.fetchPvp(), actor.fetchPk(), actor.fetchKarma());
     }
 }
 

@@ -20,20 +20,7 @@ const BotLifeEvents = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute([
-            `CREATE TABLE IF NOT EXISTS ${TABLE} (
-                id BIGINT NOT NULL AUTO_INCREMENT,
-                characterId INT NOT NULL,
-                eventType VARCHAR(32) NOT NULL,
-                summary VARCHAR(255) NOT NULL DEFAULT '',
-                weight INT NOT NULL DEFAULT 1,
-                createdAt BIGINT NOT NULL DEFAULT 0,
-                metaJson TEXT NULL,
-                PRIMARY KEY (id),
-                INDEX characterId_createdAt (characterId, createdAt)
-            )`,
-            []
-        ]).then(() => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life-events').then(() => {
             initialized = true;
             utils.infoSuccess('BotLife', 'events table ready');
             return true;

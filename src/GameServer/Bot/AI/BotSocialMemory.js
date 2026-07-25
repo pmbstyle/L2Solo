@@ -151,22 +151,22 @@ function save(record) {
             groupRuns, wipesTogether, helpedInCombat, gaveUsefulLoot, ignoredLootRequests,
             tradesCompleted, insults, recentlyAbandonedAt, notes, updatedAt
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            playerName = VALUES(playerName),
-            botName = VALUES(botName),
-            trust = VALUES(trust),
-            familiarity = VALUES(familiarity),
-            lastGroupedAt = VALUES(lastGroupedAt),
-            groupRuns = VALUES(groupRuns),
-            wipesTogether = VALUES(wipesTogether),
-            helpedInCombat = VALUES(helpedInCombat),
-            gaveUsefulLoot = VALUES(gaveUsefulLoot),
-            ignoredLootRequests = VALUES(ignoredLootRequests),
-            tradesCompleted = VALUES(tradesCompleted),
-            insults = VALUES(insults),
-            recentlyAbandonedAt = VALUES(recentlyAbandonedAt),
-            notes = VALUES(notes),
-            updatedAt = VALUES(updatedAt)`,
+        ON CONFLICT(playerId, botId) DO UPDATE SET
+            playerName = excluded.playerName,
+            botName = excluded.botName,
+            trust = excluded.trust,
+            familiarity = excluded.familiarity,
+            lastGroupedAt = excluded.lastGroupedAt,
+            groupRuns = excluded.groupRuns,
+            wipesTogether = excluded.wipesTogether,
+            helpedInCombat = excluded.helpedInCombat,
+            gaveUsefulLoot = excluded.gaveUsefulLoot,
+            ignoredLootRequests = excluded.ignoredLootRequests,
+            tradesCompleted = excluded.tradesCompleted,
+            insults = excluded.insults,
+            recentlyAbandonedAt = excluded.recentlyAbandonedAt,
+            notes = excluded.notes,
+            updatedAt = excluded.updatedAt`,
         [
             record.playerId,
             record.botId,
@@ -194,29 +194,7 @@ const BotSocialMemory = {
         if (initialized || initStarted) return;
         initStarted = true;
 
-        Database.execute([
-            `CREATE TABLE IF NOT EXISTS ${TABLE} (
-                playerId INT NOT NULL,
-                botId INT NOT NULL,
-                playerName VARCHAR(35) NOT NULL DEFAULT '',
-                botName VARCHAR(35) NOT NULL DEFAULT '',
-                trust INT NOT NULL DEFAULT 0,
-                familiarity INT NOT NULL DEFAULT 0,
-                lastGroupedAt BIGINT NULL,
-                groupRuns INT NOT NULL DEFAULT 0,
-                wipesTogether INT NOT NULL DEFAULT 0,
-                helpedInCombat INT NOT NULL DEFAULT 0,
-                gaveUsefulLoot INT NOT NULL DEFAULT 0,
-                ignoredLootRequests INT NOT NULL DEFAULT 0,
-                tradesCompleted INT NOT NULL DEFAULT 0,
-                insults INT NOT NULL DEFAULT 0,
-                recentlyAbandonedAt BIGINT NULL,
-                notes TEXT NULL,
-                updatedAt BIGINT NOT NULL DEFAULT 0,
-                PRIMARY KEY (playerId, botId)
-            )`,
-            []
-        ]).then(() => {
+        Database.execute(['SELECT 1', []], 'schema:bot-social').then(() => {
             initialized = true;
             utils.infoSuccess('BotSocial', 'memory table ready');
         }).catch((err) => {

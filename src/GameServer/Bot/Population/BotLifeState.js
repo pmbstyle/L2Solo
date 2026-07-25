@@ -128,46 +128,8 @@ function refreshCraftShop(state = {}) {
     };
 }
 
-function syncInventoryItem(characterId, existingItems, item) {
-    const selfId = Number(item.selfId || 0);
-    const amount = Number(item.amount || 0);
-    if (!selfId || amount < 0) return Promise.resolve(null);
-
-    const existing = existingItems.find((row) => Number(row.selfId) === selfId);
-    if (existing) {
-        let chain = Promise.resolve(null);
-        if (Number(existing.amount || 0) !== amount) {
-            chain = chain.then(() => Database.updateItemAmount(characterId, existing.id, amount));
-        }
-        const equipped = !!item.equipped;
-        const slot = Number(item.slot || existing.slot || 0);
-        if (!!existing.equipped !== equipped || Number(existing.slot || 0) !== slot) {
-            chain = chain.then(() => Database.updateItemEquipState(characterId, existing.id, equipped, slot));
-        }
-        return chain;
-    }
-
-    if (amount === 0) return Promise.resolve(null);
-
-    const template = itemTemplate(selfId);
-    return Database.setItem(characterId, {
-        selfId,
-        name: item.name || itemName(selfId),
-        amount,
-        equipped: !!item.equipped,
-        slot: Number(item.slot || template?.etc?.slot || 0)
-    });
-}
-
 function syncInventorySummary(characterId, inventory) {
-    const entries = Object.values(inventory || {});
-    if (!entries.length) return Promise.resolve(null);
-
-    return Database.fetchItems(characterId).then((existingItems) => (
-        entries.reduce((chain, item) => (
-            chain.then(() => syncInventoryItem(characterId, existingItems, item))
-        ), Promise.resolve())
-    ));
+    return Database.syncInventorySummary(characterId, inventory);
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
@@ -187,6 +149,9 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
         lastDefeatedNpcIds: defeatedNpcIds,
         lastResolvedAt: timestamp
     });
+    const limitTargets = (values) => Object.fromEntries(Object.entries(values)
+        .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
+        .slice(0, 24));
     const targets = { ...(previous.targets || {}) };
     const current = add(targets[targetKey]);
     targets[targetKey] = current;
@@ -199,8 +164,20 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
         ...(previous || {}),
         targetNpcId,
         ...current,
-        targets,
-        populationTargets
+        targets: limitTargets(targets),
+        populationTargets: limitTargets(populationTargets)
+    };
+}
+
+function compactResolveDebug(debug = {}) {
+    return {
+        route: debug.route || null,
+        partyId: debug.partyId || null,
+        targetNpcId: Number(debug.targetNpcId || 0) || null,
+        wins: Number(debug.wins || 0),
+        fights: Number(debug.fights || 0),
+        defeated: Array.isArray(debug.defeatedNpcIds) ? debug.defeatedNpcIds.slice(-8).map(Number) : [],
+        at: now()
     };
 }
 
@@ -347,25 +324,6 @@ function rowFromState(state) {
     };
 }
 
-function addColumn(name, definition) {
-    return Database.execute([
-        `ALTER TABLE ${TABLE} ADD COLUMN ${name} ${definition}`,
-        []
-    ]).catch((err) => {
-        if (err.code === 'ER_DUP_FIELDNAME' || err.errno === 1060) return null;
-        throw err;
-    });
-}
-
-function ensureColumns() {
-    return Promise.all([
-        addColumn('level', 'INT NOT NULL DEFAULT 1 AFTER characterName'),
-        addColumn('exp', 'BIGINT NOT NULL DEFAULT 0 AFTER level'),
-        addColumn('sp', 'BIGINT NOT NULL DEFAULT 0 AFTER exp'),
-        addColumn('adena', 'BIGINT NOT NULL DEFAULT 0 AFTER sp')
-    ]);
-}
-
 function save(row) {
     return Database.execute([
         `INSERT INTO ${TABLE} (
@@ -374,35 +332,35 @@ function save(row) {
             lastResolvedAt, lastHotAt, locX, locY, locZ, hp, maxHp, mp, maxMp,
             targetLevelBand, deathCount, partyId, inventorySummary, statsJson, updatedAt
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            accountName = VALUES(accountName),
-            characterName = VALUES(characterName),
-            level = VALUES(level),
-            exp = VALUES(exp),
-            sp = VALUES(sp),
-            adena = VALUES(adena),
-            homeRegion = VALUES(homeRegion),
-            currentRegion = VALUES(currentRegion),
-            spotId = VALUES(spotId),
-            activity = VALUES(activity),
-            phase = VALUES(phase),
-            activityStartedAt = VALUES(activityStartedAt),
-            nextResolveAt = VALUES(nextResolveAt),
-            lastResolvedAt = VALUES(lastResolvedAt),
-            lastHotAt = VALUES(lastHotAt),
-            locX = VALUES(locX),
-            locY = VALUES(locY),
-            locZ = VALUES(locZ),
-            hp = VALUES(hp),
-            maxHp = VALUES(maxHp),
-            mp = VALUES(mp),
-            maxMp = VALUES(maxMp),
-            targetLevelBand = VALUES(targetLevelBand),
-            deathCount = VALUES(deathCount),
-            partyId = VALUES(partyId),
-            inventorySummary = VALUES(inventorySummary),
-            statsJson = VALUES(statsJson),
-            updatedAt = VALUES(updatedAt)`,
+        ON CONFLICT(characterId) DO UPDATE SET
+            accountName = excluded.accountName,
+            characterName = excluded.characterName,
+            level = excluded.level,
+            exp = excluded.exp,
+            sp = excluded.sp,
+            adena = excluded.adena,
+            homeRegion = excluded.homeRegion,
+            currentRegion = excluded.currentRegion,
+            spotId = excluded.spotId,
+            activity = excluded.activity,
+            phase = excluded.phase,
+            activityStartedAt = excluded.activityStartedAt,
+            nextResolveAt = excluded.nextResolveAt,
+            lastResolvedAt = excluded.lastResolvedAt,
+            lastHotAt = excluded.lastHotAt,
+            locX = excluded.locX,
+            locY = excluded.locY,
+            locZ = excluded.locZ,
+            hp = excluded.hp,
+            maxHp = excluded.maxHp,
+            mp = excluded.mp,
+            maxMp = excluded.maxMp,
+            targetLevelBand = excluded.targetLevelBand,
+            deathCount = excluded.deathCount,
+            partyId = excluded.partyId,
+            inventorySummary = excluded.inventorySummary,
+            statsJson = excluded.statsJson,
+            updatedAt = excluded.updatedAt`,
         [
             row.characterId,
             row.accountName,
@@ -624,7 +582,7 @@ function recoverStaleCraftWaits() {
         SET activity = 'hunting',
             activityStartedAt = ?,
             nextResolveAt = ?,
-            statsJson = JSON_SET(COALESCE(statsJson, '{}'), '$.lastReason', 'startup_craft_wait_recovery'),
+            statsJson = json_set(COALESCE(statsJson, '{}'), '$.lastReason', 'startup_craft_wait_recovery'),
             updatedAt = ?
         WHERE phase = 'cold'
         AND activity = 'crafting'
@@ -647,9 +605,9 @@ function migrateAcquisitionPartyWaits() {
         SET activity = 'party_wait',
             activityStartedAt = ?,
             nextResolveAt = ?,
-            statsJson = JSON_SET(
+            statsJson = json_set(
                 COALESCE(statsJson, '{}'),
-                '$.partyWaitUntil', CAST(? AS UNSIGNED),
+                '$.partyWaitUntil', CAST(? AS INTEGER),
                 '$.restUntil', NULL,
                 '$.lastReason', 'acquisition_party_wait'
             ),
@@ -657,8 +615,8 @@ function migrateAcquisitionPartyWaits() {
         WHERE phase = 'cold'
         AND activity = 'resting'
         AND (partyId IS NULL OR partyId = '')
-        AND JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.lastReason')) = 'acquisition_party_wait'
-        AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.restUntil')) AS UNSIGNED), 0) = 0`,
+        AND json_extract(statsJson, '$.lastReason') = 'acquisition_party_wait'
+        AND COALESCE(CAST(json_extract(statsJson, '$.restUntil') AS INTEGER), 0) = 0`,
         [timestamp, replanAt, replanAt, timestamp]
     ]).then((result) => {
         const migrated = Number(result?.affectedRows || 0);
@@ -673,12 +631,12 @@ function discardInvalidEquipmentPlans() {
     const timestamp = now();
     return Database.execute([
         `UPDATE ${TABLE}
-        SET statsJson = JSON_REMOVE(COALESCE(statsJson, '{}'), '$.equipmentPlan'),
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'),
             updatedAt = ?
-        WHERE JSON_EXTRACT(statsJson, '$.equipmentPlan.target') IS NOT NULL
+        WHERE json_extract(statsJson, '$.equipmentPlan.target') IS NOT NULL
         AND (
-            COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.target.selfId')) AS UNSIGNED), 0) <= 0
-            OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.target.name')), '')) IN ('', '0')
+            COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER), 0) <= 0
+            OR TRIM(COALESCE(json_extract(statsJson, '$.equipmentPlan.target.name'), '')) IN ('', '0')
         )`,
         [timestamp]
     ]).then((result) => {
@@ -696,39 +654,7 @@ const BotLifeState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute([
-            `CREATE TABLE IF NOT EXISTS ${TABLE} (
-                characterId INT NOT NULL,
-                accountName VARCHAR(16) NOT NULL DEFAULT '',
-                characterName VARCHAR(35) NOT NULL DEFAULT '',
-                homeRegion VARCHAR(64) NULL,
-                currentRegion VARCHAR(64) NULL,
-                spotId VARCHAR(32) NULL,
-                activity VARCHAR(32) NOT NULL DEFAULT 'hunting',
-                phase VARCHAR(16) NOT NULL DEFAULT 'cold',
-                activityStartedAt BIGINT NULL,
-                nextResolveAt BIGINT NULL,
-                lastResolvedAt BIGINT NULL,
-                lastHotAt BIGINT NULL,
-                locX INT NOT NULL DEFAULT 0,
-                locY INT NOT NULL DEFAULT 0,
-                locZ INT NOT NULL DEFAULT 0,
-                hp INT NOT NULL DEFAULT 0,
-                maxHp INT NOT NULL DEFAULT 0,
-                mp INT NOT NULL DEFAULT 0,
-                maxMp INT NOT NULL DEFAULT 0,
-                targetLevelBand VARCHAR(16) NULL,
-                deathCount INT NOT NULL DEFAULT 0,
-                partyId VARCHAR(64) NULL,
-                inventorySummary TEXT NULL,
-                statsJson TEXT NULL,
-                updatedAt BIGINT NOT NULL DEFAULT 0,
-                PRIMARY KEY (characterId),
-                INDEX phase_nextResolveAt (phase, nextResolveAt),
-                INDEX accountName (accountName)
-            )`,
-            []
-        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
@@ -1006,8 +932,8 @@ const BotLifeState = {
             -- Cold stores settle on trade/expiry events, and craft-service
             -- stations are materialized on demand.  Neither belongs in the
             -- combat scheduler's periodic queue.
-            AND NOT (activity = 'merchant' AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL)
-            AND NOT (activity = 'crafting' AND JSON_EXTRACT(statsJson, '$.craftShop') IS NOT NULL)
+            AND NOT (activity = 'merchant' AND json_extract(statsJson, '$.marketStore') IS NOT NULL)
+            AND NOT (activity = 'crafting' AND json_extract(statsJson, '$.craftShop') IS NOT NULL)
             AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
             -- Travel and crafting are finite state transitions. They must
             -- outrank a large resting/hunting backlog, otherwise a bot can
@@ -1017,15 +943,15 @@ const BotLifeState = {
                 -- Startup craft recovery is a one-shot replan.  Serve it
                 -- before the normal hunting backlog so a repaired station
                 -- wait immediately selects its missing raw material.
-                WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.lastReason')) = 'startup_craft_wait_recovery' THEN 1
+                WHEN json_extract(statsJson, '$.lastReason') = 'startup_craft_wait_recovery' THEN 1
                 WHEN activity = 'dead' THEN 2
                 ELSE 3
             END ASC,
             COALESCE(nextResolveAt, 0) ASC,
                 CASE
                 -- A rate-model rollout must promptly replace persisted kill estimates.
-                WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.expectedKills')) IS NOT NULL
-                    AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.rateModelVersion')) AS UNSIGNED), 0) < 2 THEN 0
+                WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
+                    AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < 2 THEN 0
                 WHEN activity = 'dead' THEN 1
                 WHEN activity IN ('traveling', 'shopping', 'merchant', 'crafting') THEN 2
                 ELSE 3
@@ -1050,9 +976,9 @@ const BotLifeState = {
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
             AND activity = 'merchant'
-            AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL
-            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.marketTownRoutingVersion')) AS UNSIGNED), 0) < ?
-            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.expiresAt')) AS UNSIGNED), 0) > ?
+            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
+            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.marketTownRoutingVersion') AS INTEGER), 0) < ?
+            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) > ?
             ORDER BY updatedAt ASC
             LIMIT ${safeLimit}`,
             [version, Date.now()]
@@ -1073,8 +999,8 @@ const BotLifeState = {
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
             AND activity = 'merchant'
-            AND JSON_EXTRACT(statsJson, '$.marketStore') IS NOT NULL
-            AND COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.marketStore.expiresAt')) AS UNSIGNED), 0) <= ?
+            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
+            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ?
             ORDER BY updatedAt ASC
             LIMIT ${safeLimit}`,
             [Number(timestamp) || Date.now()]
@@ -1226,7 +1152,7 @@ const BotLifeState = {
         return Database.execute([
             `SELECT partyId,
                 COUNT(*) AS memberCount,
-                SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.requiresParty')) = 'true' THEN 1 ELSE 0 END) AS requiredMembers,
+                SUM(CASE WHEN json_extract(statsJson, '$.equipmentPlan.requiresParty') = 1 THEN 1 ELSE 0 END) AS requiredMembers,
                 MIN(updatedAt) AS oldestAt
             FROM ${TABLE}
             WHERE phase = 'cold'
@@ -1323,7 +1249,7 @@ const BotLifeState = {
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             route: result.debug?.route || state.stats?.route || null,
-            lastResolveDebug: result.debug || null,
+            lastResolveDebug: compactResolveDebug(result.debug),
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
@@ -1397,7 +1323,7 @@ const BotLifeState = {
                 // Keep lifecycle telemetry from this resolve authoritative over
                 // that snapshot, which still contains the previous tick's data.
                 ...(targetCombat ? { targetCombat } : {}),
-                lastResolveDebug: result.debug || null,
+                lastResolveDebug: compactResolveDebug(result.debug),
                 equipment: equipmentSummaryFromInventory(equippedInventory)
             },
             inventory: equippedInventory,

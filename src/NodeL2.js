@@ -13,6 +13,22 @@ const DevConsole = invoke('GameServer/DevConsole');
 const WorldObserver = invoke('WorldObserver/WorldObserverServer');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const ClanService = invoke('GameServer/Clan/ClanService');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
+
+let shuttingDown = false;
+function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    utils.infoWarn('DB', 'flushing buffered character state before %s', signal);
+    const forceExit = setTimeout(() => process.exit(0), 3000);
+    forceExit.unref?.();
+    CharacterWriteQueue.flushAll()
+        .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
+        .finally(() => process.exit(0));
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.info('\n\
     + ================================== \n\
@@ -51,5 +67,8 @@ Database.init(() => {
         BotManager.init();
         WorldObserver.init();
         DevConsole.init();
+        if (process.env.L2NODE_HOT_LOAD_TEST === '1') {
+            invoke('GameServer/Bot/LoadTest/HotBotLoadTest').start();
+        }
     });
 });

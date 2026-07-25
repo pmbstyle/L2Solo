@@ -2,6 +2,7 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const Item = invoke('GameServer/Item/Item');
 const World = invoke('GameServer/World/World');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 
 const MAX_LINES = 100;
 const INTERACTION_RADIUS = 300;
@@ -53,6 +54,7 @@ async function deposit(session, lines) {
     if (!isWarehouseNpc(session)) throw new Error('warehouse NPC is no longer active');
     const actor = session.actor;
     const backpack = actor.backpack;
+    await CharacterWriteQueue.flushCharacter(actor.fetchId());
     const inventory = backpack.fetchItems();
     if (!validateLines(lines, inventory)) throw new Error('invalid warehouse deposit');
 
@@ -91,6 +93,7 @@ async function withdraw(session, lines) {
     if (!isWarehouseNpc(session)) throw new Error('warehouse NPC is no longer active');
     const actor = session.actor;
     const backpack = actor.backpack;
+    await CharacterWriteQueue.flushCharacter(actor.fetchId());
     const stored = await list(actor.fetchId());
     if (!validateLines(lines, stored)) throw new Error('invalid warehouse withdrawal');
 

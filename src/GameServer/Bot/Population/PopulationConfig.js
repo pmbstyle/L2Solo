@@ -6,6 +6,9 @@ const DEFAULTS = {
     directorEnabled: true,
     summaryIntervalMs: 30000,
     schedulerIntervalMs: 5000,
+    // Cold simulation is invisible to players. Keep its total throughput,
+    // but let sockets and hot AI run between bounded pieces of work.
+    schedulerSliceMs: 12,
     // Existing cold population predates full class progression. Reconcile it
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
@@ -102,6 +105,7 @@ const ENV_KEYS = {
     activationLevelRange: 'BOT_ACTIVATION_LEVEL_RANGE',
     nearPlayerHotTarget: 'BOT_NEAR_PLAYER_HOT_TARGET',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
+    schedulerSliceMs: 'BOT_POPULATION_SCHEDULER_SLICE_MS',
     partyInviteRange: 'BOT_PARTY_INVITE_RANGE',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',

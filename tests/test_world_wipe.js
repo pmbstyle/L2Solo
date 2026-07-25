@@ -3,19 +3,32 @@ const { targetClause, validateScope, previewWithConnection, wipeWithConnection }
 
 function fakeConnection() {
     const queries = [];
+    const resultFor = (sql) => {
+        if (sql.startsWith('SELECT COUNT(*) AS count FROM characters')) return { count: 2 };
+        if (sql.startsWith('SELECT COUNT(*) AS count FROM accounts')) return { count: 3 };
+        if (sql.startsWith('SELECT id FROM characters')) return [{ id: 11 }, { id: 12 }];
+        if (sql.startsWith('SELECT id FROM clans WHERE leaderId IN')) return [{ id: 7 }];
+        return [];
+    };
     return {
         queries,
-        async query(sql, params = []) {
-            queries.push({ sql, params });
-            if (sql.startsWith('SELECT COUNT(*) AS count FROM characters')) return [{ count: 2 }];
-            if (sql.startsWith('SELECT COUNT(*) AS count FROM accounts')) return [{ count: 3 }];
-            if (sql.startsWith('SELECT id FROM characters')) return [{ id: 11 }, { id: 12 }];
-            if (sql.startsWith('SELECT id FROM clans')) return [{ id: 7 }];
-            return [];
+        prepare(sql) {
+            return {
+                get(...params) {
+                    queries.push({ sql, params });
+                    return resultFor(sql);
+                },
+                all(...params) {
+                    queries.push({ sql, params });
+                    return resultFor(sql);
+                },
+                run(...params) {
+                    queries.push({ sql, params });
+                    return { changes: 1 };
+                }
+            };
         },
-        async beginTransaction() { queries.push({ sql: 'BEGIN' }); },
-        async commit() { queries.push({ sql: 'COMMIT' }); },
-        async rollback() { queries.push({ sql: 'ROLLBACK' }); }
+        exec(sql) { queries.push({ sql, params: [] }); }
     };
 }
 
@@ -26,28 +39,28 @@ function fakeConnection() {
     assert.match(targetClause('players').sql, /NOT LIKE/);
 
     const previewConnection = fakeConnection();
-    assert.deepStrictEqual(await previewWithConnection(previewConnection, 'players'), {
+    assert.deepStrictEqual(previewWithConnection(previewConnection, 'players'), {
         scope: 'players', characters: 2, accounts: 3
     });
 
     const conn = fakeConnection();
-    assert.deepStrictEqual(await wipeWithConnection(conn, 'bots'), {
+    assert.deepStrictEqual(wipeWithConnection(conn, 'bots'), {
         scope: 'bots', characters: 2, accounts: 3
     });
     const sql = conn.queries.map((entry) => entry.sql).join('\n');
     [
-        'character_recipes', 'character_quests', 'warehouse_items', 'macros',
-        'bot_goal_state', 'bot_background_parties', 'DELETE FROM accounts'
+        'DELETE FROM characters', 'bot_background_parties', 'DELETE FROM accounts',
+        'UPDATE characters SET clanId = 0', 'DELETE FROM clans WHERE id IN'
     ].forEach((table) => assert.ok(sql.includes(table), `expected cleanup for ${table}`));
     assert.ok(sql.includes('COMMIT'));
 
     const playerConnection = fakeConnection();
-    await wipeWithConnection(playerConnection, 'players');
+    wipeWithConnection(playerConnection, 'players');
     const playerSql = playerConnection.queries.map((entry) => entry.sql).join('\n');
     assert.ok(!playerSql.includes('DELETE FROM bot_background_parties'));
 
     const allConnection = fakeConnection();
-    await wipeWithConnection(allConnection, 'all');
+    wipeWithConnection(allConnection, 'all');
     const allSql = allConnection.queries.map((entry) => entry.sql).join('\n');
     assert.ok(allSql.includes('DELETE FROM bot_background_parties'));
     assert.ok(allSql.includes('DELETE FROM clans'));

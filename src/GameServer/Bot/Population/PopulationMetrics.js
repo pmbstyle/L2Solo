@@ -21,6 +21,7 @@ function emptyCounters() {
         dbFlushes: 0,
         schedulerRuns: 0,
         schedulerSkips: 0,
+        schedulerYields: 0,
         schedulerOverruns: 0,
         slowResolves: 0
     };
@@ -54,7 +55,8 @@ const PopulationMetrics = {
     },
     interval: {
         resolveDurationsMs: [],
-        schedulerDurationsMs: []
+        schedulerDurationsMs: [],
+        schedulerSliceDurationsMs: []
     },
     timer: null,
 
@@ -162,6 +164,15 @@ const PopulationMetrics = {
         }
     },
 
+    recordSchedulerYield(sliceMs) {
+        const value = Math.max(0, Number(sliceMs) || 0);
+        this.counters.schedulerYields += 1;
+        this.interval.schedulerSliceDurationsMs.push(value);
+        if (this.interval.schedulerSliceDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.schedulerSliceDurationsMs.shift();
+        }
+    },
+
     recordSchedulerSkip() {
         this.counters.schedulerSkips += 1;
     },
@@ -177,8 +188,10 @@ const PopulationMetrics = {
         this.lastSummaryCounters = { ...this.counters };
         const resolveStats = stats(this.interval.resolveDurationsMs);
         const schedulerStats = stats(this.interval.schedulerDurationsMs);
+        const schedulerSliceStats = stats(this.interval.schedulerSliceDurationsMs);
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
+        this.interval.schedulerSliceDurationsMs = [];
 
         return {
             uptimeMs: elapsedMs,
@@ -187,6 +200,7 @@ const PopulationMetrics = {
             eventLoop: { ...this.eventLoop },
             resolve: resolveStats,
             scheduler: schedulerStats,
+            schedulerSlice: schedulerSliceStats,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }

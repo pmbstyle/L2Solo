@@ -62,9 +62,9 @@ function save(snapshot) {
     return Database.execute([
         `INSERT INTO ${TABLE} (characterId, goalJson, updatedAt)
         VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            goalJson = VALUES(goalJson),
-            updatedAt = VALUES(updatedAt)`,
+        ON CONFLICT(characterId) DO UPDATE SET
+            goalJson = excluded.goalJson,
+            updatedAt = excluded.updatedAt`,
         [snapshot.characterId, safeJson(snapshot.current), snapshot.updatedAt]
     ]);
 }
@@ -74,14 +74,7 @@ const GoalState = {
         if (initialized) return Promise.resolve(true);
         if (initPromise) return initPromise;
 
-        initPromise = Database.execute([
-            `CREATE TABLE IF NOT EXISTS ${TABLE} (
-                characterId INT NOT NULL PRIMARY KEY,
-                goalJson TEXT NULL,
-                updatedAt BIGINT NOT NULL
-            )`,
-            []
-        ]).then(() => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-goals').then(() => {
             initialized = true;
             return true;
         }).catch((err) => {

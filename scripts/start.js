@@ -297,11 +297,12 @@ function stopServer() {
     state.phase = 'stopping';
     appendLog('launcher', `stopping server process ${pid}`);
 
-    if (isWindows) {
-        spawnSync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
-        state.child.kill('SIGTERM');
-    }
+    state.child.kill('SIGTERM');
+    setTimeout(() => {
+        if (state.child?.pid !== pid) return;
+        if (isWindows) spawnSync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+        else state.child.kill('SIGKILL');
+    }, 5000).unref();
 
     return publicState();
 }

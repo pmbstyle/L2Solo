@@ -64,17 +64,17 @@ function save(row) {
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
             cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            leaderId = VALUES(leaderId),
-            memberIdsJson = VALUES(memberIdsJson),
-            spotId = VALUES(spotId),
-            nextResolveAt = VALUES(nextResolveAt),
-            cohesion = VALUES(cohesion),
-            risk = VALUES(risk),
-            status = VALUES(status),
-            roleCoverageJson = VALUES(roleCoverageJson),
-            statsJson = VALUES(statsJson),
-            updatedAt = VALUES(updatedAt)`,
+        ON CONFLICT(partyId) DO UPDATE SET
+            leaderId = excluded.leaderId,
+            memberIdsJson = excluded.memberIdsJson,
+            spotId = excluded.spotId,
+            nextResolveAt = excluded.nextResolveAt,
+            cohesion = excluded.cohesion,
+            risk = excluded.risk,
+            status = excluded.status,
+            roleCoverageJson = excluded.roleCoverageJson,
+            statsJson = excluded.statsJson,
+            updatedAt = excluded.updatedAt`,
         [
             row.partyId,
             row.leaderId,
@@ -98,26 +98,7 @@ const BackgroundPartyState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute([
-            `CREATE TABLE IF NOT EXISTS ${TABLE} (
-                partyId VARCHAR(64) NOT NULL,
-                leaderId INT NOT NULL DEFAULT 0,
-                memberIdsJson TEXT NULL,
-                spotId VARCHAR(32) NULL,
-                startedAt BIGINT NOT NULL DEFAULT 0,
-                nextResolveAt BIGINT NULL,
-                cohesion DECIMAL(5,4) NOT NULL DEFAULT 0.6500,
-                risk DECIMAL(5,4) NOT NULL DEFAULT 0.2500,
-                status VARCHAR(16) NOT NULL DEFAULT 'active',
-                roleCoverageJson TEXT NULL,
-                statsJson TEXT NULL,
-                updatedAt BIGINT NOT NULL DEFAULT 0,
-                PRIMARY KEY (partyId),
-                INDEX status_nextResolveAt (status, nextResolveAt),
-                INDEX spotId (spotId)
-            )`,
-            []
-        ]).then(() => this.loadActive()).then(() => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties').then(() => this.loadActive()).then(() => {
             initialized = true;
             utils.infoSuccess('BotParty', 'background party table ready');
             return true;

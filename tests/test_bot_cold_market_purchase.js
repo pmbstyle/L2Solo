@@ -18,6 +18,7 @@ const originals = {
     updateItemAmount: Database.updateItemAmount,
     updateItemEquipState: Database.updateItemEquipState,
     setItem: Database.setItem,
+    syncInventorySummary: Database.syncInventorySummary,
     clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
@@ -51,6 +52,10 @@ async function run() {
     };
     Database.setItem = (characterId, item) => {
         calls.push({ type: 'insert', characterId, item });
+        return Promise.resolve();
+    };
+    Database.syncInventorySummary = (characterId, inventory) => {
+        calls.push({ type: 'inventory-sync', characterId, inventory });
         return Promise.resolve();
     };
     GoalState.clear = (characterId, status) => {
@@ -93,9 +98,10 @@ async function run() {
     assert.strictEqual(result.state.inventory['2'].equipped, true);
     assert.strictEqual(result.state.stats.equipment[0].selfId, 2);
     assert.strictEqual(playerStore.items[0].count, 0, 'private offer should be consumed');
-    assert(calls.some((call) => call.type === 'amount' && call.id === 10 && call.amount === 0));
-    assert(calls.some((call) => call.type === 'equip' && call.id === 11 && call.equipped === false));
-    assert(calls.some((call) => call.type === 'insert' && call.item.selfId === 2 && call.item.equipped === true));
+    const weaponSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 77);
+    assert.strictEqual(weaponSync.inventory['57'].amount, 0, 'the optimized sync must persist spent adena');
+    assert.strictEqual(weaponSync.inventory['1'].equipped, false, 'the optimized sync must persist the replaced weapon');
+    assert.strictEqual(weaponSync.inventory['2'].equipped, true, 'the optimized sync must persist the new weapon');
     assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
 
     const noOffer = await ColdMarketService.tryPurchase({
@@ -142,8 +148,9 @@ async function run() {
     assert.strictEqual(armorPurchase.inventory['354'].equipped, true);
     assert(armorPurchase.stats.equipment.some((item) => item.selfId === 1 && item.slot === 7));
     assert(armorPurchase.stats.equipment.some((item) => item.selfId === 354 && item.slot === 10));
-    assert(calls.some((call) => call.type === 'equip' && call.characterId === 78 && call.id === 12 && call.equipped === false));
-    assert(calls.some((call) => call.type === 'insert' && call.characterId === 78 && call.item.selfId === 354 && call.item.equipped === true));
+    const armorSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 78);
+    assert.strictEqual(armorSync.inventory['21'].equipped, false, 'the optimized sync must persist the unequipped old chest');
+    assert.strictEqual(armorSync.inventory['354'].equipped, true, 'the optimized sync must persist the new chest');
 
     console.log('Bot cold market purchase checks passed');
 }
@@ -157,6 +164,7 @@ run().catch((err) => {
     Database.updateItemAmount = originals.updateItemAmount;
     Database.updateItemEquipState = originals.updateItemEquipState;
     Database.setItem = originals.setItem;
+    Database.syncInventorySummary = originals.syncInventorySummary;
     GoalState.clear = originals.clearGoal;
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;
