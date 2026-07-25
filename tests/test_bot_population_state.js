@@ -41,6 +41,9 @@ try {
         assert.strictEqual(craftRecovery.params[1], craftRecovery.params[0], 'recovered craft waits must be due immediately for their replan');
         const partyWaitMigration = statements.find((entry) => entry.sql.includes("migrated %d acquisition party waits") || entry.sql.includes("activity = 'party_wait'"));
         assert(partyWaitMigration, 'startup must move legacy acquisition waits out of the rest scheduler');
+        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("JSON_REMOVE(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
+        assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
+        assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },

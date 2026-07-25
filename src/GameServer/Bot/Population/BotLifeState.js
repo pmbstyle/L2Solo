@@ -669,6 +669,27 @@ function migrateAcquisitionPartyWaits() {
     });
 }
 
+function discardInvalidEquipmentPlans() {
+    const timestamp = now();
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET statsJson = JSON_REMOVE(COALESCE(statsJson, '{}'), '$.equipmentPlan'),
+            updatedAt = ?
+        WHERE JSON_EXTRACT(statsJson, '$.equipmentPlan.target') IS NOT NULL
+        AND (
+            COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.target.selfId')) AS UNSIGNED), 0) <= 0
+            OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(statsJson, '$.equipmentPlan.target.name')), '')) IN ('', '0')
+        )`,
+        [timestamp]
+    ]).then((result) => {
+        const discarded = Number(result?.affectedRows || 0);
+        if (discarded > 0) {
+            utils.infoWarn('BotLife', 'discarded %d invalid equipment plans on startup', discarded);
+        }
+        return discarded;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -707,7 +728,7 @@ const BotLifeState = {
                 INDEX accountName (accountName)
             )`,
             []
-        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => hydrateCache()).then((count) => {
+        ]).then(() => ensureColumns()).then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
