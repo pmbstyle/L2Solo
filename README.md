@@ -96,7 +96,7 @@ Clean C4 client protocol 656
 
 You will need:
 
-- Node.js 22.5+ (the bundled SQLite driver is used at runtime)
+- Node.js 22.5+
 - A [Lineage II C4 client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing) using protocol 656
 
 ## Quick Start
@@ -105,43 +105,9 @@ You will need:
 npm start
 ```
 
-That command will:
+That command will start the L2Solo Launcher.
 
-- open the local launcher at `http://127.0.0.1:8090/`;
-- show the current server state;
-- start and stop the server from the launcher;
-- open the world observer map when the server is running.
-
-The launcher keeps the latest server session log at `tmp/logs/latest-server.log` and rotates the prior one to `tmp/logs/previous-server.log`.
-
-Press `Start` in the launcher to run the normal server bootstrap. That start action will:
-
-- install Node dependencies if `node_modules` is missing;
-- create the embedded SQLite database on first boot;
-- start the auth server on `2106`, the game server on `7777`, and the world observer on `8088`.
-
-The server has no Docker or database-server prerequisite. The default world file is `tmp/nodel2.sqlite` and is configured in `config/default.ini`:
-
-```ini
-[Database]
-path = tmp/nodel2.sqlite
-```
-
-For an existing MariaDB world, make a copy through the one-time importer before switching over. It writes a new file, validates foreign keys, and never overwrites an existing SQLite world:
-
-```bash
-node scripts/migrate-mariadb-to-sqlite.js --source-config=path/to/old.ini --target=tmp/nodel2.sqlite
-```
-
-The import command alone may need `mariadb` installed temporarily (`npm install --no-save mariadb`); it is not a project dependency and the running server never uses it.
-
-The old direct server command still works:
-
-```bash
-npm run NodeL2
-```
-
-Use it when dependencies and the database are already prepared, and you want no bootstrap behavior.
+Press `Start` in the launcher to run the server. 
 
 ## Configuration
 
@@ -164,10 +130,6 @@ OpenRouter can also read the key/model from environment variables:
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 ```
-
-Useful startup variables:
-
-- `BOT_STATUS_LOGS=0` - disable periodic bot status log lines.
 
 ## Hot Bot Load Test
 
@@ -193,61 +155,7 @@ The runner starts each scenario with its own database and disabled network ports
 - `/invite` while targeting a bot - recruit that bot as a companion.
 - `/dismiss <name>` and `/leave` also work through the party request path.
 
-Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`. Healing and buff help depends on the bot's class and current plan.
-
-## Bot Systems
-
-SimPlayers are normal server sessions backed by database characters. On startup, `BotManager` loads them, assigns plans, and ticks their behavior.
-
-Main bot modes:
-
-- `hunting` - find monsters, fight, loot, and move between spots.
-- `resting` - recover HP/MP.
-- `getting_buffed` - visit newbie buff flow when low-level buffs expire.
-- `shopping` - return to town, sell junk, and restock consumables.
-- `following` - assist a real player as a companion.
-- `merchant` - stand in town with private buy/sell store state.
-- `pk_hunting` / `pk_fleeing` - hostile player-killer loop and safety recovery.
-
-Companion behavior is role-aware. `BotRoles` infers healer, buffer, tank, dagger, archer, mage, or generic DPS from class id. In party mode, tanks can protect the leader and avoid unsafe pulls, healers heal while conserving MP, buffers apply `Might`, `Shield`, `Haste`, and `Wind Walk`, daggers close-assist, and ranged roles keep ranged assist intent.
-
-Bot status is meant to be inspectable. Use `.botparty` to find available nearby SimPlayers, `.botstatus` for state, social memory, role decisions, buff timers, and loot requests, `.botpath` for movement and town-route diagnostics, companion panel `Status` links, or watch `BotStatus :: ...`, `BotSocial :: ...`, `BotRole :: ...`, and `BotLoot :: ...` lines in the server logs.
-
-To reset generated SimPlayer accounts and characters while keeping the rest of the database intact:
-
-```bash
-npm run wipe:bots
-```
-
-## Development
-
-Run the focused tests:
-
-```bash
-node tests/test_pathfinder_astar.js
-node tests/test_path_obstacle.js
-node tests/test_summon_runtime.js
-node tests/test_item_skill_use.js
-npm run check
-```
-
-Run a full boot check:
-
-```bash
-npm start
-```
-
-Then press `Start` in the launcher.
-
-Expected healthy boot signs:
-
-- `DB :: connected`
-- `Datapack :: cached`
-- `SpawnsGrid :: Indexed ... npcs in 2D spatial grid`
-- `AuthServer :: successful init for 0.0.0.0:2106`
-- `GameServer :: successful init for 0.0.0.0:7777`
-- `BotManager :: ... is active in World`
-- `BotStatus :: ...`, `BotRole :: ...`, `BotLoot :: ...`, or `BotSocial :: ...` when the corresponding bot paths are active
+Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`.
 
 ## Credits
 
