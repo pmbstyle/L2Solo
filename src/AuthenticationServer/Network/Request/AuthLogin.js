@@ -22,11 +22,12 @@ function authLogin(session, buffer) {
 
 function consume(session, data) {
     Database.fetchUserPassword(data.username).then((rows) => {
-        const password = rows[0]?.password;
+        const account = rows[0];
+        const password = account?.password;
 
         // Username exists in database
         if (password) {
-            data.password === password ? passwordMatch(session, data.username) : failure(session, 0x02);
+            data.password === password ? passwordMatch(session, account.username) : failure(session, 0x02);
         }
         else { // User account does not exist, create if needed
             const optn = options.default.AuthServer;

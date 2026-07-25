@@ -96,8 +96,7 @@ Clean C4 client protocol 656
 
 You will need:
 
-- Node.js LTS
-- Docker, unless you run MariaDB yourself
+- Node.js 22.5+ (the bundled SQLite driver is used at runtime)
 - A [Lineage II C4 client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing) using protocol 656
 
 ## Quick Start
@@ -118,15 +117,23 @@ The launcher keeps the latest server session log at `tmp/logs/latest-server.log`
 Press `Start` in the launcher to run the normal server bootstrap. That start action will:
 
 - install Node dependencies if `node_modules` is missing;
-- create or start a local `nodel2-mariadb` Docker container when the configured database host is `127.0.0.1` or `localhost`;
-- import `database/sql/database.sql` on first boot if database `nodel2` does not exist;
+- create the embedded SQLite database on first boot;
 - start the auth server on `2106`, the game server on `7777`, and the world observer on `8088`.
 
-If you run MariaDB yourself, set:
+The server has no Docker or database-server prerequisite. The default world file is `tmp/nodel2.sqlite` and is configured in `config/default.ini`:
+
+```ini
+[Database]
+path = tmp/nodel2.sqlite
+```
+
+For an existing MariaDB world, make a copy through the one-time importer before switching over. It writes a new file, validates foreign keys, and never overwrites an existing SQLite world:
 
 ```bash
-L2NODE_SKIP_DOCKER=1 npm start
+node scripts/migrate-mariadb-to-sqlite.js --source-config=path/to/old.ini --target=tmp/nodel2.sqlite
 ```
+
+The import command alone may need `mariadb` installed temporarily (`npm install --no-save mariadb`); the running server does not use that package.
 
 The old direct server command still works:
 
@@ -140,7 +147,7 @@ Use it when dependencies and the database are already prepared, and you want no 
 
 Committed defaults live in `config/default.ini`.
 
-Private local overrides go in ignored `config/local.ini`. This is where API keys and machine-specific database settings belong.
+Private local overrides go in ignored `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
 
 Example:
 
@@ -152,8 +159,6 @@ model = google/gemini-2.5-flash-lite
 debug = true
 ```
 
-If you use your own database instead of the local Docker container, override the `Database` section there as well.
-
 OpenRouter can also read the key/model from environment variables:
 
 ```bash
@@ -162,9 +167,6 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 
 Useful startup variables:
 
-- `L2NODE_SKIP_DOCKER=1` - skip Docker bootstrap and use the configured database.
-- `L2NODE_DB_CONTAINER=some-name` - override the Docker container name.
-- `L2NODE_DB_IMAGE=mariadb:10.6` - override the MariaDB image.
 - `BOT_STATUS_LOGS=0` - disable periodic bot status log lines.
 
 ## In-Game Commands

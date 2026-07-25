@@ -1,810 +1,540 @@
-const SQL = require('like-sql'), builder = new SQL();
+const fs = require('fs');
+const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
 
-let conn;
-let transactionTail = Promise.resolve();
+let connection;
+let queryTail = Promise.resolve();
+let databasePath;
+let flushPendingCharacterWrites = null;
 
-function normalizeRowNumbers(row) {
-    return Object.fromEntries(
-        Object.entries(row).map(([key, value]) => [key, typeof value === 'bigint' ? Number(value) : value])
-    );
+const metrics = {
+    pending: 0,
+    total: 0,
+    reads: 0,
+    writes: 0,
+    transactions: 0,
+    failures: 0,
+    waitMs: 0,
+    runMs: 0,
+    maxPending: 0,
+    byOperation: new Map()
+};
+
+function now() {
+    return Date.now();
 }
 
-function migrateCharacterExperience(optn) {
-    return conn.query(
-        'SELECT DATA_TYPE AS dataType FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
-        [optn.databaseName, 'characters', 'exp']
-    ).then((rows) => {
-        if (rows[0]?.dataType === 'bigint') return null;
-        return conn.query('ALTER TABLE `characters` MODIFY COLUMN `exp` BIGINT NOT NULL DEFAULT 0');
-    }).catch((error) => {
-        utils.infoWarn('DB', 'failed to migrate characters.exp to BIGINT: %s', error.message);
-    });
+function normalizeValue(value) {
+    if (typeof value === 'bigint') return Number(value);
+    if (Buffer.isBuffer(value)) return value;
+    return value;
 }
 
-function migrateCharacterStatus() {
-    return conn.query('ALTER TABLE `characters` ADD COLUMN `cp` FLOAT NULL')
-        .catch((error) => {
-            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add characters.cp: %s', error.message);
-        })
-        .then(() => conn.query('ALTER TABLE `characters` ADD COLUMN `effects` TEXT NULL'))
-        .catch((error) => {
-            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add characters.effects: %s', error.message);
-        });
+function normalizeRow(row) {
+    if (!row || typeof row !== 'object') return row;
+    return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeValue(value)]));
 }
 
-function migrateWarehouse() {
-    return conn.query(`CREATE TABLE IF NOT EXISTS warehouse_items (
-        id INT(8) NOT NULL AUTO_INCREMENT,
-        selfId INT(5) NOT NULL,
-        name VARCHAR(48) NOT NULL,
-        amount BIGINT NOT NULL DEFAULT 1,
-        petData TEXT NULL,
-        characterId INT(8) NOT NULL,
-        PRIMARY KEY (id),
-        KEY characterId (characterId)
-    )`).then(() => conn.query('ALTER TABLE warehouse_items ADD COLUMN petData TEXT NULL')
-        .catch((error) => {
-            if (error?.errno !== 1060) utils.infoWarn('DB', 'failed to add warehouse_items.petData: %s', error.message);
-        }))
-        .catch((error) => {
-            utils.infoWarn('DB', 'failed to create warehouse_items: %s', error.message);
-        });
+function normalizeRows(rows) {
+    return (rows || []).map(normalizeRow);
 }
 
-function migrateMacros() {
-    return conn.query(`CREATE TABLE IF NOT EXISTS macros (
-        characterId INT(8) NOT NULL,
-        id INT(8) NOT NULL,
-        icon TINYINT UNSIGNED NOT NULL,
-        name VARCHAR(64) NOT NULL,
-        descr VARCHAR(64) NOT NULL,
-        acronym VARCHAR(16) NOT NULL,
-        commands TEXT NOT NULL,
-        PRIMARY KEY (characterId, id),
-        KEY characterId (characterId)
-    )`).catch((error) => {
-        utils.infoWarn('DB', 'failed to create macros: %s', error.message);
-    });
-}
-
-function migrateCharacterRecipes() {
-    return conn.query(`CREATE TABLE IF NOT EXISTS character_recipes (
-        characterId INT(8) NOT NULL,
-        recipeId INT(8) NOT NULL,
-        type ENUM('dwarven', 'common') NOT NULL,
-        PRIMARY KEY (characterId, recipeId, type),
-        KEY characterId (characterId)
-    )`).catch((error) => {
-        utils.infoWarn('DB', 'failed to create character_recipes: %s', error.message);
-    });
-}
-
-function migrateCharacterQuests() {
-    return conn.query(`CREATE TABLE IF NOT EXISTS character_quests (
-        characterId INT(8) NOT NULL,
-        questId INT(8) NOT NULL,
-        state ENUM('created', 'started', 'completed') NOT NULL DEFAULT 'created',
-        variables TEXT NULL,
-        PRIMARY KEY (characterId, questId),
-        KEY characterId (characterId)
-    )`).catch((error) => {
-        utils.infoWarn('DB', 'failed to create character_quests: %s', error.message);
-    });
-}
-
-async function inTransaction(work) {
-    const previous = transactionTail;
-    let release;
-    transactionTail = new Promise((resolve) => { release = resolve; });
-    await previous;
-    try {
-        await conn.beginTransaction();
-        const result = await work();
-        await conn.commit();
-        return result;
-    } catch (error) {
-        await conn.rollback();
-        throw error;
-    } finally {
-        release();
+function escapeIdentifier(value) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+        throw new Error(`invalid SQL identifier: ${value}`);
     }
+    return `"${value}"`;
 }
 
-function petDataValue(petData) {
-    if (!petData) return null;
-    return typeof petData === 'string' ? petData : JSON.stringify(petData);
+function databaseFile() {
+    const configured = options.default.Database?.path || 'tmp/nodel2.sqlite';
+    return path.resolve(process.cwd(), configured);
 }
+
+function isReadStatement(sql) {
+    return /^\s*(SELECT|EXPLAIN|PRAGMA\s+[^=]+$)/i.test(String(sql || ''));
+}
+
+function operationName(sql, fallback = 'raw') {
+    const match = String(sql || '').trim().match(/^([A-Za-z]+)/);
+    return match ? `${fallback}:${match[1].toLowerCase()}` : fallback;
+}
+
+function record(operation, wait, run, read, failed = false) {
+    metrics.total += 1;
+    metrics.waitMs += wait;
+    metrics.runMs += run;
+    if (read) metrics.reads += 1;
+    else metrics.writes += 1;
+    if (failed) metrics.failures += 1;
+    const entry = metrics.byOperation.get(operation) || { count: 0, waitMs: 0, runMs: 0, failures: 0 };
+    entry.count += 1;
+    entry.waitMs += wait;
+    entry.runMs += run;
+    if (failed) entry.failures += 1;
+    metrics.byOperation.set(operation, entry);
+}
+
+function enqueue(work, { operation = 'raw', read = false } = {}) {
+    const queuedAt = now();
+    metrics.pending += 1;
+    metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
+    const execute = () => {
+        const startedAt = now();
+        const wait = startedAt - queuedAt;
+        try {
+            const result = work();
+            record(operation, wait, now() - startedAt, read);
+            return result;
+        } catch (error) {
+            record(operation, wait, now() - startedAt, read, true);
+            throw error;
+        } finally {
+            metrics.pending -= 1;
+        }
+    };
+    const result = queryTail.then(execute, execute);
+    queryTail = result.catch(() => null);
+    return result;
+}
+
+function run(sql, params = [], operation) {
+    const read = isReadStatement(sql);
+    return enqueue(() => {
+        if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
+        const statement = connection.prepare(sql);
+        if (read) return normalizeRows(statement.all(...params));
+        const result = statement.run(...params);
+        return {
+            affectedRows: Number(result.changes || 0),
+            insertId: Number(result.lastInsertRowid || 0)
+        };
+    }, { operation: operation || operationName(sql), read });
+}
+
+function insert(table, values, operation) {
+    const columns = Object.keys(values || {});
+    if (!columns.length) throw new Error(`cannot insert empty ${table}`);
+    const sql = `INSERT INTO ${escapeIdentifier(table)} (${columns.map(escapeIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`;
+    return run(sql, columns.map((key) => values[key]), operation || `insert:${table}`);
+}
+
+function update(table, values, where, params = [], operation) {
+    const columns = Object.keys(values || {});
+    if (!columns.length) return Promise.resolve({ affectedRows: 0, insertId: 0 });
+    const sql = `UPDATE ${escapeIdentifier(table)} SET ${columns.map((key) => `${escapeIdentifier(key)} = ?`).join(', ')}${where ? ` WHERE ${where}` : ''}`;
+    return run(sql, [...columns.map((key) => values[key]), ...params], operation || `update:${table}`);
+}
+
+function remove(table, where, params = [], operation) {
+    return run(`DELETE FROM ${escapeIdentifier(table)}${where ? ` WHERE ${where}` : ''}`, params, operation || `delete:${table}`);
+}
+
+function select(table, columns = ['*'], where = '', params = [], operation) {
+    const selected = columns.length === 1 && columns[0] === '*'
+        ? '*'
+        : columns.map(escapeIdentifier).join(', ');
+    return run(`SELECT ${selected} FROM ${escapeIdentifier(table)}${where ? ` WHERE ${where}` : ''}`, params, operation || `select:${table}`);
+}
+
+function selectOne(table, columns, where, params, operation) {
+    return select(table, columns, `${where} LIMIT 1`, params, operation);
+}
+
+function cleanZeroAmountItems() {
+    return run('DELETE FROM items WHERE amount <= 0', [], 'maintenance:zero-items');
+}
+
+async function inTransaction(work, operation = 'transaction') {
+    return enqueue(() => {
+        metrics.transactions += 1;
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            const result = work();
+            connection.exec('COMMIT');
+            return result;
+        } catch (error) {
+            connection.exec('ROLLBACK');
+            throw error;
+        }
+    }, { operation, read: false });
+}
+
+function withCharacterFlush(characterId, work) {
+    if (!flushPendingCharacterWrites || !Number(characterId)) return work();
+    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(work);
+}
+
+function withCharacterFlushes(characterIds, work) {
+    if (!flushPendingCharacterWrites) return work();
+    const ids = [...new Set((characterIds || []).map(Number).filter(Boolean))];
+    return ids.reduce(
+        (pending, characterId) => pending.then(() => flushPendingCharacterWrites(characterId)),
+        Promise.resolve()
+    ).then(work);
+}
+
+function applySchemaMigrations() {
+    const migrations = [
+        [1, () => {}],
+        [2, () => connection.exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS accounts_username_nocase ON accounts(username COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS characters_username_nocase ON characters(username COLLATE NOCASE);
+        `)]
+    ];
+    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+    migrations.forEach(([version, apply]) => {
+        if (applied.has(version)) return;
+        apply();
+        connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+    });
+}
+
+function one(sql, params = []) {
+    return normalizeRow(connection.prepare(sql).get(...params));
+}
+
+function all(sql, params = []) {
+    return normalizeRows(connection.prepare(sql).all(...params));
+}
+
+function write(sql, params = []) {
+    const result = connection.prepare(sql).run(...params);
+    return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
+}
+
+function applyBufferedCharacterStateUnsafe(characterId, state = {}) {
+    const character = state.character || {};
+    const fields = Object.entries(character).filter(([, value]) => value !== undefined);
+    if (fields.length) {
+        const sql = `UPDATE characters SET ${fields.map(([key]) => `${escapeIdentifier(key)} = ?`).join(', ')} WHERE id = ?`;
+        write(sql, [...fields.map(([, value]) => value), characterId]);
+    }
+    Object.values(state.items || {}).forEach((item) => {
+        if (item.delete || Number(item.amount) <= 0) {
+            write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+        } else {
+            write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [item.amount, item.id, characterId]);
+        }
+    });
+    return { characterId, fields: fields.length, items: Object.keys(state.items || {}).length };
+}
+
+const UPSERT_CHARACTER_QUEST = `INSERT INTO character_quests (characterId, questId, state, variables)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(characterId, questId) DO UPDATE SET state = excluded.state, variables = excluded.variables`;
+const UPSERT_RECIPE = `INSERT INTO character_recipes (characterId, recipeId, type) VALUES (?, ?, ?)
+    ON CONFLICT(characterId, recipeId, type) DO NOTHING`;
+const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, acronym, commands)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(characterId, id) DO UPDATE SET icon = excluded.icon, name = excluded.name,
+        descr = excluded.descr, acronym = excluded.acronym, commands = excluded.commands`;
 
 const Database = {
-    init: (callback) => {
-        const optn = options.default.Database;
+    init(callback = () => {}) {
+        try {
+            databasePath = databaseFile();
+            fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+            connection = new DatabaseSync(databasePath, { timeout: 5000 });
+            connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY;');
+            connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
+            applySchemaMigrations();
+            cleanZeroAmountItems().catch((error) => utils.infoWarn('DB', 'failed to clean zero amount items: %s', error.message));
+            utils.infoSuccess('DB', 'SQLite connected %s', databasePath);
+            callback();
+        } catch (error) {
+            utils.infoFail('DB', 'SQLite initialization failed -> %s', error.message);
+        }
+    },
 
-        require('mariadb').createConnection({
-            host     : optn.hostname,
-            port     : optn.port,
-            user     : optn.user,
-            password : optn.password,
-            database : optn.databaseName
+    execute(statement, operation = 'raw') {
+        return run(statement[0], statement[1] || [], operation);
+    },
 
-        }).then((instance) => {
-            utils.infoSuccess('DB', 'connected');
-            conn = instance;
-            Promise.all([
-                conn.query('ALTER TABLE `items` ADD COLUMN `petData` TEXT NULL')
-                .catch((error) => {
-                    if (error?.errno !== 1060) {
-                        utils.infoWarn('DB', 'failed to add items.petData: %s', error.message);
+    isReady() { return !!connection; },
+
+    registerCharacterWriteFlush(flush) {
+        flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+    },
+
+    stats({ resetPeak = false } = {}) {
+        const operations = Object.fromEntries(Array.from(metrics.byOperation.entries()).map(([key, value]) => [key, { ...value }]));
+        const snapshot = {
+            path: databasePath || null,
+            pending: metrics.pending,
+            maxPending: metrics.maxPending,
+            total: metrics.total,
+            reads: metrics.reads,
+            writes: metrics.writes,
+            transactions: metrics.transactions,
+            failures: metrics.failures,
+            avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
+            avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
+            operations
+        };
+        if (resetPeak) metrics.maxPending = metrics.pending;
+        return snapshot;
+    },
+
+    checkpoint() {
+        return enqueue(() => normalizeRows(connection.prepare('PRAGMA wal_checkpoint(PASSIVE)').all()), { operation: 'maintenance:checkpoint', read: false });
+    },
+
+    applyBufferedCharacterState(characterId, state = {}) {
+        return inTransaction(() => applyBufferedCharacterStateUnsafe(characterId, state), 'buffered-character:flush');
+    },
+
+    applyBufferedCharacterStates(entries = []) {
+        return inTransaction(() => entries.map(([characterId, state]) => applyBufferedCharacterStateUnsafe(Number(characterId), state)), 'buffered-character:flush-batch');
+    },
+
+    syncInventorySummary(characterId, inventory = {}) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const existing = all('SELECT id, selfId, amount, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
+            const bySelfId = new Map();
+            existing.forEach((row) => {
+                const key = Number(row.selfId);
+                if (!bySelfId.has(key)) bySelfId.set(key, row);
+            });
+            Object.values(inventory).forEach((item) => {
+                const selfId = Number(item.selfId || 0);
+                const amount = Number(item.amount || 0);
+                if (!selfId) return;
+                const current = bySelfId.get(selfId);
+                if (amount <= 0) {
+                    if (current) write('DELETE FROM items WHERE id = ? AND characterId = ?', [current.id, characterId]);
+                    return;
+                }
+                const equipped = item.equipped ? 1 : 0;
+                const slot = Number(item.slot || current?.slot || 0);
+                if (current) {
+                    if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== slot) {
+                        write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, slot, current.id, characterId]);
                     }
-                }),
-                migrateCharacterExperience(optn),
-                migrateCharacterStatus(),
-                migrateWarehouse(),
-                migrateMacros(),
-                migrateCharacterRecipes(),
-                migrateCharacterQuests()
-            ]).finally(callback);
+                } else {
+                    write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, slot, characterId]);
+                }
+            });
+            return { characterId, entries: Object.keys(inventory).length };
+        }, 'inventory:sync-summary'));
+    },
 
-        }).catch(error => {
-            utils.infoFail('DB', 'failed(%d) -> %s', error.errno, error.text);
+    createAccount(username, password) {
+        return insert('accounts', { username, password }, 'account:create');
+    },
+    fetchUserPassword(username) {
+        return selectOne('accounts', ['username', 'password'], 'username = ? COLLATE NOCASE', [username], 'account:password');
+    },
+    fetchCharacters(username) {
+        return select('characters', ['*'], 'username = ? COLLATE NOCASE', [username], 'character:by-account');
+    },
+    fetchClanCharacters() {
+        return select('characters', ['*'], 'clanId != 0', [], 'character:clan-members');
+    },
+    fetchCharacterName(name) {
+        return selectOne('characters', ['*'], 'name = ? COLLATE NOCASE', [name], 'character:by-name');
+    },
+    createCharacter(username, data) {
+        return selectOne('accounts', ['username'], 'username = ? COLLATE NOCASE', [username], 'account:canonical-name')
+            .then((accounts) => {
+                if (!accounts[0]) throw new Error('account does not exist');
+                return insert('characters', {
+                    username: accounts[0].username, name: data.name, race: data.race, classId: data.classId,
+                    maxHp: data.maxHp, maxMp: data.maxMp, sex: data.sex, face: data.face,
+                    hair: data.hair, hairColor: data.hairColor, locX: data.locX, locY: data.locY, locZ: data.locZ
+                }, 'character:create');
+            });
+    },
+    deleteCharacter(username, name) {
+        return remove('characters', 'username = ? COLLATE NOCASE AND name = ? COLLATE NOCASE', [username, name], 'character:delete');
+    },
+    fetchSkills(characterId) {
+        return select('skills', ['*'], 'characterId = ?', [characterId], 'skill:list');
+    },
+    fetchSkill(characterId, skillSelfId) {
+        return selectOne('skills', ['*'], 'characterId = ? AND selfId = ?', [characterId, skillSelfId], 'skill:one');
+    },
+    deleteSkills(characterId) {
+        return remove('skills', 'characterId = ?', [characterId], 'skill:delete-all');
+    },
+    setSkill(skill, characterId) {
+        return run(`INSERT INTO skills (selfId, name, passive, level, characterId) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(characterId, selfId) DO UPDATE SET name = excluded.name, passive = excluded.passive, level = excluded.level`,
+        [skill.selfId, skill.name, skill.passive ? 1 : 0, skill.level, characterId], 'skill:upsert');
+    },
+    updateSkillLevel(characterId, skillSelfId, skillLevel) {
+        return update('skills', { level: skillLevel }, 'selfId = ? AND characterId = ?', [skillSelfId, characterId], 'skill:level');
+    },
+    setItem(characterId, item) {
+        const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, equipped: item.equipped ? 1 : 0, slot: item.slot ?? 0, characterId };
+        if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
+        return withCharacterFlush(characterId, () => insert('items', values, 'item:insert'));
+    },
+    fetchItems(characterId) {
+        return withCharacterFlush(characterId, () => select('items', ['*'], 'characterId = ? AND amount > 0', [characterId], 'item:list'));
+    },
+    updateItemAmount(characterId, id, amount) {
+        return withCharacterFlush(characterId, () => {
+            if (Number(amount) <= 0) return remove('items', 'id = ? AND characterId = ?', [id, characterId], 'item:delete-empty');
+            return update('items', { amount }, 'id = ? AND characterId = ?', [id, characterId], 'item:amount');
         });
     },
-
-    execute: (sql) => {
-        // Do not let unrelated queries run inside an active item-transfer transaction
-        // on this shared MariaDB connection.
-        return transactionTail.then(() => conn.query(sql[0], sql[1]));
-    },
-
-    // Creates a `New Account` in the database with provided credentials
-    createAccount: (username, password) => {
-        return Database.execute(
-            builder.insert('accounts', {
-                username: username,
-                password: password
-            })
-        );
-    },
-
-    // Returns the `Password` from a provided account
-    fetchUserPassword: (username) => {
-        return Database.execute(
-            builder.selectOne('accounts', ['password'], 'username = ?', username)
-        );
-    },
-
-    // Returns the `Characters` stored on a user's account
-    fetchCharacters: (username) => {
-        return Database.execute(
-            builder.select('characters', ['*'], 'username = ?', username)
-        ).then((rows) => rows.map(normalizeRowNumbers));
-    },
-
-    fetchClanCharacters() {
-        return Database.execute(
-            builder.select('characters', ['*'], 'clanId != 0')
-        ).then((rows) => rows.map(normalizeRowNumbers));
-    },
-
-    // Checks if acharacter `Name` exists
-    fetchCharacterName: (name) => {
-        return Database.execute(
-            builder.selectOne('characters', ['*'], 'name = ?', name)
-        ).then((rows) => rows.map(normalizeRowNumbers));
-    },
-
-    // Stores a new `Character` in database with provided details
-    createCharacter(username, data) {
-        return Database.execute(
-            builder.insert('characters', {
-                 username: username,
-                     name: data.name,
-                     race: data.race,
-                  classId: data.classId,
-                    maxHp: data.maxHp,
-                    maxMp: data.maxMp,
-                      sex: data.sex,
-                     face: data.face,
-                     hair: data.hair,
-                hairColor: data.hairColor,
-                     locX: data.locX,
-                     locY: data.locY,
-                     locZ: data.locZ,
-            })
-        );
-    },
-
-    deleteCharacter(username, name) {
-        return Database.execute(
-            builder.delete('characters', 'username = ? AND name = ?', username, name)
-        );
-    },
-
-    fetchSkills(characterId) {
-        return Database.execute(
-            builder.select('skills', ['*'], 'characterId = ?', characterId)
-        );
-    },
-
-    fetchSkill(characterId, skillSelfId) {
-        return Database.execute(
-            builder.selectOne('skills', ['*'], 'characterId = ? AND selfId = ?', characterId, skillSelfId)
-        );
-    },
-
-    deleteSkills(characterId) {
-        return Database.execute(
-            builder.delete('skills', 'characterId = ?', characterId)
-        );
-    },
-
-    setSkill(skill, characterId) {
-        return Database.execute(
-            builder.insert('skills', {
-                     selfId: skill.selfId,
-                       name: skill.name,
-                    passive: skill.passive,
-                      level: skill.level,
-                characterId: characterId,
-            })
-        );
-    },
-
-    updateSkillLevel(characterId, skillSelfId, skillLevel) {
-        return Database.execute(
-            builder.update('skills', {
-                level: skillLevel
-            }, 'selfId = ? AND characterId = ?', skillSelfId, characterId)
-        );
-    },
-
-    setItem(characterId, item) {
-        const values = {
-                 selfId: item.selfId,
-                   name: item.name ?? '',
-                 amount: item.amount ?? 1,
-               equipped: item.equipped ?? false,
-                   slot: item.slot ?? 0,
-            characterId: characterId
-        };
-        if (item.petData) values.petData = JSON.stringify(item.petData);
-        return Database.execute(
-            builder.insert('items', values)
-        );
-    },
-
-    fetchItems(characterId) {
-        return Database.execute(
-            builder.select('items', ['*'], 'characterId = ?', characterId)
-        );
-    },
-
-    updateItemAmount(characterId, id, amount) {
-        return Database.execute(
-            builder.update('items', {
-                amount: amount
-            }, 'id = ? AND characterId = ?', id, characterId)
-        );
-    },
-
     updateItemEquipState(characterId, id, equipped, slot) {
-        return Database.execute(
-            builder.update('items', {
-                equipped: equipped,
-                    slot: slot
-            }, 'id = ? AND characterId = ?', id, characterId)
-        );
+        return withCharacterFlush(characterId, () => update('items', { equipped: equipped ? 1 : 0, slot }, 'id = ? AND characterId = ?', [id, characterId], 'item:equip'));
     },
-
     deleteItem(characterId, id) {
-        return Database.execute(
-            builder.delete('items', 'id = ? AND characterId = ?', id, characterId)
-        )
+        return withCharacterFlush(characterId, () => remove('items', 'id = ? AND characterId = ?', [id, characterId], 'item:delete'));
     },
-
     deleteItems(characterId) {
-        return Database.execute(
-            builder.delete('items', 'characterId = ?', characterId)
-        );
+        return withCharacterFlush(characterId, () => remove('items', 'characterId = ?', [characterId], 'item:delete-all'));
     },
-
     fetchWarehouseItems(characterId) {
-        return Database.execute(
-            builder.select('warehouse_items', ['*'], 'characterId = ?', characterId)
-        ).then((rows) => rows.map(normalizeRowNumbers));
+        return select('warehouse_items', ['*'], 'characterId = ? AND amount > 0', [characterId], 'warehouse:list');
     },
-
     setWarehouseItem(characterId, item) {
-        const values = {
-            selfId: item.selfId,
-            name: item.name ?? '',
-            amount: item.amount ?? 1,
-            characterId
-        };
-        if (item.petData) values.petData = JSON.stringify(item.petData);
-        return Database.execute(
-            builder.insert('warehouse_items', values)
-        );
+        const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, characterId };
+        if (item.petData) values.petData = typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData);
+        return insert('warehouse_items', values, 'warehouse:insert');
     },
-
     updateWarehouseItemAmount(characterId, id, amount) {
-        return Database.execute(
-            builder.update('warehouse_items', { amount }, 'id = ? AND characterId = ?', id, characterId)
-        );
+        if (Number(amount) <= 0) return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete-empty');
+        return update('warehouse_items', { amount }, 'id = ? AND characterId = ?', [id, characterId], 'warehouse:amount');
     },
-
     deleteWarehouseItem(characterId, id) {
-        return Database.execute(
-            builder.delete('warehouse_items', 'id = ? AND characterId = ?', id, characterId)
-        );
+        return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete');
     },
 
     transferInventoryToWarehouse(characterId, item) {
-        return inTransaction(async () => {
-            const inventory = await conn.query(
-                'SELECT id, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
-                [item.id, characterId]
-            );
-            const source = inventory[0];
-            if (!source || Number(source.amount) < item.amount) throw new Error('inventory item changed');
-
-            // Every warehouse transfer locks the inventory row first, then the
-            // warehouse row. This avoids deposit/withdraw lock inversions.
-            const existing = item.stackable ? await conn.query(
-                'SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? FOR UPDATE',
-                [characterId, item.selfId]
-            ) : [];
-            const target = existing[0];
-            const warehouseAmount = (Number(target?.amount) || 0) + item.amount;
-            let warehouseId = target?.id;
-
-            if (target) {
-                await conn.query('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
-            } else {
-                const inserted = await conn.query(
-                    'INSERT INTO warehouse_items (selfId, name, amount, petData, characterId) VALUES (?, ?, ?, ?, ?)',
-                    [item.selfId, item.name || '', item.amount, petDataValue(item.petData), characterId]
-                );
-                warehouseId = Number(inserted.insertId);
-            }
-
-            const inventoryAmount = Number(source.amount) - item.amount;
-            if (inventoryAmount === 0) {
-                await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
-            } else {
-                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
-            }
-            return { warehouseId, warehouseAmount, inventoryAmount };
-        });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const source = one('SELECT id, amount FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            if (!source || Number(source.amount) < Number(item.amount)) throw new Error('inventory item changed');
+            const target = item.stackable ? one('SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
+            const warehouseAmount = Number(target?.amount || 0) + Number(item.amount);
+            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, petData, characterId) VALUES (?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, item.petData ? JSON.stringify(item.petData) : null, characterId]).insertId;
+            if (target) write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
+            const inventoryAmount = Number(source.amount) - Number(item.amount);
+            if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
+            return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount };
+        }, 'warehouse:deposit'));
     },
 
     transferWarehouseToInventory(characterId, item) {
-        return inTransaction(async () => {
-            // Keep the same lock order as deposits: inventory first, warehouse second.
-            const existing = item.stackable ? await conn.query(
-                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
-                [characterId, item.selfId]
-            ) : [];
-            const target = existing[0];
-            const warehouse = await conn.query(
-                'SELECT id, amount, petData FROM warehouse_items WHERE id = ? AND characterId = ? FOR UPDATE',
-                [item.id, characterId]
-            );
-            const source = warehouse[0];
-            if (!source || Number(source.amount) < item.amount) throw new Error('warehouse item changed');
-
-            const inventoryAmount = (Number(target?.amount) || 0) + item.amount;
-            let inventoryId = target?.id;
-            if (target) {
-                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, inventoryId, characterId]);
-            } else {
-                const inserted = await conn.query(
-                    'INSERT INTO items (selfId, name, amount, equipped, slot, petData, characterId) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [item.selfId, item.name || '', item.amount, false, 0, source.petData, characterId]
-                );
-                inventoryId = Number(inserted.insertId);
-            }
-
-            const warehouseAmount = Number(source.amount) - item.amount;
-            if (warehouseAmount === 0) {
-                await conn.query('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
-            } else {
-                await conn.query('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
-            }
-            return { inventoryId, inventoryAmount, warehouseAmount, petData: source.petData };
-        });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const source = one('SELECT id, amount, petData FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            if (!source || Number(source.amount) < Number(item.amount)) throw new Error('warehouse item changed');
+            const target = item.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
+            const inventoryAmount = Number(target?.amount || 0) + Number(item.amount);
+            const inventoryId = target ? target.id : write('INSERT INTO items (selfId, name, amount, equipped, slot, petData, characterId) VALUES (?, ?, ?, 0, 0, ?, ?)', [item.selfId, item.name || '', item.amount, source.petData, characterId]).insertId;
+            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, inventoryId, characterId]);
+            const warehouseAmount = Number(source.amount) - Number(item.amount);
+            if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
+            return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData };
+        }, 'warehouse:withdraw'));
     },
 
-    fetchCharacterQuests(characterId) {
-        return Database.execute(
-            builder.select('character_quests', ['*'], 'characterId = ?', characterId)
-        ).then((rows) => rows.map(normalizeRowNumbers));
-    },
-
-    setCharacterQuest(characterId, questId, state, variables) {
-        return Database.execute([
-            `INSERT INTO character_quests (characterId, questId, state, variables)
-             VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE state = VALUES(state), variables = VALUES(variables)`,
-            [characterId, questId, state, JSON.stringify(variables || {})]
-        ]);
-    },
-
-    deleteCharacterQuest(characterId, questId) {
-        return Database.execute(
-            builder.delete('character_quests', 'characterId = ? AND questId = ?', characterId, questId)
-        );
-    },
-
-    fetchCharacterRecipes(characterId) {
-        return Database.execute([
-            'SELECT recipeId, type FROM character_recipes WHERE characterId = ?',
-            [characterId]
-        ]).then((rows) => rows.map(normalizeRowNumbers));
-    },
-
-    setCharacterRecipe(characterId, recipeId, type) {
-        return Database.execute([
-            'INSERT INTO character_recipes (characterId, recipeId, type) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE recipeId = VALUES(recipeId)',
-            [characterId, recipeId, type]
-        ]);
-    },
+    fetchCharacterQuests(characterId) { return select('character_quests', ['*'], 'characterId = ?', [characterId], 'quest:list'); },
+    setCharacterQuest(characterId, questId, state, variables) { return run(UPSERT_CHARACTER_QUEST, [characterId, questId, state, JSON.stringify(variables || {})], 'quest:upsert'); },
+    deleteCharacterQuest(characterId, questId) { return remove('character_quests', 'characterId = ? AND questId = ?', [characterId, questId], 'quest:delete'); },
+    fetchCharacterRecipes(characterId) { return run('SELECT recipeId, type FROM character_recipes WHERE characterId = ?', [characterId], 'recipe:list'); },
+    setCharacterRecipe(characterId, recipeId, type) { return run(UPSERT_RECIPE, [characterId, recipeId, type], 'recipe:upsert'); },
 
     craftInventoryItems(characterId, { materials, product, mp }) {
-        return inTransaction(async () => {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
             const sources = [];
             for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
-                const rows = await conn.query(
-                    'SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
-                    [material.id, characterId]
-                );
-                const source = rows[0];
-                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) {
-                    throw new Error('craft material changed');
-                }
+                const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, characterId]);
+                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
             }
-
-            const targets = product?.stackable ? await conn.query(
-                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
-                [characterId, product.selfId]
-            ) : [];
-            const target = targets[0];
-            const productAmount = (Number(target?.amount) || 0) + Number(product?.amount || 0);
-            let productId = Number(target?.id) || 0;
-
-            for (const source of sources) {
-                if (source.amount === 0) {
-                    await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]);
-                } else {
-                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, characterId]);
-                }
-            }
-
-            if (target) {
-                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, characterId]);
-            } else if (product) {
-                const inserted = await conn.query(
-                    'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
-                    [product.selfId, product.name || '', product.amount, false, product.slot || 0, characterId]
-                );
-                productId = Number(inserted.insertId);
-            }
-
-            await conn.query('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
+            const target = product?.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, product.selfId]) : null;
+            let productId = Number(target?.id || 0);
+            const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
+            sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, characterId]));
+            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, characterId]);
+            else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, characterId]).insertId;
+            write('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null };
-        });
+        }, 'craft:self'));
     },
 
     crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount }) {
-        return inTransaction(async () => {
-            const source = (await conn.query('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ? FOR UPDATE', [sourceId, characterId]))[0];
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
             if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0) throw new Error('crystallize source changed');
-            const existing = (await conn.query('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE', [characterId, crystalId]))[0];
-            const amount = (Number(existing?.amount) || 0) + crystalAmount;
-            let id = Number(existing?.id) || 0;
-            await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
-            if (existing) await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [amount, id, characterId]);
-            else { const inserted = await conn.query('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [crystalId, crystalName || '', crystalAmount, false, 0, characterId]); id = Number(inserted.insertId); }
+            const target = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, crystalId]);
+            const amount = Number(target?.amount || 0) + Number(crystalAmount);
+            let id = Number(target?.id || 0);
+            write('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
+            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [amount, id, characterId]);
+            else id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, 0, ?)', [crystalId, crystalName || '', crystalAmount, characterId]).insertId;
             return { crystalId, id, amount };
-        });
+        }, 'crystalize'));
     },
 
     craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena }) {
-        return inTransaction(async () => {
+        return withCharacterFlushes([crafterId, customerId], () => inTransaction(() => {
             const sources = [];
             for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
-                const rows = await conn.query(
-                    'SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ? FOR UPDATE',
-                    [material.id, customerId]
-                );
-                const source = rows[0];
-                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) {
-                    throw new Error('customer craft material changed');
-                }
+                const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
+                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
             }
-
             const fee = Number(price) || 0;
-            let customerAdena = null;
-            let crafterAdena = null;
+            const customerAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [customerId]) : null;
+            if (fee > 0 && (!customerAdena || Number(customerAdena.amount) < fee)) throw new Error('customer adena changed');
+            let crafterAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [crafterId]) : null;
+            const target = product?.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [customerId, product.selfId]) : null;
+            let productId = Number(target?.id || 0);
+            const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
+            sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]));
+            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
+            else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, customerId]).insertId;
+            let nextCrafterAdena = null;
             if (fee > 0) {
-                customerAdena = (await conn.query(
-                    'SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 FOR UPDATE', [customerId]
-                ))[0];
-                if (!customerAdena || Number(customerAdena.amount) < fee) throw new Error('customer adena changed');
-                crafterAdena = (await conn.query(
-                    'SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 FOR UPDATE', [crafterId]
-                ))[0];
-            }
-
-            const targets = product?.stackable ? await conn.query(
-                'SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? FOR UPDATE',
-                [customerId, product.selfId]
-            ) : [];
-            const target = targets[0];
-            const productAmount = (Number(target?.amount) || 0) + Number(product?.amount || 0);
-            let productId = Number(target?.id) || 0;
-
-            for (const source of sources) {
-                if (source.amount === 0) {
-                    await conn.query('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]);
-                } else {
-                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]);
-                }
-            }
-
-            if (target) {
-                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
-            } else if (product) {
-                const inserted = await conn.query(
-                    'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
-                    [product.selfId, product.name || '', product.amount, false, product.slot || 0, customerId]
-                );
-                productId = Number(inserted.insertId);
-            }
-
-            if (fee > 0) {
-                await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [
-                    Number(customerAdena.amount) - fee, customerAdena.id, customerId
-                ]);
+                write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(customerAdena.amount) - fee, customerAdena.id, customerId]);
                 if (crafterAdena) {
-                    await conn.query('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [
-                        Number(crafterAdena.amount) + fee, crafterAdena.id, crafterId
-                    ]);
+                    nextCrafterAdena = Number(crafterAdena.amount) + fee;
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [nextCrafterAdena, crafterAdena.id, crafterId]);
                 } else {
-                    const inserted = await conn.query(
-                        'INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)',
-                        [57, adena?.name || 'Adena', fee, false, 0, crafterId]
-                    );
-                    crafterAdena = { id: Number(inserted.insertId), amount: 0 };
+                    const id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (57, ?, ?, 0, 0, ?)', [adena?.name || 'Adena', fee, crafterId]).insertId;
+                    nextCrafterAdena = fee;
+                    crafterAdena = { id, amount: 0 };
                 }
             }
-
-            await conn.query('UPDATE characters SET mp = ? WHERE id = ?', [crafterMp, crafterId]);
-            return {
-                sources,
-                product: product ? { id: productId, amount: productAmount } : null,
-                customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null,
-                crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: Number(crafterAdena.amount) + fee } : null
-            };
-        });
+            write('UPDATE characters SET mp = ? WHERE id = ?', [crafterMp, crafterId]);
+            return { sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
+        }, 'craft:customer'));
     },
 
-    updateItemPetData(characterId, id, petData) {
-        return Database.execute(
-            builder.update('items', {
-                petData: JSON.stringify(petData || {})
-            }, 'id = ? AND characterId = ?', id, characterId)
-        );
-    },
-
-    fetchClans() {
-        return Database.execute(
-            builder.select('clans', ['*'])
-        );
-    },
-
-    createClanCrest(clanId, kind, data) {
-        return Database.execute([
-            'INSERT INTO clan_crests (clanId, kind, data) VALUES (?, ?, ?)',
-            [clanId, kind, data]
-        ]);
-    },
-
-    fetchClanCrest(id) {
-        return Database.execute(
-            builder.selectOne('clan_crests', ['*'], 'id = ? LIMIT 1', id)
-        );
-    },
-
-    createClan(data) {
-        return Database.execute(
-            builder.insert('clans', {
-                name: data.name,
-                leaderId: data.leaderId
-            })
-        );
-    },
-
-    updateClanCrest(id, crestId) {
-        return Database.execute(
-            builder.update('clans', {
-                crestId: crestId
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateClanLevel(id, level) {
-        return Database.execute(
-            builder.update('clans', {
-                level: level
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) {
-        return Database.execute(
-            builder.update('characters', {
-                clanId: clanId,
-                clanPrivileges: clanPrivileges,
-                clanJoinExpiryTime: clanJoinExpiryTime,
-                clanCreateExpiryTime: clanCreateExpiryTime
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterClanPrivileges(id, clanPrivileges) {
-        return Database.execute(
-            builder.update('characters', {
-                clanPrivileges: clanPrivileges
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    deleteGearItems(characterId) {
-        return Database.execute(
-            builder.delete('items', 'characterId = ? AND selfId != 57', characterId)
-        );
-    },
-
-    setShortcut(characterId, shortcut) {
-        return Database.execute(
-            builder.insert('shortcuts', {
-                         id: shortcut.id,
-                       kind: shortcut.kind,
-                       slot: shortcut.slot,
-                    unknown: shortcut.unknown,
-                characterId: characterId
-            })
-        );
-    },
-
-    fetchShortcuts(characterId) {
-        return Database.execute(
-            builder.select('shortcuts', ['*'], 'characterId = ?', characterId)
-        );
-    },
-
-    deleteShortcut(characterId, slot) {
-        return Database.execute(
-            builder.delete('shortcuts', 'slot = ? AND characterId = ?', slot, characterId)
-        )
-    },
-
-    deleteShortcuts(characterId) {
-        return Database.execute(
-            builder.delete('shortcuts', 'characterId = ?', characterId)
-        );
-    },
-
-    setMacro(characterId, macro) {
-        return Database.execute([
-            `INSERT INTO macros (characterId, id, icon, name, descr, acronym, commands)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE icon = VALUES(icon), name = VALUES(name), descr = VALUES(descr),
-                 acronym = VALUES(acronym), commands = VALUES(commands)`,
-            [characterId, macro.id, macro.icon, macro.name, macro.descr, macro.acronym, JSON.stringify(macro.commands)]
-        ]);
-    },
-
-    fetchMacros(characterId) {
-        return Database.execute(
-            builder.select('macros', ['*'], 'characterId = ?', characterId)
-        ).then((rows) => rows.map((row) => ({
-            ...normalizeRowNumbers(row),
-            commands: (() => {
-                try { return JSON.parse(row.commands); }
-                catch (_) { return []; }
-            })()
-        })));
-    },
-
-    deleteMacro(characterId, macroId) {
-        return Database.execute(
-            builder.delete('macros', 'characterId = ? AND id = ?', characterId, macroId)
-        );
-    },
-
-    deleteMacros(characterId) {
-        return Database.execute(
-            builder.delete('macros', 'characterId = ?', characterId)
-        );
-    },
-
-    deleteMacroShortcuts(characterId, macroId) {
-        return Database.execute(
-            builder.delete('shortcuts', 'characterId = ? AND kind = 4 AND id = ?', characterId, macroId)
-        );
-    },
-
-    updateCharacterLocation(id, coords) {
-        return Database.execute(
-            builder.update('characters', {
-                locX: coords.locX,
-                locY: coords.locY,
-                locZ: coords.locZ,
-                head: coords.head ?? -1,
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterName(id, name) {
-        return Database.execute(
-            builder.update('characters', {
-                name: name
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterExperience(id, level, exp, sp) {
-        return Database.execute(
-            builder.update('characters', {
-                level: level,
-                  exp: exp,
-                   sp: sp
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterVitals(id, hp, maxHp, mp, maxMp) {
-        return Database.execute(
-            builder.update('characters', {
-                   hp: hp,
-                maxHp: maxHp,
-                   mp: mp,
-                maxMp: maxMp,
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterStatus(id, { hp, mp, cp, effects }) {
-        return Database.execute(
-            builder.update('characters', {
-                hp,
-                mp,
-                cp,
-                effects
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterPvpPkKarma(id, pvp, pk, karma) {
-        return Database.execute(
-            builder.update('characters', {
-                  pvp: pvp,
-                   pk: pk,
-                karma: karma
-            }, 'id = ? LIMIT 1', id)
-        );
-    },
-
-    updateCharacterClassId(id, classId) {
-        return Database.execute(
-            builder.update('characters', {
-                classId: classId
-            }, 'id = ? LIMIT 1', id)
-        );
-    }
+    updateItemPetData(characterId, id, petData) { return withCharacterFlush(characterId, () => update('items', { petData: JSON.stringify(petData || {}) }, 'id = ? AND characterId = ?', [id, characterId], 'item:pet')); },
+    fetchClans() { return select('clans', ['*'], '', [], 'clan:list'); },
+    createClanCrest(clanId, kind, data) { return insert('clan_crests', { clanId, kind, data, createdAt: now() }, 'clan:crest-create'); },
+    fetchClanCrest(id) { return selectOne('clan_crests', ['*'], 'id = ?', [id], 'clan:crest'); },
+    createClan(data) { return insert('clans', { name: data.name, leaderId: data.leaderId }, 'clan:create'); },
+    updateClanCrest(id, crestId) { return update('clans', { crestId }, 'id = ?', [id], 'clan:crest'); },
+    updateClanLevel(id, level) { return update('clans', { level }, 'id = ?', [id], 'clan:level'); },
+    updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) { return update('characters', { clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime }, 'id = ?', [id], 'character:clan'); },
+    updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
+    deleteGearItems(characterId) { return withCharacterFlush(characterId, () => remove('items', 'characterId = ? AND selfId != 57', [characterId], 'item:delete-gear')); },
+    setShortcut(characterId, shortcut) { return run(`INSERT INTO shortcuts (id, kind, slot, unknown, characterId) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(characterId, slot) DO UPDATE SET id = excluded.id, kind = excluded.kind, unknown = excluded.unknown`, [shortcut.id, shortcut.kind, shortcut.slot, shortcut.unknown, characterId], 'shortcut:upsert'); },
+    fetchShortcuts(characterId) { return select('shortcuts', ['*'], 'characterId = ?', [characterId], 'shortcut:list'); },
+    deleteShortcut(characterId, slot) { return remove('shortcuts', 'slot = ? AND characterId = ?', [slot, characterId], 'shortcut:delete'); },
+    deleteShortcuts(characterId) { return remove('shortcuts', 'characterId = ?', [characterId], 'shortcut:delete-all'); },
+    setMacro(characterId, macro) { return run(UPSERT_MACRO, [characterId, macro.id, macro.icon, macro.name, macro.descr, macro.acronym, JSON.stringify(macro.commands)], 'macro:upsert'); },
+    fetchMacros(characterId) { return select('macros', ['*'], 'characterId = ?', [characterId], 'macro:list').then((rows) => rows.map((row) => ({ ...row, commands: (() => { try { return JSON.parse(row.commands); } catch (_) { return []; } })() }))); },
+    deleteMacro(characterId, macroId) { return remove('macros', 'characterId = ? AND id = ?', [characterId, macroId], 'macro:delete'); },
+    deleteMacros(characterId) { return remove('macros', 'characterId = ?', [characterId], 'macro:delete-all'); },
+    deleteMacroShortcuts(characterId, macroId) { return remove('shortcuts', 'characterId = ? AND kind = 4 AND id = ?', [characterId, macroId], 'shortcut:delete-macro'); },
+    updateCharacterLocation(id, coords) { return withCharacterFlush(id, () => update('characters', { locX: coords.locX, locY: coords.locY, locZ: coords.locZ, head: coords.head ?? -1 }, 'id = ?', [id], 'character:location')); },
+    updateCharacterName(id, name) { return withCharacterFlush(id, () => update('characters', { name }, 'id = ?', [id], 'character:name')); },
+    updateCharacterExperience(id, level, exp, sp) { return withCharacterFlush(id, () => update('characters', { level, exp, sp }, 'id = ?', [id], 'character:experience')); },
+    updateCharacterVitals(id, hp, maxHp, mp, maxMp) { return withCharacterFlush(id, () => update('characters', { hp, maxHp, mp, maxMp }, 'id = ?', [id], 'character:vitals')); },
+    updateCharacterStatus(id, { hp, mp, cp, effects }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects }, 'id = ?', [id], 'character:status')); },
+    updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
+    updateCharacterClassId(id, classId) { return withCharacterFlush(id, () => update('characters', { classId }, 'id = ?', [id], 'character:class')); }
 };
 
 module.exports = Database;

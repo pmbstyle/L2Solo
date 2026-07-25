@@ -3,45 +3,24 @@
 
 const fs = require('fs');
 const path = require('path');
-const mariadb = require('mariadb');
+const { DatabaseSync } = require('node:sqlite');
 
 const rootDir = path.resolve(__dirname, '..');
 const scopes = new Set(['bots', 'players', 'all']);
 
-function parseIni(raw) {
-    const config = {};
-    let section = config;
-    raw.split(/\r?\n/).forEach((line) => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) return;
-        const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
-        if (sectionMatch) {
-            section = config[sectionMatch[1]] = config[sectionMatch[1]] || {};
-            return;
-        }
-        const separator = trimmed.indexOf('=');
-        if (separator === -1) return;
-        section[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1).trim();
+function readDatabasePath() {
+    const files = [path.join(rootDir, 'config', 'default.ini'), path.join(rootDir, 'config', 'local.ini')];
+    let value = 'tmp/nodel2.sqlite';
+    files.filter(fs.existsSync).forEach((file) => {
+        let inDatabase = false;
+        fs.readFileSync(file, 'utf8').split(/\r?\n/).forEach((line) => {
+            const trimmed = line.trim();
+            if (/^\[Database\]$/i.test(trimmed)) inDatabase = true;
+            else if (/^\[.+\]$/.test(trimmed)) inDatabase = false;
+            else if (inDatabase && /^path\s*=/.test(trimmed)) value = trimmed.slice(trimmed.indexOf('=') + 1).trim();
+        });
     });
-    return config;
-}
-
-function mergeConfig(base, override) {
-    Object.keys(override || {}).forEach((key) => {
-        if (base[key] && override[key] && typeof base[key] === 'object' && typeof override[key] === 'object') {
-            mergeConfig(base[key], override[key]);
-        } else {
-            base[key] = override[key];
-        }
-    });
-    return base;
-}
-
-function readConfig() {
-    const config = parseIni(fs.readFileSync(path.join(rootDir, 'config', 'default.ini'), 'utf8'));
-    const localPath = path.join(rootDir, 'config', 'local.ini');
-    if (fs.existsSync(localPath)) mergeConfig(config, parseIni(fs.readFileSync(localPath, 'utf8')));
-    return config;
+    return path.resolve(rootDir, value);
 }
 
 function validateScope(scope) {
@@ -52,124 +31,75 @@ function validateScope(scope) {
 
 function targetClause(scope) {
     switch (validateScope(scope)) {
-    case 'bots': return { sql: "username LIKE 'bot\\_%' ESCAPE '\\\\'", params: [] };
-    case 'players': return { sql: "username NOT LIKE 'bot\\_%' ESCAPE '\\\\'", params: [] };
+    case 'bots': return { sql: "username LIKE 'bot\\_%' ESCAPE '\\'", params: [] };
+    case 'players': return { sql: "username NOT LIKE 'bot\\_%' ESCAPE '\\'", params: [] };
     default: return { sql: '1 = 1', params: [] };
     }
 }
 
-function placeholders(count) {
-    return Array.from({ length: count }, () => '?').join(', ');
-}
-
-async function ignoreMissingTable(operation) {
-    try {
-        return await operation();
-    } catch (error) {
-        if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
-        return null;
-    }
-}
-
-async function previewWithConnection(conn, scope) {
+function previewWithConnection(db, scope) {
     const target = targetClause(scope);
-    const [characters] = await Promise.all([
-        conn.query(`SELECT COUNT(*) AS count FROM characters WHERE ${target.sql}`, target.params),
-    ]);
-    const accounts = await conn.query(`SELECT COUNT(*) AS count FROM accounts WHERE ${target.sql}`, target.params);
     return {
         scope: validateScope(scope),
-        characters: Number(characters[0]?.count || 0),
-        accounts: Number(accounts[0]?.count || 0)
+        characters: Number(db.prepare(`SELECT COUNT(*) AS count FROM characters WHERE ${target.sql}`).get(...target.params).count || 0),
+        accounts: Number(db.prepare(`SELECT COUNT(*) AS count FROM accounts WHERE ${target.sql}`).get(...target.params).count || 0)
     };
 }
 
-async function wipeWithConnection(conn, scope) {
+function wipeWithConnection(db, scope) {
     const normalizedScope = validateScope(scope);
     const target = targetClause(normalizedScope);
-    const preview = await previewWithConnection(conn, normalizedScope);
-    const characters = await conn.query(`SELECT id FROM characters WHERE ${target.sql}`, target.params);
-    const ids = characters.map((row) => Number(row.id)).filter(Boolean);
+    const preview = previewWithConnection(db, normalizedScope);
+    const ids = db.prepare(`SELECT id FROM characters WHERE ${target.sql}`).all(...target.params).map((row) => Number(row.id)).filter(Boolean);
 
-    await conn.beginTransaction();
+    db.exec('BEGIN IMMEDIATE');
     try {
         if (normalizedScope === 'all') {
-            for (const table of [
+            [
                 'bot_life_events', 'bot_life_state', 'bot_goal_state', 'bot_social_memory',
                 'character_recipes', 'character_quests', 'warehouse_items', 'macros',
                 'shortcuts', 'skills', 'items', 'bot_background_parties', 'clan_crests', 'clans'
-            ]) {
-                await ignoreMissingTable(() => conn.query(`DELETE FROM ${table}`));
+            ].forEach((table) => db.exec(`DELETE FROM ${table}`));
+        }
+        if (ids.length) {
+            const placeholders = ids.map(() => '?').join(', ');
+            const clanIds = db.prepare(`SELECT id FROM clans WHERE leaderId IN (${placeholders})`).all(...ids)
+                .map((row) => Number(row.id)).filter(Boolean);
+            if (clanIds.length) {
+                const clanPlaceholders = clanIds.map(() => '?').join(', ');
+                db.prepare(`UPDATE characters SET clanId = 0, clanPrivileges = 0 WHERE clanId IN (${clanPlaceholders})`).run(...clanIds);
+                db.prepare(`DELETE FROM clans WHERE id IN (${clanPlaceholders})`).run(...clanIds);
             }
+            db.prepare(`DELETE FROM characters WHERE id IN (${placeholders})`).run(...ids);
         }
-
-        if (ids.length > 0) {
-            const idList = placeholders(ids.length);
-            const socialParams = [...ids, ...ids];
-            if (normalizedScope !== 'all') {
-                await ignoreMissingTable(() => conn.query(`DELETE FROM bot_life_events WHERE characterId IN (${idList})`, ids));
-                await ignoreMissingTable(() => conn.query(`DELETE FROM bot_life_state WHERE characterId IN (${idList})`, ids));
-                await ignoreMissingTable(() => conn.query(`DELETE FROM bot_goal_state WHERE characterId IN (${idList})`, ids));
-                await ignoreMissingTable(() => conn.query(`DELETE FROM bot_social_memory WHERE botId IN (${idList}) OR playerId IN (${idList})`, socialParams));
-                for (const table of ['character_recipes', 'character_quests', 'warehouse_items', 'macros', 'shortcuts', 'skills', 'items']) {
-                    await ignoreMissingTable(() => conn.query(`DELETE FROM ${table} WHERE characterId IN (${idList})`, ids));
-                }
-
-                const clans = await ignoreMissingTable(() => conn.query(`SELECT id FROM clans WHERE leaderId IN (${idList})`, ids)) || [];
-                const clanIds = clans.map((row) => Number(row.id)).filter(Boolean);
-                if (clanIds.length > 0) {
-                    const clanList = placeholders(clanIds.length);
-                    await ignoreMissingTable(() => conn.query(`DELETE FROM clan_crests WHERE clanId IN (${clanList})`, clanIds));
-                    await conn.query(`UPDATE characters SET clanId = 0, clanPrivileges = 0 WHERE clanId IN (${clanList})`, clanIds);
-                    await ignoreMissingTable(() => conn.query(`DELETE FROM clans WHERE id IN (${clanList})`, clanIds));
-                }
-            }
-
-            await conn.query(`DELETE FROM characters WHERE id IN (${idList})`, ids);
-        }
-
-        if (normalizedScope === 'bots') {
-            await ignoreMissingTable(() => conn.query('DELETE FROM bot_background_parties'));
-        }
-        await conn.query(`DELETE FROM accounts WHERE ${target.sql}`, target.params);
-        await conn.commit();
+        if (normalizedScope === 'bots') db.exec('DELETE FROM bot_background_parties');
+        db.prepare(`DELETE FROM accounts WHERE ${target.sql}`).run(...target.params);
+        db.exec('COMMIT');
         return preview;
     } catch (error) {
-        await conn.rollback();
+        db.exec('ROLLBACK');
         throw error;
     }
 }
 
-async function withConnection(work) {
-    const config = readConfig().Database || {};
-    const conn = await mariadb.createConnection({
-        host: config.hostname,
-        port: Number(config.port || 3306),
-        user: config.user,
-        password: config.password,
-        database: config.databaseName
-    });
+function withConnection(work) {
+    const db = new DatabaseSync(readDatabasePath(), { timeout: 5000 });
+    db.exec('PRAGMA foreign_keys = ON');
     try {
-        return await work(conn);
+        return work(db);
     } finally {
-        await conn.end();
+        db.close();
     }
 }
 
-function preview(scope) {
-    return withConnection((conn) => previewWithConnection(conn, scope));
-}
-
-function wipe(scope) {
-    return withConnection((conn) => wipeWithConnection(conn, scope));
-}
+function preview(scope) { return withConnection((db) => previewWithConnection(db, scope)); }
+function wipe(scope) { return withConnection((db) => wipeWithConnection(db, scope)); }
 
 module.exports = { validateScope, targetClause, previewWithConnection, wipeWithConnection, preview, wipe };
 
 if (require.main === module) {
     const argument = process.argv.find((value) => value.startsWith('--scope='));
-    const scope = argument?.slice('--scope='.length);
-    wipe(scope).then((result) => {
+    wipe(argument?.slice('--scope='.length)).then((result) => {
         process.stdout.write(`${JSON.stringify(result)}\n`);
     }).catch((error) => {
         process.stderr.write(`World wipe failed: ${error.message || error}\n`);

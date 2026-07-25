@@ -1,6 +1,7 @@
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database = invoke('Database');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const DataCache = invoke('GameServer/DataCache');
 const Item = invoke('GameServer/Item/Item');
 const { materialPlan } = invoke('GameServer/Crafting/CraftMaterials');
@@ -96,6 +97,7 @@ async function craftSelf(session, recipeId, random = Math.random) {
 
     activeCrafters.add(actorId);
     try {
+        await CharacterWriteQueue.flushCharacter(actorId);
         const success = recipe.successRate >= 100 || (Number(random()) * 100) < recipe.successRate;
         const result = await Database.craftInventoryItems(actorId, {
             materials: consumed.map(({ item, amount }) => ({ id: item.fetchId(), selfId: item.fetchSelfId(), amount })),

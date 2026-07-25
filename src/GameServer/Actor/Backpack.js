@@ -7,6 +7,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const World          = invoke('GameServer/World/World');
 const Database       = invoke('Database');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4ItemSkills   = invoke('GameServer/Items/C4ItemSkills');
@@ -81,10 +82,7 @@ class Backpack extends BackpackModel {
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 
-                // Update database in the background
-                Database.updateItemAmount(session.actor.fetchId(), item.fetchId(), total).catch((err) => {
-                    utils.infoWarn('Database', 'Failed to update item amount: ' + err);
-                });
+                CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), total);
             }
             else {
                 // Update memory state instantly
@@ -92,10 +90,7 @@ class Backpack extends BackpackModel {
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 
-                // Update database in the background
-                Database.deleteItem(session.actor.fetchId(), item.fetchId()).catch((err) => {
-                    utils.infoWarn('Database', 'Failed to delete item: ' + err);
-                });
+                CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), 0);
             }
         });
     }

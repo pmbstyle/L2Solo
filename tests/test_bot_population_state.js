@@ -8,7 +8,17 @@ const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 
 const originalExecute = Database.execute;
+const originalSyncInventorySummary = Database.syncInventorySummary;
+const originalUpdateCharacterLocation = Database.updateCharacterLocation;
+const originalUpdateCharacterExperience = Database.updateCharacterExperience;
+const originalUpdateCharacterVitals = Database.updateCharacterVitals;
+const originalFetchSkills = Database.fetchSkills;
+const originalFetchSkill = Database.fetchSkill;
+const originalSetSkill = Database.setSkill;
+const originalUpdateSkillLevel = Database.updateSkillLevel;
+const originalUpdateCharacterClassId = Database.updateCharacterClassId;
 const statements = [];
+const classUpdates = [];
 
 try {
     Database.execute = ([sql, params]) => {
@@ -23,6 +33,18 @@ try {
             return Promise.resolve([]);
         }
         return Promise.resolve([]);
+    };
+    Database.syncInventorySummary = () => Promise.resolve();
+    Database.updateCharacterLocation = () => Promise.resolve();
+    Database.updateCharacterExperience = () => Promise.resolve();
+    Database.updateCharacterVitals = () => Promise.resolve();
+    Database.fetchSkills = () => Promise.resolve([]);
+    Database.fetchSkill = () => Promise.resolve([]);
+    Database.setSkill = () => Promise.resolve();
+    Database.updateSkillLevel = () => Promise.resolve();
+    Database.updateCharacterClassId = (characterId, classId) => {
+        classUpdates.push({ characterId, classId });
+        return Promise.resolve();
     };
 
     const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -41,7 +63,7 @@ try {
         assert.strictEqual(craftRecovery.params[1], craftRecovery.params[0], 'recovered craft waits must be due immediately for their replan');
         const partyWaitMigration = statements.find((entry) => entry.sql.includes("migrated %d acquisition party waits") || entry.sql.includes("activity = 'party_wait'"));
         assert(partyWaitMigration, 'startup must move legacy acquisition waits out of the rest scheduler');
-        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("JSON_REMOVE(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
+        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
         return BotLifeState.upsertState({
@@ -49,15 +71,15 @@ try {
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
             vitals: {}, stats: { classId: 31 }, inventory: {}
         }, 'persistence_probe').then(() => {
-            const save = statements.find((entry) => entry.sql.includes('ON DUPLICATE KEY UPDATE'));
-            assert(save.sql.includes('nextResolveAt = VALUES(nextResolveAt)'), 'persisted cold resolve timing must advance after every tick');
-            assert(save.sql.includes('lastResolvedAt = VALUES(lastResolvedAt)'), 'persisted cold resolve history must survive an upsert');
-            assert(save.sql.includes('inventorySummary = VALUES(inventorySummary)'), 'background drop rewards must persist after an upsert');
+            const save = statements.find((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE'));
+            assert(save.sql.includes('nextResolveAt = excluded.nextResolveAt'), 'persisted cold resolve timing must advance after every tick');
+            assert(save.sql.includes('lastResolvedAt = excluded.lastResolvedAt'), 'persisted cold resolve history must survive an upsert');
+            assert(save.sql.includes('inventorySummary = excluded.inventorySummary'), 'background drop rewards must persist after an upsert');
             return BotLifeState.migrateLegacyClassProgression(1).then((migrated) => {
                 assert.strictEqual(migrated.length, 1, 'legacy cold bots without progression markers must be migrated');
-                const classUpdate = statements.filter((entry) => entry.sql.includes('classId')).at(-1);
+                const classUpdate = classUpdates.at(-1);
                 assert(classUpdate, 'migration must persist the profession on the physical character');
-                assert.ok([36, 37].includes(classUpdate.params[0]), 'migration must use the physical character class as its source of truth');
+                assert.ok([36, 37].includes(classUpdate.classId), 'migration must use the physical character class as its source of truth');
                 return BotLifeState.dueCold(5, 1000);
             });
         }).then(() => {
@@ -120,7 +142,7 @@ try {
                     }
                 });
             }).then(() => {
-                const partySave = statements.filter((entry) => entry.sql.includes('ON DUPLICATE KEY UPDATE')).at(-1);
+                const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);
                 const persistedStats = JSON.parse(partySave.params[27]);
                 assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
                 assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
@@ -133,8 +155,26 @@ try {
         process.exitCode = 1;
     }).finally(() => {
         Database.execute = originalExecute;
+        Database.syncInventorySummary = originalSyncInventorySummary;
+        Database.updateCharacterLocation = originalUpdateCharacterLocation;
+        Database.updateCharacterExperience = originalUpdateCharacterExperience;
+        Database.updateCharacterVitals = originalUpdateCharacterVitals;
+        Database.fetchSkills = originalFetchSkills;
+        Database.fetchSkill = originalFetchSkill;
+        Database.setSkill = originalSetSkill;
+        Database.updateSkillLevel = originalUpdateSkillLevel;
+        Database.updateCharacterClassId = originalUpdateCharacterClassId;
     });
 } catch (err) {
     Database.execute = originalExecute;
+    Database.syncInventorySummary = originalSyncInventorySummary;
+    Database.updateCharacterLocation = originalUpdateCharacterLocation;
+    Database.updateCharacterExperience = originalUpdateCharacterExperience;
+    Database.updateCharacterVitals = originalUpdateCharacterVitals;
+    Database.fetchSkills = originalFetchSkills;
+    Database.fetchSkill = originalFetchSkill;
+    Database.setSkill = originalSetSkill;
+    Database.updateSkillLevel = originalUpdateSkillLevel;
+    Database.updateCharacterClassId = originalUpdateCharacterClassId;
     throw err;
 }

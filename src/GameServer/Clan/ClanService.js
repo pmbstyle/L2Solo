@@ -110,41 +110,7 @@ function setActorClan(actor, clanId, privileges) {
 }
 
 function ensureSchema() {
-    const statements = [
-        `CREATE TABLE IF NOT EXISTS clans(
-            id INT NOT NULL AUTO_INCREMENT,
-            name VARCHAR(16) NOT NULL,
-            level INT NOT NULL DEFAULT 0,
-            leaderId INT NOT NULL,
-            crestId INT NOT NULL DEFAULT 0,
-            crestLargeId INT NOT NULL DEFAULT 0,
-            allyId INT NOT NULL DEFAULT 0,
-            allyName VARCHAR(16) NOT NULL DEFAULT "",
-            allyCrestId INT NOT NULL DEFAULT 0,
-            dissolvingExpiryTime BIGINT NOT NULL DEFAULT 0,
-            charPenaltyExpiryTime BIGINT NOT NULL DEFAULT 0,
-            PRIMARY KEY (id),
-            UNIQUE KEY name (name),
-            KEY leaderId (leaderId)
-        )`,
-        `CREATE TABLE IF NOT EXISTS clan_crests(
-            id INT NOT NULL AUTO_INCREMENT,
-            clanId INT NOT NULL,
-            kind VARCHAR(16) NOT NULL DEFAULT "pledge",
-            data VARBINARY(256) NOT NULL,
-            createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY clanId (clanId)
-        )`,
-        'ALTER TABLE characters ADD COLUMN clanId INT NOT NULL DEFAULT 0',
-        'ALTER TABLE characters ADD COLUMN clanPrivileges INT NOT NULL DEFAULT 0',
-        'ALTER TABLE characters ADD COLUMN clanJoinExpiryTime BIGINT NOT NULL DEFAULT 0',
-        'ALTER TABLE characters ADD COLUMN clanCreateExpiryTime BIGINT NOT NULL DEFAULT 0'
-    ];
-
-    return statements.reduce((chain, sql) => (
-        chain.then(() => Database.execute([sql, []]).catch(() => null))
-    ), Promise.resolve());
+    return Database.execute(['SELECT 1', []], 'schema:clans');
 }
 
 const ClanService = {

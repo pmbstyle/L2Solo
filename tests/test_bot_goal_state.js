@@ -27,7 +27,7 @@ try {
         assert.strictEqual(snapshot.current.priority, 100);
         assert.deepStrictEqual(snapshot.current.blockers, ['spot_contested']);
         assert.strictEqual(GoalState.snapshot(77).current.type, 'upgrade_gear');
-        assert(statements.some((entry) => entry.sql.includes('CREATE TABLE IF NOT EXISTS bot_goal_state')));
+        assert(statements.some((entry) => entry.sql === 'SELECT 1'), 'schema is owned by the SQLite migration, not hot-path DDL');
         const insert = statements.find((entry) => entry.sql.includes('INSERT INTO bot_goal_state'));
         assert(insert, 'goal state should use one upsert boundary');
         assert.strictEqual(insert.params[0], 77);

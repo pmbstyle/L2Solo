@@ -1,4 +1,4 @@
-const Database = invoke('Database');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 function updatePosition(session, actor, coords, environmentOptions) {
@@ -12,7 +12,7 @@ function updatePosition(session, actor, coords, environmentOptions) {
 
     // TODO: Write less in DB about movement
     actor.setLocXYZH(coords);
-    Database.updateCharacterLocation(actor.fetchId(), coords);
+    CharacterWriteQueue.location(actor.fetchId(), coords);
 
     // Update Online users, NPCs, underwater locations
     Generics.updateEnvironment(session, actor, environmentOptions);

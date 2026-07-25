@@ -1,7 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const ConsoleText    = invoke('GameServer/ConsoleText');
-const Database       = invoke('Database');
+const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 
 function levelUp(session, actor, nextLevel) {
     // Update stats
@@ -46,7 +46,7 @@ function levelUp(session, actor, nextLevel) {
             // A bot has no client of its own, so nearby players and party
             // members need the normal character refresh after a profession.
             session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
-            Database.updateCharacterVitals(id, actor.fetchHp(), actor.fetchMaxHp(), actor.fetchMp(), actor.fetchMaxMp());
+            CharacterWriteQueue.vitals(id, actor.fetchHp(), actor.fetchMaxHp(), actor.fetchMp(), actor.fetchMaxMp());
         }
     })
 
@@ -55,7 +55,7 @@ function levelUp(session, actor, nextLevel) {
     ConsoleText.transmit(session, ConsoleText.caption.levelUp);
 
     // Update database with new hp, mp
-    Database.updateCharacterVitals(id, hp, maxHp, mp, maxMp);
+    CharacterWriteQueue.vitals(id, hp, maxHp, mp, maxMp);
 
     const ClanService = invoke('GameServer/Clan/ClanService');
     const clanUpdate = ClanService.updateActorMember(actor);

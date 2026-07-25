@@ -68,6 +68,8 @@ const tests = [
     'tests/test_c4_buff_modifiers.js',
     'tests/test_c4_protocol_packets.js',
     'tests/test_cast_interrupt.js',
+    'tests/test_character_write_queue.js',
+    'tests/test_sqlite_account_casefold.js',
     'tests/test_character_status_persistence.js',
     'tests/test_change_class.js',
     'tests/test_clan_bot_invite.js',
