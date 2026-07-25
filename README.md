@@ -133,7 +133,7 @@ For an existing MariaDB world, make a copy through the one-time importer before 
 node scripts/migrate-mariadb-to-sqlite.js --source-config=path/to/old.ini --target=tmp/nodel2.sqlite
 ```
 
-The import command alone may need `mariadb` installed temporarily (`npm install --no-save mariadb`); the running server does not use that package.
+The import command alone may need `mariadb` installed temporarily (`npm install --no-save mariadb`); it is not a project dependency and the running server never uses it.
 
 The old direct server command still works:
 
@@ -168,6 +168,16 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 Useful startup variables:
 
 - `BOT_STATUS_LOGS=0` - disable periodic bot status log lines.
+
+## Hot Bot Load Test
+
+The isolated load runner provisions real bot characters in a temporary SQLite world, drives the normal hot bot AI and persistence paths, and writes a JSON summary under `tmp/hot-load-tests/`. It does not change the normal server database or its population.
+
+```bash
+node scripts/hot-bot-load-test.js --counts=100,200,300 --duration=60 --tick=1000 --spread=100
+```
+
+The runner starts each scenario with its own database and disabled network ports. It reports AI tick duration, event-loop lag, SQLite queue activity, database failures, and memory use. Use it to compare changes under the same workload; it does not simulate hundreds of connected game clients or the full cold bot scheduler.
 
 ## In-Game Commands
 
