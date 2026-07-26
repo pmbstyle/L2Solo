@@ -71,6 +71,8 @@ try {
                 fetchTowards: () => false,
                 fetchHits() { return this.hit; },
                 fetchCasts: () => false,
+                combat: false,
+                fetchCombats() { return this.combat; },
                 setTowards() {},
                 setHits(value) { this.hit = value; }
             },
@@ -113,7 +115,7 @@ try {
     assert.strictEqual(distantBot.storedPickup, undefined, 'only one nearest companion should receive the pickup order');
     pickupCalls[0].onComplete();
 
-    closestBot.state.hit = true;
+    closestBot.state.combat = true;
     PartyCompanionService.queueRandomGroundPickup(botSession, {
         fetchId: () => 500002,
         fetchLocX: () => 100,
@@ -126,10 +128,10 @@ try {
         fetchLocY: () => 200,
         fetchLocZ: () => -310
     });
-    assert.strictEqual(pickupCalls.length, 1, 'a drop arriving during the killing hit should wait for that hit to finish');
-    closestBot.state.hit = false;
+    assert.strictEqual(pickupCalls.length, 1, 'a drop arriving while the party is in combat should wait instead of interrupting the fight');
+    closestBot.state.combat = false;
     PartyCompanionService.startQueuedGroundPickup(botSession);
-    assert.deepStrictEqual(pickupCalls[1] && { session: pickupCalls[1].session, actor: pickupCalls[1].actor, data: pickupCalls[1].data }, { session: botSession, actor: closestBot, data: { id: 500002 } }, 'a queued hot-bot pickup should execute server-side after the hit instead of waiting for a client position packet');
+    assert.deepStrictEqual(pickupCalls[1] && { session: pickupCalls[1].session, actor: pickupCalls[1].actor, data: pickupCalls[1].data }, { session: botSession, actor: closestBot, data: { id: 500002 } }, 'a queued hot-bot pickup should execute server-side after combat instead of waiting for a client position packet');
     pickupCalls[1].onComplete();
     assert.deepStrictEqual(pickupCalls[2] && { session: pickupCalls[2].session, actor: pickupCalls[2].actor, data: pickupCalls[2].data }, { session: botSession, actor: closestBot, data: { id: 500003 } }, 'multiple drops assigned to the same bot should be picked up in FIFO order');
 } finally {

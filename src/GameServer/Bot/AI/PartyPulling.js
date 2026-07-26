@@ -178,19 +178,22 @@ function nearestFreeMonster(bot) {
 function shouldKeepPullMove(session, bot, state, phase, target) {
     if (!state?.moveTarget || state.movePhase !== phase) return false;
     if (!(session.moveTimer || bot.state?.fetchTowards?.())) return false;
-    if ((session.stuckTicks || 0) >= 2) return false;
+    // Follow-state samples are intentionally coarse and can report a moving
+    // puller as "stuck" between path waypoints.  Replanning from that stale
+    // sample aborts the current route and makes the client snap backwards.
+    // Pull movement is server-stepped, so retain it until it stops or the
+    // target has materially moved.
+    if (session.stuckTicks) {
+        session.stuckTicks = 0;
+        session.lastStuckSampleAt = Date.now();
+    }
     return distance(state.moveTarget, point(target)) <= PULL_MOVE_TARGET_DRIFT;
 }
 
 function moveTo(session, bot, state, phase, target) {
     if (shouldKeepPullMove(session, bot, state, phase, target)) return false;
-    // FollowingState leaves active pull movement to this coordinator. When a
-    // route has genuinely stopped, start the replacement path with a fresh
-    // sample window instead of treating every later tick as still stuck.
-    if ((session.stuckTicks || 0) >= 2) {
-        session.stuckTicks = 0;
-        session.lastStuckSampleAt = Date.now();
-    }
+    // FollowingState leaves active pull movement to this coordinator. A new
+    // route is only needed after the old one stopped or its target drifted.
     state.movePhase = phase;
     state.moveTarget = point(target);
     bot.moveTo({ from: point(bot), to: point(target) });

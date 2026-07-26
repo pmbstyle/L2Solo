@@ -141,9 +141,21 @@ function canPickGroundLoot(session, leaderSession, item) {
     const actor = session?.actor;
     if (!isActiveCompanion(session, leaderSession) || !isAliveOnline(session)) return false;
     if (['resting', 'getting_buffed', 'shopping', 'merchant'].includes(session.plan)) return false;
-    if (actor?.state?.fetchSeated?.() || actor?.state?.fetchPickinUp?.()) return false;
+    if (actor?.state?.fetchSeated?.()) return false;
     if (actor?.storedPickup) return false;
     return distance2d(actor, item) <= PARTY_LOOT_RADIUS;
+}
+
+function partyCombatInProgress(leaderSession) {
+    return [leaderSession, ...membersForLeader(leaderSession)]
+        .some((memberSession) => {
+            const state = memberSession?.actor?.state;
+            return !!(
+                state?.fetchCombats?.() ||
+                state?.fetchHits?.() ||
+                state?.fetchCasts?.()
+            );
+        });
 }
 
 function nearestGroundLootPicker(looterSession, item) {
@@ -162,7 +174,9 @@ function startQueuedGroundPickup(pickerSession) {
     const picker = pickerSession?.actor;
     const queue = pickerSession?.partyGroundPickupQueue;
     if (!picker || pickerSession.partyGroundPickupInProgress || !queue?.length) return false;
-    if (picker.state?.fetchHits?.() || picker.state?.fetchCasts?.() || picker.state?.fetchPickinUp?.()) return false;
+    const leaderSession = partyLeaderSession(pickerSession);
+    if (partyCombatInProgress(leaderSession)) return false;
+    if (picker.state?.fetchPickinUp?.()) return false;
 
     const pickup = queue[0];
     pickerSession.partyGroundPickupInProgress = true;

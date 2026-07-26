@@ -544,6 +544,10 @@ const BotManager = {
                     session.setActor({
                         ...character, ...utils.crushOb(classInfo)
                     });
+                    // Hot bots do not have a client hotbar request to enable
+                    // shots. Their stock is prepared before actor creation, so
+                    // enable the compatible C4 auto-shot explicitly.
+                    ShotStock.enableAutoShot(session.actor);
 
                     // PK seeds must remain red across restarts. Existing bot
                     // records predate the seed list, so update both runtime

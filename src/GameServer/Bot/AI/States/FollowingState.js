@@ -447,9 +447,10 @@ module.exports = {
             return;
         }
 
-        // Pulling has its own route recovery.  Teleporting an assigned
-        // puller back to the leader halfway through approach/return makes the
-        // client show it run forward, snap back, and start the route again.
+        // Pulling has its own route recovery.  Generic stuck samples must not
+        // teleport the assigned puller: between geodata waypoints they can
+        // report no movement even though its server-stepped route is healthy.
+        // A truly distant puller may still use the normal catch-up teleport.
         const pullerTravelling = activeBotPullTravel(session, pulling);
         if (!pullerTravelling && (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE)) {
             session.stuckTicks = 0;
@@ -464,6 +465,14 @@ module.exports = {
                     BotAI.say(session, "Whew, caught up with you!");
                 }
             }
+            return;
+        }
+
+        // A drop can be assigned while this companion or another party member
+        // is still finishing combat. Retry the FIFO only after the whole party
+        // is clear, so it does not lie on the ground forever or interrupt an
+        // active fight between attack swings.
+        if (PartyCompanionService.startQueuedGroundPickup(session)) {
             return;
         }
 

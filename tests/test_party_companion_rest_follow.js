@@ -1133,8 +1133,8 @@ try {
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotA.moves.length, 2, 'a stalled pull route should be replanned by the puller instead of using generic follow teleport recovery');
-    assert.strictEqual(partyHudBotASession.stuckTicks, 0, 'a pull-route replan should begin with a fresh stuck sample window');
+    assert.strictEqual(partyHudBotA.moves.length, 1, 'a stale generic stuck sample must not restart a healthy pull route');
+    assert.strictEqual(partyHudBotASession.stuckTicks, 0, 'active pull movement should clear stale generic stuck state');
 
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('non-puller must wait for the incoming mob'); }, executePvPCombat() {}
