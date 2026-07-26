@@ -6,6 +6,7 @@ const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
 const CHAT_PHRASES = {
@@ -362,15 +363,21 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
-                this.say(session, "Oops... I died! Resurrecting shortly.");
+                this.say(session, wasCompanion ? "I'm down. Waiting for a resurrection." : "Oops... I died! Resurrecting shortly.");
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
                     BotSocialMemory.recordEvent(session.followPlayerSession, session, 'party_wiped', 'bot_and_leader_dead');
                 }
             }
 
-            // Revive after 12 seconds of death
-            if (Date.now() - session.deathTimerStart > 12000) {
+            const partyRescuePending = wasCompanion && !PartyRevivalService.shouldTownRespawn(
+                session.followPlayerSession,
+                session
+            );
+            // Companions wait for the party's resurrection attempt.  The
+            // normal town restart remains the escape hatch for a wipe, an
+            // unsupported solo leader, or an unanswered corpse.
+            if (!partyRescuePending && Date.now() - session.deathTimerStart > 12000) {
                 // TeleportTo rejects actors that are still marked dead, so bot
                 // respawns must complete before applying the new town location.
                 Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true });
@@ -384,7 +391,17 @@ const BotAI = {
                     session.plan = 'pk_hunting';
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else {
-                    if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
+                    if (wasCompanion) {
+                        PartyCompanionService.clearCompanion(session, {
+                            plan: 'hunting',
+                            rebuildWindow: false,
+                            refreshPanel: false
+                        });
+                        session.plan = 'hunting';
+                        session.currentSpot = null;
+                        session.noTargetTicks = 0;
+                        spawnTarget = this.getDeathRespawnTarget(session, bot, false);
+                    } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                         session.plan = 'merchant';
                         bot.state.setSeated(true);
                         spawnTarget = {

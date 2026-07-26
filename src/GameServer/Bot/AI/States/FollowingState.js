@@ -8,6 +8,7 @@ const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
+const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
@@ -487,6 +488,14 @@ module.exports = {
         const partyVitals = weakestPartyVitals(playerSession, bot) || leaderVitals;
         const leaderSeated = player.state?.fetchSeated?.() === true;
         const botRecovering = botVitals.hpRatio < 0.95 || botVitals.mpRatio < 0.95;
+
+        const revival = PartyRevivalService.tick(session, playerSession, Generics);
+        if (revival.handled) {
+            recordRoleDecision(session, bot, 'resurrect_party', revival.source || 'waiting', {
+                targetId: revival.target?.fetchId?.() || revival.targetId || null
+            });
+            return;
+        }
 
         if (!partyThreat && !leaderTargetId && leaderSeated) {
             session.currentTargetId = undefined;

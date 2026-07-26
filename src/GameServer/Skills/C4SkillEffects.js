@@ -48,6 +48,11 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.RESURRECT) {
+        result.resurrected = applyResurrection(session, target);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.HEAL) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
@@ -348,6 +353,14 @@ function applyCombatPointHeal(session, actor, target, skill, semantic, magicSkil
     refreshCp(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextCp - currentCp);
+}
+
+function applyResurrection(session, target) {
+    if (!target?.state?.fetchDead?.()) return false;
+    const targetSession = target.session;
+    if (!targetSession) return false;
+    invoke(path.actor).revive(targetSession, target);
+    return true;
 }
 
 function applyCombatPointDamage(session, actor, target, skill, semantic, magicSkill, attack) {

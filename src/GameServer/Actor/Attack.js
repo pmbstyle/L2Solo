@@ -185,7 +185,8 @@ class Attack {
 
     remoteHit(session, creature, skill) {
         const actor = session.actor;
-        const corpseTarget = skill.fetchTargetKind?.() === 'corpse_mob';
+        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
+            .includes(skill.fetchTargetKind?.());
 
         if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
@@ -379,6 +380,10 @@ class Attack {
 
         if (targetKind === 'corpse_mob') {
             return target.fetchAttackable?.() === true && target.isDead?.() === true;
+        }
+
+        if (['corpse_player', 'corpse_pet', 'corpse_ally'].includes(targetKind)) {
+            return target.state?.fetchDead?.() === true || target.isDead?.() === true;
         }
 
         if (targetKind === 'enemy') {
