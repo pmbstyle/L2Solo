@@ -923,6 +923,12 @@ const BotLifeState = {
     dueCold(limit = 10, at = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+        // A changed drop model can make an active direct-drop route unsafe.
+        // Pull only fighting bots forward: resting and travelling states are
+        // intentionally event-scheduled and cannot hurt themselves while
+        // they wait for their persisted deadline.
+        const staleRateModelPlan = `json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
+                AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < ${GearAcquisitionPlanner.RATE_MODEL_VERSION}`;
 
         return Database.execute([
             `SELECT * FROM ${TABLE}
@@ -934,28 +940,26 @@ const BotLifeState = {
             -- combat scheduler's periodic queue.
             AND NOT (activity = 'merchant' AND json_extract(statsJson, '$.marketStore') IS NOT NULL)
             AND NOT (activity = 'crafting' AND json_extract(statsJson, '$.craftShop') IS NOT NULL)
-            AND (nextResolveAt IS NULL OR nextResolveAt <= ?)
+            AND (
+                nextResolveAt IS NULL OR nextResolveAt <= ?
+                OR (activity = 'hunting' AND (${staleRateModelPlan}))
+            )
             -- Travel and crafting are finite state transitions. They must
             -- outrank a large resting/hunting backlog, otherwise a bot can
             -- remain on its way to a station forever after a restart.
             ORDER BY CASE
-                WHEN activity IN ('traveling', 'crafting') THEN 0
+                -- Replan active combat before it can continue using a stale
+                -- target level or drop-rate estimate.
+                WHEN ${staleRateModelPlan} THEN 0
+                WHEN activity IN ('traveling', 'crafting') THEN 1
                 -- Startup craft recovery is a one-shot replan.  Serve it
                 -- before the normal hunting backlog so a repaired station
                 -- wait immediately selects its missing raw material.
-                WHEN json_extract(statsJson, '$.lastReason') = 'startup_craft_wait_recovery' THEN 1
-                WHEN activity = 'dead' THEN 2
-                ELSE 3
+                WHEN json_extract(statsJson, '$.lastReason') = 'startup_craft_wait_recovery' THEN 2
+                WHEN activity = 'dead' THEN 3
+                ELSE 4
             END ASC,
-            COALESCE(nextResolveAt, 0) ASC,
-                CASE
-                -- A rate-model rollout must promptly replace persisted kill estimates.
-                WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
-                    AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < 2 THEN 0
-                WHEN activity = 'dead' THEN 1
-                WHEN activity IN ('traveling', 'shopping', 'merchant', 'crafting') THEN 2
-                ELSE 3
-                END ASC
+            COALESCE(nextResolveAt, 0) ASC
             LIMIT ${safeLimit}`,
             [at]
         ]).then((rows) => rows.map((row) => {

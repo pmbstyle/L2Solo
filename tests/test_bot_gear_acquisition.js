@@ -22,6 +22,17 @@ const ironSources = GearAcquisitionPlanner.sourceForItem(1869, [stoneGolemSpot])
 assert(ironSources.length > 0, 'known material drops must resolve to their real NPC source');
 assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
 assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
+const handAxe = DataCache.items.find((item) => item.template?.name === 'Hand Axe');
+const wereratChiefSpot = {
+    id: 'wererat-chief-field',
+    avgLevel: 19,
+    npcEntries: [{ selfId: 414, name: 'Sukar Wererat Chief', count: 1 }]
+};
+const handAxeSource = GearAcquisitionPlanner.sourceForItem(handAxe.selfId, [wereratChiefSpot], { level: 20 })
+    .find((source) => source.npcId === 414);
+assert(handAxeSource, 'a direct equipment source must retain its real dropper');
+assert.strictEqual(handAxeSource.npcLevel, 28, 'a direct equipment source must retain its NPC level instead of its mixed-spot average');
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20 }, handAxeSource), false, 'a level-20 bot must not solo a level-28 item target just because its grid also contains lower-level mobs');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 28 }), true, 'a bot should solo only sources below its combat safety margin');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 29 }), false, 'a bot must not call an equal-level source solo-safe');
 assert.strictEqual(
