@@ -159,13 +159,17 @@ function attackRange(actor, target) {
     return role === 'archer' ? 700 : 0;
 }
 
+function actorCanEngage(actor, target) {
+    return !!actor && !!target && distance(point(actor), point(target)) <= attackRange(actor, target);
+}
+
 function targetIsEngageable(leaderSession, target, puller) {
     if (!target) return false;
     return PartyAwareness.partyActors(leaderSession)
         // A leader pull has no return phase to synchronize. Release only when
         // a companion can actually strike the player-designated target.
         .filter((actor) => actor !== leaderSession.actor && actor !== puller?.actor)
-        .some((actor) => distance(point(actor), point(target)) <= attackRange(actor, target));
+        .some((actor) => actorCanEngage(actor, target));
 }
 
 function nearestFreeMonster(bot) {
@@ -329,11 +333,11 @@ function current(leaderSession, settings) {
     if (!puller) return { enabled: false, puller: null, target: null, paused: null };
     const target = clearFinishedTarget(leaderSession);
     const state = pullState(leaderSession);
-    // A bot-pulled mob must not release the party merely because it is within
-    // the puller's own attack range.  Only tickBotPuller may promote it to the
-    // engage phase after returning to the group.
+    // A companion may meet the incoming mob while the player is moving the
+    // party.  Release only companions that can strike from their own current
+    // position; the rest keep following the leader instead of chasing it.
     const engageable = state.source === 'bot'
-        ? state.phase === 'engage'
+        ? state.phase === 'engage' || targetIsEngageable(leaderSession, target, puller)
         : targetIsEngageable(leaderSession, target, puller);
     return {
         enabled: true,
@@ -354,6 +358,7 @@ module.exports = {
     tickBotPuller,
     current,
     targetIsEngageable,
+    actorCanEngage,
     attackRange,
     PULL_AGGRO_TIMEOUT_MS
 };

@@ -184,8 +184,15 @@ class Automation extends SelectedModel {
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), radius, src.fetchCollectiveRunSpd()
         );
 
-        // Dynamically update coordinates step-by-step for bots while running to prevent teleportation/snapping on reschedule
-        if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+        // Dynamically update coordinates step-by-step only while the bot is
+        // moving itself.  A bot session can also drive an NPC's chase action;
+        // interpolating that NPC here mutates the server position without a
+        // matching movement packet and makes it appear to attack from afar.
+        const movingBot = session?.actor === src && (
+            session.constructor.name === 'BotSession'
+            || session.accountId?.startsWith('bot_')
+        );
+        if (movingBot) {
             if (session.moveTimer) {
                 clearInterval(session.moveTimer);
                 session.moveTimer = null;
@@ -227,7 +234,7 @@ class Automation extends SelectedModel {
         Timer.start(this.timer.action, () => {
             src.state.setTowards(false);
             this.clearDestId();
-            if (session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')))) {
+            if (movingBot) {
                 src.setLocXYZ(stopCoords);
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);

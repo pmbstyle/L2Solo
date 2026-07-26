@@ -717,14 +717,23 @@ module.exports = {
             }
         }
 
-        if (!acted && pulling.enabled && pulling.target && !pulling.engageable) {
+        const waitingForPullAtOwnRange = pulling.enabled && pulling.target && (
+            !pulling.engageable || (
+                pulling.puller?.session !== session &&
+                !PartyPulling.actorCanEngage(bot, pulling.target)
+            )
+        );
+        if (!acted && waitingForPullAtOwnRange) {
             session.currentTargetId = undefined;
             bot.unselect();
-            recordRoleDecision(session, bot, 'hold_for_pull', pulling.paused || 'mob_not_in_range', {
+            // The marked mob is intentionally not a chase target.  Keep the
+            // formation on the player, then join combat once this particular
+            // companion can strike from its own position.
+            recordRoleDecision(session, bot, 'follow_leader', pulling.paused || 'hold_for_pull', {
                 targetId: pulling.target.fetchId(),
                 pullerId: pulling.puller?.actor?.fetchId?.() || null
             });
-            return;
+            keepRoleDecision = true;
         }
 
         if (!acted && role === 'tank') {

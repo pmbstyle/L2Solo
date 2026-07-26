@@ -1139,7 +1139,20 @@ try {
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('non-puller must wait for the incoming mob'); }, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'non-puller should wait while the mob is outside party attack range');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'non-puller should keep following while the mob is outside its attack range');
+    assert.strictEqual(partyHudBotBSession.roleDecision.reason, 'hold_for_pull', 'following companion must not chase the marked pull target');
+
+    partyHudLeader.locX = 600;
+    partyHudBotB.moves = [];
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat() { throw new Error('non-puller must follow the leader, not chase the distant pull target'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotB.moves.length, 1, 'a held pull must not stop the companion from following a moving leader');
+    assert(
+        partyHudBotB.moves[0].to.locX > partyHudBotB.locX && partyHudBotB.moves[0].to.locX < pulledMob.locX,
+        'held-pull movement should head to the leader formation target, not the distant mob'
+    );
+    partyHudLeader.locX = 0;
 
     partyHudBotA.locX = pulledMob.locX;
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
@@ -1162,7 +1175,19 @@ try {
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('non-puller must not chase a mob that has only just aggroed the distant puller'); }, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'party should remain held until the puller has returned to the camp');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'party should keep following until each companion can reach the marked mob');
+
+    pulledMob.locX = partyHudBotB.locX;
+    let earlyMeetAssistId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat(_session, _bot, npc) { earlyMeetAssistId = npc.fetchId(); }, executePvPCombat() {}
+    });
+    assert.strictEqual(
+        earlyMeetAssistId,
+        pulledMob.fetchId(),
+        'a companion that meets the returning mob should engage before the puller completes its return'
+    );
+    pulledMob.locX = 1200;
 
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {}, executeCombat() { throw new Error('confirmed aggro should make the puller return before the party engages'); }, executePvPCombat() {}
@@ -1180,7 +1205,7 @@ try {
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('melee companion must not chase an incoming pull outside its attack range'); }, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'melee companions should keep holding until the mob reaches their actual attack range');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'melee companions should keep following until the mob reaches their actual attack range');
 
     partyHudBotA.locX = partyHudLeader.locX;
     pulledMob.locX = partyHudBotB.locX;
@@ -1237,7 +1262,7 @@ try {
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('party must wait for a leader pull outside range'); }, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'leader pull should use the same hold gate as a bot pull');
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'leader pull should keep companions in follow formation outside their range');
     pulledMob.locX = partyHudBotB.locX;
     assistedPulledMobId = null;
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {

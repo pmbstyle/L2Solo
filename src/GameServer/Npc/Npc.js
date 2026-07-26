@@ -109,9 +109,17 @@ class Npc extends NpcModel {
 
                 if (this.state.inMotion()) {
                     if (coords.locX !== newDstX || coords.locY !== newDstY) {
-                        this.setLocXYZ(new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ()).midPoint(new SpeckMath.Point3D(coords.locX, coords.locY, coords.locZ), this.automation.fetchDistanceRatio() * 1.3).toCoords()); // TODO: Another hack to catch-up
-
+                        const progress = Math.min(1, Math.max(0, Number(this.automation.fetchDistanceRatio()) || 0));
+                        this.setLocXYZ(
+                            new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ())
+                                .midPoint(new SpeckMath.Point3D(coords.locX, coords.locY, coords.locZ), progress)
+                                .toCoords()
+                        );
                         this.automation.abortAll(this);
+                        // The authoritative chase position changed before the
+                        // scheduled move ended.  Freeze the client at exactly
+                        // that position before scheduling the next chase leg.
+                        this.stopForCombatAction(session);
                     }
                     return;
                 }
