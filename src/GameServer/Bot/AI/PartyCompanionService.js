@@ -6,6 +6,7 @@ const DEFAULT_PARTY_SETTINGS = {
     movementMode: 'follow',
     combatMode: 'assist',
     pullMode: 'auto',
+    pullerId: null,
     itemLastLootIndex: -1
 };
 const PARTY_LOOT_RADIUS = 2500;
@@ -50,7 +51,7 @@ function getSettings(leaderSession) {
 function updateSettings(leaderSession, patch = {}) {
     const settings = settingsForLeader(leaderSession);
     Object.keys(patch).forEach((key) => {
-        if (patch[key] !== undefined && patch[key] !== null) {
+        if (patch[key] !== undefined && (patch[key] !== null || key === 'pullerId')) {
             settings[key] = patch[key];
         }
     });
@@ -200,15 +201,39 @@ function refreshLeaderView(leaderSession, options = {}) {
     }
 }
 
+function cancelCompanionAction(companionSession) {
+    const actor = companionSession?.actor;
+    if (!actor) return;
+    actor.attack?.abortCast?.(companionSession, actor);
+    actor.attack?.clearTimers?.();
+    actor.state?.setHits?.(false);
+    actor.state?.setCasts?.(false);
+    actor.automation?.abortAll?.(actor);
+    invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(companionSession, actor);
+}
+
 function detachState(companionSession, plan = 'hunting') {
+    cancelCompanionAction(companionSession);
     companionSession.plan = plan;
     companionSession.followPlayerSession = null;
     companionSession.partyCompanion = false;
     companionSession.botStay = false;
     companionSession.stayLocation = null;
     companionSession.currentTargetId = undefined;
+    companionSession.partyPuller = false;
     companionSession.roleDecision = null;
     companionSession.actor?.unselect?.();
+}
+
+function clearPullerIfDetached(leaderSession, companionSession) {
+    const settings = settingsForLeader(leaderSession);
+    if (settings.pullMode !== 'bot' || Number(settings.pullerId || 0) !== Number(companionSession?.actor?.fetchId?.())) {
+        return false;
+    }
+    settings.pullMode = 'auto';
+    settings.pullerId = null;
+    leaderSession.partyPullState = {};
+    return true;
 }
 
 const PartyCompanionService = {
@@ -315,6 +340,7 @@ const PartyCompanionService = {
         companionSession.botStay = false;
         companionSession.stayLocation = null;
         companionSession.currentTargetId = undefined;
+        companionSession.partyPuller = false;
         companionSession.actor?.unselect?.();
         companionSession.autoTaunt = settingsForLeader(leaderSession).pullMode !== 'off';
 
@@ -338,6 +364,7 @@ const PartyCompanionService = {
             BotSocialMemory.recordEvent(leaderSession, companionSession, event, source);
         }
 
+        clearPullerIfDetached(leaderSession, companionSession);
         detachState(companionSession, options.plan || 'hunting');
 
         if (options.message) {
@@ -364,6 +391,7 @@ const PartyCompanionService = {
     clearCompanion(companionSession, options = {}) {
         const leaderSession = companionSession?.followPlayerSession || null;
         if (!companionSession?.partyCompanion) return false;
+        if (leaderSession) clearPullerIfDetached(leaderSession, companionSession);
         detachState(companionSession, options.plan || 'hunting');
         if (leaderSession) {
             refreshLeaderView(leaderSession, options);

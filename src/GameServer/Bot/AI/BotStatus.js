@@ -3,6 +3,7 @@ const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 
@@ -229,13 +230,23 @@ const BotStatus = {
         const target = findTarget(session, bot);
         const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
         const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
+        const pull = leaderSession ? PartyPulling.current(leaderSession, partySettings) : null;
+        const isAssignedPuller = partySettings?.pullMode === 'bot' &&
+            Number(partySettings.pullerId || 0) === Number(bot.fetchId());
         const party = leaderSession ? {
             leader: actorSummary(leaderSession.actor, bot),
             role,
             settings: partySettings,
-            stance: session.botStay ? 'stay' : 'follow',
+            stance: isAssignedPuller ? 'pulling' : (session.botStay ? 'stay' : 'follow'),
             roleStance: BotRoles.partyRoleStance(role),
             autoTaunt: session.autoTaunt !== false,
+            pull: pull?.enabled ? {
+                mode: partySettings.pullMode,
+                pullerId: pull.puller?.actor?.fetchId?.() || null,
+                targetId: pull.target?.fetchId?.() || null,
+                phase: pull.phase,
+                paused: pull.paused || null
+            } : null,
             decision: session.roleDecision || null,
             members: PartyAwareness.partySessions(leaderSession)
                 .map((memberSession) => partyMemberSummary(memberSession, leaderSession, bot))

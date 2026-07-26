@@ -7,6 +7,7 @@ const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
@@ -19,6 +20,7 @@ const FOLLOW_TELEPORT_DISTANCE = 4500;
 // Newbie Guides only exist in the starter villages.  A companion should not
 // abandon a player in the field just because its starter buffs have expired.
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
+const NEWBIE_GUIDE_RECOVERY_MAX_LEVEL = 20;
 const COMPANION_TOWN_ERRAND_RADIUS = 7500;
 const COMPANION_TOWN_ERRAND_COOLDOWN_MS = 60000;
 
@@ -53,6 +55,28 @@ function isAtNewbieGuideTown(player, BotAI) {
         { locX: player.fetchLocX(), locY: player.fetchLocY() },
         guide
     ) <= NEWBIE_GUIDE_TOWN_RADIUS;
+}
+
+function canRecoverAtNewbieGuide(bot, BotAI) {
+    return Number(bot?.fetchLevel?.() || 0) <= NEWBIE_GUIDE_RECOVERY_MAX_LEVEL &&
+        isAtNewbieGuideTown(bot, BotAI);
+}
+
+function beginNewbieGuideVisit(session, bot, playerSession, role) {
+    session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    session.preBuffPlan = 'following';
+    session.resumeAfterBuff = {
+        plan: 'following',
+        followPlayerSession: playerSession,
+        partyCompanion: true,
+        botStay: session.botStay === true,
+        stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
+        role
+    };
+    session.plan = 'getting_buffed';
+    session.currentTargetId = undefined;
+    bot.unselect();
+    bot.automation.abortAll(bot);
 }
 
 function townForCompanionErrand(player, BotAI) {
@@ -248,11 +272,13 @@ function partyAggroCount(leaderSession) {
         .length;
 }
 
-function unsafeSupportMoment(session, bot, target, activeMobs) {
-    return !!session.currentTargetId ||
-        !!target.fetchDestId() ||
-        activeMobs > 0 ||
-        isBusy(bot);
+function unsafeSupportMoment(bot, activeMobs) {
+    // A selected target is not combat. Both the leader and companions retain
+    // target ids after inspecting a creature or after a completed cast; using
+    // those ids here made an idle party wait forever to refresh its buffs.
+    // Only an NPC actually targeting the party, or this bot's active native
+    // action, is unsafe for support.
+    return activeMobs > 0 || isBusy(bot);
 }
 
 function partyMembersInSupportRange(leaderSession, bot, maxDistance = 900) {
@@ -268,10 +294,12 @@ function partyMembersInSupportRange(leaderSession, bot, maxDistance = 900) {
         .filter((entry) => entry.distance <= maxDistance);
 }
 
-function weakestPartyMember(leaderSession, bot, maxDistance = 900) {
-    return partyMembersInSupportRange(leaderSession, bot, maxDistance)
+function weakestPartyMember(leaderSession, bot, preferredActor = null, maxDistance = 900) {
+    const members = partyMembersInSupportRange(leaderSession, bot, maxDistance)
         .filter((entry) => entry.actor !== bot)
-        .sort((a, b) => a.hpRatio - b.hpRatio)[0] || null;
+        .sort((a, b) => a.hpRatio - b.hpRatio);
+    const preferred = members.find((entry) => entry.actor === preferredActor);
+    return preferred?.hpRatio < 0.95 ? preferred : (members[0] || null);
 }
 
 function weakestPartyVitals(leaderSession, bot) {
@@ -279,11 +307,8 @@ function weakestPartyVitals(leaderSession, bot) {
         .reduce((lowest, entry) => !lowest || entry.hpRatio < lowest.hpRatio ? entry : lowest, null);
 }
 
-function partySupportMembers(leaderSession) {
-    return PartyAwareness.partySessions(leaderSession).map((memberSession) => ({
-        actor: memberSession.actor,
-        leader: memberSession === leaderSession
-    }));
+function partySupportMembers(leaderSession, puller) {
+    return PartyPulling.supportMembers(leaderSession, puller);
 }
 
 function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
@@ -343,13 +368,30 @@ module.exports = {
         const distance = point(bot).distance(point(player));
         const partySettings = PartyCompanionService.getSettings(playerSession);
         const combatMode = partySettings.combatMode || 'assist';
-        const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
-        const partyThreat = combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId()
-            ? null
-            : rawPartyThreat;
-        const leaderTargetId = combatMode === 'assist'
-            ? PartyAwareness.leaderCombatTargetId(playerSession)
+        const selectedLeaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
+        // A player-designated pull is intentional even when the ordinary
+        // combat posture is Protect or Passive.  Those modes should not make
+        // the party ignore the leader's selected pull target.
+        const configuredLeaderTargetId = combatMode === 'assist' || partySettings.pullMode === 'leader'
+            ? selectedLeaderTargetId
             : undefined;
+        PartyPulling.observeLeaderTarget(playerSession, partySettings, configuredLeaderTargetId);
+        let pulling = PartyPulling.current(playerSession, partySettings);
+        const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        const holdingPulledTarget = pulling.target && !pulling.engageable;
+        const rawThreatIsHeldPull = holdingPulledTarget &&
+            Number(rawPartyThreat?.actor?.fetchId?.()) === Number(pulling.target.fetchId());
+        const partyThreat = pulling.engageable && pulling.target
+            ? {
+                type: 'npc',
+                actor: pulling.target,
+                targetId: pulling.puller.actor.fetchId(),
+                source: 'party_pull'
+            }
+            : (rawThreatIsHeldPull || (combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId())
+            ? null
+            : rawPartyThreat);
+        const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
         const impairments = EffectStore.impairments(bot);
 
         if (impairments.disabled) {
@@ -452,6 +494,17 @@ module.exports = {
         }
 
         if (!partyThreat && !leaderTargetId && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
+            // Do not leave a hunting field just to recover.  This shortcut is
+            // available only when the companion is already in a starter town
+            // with a Newbie Guide, where characters through level 20 can
+            // recover and renew their blessing before returning to the party.
+            if (canRecoverAtNewbieGuide(bot, BotAI)) {
+                beginNewbieGuideVisit(session, bot, playerSession, role);
+                recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'newbie_guide_recovery');
+                BotAI.say(session, "I'm low on HP/MP. Recovering at the Newbie Guide, then I'll return.");
+                return;
+            }
+
             session.plan = 'resting';
             session.currentTargetId = undefined;
             bot.unselect();
@@ -466,7 +519,7 @@ module.exports = {
 
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
-            const unsafeToRefresh = unsafeSupportMoment(session, bot, player, partyAggroCount(playerSession));
+            const unsafeToRefresh = unsafeSupportMoment(bot, partyAggroCount(playerSession));
 
             if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
@@ -479,20 +532,7 @@ module.exports = {
                 });
                 keepRoleDecision = true;
             } else {
-                session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-                session.preBuffPlan = 'following';
-                session.resumeAfterBuff = {
-                    plan: 'following',
-                    followPlayerSession: playerSession,
-                    partyCompanion: true,
-                    botStay: session.botStay === true,
-                    stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
-                    role
-                };
-                session.plan = 'getting_buffed';
-                session.currentTargetId = undefined;
-                bot.unselect();
-                bot.automation.abortAll(bot);
+                beginNewbieGuideVisit(session, bot, playerSession, role);
                 recordRoleDecision(session, bot, 'refresh_buffs', 'newbie_blessing', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
@@ -515,11 +555,11 @@ module.exports = {
 
         const supportBuffTarget = BotSupportPlanner.nextAction(
             bot,
-            partySupportMembers(playerSession),
-            PartyAwareness.partyActors(playerSession)
+            partySupportMembers(playerSession, pulling.puller),
+            PartyPulling.supportProviders(playerSession)
         );
         const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
-            ? BotSupportPlanner.rebuffRequest(bot, PartyAwareness.partyActors(playerSession))
+            ? BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
             : null;
         if (rebuff && rebuff.provider !== bot && Date.now() - (session.lastRebuffRequestAt || 0) > 90000) {
             session.lastRebuffRequestAt = Date.now();
@@ -527,7 +567,7 @@ module.exports = {
         }
         if (!acted && supportBuffTarget) {
             const activeMobs = partyAggroCount(playerSession);
-            if (unsafeSupportMoment(session, bot, supportBuffTarget.target, activeMobs)) {
+            if (unsafeSupportMoment(bot, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
                     buff: supportBuffTarget.effect,
                     targetId: supportBuffTarget.target.fetchId(),
@@ -545,7 +585,9 @@ module.exports = {
                 keepRoleDecision = true;
             } else {
                 acted = true;
-                BotSupportPlanner.reserve(supportBuffTarget);
+                // A queued cast is not a buff yet. The reservation begins in
+                // Attack.remoteHit once the native cast has actually started.
+                BotSupportPlanner.queueSupportCast(session, supportBuffTarget);
                 castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill.fetchSelfId(), false);
                 recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.effect, {
                     buff: supportBuffTarget.effect,
@@ -599,7 +641,7 @@ module.exports = {
         if (role === 'healer') {
             const skill = BotSkillCapabilities.healSkill(bot);
             const canCast = !!skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
-            const woundedPartyMember = weakestPartyMember(playerSession, bot);
+            const woundedPartyMember = weakestPartyMember(playerSession, bot, pulling.puller?.actor);
 
             if (woundedPartyMember?.hpRatio < 0.45 && canCast) {
                 acted = true;
@@ -637,6 +679,29 @@ module.exports = {
             }
         }
 
+        if (!acted && pulling.enabled && pulling.puller?.session === session && pulling.puller.kind === 'bot') {
+            const pullAction = PartyPulling.tickBotPuller(session, bot, playerSession, partySettings, Generics, BotAI);
+            pulling = PartyPulling.current(playerSession, partySettings);
+            if (pullAction.handled) {
+                const reason = pullAction.paused || pullAction.action || (pullAction.idle ? 'no_targets' : 'waiting');
+                recordRoleDecision(session, bot, 'party_pull', reason, {
+                    targetId: pullAction.target?.fetchId?.() || pulling.target?.fetchId?.() || null,
+                    phase: pulling.phase || null
+                });
+                return;
+            }
+        }
+
+        if (!acted && pulling.enabled && pulling.target && !pulling.engageable) {
+            session.currentTargetId = undefined;
+            bot.unselect();
+            recordRoleDecision(session, bot, 'hold_for_pull', pulling.paused || 'mob_not_in_range', {
+                targetId: pulling.target.fetchId(),
+                pullerId: pulling.puller?.actor?.fetchId?.() || null
+            });
+            return;
+        }
+
         if (!acted && role === 'tank') {
             const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 800);
             const monsterToAggro = partyThreat?.type === 'npc'
@@ -662,7 +727,7 @@ module.exports = {
             }
         }
 
-        if (!acted && role === 'tank') {
+        if (!acted && role === 'tank' && !PartyPulling.enabled(partySettings)) {
             const activeMobs = partyAggroCount(playerSession);
             const blockReason = pullBlockReason(session, botVitals, partyVitals, activeMobs);
 

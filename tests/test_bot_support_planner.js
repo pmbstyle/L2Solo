@@ -18,15 +18,21 @@ function skill(id, name, level, effect, stats, target = 'friendly') {
 }
 
 let nextActorId = 1;
-function actor(name, classId, skills = [], mp = 100) {
+function actor(name, classId, skills = [], mp = 100, maxMp = 100, busy = false) {
     const id = nextActorId++;
     return {
         fetchId: () => id,
         fetchName: () => name,
         fetchClassId: () => classId,
         fetchMp: () => mp,
+        fetchMaxMp: () => maxMp,
         skillset: { fetchSkills: () => skills },
-        state: { fetchDead: () => false }
+        state: {
+            fetchDead: () => false,
+            fetchTowards: () => busy,
+            fetchHits: () => false,
+            fetchCasts: () => false
+        }
     };
 }
 
@@ -42,6 +48,14 @@ assert.strictEqual(
     true,
     'a legacy UI marker without a structured effect must not block a rebuff'
 );
+
+EffectStore.apply(target, { key: 'shield', id: 1040, level: 2, type: 'buff', durationMs: 10 * 60 * 1000 });
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(target, shieldOne),
+    false,
+    'a legacy structured newbie Shield without stats must still block a lower-level recast'
+);
+EffectStore.remove(target, 'shield');
 
 EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
 assert.strictEqual(BotSupportPlanner.needsSkill(target, shieldOne), false, 'do not overwrite an equal-level active buff');
@@ -142,5 +156,82 @@ action = BotSupportPlanner.nextAction(fullPackageBuffer, [
 ], [fullPackageBuffer]);
 assert.strictEqual(action.skill.fetchSelfId(), 1078, 'after a successful cast, the autonomous buffer should advance to the next needed party buff without another request');
 assert.strictEqual(action.target, packageMage, 'the next planned buff should target its eligible party member');
+
+const pullPriorityBuffer = actor('PullPriorityBuffer', 49, [sharedShield]);
+const ordinaryLeader = actor('OrdinaryLeader', 0);
+const designatedPuller = actor('DesignatedPuller', 4);
+action = BotSupportPlanner.nextAction(pullPriorityBuffer, [
+    { actor: ordinaryLeader, leader: true },
+    { actor: designatedPuller, leader: false, puller: true }
+], [pullPriorityBuffer]);
+assert.strictEqual(action.target, designatedPuller, 'a designated puller should receive missing individual buffs before the party leader');
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: designatedPuller, puller: true }], [pullPriorityBuffer]),
+    true,
+    'party pull should wait while a support action remains for its designated puller'
+);
+
+const exhaustedPullBuffer = actor('ExhaustedPullBuffer', 49, [sharedShield], 30, 100);
+const exhaustedPuller = actor('ExhaustedPuller', 4);
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: exhaustedPuller, puller: true }], [exhaustedPullBuffer]),
+    false,
+    'party pull should not wait forever for a buff the provider will decline below its support MP reserve'
+);
+
+const silencedPullBuffer = actor('SilencedPullBuffer', 49, [sharedShield]);
+const silencedPuller = actor('SilencedPuller', 4);
+EffectStore.apply(silencedPullBuffer, { key: 'silence', id: 116, type: 'debuff', durationMs: 30000 });
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: silencedPuller, puller: true }], [silencedPullBuffer]),
+    false,
+    'party pull should not wait for a support cast while its only provider is silenced'
+);
+
+const travellingPullBuffer = actor('TravellingPullBuffer', 49, [sharedShield], 100, 100, true);
+const travellingPuller = actor('TravellingPuller', 4);
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: travellingPuller, puller: true }], [travellingPullBuffer]),
+    false,
+    'party pull should not wait for a buff while its provider is still moving and cannot cast it'
+);
+
+const queuedSupportSession = {};
+const queuedSupportTarget = actor('QueuedSupportTarget', 4);
+const queuedSupportBuffer = actor('QueuedSupportBuffer', 49, [sharedShield]);
+queuedSupportBuffer.session = queuedSupportSession;
+action = BotSupportPlanner.nextAction(queuedSupportBuffer, [{ actor: queuedSupportTarget, leader: true }], [queuedSupportBuffer]);
+assert.strictEqual(BotSupportPlanner.queueSupportCast(queuedSupportSession, action), true, 'support selection should queue the intended native cast');
+assert.strictEqual(queuedSupportTarget.supportReservations, undefined, 'a queued movement/action must not masquerade as an accepted support cast');
+queuedSupportBuffer.state.fetchTowards = () => true;
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: queuedSupportTarget, puller: true }], [queuedSupportBuffer]),
+    true,
+    'party pull should keep waiting while a selected support cast is walking into range'
+);
+queuedSupportBuffer.state.fetchTowards = () => false;
+assert.strictEqual(BotSupportPlanner.beginSupportCast(queuedSupportSession, queuedSupportBuffer, queuedSupportTarget, action.skill), true, 'the reservation should begin only when the native cast starts');
+assert(queuedSupportTarget.supportReservations, 'an accepted cast should reserve its target effect');
+queuedSupportSession.currentTargetId = queuedSupportTarget.fetchId();
+assert.strictEqual(BotSupportPlanner.finishSupportCast(queuedSupportSession, queuedSupportBuffer, action.skill), true, 'support cast completion should clear its lifecycle marker');
+assert.strictEqual(queuedSupportSession.currentTargetId, undefined, 'a completed support cast must not leave a stale combat target behind');
+assert.strictEqual(BotSupportPlanner.queueSupportCast(queuedSupportSession, action), true, 'a subsequent support cast should be queued normally');
+assert.strictEqual(
+    BotSupportPlanner.cancelPendingSupportCast(queuedSupportSession, queuedSupportBuffer, queuedSupportTarget, partyShield),
+    false,
+    'an unrelated rejected skill must not clear a queued support cast'
+);
+assert(queuedSupportSession.pendingSupportCast, 'an unrelated rejection should leave the selected support cast intact');
+assert.strictEqual(
+    BotSupportPlanner.cancelPendingSupportCast(queuedSupportSession, queuedSupportBuffer, queuedSupportTarget, action.skill),
+    true,
+    'a native rejection of the queued support skill must release its pending marker immediately'
+);
+assert.strictEqual(queuedSupportSession.pendingSupportCast, undefined, 'a rejected queued support cast must not pause party pulling until timeout');
+assert.strictEqual(BotSupportPlanner.queueSupportCast(queuedSupportSession, action), true, 'a later retry should queue the support cast again');
+assert.strictEqual(BotSupportPlanner.beginSupportCast(queuedSupportSession, queuedSupportBuffer, queuedSupportTarget, action.skill), true, 'the subsequent cast should enter its active lifecycle');
+queuedSupportSession.currentTargetId = queuedSupportTarget.fetchId();
+assert.strictEqual(BotSupportPlanner.cancelSupportCast(queuedSupportSession, queuedSupportBuffer), true, 'an interrupted support cast should be cancellable');
+assert.strictEqual(queuedSupportSession.currentTargetId, undefined, 'a cancelled support cast must also clear its stale target');
 
 console.log('Bot support planner checks passed');

@@ -14,6 +14,7 @@ const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -243,6 +244,29 @@ try {
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
 
+    const selectedTargetRefreshBot = fakeActor(2000042, { locX: 0, locY: 0, level: 1 });
+    selectedTargetRefreshBot.activeBuffs = {};
+    const selectedTargetRefreshSession = fakeSession('bot_selected_target_refresh', selectedTargetRefreshBot);
+    selectedTargetRefreshSession.followPlayerSession = leaderSession;
+    selectedTargetRefreshSession.partyCompanion = true;
+    selectedTargetRefreshSession.plan = 'following';
+    // These can survive an inspection or an earlier completed cast. They are
+    // not proof that the party is in combat.
+    leader.destId = 1099;
+    selectedTargetRefreshSession.currentTargetId = 1099;
+    World.user = { sessions: [leaderSession, selectedTargetRefreshSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+
+    FollowingState.tick(selectedTargetRefreshSession, selectedTargetRefreshBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 0, locY: 0 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+
+    assert.strictEqual(selectedTargetRefreshSession.plan, 'getting_buffed', 'an idle companion should refresh newbie buffs even when it or the leader has a stale selected target');
+    assert.strictEqual(selectedTargetRefreshSession.roleDecision.reason, 'newbie_blessing', 'stale target ids must not produce wait_for_safe_moment outside combat');
+    leader.destId = undefined;
+
     const inviteBot = fakeActor(2000033, { locX: 50, locY: 0 });
     const inviteBotSession = fakeSession('bot_invite_resting', inviteBot);
     inviteBotSession.plan = 'resting';
@@ -414,6 +438,32 @@ try {
     assert.strictEqual(targetWakeSession.plan, 'following', 'resting companion should wake when leader attacks a target');
     assert.strictEqual(targetWakeBot.state.fetchSeated(), false, 'resting companion should stand when leader attacks');
     assert.strictEqual(targetWakeSession.currentTargetId, 1005, 'resting companion should remember leader target');
+
+    const restingPullBot = fakeActor(2000013, { locX: 80, locY: 0, hp: 20, maxHp: 100, mp: 10, maxMp: 100 });
+    restingPullBot.state.setSeated(true);
+    const restingPullSession = fakeSession('bot_resting_pull_pause', restingPullBot);
+    restingPullSession.followPlayerSession = leaderSession;
+    restingPullSession.partyCompanion = true;
+    restingPullSession.plan = 'resting';
+    const distantLeaderPull = {
+        fetchId: () => 1013,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 1200,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0
+    };
+    PartyCompanionService.updateSettings(leaderSession, { pullMode: 'leader' });
+    leader.destId = distantLeaderPull.fetchId();
+    World.user = { sessions: [leaderSession, restingPullSession] };
+    World.npc = { spawns: [distantLeaderPull] };
+    World.fetchNpcsInRadius = () => [];
+
+    RestingState.tick(restingPullSession, restingPullBot, {}, { say() {} });
+
+    assert.strictEqual(restingPullSession.plan, 'resting', 'recovering companion should not wake for a leader pull that has not reached the party');
+    assert.strictEqual(restingPullBot.state.fetchSeated(), true, 'pulling should stay paused while a companion is regenerating');
+    PartyCompanionService.updateSettings(leaderSession, { pullMode: 'auto' });
 
     leader.destId = 1003;
     const assistingBot = fakeActor(2000006, { locX: 500, locY: 0 });
@@ -728,6 +778,33 @@ try {
     assert.strictEqual(refreshSession.plan, 'getting_buffed', 'safe companion should leave briefly for a Newbie Guide when the player is in its town');
     assert.strictEqual(refreshSession.resumeAfterBuff?.plan, 'following', 'buff refresh should preserve the companion return plan');
 
+    const recoveryLeader = fakeActor(2000043, { locX: -84081, locY: 243227, locZ: -3723, level: 10 });
+    const recoveryLeaderSession = fakeSession('player_newbie_recovery_party', recoveryLeader);
+    const recoveryBot = fakeActor(2000044, { locX: -84001, locY: 243227, locZ: -3723, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
+    const recoverySession = fakeSession('bot_newbie_recovery_party', recoveryBot);
+    recoverySession.followPlayerSession = recoveryLeaderSession;
+    recoverySession.partyCompanion = true;
+    recoverySession.plan = 'following';
+    World.user = { sessions: [recoveryLeaderSession, recoverySession] };
+    FollowingState.tick(recoverySession, recoveryBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(recoverySession.plan, 'getting_buffed', 'a low-level companion already in a Newbie Guide town should recover there instead of sitting');
+    assert.strictEqual(recoverySession.roleDecision.reason, 'newbie_guide_recovery', 'Newbie Guide recovery should be visible in bot status');
+
+    const fieldRecoveryBot = fakeActor(2000045, { locX: 0, locY: 0, level: 20, hp: 20, maxHp: 100, mp: 100, maxMp: 100 });
+    const fieldRecoverySession = fakeSession('bot_field_recovery_party', fieldRecoveryBot);
+    fieldRecoverySession.followPlayerSession = fieldRefreshLeaderSession;
+    fieldRecoverySession.partyCompanion = true;
+    fieldRecoverySession.plan = 'following';
+    World.user = { sessions: [fieldRefreshLeaderSession, fieldRecoverySession] };
+    FollowingState.tick(fieldRecoverySession, fieldRecoveryBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(fieldRecoverySession.plan, 'resting', 'a low-level companion must not travel from a farming field to recover at a Newbie Guide');
+
     const errandLeader = fakeActor(2000037, { locX: 83396, locY: 147904, locZ: -3404 });
     const errandLeaderSession = fakeSession('player_town_errand_party', errandLeader);
     const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404 });
@@ -807,7 +884,7 @@ try {
 
     const partyHudLeader = fakeActor(2000030, { locX: 0, locY: 0 });
     const partyHudLeaderSession = fakeSession('player_party_hud', partyHudLeader);
-    const partyHudBotA = fakeActor(2000031, { locX: 40, locY: 0 });
+    const partyHudBotA = fakeActor(2000031, { locX: 40, locY: 0, classId: 4 });
     const partyHudBotASession = fakeSession('bot_party_hud_a', partyHudBotA);
     const partyHudBotB = fakeActor(2000032, { locX: 80, locY: 0 });
     const partyHudBotBSession = fakeSession('bot_party_hud_b', partyHudBotB);
@@ -828,6 +905,11 @@ try {
 
     World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
     World.fetchNpcsInRadius = () => [];
+    assert.deepStrictEqual(
+        PartyPulling.supportProviders(partyHudLeaderSession),
+        [partyHudBotA, partyHudBotB],
+        'the human leader must be a buff recipient, not an autonomous support provider'
+    );
     partyHudBotASession.lastTargetEvaluation = {
         targetId: 9001,
         targetName: 'Keltir',
@@ -891,6 +973,11 @@ try {
         caster: casterBot
     });
     assert(EffectStore.packetEffects(partyHudBotA).some((effect) => effect.id === 1040), 'support buff should be stored as a structured effect');
+    assert.deepStrictEqual(
+        EffectStore.list(partyHudBotA).find((effect) => effect.key === 'shield').stats,
+        { pDefMul: 1.12 },
+        'newbie and support Shield must retain C4 stats so the planner recognises it as active'
+    );
     const partyShieldPacket = lastPartySpelledPacket(partyHudLeaderSession, partyHudBotA.fetchId());
     assert(partyShieldPacket, 'support buff should refresh native party effect icons');
     assert.strictEqual(partyShieldPacket.readInt32LE(13), 1040, 'party effect packet should include shield skill id');
@@ -972,10 +1059,156 @@ try {
     assert.strictEqual(partyHudBotASession.botStay, false, 'follow mode should release held companions');
     assert.strictEqual(partyHudBotBSession.botStay, false, 'follow mode should release the full group');
 
+    const pulledMob = {
+        id: 3011,
+        locX: 1200,
+        locY: 0,
+        fetchId() { return this.id; },
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLevel: () => 26,
+        destId: undefined,
+        fetchDestId() { return this.destId; },
+        fetchLocX() { return this.locX; },
+        fetchLocY() { return this.locY; },
+        fetchLocZ: () => 0,
+        fetchName: () => 'pull target'
+    };
+    World.npc = { spawns: [pulledMob] };
+    World.fetchNpcsInRadius = () => [pulledMob];
+    partyHudBotA.locX = 40;
+    partyHudBotB.locX = 80;
+    partyHudBotA.moves = [];
+    partyHudBotB.moves = [];
+    let pulledTargetId = null;
+    const pullChat = [];
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'bot', 'assigning a bot to pull should enable the dedicated bot pull mode');
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullerId, partyHudBotA.fetchId(), 'party should use the bot explicitly selected by the player as puller');
+    assert.strictEqual(BotStatus.getStatus(partyHudBotASession).party.stance, 'pulling', 'selected companion should expose pulling as its party stance');
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say(_session, text) { pullChat.push(text); },
+        executeCombat(_session, _bot, npc) { pulledTargetId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotASession.roleDecision.action, 'party_pull', 'tank should become the assigned party puller before generic DPS');
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'approach', 'assigned puller should run to the nearest target first');
+    assert.strictEqual(partyHudBotA.moves.length, 1, 'puller should walk to the selected mob before aggroing it');
+    assert.strictEqual(partyHudLeaderSession.partyPullState.targetId, pulledMob.fetchId(), 'party should keep one shared pull target');
+
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat() { throw new Error('non-puller must wait for the incoming mob'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'non-puller should wait while the mob is outside party attack range');
+
+    partyHudBotA.locX = pulledMob.locX;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say(_session, text) { pullChat.push(text); },
+        executeCombat(_session, _bot, npc) { pulledTargetId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(pulledTargetId, pulledMob.fetchId(), 'tank should aggro with a normal attack when Aggression is not learned');
+    assert(pullChat.some((text) => text.includes('pull target')), 'puller should announce the specific mob in party chat');
+
+    partyHudLeaderSession.partyPullState.aggroRequestedAt = Date.now() - 3000;
+    partyHudBotA.state.casts = true;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() { throw new Error('puller must wait for its in-flight aggro cast instead of returning early'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'wait_for_aggro', 'puller should wait for a cast longer than the old fixed aggro timeout');
+    partyHudBotA.state.casts = false;
+
+    pulledMob.destId = partyHudBotA.fetchId();
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat() { throw new Error('non-puller must not chase a mob that has only just aggroed the distant puller'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'party should remain held until the puller has returned to the camp');
+
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() { throw new Error('confirmed aggro should make the puller return before the party engages'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'return', 'puller should return to the leader after aggro is confirmed');
+
+    pulledMob.locX = 700;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat() { throw new Error('melee companion must not chase an incoming pull outside its attack range'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'melee companions should keep holding until the mob reaches their actual attack range');
+
+    partyHudBotA.locX = partyHudLeader.locX;
+    pulledMob.locX = partyHudBotB.locX;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    pulledTargetId = null;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { pulledTargetId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(pulledTargetId, pulledMob.fetchId(), 'puller should keep attacking after the delivered pull enters engage phase');
+    partyHudLeaderSession.partyPullState.startedAt = Date.now() - 61000;
+    assert.strictEqual(PartyPulling.current(partyHudLeaderSession, PartyCompanionService.getSettings(partyHudLeaderSession)).target, pulledMob, 'a living pulled mob must stay the party target after one minute');
+    let assistedPulledMobId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { assistedPulledMobId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(assistedPulledMobId, pulledMob.fetchId(), 'party should engage the marked mob once it reaches attack range');
+
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    partyHudBotB.state.setSeated(true);
+    partyHudBotA.locX = 40;
+    partyHudBotA.moves = [];
+    pulledMob.locX = 1200;
+    pulledMob.destId = undefined;
+    let abortedAggro = 0;
+    let clearedAggroTimers = 0;
+    partyHudBotA.attack = {
+        abortCast() { abortedAggro++; },
+        clearTimers() { clearedAggroTimers++; }
+    };
+    partyHudLeaderSession.partyPullState = {
+        targetId: pulledMob.fetchId(),
+        pullerId: partyHudBotA.fetchId(),
+        source: 'bot',
+        phase: 'aggro',
+        startedAt: Date.now(),
+        aggroRequestedAt: Date.now()
+    };
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'party_recovering', 'pulling should pause while any companion is regenerating');
+    assert.strictEqual(partyHudBotA.moves.length, 0, 'puller should not leave the group during party recovery');
+    assert.strictEqual(abortedAggro, 1, 'party recovery should cancel an aggro cast that has not landed');
+    assert.strictEqual(clearedAggroTimers, 1, 'party recovery should cancel the scheduled aggro hit before it can land');
+    assert.strictEqual(partyHudLeaderSession.partyPullState.phase, 'approach', 'an interrupted aggro request should retry only after the party resumes');
+    partyHudBotB.state.setSeated(false);
+
+    partyHudLeader.destId = pulledMob.fetchId();
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'pull', 'leader']);
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {}, executeCombat() { throw new Error('party must wait for a leader pull outside range'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotBSession.roleDecision.action, 'hold_for_pull', 'leader pull should use the same hold gate as a bot pull');
+    pulledMob.locX = partyHudBotB.locX;
+    assistedPulledMobId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { assistedPulledMobId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(assistedPulledMobId, pulledMob.fetchId(), 'party should assist the leader-selected mob after it reaches the group');
+    assert.strictEqual(BotStatus.getStatus(partyHudBotASession).party.pull.mode, 'leader', 'bot status should expose the active pull mode and state');
+    partyHudLeader.destId = undefined;
+
     CompanionControl(partyHudLeaderSession, ['companion-control', 'pull', 'off']);
     assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'off', 'party control should store pull mode');
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullerId, null, 'leaving bot pull mode should clear the selected puller id');
     assert.strictEqual(partyHudBotASession.autoTaunt, false, 'pull off should disable companion taunt');
     assert.strictEqual(partyHudBotBSession.autoTaunt, false, 'pull off should apply to every companion');
+    assert.strictEqual(partyHudBotASession.partyPuller, false, 'leaving party pull mode should clear the companion pulling stance');
     const companionHtml = lastNpcHtml(partyHudLeaderSession);
     assert(companionHtml.includes('2 active'), 'party control panel should show active companion count');
     assert(companionHtml.includes('Loot: Random+Spoil'), 'party control panel should show readable loot mode');
@@ -983,9 +1216,10 @@ try {
     assert(!companionHtml.includes('<button'), 'party control panel should avoid legacy buttons because they break this client layout');
     assert(!companionHtml.includes('['), 'active party control items should use color only, not bracket labels');
     assert(
-        /companion-control pull auto[\s\S]*<td width=90 align=center><\/td>[\s\S]*companion-control pull off/.test(companionHtml),
-        'pull controls should keep Auto in the first column and Off in the third column'
+        /companion-control pull auto[\s\S]*companion-control pull leader[\s\S]*companion-control pull off/.test(companionHtml),
+        'party pull controls should expose Auto, Player, and Off modes'
     );
+    assert(companionHtml.includes('member-pull on'), 'eligible companion cards should expose a per-bot Pull order');
     assert(companionHtml.includes('Call'), 'companion cards should expose summon as a compact call action');
     assert(companionHtml.includes('Info'), 'companion cards should keep a compact status action');
     assert(companionHtml.includes('Dismiss'), 'companion cards should expose a dismiss action');
@@ -995,7 +1229,21 @@ try {
     assert(!companionHtml.includes('bgcolor=222222'), 'party control panel should avoid the flat grey panel background');
     assert(!companionHtml.includes('bgcolor=333333'), 'companion cards should avoid the flat grey card background');
 
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'bot', 'selected companion should remain the explicit puller until its status changes');
+    let cancelledPullCast = 0;
+    let clearedPullTimers = 0;
+    partyHudBotA.attack = {
+        abortCast() { cancelledPullCast++; },
+        clearTimers() { clearedPullTimers++; }
+    };
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'pull', 'off']);
+    assert.strictEqual(cancelledPullCast, 1, 'turning pull off should cancel an in-flight pull cast');
+    assert.strictEqual(clearedPullTimers, 1, 'turning pull off should cancel scheduled pull attacks');
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
     assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
+    assert.strictEqual(clearedPullTimers, 2, 'dismissing the selected puller should also cancel its scheduled pull action');
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'auto', 'dismissing the selected puller should clear party pull instead of silently assigning another bot');
     const oneMemberPacket = lastPartyAllPacket(partyHudLeaderSession);
     assert(oneMemberPacket, 'dismissing one companion should rebuild the party window');
     assert.strictEqual(oneMemberPacket.readInt32LE(5), 2, 'party window should keep the stored loot distribution after detach');

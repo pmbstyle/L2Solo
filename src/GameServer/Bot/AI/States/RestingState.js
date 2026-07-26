@@ -2,6 +2,8 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
@@ -103,7 +105,18 @@ module.exports = {
 
             const distance = point(bot).distance(point(player));
             const threat = PartyAwareness.findThreatTargetingParty(playerSession);
+            const partySettings = PartyCompanionService.getSettings(playerSession);
             const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
+            PartyPulling.observeLeaderTarget(playerSession, partySettings, leaderTargetId);
+            const pulling = PartyPulling.current(playerSession, partySettings);
+            const heldPullTargetId = pulling.target && !pulling.engageable
+                ? pulling.target.fetchId()
+                : null;
+            const threatIsHeldPull = Number(threat?.actor?.fetchId?.()) === Number(heldPullTargetId);
+            const leaderTargetIsHeldPull = Number(leaderTargetId) === Number(heldPullTargetId);
+            const combatTargetId = !threatIsHeldPull && threat?.actor?.fetchId?.()
+                ? threat.actor.fetchId()
+                : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
             const leaderSeated = player.state?.fetchSeated?.() === true;
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
@@ -115,17 +128,19 @@ module.exports = {
             const shouldFollowLeader = recovered && (
                 distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
             );
-            if (threat || leaderTargetId || shouldFollowLeader) {
+            if (combatTargetId || shouldFollowLeader) {
                 session.plan = 'following';
-                session.currentTargetId = threat?.actor?.fetchId?.() || leaderTargetId || undefined;
+                session.currentTargetId = combatTargetId || undefined;
                 session.townGossip = false;
                 standUp(session, bot);
                 recordWakeDecision(
                     session,
                     bot,
-                    threat || leaderTargetId ? 'assist_party' : 'follow_leader',
-                    threat ? 'party_under_attack' : (leaderTargetId ? 'leader_target' : (distance > REST_FOLLOW_WAKE_DISTANCE ? 'leader_moved' : 'leader_stood_ready')),
-                    threat
+                    combatTargetId ? 'assist_party' : 'follow_leader',
+                    (threat && !threatIsHeldPull)
+                        ? 'party_under_attack'
+                        : (combatTargetId ? 'leader_target' : (distance > REST_FOLLOW_WAKE_DISTANCE ? 'leader_moved' : 'leader_stood_ready')),
+                    threat && !threatIsHeldPull
                         ? { targetId: session.currentTargetId, protectedId: threat.targetId }
                         : { targetId: session.currentTargetId || null, distance: Math.round(distance) }
                 );
