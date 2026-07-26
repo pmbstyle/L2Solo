@@ -11,6 +11,8 @@ const RECOVERY_HP_RATIO = 0.35;
 const RECOVERY_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
 const MANA_REGEN_CAST_RETRY_MS = 8000;
+const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
+const NEWBIE_GUIDE_RECOVERY_MAX_LEVEL = 20;
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
@@ -61,6 +63,34 @@ function maybeCastManaRegeneration(session, bot, Generics) {
 function needsRecovery(bot) {
     return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < RECOVERY_HP_RATIO
         || bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < RECOVERY_MP_RATIO;
+}
+
+function canRecoverAtNewbieGuide(bot, BotAI) {
+    if (Number(bot?.fetchLevel?.() || 0) > NEWBIE_GUIDE_RECOVERY_MAX_LEVEL) return false;
+    const guide = BotAI.getClosestNewbieGuide?.(bot.fetchLocX(), bot.fetchLocY());
+    if (!guide) return false;
+
+    const dx = bot.fetchLocX() - guide.locX;
+    const dy = bot.fetchLocY() - guide.locY;
+    return Math.sqrt((dx * dx) + (dy * dy)) <= NEWBIE_GUIDE_TOWN_RADIUS;
+}
+
+function beginNewbieGuideRecovery(session, bot, playerSession) {
+    session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    session.preBuffPlan = 'following';
+    session.resumeAfterBuff = {
+        plan: 'following',
+        followPlayerSession: playerSession,
+        partyCompanion: true,
+        botStay: session.botStay === true,
+        stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
+        role: BotRoles.inferRole(bot)
+    };
+    session.plan = 'getting_buffed';
+    session.currentTargetId = undefined;
+    bot.unselect?.();
+    standUp(session, bot);
+    bot.automation?.abortAll?.(bot);
 }
 
 function retreatFromThreat(session, bot, threat) {
@@ -121,6 +151,18 @@ module.exports = {
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             const recovered = hpRatio >= 0.95 && mpRatio >= 0.95;
+
+            // A companion can join while it is already sitting from a prior
+            // hunt. If it is in a starter town, send low-level bots to the
+            // Newbie Guide instead of making the new party wait for normal
+            // seated regeneration. This checks the bot's own position, so it
+            // never leaves a farming spot just because the leader is in town.
+            if (!combatTargetId && !recovered && canRecoverAtNewbieGuide(bot, BotAI)) {
+                beginNewbieGuideRecovery(session, bot, playerSession);
+                recordWakeDecision(session, bot, hpRatio < 0.95 ? 'recover_hp' : 'recover_mp', 'newbie_guide_recovery');
+                BotAI.say(session, "I'm recovering at the Newbie Guide, then I'll return to you.");
+                return;
+            }
 
             // A recovering companion must stay seated even when its leader is
             // far away.  Otherwise RestingState stands it up to follow, then

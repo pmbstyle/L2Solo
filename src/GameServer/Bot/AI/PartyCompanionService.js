@@ -10,6 +10,7 @@ const DEFAULT_PARTY_SETTINGS = {
     itemLastLootIndex: -1
 };
 const PARTY_LOOT_RADIUS = 2500;
+const RANDOM_LOOT_DISTRIBUTIONS = new Set([1, 2]);
 const FORMATION_OFFSETS = [
     { locX: -90, locY: -70 },
     { locX: -90, locY: 70 },
@@ -134,6 +135,50 @@ function nextTurnMember(leaderSession, members) {
     const nextIndex = (lastIndex + 1) % members.length;
     settings.itemLastLootIndex = nextIndex;
     return members[nextIndex];
+}
+
+function canPickGroundLoot(session, leaderSession, item) {
+    const actor = session?.actor;
+    if (!isActiveCompanion(session, leaderSession) || !isAliveOnline(session)) return false;
+    if (['resting', 'getting_buffed', 'shopping', 'merchant'].includes(session.plan)) return false;
+    if (actor?.state?.fetchSeated?.() || actor?.state?.fetchPickinUp?.()) return false;
+    if (actor?.storedPickup) return false;
+    return distance2d(actor, item) <= PARTY_LOOT_RADIUS;
+}
+
+function nearestGroundLootPicker(looterSession, item) {
+    const leaderSession = partyLeaderSession(looterSession);
+    if (!leaderSession || !item || !RANDOM_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
+
+    return membersForLeader(leaderSession)
+        .filter((memberSession) => canPickGroundLoot(memberSession, leaderSession, item))
+        .sort((a, b) => (
+            distance2d(a.actor, item) - distance2d(b.actor, item) ||
+            Number(a.actor.fetchId()) - Number(b.actor.fetchId())
+        ))[0] || null;
+}
+
+function startQueuedGroundPickup(pickerSession) {
+    const picker = pickerSession?.actor;
+    const queue = pickerSession?.partyGroundPickupQueue;
+    if (!picker || pickerSession.partyGroundPickupInProgress || !queue?.length) return false;
+    if (picker.state?.fetchHits?.() || picker.state?.fetchCasts?.() || picker.state?.fetchPickinUp?.()) return false;
+
+    const pickup = queue[0];
+    pickerSession.partyGroundPickupInProgress = true;
+    const Generics = invoke(path.actor);
+    Generics.stopAutomation(pickerSession, picker);
+    Generics.pickupExec(pickerSession, picker, pickup, () => {
+        if (queue[0]?.id === pickup.id) {
+            queue.shift();
+        } else {
+            const index = queue.findIndex((entry) => entry.id === pickup.id);
+            if (index >= 0) queue.splice(index, 1);
+        }
+        pickerSession.partyGroundPickupInProgress = false;
+        startQueuedGroundPickup(pickerSession);
+    });
+    return true;
 }
 
 function formationSlotFor(companionSession) {
@@ -318,6 +363,24 @@ const PartyCompanionService = {
             })
             .filter((entry) => entry.amount > 0);
     },
+
+    queueRandomGroundPickup(looterSession, item) {
+        const pickerSession = nearestGroundLootPicker(looterSession, item);
+        if (!pickerSession) return null;
+
+        const pickup = { id: item.fetchId() };
+        // Player pickup requests wait for the next client ValidatePosition.
+        // Hot bots update their location server-side, so leaving this in
+        // storedPickup makes the visible drop stay on the ground forever.
+        // Keep an independent FIFO because a mob can drop Adena and items in
+        // the same reward pass while Automation has only one pickup timer.
+        pickerSession.partyGroundPickupQueue ??= [];
+        pickerSession.partyGroundPickupQueue.push(pickup);
+        startQueuedGroundPickup(pickerSession);
+        return pickerSession;
+    },
+
+    startQueuedGroundPickup,
 
     attach(leaderSession, companionSession, options = {}) {
         const leader = leaderSession?.actor;

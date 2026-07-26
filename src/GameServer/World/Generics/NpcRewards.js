@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const BotLootEtiquette = invoke('GameServer/Bot/AI/BotLootEtiquette');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 function isBotSession(session) {
@@ -45,6 +46,8 @@ function spawnGroundDrop(world, session, npc, selfId, amount) {
     const point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
     world.spawnItem(session, selfId, amount, {
         ...point.toCoords(), locZ: npc.fetchLocZ() - 10
+    }, (item) => {
+        PartyCompanionService.queueRandomGroundPickup(session, item);
     });
 }
 

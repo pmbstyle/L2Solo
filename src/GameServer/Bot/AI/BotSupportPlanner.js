@@ -41,7 +41,13 @@ function supportSkills(actor) {
         .filter((skill) => skill && !skill.fetchPassive?.())
         .filter((skill) => {
             const semantic = skill.fetchSemantic?.();
-            return semantic?.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target);
+            // Heal-over-time effects are represented as temporary buffs for
+            // the effect engine, but they are not part of the persistent
+            // party-buff package. Treating a 15-second HoT as a rebuff makes
+            // the support planner request it continuously and pauses pulling.
+            const skillType = skill.fetchSkillType?.();
+            const periodicHeal = skillType === 'hot' || skillType === 'healHot' || skillType === 'manaHot';
+            return !periodicHeal && semantic?.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target);
         });
 }
 

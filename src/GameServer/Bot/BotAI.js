@@ -34,6 +34,11 @@ const CHAT_PHRASES = {
         "Ready to rumble!"
     ]
 };
+// Visibility refreshes and damage can request an immediate AI pass from
+// several nearby actors at once.  Without a small gate each request cancels
+// and recreates the companion's normal timer, which can turn a group move
+// into a tight synchronous AI loop.
+const WAKEUP_THROTTLE_MS = 250;
 const REAL_PLAYER_CACHE_MS = 250;
 let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
@@ -135,8 +140,13 @@ const BotAI = {
         }
     },
 
-    wakeup(session) {
+    wakeup(session, { urgent = false } = {}) {
         if (!session.actor || !session.aiActive) return;
+
+        const now = Date.now();
+        if (!urgent && now - Number(session.lastAiWakeAt || 0) < WAKEUP_THROTTLE_MS) return;
+        session.lastAiWakeAt = now;
+
         if (session.aiTimeout) {
             clearTimeout(session.aiTimeout);
             session.aiTimeout = null;

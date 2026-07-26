@@ -57,7 +57,16 @@ class Attack {
             case 'move'   : Generics.moveTo       (session, actor, queue.data); break;
             case 'attack' : Generics.attackRequest(session, actor, queue.data); break;
             case 'skill'  : Generics.skillRequest (session, actor, queue.data); break;
-            case 'pickup' : Generics.pickupRequest(session, actor, queue.data); break;
+            case 'pickup' : {
+                const isBot = session?.constructor?.name === 'BotSession' || String(session?.accountId || '').startsWith('bot_');
+                // Hot bots move entirely on the server and never send the
+                // ValidatePosition that a player's pickupRequest waits for.
+                // A queued pickup commonly follows the killing hit, so it
+                // must use the server-side execution path as well.
+                if (isBot) Generics.pickupExec(session, actor, queue.data);
+                else Generics.pickupRequest(session, actor, queue.data);
+                break;
+            }
             case 'sit'    : Generics.basicAction  (session, actor, queue.data); break;
         }
         this.resetQueuedEvent();
@@ -156,6 +165,11 @@ class Attack {
 
         this.queueTimer(() => {
             if (this.checkParticipants(actor, creature)) {
+                return;
+            }
+
+            actor.state.setHits(false);
+            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
                 return;
             }
 
@@ -266,6 +280,10 @@ class Attack {
 
             // Start replenish
             actor.automation.replenishVitals(actor);
+
+            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+                return;
+            }
 
             if (this.queue.name) {
                 this.dequeueEvent(session);

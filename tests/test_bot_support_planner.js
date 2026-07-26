@@ -5,7 +5,7 @@ require('../src/Global');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
-function skill(id, name, level, effect, stats, target = 'friendly') {
+function skill(id, name, level, effect, stats, target = 'friendly', type = null) {
     return {
         fetchSelfId: () => id,
         fetchName: () => name,
@@ -13,6 +13,7 @@ function skill(id, name, level, effect, stats, target = 'friendly') {
         fetchPassive: () => false,
         fetchConsumedMp: () => 5,
         fetchTargetKind: () => target,
+        fetchSkillType: () => type,
         fetchSemantic: () => ({ effectType: 'buff', effect, stats, target })
     };
 }
@@ -37,10 +38,17 @@ function actor(name, classId, skills = [], mp = 100, maxMp = 100, busy = false) 
 }
 
 const shieldOne = skill(1040, 'Shield', 1, 'shield', { pDefMul: 1.08 });
+const chantOfLife = skill(1229, 'Chant of Life', 1, 'chant_of_life', {}, 'friendly', 'hot');
 const soulShieldTwo = skill(1010, 'Soul Shield', 2, 'soul_shield', { pDefMul: 1.12 });
 const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
+
+assert.deepStrictEqual(
+    BotSupportPlanner.supportSkills(actor('ChantBuffer', 49, [chantOfLife])),
+    [],
+    'a short heal-over-time effect must not enter the persistent party-buff planner'
+);
 
 target.activeBuffs = { shield: Date.now() + (10 * 60 * 1000) };
 assert.strictEqual(

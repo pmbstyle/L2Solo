@@ -300,6 +300,20 @@ try {
     }
     assert.strictEqual(inviteTell, `I'll join you, just need a moment to recover.`, 'resting invite acknowledgement should survive PartyCompanionService.attach');
     assert.strictEqual(inviteBotSession.plan, 'resting', 'attaching a resting bot should preserve resting state');
+    inviteBot.level = 17;
+    inviteBot.hp = 40;
+    inviteBot.mp = 20;
+    inviteBot.state.setSeated(true);
+    World.user = { sessions: [leaderSession, inviteBotSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    RestingState.tick(inviteBotSession, inviteBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 0, locY: 0, locZ: 0 }),
+        say() {}
+    });
+    assert.strictEqual(inviteBotSession.plan, 'getting_buffed', 'a low-level companion accepted while resting in town should recover at the Newbie Guide');
+    assert.strictEqual(inviteBot.state.fetchSeated(), false, 'Newbie Guide recovery should stand the invited companion up');
+    assert.strictEqual(inviteBotSession.roleDecision.reason, 'newbie_guide_recovery', 'the city recovery transition should be visible in companion status');
 
     const movingBot = fakeActor(2000007, { locX: 500, locY: 0 });
     movingBot.state.setTowards('move');
@@ -314,6 +328,18 @@ try {
     FollowingState.tick(movingSession, movingBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
 
     assert.strictEqual(movingBot.moves.length, 0, 'companion should not restart follow movement while the existing waypoint is still useful');
+
+    const arrivedBot = fakeActor(2000009, { locX: 0, locY: 0 });
+    const arrivedSession = fakeSession('bot_arrived_follow', arrivedBot);
+    arrivedSession.followPlayerSession = leaderSession;
+    arrivedSession.partyCompanion = true;
+    arrivedSession.plan = 'following';
+    arrivedSession.lastTickLoc = { x: 0, y: 0 };
+    arrivedSession.lastStuckSampleAt = Date.now();
+    arrivedSession.stuckTicks = 2;
+    World.user = { sessions: [leaderSession, arrivedSession] };
+    FollowingState.tick(arrivedSession, arrivedBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(arrivedSession.stuckTicks, 0, 'arriving must clear stale stuck state before the next movement command');
     assert(movingSession.lastFollowMoveHeldAt, 'companion should record that a follow retarget was held');
 
     leader.state.setSeated(true);
@@ -1097,6 +1123,19 @@ try {
     assert.strictEqual(partyHudBotA.moves.length, 1, 'puller should walk to the selected mob before aggroing it');
     assert.strictEqual(partyHudLeaderSession.partyPullState.targetId, pulledMob.fetchId(), 'party should keep one shared pull target');
 
+    partyHudBotA.state.setTowards('move');
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotA.moves.length, 1, 'an active pull approach must keep its current route instead of restarting pathfinding every AI tick');
+
+    partyHudBotASession.stuckTicks = 3;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotA.moves.length, 2, 'a stalled pull route should be replanned by the puller instead of using generic follow teleport recovery');
+    assert.strictEqual(partyHudBotASession.stuckTicks, 0, 'a pull-route replan should begin with a fresh stuck sample window');
+
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('non-puller must wait for the incoming mob'); }, executePvPCombat() {}
     });
@@ -1129,6 +1168,13 @@ try {
         say() {}, executeCombat() { throw new Error('confirmed aggro should make the puller return before the party engages'); }, executePvPCombat() {}
     });
     assert.strictEqual(partyHudBotASession.roleDecision.reason, 'return', 'puller should return to the leader after aggro is confirmed');
+    const returnMoves = partyHudBotA.moves.length;
+    partyHudBotA.state.setTowards('move');
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotA.moves.length, returnMoves, 'an active pull return must keep its current route instead of restarting pathfinding every AI tick');
+    partyHudBotA.state.setTowards(false);
 
     pulledMob.locX = 700;
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {

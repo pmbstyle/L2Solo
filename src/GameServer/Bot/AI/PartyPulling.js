@@ -9,6 +9,7 @@ const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
 const PULL_RETURN_DISTANCE = 180;
 const PULL_AGGRO_TIMEOUT_MS = 8000;
+const PULL_MOVE_TARGET_DRIFT = 200;
 
 function point(actor) {
     return {
@@ -174,8 +175,31 @@ function nearestFreeMonster(bot) {
         .sort((a, b) => distance(point(bot), point(a)) - distance(point(bot), point(b)))[0] || null;
 }
 
-function moveTo(session, bot, target) {
+function shouldKeepPullMove(session, bot, state, phase, target) {
+    if (!state?.moveTarget || state.movePhase !== phase) return false;
+    if (!(session.moveTimer || bot.state?.fetchTowards?.())) return false;
+    if ((session.stuckTicks || 0) >= 2) return false;
+    return distance(state.moveTarget, point(target)) <= PULL_MOVE_TARGET_DRIFT;
+}
+
+function moveTo(session, bot, state, phase, target) {
+    if (shouldKeepPullMove(session, bot, state, phase, target)) return false;
+    // FollowingState leaves active pull movement to this coordinator. When a
+    // route has genuinely stopped, start the replacement path with a fresh
+    // sample window instead of treating every later tick as still stuck.
+    if ((session.stuckTicks || 0) >= 2) {
+        session.stuckTicks = 0;
+        session.lastStuckSampleAt = Date.now();
+    }
+    state.movePhase = phase;
+    state.moveTarget = point(target);
     bot.moveTo({ from: point(bot), to: point(target) });
+    return true;
+}
+
+function clearPullMove(state) {
+    delete state.movePhase;
+    delete state.moveTarget;
 }
 
 function aggroActionInFlight(bot) {
@@ -198,6 +222,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         // of letting its existing automation carry it out of the group.
         if (state.phase === 'approach') {
             bot.automation?.abortAll?.(bot);
+            clearPullMove(state);
         }
         // An aggro request has not landed yet, so it must not finish while the
         // party is paused.  Once it has landed, preserve the shared target and
@@ -228,7 +253,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
     const state = pullState(leaderSession);
     if (state.phase === 'approach') {
         if (distance(point(bot), point(target)) > PULL_CONTACT_DISTANCE) {
-            moveTo(session, bot, target);
+            moveTo(session, bot, state, 'approach', target);
             return { handled: true, puller, action: 'approach', target };
         }
 
@@ -236,6 +261,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         // starting the native attack; otherwise its later completion can race
         // the cast and the return move would cancel the hit before it lands.
         bot.automation?.abortAll?.(bot);
+        clearPullMove(state);
         bot.select({ id: target.fetchId() });
         const aggression = BotRoles.inferRole(bot) === 'tank' ? BotSkillCapabilities.aggressionSkill(bot) : null;
         if (aggression && bot.fetchMp() >= aggression.fetchConsumedMp()) {
@@ -265,13 +291,14 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
             // An interrupted/missed attempt must not make the puller abandon
             // the mob. Re-enter approach and issue a new native attack.
             state.phase = 'approach';
+            clearPullMove(state);
             return { handled: true, puller, action: 'retry_aggro', target };
         }
         state.phase = 'return';
     }
 
     if (state.phase === 'return' && distance(point(bot), point(leaderSession.actor)) > PULL_RETURN_DISTANCE) {
-        moveTo(session, bot, leaderSession.actor);
+        moveTo(session, bot, state, 'return', leaderSession.actor);
         return { handled: true, puller, action: 'return', target };
     }
 
@@ -279,6 +306,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         // The puller is back at the camp. The mob is now delivered even when
         // melee formation offsets put every companion just outside its first
         // attack radius; normal assist movement can finish the engagement.
+        clearPullMove(state);
         state.phase = 'engage';
         return { handled: false, puller, target };
     }

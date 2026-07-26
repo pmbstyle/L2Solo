@@ -17,6 +17,7 @@ const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
 const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
+const STUCK_SAMPLE_INTERVAL_MS = 750;
 // Newbie Guides only exist in the starter villages.  A companion should not
 // abandon a player in the field just because its starter buffs have expired.
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
@@ -311,6 +312,13 @@ function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
 }
 
+function activeBotPullTravel(session, pulling) {
+    return pulling?.enabled === true &&
+        pulling.puller?.session === session &&
+        pulling.puller.kind === 'bot' &&
+        ['approach', 'return'].includes(pulling.phase);
+}
+
 function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
     if (session.autoTaunt === false) return 'manual_pull_off';
     if (session.botStay) return 'stay_order';
@@ -411,10 +419,14 @@ module.exports = {
         session.lastTickLoc = currentLoc;
 
         const isMoving = !!session.moveTimer || bot.state.fetchTowards();
-        if (isMoving && movedDist < 10) {
+        const now = Date.now();
+        const canSampleStuck = now - Number(session.lastStuckSampleAt || 0) >= STUCK_SAMPLE_INTERVAL_MS;
+        if (isMoving && movedDist < 10 && canSampleStuck) {
             session.stuckTicks = (session.stuckTicks || 0) + 1;
-        } else {
+            session.lastStuckSampleAt = now;
+        } else if (!isMoving || movedDist >= 10) {
             session.stuckTicks = 0;
+            session.lastStuckSampleAt = now;
         }
 
         if (bot.state.fetchSeated() && (partyThreat || leaderTargetId || distance > FOLLOW_RUN_DISTANCE)) {
@@ -435,7 +447,11 @@ module.exports = {
             return;
         }
 
-        if (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE) {
+        // Pulling has its own route recovery.  Teleporting an assigned
+        // puller back to the leader halfway through approach/return makes the
+        // client show it run forward, snap back, and start the route again.
+        const pullerTravelling = activeBotPullTravel(session, pulling);
+        if (!pullerTravelling && (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE)) {
             session.stuckTicks = 0;
             recordRoleDecision(session, bot, 'follow_leader', distance > FOLLOW_TELEPORT_DISTANCE ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
