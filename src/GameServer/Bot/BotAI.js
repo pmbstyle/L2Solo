@@ -394,7 +394,6 @@ const BotAI = {
                     if (wasCompanion) {
                         PartyCompanionService.clearCompanion(session, {
                             plan: 'hunting',
-                            rebuildWindow: false,
                             refreshPanel: false
                         });
                         // A corpse that timed out of party resurrection has
@@ -423,7 +422,6 @@ const BotAI = {
                             if (wasCompanion) {
                                 PartyCompanionService.clearCompanion(session, {
                                     plan: 'hunting',
-                                    rebuildWindow: false,
                                     refreshPanel: false
                                 });
                             }

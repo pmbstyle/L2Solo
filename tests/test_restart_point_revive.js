@@ -7,7 +7,7 @@ const revive = invoke('GameServer/Actor/Generics/Revive');
 const StateModel = invoke('GameServer/Model/State');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
-const RestartPoint = invoke('GameServer/Network/Request/RestartPoint');
+const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
 
 const dyingActor = {
     state: new StateModel(),
@@ -154,31 +154,58 @@ const fallenSessionB = {
     deathTimerStart: Date.now(),
     incomingThreatId: 1000
 };
-const aliveSession = { actor: aliveCompanion, partyCompanion: true, followPlayerSession: leaderSession };
-const unrelatedSession = { actor: deadCompanion(47), partyCompanion: true, followPlayerSession: { actor: {} } };
+const aliveSession = {
+    actor: aliveCompanion,
+    partyCompanion: true,
+    followPlayerSession: leaderSession,
+    botStay: true,
+    stayLocation: { locX: 12, locY: 34, locZ: 56 }
+};
 const companionCalls = [];
-const revivedCompanions = RestartPoint.reviveDeadCompanions(leaderSession, {
+const movedCompanions = TeleportTo.syncPartyCompanions(leaderSession, {
     locX: 1000,
     locY: 2000,
     locZ: -3000
 }, {
     revive(session, actor, options) { companionCalls.push({ type: 'revive', session, actor, options }); },
     teleportTo(session, actor, coords) { companionCalls.push({ type: 'teleport', session, actor, coords }); }
-}, {
-    sessions: [fallenSessionA, fallenSessionB, aliveSession, unrelatedSession]
-});
+}, [fallenSessionA, fallenSessionB, aliveSession]);
 
-assert.strictEqual(revivedCompanions, 2, 'leader town restart should revive every dead companion in the same party');
+assert.strictEqual(movedCompanions, 3, 'a leader teleport should move every active companion in the same party');
 assert.deepStrictEqual(companionCalls.filter((call) => call.type === 'revive').map((call) => call.actor.fetchId()), [44, 45], 'only fallen companions should be revived');
 assert.deepStrictEqual(companionCalls.filter((call) => call.type === 'teleport').map((call) => call.coords), [
     { locX: 1080, locY: 2000, locZ: -3000 },
-    { locX: 920, locY: 2000, locZ: -3000 }
-], 'fallen companions should arrive beside the player town restart point');
-assert.strictEqual(fallenSessionA.plan, 'following', 'town-revived companion must remain in the party follow state');
-assert.strictEqual(fallenSessionA.deathTimerStart, undefined, 'town restart must clear the stale death timeout');
-assert.strictEqual(fallenSessionA.currentTargetId, undefined, 'town restart must clear stale combat targets');
-assert.strictEqual(fallenSessionB.incomingThreatId, undefined, 'town restart must clear stale incoming threats');
-assert.strictEqual(fallenA.unselected, true, 'town-revived companion must clear its old target');
-assert.strictEqual(aliveSession.plan, undefined, 'living companions must not be reset by a leader town restart');
+    { locX: 920, locY: 2000, locZ: -3000 },
+    { locX: 1000, locY: 2080, locZ: -3000 }
+], 'all companions should arrive beside the player teleport point');
+assert.strictEqual(fallenSessionA.plan, 'following', 'teleported companion must remain in the party follow state');
+assert.strictEqual(fallenSessionA.deathTimerStart, undefined, 'leader teleport must clear the stale death timeout');
+assert.strictEqual(fallenSessionA.currentTargetId, undefined, 'leader teleport must clear stale combat targets');
+assert.strictEqual(fallenSessionB.incomingThreatId, undefined, 'leader teleport must clear stale incoming threats');
+assert.strictEqual(fallenA.unselected, true, 'teleported companion must clear its old target');
+assert.strictEqual(aliveSession.plan, 'following', 'living companions must return to follow when the leader teleports');
+assert.strictEqual(aliveSession.botStay, true, 'leader teleport must preserve an explicit Hold order');
+assert.deepStrictEqual(aliveSession.stayLocation, { locX: 1000, locY: 2080, locZ: -3000 }, 'a held companion must use its new teleport location as the hold anchor');
+
+const formationCalls = [];
+const fullParty = Array.from({ length: 8 }, (_value, index) => ({
+    actor: { fetchId: () => 60 + index, isDead: () => false, unselect() {} },
+    partyCompanion: true,
+    followPlayerSession: leaderSession
+}));
+TeleportTo.syncPartyCompanions(leaderSession, { locX: 3000, locY: 4000, locZ: -2000 }, {
+    revive() { throw new Error('living companions must not be revived'); },
+    teleportTo(_session, _actor, coords) { formationCalls.push(coords); }
+}, fullParty);
+assert.strictEqual(new Set(formationCalls.map((coords) => `${coords.locX}:${coords.locY}:${coords.locZ}`)).size, 8, 'a full party must receive distinct teleport landing positions');
+
+const botSourceCalls = [];
+assert.strictEqual(TeleportTo.syncPartyCompanions({
+    constructor: { name: 'BotSession' }
+}, { locX: 1, locY: 2, locZ: 3 }, {
+    revive() { botSourceCalls.push('revive'); },
+    teleportTo() { botSourceCalls.push('teleport'); }
+}, [fallenSessionA]), 0, 'a bot teleport must not recursively move its party');
+assert.deepStrictEqual(botSourceCalls, [], 'a bot teleport must leave other companions untouched');
 
 console.log('Restart point revive checks passed');

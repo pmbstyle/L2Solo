@@ -4,6 +4,8 @@ require('../src/Global');
 
 const BotAI = invoke('GameServer/Bot/BotAI');
 const revive = invoke('GameServer/Actor/Generics/Revive');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const BotManager = invoke('GameServer/Bot/BotManager');
 
 function botAt(loc) {
     return {
@@ -92,5 +94,49 @@ revive({
 assert.strictEqual(respawningBot.state.dead, false, 'bot must be alive before its immediate town teleport');
 assert.strictEqual(respawningBot.hp, 100, 'bot town respawn should restore HP before teleport validation');
 assert.strictEqual(respawnPackets.length, 2, 'bot town respawn should send revive and stand-up packets synchronously');
+
+const partyPackets = [];
+const partyLeader = {
+    actor: {
+        fetchId: () => 201,
+        fetchName: () => 'Party leader',
+        fetchCp: () => 0,
+        fetchMaxCp: () => 0,
+        fetchHp: () => 100,
+        fetchMaxHp: () => 100,
+        fetchMp: () => 100,
+        fetchMaxMp: () => 100,
+        fetchLevel: () => 20,
+        fetchClassId: () => 0
+    },
+    dataSendToMe(packet) { partyPackets.push(packet); }
+};
+const timedOutCompanion = {
+    actor: {
+        fetchId: () => 202,
+        fetchName: () => 'Timed out companion',
+        attack: { abortCast() {}, clearTimers() {} },
+        automation: { abortAll() {} },
+        state: { setHits() {}, setCasts() {} },
+        unselect() {}
+    },
+    partyCompanion: true,
+    followPlayerSession: partyLeader,
+    plan: 'following'
+};
+const originalSessions = BotManager.sessions;
+BotManager.sessions = [timedOutCompanion];
+try {
+    assert.strictEqual(
+        PartyCompanionService.clearCompanion(timedOutCompanion, { plan: 'hunting', refreshPanel: false }),
+        true,
+        'a timed-out companion should detach from its leader'
+    );
+} finally {
+    BotManager.sessions = originalSessions;
+}
+assert.strictEqual(timedOutCompanion.partyCompanion, false, 'timed-out companion should clear party membership');
+assert.strictEqual(timedOutCompanion.followPlayerSession, null, 'timed-out companion should clear its leader reference');
+assert.strictEqual(partyPackets.some((packet) => packet[0] === 0x50), true, 'companion timeout must clear the player party window immediately');
 
 console.log('Bot death respawn checks passed');
