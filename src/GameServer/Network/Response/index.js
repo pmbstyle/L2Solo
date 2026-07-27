@@ -83,6 +83,7 @@ module.exports = {
  partySmallWindowDelete: require('./PartySmallWindowDelete'),
     partySmallWindowDeleteAll: require('./PartySmallWindowDeleteAll'),
      partySmallWindowUpdate: require('./PartySmallWindowUpdate'),
+       partyMemberPosition: require('./PartyMemberPosition'),
               partySpelled: require('./PartySpelled'),
    abnormalStatusUpdate: require('./AbnormalStatusUpdate'),
               joinParty: require('./JoinParty'),

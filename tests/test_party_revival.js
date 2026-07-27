@@ -34,6 +34,7 @@ function actor(id, { dead = false, skills = [], items = [] } = {}) {
         fetchMaxMp: () => 100,
         fetchMaxHp: () => 100,
         fetchHp() { return this.hp; },
+        fetchDestId() { return this.destId; },
         fillupVitals() { this.hp = 100; this.mp = 100; },
         canUseSkill: () => true,
         select(data) { this.destId = data.id; },
@@ -101,12 +102,25 @@ try {
     const combatHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(combatHeldResult.handled, false, 'a monster still fighting a fallen party member must block resurrection');
     World.npc.spawns = [];
-    healer.state.fetchCombats = () => true;
     healer.state.fetchHits = () => true;
 
+    const staleActionResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
+    assert.strictEqual(staleActionResult.handled, true, 'a stale hit flag without a living hostile target must not strand a dead companion');
+    assert.strictEqual(staleActionResult.source, 'skill', 'a stale hit flag must still allow the preferred resurrection skill');
+    leaderSession.partyRevivalAttempt = null;
+    healer.destId = 3000100;
+    World.npc.spawns = [{
+        fetchId: () => 3000100,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => null,
+        state: { fetchCombats: () => false }
+    }];
     const activeActionHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
-    assert.strictEqual(activeActionHeldResult.handled, false, 'a living companion still executing a hit must block resurrection even before the NPC target state is visible');
+    assert.strictEqual(activeActionHeldResult.handled, false, 'a living companion still striking a living hostile target must block resurrection');
     healer.state.fetchHits = () => false;
+    healer.destId = undefined;
+    World.npc.spawns = [];
 
     let skillCast = null;
     const skillResult = PartyRevivalService.tick(healerSession, leaderSession, {

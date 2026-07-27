@@ -1,5 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
 const DEFAULT_PARTY_SETTINGS = {
@@ -13,6 +15,9 @@ const DEFAULT_PARTY_SETTINGS = {
 const PARTY_LOOT_RADIUS = 2500;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
 const RANDOM_LOOT_DISTRIBUTIONS = new Set([1, 2]);
+const MAX_PARTY_MEMBERS = 9;
+const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
+const PARTY_POSITION_UPDATE_DISTANCE = 150;
 const FORMATION_OFFSETS = [
     { locX: -90, locY: -70 },
     { locX: -90, locY: 70 },
@@ -23,6 +28,40 @@ const FORMATION_OFFSETS = [
     { locX: -250, locY: 170 },
     { locX: -330, locY: 0 }
 ];
+const ROLE_FORMATION_OFFSETS = {
+    // Local +X is in front of the leader. Tanks screen the group while the
+    // support line remains behind it; pull travel still overrides this slot.
+    tank: [
+        { locX: 90, locY: 0 },
+        { locX: 45, locY: -90 },
+        { locX: 45, locY: 90 }
+    ],
+    dagger: [
+        { locX: 15, locY: -125 },
+        { locX: 15, locY: 125 }
+    ],
+    dps: FORMATION_OFFSETS,
+    archer: [
+        { locX: -160, locY: -135 },
+        { locX: -160, locY: 135 }
+    ],
+    mage: [
+        { locX: -205, locY: -95 },
+        { locX: -205, locY: 95 }
+    ],
+    healer: [
+        { locX: -285, locY: -70 },
+        { locX: -285, locY: 70 }
+    ],
+    buffer: [
+        { locX: -330, locY: 0 },
+        { locX: -275, locY: 145 }
+    ],
+    crafter: [
+        { locX: -250, locY: 145 },
+        { locX: -250, locY: -145 }
+    ]
+};
 
 function world() {
     return invoke('GameServer/World/World');
@@ -71,7 +110,12 @@ function distributionForLeader(leaderSession) {
 
 function setDistribution(leaderSession, distribution) {
     const settings = settingsForLeader(leaderSession);
-    settings.distribution = normalizeDistribution(distribution);
+    const next = normalizeDistribution(distribution);
+    if (settings.distribution !== next) {
+        settings.distribution = next;
+        // Turn order is meaningful only for the currently selected rule.
+        settings.itemLastLootIndex = -1;
+    }
     return settings.distribution;
 }
 
@@ -110,6 +154,11 @@ function partyLeaderSession(session) {
 function membersForLeader(leaderSession) {
     if (!leaderSession) return [];
     return botSessions().filter((session) => isActiveCompanion(session, leaderSession));
+}
+
+function hasCapacity(leaderSession, companionSession = null) {
+    if (isActiveCompanion(companionSession, leaderSession)) return true;
+    return membersForLeader(leaderSession).length < MAX_COMPANIONS;
 }
 
 function lootMembersForLeader(leaderSession, target) {
@@ -160,22 +209,9 @@ function canPickGroundLoot(session, leaderSession, item) {
 }
 
 function partyCombatInProgress(leaderSession) {
-    const pullState = leaderSession?.partyPullState || {};
-    const pullerId = Number(pullState.pullerId || 0);
-    // While a puller is approaching, gaining aggro or returning, the mob has
-    // not reached the camp yet.  That travel must not make old nearby drops
-    // wait forever; a real fight by any other party member still blocks loot.
-    const pullTravel = ['approach', 'aggro', 'return'].includes(pullState.phase);
-    return [leaderSession, ...membersForLeader(leaderSession)]
-        .some((memberSession) => {
-            if (pullTravel && Number(memberSession?.actor?.fetchId?.()) === pullerId) return false;
-            const state = memberSession?.actor?.state;
-            return !!(
-                state?.fetchCombats?.() ||
-                state?.fetchHits?.() ||
-                state?.fetchCasts?.()
-            );
-        });
+    // While the designated puller is travelling, its own movement/aggro must
+    // not keep old drops locked. Every other real hostile action still does.
+    return PartyCombatState.isActive(leaderSession, { ignoreTravellingPuller: true });
 }
 
 function queuedGroundLootIds(leaderSession) {
@@ -307,9 +343,16 @@ function formationSlotFor(companionSession) {
     const leaderSession = companionSession?.followPlayerSession;
     const members = membersForLeader(leaderSession);
     const index = Math.max(0, members.indexOf(companionSession));
+    const role = BotRoles.inferRole(companionSession?.actor);
+    const sameRoleIndex = members
+        .filter((memberSession) => BotRoles.inferRole(memberSession.actor) === role)
+        .sort((a, b) => Number(a.actor?.fetchId?.()) - Number(b.actor?.fetchId?.()))
+        .indexOf(companionSession);
+    const offsets = ROLE_FORMATION_OFFSETS[role] || FORMATION_OFFSETS;
     return {
         index,
-        offset: FORMATION_OFFSETS[index % FORMATION_OFFSETS.length]
+        role,
+        offset: offsets[Math.max(0, sameRoleIndex) % offsets.length] || FORMATION_OFFSETS[index % FORMATION_OFFSETS.length]
     };
 }
 
@@ -318,12 +361,46 @@ function formationTargetFor(companionSession) {
     if (!leader) return null;
 
     const slot = formationSlotFor(companionSession);
+    // C4 heading is a 16-bit turn where zero faces +X. Formation offsets are
+    // authored in leader-local space, so the group stays behind/beside the
+    // leader as they change direction instead of forming against world north.
+    const radians = (Number(leader.fetchHead?.() || 0) / 65536) * Math.PI * 2;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const locX = (slot.offset.locX * cos) - (slot.offset.locY * sin);
+    const locY = (slot.offset.locX * sin) + (slot.offset.locY * cos);
     return {
-        locX: leader.fetchLocX() + slot.offset.locX,
-        locY: leader.fetchLocY() + slot.offset.locY,
+        locX: Math.round(leader.fetchLocX() + locX),
+        locY: Math.round(leader.fetchLocY() + locY),
         locZ: leader.fetchLocZ(),
         slot: slot.index
     };
+}
+
+function partyActorsForLeader(leaderSession) {
+    return [leaderSession?.actor, ...membersForLeader(leaderSession).map((memberSession) => memberSession.actor)]
+        .filter((actor) => actor?.fetchIsOnline?.() !== false);
+}
+
+function positionChanged(session, actor) {
+    const previous = session?.lastPartyPosition;
+    const next = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+    session.lastPartyPosition = next;
+    if (!previous) return true;
+
+    const dx = next.locX - previous.locX;
+    const dy = next.locY - previous.locY;
+    const dz = next.locZ - previous.locZ;
+    return (dx * dx) + (dy * dy) + (dz * dz) >= PARTY_POSITION_UPDATE_DISTANCE * PARTY_POSITION_UPDATE_DISTANCE;
+}
+
+function sendPartyPositions(leaderSession, sourceSession = null, force = false) {
+    const leader = leaderSession?.actor;
+    if (!leader || !leaderSession?.dataSendToMe || membersForLeader(leaderSession).length === 0) return false;
+    if (!force && sourceSession?.actor && !positionChanged(sourceSession, sourceSession.actor)) return false;
+
+    leaderSession.dataSendToMe(ServerResponse.partyMemberPosition(partyActorsForLeader(leaderSession)));
+    return true;
 }
 
 function sendPartyWindow(leaderSession, distribution = 0) {
@@ -338,6 +415,7 @@ function sendPartyWindow(leaderSession, distribution = 0) {
     leaderSession.dataSendToMe(ServerResponse.partySmallWindowDeleteAll());
     if (members.length > 0) {
         leaderSession.dataSendToMe(ServerResponse.partySmallWindowAll(leader.fetchId(), distribution, members));
+        sendPartyPositions(leaderSession, null, true);
         leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(leader));
         memberSessions.forEach((memberSession) => {
             if (memberSession.actor) {
@@ -404,7 +482,12 @@ function clearPullerIfDetached(leaderSession, companionSession) {
 }
 
 const PartyCompanionService = {
+    MAX_PARTY_MEMBERS,
+    MAX_COMPANIONS,
+
     membersForLeader,
+
+    hasCapacity,
 
     activeActorsForLeader(leaderSession) {
         return membersForLeader(leaderSession).map((session) => session.actor).filter(Boolean);
@@ -413,6 +496,15 @@ const PartyCompanionService = {
     formationSlotFor,
 
     formationTargetFor,
+
+    sendPartyPositions,
+
+    updatePosition(session, actor) {
+        const leaderSession = partyLeaderSession(session);
+        if (!leaderSession || !actor) return false;
+        if (session !== leaderSession && !isActiveCompanion(session, leaderSession)) return false;
+        return sendPartyPositions(leaderSession, session, false);
+    },
 
     lootMembersForLeader,
 
@@ -496,6 +588,7 @@ const PartyCompanionService = {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
         if (!leader || !bot) return false;
+        if (!hasCapacity(leaderSession, companionSession)) return false;
 
         const previousLeader = companionSession.followPlayerSession;
         const wasResting = companionSession.plan === 'resting';
@@ -581,6 +674,7 @@ const PartyCompanionService = {
         if (!leaderSession.actor?.fetchIsOnline?.()) return false;
         leaderSession.dataSendToMe(ServerResponse.partySmallWindowUpdate(companionSession.actor));
         leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(companionSession.actor));
+        sendPartyPositions(leaderSession, companionSession, true);
         return true;
     }
 };

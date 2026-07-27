@@ -66,6 +66,7 @@ function moveTo(session, actor, coords) {
             const snappedTo = { ...requestedTo };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
             actor.setLocXYZ(snappedTo);
+            invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
             session.lastPathfinding = {
                 requestedTo,
                 routedTo: { ...snappedTo },
@@ -132,6 +133,7 @@ function moveTo(session, actor, coords) {
 
             if (distance === 0) {
                 actor.setLocXYZ(nextLoc);
+                invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                 moveAlongPath(index + 1);
                 return;
             }
@@ -157,6 +159,7 @@ function moveTo(session, actor, coords) {
                 if (step >= steps) {
                     clearInterval(session.moveTimer);
                     actor.setLocXYZ(nextLoc);
+                    invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                     moveAlongPath(index + 1);
                 } else {
                     const ratio = step / steps;
@@ -169,6 +172,7 @@ function moveTo(session, actor, coords) {
                         locY: nextY,
                         locZ: snappedZ
                     });
+                    invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                 }
             }, tickRate);
         };

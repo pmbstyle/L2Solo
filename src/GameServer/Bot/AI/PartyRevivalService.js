@@ -1,7 +1,7 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const DataCache = invoke('GameServer/DataCache');
 const SkillModel = invoke('GameServer/Model/Skill');
-const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 
 const PARTY_REVIVE_TIMEOUT_MS = 60000;
 const RESURRECTION_SCROLL_SKILL_ID = 2014;
@@ -36,29 +36,7 @@ function deadMembers(leaderSession) {
 }
 
 function partyCombatInProgress(leaderSession) {
-    if (PartyAwareness.findThreatTargetingParty(leaderSession)) return true;
-    if (PartyAwareness.leaderCombatTargetId(leaderSession)) return true;
-
-    // A pending hit/cast is an actual native action, unlike a lingering
-    // combat marker after an already finished fight. Do not begin a long
-    // resurrection while a living party member is still executing one.
-    if (partySessions(leaderSession)
-        .filter(isAlive)
-        .some((session) => (
-            session.actor.state?.fetchHits?.() || session.actor.state?.fetchCasts?.()
-        ))) return true;
-
-    // PartyAwareness intentionally ignores corpses. For resurrection that is
-    // too narrow: a monster can keep its combat loop on a fallen party member
-    // for a short time after the lethal hit, and a healer must not begin a
-    // long resurrection cast in front of it.
-    const partyIds = new Set(partySessions(leaderSession).map((member) => member.actor?.fetchId?.()).filter(Boolean));
-    return (world().npc?.spawns || []).some((npc) => (
-        npc.fetchAttackable?.() === true &&
-        npc.isDead?.() !== true &&
-        npc.state?.fetchCombats?.() === true &&
-        partyIds.has(npc.fetchDestId?.())
-    ));
+    return PartyCombatState.isActive(leaderSession);
 }
 
 function learnedResurrectionSkills(actor) {
@@ -136,7 +114,8 @@ function tick(session, leaderSession, Generics) {
         leaderSession.partyRevivalAttempt = null;
         return { handled: false, dead };
     }
-    if (partyCombatInProgress(leaderSession)) return { handled: false, dead };
+    const combat = PartyCombatState.combatState(leaderSession);
+    if (combat.active) return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
 
     const attempt = leaderSession.partyRevivalAttempt;
     if (attempt) return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };

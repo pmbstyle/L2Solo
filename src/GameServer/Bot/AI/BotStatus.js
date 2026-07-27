@@ -4,6 +4,7 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 
@@ -231,6 +232,7 @@ const BotStatus = {
         const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
         const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
         const pull = leaderSession ? PartyPulling.current(leaderSession, partySettings) : null;
+        const combat = leaderSession ? PartyCombatState.combatState(leaderSession) : null;
         const isAssignedPuller = partySettings?.pullMode === 'bot' &&
             Number(partySettings.pullerId || 0) === Number(bot.fetchId());
         const party = leaderSession ? {
@@ -251,7 +253,26 @@ const BotStatus = {
             members: PartyAwareness.partySessions(leaderSession)
                 .map((memberSession) => partyMemberSummary(memberSession, leaderSession, bot))
                 .filter(Boolean),
-            threat: partyThreatSummary(leaderSession, bot)
+            threat: partyThreatSummary(leaderSession, bot),
+            combat: combat?.active ? {
+                reason: combat.reason,
+                targetId: combat.target?.fetchId?.() || null,
+                targetName: combat.target?.fetchName?.() || null
+            } : null,
+            recovery: leaderSession.partyRecoveryCast && Number(leaderSession.partyRecoveryCast.expiresAt || 0) > Date.now()
+                ? {
+                    kind: 'recharge',
+                    providerId: leaderSession.partyRecoveryCast.providerId,
+                    targetId: leaderSession.partyRecoveryCast.targetId,
+                    expiresAt: leaderSession.partyRecoveryCast.expiresAt
+                }
+                : null,
+            revival: leaderSession.partyRevivalAttempt ? {
+                providerId: leaderSession.partyRevivalAttempt.providerId,
+                targetId: leaderSession.partyRevivalAttempt.targetId,
+                source: leaderSession.partyRevivalAttempt.source,
+                startedAt: leaderSession.partyRevivalAttempt.startedAt
+            } : null
         } : null;
 
         const status = {

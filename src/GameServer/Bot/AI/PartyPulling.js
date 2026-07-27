@@ -3,6 +3,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 
 const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
@@ -127,13 +128,17 @@ function supportProviders(leaderSession) {
 
 function pauseReason(leaderSession, puller) {
     const state = pullState(leaderSession);
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
-    const ownPullTarget = threat &&
-        Number(threat.actor?.fetchId?.()) === Number(state.targetId || 0);
+    const recovery = leaderSession?.partyRecoveryCast;
+    if (Number(recovery?.expiresAt || 0) > Date.now()) return 'party_recharging';
+    if (recovery) delete leaderSession.partyRecoveryCast;
     // Do not select a new target while the camp is already handling an add.
     // The current shared pull target is the sole exception: it remains the
     // party's intended fight from first aggro until it dies.
-    if (threat && !ownPullTarget) return 'party_under_attack';
+    const combat = PartyCombatState.combatState(leaderSession, {
+        ignoreTravellingPuller: true,
+        ignoreTargetIds: state.targetId ? [state.targetId] : []
+    });
+    if (combat.active) return 'party_under_attack';
 
     const members = PartyAwareness.partySessions(leaderSession);
     if (members.some((memberSession) => (

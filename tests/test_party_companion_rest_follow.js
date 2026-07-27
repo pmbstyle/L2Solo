@@ -998,10 +998,10 @@ try {
         fetchRewardSp: () => 20
     });
 
-    assert.strictEqual(rewardLeader.fetchExp(), 50, 'leader should receive split exp when companion kills nearby mob');
-    assert.strictEqual(rewardLeader.fetchSp(), 10, 'leader should receive split sp when companion kills nearby mob');
-    assert.strictEqual(rewardBot.fetchExp(), 50, 'companion should keep its split exp from the kill');
-    assert.strictEqual(rewardBot.fetchSp(), 10, 'companion should keep its split sp from the kill');
+    assert.strictEqual(rewardLeader.fetchExp(), 65, 'two eligible party members should receive the C4 1.30 party EXP bonus');
+    assert.strictEqual(rewardLeader.fetchSp(), 13, 'two eligible party members should receive the C4 1.30 party SP bonus');
+    assert.strictEqual(rewardBot.fetchExp(), 65, 'companion should receive its squared-level share of the party EXP bonus');
+    assert.strictEqual(rewardBot.fetchSp(), 13, 'companion should receive its squared-level share of the party SP bonus');
 
     const partyHudLeader = fakeActor(2000030, { locX: 0, locY: 0 });
     const partyHudLeaderSession = fakeSession('player_party_hud', partyHudLeader);

@@ -361,6 +361,36 @@ function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
 }
 
+function manaPriority(entry, pullerActor) {
+    const role = BotRoles.inferRole(entry.actor);
+    if (entry.actor === pullerActor) return 0;
+    if (role === 'buffer') return 1;
+    if (role === 'healer') return 2;
+    if (role === 'mage') return 3;
+    if (role === 'tank') return 4;
+    return 5;
+}
+
+function lowestManaPartyMember(leaderSession, bot, pullerActor = null, maxDistance = 900) {
+    return partyMembersInSupportRange(leaderSession, bot, maxDistance)
+        .filter((entry) => entry.actor !== bot)
+        .filter((entry) => entry.mpRatio < 0.55)
+        .sort((a, b) => (
+            manaPriority(a, pullerActor) - manaPriority(b, pullerActor) ||
+            a.mpRatio - b.mpRatio ||
+            Number(a.actor.fetchId()) - Number(b.actor.fetchId())
+        ))[0] || null;
+}
+
+function markPartyRecharge(leaderSession, bot, target, skill) {
+    const castMs = Number(skill?.fetchCalculatedHitTime?.() || skill?.fetchHitTime?.() || 0);
+    leaderSession.partyRecoveryCast = {
+        providerId: bot.fetchId(),
+        targetId: target.fetchId(),
+        expiresAt: Date.now() + Math.max(1000, castMs + 1000)
+    };
+}
+
 function partyHasBuffer(leaderSession, exceptActor = null) {
     return PartyAwareness.partySessions(leaderSession)
         .some((memberSession) => (
@@ -675,12 +705,16 @@ module.exports = {
             PartyPulling.supportProviders(playerSession)
         );
         const healerSkill = role === 'healer' ? BotSkillCapabilities.healSkill(bot) : null;
+        const rechargeSkill = role === 'healer' ? BotSkillCapabilities.manaRechargeSkill(bot) : null;
         const healerCanCast = !!healerSkill &&
             bot.fetchMp() >= healerSkill.fetchConsumedMp() &&
             !isBusy(bot) &&
             !impairments.silenced;
         const woundedPartyMember = role === 'healer'
             ? weakestPartyMember(playerSession, bot, pulling.puller?.actor)
+            : null;
+        const manaPartyMember = role === 'healer' && rechargeSkill && !partyThreat && !leaderTargetId
+            ? lowestManaPartyMember(playerSession, bot, pulling.puller?.actor)
             : null;
         // Healing is the healer's first obligation.  Do not queue a regular
         // party buff and then overwrite it with a heal in this same AI tick.
@@ -803,6 +837,15 @@ module.exports = {
             } else if (botVitals.mpRatio < 0.25) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp');
                 keepRoleDecision = true;
+            } else if (manaPartyMember && rechargeSkill && !isBusy(bot) && !healerNeedsAction) {
+                acted = true;
+                markPartyRecharge(playerSession, bot, manaPartyMember.actor, rechargeSkill);
+                recordRoleDecision(session, bot, 'recharge_party', 'restore_mp', {
+                    targetId: manaPartyMember.actor.fetchId(),
+                    skillId: rechargeSkill.fetchSelfId()
+                });
+                castSkillOn(session, bot, Generics, manaPartyMember.actor, rechargeSkill.fetchSelfId(), false);
+                returnToPartyAfterSupport(session, bot, player, manaPartyMember.actor);
             } else if (!healerSkill && woundedPartyMember?.hpRatio < 0.70) {
                 recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
                 keepRoleDecision = true;

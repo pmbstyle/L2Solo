@@ -120,6 +120,13 @@ function setPullMode(session, mode) {
     });
 }
 
+function setLootDistribution(session, distribution) {
+    const value = Number(distribution);
+    if (![0, 1, 2, 3, 4].includes(value)) return false;
+    PartyCompanionService.rebuildWindow(session, value);
+    return true;
+}
+
 function setMemberPuller(session, targetSession) {
     const role = BotRoles.inferRole(targetSession?.actor);
     if (!['tank', 'dagger', 'dps'].includes(role)) return false;
@@ -243,6 +250,13 @@ function renderModePanel(settings, count) {
             { label: 'Off', active: settings.pullMode === 'off', command: 'companion-control pull off' }
         ], { columns: 3 }),
         Html.font(`Loot: ${lootLabel(settings.distribution)}`, Html.COLOR.muted),
+        actionRow([
+            { label: 'Finders', active: settings.distribution === 0, command: 'companion-control loot 0' },
+            { label: 'Random', active: settings.distribution === 1, command: 'companion-control loot 1' },
+            { label: 'Random+Spoil', active: settings.distribution === 2, command: 'companion-control loot 2' },
+            { label: 'By Turn', active: settings.distribution === 3, command: 'companion-control loot 3' },
+            { label: 'Turn+Spoil', active: settings.distribution === 4, command: 'companion-control loot 4' }
+        ], { columns: 5 }),
         '<br1>'
     ].join('');
 }
@@ -324,6 +338,8 @@ function companionControl(session, parts) {
         setCombatMode(session, value);
     } else if (subCommand === 'pull') {
         setPullMode(session, value);
+    } else if (subCommand === 'loot') {
+        setLootDistribution(session, value);
     } else if (subCommand === 'member-pull') {
         const targetSession = findCompanion(session, parts[3]);
         if (value === 'on' && targetSession) {
