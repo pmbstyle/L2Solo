@@ -15,6 +15,7 @@ const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -435,6 +436,13 @@ try {
         fetchLocY: () => 0
     }];
 
+    assert.strictEqual(PartyAwareness.partySessions(leaderSession).length, 2, 'party awareness should include the leader and resting companion');
+    assert.strictEqual(
+        PartyAwareness.findThreatTargetingParty(leaderSession)?.actor?.fetchId?.(),
+        1001,
+        'party awareness should expose an NPC that targets the party leader'
+    );
+
     RestingState.tick(restingSession, restingBot, {}, { say() {} });
 
     assert.strictEqual(restingSession.plan, 'following', 'resting companion should wake when party is attacked');
@@ -674,6 +682,7 @@ try {
     const healerLeaderSession = fakeSession('player_healer_party', healerLeader);
     const healerBot = fakeActor(2000025, { locX: 80, locY: 0, classId: 15 });
     learnSkill(healerBot, { selfId: 1011, name: 'Heal', spell: true, mp: 15 });
+    learnSkill(healerBot, { selfId: 1040, name: 'Shield', spell: true, mp: 10 });
     const healerSession = fakeSession('bot_healer_party', healerBot);
     healerSession.followPlayerSession = healerLeaderSession;
     healerSession.partyCompanion = true;
@@ -685,14 +694,42 @@ try {
     woundedCompanionSession.plan = 'following';
     World.user = { sessions: [healerLeaderSession, healerSession, woundedCompanionSession] };
     World.fetchNpcsInRadius = () => [];
-    let healedTargetId = null;
+    const healerCasts = [];
 
     FollowingState.tick(healerSession, healerBot, {
-        skillExec(session, bot, data) { healedTargetId = data.id; }
+        skillExec(session, bot, data) { healerCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
 
-    assert.strictEqual(healedTargetId, woundedCompanion.fetchId(), 'healer should heal the wounded companion, not only the leader');
+    assert.deepStrictEqual(healerCasts, [{ id: woundedCompanion.fetchId(), selfId: 1011, ctrl: false }], 'an emergency heal must preempt a normal party buff instead of issuing two casts in one tick');
     assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
+
+    const healerAssistBot = fakeActor(2000027, { locX: 120, locY: 0, classId: 15 });
+    const healerAssistSession = fakeSession('bot_healer_basic_assist', healerAssistBot);
+    healerAssistSession.followPlayerSession = healerLeaderSession;
+    healerAssistSession.partyCompanion = true;
+    healerAssistSession.plan = 'following';
+    const healerAssistThreat = {
+        fetchId: () => 1012,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => healerLeader.fetchId(),
+        fetchLocX: () => 100,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'healer assist threat'
+    };
+    let healerAssistOptions = null;
+    World.user = { sessions: [healerLeaderSession, healerAssistSession] };
+    World.npc = { spawns: [healerAssistThreat] };
+    World.fetchNpcsInRadius = () => [healerAssistThreat];
+    FollowingState.tick(healerAssistSession, healerAssistBot, {}, {
+        say() {},
+        executeCombat(_session, _bot, _npc, _generics, options) { healerAssistOptions = options; },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(healerAssistOptions?.basicAttackOnly, true, 'a healer assisting the party must be restricted to a no-MP basic attack');
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
 
     const unskilledHealer = fakeActor(2000033, { locX: 90, locY: 0, classId: 15 });
     const unskilledHealerSession = fakeSession('bot_unskilled_healer', unskilledHealer);
@@ -873,6 +910,50 @@ try {
     assert.strictEqual(marketSession.shoppingTarget?.actorId, marketSeller.fetchId(), 'companion market errand should walk to the live seller');
     MarketOpportunity.findOffers = originalFindOffers;
 
+    const starterTownLeader = fakeActor(2000046, { locX: 45475, locY: 48359, locZ: -3060 });
+    const starterTownLeaderSession = fakeSession('player_elven_town_errand_party', starterTownLeader);
+    const starterTownSeller = fakeActor(2000047, { locX: 45520, locY: 48359, locZ: -3060 });
+    const starterTownBot = fakeActor(2000048, { locX: 45500, locY: 48359, locZ: -3060 });
+    const starterTownSession = fakeSession('bot_elven_town_market_errand', starterTownBot);
+    starterTownSession.followPlayerSession = starterTownLeaderSession;
+    starterTownSession.partyCompanion = true;
+    starterTownSession.plan = 'following';
+    starterTownSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
+    MarketOpportunity.findOffers = () => ([{
+        sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
+        town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
+    }]);
+    World.user = { sessions: [starterTownLeaderSession, starterTownSession, { accountId: 'seller', actor: starterTownSeller }] };
+    World.fetchNpcsInRadius = () => [];
+    FollowingState.tick(starterTownSession, starterTownBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 45475, locY: 48359, locZ: -3060 }),
+        getClosestTown: () => ({ name: 'Elven Village', x: 46926, y: 51511, z: -2976 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(starterTownSession.companionShopping?.kind, 'market_purchase', 'a starter village outside the movement atlas must still allow normal in-town errands');
+    MarketOpportunity.findOffers = originalFindOffers;
+
+    const fieldNearStarterLeader = fakeActor(2000051, { locX: 49475, locY: 48359, locZ: -3060 });
+    const fieldNearStarterLeaderSession = fakeSession('player_near_elven_field_party', fieldNearStarterLeader);
+    const fieldNearStarterBot = fakeActor(2000052, { locX: 49500, locY: 48359, locZ: -3060 });
+    const fieldNearStarterSession = fakeSession('bot_near_elven_field_market', fieldNearStarterBot);
+    fieldNearStarterSession.followPlayerSession = fieldNearStarterLeaderSession;
+    fieldNearStarterSession.partyCompanion = true;
+    fieldNearStarterSession.plan = 'following';
+    fieldNearStarterSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
+    MarketOpportunity.findOffers = () => ([{
+        sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
+        town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
+    }]);
+    World.user = { sessions: [fieldNearStarterLeaderSession, fieldNearStarterSession, { accountId: 'seller', actor: starterTownSeller }] };
+    FollowingState.tick(fieldNearStarterSession, fieldNearStarterBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 45475, locY: 48359, locZ: -3060 }),
+        getClosestTown: () => ({ name: 'Elven Village', x: 46926, y: 51511, z: -2976 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.notStrictEqual(fieldNearStarterSession.companionShopping?.kind, 'market_purchase', 'a nearby farming field must not be treated as a starter village market');
+    MarketOpportunity.findOffers = originalFindOffers;
+
     World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
 
     const compactPartyStatus = BotBrainContext.compactStatus(
@@ -935,6 +1016,13 @@ try {
         PartyPulling.supportProviders(partyHudLeaderSession),
         [partyHudBotA, partyHudBotB],
         'the human leader must be a buff recipient, not an autonomous support provider'
+    );
+    const supportPullTarget = fakeActor(2000049, { locX: 0, locY: 0 });
+    const supportPuller = fakeActor(2000050, { locX: 0, locY: 0, classId: 15 });
+    assert.strictEqual(
+        PartyPulling.canDeliverPull(supportPuller, supportPullTarget),
+        true,
+        'a healer in weapon range must release a player-led pull when it is the only companion able to engage'
     );
     partyHudBotASession.lastTargetEvaluation = {
         targetId: 9001,
@@ -1195,11 +1283,13 @@ try {
     assert.strictEqual(partyHudBotASession.roleDecision.reason, 'return', 'puller should return to the leader after aggro is confirmed');
     const returnMoves = partyHudBotA.moves.length;
     partyHudBotA.state.setTowards('move');
+    partyHudLeader.locX = 500;
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.strictEqual(partyHudBotA.moves.length, returnMoves, 'an active pull return must keep its current route instead of restarting pathfinding every AI tick');
+    assert.strictEqual(partyHudBotA.moves.length, returnMoves, 'an active pull return must finish its route even when the leader moves, instead of snapping back to a replanned path');
     partyHudBotA.state.setTowards(false);
+    partyHudLeader.locX = 0;
 
     pulledMob.locX = 700;
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
@@ -1299,6 +1389,39 @@ try {
     assert(!companionHtml.includes('native #'), 'party control panel should not expose raw native loot debug text');
     assert(!companionHtml.includes('bgcolor=222222'), 'party control panel should avoid the flat grey panel background');
     assert(!companionHtml.includes('bgcolor=333333'), 'companion cards should avoid the flat grey card background');
+
+    const activeAdd = {
+        fetchId: () => 3012,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLevel: () => 26,
+        fetchDestId: () => partyHudLeader.fetchId(),
+        fetchLocX: () => 300,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'active add'
+    };
+    const freePullTarget = {
+        ...pulledMob,
+        id: 3013,
+        destId: undefined,
+        fetchId() { return this.id; },
+        fetchDestId() { return this.destId; },
+        fetchName: () => 'next pull target'
+    };
+    World.npc = { spawns: [activeAdd, freePullTarget] };
+    World.fetchNpcsInRadius = () => [activeAdd, freePullTarget];
+    partyHudBotA.moves = [];
+    partyHudLeaderSession.partyPullState = {};
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() { throw new Error('puller must not start a new pull while the party is fighting an add'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'party_under_attack', 'an unrelated incoming threat must pause bot pulling');
+    assert.strictEqual(partyHudLeaderSession.partyPullState.targetId, undefined, 'a live party threat must not be replaced with a new pull target');
+    assert.strictEqual(partyHudBotA.moves.length, 0, 'a paused puller must stay with the party during an active fight');
+    World.npc = { spawns: [pulledMob] };
+    World.fetchNpcsInRadius = () => [pulledMob];
 
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
     assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'bot', 'selected companion should remain the explicit puller until its status changes');

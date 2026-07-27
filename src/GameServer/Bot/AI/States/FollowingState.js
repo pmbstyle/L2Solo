@@ -13,6 +13,7 @@ const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -25,6 +26,8 @@ const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
 const NEWBIE_GUIDE_RECOVERY_MAX_LEVEL = 20;
 const COMPANION_TOWN_ERRAND_RADIUS = 7500;
 const COMPANION_TOWN_ERRAND_COOLDOWN_MS = 60000;
+const TOWN_CENTER_FALLBACK_RADIUS = 1500;
+const STARTER_GUIDE_TOWN_RADIUS = 1500;
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -85,10 +88,36 @@ function townForCompanionErrand(player, BotAI) {
     const town = BotAI.getClosestTown?.(player.fetchLocX(), player.fetchLocY());
     if (!town) return null;
 
-    return distance2d(
+    const distance = distance2d(
         { locX: player.fetchLocX(), locY: player.fetchLocY() },
         { locX: town.x, locY: town.y }
-    ) <= COMPANION_TOWN_ERRAND_RADIUS ? town : null;
+    );
+    if (distance > COMPANION_TOWN_ERRAND_RADIUS) return null;
+
+    const playerLoc = {
+        locX: player.fetchLocX(),
+        locY: player.fetchLocY(),
+        locZ: player.fetchLocZ()
+    };
+    // The town movement atlas is intentionally partial. Keep its precise
+    // polygons where available, with a tight center fallback for towns known
+    // to the respawn service. Starter villages outside that atlas are
+    // recognized only beside their actual Newbie Guide, never by a broad
+    // radius that also includes nearby farming fields.
+    const guide = BotAI.getClosestNewbieGuide?.(player.fetchLocX(), player.fetchLocY());
+    const besideStarterGuide = guide && distance2d(
+        { locX: player.fetchLocX(), locY: player.fetchLocY() },
+        guide
+    ) <= STARTER_GUIDE_TOWN_RADIUS;
+    const inTown = TownPathfinder.isInsideTown(playerLoc) || (
+        distance <= TOWN_CENTER_FALLBACK_RADIUS
+    ) || besideStarterGuide;
+
+    return {
+        town,
+        distance,
+        inTown
+    };
 }
 
 function actorAdena(bot) {
@@ -134,8 +163,27 @@ function plannedMarketPurchase(session, bot, town) {
 
 function companionTownErrand(session, bot, player, BotAI) {
     if (Date.now() - Number(session.lastCompanionTownErrandAt || 0) < COMPANION_TOWN_ERRAND_COOLDOWN_MS) return null;
-    const town = townForCompanionErrand(player, BotAI);
-    if (!town) return null;
+    const townContext = townForCompanionErrand(player, BotAI);
+    if (!townContext) return null;
+    const { town, inTown } = townContext;
+
+    // In town, every companion may settle its own short task.  In the field,
+    // leaving the leader is reserved for an immediately useful resupply;
+    // shopping and selling can wait until the party actually reaches town.
+    if (!inTown) {
+        if (!ShotStock.needsActorRestock(bot, 0)) return null;
+        return {
+            kind: 'restock_shots',
+            target: {
+                actorId: null,
+                name: `${town.name} general shop`,
+                locX: town.x,
+                locY: town.y,
+                locZ: town.z,
+                town: town.name
+            }
+        };
+    }
 
     const purchase = plannedMarketPurchase(session, bot, town);
     if (purchase) return purchase;
@@ -313,6 +361,24 @@ function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
 }
 
+function partyHasBuffer(leaderSession, exceptActor = null) {
+    return PartyAwareness.partySessions(leaderSession)
+        .some((memberSession) => (
+            memberSession.actor !== exceptActor &&
+            BotRoles.inferRole(memberSession.actor) === 'buffer'
+        ));
+}
+
+function returnToPartyAfterSupport(session, bot, player, target) {
+    // A remote heal/buff may have made the support bot walk far away from the
+    // formation.  The native cast owns that movement until the hit lands; the
+    // next idle tick must head back to the leader instead of beginning combat
+    // around the assisted target.
+    if (point(target).distance(point(player)) > FOLLOW_RUN_DISTANCE) {
+        session.returnToPartyAfterSupport = true;
+    }
+}
+
 function activeBotPullTravel(session, pulling) {
     return pulling?.enabled === true &&
         pulling.puller?.session === session &&
@@ -469,14 +535,6 @@ module.exports = {
             return;
         }
 
-        // A drop can be assigned while this companion or another party member
-        // is still finishing combat. Retry the FIFO only after the whole party
-        // is clear, so it does not lie on the ground forever or interrupt an
-        // active fight between attack swings.
-        if (PartyCompanionService.startQueuedGroundPickup(session)) {
-            return;
-        }
-
         const botVitals = {
             hpRatio: ratio(bot.fetchHp(), bot.fetchMaxHp()),
             mpRatio: ratio(bot.fetchMp(), bot.fetchMaxMp())
@@ -495,6 +553,22 @@ module.exports = {
                 targetId: revival.target?.fetchId?.() || revival.targetId || null
             });
             return;
+        }
+
+        if (session.returnToPartyAfterSupport && !isBusy(bot)) {
+            session.returnToPartyAfterSupport = false;
+            session.currentTargetId = undefined;
+            bot.unselect();
+            if (distance > FOLLOW_RUN_DISTANCE) {
+                const followTarget = followTargetFor(session, player);
+                session.lastFollowMoveTarget = followTarget;
+                bot.moveTo({
+                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                    to: followTarget
+                });
+                recordRoleDecision(session, bot, 'follow_leader', 'return_after_support');
+                return;
+            }
         }
 
         if (!partyThreat && !leaderTargetId && leaderSeated) {
@@ -554,13 +628,21 @@ module.exports = {
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
             const unsafeToRefresh = unsafeSupportMoment(bot, partyAggroCount(playerSession));
+            const inTown = TownPathfinder.isInsideTown({
+                locX: player.fetchLocX(),
+                locY: player.fetchLocY(),
+                locZ: player.fetchLocZ()
+            });
+            const expired = BotBuffs.needsNewbieRefresh(bot, 0);
+            const nearbyGuide = isAtNewbieGuideTown(player, BotAI);
+            const canMakeFieldBuffTrip = !inTown && expired && nearbyGuide && !partyHasBuffer(playerSession, bot);
 
             if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 keepRoleDecision = true;
-            } else if (!isAtNewbieGuideTown(player, BotAI)) {
+            } else if (!nearbyGuide || (!inTown && !canMakeFieldBuffTrip)) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_newbie_guide_town', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
@@ -592,6 +674,21 @@ module.exports = {
             partySupportMembers(playerSession, pulling.puller),
             PartyPulling.supportProviders(playerSession)
         );
+        const healerSkill = role === 'healer' ? BotSkillCapabilities.healSkill(bot) : null;
+        const healerCanCast = !!healerSkill &&
+            bot.fetchMp() >= healerSkill.fetchConsumedMp() &&
+            !isBusy(bot) &&
+            !impairments.silenced;
+        const woundedPartyMember = role === 'healer'
+            ? weakestPartyMember(playerSession, bot, pulling.puller?.actor)
+            : null;
+        // Healing is the healer's first obligation.  Do not queue a regular
+        // party buff and then overwrite it with a heal in this same AI tick.
+        const healerNeedsAction = role === 'healer' && healerCanCast && (
+            woundedPartyMember?.hpRatio < 0.45 ||
+            (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35) ||
+            (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25)
+        );
         const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
             ? BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
             : null;
@@ -599,7 +696,7 @@ module.exports = {
             session.lastRebuffRequestAt = Date.now();
             BotAI.say(session, `${rebuff.provider.fetchName()}, could you refresh ${rebuff.skill.fetchName()}?`);
         }
-        if (!acted && supportBuffTarget) {
+        if (!acted && supportBuffTarget && !healerNeedsAction) {
             const activeMobs = partyAggroCount(playerSession);
             if (unsafeSupportMoment(bot, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
@@ -623,6 +720,7 @@ module.exports = {
                 // Attack.remoteHit once the native cast has actually started.
                 BotSupportPlanner.queueSupportCast(session, supportBuffTarget);
                 castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill.fetchSelfId(), false);
+                returnToPartyAfterSupport(session, bot, player, supportBuffTarget.target);
                 recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.effect, {
                     buff: supportBuffTarget.effect,
                     skillId: supportBuffTarget.skill.fetchSelfId(),
@@ -672,32 +770,30 @@ module.exports = {
             BotAI.say(session, text);
         }
 
-        if (role === 'healer') {
-            const skill = BotSkillCapabilities.healSkill(bot);
-            const canCast = !!skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && !impairments.silenced;
-            const woundedPartyMember = weakestPartyMember(playerSession, bot, pulling.puller?.actor);
-
-            if (woundedPartyMember?.hpRatio < 0.45 && canCast) {
+        if (!acted && role === 'healer') {
+            if (woundedPartyMember?.hpRatio < 0.45 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'emergency_heal', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, skill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill.fetchSelfId(), false);
+                returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Emergency heal on " + woundedPartyMember.actor.fetchName() + "!");
                 }
-            } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && canCast) {
+            } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'top_off', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, skill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill.fetchSelfId(), false);
+                returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing " + woundedPartyMember.actor.fetchName() + "!");
                 }
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', woundedPartyMember.hpRatio < 0.45 ? 'low_mp_emergency' : 'party_not_critical');
                 keepRoleDecision = true;
-            } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && canCast) {
+            } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
-                castSkillOn(session, bot, Generics, bot, skill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, bot, healerSkill.fetchSelfId(), false);
                 if (Math.random() < 0.15) {
                     BotAI.say(session, "Healing myself!");
                 }
@@ -707,7 +803,7 @@ module.exports = {
             } else if (botVitals.mpRatio < 0.25) {
                 recordRoleDecision(session, bot, 'save_mp', 'low_mp');
                 keepRoleDecision = true;
-            } else if (!skill && woundedPartyMember?.hpRatio < 0.70) {
+            } else if (!healerSkill && woundedPartyMember?.hpRatio < 0.70) {
                 recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
                 keepRoleDecision = true;
             }
@@ -830,10 +926,11 @@ module.exports = {
             }
 
             if (!isBusy(bot)) {
+                const basicAttackOnly = role === 'healer' || role === 'buffer';
                 if (partyThreat.type === 'player') {
-                    BotAI.executePvPCombat(session, bot, target, Generics);
+                    BotAI.executePvPCombat(session, bot, target, Generics, { basicAttackOnly });
                 } else {
-                    BotAI.executeCombat(session, bot, target, Generics);
+                    BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly });
                 }
             }
             acted = true;
@@ -874,7 +971,9 @@ module.exports = {
                         if (isBusy(bot)) {
                             return;
                         }
-                        BotAI.executePvPCombat(session, bot, user, Generics);
+                        BotAI.executePvPCombat(session, bot, user, Generics, {
+                            basicAttackOnly: role === 'healer' || role === 'buffer'
+                        });
                     } else {
                         if (session.currentTargetId === playerTargetId) {
                             session.currentTargetId = undefined;
@@ -906,7 +1005,9 @@ module.exports = {
                             if (isBusy(bot)) {
                                 return;
                             }
-                            BotAI.executeCombat(session, bot, npc, Generics);
+                            BotAI.executeCombat(session, bot, npc, Generics, {
+                                basicAttackOnly: role === 'healer' || role === 'buffer'
+                            });
                         } else {
                             if (session.currentTargetId === playerTargetId) {
                                 session.currentTargetId = undefined;

@@ -397,6 +397,12 @@ const BotAI = {
                             rebuildWindow: false,
                             refreshPanel: false
                         });
+                        // A corpse that timed out of party resurrection has
+                        // just been sent to town. Keep the now-solo bot hot
+                        // long enough to complete that visible transition;
+                        // otherwise population policy can remove it in the
+                        // same scheduler pass before the client sees town.
+                        session.populationHotAt = Date.now();
                         session.plan = 'hunting';
                         session.currentSpot = null;
                         session.noTargetTicks = 0;
@@ -447,6 +453,18 @@ const BotAI = {
 
         BotEquipmentUpgrade.applyBestUpgrades(session);
 
+        // Ground drops belong to the party, not to a particular movement
+        // plan. Reconcile them before routing follow/hold/rest/pull states so
+        // idle companions can collect available loot in every party stance.
+        // PartyCompanionService itself blocks real combat and incoming adds.
+        if (isCompanion) {
+            PartyCompanionService.reconcileGroundLoot(session);
+            if (PartyCompanionService.startQueuedGroundPickup(session)) {
+                session.botStatus = BotStatus.getStatus(session);
+                return;
+            }
+        }
+
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];
         if (state) {
@@ -461,14 +479,17 @@ const BotAI = {
         }
     },
 
-    executePvPCombat(session, bot, victim, Generics) {
-        this.executeCombat(session, bot, victim, Generics);
+    executePvPCombat(session, bot, victim, Generics, options = {}) {
+        this.executeCombat(session, bot, victim, Generics, options);
     },
 
-    executeCombat(session, bot, npc, Generics) {
+    executeCombat(session, bot, npc, Generics, options = {}) {
         const role = BotRoles.inferRole(bot);
         const ARCHER_ATTACK_RANGE = 700;
-        const decision = BotCombatUtility.select(bot, npc, role);
+        // Healers and buffers may assist the party with their weapon, but
+        // their role controller must be able to keep their MP for support.
+        // Do not make that policy depend on the generic combat selector.
+        const decision = options.basicAttackOnly ? null : BotCombatUtility.select(bot, npc, role);
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',

@@ -164,7 +164,7 @@ try {
     assert.deepStrictEqual(tankReplies, [], 'a bot without friendly support skills must ignore a direct buff request');
     BotManager.botTell = originalBotTell;
 
-    const buffer = fakeActor(2000008, 'MageWithBuff', { classId: 25, mp: 30, locX: 100 });
+    const buffer = fakeActor(2000008, 'FighterWithBuff', { classId: 0, mp: 40, locX: 100 });
     buffer.skillset.skills.push(new SkillModel({
         selfId: 1068,
         name: 'Might',
@@ -187,7 +187,7 @@ try {
         id: player.fetchId(),
         selfId: 1068,
         ctrl: false
-    }, 'any bot with a learned friendly buff should cast it, regardless of role');
+    }, 'a bot with a learned friendly buff should cast it for an eligible role');
     supportReplies.length = 0;
 
     EffectStore.apply(player, {
@@ -202,8 +202,8 @@ try {
 
     EffectStore.remove(player, 'might');
     player.supportReservations = {};
-    const lowerMpBuffer = fakeActor(2000009, 'LowerMpBuffer', { classId: 25, mp: 20, locX: 100 });
-    const higherMpBuffer = fakeActor(2000010, 'HigherMpBuffer', { classId: 25, mp: 50, locX: 100 });
+    const lowerMpBuffer = fakeActor(2000009, 'LowerMpBuffer', { classId: 0, mp: 40, locX: 100 });
+    const higherMpBuffer = fakeActor(2000010, 'HigherMpBuffer', { classId: 0, mp: 50, locX: 100 });
     [lowerMpBuffer, higherMpBuffer].forEach((caster) => caster.skillset.skills.push(new SkillModel({
         selfId: 1068, name: 'Might', level: 1, passive: false, spell: true, hp: 0, mp: 10, hitTime: 1000, reuse: 1000, power: 0, distance: 600
     })));

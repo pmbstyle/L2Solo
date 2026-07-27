@@ -305,6 +305,17 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         }
         next[String(entry.selfId)] = { ...next[String(entry.selfId)], equipped: true, slot };
     });
+    const hasTwoHandedWeapon = Object.values(next).some((owned) => {
+        const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+        return owned?.equipped && Number(template?.etc?.slot || 0) === 14 &&
+            String(template?.template?.kind || '').startsWith('Weapon.');
+    });
+    if (hasTwoHandedWeapon) {
+        Object.values(next).forEach((owned) => {
+            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            if (Number(template?.etc?.slot || 0) === 8) owned.equipped = false;
+        });
+    }
     return next;
 }
 

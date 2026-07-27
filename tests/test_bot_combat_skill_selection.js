@@ -88,6 +88,13 @@ try {
     BotAI.executeCombat({}, swordFighter, npc(1111), swordFighterGenerics);
     assert.strictEqual(swordFighterGenerics.skills[0].selfId, 3, 'a sword fighter must not prepare Power Shot and should use its valid melee skill');
 
+    const cooldownFighter = bot(0, [skill(3, { name: 'Power Strike', mp: 5, range: 40, power: 30 })], 100, 'Weapon.Sword');
+    cooldownFighter.canUseSkill = () => false;
+    const cooldownFighterGenerics = generics();
+    BotAI.executeCombat({}, cooldownFighter, npc(1113), cooldownFighterGenerics);
+    assert.strictEqual(cooldownFighterGenerics.skills.length, 0, 'a melee skill on reuse must not be selected again');
+    assert.strictEqual(cooldownFighterGenerics.attacks.length, 1, 'a melee bot must use its normal attack while its offensive skill is on reuse');
+
     const fighter = bot(0, [], 20);
     const fighterGenerics = generics();
     BotAI.executeCombat({}, fighter, npc(1103), fighterGenerics);
@@ -148,6 +155,12 @@ try {
     BotAI.executeCombat({}, reserveHealer, npc(1105), reserveGenerics);
     assert.strictEqual(reserveGenerics.skills.length, 0, 'healer should preserve support MP instead of casting an expensive nuke');
     assert.strictEqual(reserveGenerics.attacks.length, 1, 'healer with no affordable utility should use a basic attack');
+
+    const supportingHealer = bot(15, [skill(1301, { mp: 5, power: 20, spell: true })], 100);
+    const supportingGenerics = generics();
+    BotAI.executeCombat({}, supportingHealer, npc(1112), supportingGenerics, { basicAttackOnly: true });
+    assert.strictEqual(supportingGenerics.skills.length, 0, 'a hot-party healer ordered to conserve MP must not use an offensive spell');
+    assert.strictEqual(supportingGenerics.attacks.length, 1, 'a hot-party healer may still contribute a normal weapon attack');
 
     const dagger = bot(7, [
         skill(1400, { mp: 5, power: 30, range: 40 }),

@@ -173,6 +173,7 @@ function shouldRecordIgnoredRequest(request) {
     if (!request.playerSession?.actor || !request.botSession?.actor) return false;
     if (request.botSession.followPlayerSession !== request.playerSession) return false;
     if (request.botSession.partyCompanion !== true) return false;
+    if (request.botSession.actor.isDead?.() || request.botSession.actor.state?.fetchDead?.()) return false;
 
     return actorDistance(request.playerSession.actor, request.botSession.actor) <= IGNORE_PENALTY_RANGE;
 }
@@ -198,6 +199,8 @@ function expireRequest(request) {
 }
 
 const BotLootEtiquette = {
+    shouldRecordIgnoredRequest,
+
     observeDrop(playerSession, npc, selfId, amount) {
         if (!playerSession?.actor || isBotSession(playerSession) || !npc || selfId === ADENA_ID) {
             return;

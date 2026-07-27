@@ -101,6 +101,14 @@ const equippedUpgrade = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 2
 });
 assert.strictEqual(equippedUpgrade[entryDSword.selfId].equipped, true, 'a useful D drop must equip immediately in the cold inventory');
 assert.strictEqual(equippedUpgrade[noGradeSword.selfId].equipped, false, 'the replaced no-grade weapon must be unequipped');
+const starterBow = DataCache.items.find((item) => Number(item.selfId) === 274);
+const starterShield = DataCache.items.find((item) => Number(item.selfId) === 20);
+const bowAndShieldInventory = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 24, stats: { role: 'archer' } }, {
+    [starterBow.selfId]: { selfId: starterBow.selfId, amount: 1, equipped: true, slot: 14 },
+    [starterShield.selfId]: { selfId: starterShield.selfId, amount: 1, equipped: true, slot: 8 }
+});
+assert.strictEqual(bowAndShieldInventory[starterBow.selfId].equipped, true, 'the cold inventory should retain its two-handed bow');
+assert.strictEqual(bowAndShieldInventory[starterShield.selfId].equipped, false, 'the cold inventory must unequip a shield when a two-handed bow is equipped');
 const entryDTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} });
 assert(entryDTarget, 'a new D-grade bot must receive an attainable equipment target');
 assert(Number(entryDTarget.item.template.price) < Number(atubaMace.template.price), 'a fresh D-grade bot must not begin by chasing the top D weapon');

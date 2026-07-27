@@ -127,6 +127,15 @@ function supportProviders(leaderSession) {
 }
 
 function pauseReason(leaderSession, puller) {
+    const state = pullState(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const ownPullTarget = threat &&
+        Number(threat.actor?.fetchId?.()) === Number(state.targetId || 0);
+    // Do not select a new target while the camp is already handling an add.
+    // The current shared pull target is the sole exception: it remains the
+    // party's intended fight from first aggro until it dies.
+    if (threat && !ownPullTarget) return 'party_under_attack';
+
     const members = PartyAwareness.partySessions(leaderSession);
     if (members.some((memberSession) => (
         memberSession !== leaderSession && (
@@ -163,13 +172,20 @@ function actorCanEngage(actor, target) {
     return !!actor && !!target && distance(point(actor), point(target)) <= attackRange(actor, target);
 }
 
+function canDeliverPull(actor, target) {
+    // Support roles use only their basic attack once the target is delivered,
+    // but they still need to release a player-led pull when they are the only
+    // companions in range.
+    return actorCanEngage(actor, target);
+}
+
 function targetIsEngageable(leaderSession, target, puller) {
     if (!target) return false;
     return PartyAwareness.partyActors(leaderSession)
         // A leader pull has no return phase to synchronize. Release only when
         // a companion can actually strike the player-designated target.
         .filter((actor) => actor !== leaderSession.actor && actor !== puller?.actor)
-        .some((actor) => actorCanEngage(actor, target));
+        .some((actor) => canDeliverPull(actor, target));
 }
 
 function nearestFreeMonster(bot) {
@@ -191,6 +207,11 @@ function shouldKeepPullMove(session, bot, state, phase, target) {
         session.stuckTicks = 0;
         session.lastStuckSampleAt = Date.now();
     }
+    // The leader can cover more than the normal target-drift threshold while
+    // a puller is returning. Replanning mid-route aborts the server movement
+    // after the client has already rendered it, which looks like a snap back.
+    // Finish the active return leg, then take a fresh formation target.
+    if (phase === 'return') return true;
     return distance(state.moveTarget, point(target)) <= PULL_MOVE_TARGET_DRIFT;
 }
 
@@ -359,6 +380,7 @@ module.exports = {
     current,
     targetIsEngageable,
     actorCanEngage,
+    canDeliverPull,
     attackRange,
     PULL_AGGRO_TIMEOUT_MS
 };

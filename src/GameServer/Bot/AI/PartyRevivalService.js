@@ -2,11 +2,14 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const DataCache = invoke('GameServer/DataCache');
 const SkillModel = invoke('GameServer/Model/Skill');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
-const World = invoke('GameServer/World/World');
 
 const PARTY_REVIVE_TIMEOUT_MS = 60000;
 const RESURRECTION_SCROLL_SKILL_ID = 2014;
 const PLAYER_RESURRECTION_SCROLLS = new Set([737, 3936, 3959]);
+
+function world() {
+    return invoke('GameServer/World/World');
+}
 
 function isCompanionOf(session, leaderSession) {
     return !!(
@@ -34,20 +37,23 @@ function deadMembers(leaderSession) {
 
 function partyCombatInProgress(leaderSession) {
     if (PartyAwareness.findThreatTargetingParty(leaderSession)) return true;
-    const members = partySessions(leaderSession);
-    if (members
+    if (PartyAwareness.leaderCombatTargetId(leaderSession)) return true;
+
+    // A pending hit/cast is an actual native action, unlike a lingering
+    // combat marker after an already finished fight. Do not begin a long
+    // resurrection while a living party member is still executing one.
+    if (partySessions(leaderSession)
         .filter(isAlive)
-        .some((session) => {
-            const state = session.actor.state;
-            return !!(state?.fetchCombats?.() || state?.fetchHits?.() || state?.fetchCasts?.());
-        })) return true;
+        .some((session) => (
+            session.actor.state?.fetchHits?.() || session.actor.state?.fetchCasts?.()
+        ))) return true;
 
     // PartyAwareness intentionally ignores corpses. For resurrection that is
     // too narrow: a monster can keep its combat loop on a fallen party member
     // for a short time after the lethal hit, and a healer must not begin a
     // long resurrection cast in front of it.
-    const partyIds = new Set(members.map((member) => member.actor?.fetchId?.()).filter(Boolean));
-    return (World.npc?.spawns || []).some((npc) => (
+    const partyIds = new Set(partySessions(leaderSession).map((member) => member.actor?.fetchId?.()).filter(Boolean));
+    return (world().npc?.spawns || []).some((npc) => (
         npc.fetchAttackable?.() === true &&
         npc.isDead?.() !== true &&
         npc.state?.fetchCombats?.() === true &&

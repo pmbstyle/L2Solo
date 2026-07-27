@@ -88,6 +88,16 @@ try {
     assert.strictEqual(duplicateWeapons.fetchItemRaw(8).fetchEquipped(), false, 'unequipping a conflicted weapon slot must clear the visible weapon');
     assert.strictEqual(duplicateWeapons.fetchPaperdollId(7), undefined, 'unequipping a conflicted weapon slot must clear paperdoll state');
 
+    const bowAndShield = backpack([
+        item(9, 274, 'Weapon.Bow', 14),
+        item(10, 20, 'Armor.Shield', 8)
+    ]);
+    const bowSession = sessionFor(bowAndShield);
+    bowAndShield.equipGear(bowSession, bowAndShield.fetchItemRaw(10));
+    bowAndShield.equipGear(bowSession, bowAndShield.fetchItemRaw(9));
+    assert.strictEqual(bowAndShield.fetchItemRaw(9).fetchEquipped(), true, 'the two-handed bow should be equipped');
+    assert.strictEqual(bowAndShield.fetchItemRaw(10).fetchEquipped(), false, 'equipping a two-handed bow must remove the shield');
+
     console.log('Equipment slot checks passed');
 } finally {
     ActorGenerics.calculateStats = originalCalculateStats;

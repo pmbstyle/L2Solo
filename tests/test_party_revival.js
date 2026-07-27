@@ -101,6 +101,12 @@ try {
     const combatHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(combatHeldResult.handled, false, 'a monster still fighting a fallen party member must block resurrection');
     World.npc.spawns = [];
+    healer.state.fetchCombats = () => true;
+    healer.state.fetchHits = () => true;
+
+    const activeActionHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
+    assert.strictEqual(activeActionHeldResult.handled, false, 'a living companion still executing a hit must block resurrection even before the NPC target state is visible');
+    healer.state.fetchHits = () => false;
 
     let skillCast = null;
     const skillResult = PartyRevivalService.tick(healerSession, leaderSession, {
@@ -109,6 +115,7 @@ try {
     assert.strictEqual(skillResult.source, 'skill', 'a learned Resurrection skill must take priority over the unlimited scroll');
     assert.strictEqual(skillCast[2].selfId, 1016, 'party resurrection should use the healer\'s learned Resurrection skill');
     assert.strictEqual(skillCast[2].id, leader.fetchId(), 'party resurrection should target the first fallen member');
+    healer.state.fetchCombats = () => false;
 
     leaderSession.partyRevivalAttempt = null;
     healer.skillset.skills = [];
