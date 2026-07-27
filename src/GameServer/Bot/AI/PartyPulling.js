@@ -1,7 +1,6 @@
 const World = invoke('GameServer/World/World');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
-const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
@@ -291,13 +290,11 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         bot.automation?.abortAll?.(bot);
         clearPullMove(state);
         bot.select({ id: target.fetchId() });
-        const aggression = BotRoles.inferRole(bot) === 'tank' ? BotSkillCapabilities.aggressionSkill(bot) : null;
-        if (aggression && bot.fetchMp() >= aggression.fetchConsumedMp()) {
-            Generics.skillExec(session, bot, { id: target.fetchId(), selfId: aggression.fetchSelfId(), ctrl: true });
-        } else {
-            BotAI.executeCombat(session, bot, target, Generics);
-        }
-        // AttackExec/SkillExec schedules the native hit asynchronously.  Do
+        // The opening pull hit favors a reliable instant attack over damage or
+        // taunt. A failed/cooldown skill must not delay the mob starting to
+        // chase the puller.
+        BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly: true });
+        // AttackExec schedules the native hit asynchronously. Do
         // not issue moveTo yet: MoveTo aborts automation and would cancel the
         // very hit that is supposed to put the mob into combat.
         state.phase = 'aggro';

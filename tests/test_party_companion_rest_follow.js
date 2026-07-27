@@ -825,6 +825,20 @@ try {
     assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
     assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
 
+    const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 21 });
+    Object.keys(overleveledRefreshBot.activeBuffs).forEach((key) => { overleveledRefreshBot.activeBuffs[key] = 0; });
+    const overleveledRefreshSession = fakeSession('bot_overleveled_refresh_party', overleveledRefreshBot);
+    overleveledRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
+    overleveledRefreshSession.partyCompanion = true;
+    overleveledRefreshSession.plan = 'following';
+    World.user = { sessions: [fieldRefreshLeaderSession, overleveledRefreshSession] };
+    FollowingState.tick(overleveledRefreshSession, overleveledRefreshBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.notStrictEqual(overleveledRefreshSession.roleDecision?.reason, 'wait_for_newbie_guide_town', 'companions above level 20 must not wait for Newbie Guide buffs');
+    assert.notStrictEqual(overleveledRefreshSession.plan, 'getting_buffed', 'companions above level 20 must not start a Newbie Guide trip');
+
     const refreshLeader = fakeActor(2000034, { locX: -84081, locY: 243227, locZ: -3723, level: 10 });
     const refreshLeaderSession = fakeSession('player_refresh_party', refreshLeader);
     const refreshBot = fakeActor(2000035, { locX: -84001, locY: 243227, locZ: -3723, level: 10 });
@@ -1195,6 +1209,7 @@ try {
     partyHudBotA.moves = [];
     partyHudBotB.moves = [];
     let pulledTargetId = null;
+    let openingPullCombatOptions = null;
     const pullChat = [];
 
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
@@ -1242,13 +1257,22 @@ try {
     );
     partyHudLeader.locX = 0;
 
+    learnSkill(partyHudBotA, { selfId: 28, name: 'Aggression', mp: 5, distance: 400 });
     partyHudBotA.locX = pulledMob.locX;
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say(_session, text) { pullChat.push(text); },
-        executeCombat(_session, _bot, npc) { pulledTargetId = npc.fetchId(); },
+        executeCombat(_session, _bot, npc, _generics, options) {
+            pulledTargetId = npc.fetchId();
+            openingPullCombatOptions = options;
+        },
         executePvPCombat() {}
     });
-    assert.strictEqual(pulledTargetId, pulledMob.fetchId(), 'tank should aggro with a normal attack when Aggression is not learned');
+    assert.strictEqual(pulledTargetId, pulledMob.fetchId(), 'tank should aggro the pull target');
+    assert.strictEqual(
+        openingPullCombatOptions?.basicAttackOnly,
+        true,
+        'opening pull aggro must use a basic attack even when the tank knows Aggression'
+    );
     assert(pullChat.some((text) => text.includes('pull target')), 'puller should announce the specific mob in party chat');
 
     partyHudLeaderSession.partyPullState.aggroRequestedAt = Date.now() - 3000;

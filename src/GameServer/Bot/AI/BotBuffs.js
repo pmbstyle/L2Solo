@@ -6,6 +6,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
+const NEWBIE_GUIDE_MAX_LEVEL = 20;
 const ALL_BUFFS = BuffCatalog.ALL_BUFFS;
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
@@ -41,7 +42,7 @@ function effectData(buff) {
 }
 
 function isNewbieEligible(actor) {
-    return actor && actor.fetchLevel() <= 25 && actor.fetchKarma() === 0;
+    return actor && actor.fetchLevel() <= NEWBIE_GUIDE_MAX_LEVEL && actor.fetchKarma() === 0;
 }
 
 function remainingMs(actor, key) {
@@ -173,6 +174,7 @@ function snapshot(actor) {
 module.exports = {
     BUFF_DURATION_MS,
     REFRESH_THRESHOLD_MS,
+    NEWBIE_GUIDE_MAX_LEVEL,
     ALL_BUFFS,
     NEWBIE_BUFFS,
     SUPPORT_BUFFS,
