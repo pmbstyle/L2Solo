@@ -7,6 +7,7 @@ const revive = invoke('GameServer/Actor/Generics/Revive');
 const StateModel = invoke('GameServer/Model/State');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+const RestartPoint = invoke('GameServer/Network/Request/RestartPoint');
 
 const dyingActor = {
     state: new StateModel(),
@@ -122,5 +123,62 @@ assert.strictEqual(actor.automation.stopReplenishCalled, true, 'town restart sho
 assert.strictEqual(packets.length, 2, 'town restart should send revive and stand-up packets immediately');
 assert.strictEqual(packets[0][0], 0x07, 'first packet should be Revive');
 assert.strictEqual(packets[1][0], 0x2d, 'second packet should be SocialAction stand-up');
+
+function deadCompanion(id) {
+    return {
+        id,
+        unselected: false,
+        fetchId: () => id,
+        isDead: () => true,
+        unselect() { this.unselected = true; }
+    };
+}
+
+const leaderSession = { actor: { fetchId: () => 43 } };
+const fallenA = deadCompanion(44);
+const fallenB = deadCompanion(45);
+const aliveCompanion = { fetchId: () => 46, isDead: () => false };
+const fallenSessionA = {
+    actor: fallenA,
+    partyCompanion: true,
+    followPlayerSession: leaderSession,
+    plan: 'resting',
+    deathTimerStart: Date.now(),
+    currentTargetId: 999
+};
+const fallenSessionB = {
+    actor: fallenB,
+    partyCompanion: true,
+    followPlayerSession: leaderSession,
+    plan: 'resting',
+    deathTimerStart: Date.now(),
+    incomingThreatId: 1000
+};
+const aliveSession = { actor: aliveCompanion, partyCompanion: true, followPlayerSession: leaderSession };
+const unrelatedSession = { actor: deadCompanion(47), partyCompanion: true, followPlayerSession: { actor: {} } };
+const companionCalls = [];
+const revivedCompanions = RestartPoint.reviveDeadCompanions(leaderSession, {
+    locX: 1000,
+    locY: 2000,
+    locZ: -3000
+}, {
+    revive(session, actor, options) { companionCalls.push({ type: 'revive', session, actor, options }); },
+    teleportTo(session, actor, coords) { companionCalls.push({ type: 'teleport', session, actor, coords }); }
+}, {
+    sessions: [fallenSessionA, fallenSessionB, aliveSession, unrelatedSession]
+});
+
+assert.strictEqual(revivedCompanions, 2, 'leader town restart should revive every dead companion in the same party');
+assert.deepStrictEqual(companionCalls.filter((call) => call.type === 'revive').map((call) => call.actor.fetchId()), [44, 45], 'only fallen companions should be revived');
+assert.deepStrictEqual(companionCalls.filter((call) => call.type === 'teleport').map((call) => call.coords), [
+    { locX: 1080, locY: 2000, locZ: -3000 },
+    { locX: 920, locY: 2000, locZ: -3000 }
+], 'fallen companions should arrive beside the player town restart point');
+assert.strictEqual(fallenSessionA.plan, 'following', 'town-revived companion must remain in the party follow state');
+assert.strictEqual(fallenSessionA.deathTimerStart, undefined, 'town restart must clear the stale death timeout');
+assert.strictEqual(fallenSessionA.currentTargetId, undefined, 'town restart must clear stale combat targets');
+assert.strictEqual(fallenSessionB.incomingThreatId, undefined, 'town restart must clear stale incoming threats');
+assert.strictEqual(fallenA.unselected, true, 'town-revived companion must clear its old target');
+assert.strictEqual(aliveSession.plan, undefined, 'living companions must not be reset by a leader town restart');
 
 console.log('Restart point revive checks passed');
