@@ -9,6 +9,7 @@ const tests = [
     'tests/test_bot_availability.js',
     'tests/test_bot_chat_commands.js',
     'tests/test_bot_chat_text.js',
+    'tests/test_bot_party_chat.js',
     'tests/test_bot_combat_skill_selection.js',
     'tests/test_bot_conversation.js',
     'tests/test_bot_death_respawn.js',

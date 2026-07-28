@@ -190,18 +190,21 @@ class Attack {
 
         if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.canUseSkill?.(skill) === false) {
             session.dataSendToMe?.(ServerResponse.actionFailed());
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.fetchMp() < skill.fetchConsumedMp()) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
@@ -209,6 +212,7 @@ class Attack {
         if (conditionFailure) {
             this.rejectSkillUseCondition(session, actor, conditionFailure);
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
@@ -230,6 +234,7 @@ class Attack {
         this.queueTimer(() => {
             if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
                 return;
             }
 
@@ -238,6 +243,7 @@ class Attack {
             if (targets.length === 0) {
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
                 return;
             }
 
@@ -258,6 +264,10 @@ class Attack {
                     attack: this,
                     magicSkill
                 });
+                // Chat confirmations are emitted only after the authoritative
+                // skill result exists. A queued, interrupted, resisted, or
+                // stack-rejected cast must never claim success to the party.
+                invoke('GameServer/Bot/AI/BotPartyChat').confirmSkillResult(session, actor, target, skill, outcome);
 
                 if (outcome.damage > 0) {
                     this.hit(session, actor, target, outcome.damage);

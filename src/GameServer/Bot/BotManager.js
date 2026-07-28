@@ -833,12 +833,19 @@ const BotManager = {
                 return false;
             }
 
+            // Do not claim a heal before the native cast lands. Attack.remoteHit
+            // will confirm only an actual positive result through BotPartyChat.
+            invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(botSession, {
+                target: player,
+                targetSession: playerSession,
+                skill,
+                kind: 'heal'
+            });
             invoke(path.actor).skillExec(botSession, bot, {
                 id: player.fetchId(),
                 selfId: skill.fetchSelfId(),
                 ctrl: false
             });
-            this.botTell(botSession, playerSession, `Casting ${skill.fetchName()} on you.`);
             return true;
         }
 
@@ -888,12 +895,19 @@ const BotManager = {
             }
 
             BotSupportPlanner.reserve(supportAction);
+            // The result is deliberately announced by Attack.remoteHit, after
+            // the effect made it through the real C4 effect stack rules.
+            invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(botSession, {
+                target: player,
+                targetSession: playerSession,
+                skill,
+                kind: 'support'
+            });
             invoke(path.actor).skillExec(botSession, bot, {
                 id: player.fetchId(),
                 selfId: skill.fetchSelfId(),
                 ctrl: false
             });
-            this.botTell(botSession, playerSession, `Casting ${skill.fetchName()} on you.`);
             return true;
         }
 

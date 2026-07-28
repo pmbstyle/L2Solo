@@ -198,6 +198,7 @@ const originalUpdateCharacterExperience = Database.updateCharacterExperience;
 const originalExperience = DataCache.experience;
 const originalRandom = Math.random;
 const originalBotSessions = BotManager.sessions;
+const originalBotPartySay = BotManager.botPartySay;
 const originalApplySupportBuff = BotBuffs.applySupportBuff;
 const originalFindOffers = MarketOpportunity.findOffers;
 
@@ -891,16 +892,21 @@ try {
     errandSession.plan = 'following';
     const errandLines = [];
     BotManager.sessions = [];
+    BotManager.botPartySay = (_session, text) => {
+        errandLines.push(text);
+        return true;
+    };
     World.user = { sessions: [errandLeaderSession, errandSession] };
     FollowingState.tick(errandSession, errandBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
         say(_session, text) { errandLines.push(text); }, executeCombat() {}, executePvPCombat() {}
     });
+    BotManager.botPartySay = originalBotPartySay;
     assert.strictEqual(errandSession.plan, 'shopping', 'companion with no shots should make a brief errand only after the party reaches town');
     assert.strictEqual(errandSession.companionShopping?.kind, 'restock_shots', 'town errand should describe the actual missing supply');
     assert.strictEqual(errandSession.shoppingTarget?.town, 'Giran', 'companion errand should stay in the player town');
-    assert(errandLines.some((line) => line.includes("then I'll return")), 'companion should tell the player it will return before shopping');
+    assert(errandLines.some((line) => line.includes('returning') || line.includes('back to camp')), 'companion should announce its return before shopping');
     assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
 
     const marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
@@ -1211,6 +1217,10 @@ try {
     let pulledTargetId = null;
     let openingPullCombatOptions = null;
     const pullChat = [];
+    BotManager.botPartySay = (_session, text) => {
+        pullChat.push(text);
+        return true;
+    };
 
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
     assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'bot', 'assigning a bot to pull should enable the dedicated bot pull mode');
@@ -1617,6 +1627,7 @@ try {
     Database.updateCharacterExperience = originalUpdateCharacterExperience;
     DataCache.experience = originalExperience;
     BotManager.sessions = originalBotSessions;
+    BotManager.botPartySay = originalBotPartySay;
     BotBuffs.applySupportBuff = originalApplySupportBuff;
     MarketOpportunity.findOffers = originalFindOffers;
 }

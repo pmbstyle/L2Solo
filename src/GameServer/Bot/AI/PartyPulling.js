@@ -4,6 +4,7 @@ const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
+const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 
 const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
@@ -336,7 +337,14 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         state.aggroRequestedAt = Date.now();
         if (!state.announced) {
             state.announced = true;
-            BotAI.say(session, `Pulling ${target.fetchName()} to the party!`);
+            BotPartyChat.announce(session, {
+                priority: 'coordination',
+                key: `pull:${target.fetchId()}`,
+                templates: [
+                    `Pulling ${target.fetchName()} to camp.`,
+                    `Bringing ${target.fetchName()} back — hold camp.`
+                ]
+            });
         }
         return { handled: true, puller, action: 'aggro', target };
     }

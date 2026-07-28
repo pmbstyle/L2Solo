@@ -99,6 +99,11 @@ function clearExpiredAttempt(leaderSession, now) {
 function castScroll(session, actor, target, skill) {
     actor.select?.({ id: target.fetchId() });
     session.currentTargetId = target.fetchId();
+    invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
+        target,
+        skill,
+        kind: 'resurrection'
+    });
     actor.automation.scheduleAction(session, actor, target, skill.fetchDistance(), () => {
         actor.attack.remoteHit(session, target, skill);
     });
@@ -150,6 +155,11 @@ function tick(session, leaderSession, Generics) {
     if (skilled) {
         session.currentTargetId = targetSession.actor.fetchId();
         session.actor.select?.({ id: targetSession.actor.fetchId() });
+        invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
+            target: targetSession.actor,
+            skill,
+            kind: 'resurrection'
+        });
         Generics.skillExec(session, session.actor, {
             id: targetSession.actor.fetchId(),
             selfId: skill.fetchSelfId(),

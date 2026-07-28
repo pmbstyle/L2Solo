@@ -363,7 +363,18 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
-                this.say(session, wasCompanion ? "I'm down. Waiting for a resurrection." : "Oops... I died! Resurrecting shortly.");
+                if (wasCompanion) {
+                    invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
+                        priority: 'critical',
+                        key: `party-death:${bot.fetchId()}`,
+                        templates: [
+                            `${bot.fetchName()} is down — waiting for resurrection.`,
+                            `Down at the camp. Waiting for a resurrection.`
+                        ]
+                    });
+                } else {
+                    this.say(session, 'Oops... I died! Resurrecting shortly.');
+                }
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
                     BotSocialMemory.recordEvent(session.followPlayerSession, session, 'party_wiped', 'bot_and_leader_dead');
