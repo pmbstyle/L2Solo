@@ -18,6 +18,7 @@ const RANDOM_LOOT_DISTRIBUTIONS = new Set([1, 2]);
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
 const PARTY_POSITION_UPDATE_DISTANCE = 150;
+const PARTY_MEMBER_UPDATE_INTERVAL_MS = 1000;
 const FORMATION_OFFSETS = [
     { locX: -90, locY: -70 },
     { locX: -90, locY: 70 },
@@ -204,7 +205,13 @@ function canPickGroundLoot(session, leaderSession, item) {
         ['approach', 'aggro', 'return'].includes(pullState.phase) &&
         Number(actor?.fetchId?.()) === Number(pullState.pullerId || 0)
     ) return false;
-    if (actor?.storedPickup) return false;
+    // Companion pickup uses the server-side queue.  A stale storedPickup is
+    // from the player ValidatePosition path and will never complete for a bot;
+    // leaving it in place permanently excludes that companion from all later
+    // ground drops.
+    if (actor?.storedPickup) {
+        delete actor.storedPickup;
+    }
     return distance2d(actor, item) <= PARTY_LOOT_RADIUS;
 }
 
@@ -254,9 +261,14 @@ function reconcileGroundLoot(looterSession) {
 
     const now = Date.now();
     if (now - Number(leaderSession.lastGroundLootScanAt || 0) < GROUND_LOOT_SCAN_INTERVAL_MS) return 0;
+    const items = availableGroundLoot(leaderSession);
+    // This shared timestamp protects the hot party from every companion
+    // walking the entire world-item list on every AI tick. Fresh NPC drops do
+    // not wait for this scan: NpcRewards queues them directly at spawn.
     leaderSession.lastGroundLootScanAt = now;
+    if (items.length === 0) return 0;
 
-    return availableGroundLoot(leaderSession)
+    return items
         .reduce((assigned, item) => assigned + Number(!!queueRandomGroundPickup(leaderSession, item)), 0);
 }
 
@@ -284,16 +296,12 @@ function startQueuedGroundPickup(pickerSession) {
         return false;
     }
     // Re-check transient plans at execution time. A queue may have been
-    // built while following and become stale after the player assigns this
-    // bot as the puller or it starts a town/support action.
+    // built while following and become stale after it starts a town/support
+    // action. Merely assigning a bot as puller is not combat: when no pull
+    // is in progress it may collect ground loot like every other companion.
     const pullState = leaderSession?.partyPullState || {};
-    const settings = settingsForLeader(leaderSession);
     if (
         ['getting_buffed', 'shopping', 'merchant'].includes(pickerSession.plan) ||
-        (
-            settings.pullMode === 'bot' &&
-            Number(settings.pullerId || 0) === Number(picker.fetchId?.())
-        ) ||
         (
             ['approach', 'aggro', 'return'].includes(pullState.phase) &&
             Number(picker.fetchId?.()) === Number(pullState.pullerId || 0)
@@ -319,6 +327,10 @@ function startQueuedGroundPickup(pickerSession) {
         }
         pickerSession.partyGroundPickupInProgress = false;
         startQueuedGroundPickup(pickerSession);
+        // A completed queue entry can make another idle ground drop eligible
+        // immediately. Do not wait for a later AI cadence just because the
+        // original drop was assigned while the party was still fighting.
+        reconcileGroundLoot(pickerSession);
     });
     return true;
 }
@@ -422,6 +434,23 @@ function sendPartyWindow(leaderSession, distribution = 0) {
                 leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(memberSession.actor));
             }
         });
+    }
+}
+
+function restoreJoiningCompanion(session, bot) {
+    bot.automation?.stopReplenish?.();
+    // Joining the player party is a recovery convenience, not a revive or
+    // level-up: restore exactly the requested HP and MP, leaving CP intact.
+    if (typeof bot.setHp === 'function' && typeof bot.fetchMaxHp === 'function') {
+        bot.setHp(bot.fetchMaxHp());
+    }
+    if (typeof bot.setMp === 'function' && typeof bot.fetchMaxMp === 'function') {
+        bot.setMp(bot.fetchMaxMp());
+    }
+
+    if (bot.state?.fetchSeated?.() === true) {
+        bot.state.setSeated(false);
+        session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(bot), bot);
     }
 }
 
@@ -591,7 +620,6 @@ const PartyCompanionService = {
         if (!hasCapacity(leaderSession, companionSession)) return false;
 
         const previousLeader = companionSession.followPlayerSession;
-        const wasResting = companionSession.plan === 'resting';
         const distribution = hasOwn(options, 'distribution')
             ? setDistribution(leaderSession, options.distribution)
             : distributionForLeader(leaderSession);
@@ -600,7 +628,8 @@ const PartyCompanionService = {
             leaderSession.dataSendToMe(ServerResponse.joinParty(distribution));
         }
 
-        companionSession.plan = wasResting ? 'resting' : 'following';
+        restoreJoiningCompanion(companionSession, bot);
+        companionSession.plan = 'following';
         companionSession.followPlayerSession = leaderSession;
         companionSession.partyCompanion = true;
         companionSession.botStay = false;
@@ -672,9 +701,14 @@ const PartyCompanionService = {
 
         const leaderSession = companionSession.followPlayerSession;
         if (!leaderSession.actor?.fetchIsOnline?.()) return false;
-        leaderSession.dataSendToMe(ServerResponse.partySmallWindowUpdate(companionSession.actor));
-        leaderSession.dataSendToMe(ServerResponse.partySpelled.fromActor(companionSession.actor));
-        sendPartyPositions(leaderSession, companionSession, true);
+        const now = Date.now();
+        if (now - Number(companionSession.lastPartyMemberUpdateAt || 0) >= PARTY_MEMBER_UPDATE_INTERVAL_MS) {
+            leaderSession.dataSendToMe(ServerResponse.partySmallWindowUpdate(companionSession.actor));
+            companionSession.lastPartyMemberUpdateAt = now;
+        }
+        // PartySpelled is sent by updateActorEffects when an effect actually
+        // changes. Re-emitting it every bot AI tick flooded the C4 client.
+        sendPartyPositions(leaderSession, companionSession, false);
         return true;
     }
 };

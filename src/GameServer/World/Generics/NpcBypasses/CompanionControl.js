@@ -6,8 +6,25 @@ const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
+// C4 limits NpcHtmlMessage to 8192 characters. Five compact party cards fit
+// safely; a full eight-member party therefore uses a second page.
+const COMPANIONS_PER_PAGE = 5;
+const PARTY_ROLE_PRIORITY = {
+    tank: 0,
+    buffer: 1,
+    healer: 2
+};
+
 function companionSessions(session) {
     return PartyCompanionService.membersForLeader(session);
+}
+
+function orderedCompanionSessions(session) {
+    return [...companionSessions(session)].sort((left, right) => {
+        const leftRole = BotRoles.inferRole(left.actor);
+        const rightRole = BotRoles.inferRole(right.actor);
+        return (PARTY_ROLE_PRIORITY[leftRole] ?? 3) - (PARTY_ROLE_PRIORITY[rightRole] ?? 3);
+    });
 }
 
 function findCompanion(session, botName) {
@@ -120,13 +137,6 @@ function setPullMode(session, mode) {
     });
 }
 
-function setLootDistribution(session, distribution) {
-    const value = Number(distribution);
-    if (![0, 1, 2, 3, 4].includes(value)) return false;
-    PartyCompanionService.rebuildWindow(session, value);
-    return true;
-}
-
 function setMemberPuller(session, targetSession) {
     const role = BotRoles.inferRole(targetSession?.actor);
     if (!['tank', 'dagger', 'dps'].includes(role)) return false;
@@ -184,16 +194,6 @@ function compactText(value, fallback = 'idle') {
         .slice(0, 32);
 }
 
-function lootLabel(distribution) {
-    return ({
-        0: 'Finders',
-        1: 'Random',
-        2: 'Random+Spoil',
-        3: 'By Turn',
-        4: 'Turn+Spoil'
-    })[distribution] || `Native #${distribution}`;
-}
-
 function actionRow(items, options = {}) {
     const columns = options.columns || items.length;
     const width = Math.floor(Html.WIDTH / columns);
@@ -209,6 +209,22 @@ function actionRow(items, options = {}) {
         }), { width, align: 'center' }));
     }
     return Html.table([Html.row(cells)]);
+}
+
+function pageNavigation(command, page, totalPages, label) {
+    if (totalPages <= 1) return '';
+
+    return Html.columns([
+        Html.cell(
+            page > 0 ? Html.link('Prev', `${command} ${page - 1}`, { color: Html.COLOR.link }) : '',
+            { width: 80, align: 'left' }
+        ),
+        Html.cell(Html.font(`${label} ${page + 1}/${totalPages}`, Html.COLOR.muted), { width: 110, align: 'center' }),
+        Html.cell(
+            page + 1 < totalPages ? Html.link('Next', `${command} ${page + 1}`, { color: Html.COLOR.link }) : '',
+            { width: 80, align: 'right' }
+        )
+    ]) + '<br1>';
 }
 
 function renderModePanel(settings, count) {
@@ -249,14 +265,6 @@ function renderModePanel(settings, count) {
             { label: 'Player', active: settings.pullMode === 'leader', command: 'companion-control pull leader' },
             { label: 'Off', active: settings.pullMode === 'off', command: 'companion-control pull off' }
         ], { columns: 3 }),
-        Html.font(`Loot: ${lootLabel(settings.distribution)}`, Html.COLOR.muted),
-        actionRow([
-            { label: 'Finders', active: settings.distribution === 0, command: 'companion-control loot 0' },
-            { label: 'Random', active: settings.distribution === 1, command: 'companion-control loot 1' },
-            { label: 'Random+Spoil', active: settings.distribution === 2, command: 'companion-control loot 2' },
-            { label: 'By Turn', active: settings.distribution === 3, command: 'companion-control loot 3' },
-            { label: 'Turn+Spoil', active: settings.distribution === 4, command: 'companion-control loot 4' }
-        ], { columns: 5 }),
         '<br1>'
     ].join('');
 }
@@ -297,7 +305,7 @@ function renderCompanionCard(companionSession, settings) {
 
     const summary = Html.table([
         Html.row([
-            Html.cell(`${Html.font(bot.fetchName(), Html.COLOR.ok)} ${Html.font(`Lv ${bot.fetchLevel()} ${role}`, Html.COLOR.link)}`, { width: 186 }),
+            Html.cell(`${Html.link(bot.fetchName(), `bot-status ${bot.fetchName()}`, { color: Html.COLOR.ok })} ${Html.font(`Lv ${bot.fetchLevel()} ${role}`, Html.COLOR.link)}`, { width: 186 }),
             Html.cell(Html.font(stance, stance === 'follow' ? Html.COLOR.ok : Html.COLOR.warn), { width: 84, align: 'right' })
         ]),
         Html.row([
@@ -317,10 +325,8 @@ function renderCompanionCard(companionSession, settings) {
                 ? { label: 'Stop Pull', command: `companion-control member-pull off ${bot.fetchName()}`, color: Html.COLOR.warn }
                 : { label: 'Pull', command: `companion-control member-pull on ${bot.fetchName()}`, color: Html.COLOR.ok })
             : null,
-        { label: 'Call', command: `companion-control summon ${bot.fetchName()}` },
-        { label: 'Info', command: `bot-status ${bot.fetchName()}` },
-        { label: 'Dismiss', command: `companion-control dismiss ${bot.fetchName()}`, color: Html.COLOR.warn }
-    ], { columns: 5 });
+        { label: 'Call', command: `companion-control summon ${bot.fetchName()}` }
+    ].filter(Boolean));
 
     return `${Html.line(Html.TEXTURE.line, Html.WIDTH, 1)}${summary}${actions}<br1>`;
 }
@@ -331,6 +337,7 @@ function companionControl(session, parts) {
 
     const subCommand = parts[1];
     const value = parts[2];
+    const requestedPage = subCommand === 'page' ? Number(value) : 0;
 
     if (subCommand === 'movement') {
         setMovementMode(session, value === 'hold' ? 'hold' : 'follow');
@@ -338,8 +345,6 @@ function companionControl(session, parts) {
         setCombatMode(session, value);
     } else if (subCommand === 'pull') {
         setPullMode(session, value);
-    } else if (subCommand === 'loot') {
-        setLootDistribution(session, value);
     } else if (subCommand === 'member-pull') {
         const targetSession = findCompanion(session, parts[3]);
         if (value === 'on' && targetSession) {
@@ -354,14 +359,14 @@ function companionControl(session, parts) {
         handleMemberCommand(session, subCommand, value);
     }
 
-    renderCompanionPanel(session);
+    renderCompanionPanel(session, requestedPage);
 }
 
-function renderCompanionPanel(session) {
+function renderCompanionPanel(session, requestedPage = 0) {
     const actor = session.actor;
     if (!actor) return;
 
-    const myCompanions = PartyCompanionService.membersForLeader(session);
+    const myCompanions = orderedCompanionSessions(session);
     const settings = PartyCompanionService.getSettings(session);
 
     if (myCompanions.length === 0) {
@@ -376,13 +381,20 @@ function renderCompanionPanel(session) {
         return;
     }
 
+    const totalPages = Math.max(1, Math.ceil(myCompanions.length / COMPANIONS_PER_PAGE));
+    const page = Math.min(totalPages - 1, Math.max(0, Number.isFinite(Number(requestedPage)) ? Math.floor(Number(requestedPage)) : 0));
+    const first = page * COMPANIONS_PER_PAGE;
+    const visibleCompanions = myCompanions.slice(first, first + COMPANIONS_PER_PAGE);
+
     let body = renderModePanel(settings, myCompanions.length);
     body += Html.spacer(5);
 
-    myCompanions.forEach((companionSession) => {
+    visibleCompanions.forEach((companionSession) => {
         body += renderCompanionCard(companionSession, settings);
         body += Html.spacer(4);
     });
+
+    body += pageNavigation('companion-control page', page, totalPages, 'Members');
 
     body += Html.actionFooter([
         { label: 'Close Panel', command: 'html 7000', color: Html.COLOR.muted }

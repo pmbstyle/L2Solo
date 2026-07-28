@@ -103,6 +103,8 @@ try {
         dataSendToMeAndOthers() {}
     };
     BotManager.sessions = [botSession, distantBotSession];
+    World.user = { sessions: [leaderSession, botSession, distantBotSession] };
+    World.fetchNpcsInRadius = () => [];
     const npc = {
         fetchSelfId: () => 999,
         fetchLocX: () => 100,
@@ -119,7 +121,16 @@ try {
     assert.strictEqual(distantBot.storedPickup, undefined, 'only one nearest companion should receive the pickup order');
     pickupCalls[0].onComplete();
 
-    closestBot.state.combat = true;
+    const activeThreat = {
+        fetchId: () => 900001,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => closestBot.fetchId(),
+        fetchLocX: () => 100,
+        fetchLocY: () => 200
+    };
+    World.npc = { spawns: [activeThreat] };
+    World.fetchNpcsInRadius = () => [activeThreat];
     PartyCompanionService.queueRandomGroundPickup(botSession, {
         fetchId: () => 500002,
         fetchLocX: () => 100,
@@ -133,7 +144,8 @@ try {
         fetchLocZ: () => -310
     });
     assert.strictEqual(pickupCalls.length, 1, 'a drop arriving while the party is in combat should wait instead of interrupting the fight');
-    closestBot.state.combat = false;
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
     PartyCompanionService.startQueuedGroundPickup(botSession);
     assert.deepStrictEqual(pickupCalls[1] && { session: pickupCalls[1].session, actor: pickupCalls[1].actor, data: pickupCalls[1].data }, { session: botSession, actor: closestBot, data: { id: 500002 } }, 'a queued hot-bot pickup should execute server-side after combat instead of waiting for a client position packet');
     pickupCalls[1].onComplete();
@@ -146,7 +158,9 @@ try {
     assert.strictEqual(pickupCalls.length, 3, 'a pending resurrection must preempt queued loot');
     leaderSession.actor.isDead = () => false;
     leaderSession.partyCompanionSettings = { distribution: 1, pullMode: 'bot', pullerId: closestBot.fetchId() };
-    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), false, 'a bot newly assigned as puller must not execute stale queued loot before its first pull tick');
+    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'an assigned puller should collect queued ground loot while no pull is active');
+    assert.deepStrictEqual(pickupCalls[3] && { session: pickupCalls[3].session, actor: pickupCalls[3].actor, data: pickupCalls[3].data }, { session: botSession, actor: closestBot, data: { id: 500007 } }, 'idle puller loot should use the normal server-side pickup path');
+    pickupCalls[3].onComplete();
     botSession.partyGroundPickupQueue = [];
     leaderSession.partyCompanionSettings = { distribution: 1 };
     leaderSession.partyPullState = {};
@@ -161,9 +175,35 @@ try {
             fetchLocZ: () => -310
         }]
     };
+    leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
-    assert.deepStrictEqual(pickupCalls[3] && { session: pickupCalls[3].session, actor: pickupCalls[3].actor, data: pickupCalls[3].data }, { session: botSession, actor: closestBot, data: { id: 500004 } }, 'an idle hot party should collect reachable loot that was already lying on the ground');
-    pickupCalls[3].onComplete();
+    assert.deepStrictEqual(pickupCalls[4] && { session: pickupCalls[4].session, actor: pickupCalls[4].actor, data: pickupCalls[4].data }, { session: botSession, actor: closestBot, data: { id: 500004 } }, 'an idle hot party should collect reachable loot that was already lying on the ground');
+    pickupCalls[4].onComplete();
+
+    closestBot.storedPickup = { id: 499999 };
+    World.items = {
+        spawns: [{
+            fetchId: () => 500008,
+            fetchLocX: () => 130,
+            fetchLocY: () => 200,
+            fetchLocZ: () => -310
+        }]
+    };
+    leaderSession.lastGroundLootScanAt = 0;
+    PartyCompanionService.reconcileGroundLoot(botSession);
+    assert.deepStrictEqual(pickupCalls[5] && { session: pickupCalls[5].session, actor: pickupCalls[5].actor, data: pickupCalls[5].data }, { session: botSession, actor: closestBot, data: { id: 500008 } }, 'a stale client pickup must not block a companion from collecting later ground loot');
+    assert.strictEqual(closestBot.storedPickup, undefined, 'companion loot reconciliation should clear stale client pickup state');
+    pickupCalls[5].onComplete();
+
+    leaderSession.lastGroundLootScanAt = 0;
+    World.items = { spawns: [] };
+    const emptyScanStartedAt = Date.now();
+    PartyCompanionService.reconcileGroundLoot(botSession);
+    assert.strictEqual(
+        leaderSession.lastGroundLootScanAt >= emptyScanStartedAt,
+        true,
+        'an idle ground-loot scan should retain its shared throttle when no items are available'
+    );
 
     // A returning puller is travelling, not fighting at camp. It must not
     // block recovery of an older drop that another companion can collect.
@@ -179,8 +219,8 @@ try {
     };
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
-    assert.deepStrictEqual(pickupCalls[4] && { session: pickupCalls[4].session, actor: pickupCalls[4].actor, data: pickupCalls[4].data }, { session: distantBotSession, actor: distantBot, data: { id: 500005 } }, 'a distant return pull should let another companion collect old loot without interrupting the puller');
-    pickupCalls[4].onComplete();
+    assert.deepStrictEqual(pickupCalls[6] && { session: pickupCalls[6].session, actor: pickupCalls[6].actor, data: pickupCalls[6].data }, { session: distantBotSession, actor: distantBot, data: { id: 500005 } }, 'a distant return pull should let another companion collect old loot without interrupting the puller');
+    pickupCalls[6].onComplete();
 
     // An NPC already targeting the party is combat even before a companion
     // has started its own hit/cast animation; loot must not delay defense.
@@ -206,7 +246,7 @@ try {
     };
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
-    assert.strictEqual(pickupCalls.length, 5, 'an incoming NPC threat must block ground pickup before party members start their own combat action');
+    assert.strictEqual(pickupCalls.length, 7, 'an incoming NPC threat must block ground pickup before party members start their own combat action');
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalRewards;
     ProgressionRates.rollGroup = originalRollGroup;

@@ -19,6 +19,7 @@ const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
 const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
+const FOLLOW_FORMATION_TOLERANCE = 45;
 const STUCK_SAMPLE_INTERVAL_MS = 750;
 // Newbie Guides only exist in the starter villages.  A companion should not
 // abandon a player in the field just because its starter buffs have expired.
@@ -361,6 +362,23 @@ function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
 }
 
+function moveToFollowTarget(session, bot, player) {
+    const followTarget = followTargetFor(session, player);
+    // Formation positions are deliberately offset from the leader.  Comparing
+    // only against the leader made a bot repeatedly path to its current
+    // position once it had reached that offset.
+    if (distance2d(loc(bot), followTarget) <= FOLLOW_FORMATION_TOLERANCE) {
+        session.lastFollowMoveTarget = null;
+        return false;
+    }
+    session.lastFollowMoveTarget = followTarget;
+    bot.moveTo({
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+        to: followTarget
+    });
+    return true;
+}
+
 function manaPriority(entry, pullerActor) {
     const role = BotRoles.inferRole(entry.actor);
     if (entry.actor === pullerActor) return 0;
@@ -469,6 +487,43 @@ module.exports = {
         }
 
         const player = playerSession.actor;
+        if (player.isDead?.()) {
+            // Do this before the provider is selected: a solo healer can be
+            // the first and only companion tick after the leader dies.
+            PartyPulling.cancelForRevival(playerSession);
+        }
+        // Resurrection is autonomous.  It must win over follow/catch-up and
+        // over a stale pull target; chat is only conversation, never a switch
+        // required to make companions revive their leader.
+        const revival = PartyRevivalService.tick(session, playerSession, Generics);
+        if (revival.handled) {
+            recordRoleDecision(session, bot, 'resurrect_party', revival.source || 'waiting', {
+                targetId: revival.target?.fetchId?.() || revival.targetId || null
+            });
+            return;
+        }
+        if (player.isDead?.()) {
+            if (!revival.blockedBy) {
+                session.currentTargetId = undefined;
+                bot.unselect();
+                bot.attack?.abortCast?.(session, bot);
+                bot.attack?.clearTimers?.();
+                bot.state?.setHits?.(false);
+                bot.state?.setCasts?.(false);
+                bot.automation?.abortAll?.(bot);
+            }
+            recordRoleDecision(
+                session,
+                bot,
+                'wait_for_resurrection',
+                revival.blockedBy ? `blocked_${revival.blockedBy}` : 'awaiting_resurrection',
+                { targetId: player.fetchId() }
+            );
+            // During an actual fight, leave the normal combat branch active
+            // so the living party can finish it. Once it clears, the next tick
+            // immediately schedules the prioritized leader resurrection.
+            if (!revival.blockedBy) return;
+        }
         const role = BotRoles.inferRole(bot);
         const distance = point(bot).distance(point(player));
         const partySettings = PartyCompanionService.getSettings(playerSession);
@@ -577,25 +632,12 @@ module.exports = {
         const leaderSeated = player.state?.fetchSeated?.() === true;
         const botRecovering = botVitals.hpRatio < 0.95 || botVitals.mpRatio < 0.95;
 
-        const revival = PartyRevivalService.tick(session, playerSession, Generics);
-        if (revival.handled) {
-            recordRoleDecision(session, bot, 'resurrect_party', revival.source || 'waiting', {
-                targetId: revival.target?.fetchId?.() || revival.targetId || null
-            });
-            return;
-        }
-
         if (session.returnToPartyAfterSupport && !isBusy(bot)) {
             session.returnToPartyAfterSupport = false;
             session.currentTargetId = undefined;
             bot.unselect();
             if (distance > FOLLOW_RUN_DISTANCE) {
-                const followTarget = followTargetFor(session, player);
-                session.lastFollowMoveTarget = followTarget;
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: followTarget
-                });
+                moveToFollowTarget(session, bot, player);
                 recordRoleDecision(session, bot, 'follow_leader', 'return_after_support');
                 return;
             }
@@ -609,12 +651,7 @@ module.exports = {
                 standUp(session, bot);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
                 if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    const followTarget = followTargetFor(session, player);
-                    session.lastFollowMoveTarget = followTarget;
-                    bot.moveTo({
-                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: followTarget
-                    });
+                    moveToFollowTarget(session, bot, player);
                 }
                 return;
             }
@@ -1095,16 +1132,16 @@ module.exports = {
                 if (!keepRoleDecision) {
                     recordRoleDecision(session, bot, 'follow_leader', 'keep_range');
                 }
-                if (shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    session.lastFollowMoveHeldAt = Date.now();
-                    return;
-                }
                 const followTarget = followTargetFor(session, player);
-                session.lastFollowMoveTarget = followTarget;
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: followTarget
-                });
+                if (distance2d(loc(bot), followTarget) <= FOLLOW_FORMATION_TOLERANCE) {
+                    session.lastFollowMoveTarget = null;
+                } else {
+                    if (shouldKeepCurrentFollowMove(session, bot, player, distance)) {
+                        session.lastFollowMoveHeldAt = Date.now();
+                        return;
+                    }
+                    moveToFollowTarget(session, bot, player);
+                }
             } else {
                 session.lastFollowMoveTarget = null;
                 if (!keepRoleDecision) {

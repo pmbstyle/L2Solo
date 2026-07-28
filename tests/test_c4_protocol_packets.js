@@ -375,6 +375,10 @@ assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should incl
 assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
 assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
 
+const oversizedNpcHtml = ServerResponse.npcHtml(actor.fetchId(), 'x'.repeat(8193));
+assert.strictEqual(oversizedNpcHtml[0], 0x0f, 'C4 NpcHtmlMessage should retain its opcode when oversized input is rejected');
+assert(oversizedNpcHtml.length < 300, 'oversized C4 HTML must be replaced with a short safe page instead of reaching the client');
+
 const magicUse = ServerResponse.skillStarted(actor, actor.fetchId(), {
     fetchSelfId: () => 2047,
     fetchCalculatedHitTime: () => 0,

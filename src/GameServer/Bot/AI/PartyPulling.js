@@ -10,6 +10,12 @@ const PULL_CONTACT_DISTANCE = 260;
 const PULL_RETURN_DISTANCE = 180;
 const PULL_AGGRO_TIMEOUT_MS = 8000;
 const PULL_MOVE_TARGET_DRIFT = 200;
+const PULL_ABANDON_DISTANCE = 5000;
+// This is a delivery radius, not the exact native hit range.  Once an
+// incoming mob is this close to a melee companion, releasing the shared
+// target lets the normal combat action close the final few steps instead of
+// holding the entire party for coordinate-perfect overlap.
+const PULL_DELIVERY_MELEE_DISTANCE = 250;
 
 function point(actor) {
     return {
@@ -24,6 +30,12 @@ function distance(a, b) {
     const dy = a.locY - b.locY;
     const dz = (a.locZ || 0) - (b.locZ || 0);
     return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+}
+
+function distance2d(a, b) {
+    const dx = a.locX - b.locX;
+    const dy = a.locY - b.locY;
+    return Math.sqrt((dx * dx) + (dy * dy));
 }
 
 function enabled(settings) {
@@ -78,7 +90,10 @@ function clearFinishedTarget(leaderSession) {
     const state = pullState(leaderSession);
     const npc = npcById(state.targetId);
     if (!state.targetId) return null;
-    if (!npc || npc.isDead?.()) {
+    // The leader can relocate (teleport, town respawn, zone transfer) while a
+    // pull target remains alive in the old region. Do not let that orphaned
+    // id keep the party in combat or make a bot attack a despawned entity.
+    if (!npc || npc.isDead?.() || distance(point(leaderSession.actor), point(npc)) > PULL_ABANDON_DISTANCE) {
         leaderSession.partyPullState = {};
         return null;
     }
@@ -128,6 +143,7 @@ function supportProviders(leaderSession) {
 
 function pauseReason(leaderSession, puller) {
     const state = pullState(leaderSession);
+    if (leaderSession?.actor?.isDead?.()) return 'party_revival';
     const recovery = leaderSession?.partyRecoveryCast;
     if (Number(recovery?.expiresAt || 0) > Date.now()) return 'party_recharging';
     if (recovery) delete leaderSession.partyRecoveryCast;
@@ -141,13 +157,15 @@ function pauseReason(leaderSession, puller) {
     if (combat.active) return 'party_under_attack';
 
     const members = PartyAwareness.partySessions(leaderSession);
-    if (members.some((memberSession) => (
-        memberSession !== leaderSession && (
-            memberSession.actor?.state?.fetchSeated?.() ||
-            memberSession.plan === 'resting' ||
-            memberSession.plan === 'getting_buffed'
-        )
-    ))) {
+    const seatedMembers = members.filter((memberSession) => (
+        memberSession.actor?.state?.fetchSeated?.() === true
+    ));
+    const pullerIsSeated = puller?.actor?.state?.fetchSeated?.() === true;
+    // A single support companion may sit briefly without halting the camp.
+    // Stop only when the designated puller is regenerating or a material
+    // fraction of the whole party is seated at the same time. Plans and low
+    // HP/MP are intentionally not signals here: both can outlive the action.
+    if (pullerIsSeated || (members.length > 0 && seatedMembers.length / members.length > 0.4)) {
         return 'party_recovering';
     }
 
@@ -161,19 +179,31 @@ function pauseReason(leaderSession, puller) {
     return null;
 }
 
+function cancelForRevival(leaderSession) {
+    if (!leaderSession?.partyPullState || Object.keys(leaderSession.partyPullState).length === 0) return false;
+    leaderSession.partyPullState = {};
+    return true;
+}
+
 function attackRange(actor, target) {
     const role = BotRoles.inferRole(actor);
     const combat = BotCombatUtility.select(actor, target, role);
-    if (Number.isFinite(Number(combat?.range))) return Number(combat.range);
-
-    // This is the same fallback used by BotAI.executeCombat: archers pass a
-    // ranged basic attack, while every other role uses the native melee
-    // attack, whose scheduled range is zero.
-    return role === 'archer' ? 700 : 0;
+    const skillRange = Number(combat?.range);
+    // This predicate decides whether normal combat may begin, rather than
+    // whether its first selected skill can land in place.  A melee skill may
+    // have a native 40-50 range, but once the mob reaches the delivery radius
+    // BotAI.executeCombat will close that final distance itself.  Otherwise a
+    // ready Power Strike can make the party hold a successfully delivered mob
+    // forever. Preserve longer spell/archer ranges for actual ranged combat.
+    const baselineRange = role === 'archer' ? 700 : PULL_DELIVERY_MELEE_DISTANCE;
+    return Number.isFinite(skillRange) ? Math.max(baselineRange, skillRange) : baselineRange;
 }
 
 function actorCanEngage(actor, target) {
-    return !!actor && !!target && distance(point(actor), point(target)) <= attackRange(actor, target);
+    // Combat ranges are horizontal.  World/map Z may temporarily differ while
+    // a mob is traversing a slope, and treating that as distance made a mob at
+    // the camp remain permanently "not delivered".
+    return !!actor && !!target && distance2d(point(actor), point(target)) <= attackRange(actor, target);
 }
 
 function canDeliverPull(actor, target) {
@@ -183,12 +213,12 @@ function canDeliverPull(actor, target) {
     return actorCanEngage(actor, target);
 }
 
-function targetIsEngageable(leaderSession, target, puller) {
+function targetIsEngageable(leaderSession, target, puller, { includePuller = false } = {}) {
     if (!target) return false;
     return PartyAwareness.partyActors(leaderSession)
         // A leader pull has no return phase to synchronize. Release only when
         // a companion can actually strike the player-designated target.
-        .filter((actor) => actor !== leaderSession.actor && actor !== puller?.actor)
+        .filter((actor) => actor !== leaderSession.actor && (includePuller || actor !== puller?.actor))
         .some((actor) => canDeliverPull(actor, target));
 }
 
@@ -360,7 +390,9 @@ function current(leaderSession, settings) {
     // party.  Release only companions that can strike from their own current
     // position; the rest keep following the leader instead of chasing it.
     const engageable = state.source === 'bot'
-        ? state.phase === 'engage' || targetIsEngageable(leaderSession, target, puller)
+        ? state.phase === 'engage'
+            ? targetIsEngageable(leaderSession, target, puller, { includePuller: true })
+            : targetIsEngageable(leaderSession, target, puller)
         : targetIsEngageable(leaderSession, target, puller);
     return {
         enabled: true,
@@ -384,5 +416,6 @@ module.exports = {
     actorCanEngage,
     canDeliverPull,
     attackRange,
+    cancelForRevival,
     PULL_AGGRO_TIMEOUT_MS
 };

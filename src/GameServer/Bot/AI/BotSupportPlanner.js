@@ -5,6 +5,10 @@ const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 const CAST_RESERVATION_MS = 5000;
 const PENDING_SUPPORT_CAST_TIMEOUT_MS = 30000;
 const MIN_SUPPORT_MP_RATIO = 0.35;
+// These effects are situational utility, not part of the ordinary field
+// package. Keeping them out of the party planner prevents a buffer/healer
+// from spending MP and pausing pulls for a buff the group cannot use.
+const EXCLUDED_PARTY_BUFF_EFFECTS = new Set(['kiss_of_eva']);
 
 const PHYSICAL_ROLES = new Set(['tank', 'dagger', 'archer', 'dps']);
 const CASTER_ROLES = new Set(['mage', 'healer', 'buffer']);
@@ -47,7 +51,10 @@ function supportSkills(actor) {
             // the support planner request it continuously and pauses pulling.
             const skillType = skill.fetchSkillType?.();
             const periodicHeal = skillType === 'hot' || skillType === 'healHot' || skillType === 'manaHot';
-            return !periodicHeal && semantic?.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target);
+            return !periodicHeal &&
+                semantic?.effectType === 'buff' &&
+                !EXCLUDED_PARTY_BUFF_EFFECTS.has(semantic.effect) &&
+                ['friendly', 'ally', 'party'].includes(semantic.target);
         });
 }
 
@@ -82,9 +89,14 @@ function overlaps(effect, keys) {
 function needsSkill(target, skill) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
+    const skillId = Number(skill.fetchSelfId?.() || 0);
     const semantic = skill.fetchSemantic?.() || {};
     const current = EffectStore.list(target, { includeDebuffs: false })
-        .filter((effect) => overlaps(effect, keys));
+        // The effect id is the authoritative identity for a completed cast.
+        // Keep the stat/effect-key fallback for old saved effects, but do not
+        // re-request a buff merely because an older payload lacked its modern
+        // semantic stat keys.
+        .filter((effect) => Number(effect.id || 0) === skillId || overlaps(effect, keys));
 
     // `activeBuffs` is retained for packet/UI compatibility only. It can outlive
     // an effect after death, dispel, or an interrupted cast, so support decisions

@@ -39,6 +39,7 @@ function actor(name, classId, skills = [], mp = 100, maxMp = 100, busy = false) 
 
 const shieldOne = skill(1040, 'Shield', 1, 'shield', { pDefMul: 1.08 });
 const chantOfLife = skill(1229, 'Chant of Life', 1, 'chant_of_life', {}, 'friendly', 'hot');
+const kissOfEva = skill(1073, 'Kiss of Eva', 2, 'kiss_of_eva', { breath: 7 });
 const soulShieldTwo = skill(1010, 'Soul Shield', 2, 'soul_shield', { pDefMul: 1.12 });
 const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
@@ -48,6 +49,11 @@ assert.deepStrictEqual(
     BotSupportPlanner.supportSkills(actor('ChantBuffer', 49, [chantOfLife])),
     [],
     'a short heal-over-time effect must not enter the persistent party-buff planner'
+);
+assert.deepStrictEqual(
+    BotSupportPlanner.supportSkills(actor('EvaBuffer', 15, [kissOfEva])),
+    [],
+    'Kiss of Eva must not enter the ordinary party-buff planner'
 );
 
 target.activeBuffs = { shield: Date.now() + (10 * 60 * 1000) };
@@ -64,6 +70,15 @@ assert.strictEqual(
     'a legacy structured newbie Shield without stats must still block a lower-level recast'
 );
 EffectStore.remove(target, 'shield');
+
+EffectStore.apply(target, { key: 'legacy_mental_shield', id: 1035, level: 1, type: 'buff', durationMs: 10 * 60 * 1000 });
+const mentalShield = skill(1035, 'Mental Shield', 1, 'mental_shield', { rootResist: 20, sleepResist: 20, mentalResist: 20 });
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(target, mentalShield),
+    false,
+    'an active buff with the same native skill id must block duplicate support casts even when its legacy key differs'
+);
+EffectStore.remove(target, 'legacy_mental_shield');
 
 EffectStore.apply(target, { key: 'shield', id: 1040, level: 1, type: 'buff', stats: { pDefMul: 1.08 }, durationMs: 10 * 60 * 1000 });
 assert.strictEqual(BotSupportPlanner.needsSkill(target, shieldOne), false, 'do not overwrite an equal-level active buff');

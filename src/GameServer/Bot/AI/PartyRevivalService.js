@@ -120,7 +120,12 @@ function tick(session, leaderSession, Generics) {
     const attempt = leaderSession.partyRevivalAttempt;
     if (attempt) return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
 
-    const targetSession = dead.sort((a, b) => Number(a.actor.fetchId()) - Number(b.actor.fetchId()))[0];
+    // The leader is the party's anchor.  Restore them first even if another
+    // companion happens to have a lower character id.
+    const targetSession = dead.sort((a, b) => (
+        Number(b === leaderSession) - Number(a === leaderSession) ||
+        Number(a.actor.fetchId()) - Number(b.actor.fetchId())
+    ))[0];
     const providers = partySessions(leaderSession)
         .filter(isAlive)
         .filter((memberSession) => memberSession !== leaderSession)

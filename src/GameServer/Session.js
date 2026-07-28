@@ -282,11 +282,18 @@ class Session {
             utils.infoWarn('GameServer', 'connection closed');
         }
         if (this.actor) {
+            // Companion social events are persisted asynchronously. Preserve
+            // the identity before the actor is destroyed so a normal network
+            // disconnect cannot overwrite the remembered player name.
+            this.characterId = this.characterId || this.actor.fetchId?.();
+            this.characterName = this.characterName || this.actor.fetchName?.();
             this.persistCharacterStatus({ currentOnly: true });
             invoke('GameServer/Effects/EffectTicker').clearAll(this.actor);
             const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
             PartyCompanionService.detachAll(this, {
-                event: 'party_dismissed',
+                // A connection close is not the player dismissing companions.
+                // It must not lower trust or trigger the abandonment cooldown.
+                event: 'party_disconnected',
                 source: 'leader_disconnect',
                 message: 'My companion disconnected. Returning to hunt.',
                 rebuildWindow: false,

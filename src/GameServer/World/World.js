@@ -162,7 +162,6 @@ const World = {
             attachOptions.distribution = distribution;
         }
 
-        const wasResting = targetSession.plan === 'resting';
         if (!PartyCompanionService.attach(session, targetSession, attachOptions)) {
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
             session.dataSendToMe(ServerResponse.actionFailed());
@@ -175,7 +174,7 @@ const World = {
             BotManager.botTell(
                 targetSession,
                 session,
-                wasResting ? `I'll join you, just need a moment to recover.` : `I'm with you. Lead the way.`
+                `I'm with you. Lead the way.`
             );
         }, 1000);
         return true;

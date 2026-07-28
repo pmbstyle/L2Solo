@@ -43,6 +43,17 @@ function isHostileNpc(npc) {
     return !!npc && npc.fetchAttackable?.() === true && npc.isDead?.() !== true;
 }
 
+function distance2d(a, b) {
+    const dx = Number(a?.fetchLocX?.() || 0) - Number(b?.fetchLocX?.() || 0);
+    const dy = Number(a?.fetchLocY?.() || 0) - Number(b?.fetchLocY?.() || 0);
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+// A monster still standing over a corpse is a real resurrection danger.  Its
+// lingering combat flag after the party has moved on is not.  Keep this close
+// to the normal threat radius so a stale target cannot strand a party forever.
+const CORPSE_COMBAT_DANGER_DISTANCE = 1400;
+
 function travellingPull(leaderSession) {
     const pull = leaderSession?.partyPullState || {};
     return {
@@ -95,9 +106,6 @@ function combatState(leaderSession, options = {}) {
 
     for (const memberSession of living) {
         if (ignoredPullAction(memberSession, pull, options)) continue;
-        if (memberSession.actor?.state?.fetchCombats?.() === true) {
-            return { active: true, reason: 'member_combat_state', memberSession };
-        }
         const target = activeActionTarget(memberSession);
         if (target && !ignoredTargetIds.has(actorId(target))) {
             return { active: true, reason: 'member_action_against_hostile', target, memberSession };
@@ -107,11 +115,13 @@ function combatState(leaderSession, options = {}) {
     // A mob may keep its combat state on a corpse immediately after the
     // lethal hit. Include dead members here so a resurrection cannot begin
     // in front of that mob, while still ignoring stale action flags.
-    const partyIds = new Set(members.map((member) => actorId(member.actor)).filter(Boolean));
+    const fallenMembers = members.filter((member) => !isAlive(member));
+    const fallenIds = new Set(fallenMembers.map((member) => actorId(member.actor)).filter(Boolean));
     const attackingCorpse = (world().npc?.spawns || []).find((npc) => (
         isHostileNpc(npc) &&
         npc.state?.fetchCombats?.() === true &&
-        partyIds.has(Number(npc.fetchDestId?.() || 0)) &&
+        fallenIds.has(Number(npc.fetchDestId?.() || 0)) &&
+        fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE) &&
         !ignoredTargetIds.has(actorId(npc))
     ));
     if (attackingCorpse) {

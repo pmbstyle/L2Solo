@@ -299,8 +299,8 @@ try {
         BotSocialMemory.getSnapshot = originalSocialSnapshot;
         BotSocialMemory.recordEvent = originalSocialRecordEvent;
     }
-    assert.strictEqual(inviteTell, `I'll join you, just need a moment to recover.`, 'resting invite acknowledgement should survive PartyCompanionService.attach');
-    assert.strictEqual(inviteBotSession.plan, 'resting', 'attaching a resting bot should preserve resting state');
+    assert.strictEqual(inviteTell, `I'm with you. Lead the way.`, 'a recovered invite acknowledgement should not promise another rest');
+    assert.strictEqual(inviteBotSession.plan, 'following', 'attaching a resting bot should resume party follow after instant recovery');
     inviteBot.level = 17;
     inviteBot.hp = 40;
     inviteBot.mp = 20;
@@ -1087,8 +1087,8 @@ try {
     );
     assert.deepStrictEqual(
         PartyCompanionService.formationTargetFor(partyHudBotASession),
-        { locX: partyHudLeader.fetchLocX() - 90, locY: partyHudLeader.fetchLocY() - 70, locZ: partyHudLeader.fetchLocZ(), slot: 0 },
-        'first companion should use the first formation slot'
+        { locX: partyHudLeader.fetchLocX() + 90, locY: partyHudLeader.fetchLocY(), locZ: partyHudLeader.fetchLocZ(), slot: 0 },
+        'a tank should use the forward screen formation slot'
     );
 
     const casterBot = fakeActor(2000033, { locX: 20, locY: 0, classId: 17 });
@@ -1289,7 +1289,10 @@ try {
     });
     assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'party should keep following until each companion can reach the marked mob');
 
-    pulledMob.locX = partyHudBotB.locX;
+    // Delivery uses a practical melee handoff radius, rather than requiring
+    // two actor origins to be exactly equal. The actual combat action closes
+    // the final step.
+    pulledMob.locX = partyHudBotB.locX + 160;
     let earlyMeetAssistId = null;
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat(_session, _bot, npc) { earlyMeetAssistId = npc.fetchId(); }, executePvPCombat() {}
@@ -1322,10 +1325,19 @@ try {
     assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'melee companions should keep following until the mob reaches their actual attack range');
 
     partyHudBotA.locX = partyHudLeader.locX;
-    pulledMob.locX = partyHudBotB.locX;
+    pulledMob.locX = partyHudBotB.locX + 160;
+    partyHudBotA.skillset.skills = [];
+    learnSkill(partyHudBotA, { selfId: 3, name: 'Power Strike', distance: 50, mp: 5 });
+    assert.strictEqual(
+        PartyPulling.attackRange(partyHudBotA, pulledMob),
+        250,
+        'a short-range melee skill must not prevent a delivered pull from entering normal combat'
+    );
+    partyHudBotA.state.setTowards('move');
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
+    partyHudBotA.state.setTowards(false);
     pulledTargetId = null;
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {},
@@ -1364,11 +1376,11 @@ try {
         aggroRequestedAt: Date.now()
     };
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
-    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'party_recovering', 'pulling should pause while any companion is regenerating');
-    assert.strictEqual(partyHudBotA.moves.length, 0, 'puller should not leave the group during party recovery');
-    assert.strictEqual(abortedAggro, 1, 'party recovery should cancel an aggro cast that has not landed');
-    assert.strictEqual(clearedAggroTimers, 1, 'party recovery should cancel the scheduled aggro hit before it can land');
-    assert.strictEqual(partyHudLeaderSession.partyPullState.phase, 'approach', 'an interrupted aggro request should retry only after the party resumes');
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'wait_for_aggro', 'one seated companion below the forty-percent threshold must not pause pulling');
+    assert.strictEqual(partyHudBotA.moves.length, 0, 'an aggro request already in flight should not schedule another approach');
+    assert.strictEqual(abortedAggro, 0, 'a single resting companion must not cancel an aggro cast');
+    assert.strictEqual(clearedAggroTimers, 0, 'a single resting companion must not cancel the scheduled aggro hit');
+    assert.strictEqual(partyHudLeaderSession.partyPullState.phase, 'aggro', 'the active aggro request should remain intact below the recovery threshold');
     partyHudBotB.state.setSeated(false);
 
     partyHudLeader.destId = pulledMob.fetchId();
@@ -1396,7 +1408,8 @@ try {
     assert.strictEqual(partyHudBotASession.partyPuller, false, 'leaving party pull mode should clear the companion pulling stance');
     const companionHtml = lastNpcHtml(partyHudLeaderSession);
     assert(companionHtml.includes('2 active'), 'party control panel should show active companion count');
-    assert(companionHtml.includes('Loot: Random+Spoil'), 'party control panel should show readable loot mode');
+    assert(!companionHtml.includes('Loot:'), 'party control panel should leave loot distribution to the native client setting');
+    assert(!companionHtml.includes('companion-control loot'), 'party control panel should not offer a separate loot-distribution bypass');
     assert(companionHtml.includes('<a action='), 'party control panel should use compact links for controls');
     assert(!companionHtml.includes('<button'), 'party control panel should avoid legacy buttons because they break this client layout');
     assert(!companionHtml.includes('['), 'active party control items should use color only, not bracket labels');
@@ -1406,8 +1419,8 @@ try {
     );
     assert(companionHtml.includes('member-pull on'), 'eligible companion cards should expose a per-bot Pull order');
     assert(companionHtml.includes('Call'), 'companion cards should expose summon as a compact call action');
-    assert(companionHtml.includes('Info'), 'companion cards should keep a compact status action');
-    assert(companionHtml.includes('Dismiss'), 'companion cards should expose a dismiss action');
+    assert(companionHtml.includes('bot-status '), 'companion cards should keep a compact status action through the bot name');
+    assert(!companionHtml.includes('Dismiss'), 'companion cards should leave party removal to the normal chat command');
     assert(!companionHtml.includes('HP '), 'party control panel should not duplicate native party HP display');
     assert(!companionHtml.includes('MP '), 'party control panel should not duplicate native party MP display');
     assert(!companionHtml.includes('native #'), 'party control panel should not expose raw native loot debug text');

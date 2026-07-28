@@ -5,6 +5,7 @@ require('../src/Global');
 const World = invoke('GameServer/World/World');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
+const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
 const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 
 function actor(id, { dead = false, skills = [], items = [] } = {}) {
@@ -24,6 +25,7 @@ function actor(id, { dead = false, skills = [], items = [] } = {}) {
         mp: 100,
         fetchId() { return this.id; },
         fetchName: () => `actor_${id}`,
+        fetchClassId: () => 0,
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
@@ -96,11 +98,24 @@ try {
     World.npc.spawns = [{
         fetchAttackable: () => true,
         isDead: () => false,
+        fetchLocX: () => 100,
+        fetchLocY: () => 0,
         fetchDestId: () => leader.fetchId(),
         state: { fetchCombats: () => true }
     }];
     const combatHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(combatHeldResult.handled, false, 'a monster still fighting a fallen party member must block resurrection');
+    World.npc.spawns = [{
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 5000,
+        fetchLocY: () => 0,
+        fetchDestId: () => leader.fetchId(),
+        state: { fetchCombats: () => true }
+    }];
+    const staleCorpseCombatResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
+    assert.strictEqual(staleCorpseCombatResult.handled, true, 'a stale combat record far from a corpse must not block resurrection');
+    leaderSession.partyRevivalAttempt = null;
     World.npc.spawns = [];
     healer.state.fetchHits = () => true;
 
@@ -136,6 +151,19 @@ try {
     const scrollResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(scrollResult.source, 'scroll', 'a living companion must fall back to its unlimited resurrection scroll');
     assert(healer.automation.scheduled, 'scroll resurrection should use the native move-and-cast path');
+
+    // Companion following must schedule resurrection itself; the player does
+    // not need to send a chat request after dying.
+    leaderSession.partyRevivalAttempt = null;
+    healer.skillset.skills = [resurrection];
+    leaderSession.partyPullState = { targetId: 3000100, phase: 'return' };
+    let autonomousResurrection = null;
+    FollowingState.tick(healerSession, healer, {
+        skillExec(...args) { autonomousResurrection = args; }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerSession.roleDecision.action, 'resurrect_party', 'a dead leader must immediately preempt ordinary following with resurrection');
+    assert.strictEqual(autonomousResurrection[2].id, leader.fetchId(), 'automatic resurrection must target the party leader first');
+    assert.deepStrictEqual(leaderSession.partyPullState, {}, 'a leader death must cancel the stale pull before resurrection begins');
 
     leader.state.setDead(false);
     healer.state.setDead(true);
