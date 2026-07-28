@@ -574,6 +574,8 @@ try {
     threatAssistSession.partyCompanion = true;
     threatAssistSession.plan = 'following';
     let assistedNpcId = null;
+    const threatChat = [];
+    leader.destId = undefined;
     World.user = { sessions: [leaderSession, threatAssistSession] };
     World.fetchNpcsInRadius = () => [{
         fetchId: () => 1006,
@@ -585,6 +587,10 @@ try {
         fetchLocZ: () => 0,
         fetchName: () => 'angry mob'
     }];
+    BotManager.botPartySay = (_session, text) => {
+        threatChat.push(text);
+        return true;
+    };
 
     FollowingState.tick(threatAssistSession, threatAssistBot, {}, {
         say() {},
@@ -594,6 +600,16 @@ try {
 
     assert.strictEqual(threatAssistSession.currentTargetId, 1006, 'companion with no target should acquire mob attacking leader');
     assert.strictEqual(assistedNpcId, 1006, 'companion should assist against mob attacking leader');
+    assert.strictEqual(threatChat.length, 1, 'an unexpected mob on the leader should produce one party warning');
+    assert.match(threatChat[0], /angry mob/, 'the party warning should identify the actual unexpected mob');
+
+    FollowingState.tick(threatAssistSession, threatAssistBot, {}, {
+        say() {},
+        executeCombat() {},
+        executePvPCombat() {}
+    });
+    assert.strictEqual(threatChat.length, 1, 'the same active add must not be repeated every AI tick');
+    BotManager.botPartySay = originalBotPartySay;
 
     const hiddenAggroNpc = {
         fetchId: () => 1007,
@@ -703,6 +719,21 @@ try {
 
     assert.deepStrictEqual(healerCasts, [{ id: woundedCompanion.fetchId(), selfId: 1011, ctrl: false }], 'an emergency heal must preempt a normal party buff instead of issuing two casts in one tick');
     assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
+
+    healerBot.mp = 20;
+    healerBot.skillset.skills.find((skill) => skill.fetchSelfId() === 1011).model.mp = 30;
+    const lowManaHealChat = [];
+    BotManager.botPartySay = (_session, text) => {
+        lowManaHealChat.push(text);
+        return true;
+    };
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec() { throw new Error('a healer without enough MP must not cast'); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerSession.roleDecision.reason, 'low_mp_emergency', 'the healer should expose an emergency MP shortage in its role decision');
+    assert.strictEqual(lowManaHealChat.length, 1, 'an emergency heal blocked by MP should be reported once to the party');
+    assert.match(lowManaHealChat[0], /No MP|need MP/, 'the party should receive a concrete MP limitation instead of a fake heal confirmation');
+    BotManager.botPartySay = originalBotPartySay;
 
     const healerAssistBot = fakeActor(2000027, { locX: 120, locY: 0, classId: 15 });
     const healerAssistSession = fakeSession('bot_healer_basic_assist', healerAssistBot);

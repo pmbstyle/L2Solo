@@ -49,6 +49,17 @@ try {
         priority: 'coordination', key: 'rebuff:1', text: 'Refresh Might.', now: 107_002
     }), true, 'coordination should resume after the shared cooldown');
 
+    const addNpc = actor(200, 'Leto Lizardman');
+    const protectedMember = actor(5, 'Belen');
+    assert.strictEqual(BotPartyChat.announceNpcAdd(companionSession, addNpc, protectedMember), true,
+        'an unexpected NPC add should produce a concise party warning');
+    assert.match(messages.at(-1).text, /Leto Lizardman/, 'the add warning should identify the actual NPC');
+    assert.strictEqual(BotPartyChat.announceNpcAdd(companionSession, addNpc, protectedMember), false,
+        'the same add should remain quiet while the fight is ongoing');
+    assert.strictEqual(BotPartyChat.announceHealManaShortage(companionSession, protectedMember), true,
+        'a healer unable to pay for an emergency heal should tell the party');
+    assert.match(messages.at(-1).text, /MP/, 'the mana warning should explain the actionable limitation');
+
     const target = actor(3, 'Belen');
     const targetSession = { actor: target };
     const skill = {
@@ -77,7 +88,7 @@ try {
     assert.strictEqual(BotPartyChat.confirmSkillResult(companionSession, companionSession.actor, target, skill, {
         effect: null
     }), false, 'a rejected effect must not produce a false success confirmation');
-    assert.strictEqual(messages.length, 4, 'failed casts must remain silent');
+    assert.strictEqual(messages.length, 6, 'failed casts must remain silent');
     assert.strictEqual(companionSession.pendingPartyChatResult, undefined, 'a completed but rejected cast must not remain eligible for a later confirmation');
     assert.strictEqual(BotPartyChat.confirmSkillResult(companionSession, companionSession.actor, target, skill, {
         effect: { key: 'might' }

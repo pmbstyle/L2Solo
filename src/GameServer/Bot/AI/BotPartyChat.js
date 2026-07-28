@@ -44,12 +44,49 @@ function canSend(state, entry, now) {
         if (now - Number(at || 0) > EVENT_HISTORY_MS) delete state.events[key];
     });
     const priority = PRIORITIES[entry.priority] || PRIORITIES.coordination;
+    const dedupeMs = Number.isFinite(Number(entry.dedupeMs))
+        ? Math.max(0, Number(entry.dedupeMs))
+        : priority.dedupeMs;
     const previous = Number(state.events[entry.key] || 0);
-    if (previous && now - previous < priority.dedupeMs) return false;
+    if (previous && now - previous < dedupeMs) return false;
     if (priority.partyCooldownMs > 0 && now - Number(state.lastPartyMessageAt || 0) < priority.partyCooldownMs) {
         return false;
     }
     return true;
+}
+
+function announceNpcAdd(session, npc, protectedActor) {
+    const npcId = Number(npc?.fetchId?.() || 0);
+    const protectedId = Number(protectedActor?.fetchId?.() || 0);
+    if (!npcId || !protectedId) return false;
+
+    const npcName = npc.fetchName?.() || 'A mob';
+    const protectedName = protectedActor.fetchName?.() || 'a party member';
+    return announce(session, {
+        priority: 'critical',
+        dedupeMs: 45000,
+        key: `add:${npcId}:${protectedId}`,
+        templates: [
+            `Add on ${protectedName}: ${npcName}.`,
+            `${npcName} is on ${protectedName} — assist.`
+        ]
+    });
+}
+
+function announceHealManaShortage(session, target) {
+    const targetId = Number(target?.fetchId?.() || 0);
+    if (!targetId) return false;
+
+    const targetName = target.fetchName?.() || 'the party';
+    return announce(session, {
+        priority: 'critical',
+        dedupeMs: 30000,
+        key: `heal-low-mp:${targetId}`,
+        templates: [
+            `No MP for a heal on ${targetName}.`,
+            `I need MP before I can heal ${targetName}.`
+        ]
+    });
 }
 
 function announce(session, entry = {}) {
@@ -177,6 +214,8 @@ module.exports = {
     RESULT_TIMEOUT_MS,
     EVENT_HISTORY_MS,
     announce,
+    announceNpcAdd,
+    announceHealManaShortage,
     expectSkillResult,
     confirmSkillResult,
     cancelExpectedSkillResult,

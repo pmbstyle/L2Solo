@@ -377,6 +377,27 @@ function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
 }
 
+function announceUnexpectedNpcAdd(session, bot, leaderSession, partyThreat, leaderTargetId) {
+    if (
+        partyThreat?.type !== 'npc' ||
+        partyThreat.source === 'party_pull' ||
+        Number(partyThreat.actor?.fetchId?.() || 0) === Number(leaderTargetId || 0)
+    ) {
+        return false;
+    }
+
+    const protectedSession = PartyAwareness.partySessions(leaderSession).find((memberSession) => (
+        Number(memberSession.actor?.fetchId?.() || 0) === Number(partyThreat.targetId || 0)
+    ));
+    const protectedActor = protectedSession?.actor;
+    if (!protectedActor || protectedActor === bot) return false;
+
+    const protectedRole = protectedSession === leaderSession ? 'leader' : BotRoles.inferRole(protectedActor);
+    if (protectedRole !== 'leader' && protectedRole !== 'healer' && protectedRole !== 'buffer') return false;
+
+    return BotPartyChat.announceNpcAdd(session, partyThreat.actor, protectedActor);
+}
+
 function moveToFollowTarget(session, bot, player) {
     const followTarget = followTargetFor(session, player);
     // Formation positions are deliberately offset from the leader.  Comparing
@@ -563,6 +584,7 @@ module.exports = {
             ? null
             : rawPartyThreat);
         const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
+        announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
 
         if (impairments.disabled) {
@@ -851,6 +873,9 @@ module.exports = {
                 returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', woundedPartyMember.hpRatio < 0.45 ? 'low_mp_emergency' : 'party_not_critical');
+                if (woundedPartyMember.hpRatio < 0.45 && healerSkill && bot.fetchMp() < healerSkill.fetchConsumedMp()) {
+                    BotPartyChat.announceHealManaShortage(session, woundedPartyMember.actor);
+                }
                 keepRoleDecision = true;
             } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && healerCanCast) {
                 acted = true;
