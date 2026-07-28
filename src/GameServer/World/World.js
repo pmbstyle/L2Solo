@@ -162,15 +162,19 @@ const World = {
             attachOptions.distribution = distribution;
         }
 
-        const wasResting = targetSession.plan === 'resting';
-        PartyCompanionService.attach(session, targetSession, attachOptions);
+        if (!PartyCompanionService.attach(session, targetSession, attachOptions)) {
+            BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
+            session.dataSendToMe(ServerResponse.actionFailed());
+            BotManager.botTell(targetSession, session, "Your party is full. Ask me again after making room.");
+            return false;
+        }
 
         BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
         setTimeout(() => {
             BotManager.botTell(
                 targetSession,
                 session,
-                wasResting ? `I'll join you, just need a moment to recover.` : `I'm with you. Lead the way.`
+                `I'm with you. Lead the way.`
             );
         }, 1000);
         return true;

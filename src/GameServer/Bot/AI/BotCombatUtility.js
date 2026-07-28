@@ -26,6 +26,10 @@ function reserveRatio(role) {
 
 function evaluate(bot, target, skill, role) {
     if (!skill || skill.fetchPassive?.()) return null;
+    // SkillRequest rejects a skill still on reuse after the combat planner has
+    // already committed to it. Treat that as unavailable here so a melee bot
+    // falls back to its normal attack instead of idling until cooldown ends.
+    if (bot.canUseSkill?.(skill) === false) return null;
     const semantic = skill.fetchSemantic?.() || {};
     if (semantic.notUsedInC4) return null;
     const allowedWeapons = Number(semantic.requires?.weaponsAllowed) || 0;

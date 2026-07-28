@@ -89,6 +89,28 @@ function actorAt(x) {
 const rangedNpc = npcWithRange(500);
 const target = actorAt(1000);
 
+class BotSession {
+    constructor(actor) {
+        this.actor = actor;
+        this.accountId = 'bot_range_test';
+        this.packets = [];
+        this.moveTimer = null;
+    }
+
+    dataSendToMeAndOthers(packet) {
+        this.packets.push(packet);
+    }
+}
+
+const npcChaseSession = new BotSession(target);
+rangedNpc.automation.scheduleAction(npcChaseSession, rangedNpc, target, 500, () => {});
+assert.strictEqual(
+    npcChaseSession.moveTimer,
+    null,
+    'an NPC chase through a bot session must not use the bot-only coordinate interpolation timer'
+);
+rangedNpc.automation.abortAll(rangedNpc);
+
 assert.strictEqual(
     rangedNpc.fetchCombatAttackRange(target),
     500,

@@ -13,7 +13,7 @@ const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 3;
+const RATE_MODEL_VERSION = 4;
 
 function isRealCatalogItem(item = {}) {
     const selfId = Number(item.selfId || 0);
@@ -305,6 +305,17 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         }
         next[String(entry.selfId)] = { ...next[String(entry.selfId)], equipped: true, slot };
     });
+    const hasTwoHandedWeapon = Object.values(next).some((owned) => {
+        const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+        return owned?.equipped && Number(template?.etc?.slot || 0) === 14 &&
+            String(template?.template?.kind || '').startsWith('Weapon.');
+    });
+    if (hasTwoHandedWeapon) {
+        Object.values(next).forEach((owned) => {
+            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            if (Number(template?.etc?.slot || 0) === 8) owned.equipped = false;
+        });
+    }
     return next;
 }
 
@@ -437,7 +448,10 @@ function itemDropYield(reward, itemId, kind = 'drop', context = {}) {
 }
 
 function soloSafeForSource(state = {}, source = {}) {
-    return combatReadiness(state).effectiveLevel >= Number(source.spotLevel || Infinity) + 2;
+    // A target can be much stronger than the average of a mixed-level grid.
+    // Safety must be evaluated against the NPC that actually drops the item,
+    // not against incidental low-level mobs around it.
+    return combatReadiness(state).effectiveLevel >= Number(source.npcLevel || source.spotLevel || Infinity) + 2;
 }
 
 function bestSourceForState(sources = [], state = {}) {
@@ -450,6 +464,10 @@ function sourceIndexFor(spots = []) {
         return sourceIndexCache.byItemId;
     }
 
+    const npcLevels = new Map((DataCache.npcs || []).map((npc) => [
+        Number(npc.selfId),
+        Number(npc.template?.level || 0)
+    ]));
     const spotByNpc = new Map();
     const spotByName = new Map();
     (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
@@ -467,7 +485,7 @@ function sourceIndexFor(spots = []) {
         )));
         itemIds.forEach((id) => {
             const entries = byItemId.get(id) || [];
-            entries.push({ reward, spot });
+            entries.push({ reward, spot, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
             byItemId.set(id, entries);
         });
     });
@@ -477,13 +495,14 @@ function sourceIndexFor(spots = []) {
 }
 
 function sourceForItem(itemId, spots = [], state = {}) {
-    return (sourceIndexFor(spots).get(Number(itemId)) || []).map(({ reward, spot }) => {
+    return (sourceIndexFor(spots).get(Number(itemId)) || []).map(({ reward, spot, npcLevel }) => {
+        const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
         const { chance, expectedYield } = itemDropYield(reward, itemId, 'drop', {
-            npcLevel: Number(spot?.avgLevel || 0),
+            npcLevel: sourceLevel,
             killerLevel: Number(state.level || 0)
         });
         if (!chance) return null;
-        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind: 'drop', chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1) };
+        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind: 'drop', chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1), npcLevel: sourceLevel };
     }).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
 }
 

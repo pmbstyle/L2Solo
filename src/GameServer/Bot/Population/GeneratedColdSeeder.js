@@ -171,6 +171,11 @@ function migratePopulationNames(states = []) {
 
 function awardBaseGear(characterId, classId) {
     const items = DataCache.newbieItems.find((row) => row.classId === classId)?.items || [];
+    const starterTemplates = items.map((item) => DataCache.items.find((row) => row.selfId === item.selfId));
+    const hasTwoHandedWeapon = starterTemplates.some((template) => (
+        Number(template?.etc?.slot || 0) === 14 &&
+        String(template?.template?.kind || '').startsWith('Weapon.')
+    ));
     return Database.fetchItems(characterId).then((existing) => {
         const existingIds = new Set((existing || []).map((item) => Number(item.selfId)));
         return Promise.all(items
@@ -180,7 +185,11 @@ function awardBaseGear(characterId, classId) {
                 return Database.setItem(characterId, {
                     ...item,
                     slot: template?.etc?.slot || 0,
-                    equipped: true
+                    // Bows and other slot-14 weapons occupy both hands.
+                    // Newbie templates may still grant a Buckler, but it
+                    // must remain in inventory until the two-handed weapon
+                    // is replaced.
+                    equipped: !(hasTwoHandedWeapon && Number(template?.etc?.slot || 0) === 8)
                 });
             }));
     });

@@ -2,9 +2,11 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
+const NEWBIE_GUIDE_MAX_LEVEL = 20;
 const ALL_BUFFS = BuffCatalog.ALL_BUFFS;
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
@@ -23,8 +25,24 @@ function now() {
     return Date.now();
 }
 
+function effectData(buff) {
+    const semantic = C4SkillRules.resolve({
+        selfId: buff.id,
+        level: buff.level
+    });
+    return {
+        key: semantic.effect || buff.key,
+        id: buff.id,
+        level: buff.level,
+        name: buff.name,
+        type: semantic.effectType || 'buff',
+        category: semantic.effectTrait || semantic.trait || semantic.effect || buff.key,
+        stats: semantic.stats || {}
+    };
+}
+
 function isNewbieEligible(actor) {
-    return actor && actor.fetchLevel() <= 25 && actor.fetchKarma() === 0;
+    return actor && actor.fetchLevel() <= NEWBIE_GUIDE_MAX_LEVEL && actor.fetchKarma() === 0;
 }
 
 function remainingMs(actor, key) {
@@ -91,11 +109,7 @@ function applyBuff(session, actor, buffType, Generics, source = {}) {
     const store = ensureStore(actor);
     store[buff.key] = now() + BUFF_DURATION_MS;
     EffectStore.apply(actor, {
-        key: buff.key,
-        id: buff.id,
-        level: buff.level,
-        name: buff.name,
-        type: 'buff',
+        ...effectData(buff),
         durationMs: BUFF_DURATION_MS
     });
     EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
@@ -127,11 +141,7 @@ function applyFullNewbieBlessing(session, actor, Generics) {
     NEWBIE_BUFF_TYPES.map((type) => ALL_BUFFS[type]).forEach((buff) => {
         store[buff.key] = expiresAt;
         EffectStore.apply(actor, {
-            key: buff.key,
-            id: buff.id,
-            level: buff.level,
-            name: buff.name,
-            type: 'buff',
+            ...effectData(buff),
             expiresAt
         });
         EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
@@ -164,6 +174,7 @@ function snapshot(actor) {
 module.exports = {
     BUFF_DURATION_MS,
     REFRESH_THRESHOLD_MS,
+    NEWBIE_GUIDE_MAX_LEVEL,
     ALL_BUFFS,
     NEWBIE_BUFFS,
     SUPPORT_BUFFS,

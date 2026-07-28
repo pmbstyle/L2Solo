@@ -145,6 +145,23 @@ function isCompatibleWithActor(kind, selfId, actor) {
     );
 }
 
+function enableAutoShot(actor) {
+    if (!actor?.backpack) return null;
+
+    const plan = planForActor(actor);
+    if (!actor.backpack.fetchItemFromSelfId?.(plan.selfId)) return null;
+
+    const enabled = actor.autoSoulshots instanceof Set
+        ? actor.autoSoulshots
+        : new Set(actor.autoSoulshots || []);
+    // A bot has one combat profile. Remove an old grade/kind after an equipment
+    // upgrade so a physical weapon never keeps a caster shot (or vice versa).
+    SHOT_IDS.forEach((selfId) => enabled.delete(selfId));
+    enabled.add(plan.selfId);
+    actor.autoSoulshots = enabled;
+    return plan;
+}
+
 function planForRows(rows, classId) {
     return planFor({
         classId,
@@ -284,6 +301,7 @@ module.exports = {
     planForActorKind,
     kindForSelfId,
     isCompatibleWithActor,
+    enableAutoShot,
     planForRows,
     shotAmount,
     ensureActorStock,

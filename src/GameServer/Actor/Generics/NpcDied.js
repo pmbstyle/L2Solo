@@ -1,6 +1,9 @@
 const World = invoke('GameServer/World/World');
 
 const PARTY_REWARD_RADIUS = 2500;
+// C4/L2J party reward curve. The total reward grows with the eligible party,
+// then is split by squared level rather than being divided equally.
+const PARTY_EXP_SP_BONUS = [1, 1.30, 1.39, 1.50, 1.54, 1.58, 1.63, 1.67, 1.71];
 
 function distance2d(a, b) {
     const dx = a.fetchLocX() - b.fetchLocX();
@@ -39,9 +42,9 @@ function ownerSessionForSummon(actor) {
 function rewardParticipants(killerSession, killer, npc) {
     const leaderSession = partyLeaderSession(killerSession);
     const leader = leaderSession?.actor;
-    if (!leader || !isAliveOnline(leaderSession)) return [killerSession];
+    if (!leader) return killer && !killer.isDead() ? [killerSession] : [];
 
-    const members = [leaderSession];
+    const members = [leaderSession, killerSession];
     World.user.sessions.forEach((candidate) => {
         if (
             candidate !== leaderSession &&
@@ -56,9 +59,60 @@ function rewardParticipants(killerSession, killer, npc) {
         .filter(isAliveOnline)
         .filter((memberSession) => distance2d(memberSession.actor, npc) <= PARTY_REWARD_RADIUS);
 
-    if (nearbyMembers.includes(killerSession)) return nearbyMembers;
+    if (nearbyMembers.length > 0) return nearbyMembers;
     if (killer && !killer.isDead()) return [killerSession];
     return [];
+}
+
+function levelOf(session) {
+    return Math.max(1, Number(session?.actor?.fetchLevel?.() || 1));
+}
+
+function partyBonus(memberCount) {
+    const index = Math.max(0, Math.min(PARTY_EXP_SP_BONUS.length - 1, Number(memberCount || 1) - 1));
+    return PARTY_EXP_SP_BONUS[index];
+}
+
+function validPartyMembers(participants) {
+    if (participants.length < 2) return participants;
+
+    // L2J's automatic cutoff excludes members whose level is so far below
+    // the group that they would otherwise be power-levelled for free.
+    const squaredLevelSum = participants.reduce((sum, memberSession) => {
+        const level = levelOf(memberSession);
+        return sum + (level * level);
+    }, 0);
+    const previousBonus = partyBonus(participants.length - 1);
+    const currentBonus = partyBonus(participants.length);
+    const cutoff = squaredLevelSum * (1 - (1 / (1 + currentBonus - previousBonus)));
+
+    return participants.filter((memberSession) => {
+        const level = levelOf(memberSession);
+        return (level * level) >= cutoff;
+    });
+}
+
+function partyRewardShares(participants, exp, sp) {
+    const validMembers = validPartyMembers(participants);
+    if (validMembers.length === 0) return [];
+
+    const totalWeight = validMembers.reduce((sum, memberSession) => {
+        const level = levelOf(memberSession);
+        return sum + (level * level);
+    }, 0);
+    const bonus = partyBonus(validMembers.length);
+    const totalExp = Math.max(0, Number(exp || 0)) * bonus;
+    const totalSp = Math.max(0, Number(sp || 0)) * bonus;
+
+    return validMembers.map((memberSession) => {
+        const level = levelOf(memberSession);
+        const weight = (level * level) / totalWeight;
+        return {
+            session: memberSession,
+            exp: Math.max(0, Math.round(totalExp * weight)),
+            sp: Math.max(0, Math.round(totalSp * weight))
+        };
+    });
 }
 
 function npcDied(session, actor, npc) {
@@ -83,8 +137,7 @@ function npcDied(session, actor, npc) {
 
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
-    const rewardExp = Math.max(0, Math.floor(npc.fetchAcquiredExp() / Math.max(1, participants.length)));
-    const rewardSp = Math.max(0, Math.floor(npc.fetchRewardSp() / Math.max(1, participants.length)));
+    const rewards = partyRewardShares(participants, npc.fetchAcquiredExp(), npc.fetchRewardSp());
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.
@@ -92,9 +145,12 @@ function npcDied(session, actor, npc) {
         utils.infoWarn('Quest', 'kill callback failed: %s', error.message);
     });
 
-    participants.forEach((memberSession) => {
-        Generics.experienceReward(memberSession, memberSession.actor, rewardExp, rewardSp);
+    rewards.forEach(({ session: memberSession, exp, sp }) => {
+        Generics.experienceReward(memberSession, memberSession.actor, exp, sp);
     });
 }
 
 module.exports = npcDied;
+module.exports.PARTY_EXP_SP_BONUS = PARTY_EXP_SP_BONUS;
+module.exports.partyRewardShares = partyRewardShares;
+module.exports.validPartyMembers = validPartyMembers;

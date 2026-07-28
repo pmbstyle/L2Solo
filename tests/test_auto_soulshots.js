@@ -8,6 +8,7 @@ const AutoSoulShot = invoke('GameServer/Network/Request/AutoSoulShot');
 const ExtendedRequest = invoke('GameServer/Network/Request/ExtendedRequest');
 const Attack = invoke('GameServer/Actor/Attack');
 const Database = invoke('Database');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 Database.updateItemAmount = () => Promise.resolve();
 Database.deleteItem = () => Promise.resolve();
@@ -126,6 +127,23 @@ beginnerPacket.writeInt32LE(1, 7);
 ExtendedRequest(beginnerSession, beginnerPacket);
 assert.strictEqual(beginnerBackpack.isAutoShotEnabled(beginnerSession.actor, 'soulshot'), true, 'quest beginner Soulshot should support the C4 hotbar toggle');
 assert.strictEqual(beginnerBackpack.fetchItemFromSelfId(5789).fetchAmount(), 2, 'enabling a quest beginner Soulshot should charge it immediately');
+
+const botPhysicalActor = {
+    fetchClassId: () => 4,
+    backpack,
+    autoSoulshots: new Set([2509])
+};
+assert.strictEqual(ShotStock.enableAutoShot(botPhysicalActor).selfId, 1835, 'a physical bot should enable its compatible Soulshot without a client hotbar request');
+assert.deepStrictEqual([...botPhysicalActor.autoSoulshots], [1835], 'a physical bot should clear an incompatible caster auto-shot');
+
+const botCasterBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+botCasterBackpack.items = [
+    item(7, { selfId: 5, kind: 'Weapon.Blunt', equipped: true, slot: 7, spiritshot: 1 }),
+    item(8, { selfId: 2509, kind: 'Other.Shot', amount: 10 })
+];
+const botCasterActor = { fetchClassId: () => 10, backpack: botCasterBackpack };
+assert.strictEqual(ShotStock.enableAutoShot(botCasterActor).selfId, 2509, 'a caster bot should enable its compatible Spiritshot without a client hotbar request');
+assert.strictEqual(botCasterBackpack.fetchAutoSpiritshot(botCasterActor).selfId, 2509, 'the spell combat path should see the bot-enabled Spiritshot');
 
 const attack = new Attack();
 let consumeCalls = 0;

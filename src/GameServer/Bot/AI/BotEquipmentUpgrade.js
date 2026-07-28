@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const ARMOR_SLOTS = {
     earringRight: 1,
@@ -233,6 +234,13 @@ function applyBestUpgrades(session, options = {}) {
         }
         actor.backpack.equipGear(session, item);
     });
+
+    // A weapon upgrade can change both the grade and the compatible shot kind.
+    // Restock and re-enable after equipping; bots cannot send a client hotbar
+    // toggle themselves.
+    ShotStock.ensureActorStock(actor)
+        .then(() => ShotStock.enableAutoShot(actor))
+        .catch((error) => utils.infoWarn('BotGear', 'failed to refresh shots for %s: %s', actor.fetchName(), error.message));
 
     session.lastEquipmentUpgradeAt = Date.now();
 

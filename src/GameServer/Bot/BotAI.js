@@ -6,6 +6,7 @@ const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
 const CHAT_PHRASES = {
@@ -34,6 +35,11 @@ const CHAT_PHRASES = {
         "Ready to rumble!"
     ]
 };
+// Visibility refreshes and damage can request an immediate AI pass from
+// several nearby actors at once.  Without a small gate each request cancels
+// and recreates the companion's normal timer, which can turn a group move
+// into a tight synchronous AI loop.
+const WAKEUP_THROTTLE_MS = 250;
 const REAL_PLAYER_CACHE_MS = 250;
 let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
@@ -135,8 +141,13 @@ const BotAI = {
         }
     },
 
-    wakeup(session) {
+    wakeup(session, { urgent = false } = {}) {
         if (!session.actor || !session.aiActive) return;
+
+        const now = Date.now();
+        if (!urgent && now - Number(session.lastAiWakeAt || 0) < WAKEUP_THROTTLE_MS) return;
+        session.lastAiWakeAt = now;
+
         if (session.aiTimeout) {
             clearTimeout(session.aiTimeout);
             session.aiTimeout = null;
@@ -352,15 +363,21 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
-                this.say(session, "Oops... I died! Resurrecting shortly.");
+                this.say(session, wasCompanion ? "I'm down. Waiting for a resurrection." : "Oops... I died! Resurrecting shortly.");
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
                     BotSocialMemory.recordEvent(session.followPlayerSession, session, 'party_wiped', 'bot_and_leader_dead');
                 }
             }
 
-            // Revive after 12 seconds of death
-            if (Date.now() - session.deathTimerStart > 12000) {
+            const partyRescuePending = wasCompanion && !PartyRevivalService.shouldTownRespawn(
+                session.followPlayerSession,
+                session
+            );
+            // Companions wait for the party's resurrection attempt.  The
+            // normal town restart remains the escape hatch for a wipe, an
+            // unsupported solo leader, or an unanswered corpse.
+            if (!partyRescuePending && Date.now() - session.deathTimerStart > 12000) {
                 // TeleportTo rejects actors that are still marked dead, so bot
                 // respawns must complete before applying the new town location.
                 Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true });
@@ -374,7 +391,22 @@ const BotAI = {
                     session.plan = 'pk_hunting';
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else {
-                    if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
+                    if (wasCompanion) {
+                        PartyCompanionService.clearCompanion(session, {
+                            plan: 'hunting',
+                            refreshPanel: false
+                        });
+                        // A corpse that timed out of party resurrection has
+                        // just been sent to town. Keep the now-solo bot hot
+                        // long enough to complete that visible transition;
+                        // otherwise population policy can remove it in the
+                        // same scheduler pass before the client sees town.
+                        session.populationHotAt = Date.now();
+                        session.plan = 'hunting';
+                        session.currentSpot = null;
+                        session.noTargetTicks = 0;
+                        spawnTarget = this.getDeathRespawnTarget(session, bot, false);
+                    } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                         session.plan = 'merchant';
                         bot.state.setSeated(true);
                         spawnTarget = {
@@ -390,7 +422,6 @@ const BotAI = {
                             if (wasCompanion) {
                                 PartyCompanionService.clearCompanion(session, {
                                     plan: 'hunting',
-                                    rebuildWindow: false,
                                     refreshPanel: false
                                 });
                             }
@@ -420,6 +451,18 @@ const BotAI = {
 
         BotEquipmentUpgrade.applyBestUpgrades(session);
 
+        // Ground drops belong to the party, not to a particular movement
+        // plan. Reconcile them before routing follow/hold/rest/pull states so
+        // idle companions can collect available loot in every party stance.
+        // PartyCompanionService itself blocks real combat and incoming adds.
+        if (isCompanion) {
+            PartyCompanionService.reconcileGroundLoot(session);
+            if (PartyCompanionService.startQueuedGroundPickup(session)) {
+                session.botStatus = BotStatus.getStatus(session);
+                return;
+            }
+        }
+
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];
         if (state) {
@@ -434,14 +477,17 @@ const BotAI = {
         }
     },
 
-    executePvPCombat(session, bot, victim, Generics) {
-        this.executeCombat(session, bot, victim, Generics);
+    executePvPCombat(session, bot, victim, Generics, options = {}) {
+        this.executeCombat(session, bot, victim, Generics, options);
     },
 
-    executeCombat(session, bot, npc, Generics) {
+    executeCombat(session, bot, npc, Generics, options = {}) {
         const role = BotRoles.inferRole(bot);
         const ARCHER_ATTACK_RANGE = 700;
-        const decision = BotCombatUtility.select(bot, npc, role);
+        // Healers and buffers may assist the party with their weapon, but
+        // their role controller must be able to keep their MP for support.
+        // Do not make that policy depend on the generic combat selector.
+        const decision = options.basicAttackOnly ? null : BotCombatUtility.select(bot, npc, role);
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',

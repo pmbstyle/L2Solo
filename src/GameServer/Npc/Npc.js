@@ -12,6 +12,11 @@ const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const AttackHelper   = new Attack();
 
+// MoveToPawn already tells the client to follow a moving target. Rebuilding
+// that request on every 100ms combat tick yields visible stop/start jitter.
+const CHASE_REPATH_DISTANCE = 120;
+const CHASE_REPATH_INTERVAL_MS = 300;
+
 class Npc extends NpcModel {
     constructor(id, data) {
         // Parent inheritance
@@ -92,6 +97,7 @@ class Npc extends NpcModel {
                 locY: 0,
                 locZ: 0,
             };
+            let lastChaseRepathAt = 0;
 
             this.timer.combat = setInterval(() => {
                 if (new SpeckMath.Point(this.fetchLocX(), this.fetchLocY()).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1500) {
@@ -108,10 +114,22 @@ class Npc extends NpcModel {
                 const newDstZ = actor.fetchLocZ();
 
                 if (this.state.inMotion()) {
-                    if (coords.locX !== newDstX || coords.locY !== newDstY) {
-                        this.setLocXYZ(new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ()).midPoint(new SpeckMath.Point3D(coords.locX, coords.locY, coords.locZ), this.automation.fetchDistanceRatio() * 1.3).toCoords()); // TODO: Another hack to catch-up
-
+                    const targetDrift = new SpeckMath.Point(coords.locX, coords.locY)
+                        .distance(new SpeckMath.Point(newDstX, newDstY));
+                    const canRepath = Date.now() - lastChaseRepathAt >= CHASE_REPATH_INTERVAL_MS;
+                    if (targetDrift >= CHASE_REPATH_DISTANCE && canRepath) {
+                        const progress = Math.min(1, Math.max(0, Number(this.automation.fetchDistanceRatio()) || 0));
+                        this.setLocXYZ(
+                            new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ())
+                                .midPoint(new SpeckMath.Point3D(coords.locX, coords.locY, coords.locZ), progress)
+                                .toCoords()
+                        );
                         this.automation.abortAll(this);
+                        // The authoritative chase position changed before the
+                        // scheduled move ended.  Freeze the client at exactly
+                        // that position before scheduling the next chase leg.
+                        this.stopForCombatAction(session);
+                        lastChaseRepathAt = Date.now();
                     }
                     return;
                 }
@@ -119,6 +137,7 @@ class Npc extends NpcModel {
                 coords.locX = newDstX;
                 coords.locY = newDstY;
                 coords.locZ = newDstZ;
+                lastChaseRepathAt = Date.now();
 
                 const combatSkill = this.selectCombatSkill(actor);
                 const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);

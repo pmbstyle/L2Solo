@@ -22,6 +22,17 @@ const ironSources = GearAcquisitionPlanner.sourceForItem(1869, [stoneGolemSpot])
 assert(ironSources.length > 0, 'known material drops must resolve to their real NPC source');
 assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
 assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
+const handAxe = DataCache.items.find((item) => item.template?.name === 'Hand Axe');
+const wereratChiefSpot = {
+    id: 'wererat-chief-field',
+    avgLevel: 19,
+    npcEntries: [{ selfId: 414, name: 'Sukar Wererat Chief', count: 1 }]
+};
+const handAxeSource = GearAcquisitionPlanner.sourceForItem(handAxe.selfId, [wereratChiefSpot], { level: 20 })
+    .find((source) => source.npcId === 414);
+assert(handAxeSource, 'a direct equipment source must retain its real dropper');
+assert.strictEqual(handAxeSource.npcLevel, 28, 'a direct equipment source must retain its NPC level instead of its mixed-spot average');
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20 }, handAxeSource), false, 'a level-20 bot must not solo a level-28 item target just because its grid also contains lower-level mobs');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 28 }), true, 'a bot should solo only sources below its combat safety margin');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 29 }), false, 'a bot must not call an equal-level source solo-safe');
 assert.strictEqual(
@@ -90,6 +101,14 @@ const equippedUpgrade = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 2
 });
 assert.strictEqual(equippedUpgrade[entryDSword.selfId].equipped, true, 'a useful D drop must equip immediately in the cold inventory');
 assert.strictEqual(equippedUpgrade[noGradeSword.selfId].equipped, false, 'the replaced no-grade weapon must be unequipped');
+const starterBow = DataCache.items.find((item) => Number(item.selfId) === 274);
+const starterShield = DataCache.items.find((item) => Number(item.selfId) === 20);
+const bowAndShieldInventory = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 24, stats: { role: 'archer' } }, {
+    [starterBow.selfId]: { selfId: starterBow.selfId, amount: 1, equipped: true, slot: 14 },
+    [starterShield.selfId]: { selfId: starterShield.selfId, amount: 1, equipped: true, slot: 8 }
+});
+assert.strictEqual(bowAndShieldInventory[starterBow.selfId].equipped, true, 'the cold inventory should retain its two-handed bow');
+assert.strictEqual(bowAndShieldInventory[starterShield.selfId].equipped, false, 'the cold inventory must unequip a shield when a two-handed bow is equipped');
 const entryDTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} });
 assert(entryDTarget, 'a new D-grade bot must receive an attainable equipment target');
 assert(Number(entryDTarget.item.template.price) < Number(atubaMace.template.price), 'a fresh D-grade bot must not begin by chasing the top D weapon');

@@ -57,7 +57,16 @@ class Attack {
             case 'move'   : Generics.moveTo       (session, actor, queue.data); break;
             case 'attack' : Generics.attackRequest(session, actor, queue.data); break;
             case 'skill'  : Generics.skillRequest (session, actor, queue.data); break;
-            case 'pickup' : Generics.pickupRequest(session, actor, queue.data); break;
+            case 'pickup' : {
+                const isBot = session?.constructor?.name === 'BotSession' || String(session?.accountId || '').startsWith('bot_');
+                // Hot bots move entirely on the server and never send the
+                // ValidatePosition that a player's pickupRequest waits for.
+                // A queued pickup commonly follows the killing hit, so it
+                // must use the server-side execution path as well.
+                if (isBot) Generics.pickupExec(session, actor, queue.data);
+                else Generics.pickupRequest(session, actor, queue.data);
+                break;
+            }
             case 'sit'    : Generics.basicAction  (session, actor, queue.data); break;
         }
         this.resetQueuedEvent();
@@ -90,6 +99,7 @@ class Attack {
         this.resetQueuedEvent();
         actor.state.setCasts(false);
         actor.storedSpell = undefined;
+        invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
 
         session?.dataSendToMeAndOthers?.(
             ServerResponse.magicSkillCanceld(actor.fetchId()),
@@ -158,6 +168,11 @@ class Attack {
                 return;
             }
 
+            actor.state.setHits(false);
+            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+                return;
+            }
+
             if (this.queue.name) {
                 this.dequeueEvent(session);
                 return;
@@ -170,25 +185,30 @@ class Attack {
 
     remoteHit(session, creature, skill) {
         const actor = session.actor;
-        const corpseTarget = skill.fetchTargetKind?.() === 'corpse_mob';
+        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
+            .includes(skill.fetchTargetKind?.());
 
         if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
             return;
         }
 
         if (actor.canUseSkill?.(skill) === false) {
             session.dataSendToMe?.(ServerResponse.actionFailed());
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
             return;
         }
 
         if (actor.fetchMp() < skill.fetchConsumedMp()) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
             return;
         }
 
         const conditionFailure = this.skillUseConditionFailure(actor, skill);
         if (conditionFailure) {
             this.rejectSkillUseCondition(session, actor, conditionFailure);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
             return;
         }
 
@@ -197,6 +217,11 @@ class Attack {
 
         const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
         skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), attackRate));
+        // Companion support selection runs before a native cast is accepted.
+        // Only create its reservation at this point, after every rejection
+        // gate above has passed and the cast is about to begin. The calculated
+        // hit time is available here, so the reservation covers the full cast.
+        invoke('GameServer/Bot/AI/BotSupportPlanner').beginSupportCast(session, actor, creature, skill);
         actor.markSkillReuse?.(skill);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
@@ -204,6 +229,7 @@ class Attack {
 
         this.queueTimer(() => {
             if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 return;
             }
 
@@ -211,6 +237,7 @@ class Attack {
 
             if (targets.length === 0) {
                 actor.state.setCasts(false);
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 return;
             }
 
@@ -250,9 +277,14 @@ class Attack {
             });
             this.clearLoadedShot(actor, magicSkill);
             actor.state.setCasts(false);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
 
             // Start replenish
             actor.automation.replenishVitals(actor);
+
+            if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+                return;
+            }
 
             if (this.queue.name) {
                 this.dequeueEvent(session);
@@ -348,6 +380,10 @@ class Attack {
 
         if (targetKind === 'corpse_mob') {
             return target.fetchAttackable?.() === true && target.isDead?.() === true;
+        }
+
+        if (['corpse_player', 'corpse_pet', 'corpse_ally'].includes(targetKind)) {
+            return target.state?.fetchDead?.() === true || target.isDead?.() === true;
         }
 
         if (targetKind === 'enemy') {

@@ -22,7 +22,9 @@ function wakeBotOnDamage(victimSession, attacker) {
     if (now - Number(victimSession.lastDamageWakeAt || 0) < BOT_WAKEUP_THROTTLE_MS) return;
 
     victimSession.lastDamageWakeAt = now;
-    invoke('GameServer/Bot/BotAI').wakeup(victimSession);
+    // Damage needs a prompt response even if a visibility refresh woke this
+    // bot a moment ago. Repeated damage is already rate-limited above.
+    invoke('GameServer/Bot/BotAI').wakeup(victimSession, { urgent: true });
 }
 
 function shouldDamageCp(session, actor) {

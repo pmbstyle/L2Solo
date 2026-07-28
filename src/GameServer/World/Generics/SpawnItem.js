@@ -2,12 +2,13 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const Item           = invoke('GameServer/Item/Item');
 const DataCache      = invoke('GameServer/DataCache');
 
-function spawnItem(session, selfId, amount, coords) {
+function spawnItem(session, selfId, amount, coords, onSpawn) {
     DataCache.fetchItemFromSelfId(selfId, (itemDetails) => {
         const item = new Item(this.items.nextId++, { ...utils.crushOb(itemDetails), ...coords });
         item.setAmount(amount);
         this.items.spawns.push(item);
         session.dataSendToMeAndOthers(ServerResponse.spawnItem(item), item);
+        onSpawn?.(item);
     });
 }
 

@@ -4,6 +4,7 @@ require('../src/Global');
 
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
+const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 DataCache.init();
 
@@ -83,9 +84,12 @@ try {
                 return BotLifeState.dueCold(5, 1000);
             });
         }).then(() => {
-            const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 0"));
+            const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 1"));
             assert(due.sql.includes('rateModelVersion'), 'due cold states must prioritize persisted plans from an older drop-rate model');
-            assert(due.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 0"), 'due cold states must promptly finish travel and crafting transitions');
+            assert(due.sql.includes(`< ${GearPlanner.RATE_MODEL_VERSION}`), 'due cold states must prioritize plans from the current model rollout rather than a stale hard-coded version');
+            assert(due.sql.includes("OR (activity = 'hunting' AND (json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL"), 'a stale active combat plan must bypass its old next-resolve deadline for an immediate safety replan');
+            assert(due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL") < due.sql.indexOf("WHEN activity IN ('traveling', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary travel and crafting transitions');
+            assert(due.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 1"), 'due cold states must promptly finish travel and crafting transitions after an urgent combat-safety replan');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
             return BotLifeState.assignParty({

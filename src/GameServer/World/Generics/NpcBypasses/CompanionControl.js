@@ -6,8 +6,25 @@ const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
+// C4 limits NpcHtmlMessage to 8192 characters. Five compact party cards fit
+// safely; a full eight-member party therefore uses a second page.
+const COMPANIONS_PER_PAGE = 5;
+const PARTY_ROLE_PRIORITY = {
+    tank: 0,
+    buffer: 1,
+    healer: 2
+};
+
 function companionSessions(session) {
     return PartyCompanionService.membersForLeader(session);
+}
+
+function orderedCompanionSessions(session) {
+    return [...companionSessions(session)].sort((left, right) => {
+        const leftRole = BotRoles.inferRole(left.actor);
+        const rightRole = BotRoles.inferRole(right.actor);
+        return (PARTY_ROLE_PRIORITY[leftRole] ?? 3) - (PARTY_ROLE_PRIORITY[rightRole] ?? 3);
+    });
 }
 
 function findCompanion(session, botName) {
@@ -34,6 +51,41 @@ function followLeader(targetSession) {
     targetSession.stayLocation = null;
 }
 
+function isAssignedPuller(targetSession, settings = PartyCompanionService.getSettings(targetSession?.followPlayerSession)) {
+    return settings?.pullMode === 'bot' &&
+        Number(settings.pullerId || 0) === Number(targetSession?.actor?.fetchId?.());
+}
+
+function stopPullAction(targetSession) {
+    const bot = targetSession?.actor;
+    if (!bot) return;
+    bot.attack?.abortCast?.(targetSession, bot);
+    bot.attack?.clearTimers?.();
+    bot.state?.setHits?.(false);
+    bot.state?.setCasts?.(false);
+    bot.automation?.abortAll?.(bot);
+    targetSession.currentTargetId = undefined;
+    bot.unselect?.();
+}
+
+function assignedPullerSession(session) {
+    const settings = PartyCompanionService.getSettings(session);
+    return companionSessions(session).find((memberSession) => isAssignedPuller(memberSession, settings)) || null;
+}
+
+function clearAssignedPuller(session) {
+    const settings = PartyCompanionService.getSettings(session);
+    if (settings.pullMode !== 'bot') return false;
+
+    stopPullAction(assignedPullerSession(session));
+    PartyCompanionService.updateSettings(session, { pullMode: 'auto', pullerId: null });
+    session.partyPullState = {};
+    companionSessions(session).forEach((memberSession) => {
+        memberSession.partyPuller = false;
+    });
+    return true;
+}
+
 function summonNear(session, targetSession, offset = 60) {
     const actor = session.actor;
     const bot = targetSession.actor;
@@ -50,6 +102,7 @@ function summonNear(session, targetSession, offset = 60) {
 
 function setMovementMode(session, mode) {
     const members = companionSessions(session);
+    if (mode === 'hold') clearAssignedPuller(session);
     PartyCompanionService.updateSettings(session, { movementMode: mode });
     members.forEach((memberSession) => {
         if (mode === 'hold') {
@@ -71,11 +124,37 @@ function setCombatMode(session, mode) {
 }
 
 function setPullMode(session, mode) {
-    const pullMode = mode === 'off' ? 'off' : 'auto';
-    PartyCompanionService.updateSettings(session, { pullMode });
+    const allowed = ['auto', 'leader', 'off'];
+    const pullMode = allowed.includes(mode) ? mode : 'auto';
+    stopPullAction(assignedPullerSession(session));
+    PartyCompanionService.updateSettings(session, { pullMode, pullerId: null });
+    session.partyPullState = {};
     companionSessions(session).forEach((memberSession) => {
         memberSession.autoTaunt = pullMode !== 'off';
+        memberSession.partyPuller = false;
+        memberSession.currentTargetId = undefined;
+        memberSession.actor?.unselect?.();
     });
+}
+
+function setMemberPuller(session, targetSession) {
+    const role = BotRoles.inferRole(targetSession?.actor);
+    if (!['tank', 'dagger', 'dps'].includes(role)) return false;
+
+    const previousPuller = assignedPullerSession(session);
+    if (previousPuller && previousPuller !== targetSession) stopPullAction(previousPuller);
+    PartyCompanionService.updateSettings(session, {
+        pullMode: 'bot',
+        pullerId: targetSession.actor.fetchId()
+    });
+    session.partyPullState = {};
+    companionSessions(session).forEach((memberSession) => {
+        memberSession.partyPuller = memberSession === targetSession;
+        memberSession.autoTaunt = true;
+        if (memberSession === targetSession) followLeader(memberSession);
+    });
+    BotManager.botSay(targetSession, "I'll pull the next mobs to the party.");
+    return true;
 }
 
 function regroup(session) {
@@ -89,9 +168,11 @@ function handleMemberCommand(session, subCommand, botName) {
     if (!targetSession) return;
 
     if (subCommand === 'follow') {
+        if (isAssignedPuller(targetSession)) clearAssignedPuller(session);
         followLeader(targetSession);
         BotManager.botSay(targetSession, "Following you again!");
     } else if (subCommand === 'stay') {
+        if (isAssignedPuller(targetSession)) clearAssignedPuller(session);
         stayHere(targetSession);
         BotManager.botSay(targetSession, "Holding this position.");
     } else if (subCommand === 'summon') {
@@ -113,16 +194,6 @@ function compactText(value, fallback = 'idle') {
         .slice(0, 32);
 }
 
-function lootLabel(distribution) {
-    return ({
-        0: 'Finders',
-        1: 'Random',
-        2: 'Random+Spoil',
-        3: 'By Turn',
-        4: 'Turn+Spoil'
-    })[distribution] || `Native #${distribution}`;
-}
-
 function actionRow(items, options = {}) {
     const columns = options.columns || items.length;
     const width = Math.floor(Html.WIDTH / columns);
@@ -140,12 +211,28 @@ function actionRow(items, options = {}) {
     return Html.table([Html.row(cells)]);
 }
 
+function pageNavigation(command, page, totalPages, label) {
+    if (totalPages <= 1) return '';
+
+    return Html.columns([
+        Html.cell(
+            page > 0 ? Html.link('Prev', `${command} ${page - 1}`, { color: Html.COLOR.link }) : '',
+            { width: 80, align: 'left' }
+        ),
+        Html.cell(Html.font(`${label} ${page + 1}/${totalPages}`, Html.COLOR.muted), { width: 110, align: 'center' }),
+        Html.cell(
+            page + 1 < totalPages ? Html.link('Next', `${command} ${page + 1}`, { color: Html.COLOR.link }) : '',
+            { width: 80, align: 'right' }
+        )
+    ]) + '<br1>';
+}
+
 function renderModePanel(settings, count) {
     const title = `${Html.font('Party Control', Html.COLOR.title)} ${Html.font(`${count} active`, Html.COLOR.ok)}`;
     const summary = [
         `Combat ${settings.combatMode}`,
         `Move ${settings.movementMode === 'hold' ? 'hold' : 'follow'}`,
-        `Pull ${settings.pullMode === 'off' ? 'off' : 'auto'}`
+        `Pull ${({ auto: 'auto', bot: 'bot', leader: 'player', off: 'off' })[settings.pullMode] || 'auto'}`
     ].join(' / ');
 
     return [
@@ -174,21 +261,21 @@ function renderModePanel(settings, count) {
         ]),
         Html.font('Pull', Html.COLOR.muted),
         actionRow([
-            { label: 'Auto', active: settings.pullMode !== 'off', command: 'companion-control pull auto' },
-            null,
+            { label: 'Auto', active: settings.pullMode === 'auto', command: 'companion-control pull auto' },
+            { label: 'Player', active: settings.pullMode === 'leader', command: 'companion-control pull leader' },
             { label: 'Off', active: settings.pullMode === 'off', command: 'companion-control pull off' }
-        ]),
-        Html.font(`Loot: ${lootLabel(settings.distribution)}`, Html.COLOR.muted),
+        ], { columns: 3 }),
         '<br1>'
     ].join('');
 }
 
-function renderCompanionCard(companionSession) {
+function renderCompanionCard(companionSession, settings) {
     const bot = companionSession.actor;
+    const isPuller = isAssignedPuller(companionSession, settings);
     const stayActive = companionSession.botStay === true;
     const status = BotManager.getBotStatus(companionSession);
     const role = status?.role || BotRoles.inferRole(bot);
-    const stance = stayActive ? 'hold' : 'follow';
+    const stance = isPuller ? 'pulling' : (stayActive ? 'hold' : 'follow');
     const intent = compactText(status?.intent || companionSession.plan, 'idle');
     const tacticalDecision = status?.decisions?.pvp
         ? BotStatus.decisionSummary(status.decisions.pvp, 'pvp')
@@ -211,16 +298,14 @@ function renderCompanionCard(companionSession) {
         : null;
     const note = blocker || debuff || buffWarning || targetEvaluation || target || 'ready';
     const noteColor = blocker || debuff ? Html.COLOR.warn : Html.COLOR.muted;
-    const pullText = BotRoles.isTank(bot)
-        ? ` / pull ${companionSession.autoTaunt === false ? 'off' : 'auto'}`
-        : '';
+    const canPull = ['tank', 'dagger', 'dps'].includes(role);
     const primaryAction = stayActive
         ? { label: 'Follow', command: `companion-control follow ${bot.fetchName()}`, color: Html.COLOR.ok }
         : { label: 'Hold', command: `companion-control stay ${bot.fetchName()}` };
 
     const summary = Html.table([
         Html.row([
-            Html.cell(`${Html.font(bot.fetchName(), Html.COLOR.ok)} ${Html.font(`Lv ${bot.fetchLevel()} ${role}`, Html.COLOR.link)}`, { width: 186 }),
+            Html.cell(`${Html.link(bot.fetchName(), `bot-status ${bot.fetchName()}`, { color: Html.COLOR.ok })} ${Html.font(`Lv ${bot.fetchLevel()} ${role}`, Html.COLOR.link)}`, { width: 186 }),
             Html.cell(Html.font(stance, stance === 'follow' ? Html.COLOR.ok : Html.COLOR.warn), { width: 84, align: 'right' })
         ]),
         Html.row([
@@ -229,16 +314,19 @@ function renderCompanionCard(companionSession) {
         ]),
         Html.row([
             Html.cell(Html.font('State', Html.COLOR.muted), { width: 54 }),
-            Html.cell(`${Html.font(note, noteColor)}${Html.font(pullText, Html.COLOR.muted)}`, { width: 216, align: 'left' })
+            Html.cell(Html.font(note, noteColor), { width: 216, align: 'left' })
         ])
     ]);
 
     const actions = actionRow([
         primaryAction,
-        { label: 'Call', command: `companion-control summon ${bot.fetchName()}` },
-        { label: 'Info', command: `bot-status ${bot.fetchName()}` },
-        { label: 'Dismiss', command: `companion-control dismiss ${bot.fetchName()}`, color: Html.COLOR.warn }
-    ]);
+        canPull
+            ? (isPuller
+                ? { label: 'Stop Pull', command: `companion-control member-pull off ${bot.fetchName()}`, color: Html.COLOR.warn }
+                : { label: 'Pull', command: `companion-control member-pull on ${bot.fetchName()}`, color: Html.COLOR.ok })
+            : null,
+        { label: 'Call', command: `companion-control summon ${bot.fetchName()}` }
+    ].filter(Boolean));
 
     return `${Html.line(Html.TEXTURE.line, Html.WIDTH, 1)}${summary}${actions}<br1>`;
 }
@@ -249,6 +337,7 @@ function companionControl(session, parts) {
 
     const subCommand = parts[1];
     const value = parts[2];
+    const requestedPage = subCommand === 'page' ? Number(value) : 0;
 
     if (subCommand === 'movement') {
         setMovementMode(session, value === 'hold' ? 'hold' : 'follow');
@@ -256,20 +345,28 @@ function companionControl(session, parts) {
         setCombatMode(session, value);
     } else if (subCommand === 'pull') {
         setPullMode(session, value);
+    } else if (subCommand === 'member-pull') {
+        const targetSession = findCompanion(session, parts[3]);
+        if (value === 'on' && targetSession) {
+            setMemberPuller(session, targetSession);
+        } else if (value === 'off' && targetSession && isAssignedPuller(targetSession)) {
+            clearAssignedPuller(session);
+            BotManager.botSay(targetSession, 'Stopping pull duty and staying with the party.');
+        }
     } else if (subCommand === 'regroup') {
         regroup(session);
     } else if (subCommand && subCommand !== 'refresh') {
         handleMemberCommand(session, subCommand, value);
     }
 
-    renderCompanionPanel(session);
+    renderCompanionPanel(session, requestedPage);
 }
 
-function renderCompanionPanel(session) {
+function renderCompanionPanel(session, requestedPage = 0) {
     const actor = session.actor;
     if (!actor) return;
 
-    const myCompanions = PartyCompanionService.membersForLeader(session);
+    const myCompanions = orderedCompanionSessions(session);
     const settings = PartyCompanionService.getSettings(session);
 
     if (myCompanions.length === 0) {
@@ -284,13 +381,20 @@ function renderCompanionPanel(session) {
         return;
     }
 
+    const totalPages = Math.max(1, Math.ceil(myCompanions.length / COMPANIONS_PER_PAGE));
+    const page = Math.min(totalPages - 1, Math.max(0, Number.isFinite(Number(requestedPage)) ? Math.floor(Number(requestedPage)) : 0));
+    const first = page * COMPANIONS_PER_PAGE;
+    const visibleCompanions = myCompanions.slice(first, first + COMPANIONS_PER_PAGE);
+
     let body = renderModePanel(settings, myCompanions.length);
     body += Html.spacer(5);
 
-    myCompanions.forEach((companionSession) => {
-        body += renderCompanionCard(companionSession);
+    visibleCompanions.forEach((companionSession) => {
+        body += renderCompanionCard(companionSession, settings);
         body += Html.spacer(4);
     });
+
+    body += pageNavigation('companion-control page', page, totalPages, 'Members');
 
     body += Html.actionFooter([
         { label: 'Close Panel', command: 'html 7000', color: Html.COLOR.muted }

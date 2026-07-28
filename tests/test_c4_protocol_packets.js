@@ -358,6 +358,14 @@ assert.strictEqual(partyUpdate.readInt32LE(updateVitalsOffset + 8), actor.fetchH
 assert.strictEqual(ServerResponse.partySmallWindowDeleteAll()[0], 0x50, 'C4 party delete all opcode should be 0x50');
 assert.strictEqual(ServerResponse.partySmallWindowDelete(actor.fetchId(), actor.fetchName())[0], 0x51, 'C4 party delete opcode should be 0x51');
 
+const partyPositions = ServerResponse.partyMemberPosition([actor]);
+assert.strictEqual(partyPositions[0], 0xa7, 'C4 PartyMemberPosition should use opcode 0xa7');
+assert.strictEqual(partyPositions.readInt32LE(1), 1, 'PartyMemberPosition should include the full member count');
+assert.strictEqual(partyPositions.readInt32LE(5), actor.fetchId(), 'PartyMemberPosition should include the member object id');
+assert.strictEqual(partyPositions.readInt32LE(9), actor.fetchLocX(), 'PartyMemberPosition should include X');
+assert.strictEqual(partyPositions.readInt32LE(13), actor.fetchLocY(), 'PartyMemberPosition should include Y');
+assert.strictEqual(partyPositions.readInt32LE(17), actor.fetchLocZ(), 'PartyMemberPosition should include Z');
+
 const partySpelled = ServerResponse.partySpelled(actor.fetchId(), [{ id: 1040, level: 2, duration: 120 }]);
 assert.strictEqual(partySpelled[0], 0xee, 'C4 PartySpelled opcode should be 0xee');
 assert.strictEqual(partySpelled.readInt32LE(1), 0, 'PartySpelled should mark normal party member effects');
@@ -366,6 +374,10 @@ assert.strictEqual(partySpelled.readInt32LE(9), 1, 'PartySpelled should include 
 assert.strictEqual(partySpelled.readInt32LE(13), 1040, 'PartySpelled should include effect skill id');
 assert.strictEqual(partySpelled.readInt16LE(17), 2, 'PartySpelled should include effect level');
 assert.strictEqual(partySpelled.readInt32LE(19), 120, 'PartySpelled should include remaining duration');
+
+const oversizedNpcHtml = ServerResponse.npcHtml(actor.fetchId(), 'x'.repeat(8193));
+assert.strictEqual(oversizedNpcHtml[0], 0x0f, 'C4 NpcHtmlMessage should retain its opcode when oversized input is rejected');
+assert(oversizedNpcHtml.length < 300, 'oversized C4 HTML must be replaced with a short safe page instead of reaching the client');
 
 const magicUse = ServerResponse.skillStarted(actor, actor.fetchId(), {
     fetchSelfId: () => 2047,

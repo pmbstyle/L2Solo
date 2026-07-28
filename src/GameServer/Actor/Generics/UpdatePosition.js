@@ -17,6 +17,7 @@ function updatePosition(session, actor, coords, environmentOptions) {
     // Update Online users, NPCs, underwater locations
     Generics.updateEnvironment(session, actor, environmentOptions);
     Generics.underwaterCheck  (session, actor);
+    invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
 
     // Reschedule actions based on updated position
     if (actor.storedAttack) {

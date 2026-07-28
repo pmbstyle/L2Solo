@@ -264,7 +264,8 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
     let best = null;
     merchantSessions.forEach((session) => {
         const merchant = session.actor;
-        if (!merchant || session.plan !== 'merchant') return;
+        if (!merchant) return;
+        if (!String(session.accountId || '').startsWith('bot_') || session.plan !== 'merchant') return;
 
         const store = merchant.fetchPrivateStore && merchant.fetchPrivateStore();
         if (!store || store.storeType !== 3 || !store.items.length) return;

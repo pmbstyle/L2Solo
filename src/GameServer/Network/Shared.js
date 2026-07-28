@@ -43,6 +43,17 @@ const Shared = {
                             }
                         });
 
+                        // Slot 14 is a two-handed weapon in the C4
+                        // paperdoll. Older starter-bot rows could retain a
+                        // shield in slot 8 as well, which grants impossible
+                        // shield stats and renders an invalid character.
+                        if (equippedBySlot.has(14) && equippedBySlot.has(8)) {
+                            const shield = equippedBySlot.get(8);
+                            shield.equipped = 0;
+                            repaired.push(shield);
+                            equippedBySlot.delete(8);
+                        }
+
                         Promise.all(repaired.map((item) => Database.updateItemEquipState(character.id, item.id, false, item.slot)))
                             .catch((error) => utils.infoWarn('Character', 'failed to repair equipment state for %s: %s', character.name, error.message));
 

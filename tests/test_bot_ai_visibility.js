@@ -60,9 +60,11 @@ assert.deepStrictEqual(
 );
 
 let wakeups = 0;
+let urgentWakeup = false;
 const originalWakeup = BotAI.wakeup;
-BotAI.wakeup = (session) => {
+BotAI.wakeup = (session, options) => {
     wakeups += 1;
+    urgentWakeup = options?.urgent === true;
     assert.strictEqual(session.accountId, 'bot_hit_wakeup');
 };
 
@@ -104,6 +106,7 @@ ReceivedHit(attackerSession, hitBotActor, 7);
 assert.strictEqual(hitBotActor.fetchHp(), 43, 'ReceivedHit should still apply damage');
 assert.strictEqual(hitBotSession.incomingThreatId, 1001, 'bot victim should remember the fresh attacker');
 assert.strictEqual(wakeups, 1, 'bot victim should wake immediately on incoming damage');
+assert.strictEqual(urgentWakeup, true, 'damage wakeups must bypass visibility wake coalescing');
 
 BotAI.wakeup = originalWakeup;
 
