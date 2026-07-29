@@ -494,7 +494,8 @@ const BotAI = {
 
     executeCombat(session, bot, npc, Generics, options = {}) {
         const role = BotRoles.inferRole(bot);
-        const ARCHER_ATTACK_RANGE = 700;
+        const BOW_ATTACK_RANGE = 700;
+        const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
@@ -526,7 +527,7 @@ const BotAI = {
         Generics.attackExec(session, bot, {
             id: npc.fetchId(),
             ctrl: true,
-            ...(role === 'archer' ? { range: ARCHER_ATTACK_RANGE } : {})
+            ...(hasBow ? { range: BOW_ATTACK_RANGE } : {})
         });
     },
 

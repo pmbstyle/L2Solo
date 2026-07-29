@@ -7,9 +7,10 @@ const OFFENSIVE_TYPES = new Set([
     C4SkillRules.DEATH_LINK,
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
-    C4SkillRules.EFFECT,
-    C4SkillRules.AGGRO_DAMAGE
+    C4SkillRules.EFFECT
 ]);
+const BOW_WEAPON_MASK = 32;
+const MIN_BOW_SKILL_RANGE = 400;
 
 function distance2d(a, b) {
     if (!a?.fetchLocX || !b?.fetchLocX) return 0;
@@ -43,6 +44,11 @@ function evaluate(bot, target, skill, role) {
 
     const range = Number(skill.fetchDistance?.());
     if (!Number.isFinite(range) || range < 0) return null;
+    // Some generic fighter skills (for example Power Strike) have no weapon
+    // restriction in the source data.  A bow user must never pick one of
+    // those short-range attacks and run into melee just because its score is
+    // higher than a shot currently on reuse.
+    if ((Attack.weaponMaskFor(bot) & BOW_WEAPON_MASK) !== 0 && range < MIN_BOW_SKILL_RANGE) return null;
 
     const mp = Number(bot.fetchMp?.() || 0);
     const maxMp = Math.max(1, Number(bot.fetchMaxMp?.() || mp || 1));
@@ -78,7 +84,7 @@ function evaluate(bot, target, skill, role) {
         score += 220;
         reasons.push('dagger_blow');
     }
-    if (role === 'tank' && [C4SkillRules.AGGRO_DAMAGE, C4SkillRules.EFFECT].includes(type)) {
+    if (role === 'tank' && type === C4SkillRules.EFFECT) {
         score += 90;
         reasons.push('tank_control');
     }

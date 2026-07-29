@@ -22,6 +22,9 @@ const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
 const FOLLOW_FORMATION_TOLERANCE = 45;
 const STUCK_SAMPLE_INTERVAL_MS = 750;
+// Aggression transfers threat; it must not consume every combat tick when
+// the native transfer has not yet changed the monster's target.
+const AGGRESSION_RETRY_MS = 5000;
 // Newbie Guides only exist in the starter villages.  A companion should not
 // abandon a player in the field just because its starter buffs have expired.
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
@@ -312,6 +315,24 @@ function castSkillOn(session, bot, Generics, target, skill, ctrl, announcement =
         });
     }
     Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl });
+}
+
+function canAttemptAggression(session, target) {
+    const previous = session.lastAggressionAttempt;
+    const targetId = Number(target?.fetchId?.() || 0);
+    const protectedId = Number(target?.fetchDestId?.() || 0);
+    return !previous ||
+        previous.targetId !== targetId ||
+        previous.protectedId !== protectedId ||
+        Date.now() - previous.at >= AGGRESSION_RETRY_MS;
+}
+
+function rememberAggressionAttempt(session, target) {
+    session.lastAggressionAttempt = {
+        targetId: Number(target.fetchId()),
+        protectedId: Number(target.fetchDestId?.() || 0),
+        at: Date.now()
+    };
 }
 
 function partyActorIds(leaderSession) {
@@ -981,8 +1002,9 @@ module.exports = {
             // below instead of repeatedly taunting the same target.
             if (monsterToAggro && Number(monsterToAggro.fetchDestId?.()) !== Number(bot.fetchId())) {
                 const skill = BotSkillCapabilities.aggressionSkill(bot);
-                if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && canAttemptAggression(session, monsterToAggro)) {
                     acted = true;
+                    rememberAggressionAttempt(session, monsterToAggro);
                     recordRoleDecision(session, bot, 'protect_leader', 'leader_targeted', { targetId: monsterToAggro.fetchId() });
                     castSkillOn(session, bot, Generics, monsterToAggro, skill, true);
                 } else if (!skill) {

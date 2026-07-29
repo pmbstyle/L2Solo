@@ -1478,6 +1478,12 @@ class Backpack extends BackpackModel {
         this.equipPaperdoll(newSlot, item.fetchId(), item.fetchSelfId());
         item.setEquipped(true);
 
+        // Persist every successful equip, including an empty paperdoll slot.
+        // Previously only unequipping an existing item scheduled persistence,
+        // so a newly equipped weapon could be reloaded as unequipped and then
+        // treated as warehouse stock on a later shopping pass.
+        this.updateDatabaseTimer(session.actor.fetchId(), [item]);
+
         ConsoleText.transmit(session, ConsoleText.caption.equipped, [
             { kind: ConsoleText.kind.item, value: item.fetchSelfId() }
         ]);
@@ -1501,9 +1507,6 @@ class Backpack extends BackpackModel {
             return;
         }
 
-        // Start a database timer to update equipped state
-        this.updateDatabaseTimer(session.actor.fetchId());
-
         // Unequip from actor
         this.unequipPaperdoll(slot);
         equippedItems.forEach((item) => {
@@ -1513,6 +1516,7 @@ class Backpack extends BackpackModel {
                 { kind: ConsoleText.kind.item, value: item.fetchSelfId() }
             ]);
         });
+        this.updateDatabaseTimer(session.actor.fetchId(), equippedItems);
 
         // Move removed gear to the beginning of inventory (legacy behavior).
         const removedIds = new Set(equippedItems.map((item) => item.fetchId()));
@@ -1525,14 +1529,15 @@ class Backpack extends BackpackModel {
         invoke(path.actor).calculateStats(session, session.actor);
     }
 
-    updateDatabaseTimer(characterId) {
+    updateDatabaseTimer(characterId, changedItems = this.items.filter((ob) => ob.isWearable())) {
         clearTimeout(this.dbTimer);
-        this.dbTimer = setTimeout(() => {
-            const wearables = this.items.filter((ob) => ob.isWearable()) ?? [];
-            wearables.forEach((item) => {
-                Database.updateItemEquipState(characterId, item.fetchId(), item.fetchEquipped(), item.fetchSlot());
-            });
-        }, 3000);
+        // Equipment must reach the write queue before this actor can cool or
+        // visit a warehouse. A delayed timer leaves a window where the DB
+        // still says that a freshly equipped item is unequipped.
+        return Promise.all(changedItems.map((item) => (
+            Database.updateItemEquipState(characterId, item.fetchId(), item.fetchEquipped(), item.fetchSlot())
+                .catch((error) => utils.infoWarn('Backpack', 'failed to persist equipment for %s: %s', characterId, error.message))
+        )));
     }
 }
 

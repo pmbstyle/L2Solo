@@ -73,15 +73,16 @@ function assignedPullerSession(session) {
     return companionSessions(session).find((memberSession) => isAssignedPuller(memberSession, settings)) || null;
 }
 
-function clearAssignedPuller(session) {
+function clearAssignedPuller(session, { nextPullMode = 'auto' } = {}) {
     const settings = PartyCompanionService.getSettings(session);
     if (settings.pullMode !== 'bot') return false;
 
     stopPullAction(assignedPullerSession(session));
-    PartyCompanionService.updateSettings(session, { pullMode: 'auto', pullerId: null });
+    PartyCompanionService.updateSettings(session, { pullMode: nextPullMode, pullerId: null });
     session.partyPullState = {};
     companionSessions(session).forEach((memberSession) => {
         memberSession.partyPuller = false;
+        memberSession.autoTaunt = nextPullMode !== 'off';
     });
     return true;
 }
@@ -350,7 +351,9 @@ function companionControl(session, parts) {
         if (value === 'on' && targetSession) {
             setMemberPuller(session, targetSession);
         } else if (value === 'off' && targetSession && isAssignedPuller(targetSession)) {
-            clearAssignedPuller(session);
+            // "Stop Pull" must disable autonomous pulling rather than
+            // silently falling back to the automatic tank puller.
+            clearAssignedPuller(session, { nextPullMode: 'off' });
             BotManager.botSay(targetSession, 'Stopping pull duty and staying with the party.');
         }
     } else if (subCommand === 'regroup') {

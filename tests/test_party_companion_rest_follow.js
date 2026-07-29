@@ -16,6 +16,8 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -857,6 +859,45 @@ try {
     assert.strictEqual(unskilledTank.skillset.skills.length, 0, 'tank AI should not inject Aggression into the actor');
     assert.strictEqual(tankFallbackTarget, tankThreat.fetchId(), 'tank without Aggression should still defend with normal combat');
 
+    const aggressionRotationSkill = {
+        fetchPassive: () => false,
+        fetchSkillType: () => C4SkillRules.AGGRO_DAMAGE,
+        fetchTargetKind: () => 'enemy',
+        fetchSemantic: () => ({}),
+        fetchDistance: () => 400,
+        fetchConsumedMp: () => 10,
+        fetchPower: () => 0
+    };
+    assert.strictEqual(
+        BotCombatUtility.evaluate(unskilledTank, tankThreat, aggressionRotationSkill, 'tank'),
+        null,
+        'Aggression must not be selected as an ordinary tank damage skill'
+    );
+
+    const transferTank = fakeActor(2000054, { locX: 90, locY: 0, classId: 4 });
+    const transferTankSession = fakeSession('bot_aggression_transfer_tank', transferTank);
+    transferTankSession.followPlayerSession = healerLeaderSession;
+    transferTankSession.partyCompanion = true;
+    transferTankSession.plan = 'following';
+    learnSkill(transferTank, { selfId: 28, name: 'Aggression', mp: 10 });
+    World.user = { sessions: [healerLeaderSession, transferTankSession] };
+    World.npc = { spawns: [tankThreat] };
+    World.fetchNpcsInRadius = () => [tankThreat];
+    let aggressionCasts = 0;
+    let transferTankBasicAttacks = 0;
+    FollowingState.tick(transferTankSession, transferTank, {
+        skillExec() { aggressionCasts++; }
+    }, {
+        say() {}, executeCombat() { transferTankBasicAttacks++; }, executePvPCombat() {}
+    });
+    FollowingState.tick(transferTankSession, transferTank, {
+        skillExec() { aggressionCasts++; }
+    }, {
+        say() {}, executeCombat() { transferTankBasicAttacks++; }, executePvPCombat() {}
+    });
+    assert.strictEqual(aggressionCasts, 1, 'a failed threat transfer must not cast Aggression again on the next AI tick');
+    assert.strictEqual(transferTankBasicAttacks, 1, 'after one transfer attempt the tank must continue with normal combat');
+
     const autoPullTank = fakeActor(2000097, { locX: 90, locY: 0, mp: 20, maxMp: 100, classId: 4 });
     const autoPullTankSession = fakeSession('bot_auto_pull_tank', autoPullTank);
     autoPullTankSession.followPlayerSession = healerLeaderSession;
@@ -1545,6 +1586,10 @@ try {
     });
     assert.strictEqual(assistedPulledMobId, pulledMob.fetchId(), 'party should engage the marked mob once it reaches attack range');
 
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'off', partyHudBotA.fetchName()]);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'off', 'Stop Pull must disable automatic fallback pulls');
+    assert.strictEqual(PartyPulling.enabled(PartyCompanionService.getSettings(partyHudLeaderSession)), false, 'Stop Pull must disable the tank auto-pull behaviour');
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
     partyHudBotB.state.setSeated(true);
     partyHudBotA.locX = 40;
