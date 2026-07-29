@@ -2,6 +2,7 @@ const Npc       = invoke('GameServer/Npc/Npc');
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
+const NpcAggro = invoke('GameServer/Npc/NpcAggro');
 
 const VISIBILITY_RADIUS = 6000;
 
@@ -31,6 +32,7 @@ function notifyNearby(world, npc, response = ServerResponse) {
 function createNpc(world, npc, coords, spawnDefinition = null) {
     const instance = new Npc(world.npc.nextId++, { ...utils.crushOb(npc), ...coords });
     instance.spawnDefinition = spawnDefinition;
+    NpcAggro.armSpawnGrace(instance);
     world.npc.spawns.push(instance);
     return instance;
 }

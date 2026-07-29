@@ -3,6 +3,7 @@ const World          = invoke('GameServer/World/World');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotAI          = invoke('GameServer/Bot/BotAI');
 const TownGuard      = invoke('GameServer/Npc/TownGuard');
+const NpcAggro       = invoke('GameServer/Npc/NpcAggro');
 
 function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefresh = false } = {}) {
     const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), 6000);
@@ -52,12 +53,9 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
         actor.previousXY = actorArea.toCoords();
     }
 
-    // Detect hostile NPCs
-    const hostile = npcs.filter((ob) => ob.fetchHostile() && actorArea.distance(new SpeckMath.Point(ob.fetchLocX(), ob.fetchLocY())) <= 500) ?? [];
-    hostile.forEach((npc) => {
-        npc.setLocZ(actor.fetchLocZ()); // TODO: Remove, uber hack...
-        npc.enterCombatState(session, actor);
-    });
+    // Detect hostile NPCs.  This same gate is used by hot-bot movement and
+    // respawn processing, so the actor type cannot change auto-aggro rules.
+    NpcAggro.engageNearby(session, actor, { npcs });
 
     // C4 guards are not ordinary hostile mobs: they seek only red names and
     // use line-of-sight before entering combat.
