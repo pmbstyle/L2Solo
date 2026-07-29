@@ -80,6 +80,24 @@ try {
     assert.deepStrictEqual(archerGenerics.skills[0], { id: 1102, selfId: 56, ctrl: true });
     assert.strictEqual(archerGenerics.attacks.length, 0, 'archer with learned Power Shot should cast it before ranged attack fallback');
 
+    const bowWithMeleeSkill = bot(9, [skill(3, { name: 'Power Strike', mp: 5, range: 50, power: 500 })], 100, 'Weapon.Bow');
+    const bowWithMeleeSkillGenerics = generics();
+    BotAI.executeCombat({}, bowWithMeleeSkill, npc(11021), bowWithMeleeSkillGenerics);
+    assert.strictEqual(bowWithMeleeSkillGenerics.skills.length, 0, 'a bow user must exclude short-range offensive skills from its rotation');
+    assert.deepStrictEqual(
+        bowWithMeleeSkillGenerics.attacks[0],
+        { id: 11021, ctrl: true, range: 700 },
+        'a bow user without an available ranged skill must keep its normal attack at bow range'
+    );
+
+    const bowWithMixedSkills = bot(9, [
+        skill(3, { name: 'Power Strike', mp: 5, range: 50, power: 500 }),
+        skill(56, { name: 'Power Shot', mp: 5, range: 700, power: 24, semantic: { requires: { weaponsAllowed: 32 } } })
+    ], 100, 'Weapon.Bow');
+    const bowWithMixedSkillsGenerics = generics();
+    BotAI.executeCombat({}, bowWithMixedSkills, npc(11022), bowWithMixedSkillsGenerics);
+    assert.strictEqual(bowWithMixedSkillsGenerics.skills[0].selfId, 56, 'a bow user must choose its ranged shot even when a stronger short-range skill is learned');
+
     const swordFighter = bot(18, [
         skill(56, { name: 'Power Shot', mp: 5, range: 700, power: 90, semantic: { requires: { weaponsAllowed: 32 } } }),
         skill(3, { name: 'Power Strike', mp: 5, range: 40, power: 30 })

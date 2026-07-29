@@ -9,6 +9,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
+const BotPartyChat  = invoke('GameServer/Bot/AI/BotPartyChat');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
@@ -21,6 +22,9 @@ const FOLLOW_TARGET_DRIFT = 650;
 const FOLLOW_TELEPORT_DISTANCE = 4500;
 const FOLLOW_FORMATION_TOLERANCE = 45;
 const STUCK_SAMPLE_INTERVAL_MS = 750;
+// Aggression transfers threat; it must not consume every combat tick when
+// the native transfer has not yet changed the monster's target.
+const AGGRESSION_RETRY_MS = 5000;
 // Newbie Guides only exist in the starter villages.  A companion should not
 // abandon a player in the field just because its starter buffs have expired.
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
@@ -241,7 +245,14 @@ function beginCompanionTownErrand(session, bot, playerSession, errand, BotAI) {
         : errand.kind === 'sell_resources'
             ? `sell these resources to ${errand.target.name}`
             : 'restock my shots';
-    BotAI.say(session, `I can ${detail} here. Give me a moment, then I'll return.`);
+    BotPartyChat.announce(session, {
+        priority: 'informational',
+        key: `town-errand:${bot.fetchId()}:${errand.kind}`,
+        templates: [
+            `Quick ${detail}; then I'm back to camp.`,
+            `Taking a moment to ${detail}, then returning.`
+        ]
+    });
 }
 
 function shouldKeepCurrentFollowMove(session, bot, player, leaderDistance) {
@@ -293,10 +304,35 @@ function recordRoleDecision(session, bot, action, reason, extra = {}) {
     }
 }
 
-function castSkillOn(session, bot, Generics, target, skillId, ctrl) {
+function castSkillOn(session, bot, Generics, target, skill, ctrl, announcement = null) {
     session.currentTargetId = target.fetchId();
     bot.select({ id: target.fetchId() });
-    Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skillId, ctrl });
+    if (announcement) {
+        BotPartyChat.expectSkillResult(session, {
+            target,
+            skill,
+            ...announcement
+        });
+    }
+    Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl });
+}
+
+function canAttemptAggression(session, target) {
+    const previous = session.lastAggressionAttempt;
+    const targetId = Number(target?.fetchId?.() || 0);
+    const protectedId = Number(target?.fetchDestId?.() || 0);
+    return !previous ||
+        previous.targetId !== targetId ||
+        previous.protectedId !== protectedId ||
+        Date.now() - previous.at >= AGGRESSION_RETRY_MS;
+}
+
+function rememberAggressionAttempt(session, target) {
+    session.lastAggressionAttempt = {
+        targetId: Number(target.fetchId()),
+        protectedId: Number(target.fetchDestId?.() || 0),
+        at: Date.now()
+    };
 }
 
 function partyActorIds(leaderSession) {
@@ -311,7 +347,9 @@ function partyAggroCount(leaderSession) {
 
     const seen = new Set();
     return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
-        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 900)
+        // Match PartyAwareness' full NPC combat envelope. A ranged mob can
+        // continue attacking from beyond the old 900-unit support check.
+        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 1500)
     ))
         .filter((npc) => {
             const id = npc.fetchId?.() || npc;
@@ -360,6 +398,27 @@ function weakestPartyVitals(leaderSession, bot) {
 
 function partySupportMembers(leaderSession, puller) {
     return PartyPulling.supportMembers(leaderSession, puller);
+}
+
+function announceUnexpectedNpcAdd(session, bot, leaderSession, partyThreat, leaderTargetId) {
+    if (
+        partyThreat?.type !== 'npc' ||
+        partyThreat.source === 'party_pull' ||
+        Number(partyThreat.actor?.fetchId?.() || 0) === Number(leaderTargetId || 0)
+    ) {
+        return false;
+    }
+
+    const protectedSession = PartyAwareness.partySessions(leaderSession).find((memberSession) => (
+        Number(memberSession.actor?.fetchId?.() || 0) === Number(partyThreat.targetId || 0)
+    ));
+    const protectedActor = protectedSession?.actor;
+    if (!protectedActor || protectedActor === bot) return false;
+
+    const protectedRole = protectedSession === leaderSession ? 'leader' : BotRoles.inferRole(protectedActor);
+    if (protectedRole !== 'leader' && protectedRole !== 'healer' && protectedRole !== 'buffer') return false;
+
+    return BotPartyChat.announceNpcAdd(session, partyThreat.actor, protectedActor);
 }
 
 function moveToFollowTarget(session, bot, player) {
@@ -440,7 +499,6 @@ function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
     if (session.currentTargetId) return 'already_assisting';
     if (partyVitals?.hpRatio < 0.65) return 'party_low_hp';
     if (botVitals.hpRatio < 0.55) return 'tank_low_hp';
-    if (botVitals.mpRatio < 0.25) return 'save_mp';
     if (activeMobs >= 2) return 'active_mobs';
     return null;
 }
@@ -450,6 +508,10 @@ function assistActionForRole(role) {
     if (role === 'buffer') return 'buff_support';
     if (role === 'dagger') return 'flank_target';
     return 'assist_leader';
+}
+
+function supportCanMeleeAssist(bot, role) {
+    return !['healer', 'buffer'].includes(role) || BotRoles.hasMeleeWeapon(bot);
 }
 
 function assistReasonForRole(role) {
@@ -463,10 +525,6 @@ function followTargetFor(session, player) {
         locY: player.fetchLocY(),
         locZ: player.fetchLocZ()
     };
-}
-
-function supportBuffPhrase(skill, playerName) {
-    return `${skill.fetchName()} on ${playerName}.`;
 }
 
 module.exports = {
@@ -541,7 +599,7 @@ module.exports = {
         const holdingPulledTarget = pulling.target && !pulling.engageable;
         const rawThreatIsHeldPull = holdingPulledTarget &&
             Number(rawPartyThreat?.actor?.fetchId?.()) === Number(pulling.target.fetchId());
-        const partyThreat = pulling.engageable && pulling.target
+        let partyThreat = pulling.engageable && pulling.target
             ? {
                 type: 'npc',
                 actor: pulling.target,
@@ -552,6 +610,7 @@ module.exports = {
             ? null
             : rawPartyThreat);
         const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
+        announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
 
         if (impairments.disabled) {
@@ -613,9 +672,11 @@ module.exports = {
                     ...followTargetFor(session, player)
                 };
                 TeleportTo(session, bot, targetLoc);
-                if (Math.random() < 0.20) {
-                    BotAI.say(session, "Whew, caught up with you!");
-                }
+                BotPartyChat.announce(session, {
+                    priority: 'informational',
+                    key: `catch-up:${bot.fetchId()}`,
+                    templates: ['Caught up.']
+                });
             }
             return;
         }
@@ -668,7 +729,15 @@ module.exports = {
             return;
         }
 
-        if (!partyThreat && !leaderTargetId && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
+        const isActiveBotPuller = pulling.enabled &&
+            pulling.puller?.kind === 'bot' &&
+            pulling.puller?.session === session &&
+            !!pulling.target;
+        // The puller is the one companion who must not sit while a living
+        // pull target is still assigned. A held incoming target is hidden
+        // from the camp until delivery, so without this guard low HP could
+        // make the puller sit in front of the mob it is returning with.
+        if (!partyThreat && !leaderTargetId && !isActiveBotPuller && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
             // Do not leave a hunting field just to recover.  This shortcut is
             // available only when the companion is already in a starter town
             // with a Newbie Guide, where characters through level 20 can
@@ -676,7 +745,14 @@ module.exports = {
             if (canRecoverAtNewbieGuide(bot, BotAI)) {
                 beginNewbieGuideVisit(session, bot, playerSession, role);
                 recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'newbie_guide_recovery');
-                BotAI.say(session, "I'm low on HP/MP. Recovering at the Newbie Guide, then I'll return.");
+                BotPartyChat.announce(session, {
+                    priority: 'coordination',
+                    key: `recover-guide:${bot.fetchId()}`,
+                    templates: [
+                        'HP/MP is low. Recovering at the Newbie Guide, then returning.',
+                        'Short Newbie Guide stop for HP/MP; I will return after.'
+                    ]
+                });
                 return;
             }
 
@@ -685,7 +761,11 @@ module.exports = {
             bot.unselect();
             sitDown(session, bot);
             recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'resting');
-            BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
+            BotPartyChat.announce(session, {
+                priority: 'coordination',
+                key: `recover-sit:${bot.fetchId()}`,
+                templates: ['HP/MP is low. Sitting to recover.', 'Need a short sit for HP/MP.']
+            });
             return;
         }
 
@@ -719,7 +799,14 @@ module.exports = {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'newbie_blessing', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
-                BotAI.say(session, "My newbie buffs are fading. Refreshing quickly, then I'll return.");
+                BotPartyChat.announce(session, {
+                    priority: 'coordination',
+                    key: `newbie-rebuff:${bot.fetchId()}`,
+                    templates: [
+                        'Newbie buffs are fading. Refreshing, then returning.',
+                        'Quick Newbie Guide rebuff; I will be right back.'
+                    ]
+                });
                 return;
             }
         }
@@ -765,9 +852,19 @@ module.exports = {
             : null;
         if (rebuff && rebuff.provider !== bot && Date.now() - (session.lastRebuffRequestAt || 0) > 90000) {
             session.lastRebuffRequestAt = Date.now();
-            BotAI.say(session, `${rebuff.provider.fetchName()}, could you refresh ${rebuff.skill.fetchName()}?`);
+            BotPartyChat.announce(session, {
+                priority: 'coordination',
+                key: `rebuff:${rebuff.provider.fetchId()}:${rebuff.skill.fetchSelfId()}`,
+                templates: [
+                    `${rebuff.provider.fetchName()}, refresh ${rebuff.skill.fetchName()} when safe?`,
+                    `${rebuff.provider.fetchName()}, ${rebuff.skill.fetchName()} is fading.`
+                ]
+            });
         }
-        if (!acted && supportBuffTarget && !healerNeedsAction) {
+        // A routine buff must never take the action slot from a live party
+        // threat. The target may be a social ranged add that is still outside
+        // melee range, so let the normal defence branch react immediately.
+        if (!acted && !partyThreat && !leaderTargetId && supportBuffTarget && !healerNeedsAction) {
             const activeMobs = partyAggroCount(playerSession);
             if (unsafeSupportMoment(bot, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
@@ -790,84 +887,37 @@ module.exports = {
                 // A queued cast is not a buff yet. The reservation begins in
                 // Attack.remoteHit once the native cast has actually started.
                 BotSupportPlanner.queueSupportCast(session, supportBuffTarget);
-                castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, supportBuffTarget.target, supportBuffTarget.skill, false);
                 returnToPartyAfterSupport(session, bot, player, supportBuffTarget.target);
                 recordRoleDecision(session, bot, 'buff_party', supportBuffTarget.effect, {
                     buff: supportBuffTarget.effect,
                     skillId: supportBuffTarget.skill.fetchSelfId(),
                     targetId: supportBuffTarget.target.fetchId()
                 });
-                if (Math.random() < 0.30) {
-                    BotAI.say(session, supportBuffPhrase(supportBuffTarget.skill, supportBuffTarget.target.fetchName()));
-                }
             }
-        }
-
-        if (Math.random() < 0.015) {
-            const chatterPhrases = [
-                "Nice combat, leader!",
-                "Following you! Let's get some good exp.",
-                "My mana is looking good, keep pulling!",
-                "Are we going to Dion or Gludio next?",
-                "Lineage 2 is so nostalgic, love this party.",
-                "Anyone got any healing potions?",
-                "I've got your back, don't worry!",
-                "Let's clean up this spawn!"
-            ];
-            const classPhrases = {
-                healer: [
-                    "Healing is ready. Watch your HP!",
-                    "Don't worry about HP, I'm casting heals.",
-                    "Mana is okay, but don't pull the whole room!"
-                ],
-                tank: [
-                    "I will take the aggro, stay behind me!",
-                    "Aggression is ready! Pulling them off you.",
-                    "I'm tanking this beast!"
-                ],
-                buffer: [
-                    "I'll keep the party buffed.",
-                    "Buffs are ready when we have a safe moment.",
-                    "Save a little mana before the next pull."
-                ],
-                dagger: [
-                    "I'll stay close and hit their weak side.",
-                    "Mark a target and I'll get in close.",
-                    "No bow tricks from me, just blades."
-                ]
-            };
-            const pool = chatterPhrases.concat(classPhrases[role] || []);
-            const text = pool[Math.floor(Math.random() * pool.length)];
-            BotAI.say(session, text);
         }
 
         if (!acted && role === 'healer') {
             if (woundedPartyMember?.hpRatio < 0.45 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'emergency_heal', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false, { kind: 'emergency_heal' });
                 returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
-                if (Math.random() < 0.15) {
-                    BotAI.say(session, "Emergency heal on " + woundedPartyMember.actor.fetchName() + "!");
-                }
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'top_off', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false);
                 returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
-                if (Math.random() < 0.15) {
-                    BotAI.say(session, "Healing " + woundedPartyMember.actor.fetchName() + "!");
-                }
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', woundedPartyMember.hpRatio < 0.45 ? 'low_mp_emergency' : 'party_not_critical');
+                if (woundedPartyMember.hpRatio < 0.45 && healerSkill && bot.fetchMp() < healerSkill.fetchConsumedMp()) {
+                    BotPartyChat.announceHealManaShortage(session, woundedPartyMember.actor);
+                }
                 keepRoleDecision = true;
             } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
-                castSkillOn(session, bot, Generics, bot, healerSkill.fetchSelfId(), false);
-                if (Math.random() < 0.15) {
-                    BotAI.say(session, "Healing myself!");
-                }
+                castSkillOn(session, bot, Generics, bot, healerSkill, false);
             } else if (impairments.silenced) {
                 recordRoleDecision(session, bot, 'save_mp', 'silenced');
                 keepRoleDecision = true;
@@ -881,7 +931,7 @@ module.exports = {
                     targetId: manaPartyMember.actor.fetchId(),
                     skillId: rechargeSkill.fetchSelfId()
                 });
-                castSkillOn(session, bot, Generics, manaPartyMember.actor, rechargeSkill.fetchSelfId(), false);
+                castSkillOn(session, bot, Generics, manaPartyMember.actor, rechargeSkill, false);
                 returnToPartyAfterSupport(session, bot, player, manaPartyMember.actor);
             } else if (!healerSkill && woundedPartyMember?.hpRatio < 0.70) {
                 recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
@@ -902,10 +952,29 @@ module.exports = {
             }
         }
 
+        // Once the puller has returned to the formation, it can keep the
+        // incoming mob occupied as soon as that mob reaches the puller's own
+        // attack range. Do not wait for the stricter leader-centred camp
+        // radius: it creates a visible idle window and can leave the tank
+        // taking hits without responding.
+        const pullerCanFightHeldTarget = !partyThreat &&
+            pulling.enabled &&
+            pulling.target &&
+            pulling.puller?.kind === 'bot' &&
+            pulling.puller?.session === session &&
+            PartyPulling.actorCanEngage(bot, pulling.target);
+        if (pullerCanFightHeldTarget) {
+            partyThreat = {
+                type: 'npc',
+                actor: pulling.target,
+                targetId: bot.fetchId(),
+                source: 'party_pull_puller_range'
+            };
+        }
+
         const waitingForPullAtOwnRange = pulling.enabled && pulling.target && (
-            !pulling.engageable || (
-                pulling.puller?.session !== session &&
-                !PartyPulling.actorCanEngage(bot, pulling.target)
+            pulling.puller?.session !== session && (
+                !pulling.engageable || !PartyPulling.actorCanEngage(bot, pulling.target)
             )
         );
         if (!acted && waitingForPullAtOwnRange) {
@@ -927,15 +996,17 @@ module.exports = {
                 ? partyThreat.actor
                 : nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
 
-            if (monsterToAggro) {
+            // Aggression is a transfer tool: use it only to take a mob away
+            // from another party member. Once it is already attacking this
+            // tank (including after a normal pull hit), continue normal combat
+            // below instead of repeatedly taunting the same target.
+            if (monsterToAggro && Number(monsterToAggro.fetchDestId?.()) !== Number(bot.fetchId())) {
                 const skill = BotSkillCapabilities.aggressionSkill(bot);
-                if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && canAttemptAggression(session, monsterToAggro)) {
                     acted = true;
+                    rememberAggressionAttempt(session, monsterToAggro);
                     recordRoleDecision(session, bot, 'protect_leader', 'leader_targeted', { targetId: monsterToAggro.fetchId() });
-                    castSkillOn(session, bot, Generics, monsterToAggro, skill.fetchSelfId(), true);
-                    if (Math.random() < 0.20) {
-                        BotAI.say(session, "Hey, " + monsterToAggro.fetchName() + "! Attack me instead!");
-                    }
+                    castSkillOn(session, bot, Generics, monsterToAggro, skill, true);
                 } else if (!skill) {
                     recordRoleDecision(session, bot, 'cannot_taunt', 'no_learned_aggression');
                     keepRoleDecision = true;
@@ -948,7 +1019,9 @@ module.exports = {
 
         if (!acted && role === 'tank' && !PartyPulling.enabled(partySettings)) {
             const activeMobs = partyAggroCount(playerSession);
-            const blockReason = pullBlockReason(session, botVitals, partyVitals, activeMobs);
+            const blockReason = PartyPulling.hasDeadPartyMember(playerSession)
+                ? 'party_revival'
+                : pullBlockReason(session, botVitals, partyVitals, activeMobs);
 
             if (blockReason) {
                 recordRoleDecision(session, bot, 'avoid_overpull', blockReason, { activeMobs });
@@ -969,20 +1042,13 @@ module.exports = {
                 }
 
                 if (targetMonster) {
-                    const skill = BotSkillCapabilities.aggressionSkill(bot);
-                    if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                    if (!isBusy(bot)) {
                         acted = true;
                         recordRoleDecision(session, bot, 'pull_target', 'safe_pull', {
                             targetId: targetMonster.fetchId(),
                             activeMobs
                         });
-                        castSkillOn(session, bot, Generics, targetMonster, skill.fetchSelfId(), true);
-                        if (Math.random() < 0.30) {
-                            BotAI.say(session, "Pulling " + targetMonster.fetchName() + " to the group!");
-                        }
-                    } else if (!skill) {
-                        recordRoleDecision(session, bot, 'avoid_pull', 'no_learned_aggression');
-                        keepRoleDecision = true;
+                        BotAI.executeCombat(session, bot, targetMonster, Generics, { basicAttackOnly: true });
                     }
                 }
             }
@@ -991,8 +1057,18 @@ module.exports = {
         if (!acted && partyThreat?.actor) {
             const target = partyThreat.actor;
             const targetId = target.fetchId();
+            const holdSupportLine = !supportCanMeleeAssist(bot, role);
 
-            if (session.currentTargetId !== targetId) {
+            if (holdSupportLine) {
+                session.currentTargetId = undefined;
+                bot.unselect();
+                recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'hold_support_line', {
+                    targetId,
+                    targetType: partyThreat.type,
+                    protectedId: partyThreat.targetId
+                });
+                keepRoleDecision = true;
+            } else if (session.currentTargetId !== targetId) {
                 session.currentTargetId = targetId;
                 bot.select({ id: targetId });
                 recordRoleDecision(session, bot, assistActionForRole(role), 'party_under_attack', {
@@ -1000,25 +1076,27 @@ module.exports = {
                     targetType: partyThreat.type,
                     protectedId: partyThreat.targetId
                 });
-                if (Math.random() < 0.20) {
-                    BotAI.say(session, "I'm helping the party!");
-                }
             }
 
-            if (!isBusy(bot)) {
+            if (!holdSupportLine && !isBusy(bot)) {
                 const basicAttackOnly = role === 'healer' || role === 'buffer';
                 if (partyThreat.type === 'player') {
                     BotAI.executePvPCombat(session, bot, target, Generics, { basicAttackOnly });
                 } else {
                     BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly });
                 }
+                acted = true;
             }
-            acted = true;
         }
 
         if (!acted) {
             const playerTargetId = leaderTargetId;
-            if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
+            if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId() && !supportCanMeleeAssist(bot, role)) {
+                session.currentTargetId = undefined;
+                bot.unselect();
+                recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'hold_support_line', { targetId: playerTargetId });
+                keepRoleDecision = true;
+            } else if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
                 acted = true;
                 World.fetchUser(playerTargetId).then((user) => {
                     if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
@@ -1044,11 +1122,8 @@ module.exports = {
                             session.currentTargetId = playerTargetId;
                             bot.select({ id: playerTargetId });
                             recordRoleDecision(session, bot, assistActionForRole(role), 'pvp_target', { targetId: playerTargetId });
-                            if (Math.random() < 0.20) {
-                                BotAI.say(session, "Assisting you in PvP! Attacking " + user.fetchName() + "!");
-                            }
                         }
-                        if (isBusy(bot)) {
+                        if (isBusy(bot) || !supportCanMeleeAssist(bot, role)) {
                             return;
                         }
                         BotAI.executePvPCombat(session, bot, user, Generics, {
@@ -1078,11 +1153,8 @@ module.exports = {
                                 session.currentTargetId = playerTargetId;
                                 bot.select({ id: playerTargetId });
                                 recordRoleDecision(session, bot, assistActionForRole(role), assistReasonForRole(role), { targetId: playerTargetId });
-                                if (Math.random() < 0.20) {
-                                    BotAI.say(session, "Assisting you! Smashing that " + npc.fetchName() + "!");
-                                }
                             }
-                            if (isBusy(bot)) {
+                            if (isBusy(bot) || !supportCanMeleeAssist(bot, role)) {
                                 return;
                             }
                             BotAI.executeCombat(session, bot, npc, Generics, {

@@ -78,6 +78,28 @@ assert.strictEqual(
 leaderSession.actor.state.seated = false;
 recoveringPlanSession.actor.state.seated = false;
 
+World.npc.spawns = [{
+    fetchId: () => 3000099,
+    fetchAttackable: () => true,
+    isDead: () => false,
+    fetchLocX: () => 100,
+    fetchLocY: () => 0,
+    fetchLocZ: () => 0,
+    fetchDestId: () => undefined
+}];
+recoveringPlanSession.actor.isDead = () => true;
+const revivalPause = PartyPulling.tickBotPuller(
+    pullerSession,
+    pullerSession.actor,
+    leaderSession,
+    settings,
+    {},
+    { executeCombat() { throw new Error('puller must not begin a new encounter while a party member needs resurrection'); } }
+);
+assert.strictEqual(revivalPause.action, 'party_revival', 'a dead party member must pause a new pull until revival is handled');
+recoveringPlanSession.actor.isDead = () => false;
+World.npc.spawns = [];
+
 pullerSession.actor.state.combat = true;
 assert.notStrictEqual(
     PartyPulling.current(leaderSession, settings).paused,

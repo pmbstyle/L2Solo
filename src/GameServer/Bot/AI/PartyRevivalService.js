@@ -89,9 +89,12 @@ function playerCanResurrect(leaderSession) {
         .some((item) => PLAYER_RESURRECTION_SCROLLS.has(Number(item.fetchSelfId?.())) && Number(item.fetchAmount?.() || 0) > 0);
 }
 
-function clearExpiredAttempt(leaderSession, now) {
+function clearExpiredAttempt(leaderSession, dead, now) {
     const attempt = leaderSession?.partyRevivalAttempt;
-    if (attempt && now - Number(attempt.startedAt || 0) > 25000) {
+    const targetStillDead = dead.some((memberSession) => (
+        Number(memberSession.actor?.fetchId?.()) === Number(attempt?.targetId)
+    ));
+    if (attempt && (!targetStillDead || now - Number(attempt.startedAt || 0) > 25000)) {
         leaderSession.partyRevivalAttempt = null;
     }
 }
@@ -99,6 +102,11 @@ function clearExpiredAttempt(leaderSession, now) {
 function castScroll(session, actor, target, skill) {
     actor.select?.({ id: target.fetchId() });
     session.currentTargetId = target.fetchId();
+    invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
+        target,
+        skill,
+        kind: 'resurrection'
+    });
     actor.automation.scheduleAction(session, actor, target, skill.fetchDistance(), () => {
         actor.attack.remoteHit(session, target, skill);
     });
@@ -108,8 +116,11 @@ function tick(session, leaderSession, Generics) {
     if (!isCompanionOf(session, leaderSession) || !isAlive(session)) return { handled: false };
 
     const now = Date.now();
-    clearExpiredAttempt(leaderSession, now);
     const dead = deadMembers(leaderSession);
+    // A successful cast can revive its target while another party member is
+    // still dead. Do not hold the old attempt until its timeout: the next
+    // provider tick must immediately pick the next corpse.
+    clearExpiredAttempt(leaderSession, dead, now);
     if (dead.length === 0) {
         leaderSession.partyRevivalAttempt = null;
         return { handled: false, dead };
@@ -150,6 +161,11 @@ function tick(session, leaderSession, Generics) {
     if (skilled) {
         session.currentTargetId = targetSession.actor.fetchId();
         session.actor.select?.({ id: targetSession.actor.fetchId() });
+        invoke('GameServer/Bot/AI/BotPartyChat').expectSkillResult(session, {
+            target: targetSession.actor,
+            skill,
+            kind: 'resurrection'
+        });
         Generics.skillExec(session, session.actor, {
             id: targetSession.actor.fetchId(),
             selfId: skill.fetchSelfId(),

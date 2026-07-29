@@ -60,6 +60,7 @@ const World = {
 
         World.spawnNpcs();
         this.indexSpawnsInGrid();
+        invoke('GameServer/Npc/NpcAggro').startAggroTicker(this);
     },
 
     insertUser(session) {

@@ -2,6 +2,11 @@ const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
+function boatObjectId(actor) {
+    const boat = actor?.fetchBoat?.() || actor?.boat;
+    return Number(actor?.fetchBoatId?.() ?? boat?.fetchId?.() ?? boat?.id ?? 0) || 0;
+}
+
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
     const weaponDisplayId = actor.backpack.fetchPaperdollSelfId(7) || actor.backpack.fetchPaperdollSelfId(14) || 0;
@@ -14,13 +19,22 @@ function charInfo(actor) {
     const swimWalkSpeed = swimSpeed || walkSpeed;
     const privateStoreType = actor.fetchPrivateStoreType();
     const standingState = actor.state.fetchSeated() ? 0x00 : 0x01;
+    const runningState = actor.state.fetchWalkin?.() ? 0x00 : 0x01;
+    // The C4 client renders this flag as a persistent red combat aura around
+    // the nameplate. Combat is already represented by AutoAttackStart/Stop,
+    // so do not expose this cosmetic state in CharInfo for players or bots.
+    const combatState = 0x00;
+    const deadState = actor.state.fetchDead?.() ? 0x01 : 0x00;
     const title = actor.fetchTitle();
 
     packet
         .writeD(actor.fetchLocX())
         .writeD(actor.fetchLocY())
         .writeD(actor.fetchLocZ())
-        .writeD(actor.fetchHead())
+        // C4 reserves this field for the boat object id, not the character
+        // heading. A non-zero heading made every ordinary character appear
+        // attached to a non-existent vehicle on the client.
+        .writeD(boatObjectId(actor))
         .writeD(actor.fetchId())
         .writeS(actor.fetchName())
         .writeD(actor.fetchRace())
@@ -65,9 +79,9 @@ function charInfo(actor) {
         .writeD(Pledge.allyCrestId(actor))  // Ally Crest Id
         .writeD(0x00)  // ?
         .writeC(standingState)  // Sitting = 0, Standing = 1
-        .writeC(0x01)  // Running = 1
-        .writeC(0x00)  // Combat = 1
-        .writeC(0x00)  // Dead = 1
+        .writeC(runningState)  // Running = 1
+        .writeC(combatState)  // Combat = 1
+        .writeC(deadState)  // Dead = 1
         .writeC(0x00)  // Invisible = 1
         .writeC(actor.fetchMounted?.() || actor.mounted ? 1 : 0)  // Mount
         .writeC(privateStoreType)  // Private store type
@@ -97,7 +111,7 @@ function charInfo(actor) {
         .writeD(0xffffff); // Name color
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:titleLen=${title.length}`;
+    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
     return buffer;
 }
 

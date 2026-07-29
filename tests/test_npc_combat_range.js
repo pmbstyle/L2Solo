@@ -128,6 +128,13 @@ assert.strictEqual(rangedNpc.isTargetInAttackRange(target), true, 'ranged NPC sh
 assert.notStrictEqual(rangedNpc.fetchLocX(), target.fetchLocX(), 'ranged NPC must not snap onto the player');
 
 const meleeNpc = npcWithRange(40);
+const deadTarget = actorAt(100);
+deadTarget.state.fetchDead = () => true;
+const corpseTargetNpc = npcWithRange(40, 900001);
+const combatAbortSession = { packets: [], dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+corpseTargetNpc.enterCombatState(combatAbortSession, deadTarget);
+assert.strictEqual(corpseTargetNpc.state.fetchCombats(), false, 'an NPC must not enter combat against an already dead target');
+
 EffectStore.apply(meleeNpc, {
     key: 'npc_debuff_regression',
     id: 9999,

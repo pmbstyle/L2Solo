@@ -322,9 +322,10 @@ class Automation extends SelectedModel {
         }, ticks);
     }
 
-    abortAll(creature) {
+    abortAll(creature, { notifyClient = true } = {}) {
+        const wasMoving = !!creature?.state?.inMotion?.();
         this.clearDestId();
-        creature.state.setTowards(false);
+        creature.state?.setTowards?.(false);
         Timer.clear(this.timer.action);
         Timer.clear(this.timer.pickup);
 
@@ -332,6 +333,25 @@ class Automation extends SelectedModel {
         if (session && session.moveTimer) {
             clearInterval(session.moveTimer);
             session.moveTimer = null;
+        }
+        const botSession = session && (
+            session.constructor?.name === 'BotSession' ||
+            session.accountId?.startsWith?.('bot_')
+        );
+
+        // The server owns bot movement timers.  If one is cancelled without
+        // a StopMove, C4 keeps animating the old route until a later combat
+        // packet or CharInfo forces an obvious position correction.
+        if (wasMoving && notifyClient && botSession && session.dataSendToMeAndOthers && creature?.fetchId) {
+            session.dataSendToMeAndOthers(
+                ServerResponse.stopMove(creature.fetchId(), {
+                    locX: creature.fetchLocX?.() || 0,
+                    locY: creature.fetchLocY?.() || 0,
+                    locZ: creature.fetchLocZ?.() || 0,
+                    head: creature.fetchHead?.() || 0
+                }),
+                creature
+            );
         }
     }
 }

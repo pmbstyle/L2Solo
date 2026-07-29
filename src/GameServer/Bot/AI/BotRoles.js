@@ -59,6 +59,19 @@ function isRanged(roleOrActor) {
     return role === 'archer' || role === 'mage';
 }
 
+function hasMeleeWeapon(actor) {
+    const weapon = actor?.backpack?.fetchEquippedWeapon?.();
+    if (!weapon) return false;
+
+    const kind = String(weapon.fetchKind?.() || '');
+    const name = String(weapon.fetchName?.() || '');
+    // C4 stores staves, wands and rods under Weapon.Blunt together with real
+    // clubs and maces. Their names are the authoritative distinction in the
+    // datapack, so do not let a support class treat every blunt as melee.
+    const casterWeapon = /\b(staff|wand|rod|spellbook|voodoo|scroll)\b/i.test(name);
+    return kind.startsWith('Weapon.') && kind !== 'Weapon.Bow' && !casterWeapon;
+}
+
 function partyRoleStance(role) {
     if (role === 'healer') return 'support';
     if (role === 'buffer') return 'buff_support';
@@ -76,5 +89,6 @@ module.exports = {
     isTank,
     canBuff,
     isRanged,
+    hasMeleeWeapon,
     partyRoleStance
 };

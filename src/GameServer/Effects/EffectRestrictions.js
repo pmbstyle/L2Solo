@@ -52,7 +52,8 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
     const confused = EffectStore.hasDebuff(actor, 'confusion');
     if (!(impairments.disabled || impairments.rooted || confused)) return;
 
-    actor.automation?.abortAll?.(actor);
+    // stopMovement below sends the authoritative StopMove packet.
+    actor.automation?.abortAll?.(actor, { notifyClient: false });
     actor.attack?.clearTimers?.();
     actor.attack?.resetQueuedEvent?.();
     actor.state?.setHits?.(false);

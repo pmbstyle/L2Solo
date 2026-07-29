@@ -2,6 +2,38 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
+// World.fetchVisibleUsers broadcasts movement to observers inside this same
+// radius.  Low-detail simulation must never silently relocate a bot that is
+// already visible to a player (or whose requested destination is visible).
+const CLIENT_VISIBILITY_RADIUS = 6000;
+
+function distanceToClosestPlayer(players, coords) {
+    if (!players.length) return Infinity;
+
+    return players.reduce((closest, player) => {
+        const dx = player.fetchLocX() - coords.locX;
+        const dy = player.fetchLocY() - coords.locY;
+        return Math.min(closest, Math.sqrt(dx * dx + dy * dy));
+    }, Infinity);
+}
+
+function distance2d(first, second) {
+    const dx = Number(first?.fetchLocX?.() ?? first?.locX ?? 0) - Number(second?.fetchLocX?.() ?? second?.locX ?? 0);
+    const dy = Number(first?.fetchLocY?.() ?? first?.locY ?? 0) - Number(second?.fetchLocY?.() ?? second?.locY ?? 0);
+    return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function shouldUseLowLodWarp({ startDistance, destinationDistance, isCompanion, plan }) {
+    return !isCompanion &&
+        plan !== 'pk_hunting' &&
+        startDistance > CLIENT_VISIBILITY_RADIUS &&
+        destinationDistance > CLIENT_VISIBILITY_RADIUS;
+}
+
+function shouldPreannounceVisibleMove(startDistance, destinationDistance) {
+    return startDistance > CLIENT_VISIBILITY_RADIUS && destinationDistance <= CLIENT_VISIBILITY_RADIUS;
+}
+
 function moveTo(session, actor, coords) {
     if (actor.isDead()) {
         return;
@@ -33,35 +65,44 @@ function moveTo(session, actor, coords) {
         const startY = coords.from.locY;
         const startZ = coords.from.locZ;
 
-        // Helper to fetch distance to closest real player
-        const getDistanceToClosestPlayer = () => {
-            const World = invoke('GameServer/World/World');
-            const onlinePlayers = World.user.sessions.filter(s => 
-                s.actor && 
-                s.actor.fetchIsOnline() && 
-                s.accountId && 
+        // Keep low-detail simulation outside the client-visible area.  The
+        // old 1500-unit threshold was much smaller than the 6000-unit world
+        // visibility radius, so a bot could be visibly running and then have
+        // its server position silently overwritten.
+        const World = invoke('GameServer/World/World');
+        const onlinePlayerSessions = World.user.sessions
+            .filter(s =>
+                s.actor &&
+                s.actor.fetchIsOnline() &&
+                s.accountId &&
                 !s.accountId.startsWith('bot_')
             );
+        const onlinePlayers = onlinePlayerSessions.map((playerSession) => playerSession.actor);
+        const distanceToPlayer = distanceToClosestPlayer(onlinePlayers, {
+            locX: startX,
+            locY: startY
+        });
+        const destinationDistanceToPlayer = distanceToClosestPlayer(onlinePlayers, requestedTo);
+        // Movement packets are normally broadcast from the bot's current
+        // coordinates. A player who is just outside that radius would miss
+        // the first packet and only discover the bot through a later refresh,
+        // which looks like a teleport. Prime that observer before the route
+        // crosses into their visible area.
+        const approachingObservers = onlinePlayerSessions
+            .filter((playerSession) => shouldPreannounceVisibleMove(
+                distance2d(playerSession.actor, { locX: startX, locY: startY }),
+                distance2d(playerSession.actor, requestedTo)
+            ))
+            .map((playerSession) => ({ session: playerSession, announced: false }));
 
-            if (onlinePlayers.length === 0) return Infinity;
-
-            let minDist = Infinity;
-            onlinePlayers.forEach(pSession => {
-                const player = pSession.actor;
-                const pdx = player.fetchLocX() - startX;
-                const pdy = player.fetchLocY() - startY;
-                const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
-                if (pdist < minDist) {
-                    minDist = pdist;
-                }
-            });
-            return minDist;
-        };
-
-        const distanceToPlayer = getDistanceToClosestPlayer();
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
 
-        if (distanceToPlayer > 1500 && !isCompanion && session.plan !== 'pk_hunting') {
+        if (shouldUseLowLodWarp({
+            startDistance: distanceToPlayer,
+            destinationDistance: destinationDistanceToPlayer,
+            isCompanion,
+            plan: session.plan
+        })) {
             // Low LOD: instant warp (we do not calculate movements at all)
             const snappedTo = { ...requestedTo };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
@@ -74,6 +115,7 @@ function moveTo(session, actor, coords) {
                 pathLength: 0,
                 lowLodWarp: true,
                 distanceToPlayer,
+                destinationDistanceToPlayer,
                 strategy: 'low_lod_direct',
                 at: Date.now()
             };
@@ -112,6 +154,7 @@ function moveTo(session, actor, coords) {
             pathLength: path.length,
             lowLodWarp: false,
             distanceToPlayer,
+            destinationDistanceToPlayer,
             strategy: pathStrategy,
             at: Date.now()
         };
@@ -142,7 +185,20 @@ function moveTo(session, actor, coords) {
                 from: currentLoc,
                 to: nextLoc
             };
-            session.dataSendToMeAndOthers(ServerResponse.moveToLocation(actor.fetchId(), segmentCoords), actor);
+            const movePacket = ServerResponse.moveToLocation(actor.fetchId(), segmentCoords);
+            session.dataSendToMeAndOthers(movePacket, actor);
+            approachingObservers.forEach((observer) => {
+                const observerSession = observer.session;
+                if (!observerSession?.actor?.fetchIsOnline?.() || !observerSession.dataSendToMe) return;
+                // Once the bot is in the standard broadcast radius, the
+                // normal dataSendToMeAndOthers call above owns delivery.
+                if (distance2d(observerSession.actor, currentLoc) <= CLIENT_VISIBILITY_RADIUS) return;
+                if (!observer.announced) {
+                    observerSession.dataSendToMe(ServerResponse.charInfo(actor));
+                    observer.announced = true;
+                }
+                observerSession.dataSendToMe(movePacket);
+            });
 
             const speed = actor.fetchCollectiveRunSpd() || 120;
             const duration = (distance / speed) * 1000;
@@ -183,3 +239,6 @@ function moveTo(session, actor, coords) {
 }
 
 module.exports = moveTo;
+module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
+module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
+module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;

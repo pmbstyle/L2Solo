@@ -98,6 +98,21 @@ try {
     assert.strictEqual(bowAndShield.fetchItemRaw(9).fetchEquipped(), true, 'the two-handed bow should be equipped');
     assert.strictEqual(bowAndShield.fetchItemRaw(10).fetchEquipped(), false, 'equipping a two-handed bow must remove the shield');
 
+    const persistedEmptySlotWeapon = backpack([
+        item(11, 5, 'Weapon.Blunt', 7)
+    ]);
+    const persistedSnapshots = [];
+    persistedEmptySlotWeapon.updateDatabaseTimer = () => {
+        persistedSnapshots.push(persistedEmptySlotWeapon.fetchItems().map((entry) => ({
+            id: entry.fetchId(),
+            equipped: entry.fetchEquipped(),
+            slot: entry.fetchSlot()
+        })));
+    };
+    persistedEmptySlotWeapon.equipGear(sessionFor(persistedEmptySlotWeapon), persistedEmptySlotWeapon.fetchItemRaw(11));
+    assert.deepStrictEqual(persistedSnapshots, [[{ id: 11, equipped: true, slot: 7 }]],
+        'equipping into an empty weapon slot must immediately schedule durable equipped state');
+
     console.log('Equipment slot checks passed');
 } finally {
     ActorGenerics.calculateStats = originalCalculateStats;

@@ -14,6 +14,8 @@ const DEFAULT_PARTY_SETTINGS = {
 };
 const PARTY_LOOT_RADIUS = 2500;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
+const GROUND_PICKUP_FALLBACK_TIMEOUT_MS = 8000;
+const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
 const RANDOM_LOOT_DISTRIBUTIONS = new Set([1, 2]);
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
@@ -284,10 +286,39 @@ function nearestGroundLootPicker(looterSession, item) {
         ))[0] || null;
 }
 
+function groundPickupTimeoutMs(picker, pickup) {
+    const item = (world().items?.spawns || [])
+        .find((candidate) => Number(candidate?.fetchId?.()) === Number(pickup?.id));
+    if (!item?.fetchLocX || !item?.fetchLocY || !item?.fetchLocZ) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
+    const automation = picker?.automation;
+    const runSpeed = Number(picker?.fetchCollectiveRunSpd?.());
+    if (!Number.isFinite(runSpeed) || runSpeed <= 0) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
+    const travelMs = Number(automation?.ticksToMove?.(
+        picker.fetchLocX(), picker.fetchLocY(), picker.fetchLocZ(),
+        item.fetchLocX(), item.fetchLocY(), item.fetchLocZ(),
+        0,
+        runSpeed
+    ));
+    if (!Number.isFinite(travelMs) || travelMs <= 0) return GROUND_PICKUP_FALLBACK_TIMEOUT_MS;
+    return Math.max(GROUND_PICKUP_FALLBACK_TIMEOUT_MS, Math.ceil(travelMs) + GROUND_PICKUP_TIMEOUT_GRACE_MS);
+}
+
 function startQueuedGroundPickup(pickerSession) {
     const picker = pickerSession?.actor;
     const queue = pickerSession?.partyGroundPickupQueue;
-    if (!picker || pickerSession.partyGroundPickupInProgress || !queue?.length) return false;
+    if (!picker || !queue?.length) return false;
+    const now = Date.now();
+    if (pickerSession.partyGroundPickupInProgress) {
+        const deadlineAt = Number(pickerSession.partyGroundPickupDeadlineAt || 0);
+        if (!deadlineAt || now < deadlineAt) return false;
+        // A competing movement order can cancel Automation's pickup timer
+        // without invoking PickupExec's completion callback. Do not leave the
+        // whole FIFO permanently locked behind that stale action.
+        picker.automation?.abortAll?.(picker);
+        picker.state?.setPickinUp?.(false);
+        pickerSession.partyGroundPickupInProgress = false;
+        pickerSession.partyGroundPickupDeadlineAt = 0;
+    }
     const leaderSession = partyLeaderSession(pickerSession);
     // A queued drop is lower priority than a resurrection.  This also
     // protects queues that were assigned before a companion died, rather
@@ -312,6 +343,9 @@ function startQueuedGroundPickup(pickerSession) {
 
     const pickup = queue[0];
     pickerSession.partyGroundPickupInProgress = true;
+    pickerSession.partyGroundPickupDeadlineAt = now + groundPickupTimeoutMs(picker, pickup);
+    const attempt = Number(pickerSession.partyGroundPickupAttempt || 0) + 1;
+    pickerSession.partyGroundPickupAttempt = attempt;
     if (picker.state?.fetchSeated?.()) {
         picker.state.setSeated(false);
         pickerSession.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(picker), picker);
@@ -319,6 +353,7 @@ function startQueuedGroundPickup(pickerSession) {
     const Generics = invoke(path.actor);
     Generics.stopAutomation(pickerSession, picker);
     Generics.pickupExec(pickerSession, picker, pickup, () => {
+        if (Number(pickerSession.partyGroundPickupAttempt) !== attempt) return;
         if (queue[0]?.id === pickup.id) {
             queue.shift();
         } else {
@@ -326,6 +361,7 @@ function startQueuedGroundPickup(pickerSession) {
             if (index >= 0) queue.splice(index, 1);
         }
         pickerSession.partyGroundPickupInProgress = false;
+        pickerSession.partyGroundPickupDeadlineAt = 0;
         startQueuedGroundPickup(pickerSession);
         // A completed queue entry can make another idle ground drop eligible
         // immediately. Do not wait for a later AI cadence just because the

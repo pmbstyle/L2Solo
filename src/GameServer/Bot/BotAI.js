@@ -363,7 +363,18 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
-                this.say(session, wasCompanion ? "I'm down. Waiting for a resurrection." : "Oops... I died! Resurrecting shortly.");
+                if (wasCompanion) {
+                    invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
+                        priority: 'critical',
+                        key: `party-death:${bot.fetchId()}`,
+                        templates: [
+                            `${bot.fetchName()} is down — waiting for resurrection.`,
+                            `Down at the camp. Waiting for a resurrection.`
+                        ]
+                    });
+                } else {
+                    this.say(session, 'Oops... I died! Resurrecting shortly.');
+                }
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
                     BotSocialMemory.recordEvent(session.followPlayerSession, session, 'party_wiped', 'bot_and_leader_dead');
@@ -483,7 +494,8 @@ const BotAI = {
 
     executeCombat(session, bot, npc, Generics, options = {}) {
         const role = BotRoles.inferRole(bot);
-        const ARCHER_ATTACK_RANGE = 700;
+        const BOW_ATTACK_RANGE = 700;
+        const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
@@ -515,7 +527,7 @@ const BotAI = {
         Generics.attackExec(session, bot, {
             id: npc.fetchId(),
             ctrl: true,
-            ...(role === 'archer' ? { range: ARCHER_ATTACK_RANGE } : {})
+            ...(hasBow ? { range: BOW_ATTACK_RANGE } : {})
         });
     },
 

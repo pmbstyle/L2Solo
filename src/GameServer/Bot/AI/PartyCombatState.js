@@ -120,6 +120,7 @@ function combatState(leaderSession, options = {}) {
     const attackingCorpse = (world().npc?.spawns || []).find((npc) => (
         isHostileNpc(npc) &&
         npc.state?.fetchCombats?.() === true &&
+        npc.fetchStateAttack?.() === true &&
         fallenIds.has(Number(npc.fetchDestId?.() || 0)) &&
         fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE) &&
         !ignoredTargetIds.has(actorId(npc))

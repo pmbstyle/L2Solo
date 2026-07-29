@@ -3,6 +3,11 @@ const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
+function boatObjectId(actor) {
+    const boat = actor?.fetchBoat?.() || actor?.boat;
+    return Number(actor?.fetchBoatId?.() ?? boat?.fetchId?.() ?? boat?.id ?? 0) || 0;
+}
+
 function userInfo(actor) {
     const packet = new SendPacket(0x04);
     const clan = Pledge.clan(actor);
@@ -16,7 +21,7 @@ function userInfo(actor) {
         .writeD(actor.fetchLocX())
         .writeD(actor.fetchLocY())
         .writeD(actor.fetchLocZ())
-        .writeD(actor.fetchHead())
+        .writeD(boatObjectId(actor))
         .writeD(actor.fetchId())
         .writeS(actor.fetchName())
         .writeD(actor.fetchRace())

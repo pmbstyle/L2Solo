@@ -222,7 +222,12 @@ try {
     assert.deepStrictEqual(supportCast, {
         id: player.fetchId(), selfId: 1068, ctrl: false
     }, 'the highest-MP party bot should cast the shared requested buff');
-    assert.deepStrictEqual(supportReplies, ['Casting Might on you.'], 'only the selected party caster should answer the direct buff request');
+    assert.deepStrictEqual(supportReplies, [], 'a requested buff must not claim success before the native cast lands');
+    assert.strictEqual(
+        higherMpSession.pendingPartyChatResult?.skillId,
+        1068,
+        'the selected provider should retain a pending factual confirmation for the native cast result'
+    );
     BotManager.botTell = originalBotTell;
 
     const socialEvents = [];
