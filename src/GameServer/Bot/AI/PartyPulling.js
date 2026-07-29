@@ -17,6 +17,7 @@ const PULL_ABANDON_DISTANCE = 5000;
 // target lets the normal combat action close the final few steps instead of
 // holding the entire party for coordinate-perfect overlap.
 const PULL_DELIVERY_MELEE_DISTANCE = 250;
+const PULL_DELIVERY_CAMP_DISTANCE = 350;
 
 function point(actor) {
     return {
@@ -223,6 +224,11 @@ function targetIsEngageable(leaderSession, target, puller, { includePuller = fal
         .some((actor) => canDeliverPull(actor, target));
 }
 
+function targetDeliveredToCamp(leaderSession, target) {
+    return !!leaderSession?.actor && !!target &&
+        distance2d(point(leaderSession.actor), point(target)) <= PULL_DELIVERY_CAMP_DISTANCE;
+}
+
 function nearestFreeMonster(bot) {
     return World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), PULL_SEARCH_RADIUS)
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
@@ -394,13 +400,12 @@ function current(leaderSession, settings) {
     if (!puller) return { enabled: false, puller: null, target: null, paused: null };
     const target = clearFinishedTarget(leaderSession);
     const state = pullState(leaderSession);
-    // A companion may meet the incoming mob while the player is moving the
-    // party.  Release only companions that can strike from their own current
-    // position; the rest keep following the leader instead of chasing it.
+    // Keep the formation around the leader until the dedicated puller has
+    // returned and the mob has reached the camp. Releasing a companion merely
+    // because it can hit an incoming mob makes it chase the puller and breaks
+    // the party line.
     const engageable = state.source === 'bot'
-        ? state.phase === 'engage'
-            ? targetIsEngageable(leaderSession, target, puller, { includePuller: true })
-            : targetIsEngageable(leaderSession, target, puller)
+        ? state.phase === 'engage' && targetDeliveredToCamp(leaderSession, target)
         : targetIsEngageable(leaderSession, target, puller);
     return {
         enabled: true,
@@ -421,6 +426,7 @@ module.exports = {
     tickBotPuller,
     current,
     targetIsEngageable,
+    targetDeliveredToCamp,
     actorCanEngage,
     canDeliverPull,
     attackRange,

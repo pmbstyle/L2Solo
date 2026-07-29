@@ -247,6 +247,47 @@ try {
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.strictEqual(pickupCalls.length, 7, 'an incoming NPC threat must block ground pickup before party members start their own combat action');
+
+    // A follow/combat movement command can cancel Automation's pickup timer
+    // before PickupExec reaches its completion callback. The queue must retry
+    // rather than becoming permanently unavailable after that one dropped
+    // completion.
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    World.items = { spawns: [] };
+    botSession.partyGroundPickupQueue = [{ id: 500009 }];
+    botSession.partyGroundPickupInProgress = false;
+    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'a queued pickup should start normally before a simulated cancellation');
+    const cancelledPickup = pickupCalls[7];
+    botSession.partyGroundPickupDeadlineAt = Date.now() - 1;
+    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'an expired pickup action should be retried instead of locking future loot');
+    const retriedPickup = pickupCalls[8];
+    cancelledPickup.onComplete();
+    assert.deepStrictEqual(botSession.partyGroundPickupQueue, [{ id: 500009 }], 'a stale completion must not remove the retried pickup from the queue');
+    retriedPickup.onComplete();
+    assert.deepStrictEqual(botSession.partyGroundPickupQueue, [], 'the current pickup completion should remove the recovered queue entry');
+
+    closestBot.fetchCollectiveRunSpd = () => 120;
+    closestBot.automation.ticksToMove = () => 21000;
+    World.items = {
+        spawns: [{
+            fetchId: () => 500010,
+            fetchLocX: () => 2500,
+            fetchLocY: () => 200,
+            fetchLocZ: () => -310
+        }]
+    };
+    botSession.partyGroundPickupQueue = [{ id: 500010 }];
+    botSession.partyGroundPickupInProgress = false;
+    assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'a distant pickup should start normally');
+    const longWalkPickup = pickupCalls[9];
+    assert.strictEqual(
+        PartyCompanionService.startQueuedGroundPickup(botSession),
+        false,
+        'a valid long walk should remain in progress instead of being cancelled by the short fallback timeout'
+    );
+    longWalkPickup.onComplete();
+    assert.deepStrictEqual(botSession.partyGroundPickupQueue, [], 'a completed long walk should still clear its queue entry');
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalRewards;
     ProgressionRates.rollGroup = originalRollGroup;

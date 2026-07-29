@@ -488,6 +488,10 @@ function assistActionForRole(role) {
     return 'assist_leader';
 }
 
+function supportCanMeleeAssist(bot, role) {
+    return !['healer', 'buffer'].includes(role) || BotRoles.hasMeleeWeapon(bot);
+}
+
 function assistReasonForRole(role) {
     if (role === 'dagger') return 'close_assist';
     return 'leader_target';
@@ -998,8 +1002,18 @@ module.exports = {
         if (!acted && partyThreat?.actor) {
             const target = partyThreat.actor;
             const targetId = target.fetchId();
+            const holdSupportLine = !supportCanMeleeAssist(bot, role);
 
-            if (session.currentTargetId !== targetId) {
+            if (holdSupportLine) {
+                session.currentTargetId = undefined;
+                bot.unselect();
+                recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'hold_support_line', {
+                    targetId,
+                    targetType: partyThreat.type,
+                    protectedId: partyThreat.targetId
+                });
+                keepRoleDecision = true;
+            } else if (session.currentTargetId !== targetId) {
                 session.currentTargetId = targetId;
                 bot.select({ id: targetId });
                 recordRoleDecision(session, bot, assistActionForRole(role), 'party_under_attack', {
@@ -1009,20 +1023,25 @@ module.exports = {
                 });
             }
 
-            if (!isBusy(bot)) {
+            if (!holdSupportLine && !isBusy(bot)) {
                 const basicAttackOnly = role === 'healer' || role === 'buffer';
                 if (partyThreat.type === 'player') {
                     BotAI.executePvPCombat(session, bot, target, Generics, { basicAttackOnly });
                 } else {
                     BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly });
                 }
+                acted = true;
             }
-            acted = true;
         }
 
         if (!acted) {
             const playerTargetId = leaderTargetId;
-            if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
+            if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId() && !supportCanMeleeAssist(bot, role)) {
+                session.currentTargetId = undefined;
+                bot.unselect();
+                recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'hold_support_line', { targetId: playerTargetId });
+                keepRoleDecision = true;
+            } else if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
                 acted = true;
                 World.fetchUser(playerTargetId).then((user) => {
                     if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
@@ -1049,7 +1068,7 @@ module.exports = {
                             bot.select({ id: playerTargetId });
                             recordRoleDecision(session, bot, assistActionForRole(role), 'pvp_target', { targetId: playerTargetId });
                         }
-                        if (isBusy(bot)) {
+                        if (isBusy(bot) || !supportCanMeleeAssist(bot, role)) {
                             return;
                         }
                         BotAI.executePvPCombat(session, bot, user, Generics, {
@@ -1080,7 +1099,7 @@ module.exports = {
                                 bot.select({ id: playerTargetId });
                                 recordRoleDecision(session, bot, assistActionForRole(role), assistReasonForRole(role), { targetId: playerTargetId });
                             }
-                            if (isBusy(bot)) {
+                            if (isBusy(bot) || !supportCanMeleeAssist(bot, role)) {
                                 return;
                             }
                             BotAI.executeCombat(session, bot, npc, Generics, {

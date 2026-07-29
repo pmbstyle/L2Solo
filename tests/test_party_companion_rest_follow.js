@@ -735,7 +735,7 @@ try {
     assert.match(lowManaHealChat[0], /No MP|need MP/, 'the party should receive a concrete MP limitation instead of a fake heal confirmation');
     BotManager.botPartySay = originalBotPartySay;
 
-    const healerAssistBot = fakeActor(2000027, { locX: 120, locY: 0, classId: 15 });
+    const healerAssistBot = fakeActor(2000027, { locX: 700, locY: 0, classId: 15 });
     const healerAssistSession = fakeSession('bot_healer_basic_assist', healerAssistBot);
     healerAssistSession.followPlayerSession = healerLeaderSession;
     healerAssistSession.partyCompanion = true;
@@ -751,6 +751,10 @@ try {
         fetchName: () => 'healer assist threat'
     };
     let healerAssistOptions = null;
+    healerAssistBot.backpack.fetchEquippedWeapon = () => ({
+        fetchKind: () => 'Weapon.Blunt',
+        fetchName: () => 'Willow Staff'
+    });
     World.user = { sessions: [healerLeaderSession, healerAssistSession] };
     World.npc = { spawns: [healerAssistThreat] };
     World.fetchNpcsInRadius = () => [healerAssistThreat];
@@ -759,7 +763,18 @@ try {
         executeCombat(_session, _bot, _npc, _generics, options) { healerAssistOptions = options; },
         executePvPCombat() {}
     });
-    assert.strictEqual(healerAssistOptions?.basicAttackOnly, true, 'a healer assisting the party must be restricted to a no-MP basic attack');
+    assert.strictEqual(healerAssistOptions, null, 'a healer with a staff should stay in support formation instead of attacking');
+    assert.strictEqual(healerAssistBot.moves.length, 1, 'a healer with a staff should continue following the leader during combat');
+    healerAssistBot.backpack.fetchEquippedWeapon = () => ({
+        fetchKind: () => 'Weapon.Sword',
+        fetchName: () => 'Orcish Sword'
+    });
+    FollowingState.tick(healerAssistSession, healerAssistBot, {}, {
+        say() {},
+        executeCombat(_session, _bot, _npc, _generics, options) { healerAssistOptions = options; },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(healerAssistOptions?.basicAttackOnly, true, 'a healer with a melee weapon may assist using only a basic attack');
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 
@@ -1330,19 +1345,16 @@ try {
     });
     assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'party should keep following until each companion can reach the marked mob');
 
-    // Delivery uses a practical melee handoff radius, rather than requiring
-    // two actor origins to be exactly equal. The actual combat action closes
-    // the final step.
+    // The pull target may cross a companion's personal attack range on its
+    // way back. Formation still stays with the leader until the puller has
+    // returned and the mob reaches the camp.
     pulledMob.locX = partyHudBotB.locX + 160;
     let earlyMeetAssistId = null;
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat(_session, _bot, npc) { earlyMeetAssistId = npc.fetchId(); }, executePvPCombat() {}
     });
-    assert.strictEqual(
-        earlyMeetAssistId,
-        pulledMob.fetchId(),
-        'a companion that meets the returning mob should engage before the puller completes its return'
-    );
+    assert.strictEqual(earlyMeetAssistId, null, 'a companion must not engage an incoming pull before it reaches camp');
+    assert.strictEqual(partyHudBotBSession.roleDecision.reason, 'hold_for_pull', 'an incoming pull should keep every non-puller in leader formation');
     pulledMob.locX = 1200;
 
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
