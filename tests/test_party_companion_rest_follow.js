@@ -611,6 +611,40 @@ try {
     assert.strictEqual(threatChat.length, 1, 'the same active add must not be repeated every AI tick');
     BotManager.botPartySay = originalBotPartySay;
 
+    // An NPC keeps its native combat state while the target is just under
+    // 1500 units away.  This is the important social-pull case: after the
+    // first mob dies, a ranged add must be acquired without the player
+    // manually selecting it.
+    const distantArcher = {
+        fetchId: () => 1010,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => leader.fetchId(),
+        fetchLocX: () => 1490,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'Turek Orc Archer'
+    };
+    const distantThreatBot = fakeActor(2000053, { locX: 120, locY: 0 });
+    const distantThreatSession = fakeSession('bot_distant_threat_assist', distantThreatBot);
+    distantThreatSession.followPlayerSession = leaderSession;
+    distantThreatSession.partyCompanion = true;
+    distantThreatSession.plan = 'following';
+    let distantThreatAssistId = null;
+    PartyCompanionService.updateSettings(leaderSession, { pullMode: 'auto' });
+    World.user = { sessions: [leaderSession, distantThreatSession] };
+    World.npc = { spawns: [distantArcher] };
+    World.fetchNpcsInRadius = (_x, _y, radius) => radius >= 1490 ? [distantArcher] : [];
+
+    FollowingState.tick(distantThreatSession, distantThreatBot, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { distantThreatAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+
+    assert.strictEqual(distantThreatSession.currentTargetId, distantArcher.fetchId(), 'party should acquire a distant archer that is still attacking a member');
+    assert.strictEqual(distantThreatAssistId, distantArcher.fetchId(), 'party should attack a social ranged add without a manual leader target');
+
     const hiddenAggroNpc = {
         fetchId: () => 1007,
         fetchAttackable: () => true,
@@ -822,6 +856,74 @@ try {
     assert.strictEqual(inventedAggression, false, 'tank should not cast Aggression it has not learned');
     assert.strictEqual(unskilledTank.skillset.skills.length, 0, 'tank AI should not inject Aggression into the actor');
     assert.strictEqual(tankFallbackTarget, tankThreat.fetchId(), 'tank without Aggression should still defend with normal combat');
+
+    const autoPullTank = fakeActor(2000097, { locX: 90, locY: 0, mp: 20, maxMp: 100, classId: 4 });
+    const autoPullTankSession = fakeSession('bot_auto_pull_tank', autoPullTank);
+    autoPullTankSession.followPlayerSession = healerLeaderSession;
+    autoPullTankSession.partyCompanion = true;
+    autoPullTankSession.plan = 'following';
+    learnSkill(autoPullTank, { selfId: 28, name: 'Aggression', mp: 30 });
+    let autoPullTargetId = undefined;
+    const autoPullTarget = {
+        fetchId: () => 1010,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => autoPullTargetId,
+        fetchLocX: () => 150,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchName: () => 'free pull target'
+    };
+    World.user = { sessions: [healerLeaderSession, autoPullTankSession] };
+    World.npc = { spawns: [autoPullTarget] };
+    World.fetchNpcsInRadius = () => [autoPullTarget];
+    let autoPullSkillCast = false;
+    let autoPullOptions = null;
+    FollowingState.tick(autoPullTankSession, autoPullTank, {
+        skillExec() { autoPullSkillCast = true; }
+    }, {
+        say() {},
+        executeCombat(_session, _bot, npc, _generics, options) {
+            assert.strictEqual(npc, autoPullTarget, 'auto pull should attack the nearest safe target');
+            autoPullOptions = options;
+        },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(autoPullSkillCast, false, 'auto pull must not cast Aggression even when it is learned');
+    assert.strictEqual(autoPullOptions?.basicAttackOnly, true, 'auto pull should start with a basic attack');
+    assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
+    autoPullTank.mp = 100;
+    autoPullTargetId = autoPullTank.fetchId();
+    let engagedPulledTarget = null;
+    FollowingState.tick(autoPullTankSession, autoPullTank, {
+        skillExec() { autoPullSkillCast = true; }
+    }, {
+        say() {},
+        executeCombat(_session, _bot, npc) { engagedPulledTarget = npc; },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(autoPullSkillCast, false, 'a mob already attacking its tank must not be taunted again');
+    assert.strictEqual(engagedPulledTarget, autoPullTarget, 'the tank should fight the mob it already pulled');
+    const fallenAutoPullMember = fakeActor(2000098, { locX: 60, locY: 0 });
+    fallenAutoPullMember.state.dead = true;
+    const fallenAutoPullSession = fakeSession('bot_auto_pull_fallen_member', fallenAutoPullMember);
+    fallenAutoPullSession.followPlayerSession = healerLeaderSession;
+    fallenAutoPullSession.partyCompanion = true;
+    fallenAutoPullSession.plan = 'following';
+    autoPullTargetId = undefined;
+    autoPullTankSession.currentTargetId = undefined;
+    autoPullTank.unselect();
+    World.user = { sessions: [healerLeaderSession, autoPullTankSession, fallenAutoPullSession] };
+    let blockedAutoPullCombat = false;
+    FollowingState.tick(autoPullTankSession, autoPullTank, {
+        skillExec() { blockedAutoPullCombat = true; }
+    }, {
+        say() {},
+        executeCombat() { blockedAutoPullCombat = true; },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(blockedAutoPullCombat, false, 'auto pull must wait for a fallen party member to be resurrected');
+    assert.strictEqual(autoPullTankSession.roleDecision.reason, 'party_revival', 'auto pull pause should report the pending party revival');
 
     const bufferLeader = fakeActor(2000027, { locX: 0, locY: 0 });
     const bufferLeaderSession = fakeSession('player_buffer_party', bufferLeader);
@@ -1386,6 +1488,41 @@ try {
         250,
         'a short-range melee skill must not prevent a delivered pull from entering normal combat'
     );
+    let campArrivalAssistId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { campArrivalAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(campArrivalAssistId, pulledMob.fetchId(), 'party should attack as soon as an aggroed pull reaches camp, before the puller finishes its return tick');
+
+    // The camp-radius check is intentionally stricter than a puller's own
+    // melee range. The tank must nevertheless keep hitting a held target it
+    // can already reach, including at low HP; it may not sit and turn the
+    // whole party into "party_recovering" while the target is alive.
+    partyHudLeaderSession.partyPullState = {
+        targetId: pulledMob.fetchId(),
+        pullerId: partyHudBotA.fetchId(),
+        source: 'bot',
+        phase: 'engage',
+        startedAt: Date.now()
+    };
+    partyHudBotA.locX = 180;
+    partyHudBotA.hp = 20;
+    partyHudBotA.state.setSeated(false);
+    pulledMob.locX = 400;
+    pulledMob.destId = partyHudBotA.fetchId();
+    let heldPullerAssistId = null;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { heldPullerAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(heldPullerAssistId, pulledMob.fetchId(), 'puller should attack a held target in its own range before full camp delivery');
+    assert.strictEqual(partyHudBotA.state.fetchSeated(), false, 'low-HP puller must not sit while its living pull target is active');
+    partyHudBotA.hp = partyHudBotA.maxHp;
+    partyHudBotA.locX = partyHudLeader.locX;
+    pulledMob.locX = partyHudBotB.locX + 160;
     partyHudBotA.state.setTowards('move');
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
         say() {}, executeCombat() {}, executePvPCombat() {}

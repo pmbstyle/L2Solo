@@ -1,6 +1,10 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
+// NPC combat remains active until the target is 1500 units away.  Threat
+// discovery must cover that full envelope: a ranged/social add at 1401-1499
+// can still be hitting the puller and therefore must wake the camp.
+const NPC_THREAT_RADIUS = 1500;
 
 // World loads bot controls as part of its own initialization. Resolving it at
 // module scope here can therefore retain Node's empty circular-dependency
@@ -120,7 +124,7 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     if (members.length === 0) return null;
 
     const memberIds = new Set(members.map(actorId).filter((id) => id !== null));
-    const npcRadius = options.npcRadius || 1400;
+    const npcRadius = options.npcRadius || NPC_THREAT_RADIUS;
     const playerRadius = options.playerRadius || 1800;
 
     const recentThreat = recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius);

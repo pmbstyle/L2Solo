@@ -89,9 +89,12 @@ function playerCanResurrect(leaderSession) {
         .some((item) => PLAYER_RESURRECTION_SCROLLS.has(Number(item.fetchSelfId?.())) && Number(item.fetchAmount?.() || 0) > 0);
 }
 
-function clearExpiredAttempt(leaderSession, now) {
+function clearExpiredAttempt(leaderSession, dead, now) {
     const attempt = leaderSession?.partyRevivalAttempt;
-    if (attempt && now - Number(attempt.startedAt || 0) > 25000) {
+    const targetStillDead = dead.some((memberSession) => (
+        Number(memberSession.actor?.fetchId?.()) === Number(attempt?.targetId)
+    ));
+    if (attempt && (!targetStillDead || now - Number(attempt.startedAt || 0) > 25000)) {
         leaderSession.partyRevivalAttempt = null;
     }
 }
@@ -113,8 +116,11 @@ function tick(session, leaderSession, Generics) {
     if (!isCompanionOf(session, leaderSession) || !isAlive(session)) return { handled: false };
 
     const now = Date.now();
-    clearExpiredAttempt(leaderSession, now);
     const dead = deadMembers(leaderSession);
+    // A successful cast can revive its target while another party member is
+    // still dead. Do not hold the old attempt until its timeout: the next
+    // provider tick must immediately pick the next corpse.
+    clearExpiredAttempt(leaderSession, dead, now);
     if (dead.length === 0) {
         leaderSession.partyRevivalAttempt = null;
         return { handled: false, dead };

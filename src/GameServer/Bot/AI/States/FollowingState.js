@@ -326,7 +326,9 @@ function partyAggroCount(leaderSession) {
 
     const seen = new Set();
     return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
-        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 900)
+        // Match PartyAwareness' full NPC combat envelope. A ranged mob can
+        // continue attacking from beyond the old 900-unit support check.
+        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 1500)
     ))
         .filter((npc) => {
             const id = npc.fetchId?.() || npc;
@@ -476,7 +478,6 @@ function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
     if (session.currentTargetId) return 'already_assisting';
     if (partyVitals?.hpRatio < 0.65) return 'party_low_hp';
     if (botVitals.hpRatio < 0.55) return 'tank_low_hp';
-    if (botVitals.mpRatio < 0.25) return 'save_mp';
     if (activeMobs >= 2) return 'active_mobs';
     return null;
 }
@@ -577,7 +578,7 @@ module.exports = {
         const holdingPulledTarget = pulling.target && !pulling.engageable;
         const rawThreatIsHeldPull = holdingPulledTarget &&
             Number(rawPartyThreat?.actor?.fetchId?.()) === Number(pulling.target.fetchId());
-        const partyThreat = pulling.engageable && pulling.target
+        let partyThreat = pulling.engageable && pulling.target
             ? {
                 type: 'npc',
                 actor: pulling.target,
@@ -707,7 +708,15 @@ module.exports = {
             return;
         }
 
-        if (!partyThreat && !leaderTargetId && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
+        const isActiveBotPuller = pulling.enabled &&
+            pulling.puller?.kind === 'bot' &&
+            pulling.puller?.session === session &&
+            !!pulling.target;
+        // The puller is the one companion who must not sit while a living
+        // pull target is still assigned. A held incoming target is hidden
+        // from the camp until delivery, so without this guard low HP could
+        // make the puller sit in front of the mob it is returning with.
+        if (!partyThreat && !leaderTargetId && !isActiveBotPuller && (botVitals.hpRatio < 0.30 || botVitals.mpRatio < 0.15)) {
             // Do not leave a hunting field just to recover.  This shortcut is
             // available only when the companion is already in a starter town
             // with a Newbie Guide, where characters through level 20 can
@@ -831,7 +840,10 @@ module.exports = {
                 ]
             });
         }
-        if (!acted && supportBuffTarget && !healerNeedsAction) {
+        // A routine buff must never take the action slot from a live party
+        // threat. The target may be a social ranged add that is still outside
+        // melee range, so let the normal defence branch react immediately.
+        if (!acted && !partyThreat && !leaderTargetId && supportBuffTarget && !healerNeedsAction) {
             const activeMobs = partyAggroCount(playerSession);
             if (unsafeSupportMoment(bot, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
@@ -919,10 +931,29 @@ module.exports = {
             }
         }
 
+        // Once the puller has returned to the formation, it can keep the
+        // incoming mob occupied as soon as that mob reaches the puller's own
+        // attack range. Do not wait for the stricter leader-centred camp
+        // radius: it creates a visible idle window and can leave the tank
+        // taking hits without responding.
+        const pullerCanFightHeldTarget = !partyThreat &&
+            pulling.enabled &&
+            pulling.target &&
+            pulling.puller?.kind === 'bot' &&
+            pulling.puller?.session === session &&
+            PartyPulling.actorCanEngage(bot, pulling.target);
+        if (pullerCanFightHeldTarget) {
+            partyThreat = {
+                type: 'npc',
+                actor: pulling.target,
+                targetId: bot.fetchId(),
+                source: 'party_pull_puller_range'
+            };
+        }
+
         const waitingForPullAtOwnRange = pulling.enabled && pulling.target && (
-            !pulling.engageable || (
-                pulling.puller?.session !== session &&
-                !PartyPulling.actorCanEngage(bot, pulling.target)
+            pulling.puller?.session !== session && (
+                !pulling.engageable || !PartyPulling.actorCanEngage(bot, pulling.target)
             )
         );
         if (!acted && waitingForPullAtOwnRange) {
@@ -944,7 +975,11 @@ module.exports = {
                 ? partyThreat.actor
                 : nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
 
-            if (monsterToAggro) {
+            // Aggression is a transfer tool: use it only to take a mob away
+            // from another party member. Once it is already attacking this
+            // tank (including after a normal pull hit), continue normal combat
+            // below instead of repeatedly taunting the same target.
+            if (monsterToAggro && Number(monsterToAggro.fetchDestId?.()) !== Number(bot.fetchId())) {
                 const skill = BotSkillCapabilities.aggressionSkill(bot);
                 if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
                     acted = true;
@@ -962,7 +997,9 @@ module.exports = {
 
         if (!acted && role === 'tank' && !PartyPulling.enabled(partySettings)) {
             const activeMobs = partyAggroCount(playerSession);
-            const blockReason = pullBlockReason(session, botVitals, partyVitals, activeMobs);
+            const blockReason = PartyPulling.hasDeadPartyMember(playerSession)
+                ? 'party_revival'
+                : pullBlockReason(session, botVitals, partyVitals, activeMobs);
 
             if (blockReason) {
                 recordRoleDecision(session, bot, 'avoid_overpull', blockReason, { activeMobs });
@@ -983,17 +1020,13 @@ module.exports = {
                 }
 
                 if (targetMonster) {
-                    const skill = BotSkillCapabilities.aggressionSkill(bot);
-                    if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot)) {
+                    if (!isBusy(bot)) {
                         acted = true;
                         recordRoleDecision(session, bot, 'pull_target', 'safe_pull', {
                             targetId: targetMonster.fetchId(),
                             activeMobs
                         });
-                        castSkillOn(session, bot, Generics, targetMonster, skill, true);
-                    } else if (!skill) {
-                        recordRoleDecision(session, bot, 'avoid_pull', 'no_learned_aggression');
-                        keepRoleDecision = true;
+                        BotAI.executeCombat(session, bot, targetMonster, Generics, { basicAttackOnly: true });
                     }
                 }
             }

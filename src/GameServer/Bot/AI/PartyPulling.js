@@ -229,6 +229,13 @@ function targetDeliveredToCamp(leaderSession, target) {
         distance2d(point(leaderSession.actor), point(target)) <= PULL_DELIVERY_CAMP_DISTANCE;
 }
 
+function hasDeadPartyMember(leaderSession) {
+    return (World.user?.sessions || []).some((memberSession) => (
+        PartyAwareness.isPartySession(memberSession, leaderSession) &&
+        memberSession.actor?.isDead?.() === true
+    ));
+}
+
 function nearestFreeMonster(bot) {
     return World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), PULL_SEARCH_RADIUS)
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
@@ -314,6 +321,13 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
 
     let target = clearFinishedTarget(leaderSession);
     if (!target) {
+        // Do not let the puller win the scheduler race immediately after a
+        // resurrection. The next revival target must be selected before the
+        // party starts another encounter, while an already active encounter is
+        // still allowed to finish normally.
+        if (hasDeadPartyMember(leaderSession)) {
+            return { handled: true, puller, action: 'party_revival' };
+        }
         target = nearestFreeMonster(bot);
         if (!target) return { handled: true, puller, idle: true };
         beginTarget(leaderSession, puller, target, 'bot');
@@ -400,12 +414,12 @@ function current(leaderSession, settings) {
     if (!puller) return { enabled: false, puller: null, target: null, paused: null };
     const target = clearFinishedTarget(leaderSession);
     const state = pullState(leaderSession);
-    // Keep the formation around the leader until the dedicated puller has
-    // returned and the mob has reached the camp. Releasing a companion merely
-    // because it can hit an incoming mob makes it chase the puller and breaks
-    // the party line.
+    // Keep the formation around the leader until an aggroed mob itself reaches
+    // the camp. Once it is there, the party must attack immediately rather
+    // than wait for the puller to complete a separate return tick: otherwise
+    // the delivered mob can hit the leader before anyone reacts.
     const engageable = state.source === 'bot'
-        ? state.phase === 'engage' && targetDeliveredToCamp(leaderSession, target)
+        ? ['return', 'engage'].includes(state.phase) && targetDeliveredToCamp(leaderSession, target)
         : targetIsEngageable(leaderSession, target, puller);
     return {
         enabled: true,
@@ -429,6 +443,7 @@ module.exports = {
     targetDeliveredToCamp,
     actorCanEngage,
     canDeliverPull,
+    hasDeadPartyMember,
     attackRange,
     cancelForRevival,
     PULL_AGGRO_TIMEOUT_MS

@@ -146,7 +146,16 @@ try {
     assert.strictEqual(skillCast[2].id, leader.fetchId(), 'party resurrection should target the first fallen member');
     healer.state.fetchCombats = () => false;
 
+    leader.state.setDead(false);
+    let secondResurrectionCast = null;
+    const secondResurrectionResult = PartyRevivalService.tick(healerSession, leaderSession, {
+        skillExec(...args) { secondResurrectionCast = args; }
+    });
+    assert.strictEqual(secondResurrectionResult.source, 'skill', 'a remaining fallen companion should be revived without waiting for the first attempt timeout');
+    assert.strictEqual(secondResurrectionCast[2].id, fallen.fetchId(), 'the next resurrection should immediately target the remaining corpse');
+
     leaderSession.partyRevivalAttempt = null;
+    leader.state.setDead(true);
     healer.skillset.skills = [];
     const scrollResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(scrollResult.source, 'scroll', 'a living companion must fall back to its unlimited resurrection scroll');
