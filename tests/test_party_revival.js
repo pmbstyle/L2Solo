@@ -101,6 +101,7 @@ try {
         fetchLocX: () => 100,
         fetchLocY: () => 0,
         fetchDestId: () => leader.fetchId(),
+        fetchStateAttack: () => true,
         state: { fetchCombats: () => true }
     }];
     const combatHeldResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
@@ -111,10 +112,23 @@ try {
         fetchLocX: () => 5000,
         fetchLocY: () => 0,
         fetchDestId: () => leader.fetchId(),
+        fetchStateAttack: () => true,
         state: { fetchCombats: () => true }
     }];
     const staleCorpseCombatResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
     assert.strictEqual(staleCorpseCombatResult.handled, true, 'a stale combat record far from a corpse must not block resurrection');
+    leaderSession.partyRevivalAttempt = null;
+    World.npc.spawns = [{
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 100,
+        fetchLocY: () => 0,
+        fetchDestId: () => leader.fetchId(),
+        fetchStateAttack: () => false,
+        state: { fetchCombats: () => true }
+    }];
+    const staleCloseCorpseCombatResult = PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} });
+    assert.strictEqual(staleCloseCorpseCombatResult.handled, true, 'a close stale combat flag without an active attack must not block resurrection forever');
     leaderSession.partyRevivalAttempt = null;
     World.npc.spawns = [];
     healer.state.fetchHits = () => true;

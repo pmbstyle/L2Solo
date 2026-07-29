@@ -74,7 +74,7 @@ class Npc extends NpcModel {
     }
 
     enterCombatState(session, actor) {
-        if (this.state.fetchCombats()) {
+        if (this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.()) {
             return;
         }
 
@@ -88,7 +88,8 @@ class Npc extends NpcModel {
 
         this.timer.combatStart = setTimeout(() => {
             this.timer.combatStart = undefined;
-            if (!this.state.fetchCombats()) {
+            if (!this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.()) {
+                if (this.state.fetchCombats()) this.abortCombatState(session);
                 return;
             }
 
@@ -100,6 +101,14 @@ class Npc extends NpcModel {
             let lastChaseRepathAt = 0;
 
             this.timer.combat = setInterval(() => {
+                // A dead target cannot be chased or hit.  Leaving the NPC in
+                // combat here pins its target to the corpse indefinitely and
+                // makes party resurrection believe the fight never ended.
+                if (actor?.isDead?.() || actor?.state?.fetchDead?.()) {
+                    this.abortCombatState(session);
+                    return;
+                }
+
                 if (new SpeckMath.Point(this.fetchLocX(), this.fetchLocY()).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1500) {
                     this.abortCombatState(session); // Actor is out of reach
                     return;

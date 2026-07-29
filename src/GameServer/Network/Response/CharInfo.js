@@ -15,7 +15,10 @@ function charInfo(actor) {
     const privateStoreType = actor.fetchPrivateStoreType();
     const standingState = actor.state.fetchSeated() ? 0x00 : 0x01;
     const runningState = actor.state.fetchWalkin?.() ? 0x00 : 0x01;
-    const combatState = actor.state.fetchCombats?.() ? 0x01 : 0x00;
+    // The C4 client renders this flag as a persistent red combat aura around
+    // the nameplate. Combat is already represented by AutoAttackStart/Stop,
+    // so do not expose this cosmetic state in CharInfo for players or bots.
+    const combatState = 0x00;
     const deadState = actor.state.fetchDead?.() ? 0x01 : 0x00;
     const title = actor.fetchTitle();
 

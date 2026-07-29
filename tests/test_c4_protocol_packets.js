@@ -291,7 +291,7 @@ const visualTitleStart = visualNameEnd + 2 + (28 * 4) + (4 * 8) + (3 * 4);
 const visualTitleEnd = findUtf16Terminator(visualStateInfo, visualTitleStart);
 const visualFlagsOffset = visualTitleEnd + 2 + (5 * 4);
 assert.strictEqual(visualStateInfo[visualFlagsOffset + 1], 0, 'C4 CharInfo should mark a walking actor as not running');
-assert.strictEqual(visualStateInfo[visualFlagsOffset + 2], 1, 'C4 CharInfo should expose active combat');
+assert.strictEqual(visualStateInfo[visualFlagsOffset + 2], 0, 'C4 CharInfo should suppress the red combat aura around player nameplates');
 assert.strictEqual(visualStateInfo[visualFlagsOffset + 3], 1, 'C4 CharInfo must retain the authoritative dead flag after Die');
 
 const privateStoreSell = ServerResponse.privateStoreMsg(actor, 'Cheap C-Grade gear');
