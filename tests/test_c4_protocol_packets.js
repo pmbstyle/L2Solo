@@ -250,6 +250,7 @@ assert.strictEqual(etcStatusUpdate.readInt32LE(5), 0, 'C4 EtcStatusUpdate should
 
 const userInfo = ServerResponse.userInfo(actor);
 assert.strictEqual(userInfo[0], 0x04);
+assert.strictEqual(userInfo.readInt32LE(13), 0, 'C4 UserInfo must send boat object id, not character heading');
 assert.deepStrictEqual(actor.paperdollIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
 assert.deepStrictEqual(actor.paperdollSelfIdSlots, [7, ...Array.from({ length: 14 }, (_, i) => i)]);
 assert.ok(userInfo.includes(0xff), 'C4 UserInfo should include trailing name-color bytes');
@@ -269,8 +270,13 @@ assert.ok(ServerResponse.userInfo(actor).includes(0x40), 'C4 UserInfo should exp
 
 const charInfo = ServerResponse.charInfo(actor);
 assert.strictEqual(charInfo[0], 0x03);
+assert.strictEqual(charInfo.readInt32LE(13), 0, 'C4 CharInfo must send boat object id, not character heading');
 assert.ok(charInfo.includes(0xff), 'C4 CharInfo should include trailing name-color bytes');
 assert.strictEqual(charInfoEquipment(charInfo).weapon, 1007, 'C4 CharInfo should display right-hand weapons');
+const boatActor = fakeActor();
+boatActor.fetchBoatId = () => 7000001;
+assert.strictEqual(ServerResponse.userInfo(boatActor).readInt32LE(13), 7000001, 'C4 UserInfo should preserve an attached boat object id');
+assert.strictEqual(ServerResponse.charInfo(boatActor).readInt32LE(13), 7000001, 'C4 CharInfo should preserve an attached boat object id');
 const nameColorOffset = charInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
 assert.ok(nameColorOffset > 0, 'C4 CharInfo should end its meaningful payload with name color');
 const charInfoTail = charInfo.subarray(nameColorOffset + 4 - 37, nameColorOffset + 4);

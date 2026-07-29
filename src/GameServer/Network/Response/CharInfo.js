@@ -2,6 +2,11 @@ const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
+function boatObjectId(actor) {
+    const boat = actor?.fetchBoat?.() || actor?.boat;
+    return Number(actor?.fetchBoatId?.() ?? boat?.fetchId?.() ?? boat?.id ?? 0) || 0;
+}
+
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
     const weaponDisplayId = actor.backpack.fetchPaperdollSelfId(7) || actor.backpack.fetchPaperdollSelfId(14) || 0;
@@ -26,7 +31,10 @@ function charInfo(actor) {
         .writeD(actor.fetchLocX())
         .writeD(actor.fetchLocY())
         .writeD(actor.fetchLocZ())
-        .writeD(actor.fetchHead())
+        // C4 reserves this field for the boat object id, not the character
+        // heading. A non-zero heading made every ordinary character appear
+        // attached to a non-existent vehicle on the client.
+        .writeD(boatObjectId(actor))
         .writeD(actor.fetchId())
         .writeS(actor.fetchName())
         .writeD(actor.fetchRace())
