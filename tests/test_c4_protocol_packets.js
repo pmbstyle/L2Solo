@@ -91,7 +91,10 @@ function fakeActor(paperdoll = fakePaperdoll()) {
         fetchCp: () => 77,
         fetchCharges: () => 3,
         state: {
-            fetchSeated: () => false
+            fetchSeated: () => false,
+            fetchWalkin: () => false,
+            fetchCombats: () => false,
+            fetchDead: () => false
         }
     };
 
@@ -275,6 +278,22 @@ assert.strictEqual(charInfoTail.readInt32LE(0), 0, 'C4 CharInfo should send moun
 assert.strictEqual(charInfoTail.readInt32LE(4), 10, 'C4 CharInfo should send class id after mount NPC id');
 assert.strictEqual(charInfoTail.readInt32LE(8), 0, 'C4 CharInfo should not send CP in the public tail');
 
+const visualStateActor = fakeActor();
+visualStateActor.state = {
+    fetchSeated: () => false,
+    fetchWalkin: () => true,
+    fetchCombats: () => true,
+    fetchDead: () => true
+};
+const visualStateInfo = ServerResponse.charInfo(visualStateActor);
+const visualNameEnd = findUtf16Terminator(visualStateInfo, 21);
+const visualTitleStart = visualNameEnd + 2 + (28 * 4) + (4 * 8) + (3 * 4);
+const visualTitleEnd = findUtf16Terminator(visualStateInfo, visualTitleStart);
+const visualFlagsOffset = visualTitleEnd + 2 + (5 * 4);
+assert.strictEqual(visualStateInfo[visualFlagsOffset + 1], 0, 'C4 CharInfo should mark a walking actor as not running');
+assert.strictEqual(visualStateInfo[visualFlagsOffset + 2], 1, 'C4 CharInfo should expose active combat');
+assert.strictEqual(visualStateInfo[visualFlagsOffset + 3], 1, 'C4 CharInfo must retain the authoritative dead flag after Die');
+
 const privateStoreSell = ServerResponse.privateStoreMsg(actor, 'Cheap C-Grade gear');
 assert.strictEqual(privateStoreSell[0], 0x9c, 'C4 PrivateStoreMsgSell should use opcode 0x9c');
 assert.strictEqual(privateStoreSell.readInt32LE(1), actor.fetchId(), 'C4 PrivateStoreMsgSell should include the seller object id');
@@ -430,6 +449,13 @@ assert.strictEqual(attack.readInt16LE(26), 0, 'C4 Attack should send no extra hi
 const npcInfo = ServerResponse.npcInfo(fakeNpc());
 assert.strictEqual(npcInfo[0], 0x16);
 assert.ok(npcInfo.length >= 208, 'C4 NpcInfo should include team/collision tail fields');
+
+const deadNpc = fakeNpc();
+deadNpc.fetchStateDead = () => 0;
+deadNpc.state = { fetchDead: () => true };
+const deadNpcInfo = ServerResponse.npcInfo(deadNpc);
+const npcStateOffset = 1 + (18 * 4) + (4 * 8) + (3 * 4);
+assert.strictEqual(deadNpcInfo[npcStateOffset + 3], 1, 'C4 NpcInfo must use the NPC state-machine dead flag instead of stale model state');
 
 const deleteObject = ServerResponse.deleteOb(3000001);
 assert.strictEqual(deleteObject[0], 0x12, 'C4 DeleteObject opcode should be 0x12');

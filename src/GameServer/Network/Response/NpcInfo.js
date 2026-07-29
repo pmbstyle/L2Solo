@@ -3,6 +3,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function npcInfo(npc) {
     const packet = new SendPacket(0x16);
+    const deadState = npc.state?.fetchDead?.() ? 0x01 : (npc.fetchStateDead() ? 0x01 : 0x00);
 
     packet
         .writeD(npc.fetchId())
@@ -33,7 +34,7 @@ function npcInfo(npc) {
         .writeC(0x01)  // Name above character
         .writeC(npc.fetchStateRun())
         .writeC(npc.fetchStateAttack())
-        .writeC(npc.fetchStateDead())
+        .writeC(deadState)
         .writeC(npc.fetchStateInvisible())
         .writeS(npc.fetchName())
         .writeS(npc.fetchTitle())
