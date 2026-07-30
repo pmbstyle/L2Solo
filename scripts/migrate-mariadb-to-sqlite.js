@@ -11,7 +11,7 @@ const rootDir = path.resolve(__dirname, '..');
 const TABLE_ORDER = [
     'accounts', 'characters', 'clans', 'clan_crests', 'items',
     'character_recipes', 'character_quests', 'warehouse_items', 'skills',
-    'shortcuts', 'macros', 'bot_life_state', 'bot_goal_state',
+    'shortcuts', 'macros', 'bot_life_state', 'bot_goal_state', 'bot_personas',
     'bot_social_memory', 'bot_life_events', 'bot_background_parties'
 ];
 const SEQUENCE_TABLES = ['characters', 'clans', 'clan_crests', 'items', 'warehouse_items', 'bot_life_events'];
@@ -97,7 +97,7 @@ function normalizeValue(value) {
 function sourceSelect(table) {
     const characterChildren = new Set([
         'items', 'character_recipes', 'character_quests', 'warehouse_items',
-        'skills', 'shortcuts', 'macros', 'bot_life_state', 'bot_goal_state', 'bot_life_events'
+        'skills', 'shortcuts', 'macros', 'bot_life_state', 'bot_goal_state', 'bot_personas', 'bot_life_events'
     ]);
     if (characterChildren.has(table)) {
         return `SELECT source.* FROM \`${table}\` source INNER JOIN \`characters\` character_ref ON character_ref.id = source.characterId`;

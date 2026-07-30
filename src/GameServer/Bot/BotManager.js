@@ -5,6 +5,7 @@ const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
 const BotBrain    = invoke('GameServer/Bot/AI/BotBrain');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
@@ -545,6 +546,19 @@ const BotManager = {
                     session.setActor({
                         ...character, ...utils.crushOb(classInfo)
                     });
+                    // Persona generation is intentionally independent from
+                    // spawning. Static shop/craft services represent a fixed
+                    // service surface, while every other bot is modelled as a
+                    // simulated player and gets a durable seed-based profile.
+                    const staticService = !!storeCfg || (!!manufactureShop && !botData.coldCraftState);
+                    if (!staticService) {
+                        BotPersona.ensure({
+                            characterId: character.id,
+                            stats: botData.coldLifeState?.stats || {}
+                        }).then((persona) => {
+                            session.persona = persona;
+                        });
+                    }
                     // Hot bots do not have a client hotbar request to enable
                     // shots. Their stock is prepared before actor creation, so
                     // enable the compatible C4 auto-shot explicitly.

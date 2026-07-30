@@ -23,6 +23,7 @@ const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitm
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
@@ -165,6 +166,8 @@ const PopulationService = {
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     marketExpiryCleanupTimer: null,
+    personaBackfillTimer: null,
+    personaBackfillRunning: false,
     nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
@@ -265,6 +268,7 @@ const PopulationService = {
         }
 
         this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
+        this.schedulePersonaBackfill();
 
         Director.start();
     },
@@ -307,6 +311,11 @@ const PopulationService = {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
         }
+        if (this.personaBackfillTimer) {
+            clearInterval(this.personaBackfillTimer);
+            this.personaBackfillTimer = null;
+        }
+        this.personaBackfillRunning = false;
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -342,6 +351,31 @@ const PopulationService = {
 
         if (typeof this.seedTimer.unref === 'function') {
             this.seedTimer.unref();
+        }
+    },
+
+    schedulePersonaBackfill() {
+        if (this.personaBackfillTimer) return;
+
+        const run = () => {
+            if (this.personaBackfillRunning) return;
+            this.personaBackfillRunning = true;
+            BotPersona.backfillGenerated().then((result) => {
+                // Only a successful short read closes this one-time migration.
+                // A failed write stays scheduled for a later retry.
+                if (result.exhausted && this.personaBackfillTimer) {
+                    clearInterval(this.personaBackfillTimer);
+                    this.personaBackfillTimer = null;
+                }
+            }).finally(() => {
+                this.personaBackfillRunning = false;
+            });
+        };
+
+        run();
+        this.personaBackfillTimer = setInterval(run, 2000);
+        if (typeof this.personaBackfillTimer.unref === 'function') {
+            this.personaBackfillTimer.unref();
         }
     },
 

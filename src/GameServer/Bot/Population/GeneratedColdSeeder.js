@@ -12,6 +12,7 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
 const NAME_GENERATOR_VERSION = 2;
 
@@ -504,7 +505,9 @@ const GeneratedColdSeeder = {
         if (!limit || this.running) return Promise.resolve({ created: 0, seeded: 0, total: 0, limit });
 
         this.running = true;
-        return Promise.resolve().then(() => migratePopulationNames(LifeState.allStates(limit + 100))).then(() => {
+        return Promise.resolve()
+            .then(() => migratePopulationNames(LifeState.allStates(limit + 100)))
+            .then(() => {
             const plan = SeedPlanner.plan(
                 SpotProfiles.ensure(),
                 LifeState.allStates(limit + 100),
@@ -537,6 +540,7 @@ const GeneratedColdSeeder = {
                             loc: result.loc || randomNear(spot.center, index)
                         });
                         return hydrateColdCombatProfile(state)
+                            .then((profiledState) => BotPersona.ensure(profiledState).then(() => profiledState))
                             .then((profiledState) => LifeState.upsertState(profiledState, 'population_wave_seed'))
                             .then((saved) => {
                                 if (saved && result.created) created += 1;
