@@ -4,6 +4,7 @@ require('../src/Global');
 
 const Database = invoke('Database');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 
 const subject = { characterId: 2000123, stats: { generatedIndex: 987654 } };
 const first = BotPersona.generate(subject);
@@ -17,6 +18,25 @@ BotPersona.TRAITS.forEach((trait) => {
     assert(Number.isFinite(first.traits[trait]), `${trait} must be numeric`);
     assert(first.traits[trait] >= 0 && first.traits[trait] <= 1, `${trait} must remain normalized`);
 });
+
+const compact = BotBrainContext.compactStatus({ actor: null }, {
+    available: true,
+    name: 'PersonaProbe',
+    level: 20,
+    classId: 31,
+    mode: 'hunting',
+    intent: 'find_target',
+    role: 'dps',
+    vitals: { hpPct: 1, mpPct: 1 },
+    target: null,
+    party: null,
+    nearby: {},
+    blockers: [],
+    spot: null,
+    persona: first,
+    social: null
+});
+assert.deepStrictEqual(compact.persona, first, 'the model context must receive the stable persona alongside live status');
 
 const originalExecute = Database.execute;
 const statements = [];

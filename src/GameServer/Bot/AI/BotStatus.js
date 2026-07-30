@@ -207,6 +207,18 @@ function tradeSnapshot(session, bot) {
     };
 }
 
+function personaSnapshot(session) {
+    const persona = session?.persona;
+    if (!persona?.primaryDrive || !persona?.archetype || !persona?.traits) return null;
+
+    return {
+        primaryDrive: persona.primaryDrive,
+        archetype: persona.archetype,
+        traits: { ...persona.traits },
+        textCard: persona.textCard || ''
+    };
+}
+
 const BotStatus = {
     getStatus(session) {
         const bot = session.actor;
@@ -325,6 +337,7 @@ const BotStatus = {
             },
             nearby: nearbySnapshot(bot),
             trade: tradeSnapshot(session, bot),
+            persona: personaSnapshot(session),
             social: session.socialSummary || null,
             lastSocialEvent: session.lastSocialEvent || null,
             blockers: []

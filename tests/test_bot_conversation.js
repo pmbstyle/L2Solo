@@ -46,4 +46,15 @@ assert.strictEqual(
 const companion = session('Companion', { partyCompanion: true });
 assert.strictEqual(BotConversation.canStart(companion, belen, startedAt + 999999), false, 'player companions must not gossip autonomously');
 
+const socialRest = BotConversation.chooseTopic(
+    session('Social', { persona: { primaryDrive: 'social', traits: { sociability: 0.9 } } }),
+    session('Solo')
+);
+const wealthRest = BotConversation.chooseTopic(
+    session('Wealth', { persona: { primaryDrive: 'wealth', traits: { sociability: 0.2 } } }),
+    session('Solo')
+);
+assert(socialRest.opener.includes('familiar company'), 'social personas should frame rest dialogue around companionship');
+assert(wealthRest.opener.includes('pay for the next upgrade'), 'wealth personas should frame rest dialogue around practical earnings');
+
 console.log('Bot conversation checks passed');

@@ -272,6 +272,7 @@ function compactStatus(session, status, text = '') {
         inventory: inventorySnapshot(actor, text),
         skills: skillsSnapshot(actor, text),
         roleDecision: status.roleDecision || null,
+        persona: status.persona || null,
         social: status.social || null
     };
 }
