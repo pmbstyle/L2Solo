@@ -1,6 +1,7 @@
 const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 const DEFAULT_LEVEL_RANGE = 4;
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
@@ -28,6 +29,9 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
 
         const aAffinity = PartyAffinity.affinity(a, peers);
         const bAffinity = PartyAffinity.affinity(b, peers);
+        const aPreference = PersonaPartyPolicy.preference(a, peers, coverage).score;
+        const bPreference = PersonaPartyPolicy.preference(b, peers, coverage).score;
+        if (aPreference !== bPreference) return bPreference - aPreference;
         if (aAffinity !== bAffinity) return bAffinity - aAffinity;
 
         const aDistance = Math.abs(levelOf(a) - levelOf(anchor));

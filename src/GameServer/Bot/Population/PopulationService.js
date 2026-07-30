@@ -24,6 +24,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
@@ -713,6 +714,10 @@ const PopulationService = {
                         stats: {
                             formedAt: Date.now(),
                             memberNames: members.map((state) => state.name),
+                            personaFormation: Object.fromEntries(members.map((member) => [
+                                member.characterId,
+                                PersonaPartyPolicy.explain(member, members.filter((peer) => peer !== member), PartyComposition.roleCoverage(members))
+                            ])),
                             route: partySpot?.route || null,
                             acquisitionGoal: leader.stats?.equipmentPlan?.status === 'active'
                                 ? leader.stats.equipmentPlan

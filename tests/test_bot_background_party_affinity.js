@@ -4,6 +4,7 @@ require('../src/Global');
 
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 const tank = { characterId: 1, level: 15, party: { role: 'tank' } };
 const healer = { characterId: 2, level: 15, party: { role: 'healer' } };
@@ -13,6 +14,10 @@ const strangerBuffer = { characterId: 4, level: 15, party: { role: 'buffer' } };
 const history = PartyAffinity.recordRun(tank, [tank, healer], 100);
 assert.deepStrictEqual(history, { 2: { runs: 1, lastGroupedAt: 100 } });
 assert.strictEqual(PartyAffinity.affinity(familiarBuffer, [tank, healer]), 4);
+const familiarPreference = PersonaPartyPolicy.preference(familiarBuffer, [tank, healer], { tank: 1, healer: 1 });
+const strangerPreference = PersonaPartyPolicy.preference(strangerBuffer, [tank, healer], { tank: 1, healer: 1 });
+assert(familiarPreference.score > strangerPreference.score, 'commitment must amplify a proven party history rather than replace it with random personality');
+assert(familiarPreference.reasons.includes('familiar_party'), 'party preference explanations must expose why a familiar group won');
 assert.deepStrictEqual(
     PartyComposition.selectRecruits([tank, healer], [strangerBuffer, familiarBuffer], { maxSize: 3 }).map((state) => state.characterId),
     [3],
