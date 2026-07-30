@@ -4,6 +4,7 @@ require('../src/Global');
 
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 function actor(id, name) {
     return {
@@ -14,7 +15,10 @@ function actor(id, name) {
 
 const originalPartySay = BotManager.botPartySay;
 const originalTell = BotManager.botTell;
+const originalSessions = BotManager.sessions;
+const originalRecordEvent = BotSocialMemory.recordEvent;
 const messages = [];
+const socialEvents = [];
 
 try {
     BotManager.botPartySay = (_session, text) => {
@@ -24,6 +28,10 @@ try {
     BotManager.botTell = (_session, targetSession, text) => {
         messages.push({ scope: 'tell', target: targetSession.actor.fetchName(), text });
         return true;
+    };
+    BotSocialMemory.recordEvent = (leaderSession, botSession, eventName, detail) => {
+        socialEvents.push({ leaderSession, botSession, eventName, detail });
+        return Promise.resolve(null);
     };
 
     const leaderSession = { actor: actor(1, 'Slava') };
@@ -61,7 +69,12 @@ try {
     assert.match(messages.at(-1).text, /MP/, 'the mana warning should explain the actionable limitation');
 
     const target = actor(3, 'Belen');
-    const targetSession = { actor: target };
+    const targetSession = {
+        actor: target,
+        partyCompanion: true,
+        followPlayerSession: leaderSession
+    };
+    BotManager.sessions = [companionSession, targetSession];
     const skill = {
         fetchSelfId: () => 1068,
         fetchName: () => 'Might'
@@ -78,6 +91,8 @@ try {
     assert.deepStrictEqual(messages.at(-1), {
         scope: 'tell', target: 'Belen', text: 'Might is up on Belen.'
     });
+    assert.strictEqual(socialEvents.length, 1, 'a confirmed party support result should earn social credit');
+    assert.strictEqual(socialEvents[0].eventName, 'supported_party');
 
     assert.strictEqual(BotPartyChat.expectSkillResult(companionSession, {
         target,
@@ -119,4 +134,6 @@ try {
 } finally {
     BotManager.botPartySay = originalPartySay;
     BotManager.botTell = originalTell;
+    BotManager.sessions = originalSessions;
+    BotSocialMemory.recordEvent = originalRecordEvent;
 }

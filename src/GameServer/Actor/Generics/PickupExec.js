@@ -17,7 +17,13 @@ function pickupExec(session, actor, data, onComplete) {
             }, 500);
         });
     }).catch((err) => {
-        utils.infoWarn('GameServer', 'Pickup -> ' + err);
+        utils.infoWarn(
+            'GameServer',
+            'Pickup failed actor=%s item=%s error=%s',
+            actor?.fetchName?.() || actor?.fetchId?.() || 'unknown',
+            data?.id || 'unknown',
+            err?.message || String(err)
+        );
         onComplete?.();
     });
 }

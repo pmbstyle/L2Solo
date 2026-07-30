@@ -164,12 +164,14 @@ module.exports = {
                 return;
             }
 
-            // A recovering companion must stay seated even when its leader is
-            // far away.  Otherwise RestingState stands it up to follow, then
-            // FollowingState immediately seats it again for low HP/MP.
-            const shouldFollowLeader = recovered && (
+            // When the whole party rests, regroup first. FollowingState checks
+            // the seated leader before its low-resource branch, so the bot
+            // moves into formation and then sits there without oscillating.
+            // A companion resting alone still finishes recovery in place.
+            const shouldRegroupForPartyRest = leaderSeated && distance > 250;
+            const shouldFollowLeader = shouldRegroupForPartyRest || (recovered && (
                 distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
-            );
+            ));
             if (combatTargetId || shouldFollowLeader) {
                 session.plan = 'following';
                 session.currentTargetId = combatTargetId || undefined;

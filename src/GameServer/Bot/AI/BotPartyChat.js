@@ -134,6 +134,37 @@ function didLand(outcome) {
     );
 }
 
+function recordSupportCredit(session, request, target, skill) {
+    const leaderSession = session?.partyCompanion === true ? session.followPlayerSession : null;
+    if (!leaderSession?.actor) return false;
+    const targetId = Number(target?.fetchId?.() || 0);
+    const belongsToParty = targetId === Number(leaderSession.actor.fetchId?.() || 0) ||
+        (invoke('GameServer/Bot/BotManager').sessions || []).some(candidate => (
+            candidate?.partyCompanion === true &&
+            candidate.followPlayerSession === leaderSession &&
+            Number(candidate.actor?.fetchId?.() || 0) === targetId
+        ));
+    if (!belongsToParty) return false;
+    const now = Date.now();
+    const key = `${request.kind}:${target?.fetchId?.() || 0}:${skill?.fetchSelfId?.() || 0}`;
+    session.partySupportSocialCredit ??= new Map();
+    const previousAt = Number(session.partySupportSocialCredit.get(key) || 0);
+    if (now - previousAt < 60000) return false;
+    session.partySupportSocialCredit.set(key, now);
+    if (session.partySupportSocialCredit.size > 100) {
+        for (const [entryKey, at] of session.partySupportSocialCredit) {
+            if (now - Number(at) >= 60000) session.partySupportSocialCredit.delete(entryKey);
+        }
+    }
+    invoke('GameServer/Bot/AI/BotSocialMemory').recordEvent(
+        leaderSession,
+        session,
+        'supported_party',
+        `${request.kind} ${skill?.fetchSelfId?.() || 0} on ${target?.fetchId?.() || 0}`
+    );
+    return true;
+}
+
 function resultEntry(request, target, skill) {
     const targetName = target.fetchName?.() || 'the party';
     const skillName = skill.fetchName?.() || 'Support';
@@ -193,6 +224,7 @@ function confirmSkillResult(session, actor, target, skill, outcome) {
 
     session.pendingPartyChatResult = undefined;
     if (!didLand(outcome)) return false;
+    recordSupportCredit(session, request, target, skill);
     return announce(session, resultEntry(request, target, skill));
 }
 

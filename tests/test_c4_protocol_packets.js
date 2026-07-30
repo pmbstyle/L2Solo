@@ -243,6 +243,33 @@ assert.strictEqual(chooseInventoryItem[0], 0x6f, 'C4 ChooseInventoryItem respons
 assert.strictEqual(chooseInventoryItem.readInt32LE(1), 731, 'C4 ChooseInventoryItem should send the selected scroll item id');
 
 const actor = fakeActor();
+const movementTarget = {
+    fetchId: () => 3000001,
+    fetchLocX: () => 101,
+    fetchLocY: () => 202,
+    fetchLocZ: () => 303
+};
+const moveToPawn = ServerResponse.moveToPawn(actor, movementTarget, 80);
+assert.strictEqual(moveToPawn[0], 0x60, 'C4 MoveToPawn opcode should be 0x60');
+assert.strictEqual(moveToPawn.readInt32LE(5), movementTarget.fetchId(), 'C4 MoveToPawn should include the target object id');
+assert.strictEqual(moveToPawn.readInt32LE(25), movementTarget.fetchLocX(), 'C4 MoveToPawn must include target X after source coordinates');
+assert.strictEqual(moveToPawn.readInt32LE(29), movementTarget.fetchLocY(), 'C4 MoveToPawn must include target Y after source coordinates');
+assert.strictEqual(moveToPawn.readInt32LE(33), movementTarget.fetchLocZ(), 'C4 MoveToPawn must include target Z after source coordinates');
+
+const groundItem = {
+    fetchId: () => 1000002,
+    fetchSelfId: () => 57,
+    fetchLocX: () => 11,
+    fetchLocY: () => 22,
+    fetchLocZ: () => 33,
+    fetchStackable: () => 1,
+    fetchAmount: () => 1234
+};
+const spawnItem = ServerResponse.spawnItem(groundItem);
+assert.strictEqual(spawnItem[0], 0x0b, 'C4 SpawnItem opcode should be 0x0b');
+assert.strictEqual(spawnItem.readInt32LE(25), groundItem.fetchAmount(), 'C4 SpawnItem should include the ground stack amount');
+assert.strictEqual(spawnItem.readInt32LE(29), 0, 'C4 SpawnItem must include its trailing protocol field');
+
 const etcStatusUpdate = ServerResponse.etcStatusUpdate(actor);
 assert.strictEqual(etcStatusUpdate[0], 0xf3, 'C4 EtcStatusUpdate response opcode should be 0xf3');
 assert.strictEqual(etcStatusUpdate.readInt32LE(1), 3, 'C4 EtcStatusUpdate should send current charges first');

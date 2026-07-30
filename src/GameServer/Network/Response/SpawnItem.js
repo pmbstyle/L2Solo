@@ -10,7 +10,8 @@ function spawnItem(item) {
         .writeD(item.fetchLocY())
         .writeD(item.fetchLocZ())
         .writeD(item.fetchStackable())
-        .writeD(item.fetchAmount());
+        .writeD(item.fetchAmount())
+        .writeD(0x00); // C2/C4 trailing field
 
     return packet.fetchBuffer();
 }

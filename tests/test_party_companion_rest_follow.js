@@ -138,7 +138,13 @@ function fakeActor(id, loc = {}) {
         fetchIsOnline() { return true; },
         isDead() { return this.state.fetchDead(); },
         isBlocked() { return this.state.isBlocked(); },
-        moveTo(data) { this.moves.push(data); },
+        moveTo(data) {
+            if (data.previewOnly) {
+                if (this.session) this.session.lastPathfinding = { pathLength: 2, lowLodWarp: false };
+                return;
+            }
+            this.moves.push(data);
+        },
         select(data) { this.destId = data.id; },
         unselect() { this.destId = undefined; },
         statusUpdateVitals() {},
@@ -530,6 +536,28 @@ try {
     assert.strictEqual(restingPullBot.state.fetchSeated(), true, 'pulling should stay paused while a companion is regenerating');
     PartyCompanionService.updateSettings(leaderSession, { pullMode: 'auto' });
 
+    const regroupingRestBot = fakeActor(2000055, { locX: 900, locY: 0, hp: 100, maxHp: 100, mp: 10, maxMp: 100 });
+    regroupingRestBot.state.setSeated(true);
+    const regroupingRestSession = fakeSession('bot_regrouping_rest', regroupingRestBot);
+    regroupingRestSession.followPlayerSession = leaderSession;
+    regroupingRestSession.partyCompanion = true;
+    regroupingRestSession.plan = 'resting';
+    leader.state.setSeated(true);
+    leader.destId = undefined;
+    World.user = { sessions: [leaderSession, regroupingRestSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+
+    RestingState.tick(regroupingRestSession, regroupingRestBot, {}, { say() {} });
+
+    assert.strictEqual(regroupingRestSession.plan, 'following', 'a distant recovering companion should regroup when the leader sits');
+    assert.strictEqual(regroupingRestBot.state.fetchSeated(), false, 'the recovering companion should stand before moving to the resting party');
+    assert.strictEqual(regroupingRestSession.roleDecision.reason, 'leader_moved', 'rest regrouping should expose why the bot woke before recovery completed');
+    FollowingState.tick(regroupingRestSession, regroupingRestBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(regroupingRestSession.roleDecision.reason, 'move_near_sitting_leader', 'the regrouping companion should move into the seated leader formation before sitting again');
+    assert.strictEqual(regroupingRestBot.moves.length, 1, 'party rest regrouping should issue one formation move');
+    leader.state.setSeated(false);
+
     leader.destId = 1003;
     const assistingBot = fakeActor(2000006, { locX: 500, locY: 0 });
     const assistingSession = fakeSession('bot_assisting', assistingBot);
@@ -818,6 +846,62 @@ try {
     assert.deepStrictEqual(healerCasts, [{ id: woundedCompanion.fetchId(), selfId: 1011, ctrl: false }], 'an emergency heal must preempt a normal party buff instead of issuing two casts in one tick');
     assert.strictEqual(healerSession.roleDecision.action, 'heal_party', 'healer role decision should be party-wide');
 
+    healerCasts.length = 0;
+    healerBot.moves = [];
+    healerBot.locX = 0;
+    woundedCompanion.locX = 800;
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerCasts.length, 0, 'an out-of-range emergency heal must not use direct action movement through geodata');
+    assert.strictEqual(healerBot.moves.length, 1, 'an out-of-range healer should start a normal pathfinding approach');
+    assert.strictEqual(healerSession.pendingSupportApproach.targetId, woundedCompanion.fetchId(), 'the healer should retain the pending emergency target while approaching');
+    healerBot.locX = 250;
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerCasts.length, 1, 'the pending emergency heal should cast as soon as pathfinding brings the healer into native range');
+    assert.strictEqual(healerSession.pendingSupportApproach, undefined, 'a completed support approach must release its pending movement state');
+    healerBot.locX = 80;
+    woundedCompanion.locX = 120;
+
+    healerCasts.length = 0;
+    healerBot.locX = 0;
+    woundedCompanion.locX = 800;
+    woundedCompanion.hp = 60;
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerSession.pendingSupportApproach.kind, 'top_off', 'a distant non-critical target should queue a normal top-off approach');
+    const criticalCompanion = fakeActor(2000037, { locX: 120, locY: 0, hp: 20, maxHp: 100 });
+    const criticalCompanionSession = fakeSession('bot_critical_party', criticalCompanion);
+    criticalCompanionSession.followPlayerSession = healerLeaderSession;
+    criticalCompanionSession.partyCompanion = true;
+    criticalCompanionSession.plan = 'following';
+    World.user.sessions.push(criticalCompanionSession);
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(healerCasts, [{ id: criticalCompanion.fetchId(), selfId: 1011, ctrl: false }], 'a critical party member must preempt a pending top-off approach');
+    assert.strictEqual(healerSession.pendingSupportApproach, undefined, 'preempting a stale support approach must release its pending state after the emergency cast');
+    World.user.sessions.pop();
+
+    healerCasts.length = 0;
+    healerBot.hp = 100;
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(healerSession.pendingSupportApproach.kind, 'top_off', 'the normal distant top-off should be queued again once the emergency is gone');
+    healerBot.hp = 40;
+    FollowingState.tick(healerSession, healerBot, {
+        skillExec(session, bot, data) { healerCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(healerCasts, [{ id: healerBot.fetchId(), selfId: 1011, ctrl: false }], 'a badly wounded healer must preempt a pending top-off and preserve itself');
+    healerBot.hp = 100;
+    healerBot.locX = 80;
+    woundedCompanion.locX = 120;
+    woundedCompanion.hp = 25;
+
     healerBot.mp = 20;
     healerBot.skillset.skills.find((skill) => skill.fetchSelfId() === 1011).model.mp = 30;
     const lowManaHealChat = [];
@@ -873,6 +957,28 @@ try {
         executePvPCombat() {}
     });
     assert.strictEqual(healerAssistOptions?.basicAttackOnly, true, 'a healer with a melee weapon may assist using only a basic attack');
+
+    const busyAssistBot = fakeActor(2000098, { locX: 650, locY: 0, classId: 0 });
+    const busyAssistSession = fakeSession('bot_busy_party_assist', busyAssistBot);
+    busyAssistSession.followPlayerSession = healerLeaderSession;
+    busyAssistSession.partyCompanion = true;
+    busyAssistSession.plan = 'following';
+    busyAssistBot.state.setTowards('move');
+    let abortedOldFollow = 0;
+    busyAssistBot.automation.abortAll = () => {
+        abortedOldFollow++;
+        busyAssistBot.state.setTowards(false);
+    };
+    let busyAssistTarget = null;
+    World.user = { sessions: [healerLeaderSession, busyAssistSession] };
+    FollowingState.tick(busyAssistSession, busyAssistBot, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { busyAssistTarget = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(abortedOldFollow, 1, 'acquiring a party threat should cancel an obsolete follow movement');
+    assert.strictEqual(busyAssistTarget, healerAssistThreat.fetchId(), 'the bot should attack instead of falling through to ready after cancelling follow');
+    assert.strictEqual(busyAssistSession.currentTargetId, healerAssistThreat.fetchId(), 'a busy combat tick must retain the shared threat target');
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 
@@ -995,6 +1101,25 @@ try {
     assert.strictEqual(autoPullSkillCast, false, 'auto pull must not cast Aggression even when it is learned');
     assert.strictEqual(autoPullOptions?.basicAttackOnly, true, 'auto pull should start with a basic attack');
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
+
+    // The shared party setting is authoritative. A stale per-session mirror
+    // must never revive the legacy tank fallback after Pull Off.
+    PartyCompanionService.updateSettings(healerLeaderSession, { pullMode: 'off', pullerId: null });
+    autoPullTankSession.autoTaunt = true;
+    autoPullTankSession.currentTargetId = undefined;
+    autoPullTank.unselect();
+    let disabledPullCombat = false;
+    FollowingState.tick(autoPullTankSession, autoPullTank, {
+        skillExec() { disabledPullCombat = true; }
+    }, {
+        say() {},
+        executeCombat() { disabledPullCombat = true; },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(disabledPullCombat, false, 'Pull Off must block tank safe-pull even when session.autoTaunt is stale');
+    assert.notStrictEqual(autoPullTankSession.roleDecision.action, 'avoid_overpull', 'Pull Off should remain a quiet order instead of looking like a failed overpull check');
+    PartyCompanionService.updateSettings(healerLeaderSession, { pullMode: 'auto', pullerId: null });
+
     autoPullTank.mp = 100;
     autoPullTargetId = autoPullTank.fetchId();
     let engagedPulledTarget = null;
@@ -1506,6 +1631,42 @@ try {
     assert.strictEqual(partyHudBotBSession.roleDecision.action, 'follow_leader', 'non-puller should keep following while the mob is outside its attack range');
     assert.strictEqual(partyHudBotBSession.roleDecision.reason, 'hold_for_pull', 'following companion must not chase the marked pull target');
 
+    const rangedPullAdd = {
+        ...pulledMob,
+        id: 3012,
+        locX: 1250,
+        destId: partyHudBotA.fetchId(),
+        fetchId() { return this.id; },
+        fetchDestId() { return this.destId; },
+        fetchName: () => 'ranged pull add'
+    };
+    partyHudBotA.locX = 1100;
+    partyHudLeaderSession.partyPullState.phase = 'return';
+    World.npc = { spawns: [pulledMob, rangedPullAdd] };
+    World.fetchNpcsInRadius = () => [rangedPullAdd];
+    let rangedAddAssistId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { rangedAddAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(rangedAddAssistId, null, 'the camp must not run toward a ranged add that targets only a travelling puller');
+    assert.strictEqual(partyHudBotBSession.roleDecision.reason, 'hold_for_pull', 'a ranged add on the distant puller should preserve camp formation');
+    partyHudBotA.locX = partyHudLeader.locX;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { rangedAddAssistId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(rangedAddAssistId, rangedPullAdd.fetchId(), 'once the puller returns, the party must chase a ranged add that keeps firing from outside camp');
+    World.npc = { spawns: [pulledMob] };
+    World.fetchNpcsInRadius = () => [pulledMob];
+    partyHudBotA.locX = 40;
+    partyHudLeaderSession.partyPullState.phase = 'approach';
+    pulledMob.destId = undefined;
+    partyHudBotBSession.currentTargetId = undefined;
+    partyHudBotB.unselect();
+
     partyHudLeader.locX = 600;
     partyHudBotB.moves = [];
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
@@ -1545,6 +1706,31 @@ try {
     partyHudBotA.state.casts = false;
 
     pulledMob.destId = partyHudBotA.fetchId();
+    const pullAdd = {
+        fetchId: () => 3013,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchDestId: () => partyHudBotB.fetchId(),
+        fetchLocX: () => partyHudBotB.fetchLocX() + 100,
+        fetchLocY: () => partyHudBotB.fetchLocY(),
+        fetchLocZ: () => partyHudBotB.fetchLocZ(),
+        state: { fetchCombats: () => true },
+        fetchStateAttack: () => true
+    };
+    World.npc = { spawns: [pulledMob, pullAdd] };
+    World.fetchNpcsInRadius = () => [pulledMob, pullAdd];
+    let stoppedOpeningAttack = 0;
+    partyHudBotA.attack = {
+        clearTimers() { stoppedOpeningAttack++; },
+        abortCast() {}
+    };
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() { throw new Error('confirmed aggro must return even while the camp handles an add'); }, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'return', 'confirmed aggro must outrank an unrelated party-under-attack pause');
+    assert.strictEqual(stoppedOpeningAttack, 1, 'confirmed pull aggro must stop the repeating opening basic attack');
+    World.npc = { spawns: [pulledMob] };
+    World.fetchNpcsInRadius = () => [pulledMob];
     FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
         say() {}, executeCombat() { throw new Error('non-puller must not chase a mob that has only just aggroed the distant puller'); }, executePvPCombat() {}
     });
@@ -1562,10 +1748,6 @@ try {
     assert.strictEqual(partyHudBotBSession.roleDecision.reason, 'hold_for_pull', 'an incoming pull should keep every non-puller in leader formation');
     pulledMob.locX = 1200;
 
-    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
-        say() {}, executeCombat() { throw new Error('confirmed aggro should make the puller return before the party engages'); }, executePvPCombat() {}
-    });
-    assert.strictEqual(partyHudBotASession.roleDecision.reason, 'return', 'puller should return to the leader after aggro is confirmed');
     const returnMoves = partyHudBotA.moves.length;
     partyHudBotA.state.setTowards('move');
     partyHudLeader.locX = 500;
@@ -1638,6 +1820,15 @@ try {
         executePvPCombat() {}
     });
     assert.strictEqual(pulledTargetId, pulledMob.fetchId(), 'puller should keep attacking after the delivered pull enters engage phase');
+    pulledMob.locX = 900;
+    let rangedPullChaseId = null;
+    FollowingState.tick(partyHudBotBSession, partyHudBotB, {}, {
+        say() {},
+        executeCombat(_session, _bot, npc) { rangedPullChaseId = npc.fetchId(); },
+        executePvPCombat() {}
+    });
+    assert.strictEqual(rangedPullChaseId, pulledMob.fetchId(), 'after the puller returns, melee companions should chase a ranged pull that refuses to enter camp');
+    pulledMob.locX = partyHudBotB.locX + 160;
     partyHudLeaderSession.partyPullState.startedAt = Date.now() - 61000;
     assert.strictEqual(PartyPulling.current(partyHudLeaderSession, PartyCompanionService.getSettings(partyHudLeaderSession)).target, pulledMob, 'a living pulled mob must stay the party target after one minute');
     let assistedPulledMobId = null;
