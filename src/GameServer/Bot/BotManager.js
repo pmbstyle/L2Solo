@@ -33,6 +33,19 @@ const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     return { name: name, merchantConfigName: name, race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: cfg.locX, locY: cfg.locY, locZ: cfg.locZ };
 });
 
+function personaTraits(persona) {
+    if (!persona?.traits) return { social: 'unavailable', style: 'unavailable' };
+    const pct = (name) => Math.round(Number(persona.traits[name] || 0) * 100);
+    return {
+        social: `soc ${pct('sociability')} / bond ${pct('commitment')} / help ${pct('empathy')}`,
+        style: `safe ${pct('caution')} / aim ${pct('ambition')} / lead ${pct('assertiveness')} / calm ${pct('resilience')}`
+    };
+}
+
+function personaArchetype(persona) {
+    return persona?.archetype ? String(persona.archetype).replace(/_/g, ' ') : 'unavailable';
+}
+
 const merchantConfigFor = (botData, characterName) => MerchantConfigs[botData.merchantConfigName || characterName];
 
 function isOnGiranMarketPlaza(loc = {}) {
@@ -148,6 +161,8 @@ const BotManager = {
         const availability = BotAvailability.evaluate(playerSession, botSession);
         const social = availability.memory ? `${availability.relationship}, trust ${availability.memory.trust}, familiarity ${availability.memory.familiarity}` : 'none';
         const invite = availability.available ? 'available' : availability.reasonText;
+        const persona = status.persona;
+        const traits = personaTraits(persona);
 
         let body = `${Html.font(status.name, Html.COLOR.title)}<br>`;
         body += Html.statusTable([
@@ -169,6 +184,10 @@ const BotManager = {
             ['PvP AI', safe(pvpDecision)],
             ['Buffs', safe(buffs)],
             ['Trade', safe(trade)],
+            ['Type', safe(personaArchetype(persona))],
+            ['Drive', safe(persona?.primaryDrive || 'unavailable')],
+            ['Social', safe(traits.social)],
+            ['Style', safe(traits.style)],
             ['Social', safe(social)],
             ['Invite', safe(invite)]
         ]);
@@ -190,6 +209,8 @@ const BotManager = {
         const lead = state.stats?.marketLead;
         const wanted = state.stats?.marketWanted;
         const history = Object.values(state.stats?.partyHistory || {});
+        const persona = BotPersona.generate(state);
+        const traits = personaTraits(persona);
         const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
             ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
             ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
@@ -197,6 +218,8 @@ const BotManager = {
             ['Travel', safe(travel ? `${travel.reason} -> ${travel.townName || 'field'}` : 'none')],
             ['Market Lead', safe(lead ? `${lead.itemName} in ${lead.town} for ${lead.price}` : 'none')],
             ['WTB', safe(wanted ? wanted.itemName || `Item ${wanted.itemId}` : 'none')],
+            ['Type', safe(personaArchetype(persona))], ['Drive', safe(persona?.primaryDrive || 'unavailable')],
+            ['Social', safe(traits.social)], ['Style', safe(traits.style)],
             ['Party Bonds', safe(`${history.length} remembered partners`)]
         ]) + '<br>' + Html.actionFooter([{ label: 'Refresh', command: `bot-status ${state.name}` }]);
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), Html.page(body, { title: 'Cold Bot Status' })));

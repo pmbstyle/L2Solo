@@ -29,14 +29,17 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
 
         const aAffinity = PartyAffinity.affinity(a, peers);
         const bAffinity = PartyAffinity.affinity(b, peers);
-        const aPreference = PersonaPartyPolicy.preference(a, peers, coverage).score;
-        const bPreference = PersonaPartyPolicy.preference(b, peers, coverage).score;
-        if (aPreference !== bPreference) return bPreference - aPreference;
         if (aAffinity !== bAffinity) return bAffinity - aAffinity;
 
         const aDistance = Math.abs(levelOf(a) - levelOf(anchor));
         const bDistance = Math.abs(levelOf(b) - levelOf(anchor));
         if (aDistance !== bDistance) return aDistance - bDistance;
+
+        // Persona only distinguishes otherwise equally effective choices. It
+        // must not displace established party bonds or a tighter level match.
+        const aPreference = PersonaPartyPolicy.preference(a, peers, coverage).score;
+        const bPreference = PersonaPartyPolicy.preference(b, peers, coverage).score;
+        if (aPreference !== bPreference) return bPreference - aPreference;
         return Number(a.characterId || 0) - Number(b.characterId || 0);
     };
 }
