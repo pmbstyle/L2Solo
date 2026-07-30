@@ -49,8 +49,12 @@ function moveTo(session, actor, coords) {
         return;
     }
 
-    // Abort scheduled movement, user redirected the actor
-    actor.automation.abortAll(actor);
+    const previewOnly = coords.previewOnly === true;
+    // A route preview must not alter the actor or emit a false movement packet.
+    if (!previewOnly) {
+        // Abort scheduled movement, user redirected the actor
+        actor.automation.abortAll(actor);
+    }
 
     const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
     const requestedTo = { ...coords.to };
@@ -106,20 +110,22 @@ function moveTo(session, actor, coords) {
             // Low LOD: instant warp (we do not calculate movements at all)
             const snappedTo = { ...requestedTo };
             snappedTo.locZ = GeodataEngine.getHeight(snappedTo.locX, snappedTo.locY, snappedTo.locZ);
-            actor.setLocXYZ(snappedTo);
-            invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
             session.lastPathfinding = {
                 requestedTo,
                 routedTo: { ...snappedTo },
                 townRoute: null,
                 pathLength: 0,
+                routeUsable: true,
                 lowLodWarp: true,
                 distanceToPlayer,
                 destinationDistanceToPlayer,
                 strategy: 'low_lod_direct',
                 at: Date.now()
             };
-            return;
+            if (previewOnly) return session.lastPathfinding;
+            actor.setLocXYZ(snappedTo);
+            invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+            return session.lastPathfinding;
         }
 
         const isClose = isCompanion || distanceToPlayer <= 500;
@@ -130,19 +136,32 @@ function moveTo(session, actor, coords) {
 
         if (!path || path.length <= 1) {
             const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+            const previousTownRoutePlan = session.townRoutePlan;
             const routeResult = TownPathfinder.routeWithSession(session, actor, coords.from, requestedTo);
+            if (previewOnly) session.townRoutePlan = previousTownRoutePlan;
             pathTarget = { ...routeResult.to };
             townRouteDiagnostics = routeResult.diagnostics;
-            coords.to.locX = pathTarget.locX;
-            coords.to.locY = pathTarget.locY;
-            coords.to.locZ = pathTarget.locZ;
+            if (!previewOnly) {
+                coords.to.locX = pathTarget.locX;
+                coords.to.locY = pathTarget.locY;
+                coords.to.locZ = pathTarget.locZ;
+            }
             pathStrategy = townRouteDiagnostics?.changedTarget ? 'town_waypoint_fallback' : 'direct_fallback';
 
             path = GeodataEngine.findPath(startX, startY, startZ, pathTarget.locX, pathTarget.locY, pathTarget.locZ);
-        } else if (session) {
+        } else if (session && !previewOnly) {
             session.townRoutePlan = null;
         }
 
+        const routeFound = Array.isArray(path) && path.length > 1;
+        // A* is deliberately bounded and can return null in otherwise open
+        // terrain. The runtime has always handled that case with a direct
+        // movement fallback, so distinguish a clear line from a genuinely
+        // blocked destination before callers decide to reject the route.
+        const fallbackLineOfSight = !routeFound && GeodataEngine.hasLineOfSight(
+            startX, startY, startZ,
+            pathTarget.locX, pathTarget.locY, pathTarget.locZ
+        );
         console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${pathTarget.locX}, ${pathTarget.locY}, ${pathTarget.locZ}) strategy=${pathStrategy} -> Waypoints: ${path ? path.length : 0}`);
         if (!path || path.length <= 1) {
             path = [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }];
@@ -152,12 +171,16 @@ function moveTo(session, actor, coords) {
             routedTo: { ...pathTarget },
             townRoute: townRouteDiagnostics,
             pathLength: path.length,
+            routeUsable: routeFound || fallbackLineOfSight,
             lowLodWarp: false,
             distanceToPlayer,
             destinationDistanceToPlayer,
             strategy: pathStrategy,
             at: Date.now()
         };
+        if (previewOnly) {
+            return session.lastPathfinding;
+        }
 
         const moveAlongPath = (index) => {
             if (index >= path.length) {
@@ -235,6 +258,7 @@ function moveTo(session, actor, coords) {
 
         actor.state.setTowards('move');
         moveAlongPath(0);
+        return session.lastPathfinding;
     }
 }
 

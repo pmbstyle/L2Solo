@@ -120,6 +120,9 @@ function applyEvent(record, eventName) {
         updated.trust += 3;
         updated.familiarity += 1;
         updated.helpedInCombat += 1;
+    } else if (eventName === 'supported_party') {
+        updated.trust += 1;
+        updated.familiarity += 1;
     } else if (eventName === 'trade_completed') {
         updated.trust += 1;
         updated.familiarity += 1;

@@ -4,6 +4,9 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 
 const PARTY_REVIVE_TIMEOUT_MS = 60000;
+const PARTY_DEATH_FRUSTRATION_WINDOW_MS = 10 * 60 * 1000;
+const PARTY_DEATH_WARNING_COUNT = 2;
+const PARTY_DEATH_LEAVE_COUNT = 3;
 const RESURRECTION_SCROLL_SKILL_ID = 2014;
 const PLAYER_RESURRECTION_SCROLLS = new Set([737, 3936, 3959]);
 
@@ -31,8 +34,30 @@ function isAlive(session) {
 
 function deadMembers(leaderSession) {
     return partySessions(leaderSession).filter((session) => (
-        session?.actor?.fetchIsOnline?.() === true && session.actor.isDead?.()
+        session?.actor?.fetchIsOnline?.() === true &&
+        session.actor.isDead?.() &&
+        session.partyLeaveAfterDeath !== true
     ));
+}
+
+function noteCompanionDeath(leaderSession, deadSession, now = Date.now()) {
+    if (!isCompanionOf(deadSession, leaderSession)) return { count: 0, warning: false, leaving: false };
+    const leaderId = Number(leaderSession.actor?.fetchId?.() || 0);
+    const previous = deadSession.partyDeathFrustration;
+    const sameLeader = Number(previous?.leaderId || 0) === leaderId;
+    const deaths = (sameLeader ? previous?.deaths || [] : [])
+        .map(Number)
+        .filter((at) => now - at <= PARTY_DEATH_FRUSTRATION_WINDOW_MS);
+    deaths.push(now);
+    deadSession.partyDeathFrustration = { leaderId, deaths };
+    const count = deaths.length;
+    const leaving = count >= PARTY_DEATH_LEAVE_COUNT;
+    deadSession.partyLeaveAfterDeath = leaving;
+    return {
+        count,
+        warning: count === PARTY_DEATH_WARNING_COUNT,
+        leaving
+    };
 }
 
 function partyCombatInProgress(leaderSession) {
@@ -184,6 +209,7 @@ function tick(session, leaderSession, Generics) {
 
 function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     if (!isCompanionOf(deadSession, leaderSession) || !leaderSession?.actor?.fetchIsOnline?.()) return true;
+    if (deadSession.partyLeaveAfterDeath === true) return true;
 
     const members = partySessions(leaderSession);
     const living = members.filter(isAlive);
@@ -195,6 +221,9 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
 
 module.exports = {
     PARTY_REVIVE_TIMEOUT_MS,
+    PARTY_DEATH_FRUSTRATION_WINDOW_MS,
+    PARTY_DEATH_WARNING_COUNT,
+    PARTY_DEATH_LEAVE_COUNT,
     partySessions,
     deadMembers,
     partyCombatInProgress,
@@ -202,5 +231,6 @@ module.exports = {
     resurrectionSkill,
     playerCanResurrect,
     tick,
+    noteCompanionDeath,
     shouldTownRespawn
 };
