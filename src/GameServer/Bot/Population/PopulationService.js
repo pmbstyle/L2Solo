@@ -534,7 +534,13 @@ const PopulationService = {
                         // persisted route. Keep it cold until its resolver
                         // reaches the destination, instead of spawning a
                         // hunter/resting bot stranded on a road or plaza.
-                        const available = states.filter((state) => !['pk_hunting', 'traveling'].includes(state.activity));
+                        // A persisted background party is one lifecycle unit.
+                        // Ambient visibility must not materialize one member
+                        // as a solo hot bot and silently dissolve the group.
+                        const available = states.filter((state) => (
+                            !['pk_hunting', 'traveling'].includes(state.activity) &&
+                            !state.party?.partyId
+                        ));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
                         const ambientRemaining = Math.min(

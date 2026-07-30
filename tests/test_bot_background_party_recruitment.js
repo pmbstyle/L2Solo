@@ -7,6 +7,9 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
+const BotManager = invoke('GameServer/Bot/BotManager');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const originals = {
     active: PartyState.active,
@@ -14,8 +17,11 @@ const originals = {
     assignParty: LifeState.assignParty,
     partyRequirementCounts: LifeState.partyRequirementCounts,
     clearParty: LifeState.clearParty,
+    cachedState: LifeState.cachedState,
     createOrUpdate: PartyState.createOrUpdate,
     setStatus: PartyState.setStatus,
+    loadAndSpawnBot: BotManager.loadAndSpawnBot,
+    findCurrentSpot: SpotService.findCurrentSpot,
     record: LifeEvents.record,
     partyMinSize: Config.partyMinSize,
     partyMaxSize: Config.partyMaxSize,
@@ -95,6 +101,87 @@ async function run() {
     ]);
     assert.deepStrictEqual(released.map((party) => party.partyId), ['bgp_elective']);
     assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
+
+    const activationOrder = [];
+    const groupedState = {
+        characterId: 91001,
+        accountName: 'bot_activation_probe',
+        name: 'ActivationProbe',
+        phase: 'cold',
+        activity: 'grouped',
+        homeRegion: 'human',
+        loc: { locX: -71300, locY: 258000, locZ: -3100 },
+        stats: {},
+        party: { partyId: 'bgp_activation_probe', leaderId: 91001 }
+    };
+    const releasedState = {
+        ...groupedState,
+        activity: 'hunting',
+        party: { partyId: null, leaderId: null }
+    };
+    PartyState.setStatus = async (partyId, status) => {
+        activationOrder.push(`status:${partyId}:${status}`);
+    };
+    LifeState.clearParty = async (partyId, reason) => {
+        activationOrder.push(`clear:${partyId}:${reason}`);
+        return 2;
+    };
+    LifeState.cachedState = (characterId) => characterId === groupedState.characterId ? releasedState : null;
+    SpotService.findCurrentSpot = () => null;
+    BotManager.loadAndSpawnBot = (_accountName, options) => {
+        activationOrder.push(`spawn:${options.coldLifeState?.party?.partyId || 'solo'}`);
+    };
+
+    const activated = await HotActivation.activate(groupedState, 'party_invite', { keepStoreLocation: true });
+    assert.strictEqual(activated.ok, true, 'an explicitly requested grouped bot should still materialize');
+    assert.deepStrictEqual(
+        activationOrder,
+        [
+            'status:bgp_activation_probe:dissolved',
+            'clear:bgp_activation_probe:hot_activation_party_invite',
+            'spawn:solo'
+        ],
+        'background party cleanup must finish before a member spawns from the released solo snapshot'
+    );
+
+    activationOrder.length = 0;
+    const blockedState = {
+        ...groupedState,
+        characterId: 91002,
+        name: 'BlockedActivationProbe'
+    };
+    LifeState.clearParty = async () => 0;
+    LifeState.cachedState = (characterId) => characterId === blockedState.characterId ? blockedState : null;
+    const blockedActivation = await HotActivation.activate(blockedState, 'party_invite', { keepStoreLocation: true });
+    assert.strictEqual(blockedActivation.ok, false, 'a member must not spawn while its persisted party link is still present');
+    assert.strictEqual(blockedActivation.reason, 'activation_prepare_failed');
+    assert(!activationOrder.some((entry) => entry.startsWith('spawn:')), 'failed party cleanup must stop hot activation before spawning');
+
+    activationOrder.length = 0;
+    const concurrentState = {
+        ...groupedState,
+        characterId: 91003,
+        name: 'ConcurrentActivationProbe'
+    };
+    const concurrentReleasedState = {
+        ...concurrentState,
+        activity: 'hunting',
+        party: { partyId: null, leaderId: null }
+    };
+    let releaseStatus;
+    const releaseGate = new Promise((resolve) => { releaseStatus = resolve; });
+    PartyState.setStatus = async () => releaseGate;
+    LifeState.clearParty = async () => 2;
+    LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentReleasedState : null;
+
+    const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true });
+    const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true });
+    await Promise.resolve();
+    releaseStatus();
+    const concurrentResults = await Promise.all([firstActivation, secondActivation]);
+    assert.strictEqual(concurrentResults.filter((result) => result.ok).length, 1, 'only one concurrent request may activate a character');
+    assert.strictEqual(concurrentResults.filter((result) => result.reason === 'activation_pending').length, 1, 'the competing request must observe the early activation reservation');
+    assert.strictEqual(activationOrder.filter((entry) => entry.startsWith('spawn:')).length, 1, 'concurrent activation must create exactly one hot AI session');
     console.log('Bot background party recruitment checks passed');
 }
 
@@ -107,8 +194,11 @@ run().catch((err) => {
     LifeState.assignParty = originals.assignParty;
     LifeState.partyRequirementCounts = originals.partyRequirementCounts;
     LifeState.clearParty = originals.clearParty;
+    LifeState.cachedState = originals.cachedState;
     PartyState.createOrUpdate = originals.createOrUpdate;
     PartyState.setStatus = originals.setStatus;
+    BotManager.loadAndSpawnBot = originals.loadAndSpawnBot;
+    SpotService.findCurrentSpot = originals.findCurrentSpot;
     LifeEvents.record = originals.record;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;

@@ -115,6 +115,26 @@ function activationDistance(placement, options) {
     return Number.isFinite(dist) ? String(Math.round(dist)) : 'n/a';
 }
 
+function releaseBackgroundParty(state, reason) {
+    const partyId = state?.party?.partyId;
+    if (!partyId) return Promise.resolve(state);
+
+    return BackgroundPartyState.setStatus(partyId, 'dissolved')
+        .then(() => LifeState.clearParty(partyId, `hot_activation_${reason}`))
+        .then((cleared) => {
+            const refreshed = LifeState.cachedState(state.characterId);
+            if (refreshed && !refreshed.party?.partyId) return refreshed;
+            if (Number(cleared || 0) <= 0 || refreshed?.party?.partyId) {
+                throw new Error(`background_party_release_failed:${partyId}`);
+            }
+            return {
+                ...state,
+                activity: state.activity === 'grouped' ? 'hunting' : state.activity,
+                party: { ...(state.party || {}), partyId: null, leaderId: null }
+            };
+        });
+}
+
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
         const loadState = typeof stateOrName === 'string'
@@ -134,77 +154,83 @@ const HotActivation = {
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
             }
+            // Reserve the character before party cleanup or recipe sync can
+            // yield. Otherwise two concurrent visibility/invite requests can
+            // both pass the guard and create independent hot AI sessions.
+            pendingActivations.add(state.characterId);
 
             const BotManager = invoke('GameServer/Bot/BotManager');
-            if (state.party?.partyId) {
-                BackgroundPartyState.setStatus(state.party.partyId, 'dissolved');
-                LifeState.clearParty(state.party.partyId);
-            }
+            let craftActivation = false;
+            return releaseBackgroundParty(state, reason).then((releasedState) => {
+                state = releasedState;
 
-            const craftShop = state.activity === 'crafting' && state.stats?.craftShop
-                ? CraftShopService.profileFor(state)
-                : null;
-            const plan = activationPlan(state, options);
-            const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
-            const placement = activationPlacement(state, {
-                ...options,
-                storeLoc: marketStore?.loc || craftShop?.loc || state.loc
-            });
-            pendingActivations.add(state.characterId);
-            if (marketStore) MarketOpportunity.removeColdStore(state.characterId);
-            const recipesReady = craftShop
-                ? CraftShopService.ensureRecipes(state.characterId, craftShop)
-                : Promise.resolve();
-            return recipesReady.then(() => {
-                BotManager.loadAndSpawnBot(state.accountName, {
-                name: state.name,
-                homeRegion: state.homeRegion,
-                newbieAnchor: !!state.stats?.newbieAnchor,
-                plan,
-                backgroundActivity: state.activity || 'hunting',
-                currentSpot: spotSnapshot(placement.spot),
-                spawnReady: true,
-                locX: placement.loc?.locX,
-                locY: placement.loc?.locY,
-                locZ: placement.loc?.locZ,
-                keepStoreLocation: !!marketStore || !!craftShop,
-                coldLifeState: !marketStore && !craftShop ? state : null,
-                coldMarketState: marketStore ? state : null,
-                coldCraftState: craftShop ? state : null,
-                privateStore: marketStore ? {
-                    storeType: Number(marketStore.storeType || 1),
-                    title: marketStore.autoTitle === false
-                        ? marketStore.title
-                        : marketStoreTitle(marketStore.items),
-                    town: marketStore.town || state.currentRegion || null,
-                    items: marketStore.items || []
-                } : null,
-                manufactureShop: craftShop
+                const craftShop = state.activity === 'crafting' && state.stats?.craftShop
+                    ? CraftShopService.profileFor(state)
+                    : null;
+                craftActivation = !!craftShop;
+                const plan = activationPlan(state, options);
+                const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
+                const placement = activationPlacement(state, {
+                    ...options,
+                    storeLoc: marketStore?.loc || craftShop?.loc || state.loc
                 });
+                if (marketStore) MarketOpportunity.removeColdStore(state.characterId);
+                const recipesReady = craftShop
+                    ? CraftShopService.ensureRecipes(state.characterId, craftShop)
+                    : Promise.resolve();
+                return recipesReady.then(() => {
+                    BotManager.loadAndSpawnBot(state.accountName, {
+                        name: state.name,
+                        homeRegion: state.homeRegion,
+                        newbieAnchor: !!state.stats?.newbieAnchor,
+                        plan,
+                        backgroundActivity: state.activity || 'hunting',
+                        currentSpot: spotSnapshot(placement.spot),
+                        spawnReady: true,
+                        locX: placement.loc?.locX,
+                        locY: placement.loc?.locY,
+                        locZ: placement.loc?.locZ,
+                        keepStoreLocation: !!marketStore || !!craftShop,
+                        coldLifeState: !marketStore && !craftShop ? state : null,
+                        coldMarketState: marketStore ? state : null,
+                        coldCraftState: craftShop ? state : null,
+                        privateStore: marketStore ? {
+                            storeType: Number(marketStore.storeType || 1),
+                            title: marketStore.autoTitle === false
+                                ? marketStore.title
+                                : marketStoreTitle(marketStore.items),
+                            town: marketStore.town || state.currentRegion || null,
+                            items: marketStore.items || []
+                        } : null,
+                        manufactureShop: craftShop
+                    });
 
-                setTimeout(() => {
-                    pendingActivations.delete(state.characterId);
-                }, 10000);
+                    const pendingTimer = setTimeout(() => {
+                        pendingActivations.delete(state.characterId);
+                    }, 10000);
+                    pendingTimer.unref?.();
 
-                console.info(
-                    'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s ready=%s',
-                    state.name,
-                    reason,
-                    state.activity || 'hunting',
-                    plan,
-                    placement.spot?.id || state.spotId || 'none',
-                    placement.loc?.locX || 0,
-                    placement.loc?.locY || 0,
-                    placement.loc?.locZ || 0,
-                    activationDistance(placement, options),
-                    (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
-                );
-                Metrics.recordActivation();
-                return { ok: true, state, reason };
+                    console.info(
+                        'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s ready=%s',
+                        state.name,
+                        reason,
+                        state.activity || 'hunting',
+                        plan,
+                        placement.spot?.id || state.spotId || 'none',
+                        placement.loc?.locX || 0,
+                        placement.loc?.locY || 0,
+                        placement.loc?.locZ || 0,
+                        activationDistance(placement, options),
+                        (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
+                    );
+                    Metrics.recordActivation();
+                    return { ok: true, state, reason };
+                });
             }).catch((error) => {
                 pendingActivations.delete(state.characterId);
-                utils.infoWarn('BotPopulation', 'craft shop activation failed for %s: %s', state.name, error.message || error);
-                return { ok: false, reason: 'craft_recipe_sync_failed', state };
+                const failureReason = craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed';
+                utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
+                return { ok: false, reason: failureReason, state };
             });
         });
     }

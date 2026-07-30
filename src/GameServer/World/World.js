@@ -121,7 +121,16 @@ const World = {
             const targetIsBot = targetSession && (targetSession.constructor.name === 'BotSession' || (targetSession.accountId && targetSession.accountId.startsWith('bot_')));
 
             if (targetIsBot) {
-                this.inviteBotCompanion(session, actor, targetSession, data.distribution, 'invite');
+                // Keep the native C4 request/answer lifecycle even though a
+                // SimPlayer has no client from which to send AnswerJoinParty.
+                // The server-side availability decision is the bot's answer.
+                targetSession.pendingPartyInvite = {
+                    requestorSession: session,
+                    requestorActor: actor,
+                    distribution: data.distribution,
+                    source: 'invite'
+                };
+                this.answerForTeamUp(targetSession, user, { id: 1 });
             } else {
                 user.session.dataSendToMe(ServerResponse.askForTeamUp(actor.fetchName(), data.distribution));
             }
@@ -146,7 +155,7 @@ const World = {
 
         if (!availability.available) {
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', availability.reason);
-            session.dataSendToMe(ServerResponse.actionFailed());
+            session.dataSendToMe(ServerResponse.joinParty(0));
             BotManager.botTell(targetSession, session, `I can't join right now: ${availability.reasonText}.`);
             console.info(
                 'BotParty :: %s refused %s: %s distance=%s',
@@ -165,7 +174,7 @@ const World = {
 
         if (!PartyCompanionService.attach(session, targetSession, attachOptions)) {
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
-            session.dataSendToMe(ServerResponse.actionFailed());
+            session.dataSendToMe(ServerResponse.joinParty(0));
             BotManager.botTell(targetSession, session, "Your party is full. Ask me again after making room.");
             return false;
         }
@@ -305,7 +314,26 @@ const World = {
     },
 
     answerForTeamUp(session, actor, data) {
-        console.info(data);
+        const pending = session.pendingPartyInvite;
+        session.pendingPartyInvite = null;
+
+        if (!pending?.requestorSession || !pending?.requestorActor) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        }
+
+        if (Number(data?.id) !== 1) {
+            pending.requestorSession.dataSendToMe(ServerResponse.joinParty(0));
+            return false;
+        }
+
+        return this.inviteBotCompanion(
+            pending.requestorSession,
+            pending.requestorActor,
+            session,
+            pending.distribution,
+            pending.source || 'invite'
+        );
     },
 
     oustPartyMember(session, actor, data) {

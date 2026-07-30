@@ -58,6 +58,11 @@ try {
         assert(!recovery.sql.includes('activity <> \'crafting\''), 'craft services must recover as cold because they have no static startup owner');
         assert(recovery.sql.includes("WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'"));
         assert.strictEqual(recovery.params.length, 2, 'recovery query should set next resolve and updated timestamps');
+        const dissolvedPartyRecovery = statements.find((entry) => entry.sql.includes('orphaned_dissolved_party'));
+        assert(dissolvedPartyRecovery, 'startup must release members left behind by a dissolved background party');
+        assert(dissolvedPartyRecovery.sql.includes('SET partyId = NULL'), 'orphan recovery must clear the persisted party id');
+        assert(dissolvedPartyRecovery.sql.includes("WHEN activity = 'grouped' THEN 'hunting'"), 'orphan recovery must return grouped members to an actionable solo state');
+        assert(dissolvedPartyRecovery.sql.includes("status <> 'active'"), 'active background parties must survive startup recovery');
         const craftRecovery = statements.find((entry) => entry.sql.includes("startup_craft_wait_recovery"));
         assert(craftRecovery, 'bot life init must release stale craft waits after a restart');
         assert(craftRecovery.sql.includes("AND activity = 'crafting'"), 'only stale station waits should be recovered as hunters');

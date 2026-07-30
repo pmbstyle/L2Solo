@@ -20,6 +20,7 @@ const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
@@ -779,11 +780,16 @@ const BotManager = {
                 setTimeout(() => {
                     this.botSay(session, `Alright, returning to hunt keltirs!`, playerSession);
                     if (session.followPlayerSession === playerSession && session.partyCompanion === true) {
-                        BotSocialMemory.recordEvent(playerSession, session, 'party_dismissed', 'chat_hunt');
+                        PartyCompanionService.detach(playerSession, session, {
+                            event: 'party_dismissed',
+                            source: 'chat_hunt',
+                            plan: 'hunting'
+                        });
+                    } else {
+                        session.plan = 'hunting';
+                        session.followPlayerSession = null;
+                        session.partyCompanion = false;
                     }
-                    session.plan = 'hunting';
-                    session.followPlayerSession = null;
-                    session.partyCompanion = false;
                 }, 800 + Math.random() * 800);
             }
 
