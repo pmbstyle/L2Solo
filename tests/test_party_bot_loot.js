@@ -288,6 +288,27 @@ try {
     );
     longWalkPickup.onComplete();
     assert.deepStrictEqual(botSession.partyGroundPickupQueue, [], 'a completed long walk should still clear its queue entry');
+
+    // By Turn and By Turn Including Spoil still require a physical companion
+    // to collect the ground object before the normal distribution resolver
+    // assigns it to the current recipient.
+    leaderSession.partyCompanionSettings = { distribution: 3 };
+    World.items = {
+        spawns: [{
+            fetchId: () => 500011,
+            fetchLocX: () => 130,
+            fetchLocY: () => 200,
+            fetchLocZ: () => -310
+        }]
+    };
+    leaderSession.lastGroundLootScanAt = 0;
+    PartyCompanionService.reconcileGroundLoot(botSession);
+    assert.deepStrictEqual(
+        pickupCalls[10] && { session: pickupCalls[10].session, actor: pickupCalls[10].actor, data: pickupCalls[10].data },
+        { session: botSession, actor: closestBot, data: { id: 500011 } },
+        'By Turn loot should still be collected from the ground by an available companion'
+    );
+    pickupCalls[10].onComplete();
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalRewards;
     ProgressionRates.rollGroup = originalRollGroup;

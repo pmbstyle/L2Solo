@@ -33,6 +33,9 @@ const COMPANION_TOWN_ERRAND_RADIUS = 7500;
 const COMPANION_TOWN_ERRAND_COOLDOWN_MS = 60000;
 const TOWN_CENTER_FALLBACK_RADIUS = 1500;
 const STARTER_GUIDE_TOWN_RADIUS = 1500;
+const CRITICAL_COMBAT_HP_RATIO = 0.25;
+const PARTY_RETREAT_DISTANCE = 500;
+const PARTY_RETREAT_REPATH_MS = 1500;
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -435,6 +438,48 @@ function moveToFollowTarget(session, bot, player) {
         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
         to: followTarget
     });
+    return true;
+}
+
+function retreatFromThreat(session, bot, threat, player, rooted) {
+    const retreatInProgress = Date.now() < Number(session.partyRetreatUntil || 0) &&
+        (!!session.moveTimer || bot.state?.fetchTowards?.());
+    session.currentTargetId = undefined;
+    bot.unselect();
+    bot.attack?.abortCast?.(session, bot);
+    bot.attack?.clearTimers?.();
+    bot.state?.setHits?.(false);
+
+    // Damage wakeups can run this state several times before a 500-unit route
+    // completes. Keep the existing escape movement instead of cancelling it
+    // and returning without a replacement route on every cooldown tick.
+    if (retreatInProgress) return true;
+
+    bot.automation?.abortAll?.(bot);
+    if (rooted) return false;
+
+    let dx = bot.fetchLocX() - threat.fetchLocX();
+    let dy = bot.fetchLocY() - threat.fetchLocY();
+    let magnitude = Math.sqrt((dx * dx) + (dy * dy));
+    if (magnitude < 1) {
+        dx = player.fetchLocX() - threat.fetchLocX();
+        dy = player.fetchLocY() - threat.fetchLocY();
+        magnitude = Math.sqrt((dx * dx) + (dy * dy));
+    }
+    if (magnitude < 1) {
+        dx = 1;
+        dy = 0;
+        magnitude = 1;
+    }
+
+    const retreatTarget = {
+        locX: Math.round(bot.fetchLocX() + ((dx / magnitude) * PARTY_RETREAT_DISTANCE)),
+        locY: Math.round(bot.fetchLocY() + ((dy / magnitude) * PARTY_RETREAT_DISTANCE)),
+        locZ: bot.fetchLocZ()
+    };
+    session.partyRetreatUntil = Date.now() + PARTY_RETREAT_REPATH_MS;
+    session.lastFollowMoveTarget = retreatTarget;
+    bot.moveTo({ from: loc(bot), to: retreatTarget });
     return true;
 }
 
@@ -937,6 +982,26 @@ module.exports = {
                 recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
                 keepRoleDecision = true;
             }
+        }
+
+        // A critically wounded non-tank should stop feeding the attacker.
+        // Healers still get the first action slot for a self/party heal; once
+        // no cast was started, every fragile role creates distance while
+        // remaining attached to the party lifecycle.
+        if (
+            !acted &&
+            partyThreat?.actor &&
+            role !== 'tank' &&
+            botVitals.hpRatio < CRITICAL_COMBAT_HP_RATIO &&
+            !bot.state.fetchCasts()
+        ) {
+            const moved = retreatFromThreat(session, bot, partyThreat.actor, player, impairments.rooted);
+            recordRoleDecision(session, bot, 'retreat', impairments.rooted ? 'critical_hp_rooted' : 'critical_hp_under_attack', {
+                targetId: partyThreat.actor.fetchId(),
+                hpRatio: botVitals.hpRatio,
+                moved
+            });
+            return;
         }
 
         if (!acted && pulling.enabled && pulling.puller?.session === session && pulling.puller.kind === 'bot') {

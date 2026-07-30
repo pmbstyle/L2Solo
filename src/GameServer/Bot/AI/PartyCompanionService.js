@@ -16,7 +16,7 @@ const PARTY_LOOT_RADIUS = 2500;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
 const GROUND_PICKUP_FALLBACK_TIMEOUT_MS = 8000;
 const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
-const RANDOM_LOOT_DISTRIBUTIONS = new Set([1, 2]);
+const AUTOMATED_LOOT_DISTRIBUTIONS = new Set([1, 2, 3, 4]);
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
 const PARTY_POSITION_UPDATE_DISTANCE = 150;
@@ -276,7 +276,7 @@ function reconcileGroundLoot(looterSession) {
 
 function nearestGroundLootPicker(looterSession, item) {
     const leaderSession = partyLeaderSession(looterSession);
-    if (!leaderSession || !item || !RANDOM_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
+    if (!leaderSession || !item || !AUTOMATED_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
 
     return membersForLeader(leaderSession)
         .filter((memberSession) => canPickGroundLoot(memberSession, leaderSession, item))
@@ -661,7 +661,7 @@ const PartyCompanionService = {
             : distributionForLeader(leaderSession);
 
         if (options.sendJoin !== false) {
-            leaderSession.dataSendToMe(ServerResponse.joinParty(distribution));
+            leaderSession.dataSendToMe(ServerResponse.joinParty(1));
         }
 
         restoreJoiningCompanion(companionSession, bot);

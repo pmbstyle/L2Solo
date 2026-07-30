@@ -505,6 +505,34 @@ function recoverStaleHotStates() {
     });
 }
 
+function recoverDissolvedPartyMembers() {
+    const timestamp = now();
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET partyId = NULL,
+            activity = CASE WHEN activity = 'grouped' THEN 'hunting' ELSE activity END,
+            activityStartedAt = ?,
+            nextResolveAt = ?,
+            statsJson = json_set(
+                COALESCE(statsJson, '{}'),
+                '$.backgroundPartyId', NULL,
+                '$.partyBreakReason', 'orphaned_dissolved_party',
+                '$.lastReason', 'orphaned_dissolved_party'
+            ),
+            updatedAt = ?
+        WHERE partyId IN (
+            SELECT partyId FROM bot_background_parties WHERE status <> 'active'
+        )`,
+        [timestamp, timestamp, timestamp]
+    ]).then((result) => {
+        const recovered = Number(result?.affectedRows || 0);
+        if (recovered > 0) {
+            utils.infoWarn('BotLife', 'released %d bot(s) from dissolved background parties', recovered);
+        }
+        return recovered;
+    });
+}
+
 function mergeSessionIntoLifeState(session, state, phase, reason = '', options = {}) {
     const observed = recordFromSession(session, phase, reason);
     const observedStats = parseJson(observed.statsJson, {});
@@ -654,7 +682,7 @@ const BotLifeState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));

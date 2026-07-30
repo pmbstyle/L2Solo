@@ -288,13 +288,41 @@ try {
         BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0, recentlyAbandonedAt: null });
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
         BotManager.botTell = (sourceSession, targetSession, text) => {
-            assert.strictEqual(sourceSession, inviteBotSession, 'invite acknowledgement should come from invited bot');
             assert.strictEqual(targetSession, leaderSession, 'invite acknowledgement should target party leader');
-            inviteTell = text;
+            if (sourceSession === inviteBotSession) inviteTell = text;
         };
-        BotManager.sessions = [inviteBotSession];
+        const nativeAnswerBot = fakeActor(2000045, { locX: 60, locY: 0 });
+        const nativeAnswerSession = fakeSession('bot_native_party_answer', nativeAnswerBot);
+        const nativeDeclineBot = fakeActor(2000046, { locX: 70, locY: 0 });
+        const nativeDeclineSession = fakeSession('bot_native_party_decline', nativeDeclineBot);
+        BotManager.sessions = [inviteBotSession, nativeAnswerSession, nativeDeclineSession];
 
         assert.strictEqual(World.inviteBotCompanion(leaderSession, leader, inviteBotSession, 1, 'test_invite'), true, 'available resting bot should join the party');
+        const acceptedPacket = [...leaderSession.packets].reverse().find((packet) => packet[0] === 0x3a);
+        assert.strictEqual(acceptedPacket.readInt32LE(1), 1, 'party success must send native JoinParty(1), not the loot distribution id');
+
+        nativeAnswerSession.pendingPartyInvite = {
+            requestorSession: leaderSession,
+            requestorActor: leader,
+            distribution: 3,
+            source: 'test_native_answer'
+        };
+        assert.strictEqual(World.answerForTeamUp(nativeAnswerSession, nativeAnswerBot, { id: 1 }), true, 'a bot should be able to accept through the native answer lifecycle');
+        assert.strictEqual(nativeAnswerSession.pendingPartyInvite, null, 'the accepted native invitation must be consumed once');
+        assert.strictEqual(nativeAnswerSession.followPlayerSession, leaderSession, 'native acceptance should attach the bot to the requesting leader');
+        const nativeAcceptedPacket = [...leaderSession.packets].reverse().find((packet) => packet[0] === 0x3a);
+        assert.strictEqual(nativeAcceptedPacket.readInt32LE(1), 1, 'native bot acceptance must return JoinParty success');
+
+        nativeDeclineSession.pendingPartyInvite = {
+            requestorSession: leaderSession,
+            requestorActor: leader,
+            distribution: 3,
+            source: 'test_native_decline'
+        };
+        assert.strictEqual(World.answerForTeamUp(nativeDeclineSession, nativeDeclineBot, { id: 0 }), false, 'a bot invitation may be declined');
+        assert.strictEqual(nativeDeclineSession.partyCompanion, undefined, 'declining a native invitation must not attach the bot');
+        const declinedPacket = [...leaderSession.packets].reverse().find((packet) => packet[0] === 0x3a);
+        assert.strictEqual(declinedPacket.readInt32LE(1), 0, 'native refusal must return JoinParty failure rather than ActionFailed');
     } finally {
         global.setTimeout = originalSetTimeout;
         BotManager.botTell = originalBotTell;
@@ -710,6 +738,40 @@ try {
 
     assert.strictEqual(selfDefenseSession.currentTargetId, selfDefenseNpc.fetchId(), 'companion should defend itself against recent incoming mob');
     assert.strictEqual(selfDefenseAssistId, selfDefenseNpc.fetchId(), 'companion should fight back when mob hits the bot');
+
+    const criticalBot = fakeActor(2000044, { locX: 120, locY: 0, hp: 20, maxHp: 100 });
+    const criticalSession = fakeSession('bot_critical_self_preservation', criticalBot);
+    criticalSession.followPlayerSession = leaderSession;
+    criticalSession.partyCompanion = true;
+    criticalSession.plan = 'following';
+    criticalSession.incomingThreatId = selfDefenseNpc.fetchId();
+    criticalSession.incomingThreatAt = Date.now();
+    let criticalCombatStarted = false;
+    World.user = { sessions: [leaderSession, criticalSession] };
+    FollowingState.tick(criticalSession, criticalBot, {}, {
+        say() {},
+        executeCombat() { criticalCombatStarted = true; },
+        executePvPCombat() { criticalCombatStarted = true; }
+    });
+    assert.strictEqual(criticalCombatStarted, false, 'a critically wounded non-tank should not start another attack');
+    assert.strictEqual(criticalSession.currentTargetId, undefined, 'critical self-preservation should clear the combat target');
+    assert.strictEqual(criticalSession.roleDecision.action, 'retreat', 'critical self-preservation should be observable');
+    assert.strictEqual(criticalSession.plan, 'following', 'retreat should keep the bot attached to the party');
+    assert.strictEqual(criticalBot.moves.length, 1, 'a critically wounded companion should create distance from its attacker');
+    assert(criticalBot.moves[0].to.locX < criticalBot.fetchLocX(), 'the retreat destination should lead away from the attacker and toward party safety');
+    let retreatAborts = 0;
+    criticalBot.automation.abortAll = () => {
+        retreatAborts += 1;
+        criticalBot.state.setTowards(false);
+    };
+    criticalBot.state.setTowards('move');
+    FollowingState.tick(criticalSession, criticalBot, {}, {
+        say() {},
+        executeCombat() { criticalCombatStarted = true; },
+        executePvPCombat() { criticalCombatStarted = true; }
+    });
+    assert.strictEqual(retreatAborts, 0, 'a repeated critical-HP tick must preserve the active retreat route');
+    assert.strictEqual(criticalBot.moves.length, 1, 'an active retreat should not be cancelled and immediately reissued');
 
     const hostileBot = fakeActor(2000019, { locX: 140, locY: 0, pvpFlag: 1, destId: leader.fetchId() });
     const hostileBotSession = fakeSession('bot_hostile_attacker', hostileBot);
