@@ -7,6 +7,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
 const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const Revive = invoke('GameServer/Actor/Generics/Revive');
 
 function actor(id, { dead = false, skills = [], items = [] } = {}) {
     const state = {
@@ -94,6 +95,36 @@ try {
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     BotManager.sessions = [healerSession, fallenSession];
+
+    const frustrationStart = 1_000_000;
+    assert.deepStrictEqual(
+        PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart),
+        { count: 1, warning: false, leaving: false },
+        'the first recent companion death should not threaten to leave'
+    );
+    assert.deepStrictEqual(
+        PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + 60_000),
+        { count: 2, warning: true, leaving: false },
+        'the second recent death should warn the party before any future departure'
+    );
+    assert.deepStrictEqual(
+        PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + 120_000),
+        { count: 3, warning: false, leaving: true },
+        'the third recent death should make the warned companion leave'
+    );
+    assert.strictEqual(PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, frustrationStart + 120_000), true, 'a companion leaving after repeated deaths must not wait for resurrection');
+    fallenSession.partyLeaveAfterDeath = false;
+    fallenSession.partyDeathFrustration = undefined;
+    fallenSession.deathTimerStart = frustrationStart;
+    Revive(fallenSession, fallen, { delayMs: 0 });
+    assert.strictEqual(fallenSession.deathTimerStart, undefined, 'native resurrection must release the death lifecycle so a later death is counted');
+    fallen.state.setDead(true);
+    assert.deepStrictEqual(
+        PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + PartyRevivalService.PARTY_DEATH_FRUSTRATION_WINDOW_MS + 1),
+        { count: 1, warning: false, leaving: false },
+        'death frustration should cool off after ten quiet minutes'
+    );
+    fallenSession.partyDeathFrustration = undefined;
 
     World.npc.spawns = [{
         fetchAttackable: () => true,

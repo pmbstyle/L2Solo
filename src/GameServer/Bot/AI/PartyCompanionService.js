@@ -13,6 +13,7 @@ const DEFAULT_PARTY_SETTINGS = {
     itemLastLootIndex: -1
 };
 const PARTY_LOOT_RADIUS = 2500;
+const PARTY_GROUND_LOOT_LEASH_RADIUS = 1200;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
 const GROUND_PICKUP_FALLBACK_TIMEOUT_MS = 8000;
 const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
@@ -214,7 +215,21 @@ function canPickGroundLoot(session, leaderSession, item) {
     if (actor?.storedPickup) {
         delete actor.storedPickup;
     }
-    return distance2d(actor, item) <= PARTY_LOOT_RADIUS;
+    return distance2d(actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
+}
+
+function partyGroundLootLeaderId(item) {
+    return Number(item?.model?.partyLootLeaderId ?? item?.partyLootLeaderId ?? 0);
+}
+
+function isOwnedPartyGroundLoot(leaderSession, item) {
+    const leaderId = Number(leaderSession?.actor?.fetchId?.() || 0);
+    return leaderId > 0 && partyGroundLootLeaderId(item) === leaderId;
+}
+
+function isInsidePartyGroundLootLeash(leaderSession, item) {
+    return !!leaderSession?.actor &&
+        distance2d(leaderSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
 }
 
 function partyCombatInProgress(leaderSession) {
@@ -237,7 +252,9 @@ function availableGroundLoot(leaderSession) {
     return (world().items?.spawns || [])
         .filter((item) => item?.fetchId && item?.fetchLocX && item?.fetchLocY)
         .filter((item) => !queuedIds.has(Number(item.fetchId())))
-        .filter((item) => members.some((memberSession) => distance2d(memberSession.actor, item) <= PARTY_LOOT_RADIUS))
+        .filter((item) => isOwnedPartyGroundLoot(leaderSession, item))
+        .filter((item) => isInsidePartyGroundLootLeash(leaderSession, item))
+        .filter((item) => members.some((memberSession) => distance2d(memberSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS))
         .sort((a, b) => Number(a.fetchId()) - Number(b.fetchId()));
 }
 
@@ -277,6 +294,7 @@ function reconcileGroundLoot(looterSession) {
 function nearestGroundLootPicker(looterSession, item) {
     const leaderSession = partyLeaderSession(looterSession);
     if (!leaderSession || !item || !AUTOMATED_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
+    if (!isOwnedPartyGroundLoot(leaderSession, item) || !isInsidePartyGroundLootLeash(leaderSession, item)) return null;
 
     return membersForLeader(leaderSession)
         .filter((memberSession) => canPickGroundLoot(memberSession, leaderSession, item))
@@ -308,9 +326,33 @@ function startQueuedGroundPickup(pickerSession) {
     const queue = pickerSession?.partyGroundPickupQueue;
     if (!picker || !queue?.length) return false;
     const now = Date.now();
+    const leaderSession = partyLeaderSession(pickerSession);
+    const pullState = leaderSession?.partyPullState || {};
+    const partyNeedsAttention = (
+        [leaderSession, ...membersForLeader(leaderSession)].some((memberSession) => memberSession?.actor?.isDead?.()) ||
+        ['getting_buffed', 'shopping', 'merchant'].includes(pickerSession.plan) ||
+        (
+            ['approach', 'aggro', 'return'].includes(pullState.phase) &&
+            Number(picker.fetchId?.()) === Number(pullState.pullerId || 0)
+        ) ||
+        partyCombatInProgress(leaderSession) ||
+        hasCampThreat(leaderSession)
+    );
+    const pickup = queue[0];
+    const queuedItem = (world().items?.spawns || [])
+        .find((item) => Number(item?.fetchId?.()) === Number(pickup?.id));
+    const invalidPickup = !queuedItem ||
+        !isOwnedPartyGroundLoot(leaderSession, queuedItem) ||
+        !isInsidePartyGroundLootLeash(leaderSession, queuedItem) ||
+        distance2d(picker, queuedItem) > PARTY_GROUND_LOOT_LEASH_RADIUS;
     if (pickerSession.partyGroundPickupInProgress) {
         const deadlineAt = Number(pickerSession.partyGroundPickupDeadlineAt || 0);
-        if (!deadlineAt || now < deadlineAt) return false;
+        // This is a handled AI action. Falling through into FollowingState
+        // would issue a formation move, cancel the pickup timer and make the
+        // bot visibly run out and back without collecting anything. Combat,
+        // revival and a broken leash still outrank loot and must reclaim the
+        // current tick immediately.
+        if ((!deadlineAt || now < deadlineAt) && !partyNeedsAttention && !invalidPickup) return true;
         // A competing movement order can cancel Automation's pickup timer
         // without invoking PickupExec's completion callback. Do not leave the
         // whole FIFO permanently locked behind that stale action.
@@ -318,8 +360,12 @@ function startQueuedGroundPickup(pickerSession) {
         picker.state?.setPickinUp?.(false);
         pickerSession.partyGroundPickupInProgress = false;
         pickerSession.partyGroundPickupDeadlineAt = 0;
+        // Invalidate a completion that was already queued before abortAll.
+        // The item stays queued across transient combat and can retry later.
+        pickerSession.partyGroundPickupAttempt = Number(pickerSession.partyGroundPickupAttempt || 0) + 1;
+        if (invalidPickup) queue.shift();
+        if (partyNeedsAttention || invalidPickup) return false;
     }
-    const leaderSession = partyLeaderSession(pickerSession);
     // A queued drop is lower priority than a resurrection.  This also
     // protects queues that were assigned before a companion died, rather
     // than letting the only living support bot run away from the corpse.
@@ -330,7 +376,6 @@ function startQueuedGroundPickup(pickerSession) {
     // built while following and become stale after it starts a town/support
     // action. Merely assigning a bot as puller is not combat: when no pull
     // is in progress it may collect ground loot like every other companion.
-    const pullState = leaderSession?.partyPullState || {};
     if (
         ['getting_buffed', 'shopping', 'merchant'].includes(pickerSession.plan) ||
         (
@@ -341,7 +386,14 @@ function startQueuedGroundPickup(pickerSession) {
     if (partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) return false;
     if (picker.state?.fetchPickinUp?.()) return false;
 
-    const pickup = queue[0];
+    if (!queuedItem ||
+        !isOwnedPartyGroundLoot(leaderSession, queuedItem) ||
+        !isInsidePartyGroundLootLeash(leaderSession, queuedItem) ||
+        !canPickGroundLoot(pickerSession, leaderSession, queuedItem)) {
+        queue.shift();
+        pickerSession.partyGroundPickupDeadlineAt = 0;
+        return startQueuedGroundPickup(pickerSession);
+    }
     pickerSession.partyGroundPickupInProgress = true;
     pickerSession.partyGroundPickupDeadlineAt = now + groundPickupTimeoutMs(picker, pickup);
     const attempt = Number(pickerSession.partyGroundPickupAttempt || 0) + 1;

@@ -36,6 +36,9 @@ const STARTER_GUIDE_TOWN_RADIUS = 1500;
 const CRITICAL_COMBAT_HP_RATIO = 0.25;
 const PARTY_RETREAT_DISTANCE = 500;
 const PARTY_RETREAT_REPATH_MS = 1500;
+const SUPPORT_APPROACH_TIMEOUT_MS = 10000;
+const SUPPORT_APPROACH_REPATH_MS = 1500;
+const SUPPORT_TARGET_DRIFT = 120;
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -283,6 +286,18 @@ function sitDown(session, bot) {
     return true;
 }
 
+function roleDecisionSignature(decision) {
+    return [
+        decision?.role,
+        decision?.action,
+        decision?.reason,
+        decision?.targetId,
+        decision?.protectedId,
+        decision?.threatSource,
+        decision?.phase
+    ].map((value) => value ?? '').join(':');
+}
+
 function recordRoleDecision(session, bot, action, reason, extra = {}) {
     const role = BotRoles.inferRole(bot);
     const previous = session.roleDecision;
@@ -296,14 +311,20 @@ function recordRoleDecision(session, bot, action, reason, extra = {}) {
 
     session.roleDecision = current;
 
-    const signature = `${role}:${action}:${reason}`;
+    const signature = roleDecisionSignature(current);
     const shouldLog = !previous ||
-        `${previous.role}:${previous.action}:${previous.reason}` !== signature ||
+        roleDecisionSignature(previous) !== signature ||
         current.at - (session.lastRoleDecisionLogAt || 0) > 10000;
 
     if (shouldLog) {
         session.lastRoleDecisionLogAt = current.at;
-        console.info("BotRole :: %s %s/%s (%s)", bot.fetchName(), action, reason, role);
+        const details = [
+            current.targetId !== undefined && `target=${current.targetId}`,
+            current.protectedId !== undefined && `protected=${current.protectedId}`,
+            current.threatSource && `source=${current.threatSource}`,
+            current.phase && `phase=${current.phase}`
+        ].filter(Boolean).join(' ');
+        console.info("BotRole :: %s %s/%s (%s)%s", bot.fetchName(), action, reason, role, details ? ` ${details}` : '');
     }
 }
 
@@ -318,6 +339,82 @@ function castSkillOn(session, bot, Generics, target, skill, ctrl, announcement =
         });
     }
     Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl });
+}
+
+function clearPendingSupportApproach(session, bot, { abortMove = false } = {}) {
+    if (!session.pendingSupportApproach) return false;
+    session.pendingSupportApproach = undefined;
+    if (abortMove && bot.state?.fetchTowards?.() && !bot.state?.fetchHits?.() && !bot.state?.fetchCasts?.()) {
+        bot.automation?.abortAll?.(bot);
+    }
+    return true;
+}
+
+function queueSupportSkillOn(session, bot, Generics, target, skill, ctrl, kind, announcement = null) {
+    const castRange = Math.max(0, Number(skill.fetchDistance?.()) || 0);
+    if (point(bot).distance(point(target)) <= castRange) {
+        clearPendingSupportApproach(session, bot, { abortMove: true });
+        castSkillOn(session, bot, Generics, target, skill, ctrl, announcement);
+        return 'cast';
+    }
+
+    const now = Date.now();
+    const targetLoc = loc(target);
+    const pending = session.pendingSupportApproach;
+    const sameAction = pending &&
+        Number(pending.targetId) === Number(target.fetchId()) &&
+        Number(pending.skillId) === Number(skill.fetchSelfId());
+    const targetDrift = sameAction && pending.targetLoc
+        ? distance2d(pending.targetLoc, targetLoc)
+        : Infinity;
+    const shouldRepath = !sameAction ||
+        !session.moveTimer ||
+        !bot.state?.fetchTowards?.() ||
+        targetDrift > SUPPORT_TARGET_DRIFT ||
+        now - Number(pending.lastMoveAt || 0) >= SUPPORT_APPROACH_REPATH_MS;
+
+    session.pendingSupportApproach = {
+        targetId: target.fetchId(),
+        skillId: skill.fetchSelfId(),
+        ctrl,
+        kind,
+        announcement,
+        startedAt: sameAction ? pending.startedAt : now,
+        lastMoveAt: shouldRepath ? now : pending.lastMoveAt,
+        targetLoc
+    };
+
+    if (shouldRepath) {
+        bot.moveTo({ from: loc(bot), to: targetLoc });
+    }
+    return 'approach';
+}
+
+function resumePendingSupportApproach(session, bot, Generics, leaderSession) {
+    const pending = session.pendingSupportApproach;
+    if (!pending) return null;
+
+    const targetSession = PartyAwareness.partySessions(leaderSession).find((memberSession) => (
+        Number(memberSession.actor?.fetchId?.()) === Number(pending.targetId)
+    ));
+    const target = targetSession?.actor;
+    const skill = bot.skillset?.fetchSkill?.(pending.skillId);
+    if (!target || target.isDead?.() || !skill || Date.now() - pending.startedAt > SUPPORT_APPROACH_TIMEOUT_MS) {
+        clearPendingSupportApproach(session, bot, { abortMove: true });
+        return { handled: false, expired: true };
+    }
+
+    const result = queueSupportSkillOn(
+        session,
+        bot,
+        Generics,
+        target,
+        skill,
+        pending.ctrl,
+        pending.kind,
+        pending.announcement
+    );
+    return { handled: true, action: result, target, skill, kind: pending.kind };
 }
 
 function canAttemptAggression(session, target) {
@@ -336,6 +433,32 @@ function rememberAggressionAttempt(session, target) {
         protectedId: Number(target.fetchDestId?.() || 0),
         at: Date.now()
     };
+}
+
+function pendingSupportShouldYield(session, bot, leaderSession, pullerActor, partyThreat) {
+    const pending = session.pendingSupportApproach;
+    if (!pending) return false;
+
+    const targetSession = PartyAwareness.partySessions(leaderSession).find((memberSession) => (
+        Number(memberSession.actor?.fetchId?.()) === Number(pending.targetId)
+    ));
+    const target = targetSession?.actor;
+    if (!target || target.isDead?.()) return true;
+
+    const targetHpRatio = ratio(target.fetchHp(), target.fetchMaxHp());
+    const targetMpRatio = ratio(target.fetchMp(), target.fetchMaxMp());
+    if (pending.kind === 'top_off' && targetHpRatio >= 0.70) return true;
+    if (pending.kind === 'restore_mp' && targetMpRatio >= 0.55) return true;
+    if (partyThreat && pending.kind === 'restore_mp') return true;
+
+    if (BotRoles.inferRole(bot) !== 'healer') return false;
+    const emergency = weakestPartyMember(leaderSession, bot, pullerActor);
+    if (emergency?.hpRatio < 0.45) return (
+        pending.kind !== 'emergency_heal' ||
+        Number(pending.targetId) !== Number(emergency.actor.fetchId())
+    );
+    return ratio(bot.fetchHp(), bot.fetchMaxHp()) < 0.55 &&
+        Number(pending.targetId) !== Number(bot.fetchId());
 }
 
 function partyActorIds(leaderSession) {
@@ -538,8 +661,10 @@ function activeBotPullTravel(session, pulling) {
         ['approach', 'return'].includes(pulling.phase);
 }
 
-function pullBlockReason(session, botVitals, partyVitals, activeMobs) {
-    if (session.autoTaunt === false) return 'manual_pull_off';
+function pullBlockReason(session, botVitals, partyVitals, activeMobs, partySettings) {
+    // pullMode is authoritative. autoTaunt is only a per-session mirror and
+    // can briefly be stale after party/session lifecycle changes.
+    if (partySettings?.pullMode === 'off' || session.autoTaunt === false) return 'manual_pull_off';
     if (session.botStay) return 'stay_order';
     if (session.currentTargetId) return 'already_assisting';
     if (partyVitals?.hpRatio < 0.65) return 'party_low_hp';
@@ -644,6 +769,14 @@ module.exports = {
         const holdingPulledTarget = pulling.target && !pulling.engageable;
         const rawThreatIsHeldPull = holdingPulledTarget &&
             Number(rawPartyThreat?.actor?.fetchId?.()) === Number(pulling.target.fetchId());
+        // While the puller is away from camp, mobs attacking only that puller
+        // are part of the delivery, not a signal for the whole formation to
+        // run out. Once the puller returns (or becomes critical), ranged adds
+        // remain normal threats and the party will go finish them.
+        const pullerAwayFromCamp = PartyPulling.travellingPullerAwayFromCamp(playerSession, pulling);
+        const rawThreatOnlyTargetsTravellingPuller = pullerAwayFromCamp &&
+            Number(rawPartyThreat?.targetId || 0) === Number(pulling.puller?.actor?.fetchId?.() || 0) &&
+            ratio(pulling.puller.actor.fetchHp(), pulling.puller.actor.fetchMaxHp()) >= CRITICAL_COMBAT_HP_RATIO;
         let partyThreat = pulling.engageable && pulling.target
             ? {
                 type: 'npc',
@@ -651,7 +784,7 @@ module.exports = {
                 targetId: pulling.puller.actor.fetchId(),
                 source: 'party_pull'
             }
-            : (rawThreatIsHeldPull || (combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId())
+            : (rawThreatIsHeldPull || rawThreatOnlyTargetsTravellingPuller || (combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId())
             ? null
             : rawPartyThreat);
         const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
@@ -659,6 +792,7 @@ module.exports = {
         const impairments = EffectStore.impairments(bot);
 
         if (impairments.disabled) {
+            clearPendingSupportApproach(session, bot, { abortMove: true });
             session.currentTargetId = undefined;
             bot.unselect();
             recordRoleDecision(session, bot, 'disabled', 'debuff_control');
@@ -723,6 +857,21 @@ module.exports = {
                     templates: ['Caught up.']
                 });
             }
+            return;
+        }
+
+        if (pendingSupportShouldYield(session, bot, playerSession, pulling.puller?.actor, partyThreat)) {
+            clearPendingSupportApproach(session, bot, { abortMove: true });
+        }
+        const pendingSupport = resumePendingSupportApproach(session, bot, Generics, playerSession);
+        if (pendingSupport?.handled) {
+            recordRoleDecision(
+                session,
+                bot,
+                pendingSupport.action === 'cast' ? 'heal_party' : 'move_for_support',
+                pendingSupport.kind,
+                { targetId: pendingSupport.target.fetchId(), skillId: pendingSupport.skill.fetchSelfId() }
+            );
             return;
         }
 
@@ -946,12 +1095,16 @@ module.exports = {
             if (woundedPartyMember?.hpRatio < 0.45 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'emergency_heal', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false, { kind: 'emergency_heal' });
+                queueSupportSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false, 'emergency_heal', { kind: 'emergency_heal' });
                 returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
+            } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && healerCanCast) {
+                acted = true;
+                recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
+                queueSupportSkillOn(session, bot, Generics, bot, healerSkill, false, 'self_preservation');
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio >= 0.35 && healerCanCast) {
                 acted = true;
                 recordRoleDecision(session, bot, 'heal_party', 'top_off', { targetId: woundedPartyMember.actor.fetchId() });
-                castSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false);
+                queueSupportSkillOn(session, bot, Generics, woundedPartyMember.actor, healerSkill, false, 'top_off');
                 returnToPartyAfterSupport(session, bot, player, woundedPartyMember.actor);
             } else if (woundedPartyMember?.hpRatio < 0.70 && botVitals.mpRatio < 0.35) {
                 recordRoleDecision(session, bot, 'save_mp', woundedPartyMember.hpRatio < 0.45 ? 'low_mp_emergency' : 'party_not_critical');
@@ -959,10 +1112,6 @@ module.exports = {
                     BotPartyChat.announceHealManaShortage(session, woundedPartyMember.actor);
                 }
                 keepRoleDecision = true;
-            } else if (botVitals.hpRatio < 0.55 && botVitals.mpRatio >= 0.25 && healerCanCast) {
-                acted = true;
-                recordRoleDecision(session, bot, 'heal_self', 'self_preservation', { targetId: bot.fetchId() });
-                castSkillOn(session, bot, Generics, bot, healerSkill, false);
             } else if (impairments.silenced) {
                 recordRoleDecision(session, bot, 'save_mp', 'silenced');
                 keepRoleDecision = true;
@@ -976,7 +1125,7 @@ module.exports = {
                     targetId: manaPartyMember.actor.fetchId(),
                     skillId: rechargeSkill.fetchSelfId()
                 });
-                castSkillOn(session, bot, Generics, manaPartyMember.actor, rechargeSkill, false);
+                queueSupportSkillOn(session, bot, Generics, manaPartyMember.actor, rechargeSkill, false, 'restore_mp');
                 returnToPartyAfterSupport(session, bot, player, manaPartyMember.actor);
             } else if (!healerSkill && woundedPartyMember?.hpRatio < 0.70) {
                 recordRoleDecision(session, bot, 'cannot_heal', 'no_learned_heal');
@@ -1048,7 +1197,7 @@ module.exports = {
             // The marked mob is intentionally not a chase target.  Keep the
             // formation on the player, then join combat once this particular
             // companion can strike from its own position.
-            recordRoleDecision(session, bot, 'follow_leader', pulling.paused || 'hold_for_pull', {
+            recordRoleDecision(session, bot, 'follow_leader', rawThreatOnlyTargetsTravellingPuller ? 'hold_for_pull' : (pulling.paused || 'hold_for_pull'), {
                 targetId: pulling.target.fetchId(),
                 pullerId: pulling.puller?.actor?.fetchId?.() || null
             });
@@ -1082,11 +1231,14 @@ module.exports = {
             }
         }
 
-        if (!acted && role === 'tank' && !PartyPulling.enabled(partySettings)) {
+        // Auto mode retains the lightweight tank fallback. Explicit Off is a
+        // quiet order, not an "avoid overpull" failure that should overwrite
+        // the tank's otherwise useful role status every tick.
+        if (!acted && role === 'tank' && partySettings.pullMode === 'auto') {
             const activeMobs = partyAggroCount(playerSession);
             const blockReason = PartyPulling.hasDeadPartyMember(playerSession)
                 ? 'party_revival'
-                : pullBlockReason(session, botVitals, partyVitals, activeMobs);
+                : pullBlockReason(session, botVitals, partyVitals, activeMobs, partySettings);
 
             if (blockReason) {
                 recordRoleDecision(session, bot, 'avoid_overpull', blockReason, { activeMobs });
@@ -1123,23 +1275,34 @@ module.exports = {
             const target = partyThreat.actor;
             const targetId = target.fetchId();
             const holdSupportLine = !supportCanMeleeAssist(bot, role);
-
             if (holdSupportLine) {
                 session.currentTargetId = undefined;
                 bot.unselect();
                 recordRoleDecision(session, bot, BotRoles.partyRoleStance(role), 'hold_support_line', {
                     targetId,
                     targetType: partyThreat.type,
-                    protectedId: partyThreat.targetId
+                    protectedId: partyThreat.targetId,
+                    threatSource: partyThreat.source || 'targeting_party'
                 });
                 keepRoleDecision = true;
-            } else if (session.currentTargetId !== targetId) {
+            } else {
+                // A combat-capable party member owns this tick even if an
+                // earlier hit, cast, or approach is still in flight. Support
+                // roles that hold their line may still follow the formation.
+                acted = true;
+            }
+
+            if (!holdSupportLine && session.currentTargetId !== targetId) {
+                if (bot.state?.fetchTowards?.() && !bot.state?.fetchHits?.() && !bot.state?.fetchCasts?.()) {
+                    bot.automation?.abortAll?.(bot);
+                }
                 session.currentTargetId = targetId;
                 bot.select({ id: targetId });
                 recordRoleDecision(session, bot, assistActionForRole(role), 'party_under_attack', {
                     targetId,
                     targetType: partyThreat.type,
-                    protectedId: partyThreat.targetId
+                    protectedId: partyThreat.targetId,
+                    threatSource: partyThreat.source || 'targeting_party'
                 });
             }
 
@@ -1150,7 +1313,6 @@ module.exports = {
                 } else {
                     BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly });
                 }
-                acted = true;
             }
         }
 

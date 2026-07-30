@@ -18,6 +18,9 @@ const PULL_ABANDON_DISTANCE = 5000;
 // holding the entire party for coordinate-perfect overlap.
 const PULL_DELIVERY_MELEE_DISTANCE = 250;
 const PULL_DELIVERY_CAMP_DISTANCE = 350;
+const PULL_UNREACHABLE_RETRY_MS = 30000;
+const PULL_ROUTE_SEARCH_BATCH = 5;
+const PULL_ROUTE_SEARCH_COOLDOWN_MS = 5000;
 
 function point(actor) {
     return {
@@ -229,6 +232,14 @@ function targetDeliveredToCamp(leaderSession, target) {
         distance2d(point(leaderSession.actor), point(target)) <= PULL_DELIVERY_CAMP_DISTANCE;
 }
 
+function travellingPullerAwayFromCamp(leaderSession, pulling) {
+    return pulling?.enabled === true &&
+        pulling.puller?.kind === 'bot' &&
+        ['approach', 'aggro', 'return'].includes(pulling.phase) &&
+        !!leaderSession?.actor &&
+        distance2d(point(pulling.puller.actor), point(leaderSession.actor)) > PULL_RETURN_DISTANCE;
+}
+
 function hasDeadPartyMember(leaderSession) {
     return (World.user?.sessions || []).some((memberSession) => (
         PartyAwareness.isPartySession(memberSession, leaderSession) &&
@@ -236,11 +247,52 @@ function hasDeadPartyMember(leaderSession) {
     ));
 }
 
-function nearestFreeMonster(bot) {
+function rejectedTargetUntil(leaderSession, targetId) {
+    return Number(leaderSession.partyPullRejectedTargets?.[targetId] || 0);
+}
+
+function rejectTarget(leaderSession, target) {
+    const now = Date.now();
+    const rejected = leaderSession.partyPullRejectedTargets || {};
+    Object.keys(rejected).forEach((targetId) => {
+        if (Number(rejected[targetId]) <= now) delete rejected[targetId];
+    });
+    rejected[target.fetchId()] = now + PULL_UNREACHABLE_RETRY_MS;
+    leaderSession.partyPullRejectedTargets = rejected;
+    leaderSession.partyPullState = {};
+}
+
+function freeMonsters(bot) {
     return World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), PULL_SEARCH_RADIUS)
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
         .filter((npc) => !npc.fetchDestId?.())
+        .sort((a, b) => distance(point(bot), point(a)) - distance(point(bot), point(b)));
+}
+
+function nearestFreeMonster(bot, leaderSession) {
+    const now = Date.now();
+    return freeMonsters(bot)
+        .filter((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) <= now)[0] || null;
+}
+
+function incomingMobOnPuller(bot) {
+    return (World.npc?.spawns || [])
+        .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
+        .filter((npc) => Number(npc.fetchDestId?.()) === Number(bot.fetchId()))
+        .filter((npc) => distance(point(bot), point(npc)) <= PULL_ABANDON_DISTANCE)
         .sort((a, b) => distance(point(bot), point(a)) - distance(point(bot), point(b)))[0] || null;
+}
+
+function announceNoReachableTargets(session) {
+    return BotPartyChat.announce(session, {
+        priority: 'coordination',
+        dedupeMs: 30000,
+        key: `pull-no-route:${session.actor.fetchId()}`,
+        templates: [
+            "I can't find a safe route to the nearby mobs. Holding here.",
+            'No reachable pull target from here. Waiting for a better route.'
+        ]
+    });
 }
 
 function shouldKeepPullMove(session, bot, state, phase, target) {
@@ -264,13 +316,28 @@ function shouldKeepPullMove(session, bot, state, phase, target) {
 }
 
 function moveTo(session, bot, state, phase, target) {
-    if (shouldKeepPullMove(session, bot, state, phase, target)) return false;
+    if (shouldKeepPullMove(session, bot, state, phase, target)) {
+        return { started: false, unreachable: false };
+    }
     // FollowingState leaves active pull movement to this coordinator. A new
     // route is only needed after the old one stopped or its target drifted.
     state.movePhase = phase;
     state.moveTarget = point(target);
-    bot.moveTo({ from: point(bot), to: point(target) });
-    return true;
+    const previousDiagnostics = session.lastPathfinding;
+    if (phase === 'approach') {
+        bot.moveTo({ from: point(bot), to: point(target), previewOnly: true });
+    }
+    const diagnostics = session.lastPathfinding;
+    const requestedDistance = distance(point(bot), point(target));
+    const unreachable = phase === 'approach' &&
+        requestedDistance > PULL_CONTACT_DISTANCE &&
+        diagnostics && diagnostics !== previousDiagnostics &&
+        diagnostics?.lowLodWarp !== true &&
+        diagnostics?.routeUsable === false;
+    if (!unreachable) {
+        bot.moveTo({ from: point(bot), to: point(target) });
+    }
+    return { started: true, unreachable };
 }
 
 function clearPullMove(state) {
@@ -286,13 +353,61 @@ function aggroActionInFlight(bot) {
     );
 }
 
-function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
+function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, searchAttempts = 0) {
     const puller = resolvePuller(leaderSession, settings);
     if (!puller || puller.session !== session) return { handled: false, puller };
 
-    const pause = pauseReason(leaderSession, puller);
+    let target = clearFinishedTarget(leaderSession);
+    let state = pullState(leaderSession);
+    // Any mob that has already committed to the travelling puller is a valid
+    // delivery. Adopt it and return immediately instead of treating its aggro
+    // as a reason to freeze beside the original target.
+    const incoming = ['approach', 'aggro'].includes(state.phase)
+        ? incomingMobOnPuller(bot)
+        : null;
+    if (incoming) {
+        const switchedTarget = Number(incoming.fetchId()) !== Number(target?.fetchId?.());
+        if (switchedTarget) {
+            beginTarget(leaderSession, puller, incoming, 'bot');
+            state = pullState(leaderSession);
+            target = incoming;
+        }
+        bot.attack?.abortCast?.(session, bot);
+        bot.attack?.clearTimers?.();
+        bot.state?.setHits?.(false);
+        bot.state?.setCasts?.(false);
+        bot.automation?.abortAll?.(bot);
+        clearPullMove(state);
+        state.phase = 'return';
+        if (!state.announced) {
+            state.announced = true;
+            BotPartyChat.announce(session, {
+                priority: 'coordination',
+                key: `pull-aggro:${incoming.fetchId()}`,
+                templates: [
+                    `${incoming.fetchName()} is on me. Bringing it back.`,
+                    `Got aggro from ${incoming.fetchName()} — returning to camp.`
+                ]
+            });
+        }
+    }
+    // A native basic attack repeats until explicitly stopped. Once the
+    // opening hit has transferred aggro to the puller, returning to camp must
+    // win over an unrelated add pause; otherwise the tank keeps auto-attacking
+    // at the pull spot while the rest of the party handles the add.
+    const aggroConfirmed = state.phase === 'aggro' && target &&
+        Number(target.fetchDestId?.()) === Number(bot.fetchId());
+    if (aggroConfirmed) {
+        bot.attack?.clearTimers?.();
+        bot.state?.setHits?.(false);
+        clearPullMove(state);
+        state.phase = 'return';
+    }
+
+    // Recovery/add pauses may cancel an approach or an unconfirmed opening
+    // hit, but must never interrupt a confirmed return leg.
+    const pause = state.phase === 'return' ? null : pauseReason(leaderSession, puller);
     if (pause) {
-        const state = pullState(leaderSession);
         // A rest/buff pause can happen while the puller is still travelling
         // towards an untouched mob.  Stop that movement immediately instead
         // of letting its existing automation carry it out of the group.
@@ -319,7 +434,6 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         return { handled: true, puller, paused: pause };
     }
 
-    let target = clearFinishedTarget(leaderSession);
     if (!target) {
         // Do not let the puller win the scheduler race immediately after a
         // resurrection. The next revival target must be selected before the
@@ -328,15 +442,36 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI) {
         if (hasDeadPartyMember(leaderSession)) {
             return { handled: true, puller, action: 'party_revival' };
         }
-        target = nearestFreeMonster(bot);
-        if (!target) return { handled: true, puller, idle: true };
+        if (Number(leaderSession.partyPullSearchRetryAt || 0) > Date.now()) {
+            return { handled: true, puller, action: 'route_search_cooldown' };
+        }
+        target = nearestFreeMonster(bot, leaderSession);
+        if (!target) {
+            const rejectedNearby = freeMonsters(bot)
+                .some((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) > Date.now());
+            if (rejectedNearby) {
+                leaderSession.partyPullSearchRetryAt = Date.now() + PULL_ROUTE_SEARCH_COOLDOWN_MS;
+                announceNoReachableTargets(session);
+                return { handled: true, puller, action: 'no_reachable_targets' };
+            }
+            return { handled: true, puller, idle: true };
+        }
+        leaderSession.partyPullSearchRetryAt = undefined;
         beginTarget(leaderSession, puller, target, 'bot');
+        state = pullState(leaderSession);
     }
 
-    const state = pullState(leaderSession);
     if (state.phase === 'approach') {
         if (distance(point(bot), point(target)) > PULL_CONTACT_DISTANCE) {
-            moveTo(session, bot, state, 'approach', target);
+            const movement = moveTo(session, bot, state, 'approach', target);
+            if (movement.unreachable) {
+                bot.automation?.abortAll?.(bot);
+                rejectTarget(leaderSession, target);
+                if (searchAttempts + 1 < PULL_ROUTE_SEARCH_BATCH) {
+                    return tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, searchAttempts + 1);
+                }
+                return { handled: true, puller, action: 'searching_reachable_target', target };
+            }
             return { handled: true, puller, action: 'approach', target };
         }
 
@@ -418,8 +553,14 @@ function current(leaderSession, settings) {
     // the camp. Once it is there, the party must attack immediately rather
     // than wait for the puller to complete a separate return tick: otherwise
     // the delivered mob can hit the leader before anyone reacts.
+    const pullerBackAtCamp = puller.actor && leaderSession?.actor &&
+        distance2d(point(puller.actor), point(leaderSession.actor)) <= PULL_RETURN_DISTANCE;
     const engageable = state.source === 'bot'
-        ? ['return', 'engage'].includes(state.phase) && targetDeliveredToCamp(leaderSession, target)
+        ? state.phase === 'engage' || (
+            state.phase === 'return' &&
+            pullerBackAtCamp &&
+            targetDeliveredToCamp(leaderSession, target)
+        )
         : targetIsEngageable(leaderSession, target, puller);
     return {
         enabled: true,
@@ -441,6 +582,7 @@ module.exports = {
     current,
     targetIsEngageable,
     targetDeliveredToCamp,
+    travellingPullerAwayFromCamp,
     actorCanEngage,
     canDeliverPull,
     hasDeadPartyMember,

@@ -44,8 +44,16 @@ function awardDirect(world, session, selfId, amount) {
 
 function spawnGroundDrop(world, session, npc, selfId, amount) {
     const point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
+    const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+        ? session.followPlayerSession
+        : session;
     world.spawnItem(session, selfId, amount, {
-        ...point.toCoords(), locZ: npc.fetchLocZ() - 10
+        ...point.toCoords(),
+        locZ: npc.fetchLocZ() - 10,
+        // Ground items have no native owner metadata in this runtime. Keep a
+        // lightweight provenance marker so an idle party never treats another
+        // group's nearby drop as its own recovery work.
+        partyLootLeaderId: Number(leaderSession?.actor?.fetchId?.() || 0)
     }, (item) => {
         PartyCompanionService.queueRandomGroundPickup(session, item);
     });

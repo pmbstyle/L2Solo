@@ -66,7 +66,7 @@ class Actor extends ActorModel {
     }
 
     moveTo(data) {
-        invoke(path.actor).moveTo(
+        return invoke(path.actor).moveTo(
             this.session, this, data
         );
     }

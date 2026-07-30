@@ -9,7 +9,10 @@ function moveToPawn(src, dst, distance) {
         .writeD(distance)
         .writeD(src.fetchLocX())
         .writeD(src.fetchLocY())
-        .writeD(src.fetchLocZ());
+        .writeD(src.fetchLocZ())
+        .writeD(dst.fetchLocX())
+        .writeD(dst.fetchLocY())
+        .writeD(dst.fetchLocZ());
 
     return packet.fetchBuffer();
 }

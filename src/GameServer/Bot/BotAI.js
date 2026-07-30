@@ -364,13 +364,26 @@ const BotAI = {
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
                 if (wasCompanion) {
+                    const deathReaction = PartyRevivalService.noteCompanionDeath(
+                        session.followPlayerSession,
+                        session,
+                        session.deathTimerStart
+                    );
                     invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
                         priority: 'critical',
                         key: `party-death:${bot.fetchId()}`,
-                        templates: [
-                            `${bot.fetchName()} is down — waiting for resurrection.`,
-                            `Down at the camp. Waiting for a resurrection.`
-                        ]
+                        templates: deathReaction.leaving
+                            ? [
+                                `Down again. That's enough — I'm returning to town and leaving the party.`
+                            ]
+                            : deathReaction.warning
+                                ? [
+                                    `Down again. I'm getting tired of dying — one more death soon and I'm leaving.`
+                                ]
+                                : [
+                                    `${bot.fetchName()} is down — waiting for resurrection.`,
+                                    `Down at the camp. Waiting for a resurrection.`
+                                ]
                     });
                 } else {
                     this.say(session, 'Oops... I died! Resurrecting shortly.');
@@ -389,6 +402,7 @@ const BotAI = {
             // normal town restart remains the escape hatch for a wipe, an
             // unsupported solo leader, or an unanswered corpse.
             if (!partyRescuePending && Date.now() - session.deathTimerStart > 12000) {
+                const deathStartedAt = session.deathTimerStart;
                 // TeleportTo rejects actors that are still marked dead, so bot
                 // respawns must complete before applying the new town location.
                 Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true });
@@ -403,10 +417,20 @@ const BotAI = {
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else {
                     if (wasCompanion) {
+                        if (session.partyLeaveAfterDeath !== true) {
+                            invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
+                                priority: 'critical',
+                                key: `party-respawn-timeout:${bot.fetchId()}:${deathStartedAt}`,
+                                templates: [
+                                    `No resurrection came. I'm returning to town and leaving the party.`
+                                ]
+                            });
+                        }
                         PartyCompanionService.clearCompanion(session, {
                             plan: 'hunting',
                             refreshPanel: false
                         });
+                        session.partyLeaveAfterDeath = false;
                         // A corpse that timed out of party resurrection has
                         // just been sent to town. Keep the now-solo bot hot
                         // long enough to complete that visible transition;
