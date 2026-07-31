@@ -94,6 +94,25 @@ try {
     assert.strictEqual(result.available, false, 'far cold bot should obey the same invite range as a hot bot');
     assert.strictEqual(result.reason, 'too_far');
 
+    const socialBot = session(actor(2000012, 20), {
+        persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, socialBot);
+    assert.strictEqual(result.available, true, 'a social persona should remain available after hard invite checks pass');
+
+    const soloBot = session(actor(2000013, 20), {
+        persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, soloBot);
+    assert.strictEqual(result.available, false, 'a reserved persona may decline after all hard checks pass');
+    assert.strictEqual(result.reason, 'prefers_solo');
+
+    const farSocialBot = session(actor(2000014, 20, 0, { locX: 100000 }), {
+        persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, farSocialBot);
+    assert.strictEqual(result.reason, 'too_far', 'persona must not override a hard invite gate');
+
     console.log('Bot availability checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalGetSnapshot;

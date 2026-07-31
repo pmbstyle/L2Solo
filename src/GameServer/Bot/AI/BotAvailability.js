@@ -1,4 +1,5 @@
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PersonaPartyDecisionPolicy = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
@@ -30,6 +31,7 @@ function reasonText(reason) {
         low_trust: 'low trust',
         recently_abandoned: 'recently abandoned',
         level_gap_too_large: 'level gap too large',
+        prefers_solo: 'prefers a solo run for now',
         hunting_target: 'busy fighting'
     };
     return text[reason] || reason;
@@ -84,9 +86,16 @@ const BotAvailability = {
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
+        if (reason === 'available' && !result.clanmate) {
+            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(botSession, result.memory);
+            if (!result.partyDecision.accept) {
+                reason = result.partyDecision.reason;
+            }
+        }
         result.available = reason === 'available';
         result.reason = reason;
-        result.reasonText = reasonText(reason);
+        result.reasonText = result.partyDecision?.reason === reason
+            ? result.partyDecision.reasonText : reasonText(reason);
         return result;
     },
 
@@ -108,9 +117,16 @@ const BotAvailability = {
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
+        if (reason === 'available' && !result.clanmate) {
+            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(state, result.memory);
+            if (!result.partyDecision.accept) {
+                reason = result.partyDecision.reason;
+            }
+        }
         result.available = reason === 'available';
         result.reason = reason;
-        result.reasonText = reasonText(reason);
+        result.reasonText = result.partyDecision?.reason === reason
+            ? result.partyDecision.reasonText : reasonText(reason);
         return result;
     },
 

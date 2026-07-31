@@ -147,6 +147,7 @@ const World = {
         const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
         const BotManager = invoke('GameServer/Bot/BotManager');
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+        const PersonaPartyDecisionPolicy = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         const availability = BotAvailability.evaluate(session, targetSession);
         const bot = targetSession.actor;
@@ -156,7 +157,9 @@ const World = {
         if (!availability.available) {
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', availability.reason);
             session.dataSendToMe(ServerResponse.joinParty(0));
-            BotManager.botTell(targetSession, session, `I can't join right now: ${availability.reasonText}.`);
+            BotManager.botTell(targetSession, session, availability.partyDecision
+                ? PersonaPartyDecisionPolicy.reply(availability.partyDecision)
+                : `I can't join right now: ${availability.reasonText}.`);
             console.info(
                 'BotParty :: %s refused %s: %s distance=%s',
                 bot?.fetchName() || 'unknown',
@@ -184,7 +187,9 @@ const World = {
             BotManager.botTell(
                 targetSession,
                 session,
-                `I'm with you. Lead the way.`
+                availability.partyDecision
+                    ? PersonaPartyDecisionPolicy.reply(availability.partyDecision)
+                    : `I'm with you. Lead the way.`
             );
         }, 1000);
         return true;
