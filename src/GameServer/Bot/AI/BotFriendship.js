@@ -36,6 +36,13 @@ const BotFriendship = {
         if (!playerId || !botId) return Promise.resolve(false);
         return Database.execute(["SELECT 1 FROM bot_friendships WHERE playerId = ? AND botId = ? AND status = 'accepted'", [playerId, Number(botId)]]).then((rows) => !!rows[0]);
     },
+    remove(player, botId) {
+        const playerId = id(player);
+        if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
+        return Database.execute(['DELETE FROM bot_friend_roster WHERE playerId = ? AND botId = ?', [playerId, Number(botId)]])
+            .then(() => Database.execute(['DELETE FROM bot_friendships WHERE playerId = ? AND botId = ?', [playerId, Number(botId)]]))
+            .then(() => ({ ok: true }));
+    },
     request(player, state) {
         const playerId = id(player), botId = Number(state?.characterId || 0);
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });

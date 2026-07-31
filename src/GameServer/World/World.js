@@ -343,6 +343,7 @@ const World = {
 
     inviteFriendByName(session, actor, name, distribution, source = 'friend_invite') {
         const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
+        const BotManager = invoke('GameServer/Bot/BotManager');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         if (!PartyCompanionService.hasCapacity(session)) {
@@ -353,10 +354,19 @@ const World = {
             if (!state) return false;
             return BotFriendship.isFriend(session, state.characterId).then((friend) => {
                 if (!friend) return false;
+                const hotSession = BotManager.findSessionByName(name);
+                const previousLeader = hotSession?.partyCompanion === true ? hotSession.followPlayerSession : null;
+                const leaveActiveParty = previousLeader && previousLeader !== session
+                    ? Promise.resolve(PartyCompanionService.detach(previousLeader, hotSession, { source: 'friend_priority' }))
+                    : Promise.resolve(true);
                 const leaveBackgroundParty = state.party?.partyId
                     ? LifeState.leaveParty(state, 'friend_priority')
                     : Promise.resolve(state);
-                return leaveBackgroundParty.then(() => this.inviteBotByName(session, actor, name, distribution, source, { ignoreDistance: true }));
+                return Promise.all([leaveActiveParty, leaveBackgroundParty])
+                    .then(() => this.inviteBotByName(session, actor, name, distribution, source, {
+                        ignoreDistance: true,
+                        forceFriend: true
+                    }));
             });
         });
     },

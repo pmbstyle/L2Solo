@@ -28,7 +28,9 @@ function render(session, mode = 'friends', currentPage = 0, notice = null) {
         bots.forEach((bot) => {
             const action = isAdd
                 ? (bot.trust >= BotFriendship.FRIEND_TRUST ? Html.link('Add friend', `bot-friends request ${bot.name} ${currentPage}`, { color: Html.COLOR.ok }) : Html.font(`trust ${bot.trust}/${BotFriendship.FRIEND_TRUST}`, Html.COLOR.muted))
-                : Html.link(bot.selected ? 'Const: ON' : 'Const: OFF', `bot-friends const ${bot.botId} ${currentPage}`, { color: bot.selected ? Html.COLOR.ok : Html.COLOR.link });
+                : Html.link(bot.selected ? 'Const: ON' : 'Const: OFF', `bot-friends const ${bot.botId} ${currentPage}`, { color: bot.selected ? Html.COLOR.ok : Html.COLOR.link })
+                    + '<br1>'
+                    + Html.link('Remove', `bot-friends remove ${bot.botId} ${currentPage}`, { color: Html.COLOR.danger });
             body += Html.table([Html.row([
                 Html.cell(`${Html.font(bot.name, Html.COLOR.title)} Lv ${bot.level} ${bot.role}`, { width: 190 }),
                 Html.cell(action, { width: 95, align: 'right' })
@@ -56,6 +58,12 @@ function handler(session, parts) {
                 ? `${name} accepted your friend request.`
                 : `${name} declined the request: ${requestReasonText(result.reason)}.`;
             return render(session, 'add', parts[3], { ok: result.ok, message });
+        }));
+    }
+    if (mode === 'remove' && parts[2]) {
+        return BotFriendship.remove(session, parts[2]).then((result) => render(session, 'friends', parts[3], {
+            ok: result.ok,
+            message: result.ok ? 'Friend removed. Social memory was kept.' : 'The friend could not be removed.'
         }));
     }
     if (mode === 'const' && parts[2]) return BotFriendship.toggleConst(session, parts[2]).then(() => render(session, 'friends', parts[3]));

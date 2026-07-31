@@ -79,14 +79,14 @@ const BotAvailability = {
         if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
-        else if (botSession.plan === 'merchant') reason = 'merchant_duty';
-        else if (botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
+        else if (!options.forceFriend && botSession.plan === 'merchant') reason = 'merchant_duty';
+        else if (!options.forceFriend && botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
         else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
-        else if (result.memory.trust <= -6) reason = 'low_trust';
-        else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
-        else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
+        else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
+        else if (!options.forceFriend && result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
+        else if (!options.forceFriend && Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
-        if (reason === 'available' && !result.clanmate) {
+        if (reason === 'available' && !result.clanmate && !options.forceFriend) {
             result.partyDecision = PersonaPartyDecisionPolicy.evaluate(botSession, result.memory);
             if (!result.partyDecision.accept) {
                 reason = result.partyDecision.reason;
@@ -111,13 +111,13 @@ const BotAvailability = {
         if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
-        else if (state.activity === 'merchant' || state.activity === 'crafting') reason = 'merchant_duty';
+        else if (!options.forceFriend && (state.activity === 'merchant' || state.activity === 'crafting')) reason = 'merchant_duty';
         else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
-        else if (result.memory.trust <= -6) reason = 'low_trust';
-        else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
-        else if (Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
+        else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
+        else if (!options.forceFriend && result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
+        else if (!options.forceFriend && Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
-        if (reason === 'available' && !result.clanmate) {
+        if (reason === 'available' && !result.clanmate && !options.forceFriend) {
             result.partyDecision = PersonaPartyDecisionPolicy.evaluate(state, result.memory);
             if (!result.partyDecision.accept) {
                 reason = result.partyDecision.reason;

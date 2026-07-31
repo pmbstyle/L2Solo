@@ -38,6 +38,8 @@ Promise.all([
     requestSocial = { trust: 20, insults: 0, recentlyAbandonedAt: Date.now() - 1000 };
     const coolingDown = await BotFriendship.request({ characterId: 42 }, { characterId: 101, name: 'CoolingFriend' });
     assert.strictEqual(coolingDown.reason, 'recently_abandoned', 'a recent abandonment must still be respected');
+    const removed = await BotFriendship.remove({ characterId: 42 }, 100);
+    assert.strictEqual(removed.ok, true, 'removing a friend should clear friendship and const membership');
     console.log('Bot friendship roster checks passed');
 }).catch((error) => {
     console.error(error);

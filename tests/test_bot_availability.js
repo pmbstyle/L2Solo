@@ -106,6 +106,14 @@ try {
     result = BotAvailability.evaluate(lowPlayer, soloBot);
     assert.strictEqual(result.available, false, 'a reserved persona may decline after all hard checks pass');
     assert.strictEqual(result.reason, 'prefers_solo');
+    result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, true, 'a const friend invite must override persona solo preference');
+
+    const farLowFriend = session(actor(2000015, 55, 0, { locX: 100000 }), {
+        persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, farLowFriend, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, true, 'a const friend invite must override distance and level soft gates');
 
     const farSocialBot = session(actor(2000014, 20, 0, { locX: 100000 }), {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
