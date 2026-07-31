@@ -45,12 +45,22 @@ const DEFAULTS = {
     // the three available slots reach distinct crowded grounds instead of
     // letting the two largest queues consume the whole selection window.
     partyFormationCandidateLimit: 250,
+    // Recruitment must get a fair sample from every active party ground; a
+    // global top-N window otherwise starves less crowded spots forever.
+    partyRecruitmentCandidateLimit: 40,
     partyMinSize: 2,
     partyMaxSize: 5,
     // At roughly one party resolve per 90 seconds, forty parties consume
     // about 27 of the 36 bounded resolves available each minute.  This opens
     // enough party-wait capacity without increasing work in a scheduler tick.
     maxBackgroundParties: 40,
+    // A sustained party-wait queue can use the spare party-resolve headroom,
+    // but the expansion is deliberately capped so it cannot grow unbounded.
+    partyBacklogCapacityThreshold: 250,
+    partyBacklogCapacityStep: 3,
+    partyBacklogCapacityMaxExtra: 12,
+    partyRequirementRefreshMs: 5 * 60 * 1000,
+    partyRequirementRefreshBatchSize: 8,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,

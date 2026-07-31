@@ -117,38 +117,47 @@ try {
             }).then(() => {
                 const requiredCandidates = statements.find((entry) => entry.sql.includes("states.activity = 'party_wait'"));
                 assert(requiredCandidates, 'a real party-wait backlog must reserve formation capacity ahead of elective hunting parties');
-                const member = {
-                    characterId: 44,
-                    name: 'PartyTelemetryProbe',
-                    level: 20,
-                    phase: 'cold',
-                    activity: 'grouped',
-                    party: { partyId: 'bgp_probe' },
-                    timing: { nextResolveAt: 9000 },
-                    vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
-                    stats: {
-                        lastResolveDebug: { targetNpcId: null },
-                        targetCombat: { targets: {}, populationTargets: {} }
-                    },
-                    inventory: {}
-                };
-                return BotLifeState.applyResolve(member, {
-                    patch: {
+                return BotLifeState.coldPartyCandidateCount(true).then(() => {
+                    const count = statements.find((entry) => entry.sql.includes('COUNT(*) AS candidateCount'));
+                    assert(count, 'party capacity planning must be able to measure the full wait backlog');
+                    return BotLifeState.coldPartyCandidatesForSpots(['cruma', 'dion'], 3, true);
+                }).then(() => {
+                    const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY states.spotId'));
+                    assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
+                }).then(() => {
+                    const member = {
+                        characterId: 44,
+                        name: 'PartyTelemetryProbe',
+                        level: 20,
+                        phase: 'cold',
                         activity: 'grouped',
-                        vitals: member.vitals,
-                        // This mirrors the projected snapshot that a party
-                        // resolver returns after a fight.
-                        stats: { ...member.stats, coldCombat: { cooldowns: {} } }
-                    },
-                    materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                    nextResolveAt: 10000,
-                    debug: {
-                        partyId: 'bgp_probe',
-                        aggregate: true,
-                        populationTelemetryOwner: true,
-                        targetNpcId: 93,
-                        defeatedNpcIds: [93]
-                    }
+                        party: { partyId: 'bgp_probe' },
+                        timing: { nextResolveAt: 9000 },
+                        vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
+                        stats: {
+                            lastResolveDebug: { targetNpcId: null },
+                            targetCombat: { targets: {}, populationTargets: {} }
+                        },
+                        inventory: {}
+                    };
+                    return BotLifeState.applyResolve(member, {
+                        patch: {
+                            activity: 'grouped',
+                            vitals: member.vitals,
+                            // This mirrors the projected snapshot that a party
+                            // resolver returns after a fight.
+                            stats: { ...member.stats, coldCombat: { cooldowns: {} } }
+                        },
+                        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                        nextResolveAt: 10000,
+                        debug: {
+                            partyId: 'bgp_probe',
+                            aggregate: true,
+                            populationTelemetryOwner: true,
+                            targetNpcId: 93,
+                            defeatedNpcIds: [93]
+                        }
+                    });
                 });
             }).then(() => {
                 const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);

@@ -1176,6 +1176,61 @@ const BotLifeState = {
         });
     },
 
+    coldPartyCandidateCount(partyRequiredOnly = false) {
+        if (!initialized) return Promise.resolve(0);
+        const activityClause = partyRequiredOnly
+            ? "activity = 'party_wait'"
+            : "activity IN ('hunting', 'resting', 'party_wait')";
+
+        return Database.execute([
+            `SELECT COUNT(*) AS candidateCount FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND (partyId IS NULL OR partyId = '')
+            AND spotId IS NOT NULL
+            AND ${activityClause}`,
+            []
+        ]).then((rows) => Number(rows[0]?.candidateCount || 0)).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to count party candidates: %s', err.message);
+            return 0;
+        });
+    },
+
+    coldPartyCandidatesForSpots(spotIds = [], limitPerSpot = 40, partyRequiredOnly = false) {
+        if (!initialized) return Promise.resolve([]);
+        const uniqueSpots = Array.from(new Set((spotIds || []).map((spotId) => String(spotId || '')).filter(Boolean)));
+        if (!uniqueSpots.length) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(100, Number(limitPerSpot) || 40));
+        const placeholders = uniqueSpots.map(() => '?').join(', ');
+        const activityClause = partyRequiredOnly
+            ? "states.activity = 'party_wait'"
+            : "states.activity IN ('hunting', 'resting', 'party_wait')";
+
+        return Database.execute([
+            `SELECT * FROM (
+                SELECT states.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY states.spotId
+                        ORDER BY states.updatedAt ASC, states.level ASC, states.characterId ASC
+                    ) AS candidateRank
+                FROM ${TABLE} states
+                WHERE states.phase = 'cold'
+                AND (states.partyId IS NULL OR states.partyId = '')
+                AND states.spotId IN (${placeholders})
+                AND ${activityClause}
+            ) ranked
+            WHERE candidateRank <= ${safeLimit}
+            ORDER BY spotId ASC, candidateRank ASC`,
+            uniqueSpots
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch party candidates by spot: %s', err.message);
+            return [];
+        });
+    },
+
     partyRequirementCounts(partyIds = []) {
         if (!initialized) return Promise.resolve([]);
         const ids = Array.from(new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean)));
