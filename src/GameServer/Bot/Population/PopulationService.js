@@ -669,11 +669,14 @@ const PopulationService = {
                 ? { states: partyWaitStates, partyWaitBacklog: true }
                 : LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
                     .then((states) => ({ states, partyWaitBacklog: false }))))
-            .then(({ states, partyWaitBacklog }) => this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? states : [])
-                .then(() => this.recruitBackgroundMembers(states)).then((recruitedIds) => ({
-                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId))),
+            .then(({ states, partyWaitBacklog }) => {
+                const willingStates = states.filter((state) => PersonaPartyPolicy.backgroundIntent(state).accept);
+                return this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? willingStates : [])
+                    .then(() => this.recruitBackgroundMembers(willingStates)).then((recruitedIds) => ({
+                    states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
                     partyWaitBacklog
-                })))
+                }));
+            })
             .then(({ states, partyWaitBacklog }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
                 const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
