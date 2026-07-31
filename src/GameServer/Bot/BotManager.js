@@ -211,10 +211,13 @@ const BotManager = {
         const history = Object.values(state.stats?.partyHistory || {});
         const persona = BotPersona.generate(state);
         const traits = personaTraits(persona);
+        const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
+            ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
+            : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
         const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
             ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
             ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
-            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goal ? `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}` : 'none')],
+            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goalLabel)],
             ['Travel', safe(travel ? `${travel.reason} -> ${travel.townName || 'field'}` : 'none')],
             ['Market Lead', safe(lead ? `${lead.itemName} in ${lead.town} for ${lead.price}` : 'none')],
             ['WTB', safe(wanted ? wanted.itemName || `Item ${wanted.itemId}` : 'none')],

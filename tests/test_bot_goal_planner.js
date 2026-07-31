@@ -112,6 +112,18 @@ const saleGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
 assert.strictEqual(saleGoal.type, 'sell_inventory');
 assert.strictEqual(saleGoal.plan.expectedBenefit, 'market_sale_inventory');
 
+const wealthSaleGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    persona: { primaryDrive: 'wealth', traits: {} },
+    inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(wealthSaleGoal.type, 'sell_inventory');
+assert.strictEqual(wealthSaleGoal.priority, 86, 'wealth drive should prioritize a real market opportunity');
+assert.strictEqual(wealthSaleGoal.plan.personaDrive, 'wealth');
+assert.strictEqual(wealthSaleGoal.target.focusItem.itemId, 1864);
+
 const poorSellerGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,
     adena: 50,

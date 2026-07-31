@@ -2,6 +2,7 @@ const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
+const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPolicy');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 // Weapons make the largest immediate difference, then core armour.  The two
@@ -186,16 +187,27 @@ function evaluate(state = {}, options = {}) {
     }
 
     const sale = ItemDisposition.saleSummary(state);
-    if (sale.itemCount >= 3 || sale.marketValue >= 1000) {
+    const wealthSale = PersonaEconomicPolicy.wealthSaleOpportunity(state, sale);
+    if (sale.itemCount >= 3 || sale.marketValue >= 1000 || wealthSale) {
         candidates.push({
             type: 'sell_inventory',
             // A full bag is capital, not a reason to keep grinding with no
             // adena. Recovery and death still win, but an equipped bot with
             // useful surplus should reach the market before another generic
             // earn-adena / upgrade-funding loop.
-            priority: 74,
-            target: { itemCount: sale.itemCount, marketValue: sale.marketValue },
-            plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0 },
+            priority: 74 + Number(wealthSale?.priorityBonus || 0),
+            target: {
+                itemCount: sale.itemCount,
+                marketValue: sale.marketValue,
+                focusItem: wealthSale?.focus || null
+            },
+            plan: {
+                kind: 'market_sell',
+                expectedBenefit: 'market_sale_inventory',
+                risk: 0,
+                personaDrive: wealthSale ? 'wealth' : null,
+                personaReason: wealthSale?.reason || null
+            },
             blockers: [],
             nextReviewAt: timestamp + 10 * 60 * 1000
         });
