@@ -4,6 +4,7 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const FRIEND_TRUST = 8;
 const MAX_CONST_MEMBERS = 8;
 const PAGE_SIZE = 12;
+const rosterWrites = new Map();
 
 function id(subject) { return Number(subject?.characterId || subject?.actor?.fetchId?.() || 0); }
 function page(value) { return Math.max(0, Number(value) || 0); }
@@ -49,7 +50,7 @@ const BotFriendship = {
     toggleConst(player, botId) {
         const playerId = id(player);
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
-        return this.isFriend(player, botId).then((friend) => {
+        const change = () => this.isFriend(player, botId).then((friend) => {
             if (!friend) return { ok: false, reason: 'not_friend' };
             return Database.execute(['SELECT 1 FROM bot_friend_roster WHERE playerId = ? AND botId = ?', [playerId, Number(botId)]]).then((rows) => {
                 if (rows[0]) return Database.execute(['DELETE FROM bot_friend_roster WHERE playerId = ? AND botId = ?', [playerId, Number(botId)]]).then(() => ({ ok: true, selected: false }));
@@ -59,6 +60,13 @@ const BotFriendship = {
                 });
             });
         });
+        const previous = rosterWrites.get(playerId) || Promise.resolve();
+        const next = previous.then(change, change);
+        const tracked = next.finally(() => {
+            if (rosterWrites.get(playerId) === tracked) rosterWrites.delete(playerId);
+        });
+        rosterWrites.set(playerId, tracked);
+        return next;
     },
     selected(player) {
         const playerId = id(player);

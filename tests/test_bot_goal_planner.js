@@ -51,6 +51,24 @@ assert.strictEqual(equipmentGoal.type, 'upgrade_gear');
 assert.strictEqual(equipmentGoal.target.itemId, expectedWeapon.selfId);
 assert.strictEqual(equipmentGoal.plan.expectedBenefit, 'adena_for_weapon_upgrade');
 
+const wealthInvestmentGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    adena: 1000000000,
+    spotId: 'cruma',
+    persona: { primaryDrive: 'wealth', traits: {} },
+    stats: {
+        classId: 0,
+        build: { grade: 'c', classId: 0, level: 40 },
+        equipment: [{ selfId: 999, slot: 7, rank: 'd', name: 'Old Weapon' }],
+        deaths: 3,
+        fightsResolved: 12,
+        spotRisk: { spotId: 'cruma', deathsAtEntry: 1, fightsAtEntry: 2 }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(wealthInvestmentGoal.type, 'upgrade_gear');
+assert.strictEqual(wealthInvestmentGoal.priority, 81, 'repeated deaths at the current spot should elevate an affordable wealth investment');
+assert.strictEqual(wealthInvestmentGoal.plan.wealthInvestment.reason, 'reduce_deaths_at_profitable_spot');
+
 const expectedChest = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 0, level: 40 }).items.find((item) => Number(item.slot) === 10);
 const expectedChestPrice = Number((DataCache.items || []).find((item) => Number(item.selfId) === Number(expectedChest.selfId))?.template?.price || 0);
 const armorGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({

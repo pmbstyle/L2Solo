@@ -4,10 +4,14 @@ const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
 function retryAfterFailedPurchase(state, goal, reason) {
+    if (reason === 'no_affordable_offer') MarketTelemetry.noOffer();
+    else if (reason === 'offer_changed') MarketTelemetry.offerChanged();
+    else if (reason === 'purchase_failed' || reason === 'persist_failed') MarketTelemetry.purchaseFailed();
     const timestamp = Date.now();
     const retryState = {
         ...state,
@@ -59,12 +63,15 @@ const ColdMarketService = {
                 return retryAfterFailedPurchase(state, goal, 'persist_failed');
             }
             const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
-            return settlement.then((sellerState) => GoalState.clear(state.characterId, 'completed').then(() => ({
+            return settlement.then((sellerState) => {
+                MarketTelemetry.purchase(offer, 1);
+                return GoalState.clear(state.characterId, 'completed').then(() => ({
                 state: updated,
                 purchased: true,
                 offer,
                 sellerState
-            })));
+                }));
+            });
         }).catch((err) => {
             MarketOpportunity.release(offer, 1);
             utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);

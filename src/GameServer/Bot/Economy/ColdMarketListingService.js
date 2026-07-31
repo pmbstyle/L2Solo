@@ -5,8 +5,10 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
@@ -502,31 +504,37 @@ function open(state, options = {}) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
         return Promise.resolve({ state, listed: false, reason: 'not_shopping' });
     }
-    const items = ItemDisposition.saleCandidates(state, options);
-    if (!items.length) return Promise.resolve({ state, listed: false, reason: 'nothing_to_sell' });
+    const initialItems = ItemDisposition.saleCandidates(state, options);
+    if (!initialItems.length) return Promise.resolve({ state, listed: false, reason: 'nothing_to_sell' });
 
     const timestamp = Number(options.now) || Date.now();
-    const town = marketTown(options.town || targetMarketTownName(state, items));
+    // GoalExecutor chooses the best buyer town before travel. At this stage
+    // the bot must trade only with the city it has actually reached.
+    const town = marketTown(options.town || state.currentRegion || targetMarketTownName(state, initialItems));
+    return StaticBuyerService.sell(state, town?.name).then((buyerSale) => {
+    const saleState = buyerSale.state || state;
+    const items = ItemDisposition.saleCandidates(saleState, options);
+    if (!items.length) return { state: saleState, listed: false, reason: buyerSale.sold ? 'sold_to_static_buyer' : 'nothing_to_sell', buyerSale };
     const storeLoc = marketLocation(town, { ...options, state });
-    if (!storeLoc) return Promise.resolve({ state, listed: false, reason: 'giran_plaza_full' });
+    if (!storeLoc) return { state: saleState, listed: false, reason: 'giran_plaza_full', buyerSale };
     const nextState = {
-        ...state,
+        ...saleState,
         activity: 'merchant',
         currentRegion: town?.name || state.currentRegion,
         // A private store has a stall, not a roaming route. Persist the plaza
         // coordinate so cold ticks and hot materialization use the same spot.
         loc: storeLoc,
         stats: {
-            ...(state.stats || {}),
+            ...(saleState.stats || {}),
             marketStore: {
                 id: `${state.characterId}:${timestamp}`,
                 storeType: 1,
-                sellerCharacterId: Number(state.characterId),
-                sellerName: state.name,
+                sellerCharacterId: Number(saleState.characterId),
+                sellerName: saleState.name,
                 title: options.title || marketStoreTitle(items),
                 autoTitle: !options.title,
                 marketTownRoutingVersion: MARKET_TOWN_ROUTING_VERSION,
-                town: town?.name || options.town || state.currentRegion,
+                town: town?.name || options.town || saleState.currentRegion,
                 loc: storeLoc,
                 items,
                 openedAt: timestamp,
@@ -534,7 +542,7 @@ function open(state, options = {}) {
             }
         },
         timing: {
-            ...(state.timing || {}),
+            ...(saleState.timing || {}),
             activityStartedAt: timestamp,
             // Sales settle through the market event path.  A listed store only
             // needs a scheduled wake-up when its offer expires.
@@ -543,11 +551,14 @@ function open(state, options = {}) {
     };
     return LifeState.upsertState(nextState, 'cold_market_listing').then((saved) => {
         if (saved) MarketOpportunity.indexColdStore(saved);
+        if (saved) MarketTelemetry.listingOpened();
         return {
-            state: saved || state,
+            state: saved || saleState,
             listed: !!saved,
-            itemCount: items.length
+            itemCount: items.length,
+            buyerSale
         };
+    });
     });
 }
 
@@ -609,14 +620,18 @@ function resolve(state, timestamp = Date.now()) {
                 liquidated
             }));
         })
-        .then(({ state: liquidatedState, warehouseCount, liquidated }) => LifeState.upsertState(liquidatedState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out')
+        .then(({ state: liquidatedState, warehouseCount, liquidated }) => {
+            const reason = hasStock ? 'expired' : 'sold_out';
+            MarketTelemetry.closed(reason, liquidated.reduce((sum, item) => sum + Number(item.count || 0), 0));
+            return LifeState.upsertState(liquidatedState, hasStock ? 'cold_market_expired' : 'cold_market_sold_out')
             .then((saved) => ({
                 state: saved || liquidatedState,
                 closed: true,
                 reason: hasStock ? 'expired' : 'sold_out',
                 warehouseCount,
                 liquidatedCount: liquidated.reduce((sum, item) => sum + Number(item.count || 0), 0)
-            })));
+            }));
+        });
 }
 
 // Stores created before town-based routing all lived in Giran.  Move that

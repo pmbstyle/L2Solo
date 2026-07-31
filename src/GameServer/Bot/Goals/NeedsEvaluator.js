@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPolicy');
+const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 // Weapons make the largest immediate difference, then core armour.  The two
@@ -119,9 +120,10 @@ function evaluate(state = {}, options = {}) {
     if (gear) {
         const requiredAdena = Math.max(0, gear.desiredItem.price - Number(state.adena || 0));
         const weaponUpgrade = gear.slot === 7;
+        const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
         candidates.push({
             type: 'upgrade_gear',
-            priority: requiredAdena > 0 ? 72 : 58,
+            priority: wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58,
             target: {
                 equipmentSlot: gear.slotName,
                 requiredRank: gear.desiredRank,
@@ -137,7 +139,16 @@ function evaluate(state = {}, options = {}) {
                     : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
                 estimatedCost: gear.desiredItem.price,
                 requiredAdena,
-                marketTown: gear.marketTown
+                marketTown: gear.marketTown,
+                ...(wealthInvestment ? {
+                    personaDrive: 'wealth',
+                    wealthInvestment: {
+                        reason: wealthInvestment.reason,
+                        affordable: wealthInvestment.affordable,
+                        reserve: wealthInvestment.reserve,
+                        spotRisk: wealthInvestment.pressure
+                    }
+                } : {})
             },
             blockers: spot ? [] : ['missing_spot'],
             nextReviewAt: timestamp + 10 * 60 * 1000

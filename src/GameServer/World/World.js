@@ -344,6 +344,11 @@ const World = {
     inviteFriendByName(session, actor, name, distribution, source = 'friend_invite') {
         const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+        if (!PartyCompanionService.hasCapacity(session)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return Promise.resolve(false);
+        }
         return LifeState.findByName(name).then((state) => {
             if (!state) return false;
             return BotFriendship.isFriend(session, state.characterId).then((friend) => {

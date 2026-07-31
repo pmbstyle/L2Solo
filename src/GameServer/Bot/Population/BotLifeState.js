@@ -1272,6 +1272,16 @@ const BotLifeState = {
             .reduce((sum, item) => sum + Number(item.amount || 0), 0);
         const adena = Number(state.adena || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems;
         const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
+        const nextSpotId = result.patch?.spotId || state.spotId;
+        const previousRisk = state.stats?.spotRisk;
+        const spotRisk = String(previousRisk?.spotId || '') === String(nextSpotId || '')
+            ? previousRisk
+            : {
+                spotId: nextSpotId || null,
+                enteredAt: timestamp,
+                deathsAtEntry: Number(state.stats?.deaths || 0),
+                fightsAtEntry: Number(state.stats?.fightsResolved || 0)
+            };
         const stats = {
             ...(state.stats || {}),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
@@ -1330,7 +1340,7 @@ const BotLifeState = {
             adena,
             phase: 'cold',
             activity: nextActivity,
-            spotId: result.patch?.spotId || state.spotId,
+            spotId: nextSpotId,
             currentRegion: result.patch?.currentRegion || state.currentRegion,
             loc: {
                 ...(state.loc || {}),
@@ -1351,6 +1361,9 @@ const BotLifeState = {
             stats: {
                 ...stats,
                 ...(result.patch?.stats || {}),
+                // Resolver patches commonly start from the prior state. Keep
+                // the baseline stamped for this resolve's actual destination.
+                spotRisk,
                 // Party combat carries a projected combat snapshot in patch.stats.
                 // Keep lifecycle telemetry from this resolve authoritative over
                 // that snapshot, which still contains the previous tick's data.
@@ -1610,7 +1623,7 @@ const BotLifeState = {
             });
     },
 
-    applyNpcLiquidation(state, candidates = []) {
+    applyNpcLiquidation(state, candidates = [], options = {}) {
         if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
         const inventory = { ...(state.inventory || {}) };
         let payout = 0;
@@ -1639,7 +1652,7 @@ const BotLifeState = {
             inventory,
             stats: {
                 ...(state.stats || {}),
-                lastNpcLiquidation: { payout, sold, at: now() }
+                lastNpcLiquidation: { payout, sold, at: now(), ...options }
             },
             updatedAt: now()
         };
