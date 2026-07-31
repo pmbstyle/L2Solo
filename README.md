@@ -62,19 +62,21 @@ Clean C4 client protocol 656
 - Bots are farming solo and in party
 - In-party roles (tank, dps, healer, buffer, etc)
 - In-party buff control
-- Bot farm goals: craft or drop equipment for bot progression
+- Bot goals: equipment craft/drop/purchase, gain wealth, lvl-up faster, etc
 - Craft using recipes and craft stations
 - Selling loot in towns using a private store
 - Buying needed resources or equipment
 - PK bots
 - Bots attack a PK or run away
 - Communication in chat (LFP, LFG, PK alert, etc)
+- Cost parties and friends system
+- Reputation system - bots will reject player party if you treated them badly or become friends and const party members if good
 - Bots ask for loot if you have something they need
 - Bots go for NPC (Nobie guide) buff
-- Bots changing their farming location based on lvl, number of mobs around, or a crafting goal
+- Bots change their farming location based on lvl, number of mobs around, or a crafting goal
 - Bots join and fight in a party with a player
 - Bots have a memory about interaction with a player; they act correspondingly 
-
+- Bot persona traits: Sociability, Commitment, Caution, Ambition, Assertiveness, Empathy, Resilience
 
 ### ✴️ Will be added
 
@@ -83,13 +85,12 @@ Clean C4 client protocol 656
 - Clan wars
 - Wars for a farm spot
 - Olympiad, heroes
-- Siages (bot or player -driven)
+- Sieges (bot- or player -driven)
 - Raids (Raid/World bosses)
 - Complete live economy
 - Full quests, including profession change
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
-- One-click installer
 
 
 ## 🎮 Wanna play now?
@@ -135,7 +136,9 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 
 - `.admin` - open the admin menu.
 - `.sell` - sell all unequipped non-Adena items for 50% item value.
-- `.bot` or `.companion` - open the companion control panel.
+- `.bot` - open the party control panel.
+- `.botparty`- search for bots around player location to join player party
+- `.botfriends` - friend list and const party management
 - `.botstatus` - show a bot overview panel.
 - `.botstatus <name>` - show detailed status for a specific bot.
 - `.botpath` / `.botpath <name>` - inspect bot movement, town-route waypoints, and geodata path diagnostics.
