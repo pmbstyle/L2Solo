@@ -116,6 +116,11 @@ function consume(session, data) {
             World.inviteBotByName(session, session.actor, name, undefined, 'chat_invite');
             return;
         }
+        if (data.text === '.botfriends' || data.text.startsWith('.botfriends ')) {
+            const BotFriends = invoke('GameServer/World/Generics/NpcBypasses/BotFriends');
+            BotFriends.render(session, data.text.includes(' add') ? 'add' : 'friends');
+            return;
+        }
         if (/^(\/tell|\.tell|\/w|\.w)\s+/i.test(data.text)) {
             const body = data.text.replace(/^(\/tell|\.tell|\/w|\.w)\s+/i, '').trim();
             const match = body.match(/^(\S+)\s+(.+)$/);

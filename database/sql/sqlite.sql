@@ -220,6 +220,24 @@ CREATE TABLE IF NOT EXISTS bot_social_memory (
     PRIMARY KEY(playerId, botId)
 );
 
+CREATE TABLE IF NOT EXISTS bot_friendships (
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'accepted',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY (playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_friendships_player ON bot_friendships(playerId, status);
+
+CREATE TABLE IF NOT EXISTS bot_friend_roster (
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    selectedAt INTEGER NOT NULL,
+    PRIMARY KEY (playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_friend_roster_player ON bot_friend_roster(playerId, selectedAt);
+
 CREATE TABLE IF NOT EXISTS bot_life_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,

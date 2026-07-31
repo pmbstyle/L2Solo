@@ -143,13 +143,13 @@ const World = {
         });
     },
 
-    inviteBotCompanion(session, actor, targetSession, distribution, source = 'invite') {
+    inviteBotCompanion(session, actor, targetSession, distribution, source = 'invite', options = {}) {
         const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
         const BotManager = invoke('GameServer/Bot/BotManager');
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         const PersonaPartyDecisionPolicy = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
-        const availability = BotAvailability.evaluate(session, targetSession);
+        const availability = BotAvailability.evaluate(session, targetSession, options);
         const bot = targetSession.actor;
 
         BotSocialMemory.recordEvent(session, targetSession, 'invite_attempt', source);
@@ -195,7 +195,7 @@ const World = {
         return true;
     },
 
-    inviteBotByName(session, actor, name, distribution, source = 'named_invite') {
+    inviteBotByName(session, actor, name, distribution, source = 'named_invite', options = {}) {
         const lookup = String(name || '').trim();
         if (!lookup) {
             session.dataSendToMe(ServerResponse.actionFailed());
@@ -210,7 +210,7 @@ const World = {
 
         const hotSession = BotManager.findSessionByName(lookup);
         if (hotSession) {
-            return Promise.resolve(this.inviteBotCompanion(session, actor, hotSession, distribution, source));
+            return Promise.resolve(this.inviteBotCompanion(session, actor, hotSession, distribution, source, options));
         }
 
         ConsoleText.transmit(session, ConsoleText.caption.waitForResponse);
@@ -220,7 +220,7 @@ const World = {
                 return false;
             }
 
-            const availability = BotAvailability.evaluateState(session, state);
+            const availability = BotAvailability.evaluateState(session, state, options);
             if (!availability.available) {
                 BotSocialMemory.recordEvent(session, state, 'invite_attempt', source);
                 BotSocialMemory.recordEvent(session, state, 'party_refused', availability.reason);
@@ -254,7 +254,7 @@ const World = {
                         return false;
                     }
 
-                    return this.inviteBotCompanion(session, actor, targetSession, distribution, source);
+                    return this.inviteBotCompanion(session, actor, targetSession, distribution, source, options);
                 });
             });
         }).catch((err) => {
@@ -339,6 +339,17 @@ const World = {
             pending.distribution,
             pending.source || 'invite'
         );
+    },
+
+    inviteFriendByName(session, actor, name, distribution, source = 'friend_invite') {
+        const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        return LifeState.findByName(name).then((state) => {
+            if (!state) return false;
+            return BotFriendship.isFriend(session, state.characterId).then((friend) => friend
+                ? this.inviteBotByName(session, actor, name, distribution, source, { ignoreDistance: true })
+                : false);
+        });
     },
 
     oustPartyMember(session, actor, data) {

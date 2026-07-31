@@ -65,7 +65,7 @@ function emptyResult(playerSession, botSubject) {
 const BotAvailability = {
     inviteRange: Config.partyInviteRange,
 
-    evaluate(playerSession, botSession) {
+    evaluate(playerSession, botSession, options = {}) {
         const player = playerSession?.actor;
         const bot = botSession?.actor;
         const result = emptyResult(playerSession, botSession);
@@ -81,7 +81,7 @@ const BotAvailability = {
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
         else if (botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
-        else if (result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
+        else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (result.memory.trust <= -6) reason = 'low_trust';
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
@@ -99,7 +99,7 @@ const BotAvailability = {
         return result;
     },
 
-    evaluateState(playerSession, state) {
+    evaluateState(playerSession, state, options = {}) {
         const player = playerSession?.actor;
         const result = emptyResult(playerSession, state);
         if (!player || !state) return result;
@@ -112,7 +112,7 @@ const BotAvailability = {
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
         else if (state.activity === 'merchant' || state.activity === 'crafting') reason = 'merchant_duty';
-        else if (result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
+        else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (result.memory.trust <= -6) reason = 'low_trust';
         else if (result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';

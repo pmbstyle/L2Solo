@@ -12,6 +12,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
@@ -290,6 +291,7 @@ const BotManager = {
     init() {
         console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
+        BotFriendship.init();
         PopulationService.init();
         GoalService.init();
         SimulationKernel.init({ population: PopulationService });
