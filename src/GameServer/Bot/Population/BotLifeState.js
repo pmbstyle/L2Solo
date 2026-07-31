@@ -972,14 +972,15 @@ const BotLifeState = {
                 nextResolveAt IS NULL OR nextResolveAt <= ?
                 OR (activity = 'hunting' AND (${staleRateModelPlan}))
             )
-            -- Travel and crafting are finite state transitions. They must
-            -- outrank a large resting/hunting backlog, otherwise a bot can
-            -- remain on its way to a station forever after a restart.
+            -- Travel, the arrived market action, and crafting are finite
+            -- state transitions. They must outrank a large resting/hunting
+            -- backlog, otherwise a bot can remain at a market or station
+            -- for minutes after it is already due.
             ORDER BY CASE
                 -- Replan active combat before it can continue using a stale
                 -- target level or drop-rate estimate.
                 WHEN ${staleRateModelPlan} THEN 0
-                WHEN activity IN ('traveling', 'crafting') THEN 1
+                WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1
                 -- Startup craft recovery is a one-shot replan.  Serve it
                 -- before the normal hunting backlog so a repaired station
                 -- wait immediately selects its missing raw material.
