@@ -96,6 +96,8 @@ async function run() {
     ]);
     Config.maxBackgroundParties = 2;
     Config.partyFormationBatchSize = 2;
+    assert.strictEqual(PopulationService.maxBackgroundPartiesForBacklog(0), 2, 'without a backlog the base party capacity must remain unchanged');
+    assert(PopulationService.maxBackgroundPartiesForBacklog(1000) > 2, 'a sustained party-wait backlog should open bounded spare party capacity');
     const released = await PopulationService.reclaimBackgroundPartyCapacity([
         { characterId: 31 }, { characterId: 32 }, { characterId: 33 }, { characterId: 34 }
     ]);

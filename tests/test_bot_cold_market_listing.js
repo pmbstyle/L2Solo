@@ -109,6 +109,25 @@ async function run() {
     const dy = secondStall.locY - opened.state.loc.locY;
     assert(Math.sqrt(dx * dx + dy * dy) >= ListingService.GIRAN_STALL_MIN_DISTANCE, 'stores must not overlap on the Giran plaza');
 
+    const buyerRoutedState = {
+        ...state,
+        characterId: 87,
+        name: 'BuyerRoutedSeller',
+        currentRegion: 'Talking Island',
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 500 },
+            1864: { selfId: 1864, name: 'Stem', amount: 10, kind: 'Other.Material' }
+        }
+    };
+    const buyerRouted = await ListingService.open(buyerRoutedState, { now: 1000, durationMs: 60000 });
+    assert.strictEqual(buyerRouted.listed, false, 'materials accepted by a static buyer must not create a dead private store');
+    assert.strictEqual(buyerRouted.reason, 'sold_to_static_buyer');
+    assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.source, 'static_buyer');
+
+    const remoteBuyerState = { ...buyerRoutedState, characterId: 86, currentRegion: 'Giran' };
+    const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
+    assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation?.source, undefined, 'a bot must not sell to a buyer in another town before travelling there');
+
     const ownOffer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 88 });
     assert(!ownOffer || ownOffer.sourceType !== 'cold_store', 'seller must not buy its own listing');
     const offer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 99 });

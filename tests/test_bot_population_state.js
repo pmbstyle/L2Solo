@@ -89,12 +89,12 @@ try {
                 return BotLifeState.dueCold(5, 1000);
             });
         }).then(() => {
-            const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 1"));
+            const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
             assert(due.sql.includes('rateModelVersion'), 'due cold states must prioritize persisted plans from an older drop-rate model');
             assert(due.sql.includes(`< ${GearPlanner.RATE_MODEL_VERSION}`), 'due cold states must prioritize plans from the current model rollout rather than a stale hard-coded version');
             assert(due.sql.includes("OR (activity = 'hunting' AND (json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL"), 'a stale active combat plan must bypass its old next-resolve deadline for an immediate safety replan');
-            assert(due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL") < due.sql.indexOf("WHEN activity IN ('traveling', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary travel and crafting transitions');
-            assert(due.sql.includes("WHEN activity IN ('traveling', 'crafting') THEN 1"), 'due cold states must promptly finish travel and crafting transitions after an urgent combat-safety replan');
+            assert(due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL") < due.sql.indexOf("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary market, travel, and crafting transitions');
+            assert(due.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'due cold states must promptly finish market, travel, and crafting transitions after an urgent combat-safety replan');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
             return BotLifeState.assignParty({
@@ -117,38 +117,47 @@ try {
             }).then(() => {
                 const requiredCandidates = statements.find((entry) => entry.sql.includes("states.activity = 'party_wait'"));
                 assert(requiredCandidates, 'a real party-wait backlog must reserve formation capacity ahead of elective hunting parties');
-                const member = {
-                    characterId: 44,
-                    name: 'PartyTelemetryProbe',
-                    level: 20,
-                    phase: 'cold',
-                    activity: 'grouped',
-                    party: { partyId: 'bgp_probe' },
-                    timing: { nextResolveAt: 9000 },
-                    vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
-                    stats: {
-                        lastResolveDebug: { targetNpcId: null },
-                        targetCombat: { targets: {}, populationTargets: {} }
-                    },
-                    inventory: {}
-                };
-                return BotLifeState.applyResolve(member, {
-                    patch: {
+                return BotLifeState.coldPartyCandidateCount(true).then(() => {
+                    const count = statements.find((entry) => entry.sql.includes('COUNT(*) AS candidateCount'));
+                    assert(count, 'party capacity planning must be able to measure the full wait backlog');
+                    return BotLifeState.coldPartyCandidatesForSpots(['cruma', 'dion'], 3, true);
+                }).then(() => {
+                    const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY states.spotId'));
+                    assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
+                }).then(() => {
+                    const member = {
+                        characterId: 44,
+                        name: 'PartyTelemetryProbe',
+                        level: 20,
+                        phase: 'cold',
                         activity: 'grouped',
-                        vitals: member.vitals,
-                        // This mirrors the projected snapshot that a party
-                        // resolver returns after a fight.
-                        stats: { ...member.stats, coldCombat: { cooldowns: {} } }
-                    },
-                    materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                    nextResolveAt: 10000,
-                    debug: {
-                        partyId: 'bgp_probe',
-                        aggregate: true,
-                        populationTelemetryOwner: true,
-                        targetNpcId: 93,
-                        defeatedNpcIds: [93]
-                    }
+                        party: { partyId: 'bgp_probe' },
+                        timing: { nextResolveAt: 9000 },
+                        vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
+                        stats: {
+                            lastResolveDebug: { targetNpcId: null },
+                            targetCombat: { targets: {}, populationTargets: {} }
+                        },
+                        inventory: {}
+                    };
+                    return BotLifeState.applyResolve(member, {
+                        patch: {
+                            activity: 'grouped',
+                            vitals: member.vitals,
+                            // This mirrors the projected snapshot that a party
+                            // resolver returns after a fight.
+                            stats: { ...member.stats, coldCombat: { cooldowns: {} } }
+                        },
+                        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                        nextResolveAt: 10000,
+                        debug: {
+                            partyId: 'bgp_probe',
+                            aggregate: true,
+                            populationTelemetryOwner: true,
+                            targetNpcId: 93,
+                            defeatedNpcIds: [93]
+                        }
+                    });
                 });
             }).then(() => {
                 const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);

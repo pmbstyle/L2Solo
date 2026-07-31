@@ -301,6 +301,15 @@ try {
         const nativeAnswerSession = fakeSession('bot_native_party_answer', nativeAnswerBot);
         const nativeDeclineBot = fakeActor(2000046, { locX: 70, locY: 0 });
         const nativeDeclineSession = fakeSession('bot_native_party_decline', nativeDeclineBot);
+        // This test exercises the accepted invite lifecycle. Make the
+        // persona choice explicit now that ordinary invites are persona-aware.
+        const socialPersona = {
+            primaryDrive: 'social',
+            archetype: 'party_regular',
+            traits: { sociability: 0.82, empathy: 0.66, commitment: 0.66 }
+        };
+        inviteBotSession.persona = socialPersona;
+        nativeAnswerSession.persona = socialPersona;
         BotManager.sessions = [inviteBotSession, nativeAnswerSession, nativeDeclineSession];
 
         assert.strictEqual(World.inviteBotCompanion(leaderSession, leader, inviteBotSession, 1, 'test_invite'), true, 'available resting bot should join the party');
@@ -336,7 +345,7 @@ try {
         BotSocialMemory.getSnapshot = originalSocialSnapshot;
         BotSocialMemory.recordEvent = originalSocialRecordEvent;
     }
-    assert.strictEqual(inviteTell, `I'm with you. Lead the way.`, 'a recovered invite acknowledgement should not promise another rest');
+    assert.strictEqual(inviteTell, 'Gladly. A steady party is better than going alone.', 'an accepted persona-aware invite should acknowledge the party without promising another rest');
     assert.strictEqual(inviteBotSession.plan, 'following', 'attaching a resting bot should resume party follow after instant recovery');
     inviteBot.level = 17;
     inviteBot.hp = 40;

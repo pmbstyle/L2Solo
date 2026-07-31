@@ -5,12 +5,14 @@ const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
 const BotBrain    = invoke('GameServer/Bot/AI/BotBrain');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
@@ -31,6 +33,19 @@ const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     const cfg = MerchantConfigs[name];
     return { name: name, merchantConfigName: name, race: 4, sex: 0, classId: 53, face: 0, hair: 0, hairColor: 0, locX: cfg.locX, locY: cfg.locY, locZ: cfg.locZ };
 });
+
+function personaTraits(persona) {
+    if (!persona?.traits) return { social: 'unavailable', style: 'unavailable' };
+    const pct = (name) => Math.round(Number(persona.traits[name] || 0) * 100);
+    return {
+        social: `soc ${pct('sociability')} / bond ${pct('commitment')} / help ${pct('empathy')}`,
+        style: `safe ${pct('caution')} / aim ${pct('ambition')} / lead ${pct('assertiveness')} / calm ${pct('resilience')}`
+    };
+}
+
+function personaArchetype(persona) {
+    return persona?.archetype ? String(persona.archetype).replace(/_/g, ' ') : 'unavailable';
+}
 
 const merchantConfigFor = (botData, characterName) => MerchantConfigs[botData.merchantConfigName || characterName];
 
@@ -147,6 +162,8 @@ const BotManager = {
         const availability = BotAvailability.evaluate(playerSession, botSession);
         const social = availability.memory ? `${availability.relationship}, trust ${availability.memory.trust}, familiarity ${availability.memory.familiarity}` : 'none';
         const invite = availability.available ? 'available' : availability.reasonText;
+        const persona = status.persona;
+        const traits = personaTraits(persona);
 
         let body = `${Html.font(status.name, Html.COLOR.title)}<br>`;
         body += Html.statusTable([
@@ -168,6 +185,10 @@ const BotManager = {
             ['PvP AI', safe(pvpDecision)],
             ['Buffs', safe(buffs)],
             ['Trade', safe(trade)],
+            ['Type', safe(personaArchetype(persona))],
+            ['Drive', safe(persona?.primaryDrive || 'unavailable')],
+            ['Social', safe(traits.social)],
+            ['Style', safe(traits.style)],
             ['Social', safe(social)],
             ['Invite', safe(invite)]
         ]);
@@ -189,13 +210,20 @@ const BotManager = {
         const lead = state.stats?.marketLead;
         const wanted = state.stats?.marketWanted;
         const history = Object.values(state.stats?.partyHistory || {});
+        const persona = BotPersona.generate(state);
+        const traits = personaTraits(persona);
+        const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
+            ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
+            : `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}`;
         const body = `${Html.font(state.name, Html.COLOR.title)}<br>` + Html.statusTable([
             ['Phase', 'cold'], ['Activity', safe(state.activity)], ['Level', safe(String(state.level))],
             ['Role', safe(state.party?.role || state.stats?.role || 'dps')], ['Region / Spot', safe(`${state.currentRegion || 'unknown'} / ${state.spotId || 'none'}`)],
-            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goal ? `${goal.type}: ${goal.plan?.expectedBenefit || 'active'}` : 'none')],
+            ['Party', safe(state.party?.partyId || 'none')], ['Goal', safe(goalLabel)],
             ['Travel', safe(travel ? `${travel.reason} -> ${travel.townName || 'field'}` : 'none')],
             ['Market Lead', safe(lead ? `${lead.itemName} in ${lead.town} for ${lead.price}` : 'none')],
             ['WTB', safe(wanted ? wanted.itemName || `Item ${wanted.itemId}` : 'none')],
+            ['Type', safe(personaArchetype(persona))], ['Drive', safe(persona?.primaryDrive || 'unavailable')],
+            ['Social', safe(traits.social)], ['Style', safe(traits.style)],
             ['Party Bonds', safe(`${history.length} remembered partners`)]
         ]) + '<br>' + Html.actionFooter([{ label: 'Refresh', command: `bot-status ${state.name}` }]);
         playerSession.dataSendToMe(ServerResponse.npcHtml(playerSession.actor.fetchId(), Html.page(body, { title: 'Cold Bot Status' })));
@@ -263,6 +291,7 @@ const BotManager = {
     init() {
         console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
+        BotFriendship.init();
         PopulationService.init();
         GoalService.init();
         SimulationKernel.init({ population: PopulationService });
@@ -545,6 +574,19 @@ const BotManager = {
                     session.setActor({
                         ...character, ...utils.crushOb(classInfo)
                     });
+                    // Persona generation is intentionally independent from
+                    // spawning. Static shop/craft services represent a fixed
+                    // service surface, while every other bot is modelled as a
+                    // simulated player and gets a durable seed-based profile.
+                    const staticService = !!storeCfg || (!!manufactureShop && !botData.coldCraftState);
+                    if (!staticService) {
+                        BotPersona.ensure({
+                            characterId: character.id,
+                            stats: botData.coldLifeState?.stats || {}
+                        }).then((persona) => {
+                            session.persona = persona;
+                        });
+                    }
                     // Hot bots do not have a client hotbar request to enable
                     // shots. Their stock is prepared before actor creation, so
                     // enable the compatible C4 auto-shot explicitly.

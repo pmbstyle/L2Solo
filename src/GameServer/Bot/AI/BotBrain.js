@@ -166,6 +166,7 @@ function systemPrompt() {
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
+        'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');

@@ -94,6 +94,51 @@ try {
     assert.strictEqual(result.available, false, 'far cold bot should obey the same invite range as a hot bot');
     assert.strictEqual(result.reason, 'too_far');
 
+    const socialBot = session(actor(2000012, 20), {
+        persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, socialBot);
+    assert.strictEqual(result.available, true, 'a social persona should remain available after hard invite checks pass');
+
+    const soloBot = session(actor(2000013, 20), {
+        persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, soloBot);
+    assert.strictEqual(result.available, false, 'a reserved persona may decline after all hard checks pass');
+    assert.strictEqual(result.reason, 'prefers_solo');
+    result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, true, 'a const friend invite must override persona solo preference');
+
+    const farLowFriend = session(actor(2000015, 55, 0, { locX: 100000 }), {
+        persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, farLowFriend, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, true, 'a const friend invite must override distance and level soft gates');
+
+    const farSocialBot = session(actor(2000014, 20, 0, { locX: 100000 }), {
+        persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, farSocialBot);
+    assert.strictEqual(result.reason, 'too_far', 'persona must not override a hard invite gate');
+
+    const staticCraftState = {
+        characterId: 2000016,
+        name: 'PublicCrafter',
+        level: 70,
+        activity: 'crafting',
+        loc: { locX: 0, locY: 0, locZ: 0 },
+        vitals: { hp: 100, maxHp: 100 },
+        stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
+    };
+    result = BotAvailability.evaluateState(lowPlayer, staticCraftState, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, false, 'const friend overrides must never recruit a public craft service');
+    assert.strictEqual(result.reason, 'merchant_duty');
+
+    const staticMerchant = session(actor(2000017, 20), { plan: 'merchant' });
+    result = BotAvailability.evaluate(lowPlayer, staticMerchant, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, false, 'const friend overrides must never recruit a fixed merchant');
+    assert.strictEqual(result.reason, 'merchant_duty');
+
     console.log('Bot availability checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalGetSnapshot;

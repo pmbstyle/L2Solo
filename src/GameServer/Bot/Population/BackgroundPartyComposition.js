@@ -1,6 +1,7 @@
 const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 const DEFAULT_LEVEL_RANGE = 4;
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
@@ -33,6 +34,12 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
         const aDistance = Math.abs(levelOf(a) - levelOf(anchor));
         const bDistance = Math.abs(levelOf(b) - levelOf(anchor));
         if (aDistance !== bDistance) return aDistance - bDistance;
+
+        // Persona only distinguishes otherwise equally effective choices. It
+        // must not displace established party bonds or a tighter level match.
+        const aPreference = PersonaPartyPolicy.preference(a, peers, coverage).score;
+        const bPreference = PersonaPartyPolicy.preference(b, peers, coverage).score;
+        if (aPreference !== bPreference) return bPreference - aPreference;
         return Number(a.characterId || 0) - Number(b.characterId || 0);
     };
 }

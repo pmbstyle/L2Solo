@@ -185,6 +185,20 @@ CREATE TABLE IF NOT EXISTS bot_goal_state (
     updatedAt INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bot_personas (
+    characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL DEFAULT 1,
+    seed TEXT NOT NULL,
+    primaryDrive TEXT NOT NULL,
+    archetype TEXT NOT NULL,
+    traitsJson TEXT NOT NULL,
+    textCard TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS bot_personas_primaryDrive ON bot_personas(primaryDrive);
+CREATE INDEX IF NOT EXISTS bot_personas_archetype ON bot_personas(archetype);
+
 CREATE TABLE IF NOT EXISTS bot_social_memory (
     playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
@@ -205,6 +219,24 @@ CREATE TABLE IF NOT EXISTS bot_social_memory (
     updatedAt INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(playerId, botId)
 );
+
+CREATE TABLE IF NOT EXISTS bot_friendships (
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'accepted',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY (playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_friendships_player ON bot_friendships(playerId, status);
+
+CREATE TABLE IF NOT EXISTS bot_friend_roster (
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    selectedAt INTEGER NOT NULL,
+    PRIMARY KEY (playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_friend_roster_player ON bot_friend_roster(playerId, selectedAt);
 
 CREATE TABLE IF NOT EXISTS bot_life_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,5 +1,6 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const DataCache = invoke('GameServer/DataCache');
+const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 let rankIndexSource = null;
@@ -73,7 +74,13 @@ function targetTownForItems(state, items = []) {
 }
 
 function targetTownForSale(state) {
-    return targetTownForItems(state, ItemDisposition.saleCandidates(state));
+    // Static buyer stores are the dependable Adena path for harvested
+    // resources. Prefer the city that is actually bidding on this inventory;
+    // equipment left after that sale may still open a normal private store
+    // there. Without this, no-grade local markets can strand materials in a
+    // town with no buyer.
+    const buyerTown = StaticBuyerService.bestTownFor(state)?.town;
+    return buyerTown || targetTownForItems(state, ItemDisposition.saleCandidates(state));
 }
 
 module.exports = {

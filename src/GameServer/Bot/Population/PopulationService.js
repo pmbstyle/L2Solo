@@ -23,6 +23,8 @@ const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitm
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
@@ -78,6 +80,25 @@ function partySpotForLeader(leader) {
             routeMode: 'party'
         }
     }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
+}
+
+function maxBackgroundPartiesForBacklog(partyWaitCount = 0) {
+    const base = Math.max(0, Number(Config.maxBackgroundParties) || 0);
+    const threshold = Math.max(1, Number(Config.partyBacklogCapacityThreshold) || 250);
+    const step = Math.max(0, Number(Config.partyBacklogCapacityStep) || 0);
+    const maxExtra = Math.max(0, Number(Config.partyBacklogCapacityMaxExtra) || 0);
+    const extra = Math.min(maxExtra, Math.floor(Math.max(0, Number(partyWaitCount) || 0) / threshold) * step);
+    return base + extra;
+}
+
+function acquisitionRequirementKey(plan) {
+    return JSON.stringify({
+        status: plan?.status || null,
+        strategy: plan?.strategy || null,
+        requiresParty: Boolean(plan?.requiresParty),
+        target: Number(plan?.target?.selfId || 0),
+        nextSpot: plan?.next?.spotId || null
+    });
 }
 
 function directDropTargetNpcId(...plans) {
@@ -165,6 +186,8 @@ const PopulationService = {
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     marketExpiryCleanupTimer: null,
+    personaBackfillTimer: null,
+    personaBackfillRunning: false,
     nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
@@ -265,6 +288,7 @@ const PopulationService = {
         }
 
         this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
+        this.schedulePersonaBackfill();
 
         Director.start();
     },
@@ -307,6 +331,11 @@ const PopulationService = {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
         }
+        if (this.personaBackfillTimer) {
+            clearInterval(this.personaBackfillTimer);
+            this.personaBackfillTimer = null;
+        }
+        this.personaBackfillRunning = false;
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
@@ -342,6 +371,31 @@ const PopulationService = {
 
         if (typeof this.seedTimer.unref === 'function') {
             this.seedTimer.unref();
+        }
+    },
+
+    schedulePersonaBackfill() {
+        if (this.personaBackfillTimer) return;
+
+        const run = () => {
+            if (this.personaBackfillRunning) return;
+            this.personaBackfillRunning = true;
+            BotPersona.backfillGenerated().then((result) => {
+                // Only a successful short read closes this one-time migration.
+                // A failed write stays scheduled for a later retry.
+                if (result.exhausted && this.personaBackfillTimer) {
+                    clearInterval(this.personaBackfillTimer);
+                    this.personaBackfillTimer = null;
+                }
+            }).finally(() => {
+                this.personaBackfillRunning = false;
+            });
+        };
+
+        run();
+        this.personaBackfillTimer = setInterval(run, 2000);
+        if (typeof this.personaBackfillTimer.unref === 'function') {
+            this.personaBackfillTimer.unref();
         }
     },
 
@@ -629,19 +683,44 @@ const PopulationService = {
         }
 
         this.partyFormationRunning = true;
-        return LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit, true)
-            .then((partyWaitStates) => (partyWaitStates.length
-                ? { states: partyWaitStates, partyWaitBacklog: true }
-                : LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-                    .then((states) => ({ states, partyWaitBacklog: false }))))
-            .then(({ states, partyWaitBacklog }) => this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? states : [])
-                .then(() => this.recruitBackgroundMembers(states)).then((recruitedIds) => ({
-                    states: states.filter((state) => !recruitedIds.has(Number(state.characterId))),
-                    partyWaitBacklog
-                })))
-            .then(({ states, partyWaitBacklog }) => {
+        return LifeState.coldPartyCandidateCount(true)
+            .then((partyWaitCount) => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit, true)
+                .then((partyWaitStates) => (partyWaitStates.length
+                    ? { states: partyWaitStates, partyWaitBacklog: true }
+                    : LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+                        .then((states) => ({ states, partyWaitBacklog: false }))))
+                .then(({ states, partyWaitBacklog }) => {
+                    const activeParties = BackgroundPartyState.active();
+                    const recruitSpots = activeParties
+                        .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
+                        .map((party) => party.spotId);
+                    const fairCandidates = LifeState.coldPartyCandidatesForSpots(
+                        recruitSpots,
+                        Config.partyRecruitmentCandidateLimit,
+                        partyWaitBacklog
+                    );
+                    return fairCandidates.then((spotCandidates) => {
+                        const byId = new Map((states || []).map((state) => [Number(state.characterId), state]));
+                        spotCandidates.forEach((state) => byId.set(Number(state.characterId), state));
+                        return {
+                            states: Array.from(byId.values()),
+                            partyWaitBacklog,
+                            partyWaitCount
+                        };
+                    });
+                }))
+            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
+                const willingStates = states.filter((state) => PersonaPartyPolicy.backgroundIntent(state).accept);
+                return this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? willingStates : [], partyWaitCount)
+                    .then(() => this.recruitBackgroundMembers(willingStates)).then((recruitedIds) => ({
+                    states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
+                    partyWaitBacklog,
+                    partyWaitCount
+                }));
+            })
+            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
-                const slots = Math.max(0, Config.maxBackgroundParties - activeParties);
+                const slots = Math.max(0, maxBackgroundPartiesForBacklog(partyWaitCount) - activeParties);
                 if (slots <= 0) return [];
                 const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
                 const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
@@ -679,6 +758,10 @@ const PopulationService = {
                         stats: {
                             formedAt: Date.now(),
                             memberNames: members.map((state) => state.name),
+                            personaFormation: Object.fromEntries(members.map((member) => [
+                                member.characterId,
+                                PersonaPartyPolicy.explain(member, members.filter((peer) => peer !== member), PartyComposition.roleCoverage(members))
+                            ])),
                             route: partySpot?.route || null,
                             acquisitionGoal: leader.stats?.equipmentPlan?.status === 'active'
                                 ? leader.stats.equipmentPlan
@@ -729,10 +812,60 @@ const PopulationService = {
         return groupBySpot(states, options);
     },
 
-    reclaimBackgroundPartyCapacity(partyWaitStates = []) {
+    maxBackgroundPartiesForBacklog,
+
+    refreshBackgroundPartyRequirements(parties = []) {
+        const timestamp = Date.now();
+        const refreshMs = Math.max(1000, Number(Config.partyRequirementRefreshMs) || 5 * 60 * 1000);
+        const batchSize = Math.max(1, Number(Config.partyRequirementRefreshBatchSize) || 8);
+        const refreshable = (parties || [])
+            .filter((party) => timestamp - Number(party.stats?.lastRequirementRefreshAt || 0) >= refreshMs)
+            .sort((a, b) => Number(a.stats?.lastRequirementRefreshAt || 0) - Number(b.stats?.lastRequirementRefreshAt || 0))
+            .slice(0, batchSize);
+        if (!refreshable.length) return Promise.resolve([]);
+
+        let spots = [];
+        try {
+            spots = SpotProfiles.ensure();
+        } catch (err) {
+            // Unit/integration harnesses may not load the world spot index;
+            // keep the refresh best-effort and let the normal party resolver
+            // retry it on the next formation pass.
+            utils.infoWarn('BotPopulation', 'party requirement refresh spot index unavailable: %s', err.message);
+            return Promise.resolve([]);
+        }
+        return refreshable.reduce((chain, party) => chain.then(async (refreshed) => {
+            const members = await LifeState.statesForParty(party.partyId);
+            let changed = false;
+            for (const member of members) {
+                const previousPlan = member.stats?.equipmentPlan;
+                let nextPlan;
+                try {
+                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots });
+                } catch (err) {
+                    utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
+                    continue;
+                }
+                if (acquisitionRequirementKey(previousPlan) === acquisitionRequirementKey(nextPlan)) continue;
+                const nextState = {
+                    ...member,
+                    stats: { ...(member.stats || {}), equipmentPlan: nextPlan }
+                };
+                const saved = await LifeState.upsertState(nextState, 'party_requirement_refresh');
+                changed = changed || !!saved;
+            }
+            await BackgroundPartyState.createOrUpdate({
+                ...party,
+                stats: { ...(party.stats || {}), lastRequirementRefreshAt: timestamp }
+            });
+            return changed ? [...refreshed, party.partyId] : refreshed;
+        }), Promise.resolve([]));
+    },
+
+    reclaimBackgroundPartyCapacity(partyWaitStates = [], partyWaitCount = partyWaitStates.length) {
         if (!partyWaitStates.length) return Promise.resolve([]);
         const activeParties = BackgroundPartyState.active();
-        const availableSlots = Math.max(0, Config.maxBackgroundParties - activeParties.length);
+        const availableSlots = Math.max(0, maxBackgroundPartiesForBacklog(partyWaitCount) - activeParties.length);
         const wantedSlots = Math.min(
             Config.partyFormationBatchSize,
             Math.floor(partyWaitStates.length / Math.max(1, Config.partyMinSize))
@@ -740,7 +873,8 @@ const PopulationService = {
         const reclaimCount = Math.max(0, wantedSlots - availableSlots);
         if (!reclaimCount || !activeParties.length) return Promise.resolve([]);
 
-        return LifeState.partyRequirementCounts(activeParties.map((party) => party.partyId))
+        return this.refreshBackgroundPartyRequirements(activeParties)
+            .then(() => LifeState.partyRequirementCounts(activeParties.map((party) => party.partyId)))
             .then((counts) => {
                 const countByPartyId = new Map(counts.map((count) => [count.partyId, count]));
                 return activeParties

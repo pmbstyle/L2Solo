@@ -56,7 +56,7 @@ function wipeWithConnection(db, scope) {
     try {
         if (normalizedScope === 'all') {
             [
-                'bot_life_events', 'bot_life_state', 'bot_goal_state', 'bot_social_memory',
+                'bot_life_events', 'bot_life_state', 'bot_goal_state', 'bot_personas', 'bot_social_memory',
                 'character_recipes', 'character_quests', 'warehouse_items', 'macros',
                 'shortcuts', 'skills', 'items', 'bot_background_parties', 'clan_crests', 'clans'
             ].forEach((table) => db.exec(`DELETE FROM ${table}`));
