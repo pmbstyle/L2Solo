@@ -12,12 +12,17 @@ function wealthSaleOpportunity(state = {}, sale = {}) {
     const persona = personaFor(state);
     if (persona?.primaryDrive !== 'wealth') return null;
 
-    const focus = sale.items?.[0] || null;
+    const focus = (sale.items || []).reduce((best, item) => {
+        const value = Number(item?.count || 0) * Number(item?.price || 0);
+        const bestValue = Number(best?.count || 0) * Number(best?.price || 0);
+        return value > bestValue || (value === bestValue && Number(item?.selfId || 0) < Number(best?.selfId || 0))
+            ? item
+            : best;
+    }, null);
     if (!focus) return null;
     const focusValue = Number(focus.count || 0) * Number(focus.price || 0);
     const qualifying = Number(sale.itemCount || 0) >= EARLY_SALE_ITEM_COUNT
-        || Number(sale.marketValue || 0) >= EARLY_SALE_VALUE
-        || focusValue >= EARLY_SALE_VALUE;
+        && Number(sale.marketValue || 0) >= EARLY_SALE_VALUE;
     if (!qualifying) return null;
 
     return {
