@@ -121,6 +121,24 @@ try {
     result = BotAvailability.evaluate(lowPlayer, farSocialBot);
     assert.strictEqual(result.reason, 'too_far', 'persona must not override a hard invite gate');
 
+    const staticCraftState = {
+        characterId: 2000016,
+        name: 'PublicCrafter',
+        level: 70,
+        activity: 'crafting',
+        loc: { locX: 0, locY: 0, locZ: 0 },
+        vitals: { hp: 100, maxHp: 100 },
+        stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
+    };
+    result = BotAvailability.evaluateState(lowPlayer, staticCraftState, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, false, 'const friend overrides must never recruit a public craft service');
+    assert.strictEqual(result.reason, 'merchant_duty');
+
+    const staticMerchant = session(actor(2000017, 20), { plan: 'merchant' });
+    result = BotAvailability.evaluate(lowPlayer, staticMerchant, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.available, false, 'const friend overrides must never recruit a fixed merchant');
+    assert.strictEqual(result.reason, 'merchant_duty');
+
     console.log('Bot availability checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalGetSnapshot;

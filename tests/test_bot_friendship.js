@@ -35,6 +35,12 @@ Promise.all([
     assert.strictEqual(rosterCount, 8);
     const accepted = await BotFriendship.request({ characterId: 42 }, { characterId: 100, name: 'OldFriend' });
     assert.strictEqual(accepted.ok, true, 'an old abandonment cooldown must not block friendship forever');
+    const staticService = await BotFriendship.request({ characterId: 42 }, {
+        characterId: 102,
+        name: 'PublicCrafter',
+        stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
+    });
+    assert.strictEqual(staticService.reason, 'merchant_duty', 'fixed craft services must not be eligible for friendship');
     requestSocial = { trust: 20, insults: 0, recentlyAbandonedAt: Date.now() - 1000 };
     const coolingDown = await BotFriendship.request({ characterId: 42 }, { characterId: 101, name: 'CoolingFriend' });
     assert.strictEqual(coolingDown.reason, 'recently_abandoned', 'a recent abandonment must still be respected');

@@ -9,6 +9,10 @@ const rosterWrites = new Map();
 
 function id(subject) { return Number(subject?.characterId || subject?.actor?.fetchId?.() || 0); }
 function page(value) { return Math.max(0, Number(value) || 0); }
+function isStaticService(state = {}) {
+    const stats = state.stats || {};
+    return Boolean(stats.craftStationId || stats.craftShop);
+}
 function normalize(row) {
     let stats = {};
     try { stats = JSON.parse(row.statsJson || '{}'); } catch {}
@@ -21,6 +25,8 @@ function list(playerId, where, currentPage) {
         LEFT JOIN bot_friendships f ON f.playerId = s.playerId AND f.botId = s.botId
         LEFT JOIN bot_friend_roster r ON r.playerId = s.playerId AND r.botId = s.botId
         WHERE s.playerId = ? AND ${where}
+        AND json_extract(COALESCE(l.statsJson, '{}'), '$.craftStationId') IS NULL
+        AND json_extract(COALESCE(l.statsJson, '{}'), '$.craftShop') IS NULL
         ORDER BY s.trust DESC, s.familiarity DESC, l.characterName COLLATE NOCASE LIMIT ? OFFSET ?`,
         [playerId, PAGE_SIZE, page(currentPage) * PAGE_SIZE]
     ]).then((rows) => rows.map(normalize));
@@ -46,6 +52,7 @@ const BotFriendship = {
     request(player, state) {
         const playerId = id(player), botId = Number(state?.characterId || 0);
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
+        if (isStaticService(state)) return Promise.resolve({ ok: false, reason: 'merchant_duty', trust: 0, persona: null });
         return Database.execute(['SELECT * FROM bot_social_memory WHERE playerId = ? AND botId = ?', [playerId, botId]]).then((rows) => {
             const social = rows[0] || {};
             const now = Date.now();

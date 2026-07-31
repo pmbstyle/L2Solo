@@ -9,6 +9,7 @@ function requestReasonText(reason) {
         low_trust: 'trust is still too low',
         insults: 'the bot remembers an insult',
         recently_abandoned: 'the bot needs a little time after the last abandonment',
+        merchant_duty: 'this is a fixed service bot',
         missing_bot: 'the bot could not be found'
     }[reason] || 'the request was declined';
 }

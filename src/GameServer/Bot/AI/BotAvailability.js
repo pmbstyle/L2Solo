@@ -49,6 +49,18 @@ function sameClan(player, botSubject) {
     return playerClanId === clanIdOf(botSubject);
 }
 
+function isStaticService(subject = {}) {
+    const stats = subject?.stats || subject?.coldCraftState?.stats || {};
+    if (stats.craftStationId || stats.craftShop || subject?.manufactureShop) return true;
+
+    // Permanent private-store bots do not have a cold state. A market store
+    // or craft state marks an adventurer that may still be called by a friend.
+    return subject?.plan === 'merchant'
+        && !subject?.coldMarketState
+        && !subject?.coldCraftState
+        && !subject?.coldLifeState;
+}
+
 function emptyResult(playerSession, botSubject) {
     const memory = BotSocialMemory.getSnapshot(playerSession, botSubject);
     return {
@@ -74,11 +86,13 @@ const BotAvailability = {
 
         result.distance = distance(actorLocation(player), actorLocation(bot));
         result.clanmate = sameClan(player, bot);
+        const staticService = isStaticService(botSession);
 
         let reason = 'available';
         if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
+        else if (staticService) reason = 'merchant_duty';
         else if (!options.forceFriend && botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (!options.forceFriend && botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
         else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
@@ -106,11 +120,13 @@ const BotAvailability = {
 
         result.distance = distance(actorLocation(player), state.loc);
         result.clanmate = sameClan(player, state);
+        const staticService = isStaticService(state);
 
         let reason = 'available';
         if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
+        else if (staticService) reason = 'merchant_duty';
         else if (!options.forceFriend && (state.activity === 'merchant' || state.activity === 'crafting')) reason = 'merchant_duty';
         else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
