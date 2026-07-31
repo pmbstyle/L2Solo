@@ -346,9 +346,13 @@ const World = {
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         return LifeState.findByName(name).then((state) => {
             if (!state) return false;
-            return BotFriendship.isFriend(session, state.characterId).then((friend) => friend
-                ? this.inviteBotByName(session, actor, name, distribution, source, { ignoreDistance: true })
-                : false);
+            return BotFriendship.isFriend(session, state.characterId).then((friend) => {
+                if (!friend) return false;
+                const leaveBackgroundParty = state.party?.partyId
+                    ? LifeState.leaveParty(state, 'friend_priority')
+                    : Promise.resolve(state);
+                return leaveBackgroundParty.then(() => this.inviteBotByName(session, actor, name, distribution, source, { ignoreDistance: true }));
+            });
         });
     },
 
