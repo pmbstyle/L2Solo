@@ -6,9 +6,16 @@ const Database = invoke('Database');
 const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
 const originalExecute = Database.execute;
 let rosterCount = 7;
+let requestSocial = {
+    trust: 20,
+    insults: 0,
+    recentlyAbandonedAt: Date.now() - 10 * 60 * 1000
+};
 
 Database.execute = ([sql]) => {
     const text = String(sql);
+    if (text.includes('FROM bot_social_memory')) return Promise.resolve([requestSocial]);
+    if (text.includes('INSERT INTO bot_friendships')) return Promise.resolve([]);
     if (text.includes('FROM bot_friendships')) return Promise.resolve([{}]);
     if (text.includes('FROM bot_friend_roster WHERE playerId') && text.includes('botId')) return Promise.resolve([]);
     if (text.includes('COUNT(*) AS count')) return Promise.resolve([{ count: rosterCount }]);
@@ -22,10 +29,15 @@ Database.execute = ([sql]) => {
 Promise.all([
     BotFriendship.toggleConst({ characterId: 42 }, 100),
     BotFriendship.toggleConst({ characterId: 42 }, 101)
-]).then(([first, second]) => {
+]).then(async ([first, second]) => {
     assert.strictEqual(first.selected, true);
     assert.strictEqual(second.reason, 'const_full', 'concurrent selections must not exceed eight const members');
     assert.strictEqual(rosterCount, 8);
+    const accepted = await BotFriendship.request({ characterId: 42 }, { characterId: 100, name: 'OldFriend' });
+    assert.strictEqual(accepted.ok, true, 'an old abandonment cooldown must not block friendship forever');
+    requestSocial = { trust: 20, insults: 0, recentlyAbandonedAt: Date.now() - 1000 };
+    const coolingDown = await BotFriendship.request({ characterId: 42 }, { characterId: 101, name: 'CoolingFriend' });
+    assert.strictEqual(coolingDown.reason, 'recently_abandoned', 'a recent abandonment must still be respected');
     console.log('Bot friendship roster checks passed');
 }).catch((error) => {
     console.error(error);

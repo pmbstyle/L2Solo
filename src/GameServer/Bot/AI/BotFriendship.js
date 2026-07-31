@@ -4,6 +4,7 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const FRIEND_TRUST = 8;
 const MAX_CONST_MEMBERS = 8;
 const PAGE_SIZE = 12;
+const RECENT_ABANDON_MS = 5 * 60 * 1000;
 const rosterWrites = new Map();
 
 function id(subject) { return Number(subject?.characterId || subject?.actor?.fetchId?.() || 0); }
@@ -40,11 +41,18 @@ const BotFriendship = {
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
         return Database.execute(['SELECT * FROM bot_social_memory WHERE playerId = ? AND botId = ?', [playerId, botId]]).then((rows) => {
             const social = rows[0] || {};
-            const accepted = Number(social.trust || 0) >= FRIEND_TRUST && Number(social.insults || 0) === 0 && !social.recentlyAbandonedAt;
             const now = Date.now();
+            const trust = Number(social.trust || 0);
+            const insults = Number(social.insults || 0);
+            const recentlyAbandoned = Number(social.recentlyAbandonedAt || 0) > 0
+                && now - Number(social.recentlyAbandonedAt) < RECENT_ABANDON_MS;
+            const reason = trust < FRIEND_TRUST ? 'low_trust'
+                : insults > 0 ? 'insults'
+                    : recentlyAbandoned ? 'recently_abandoned' : null;
+            const accepted = !reason;
             return Database.execute([`INSERT INTO bot_friendships (playerId, botId, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(playerId, botId) DO UPDATE SET status = excluded.status, updatedAt = excluded.updatedAt`, [playerId, botId, accepted ? 'accepted' : 'declined', now, now]])
-                .then(() => ({ ok: accepted, reason: accepted ? 'accepted' : 'trust_required', trust: Number(social.trust || 0), persona: BotPersona.generate(state) }));
+                .then(() => ({ ok: accepted, reason: accepted ? 'accepted' : reason, trust, persona: BotPersona.generate(state) }));
         });
     },
     toggleConst(player, botId) {

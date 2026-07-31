@@ -4,7 +4,16 @@ const Html = invoke('GameServer/World/Generics/HtmlKit');
 const ServerResponse = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
 
-function render(session, mode = 'friends', currentPage = 0) {
+function requestReasonText(reason) {
+    return {
+        low_trust: 'trust is still too low',
+        insults: 'the bot remembers an insult',
+        recently_abandoned: 'the bot needs a little time after the last abandonment',
+        missing_bot: 'the bot could not be found'
+    }[reason] || 'the request was declined';
+}
+
+function render(session, mode = 'friends', currentPage = 0, notice = null) {
     const actor = session.actor;
     if (!actor) return;
     const isAdd = mode === 'add';
@@ -12,6 +21,10 @@ function render(session, mode = 'friends', currentPage = 0) {
     Promise.all([loader, BotFriendship.selectedCount(session)]).then(([bots, selectedCount]) => {
         let body = `${Html.font(isAdd ? 'Add Bot Friend' : 'Bot Friends', Html.COLOR.title)}<br1>`;
         body += Html.font(isAdd ? 'Bots who know you, sorted by trust.' : 'Friends can be called from anywhere. Mark up to 8 for your const party.', Html.COLOR.muted) + '<br>';
+        if (notice?.message) {
+            body += Html.font(notice.message, notice.ok ? Html.COLOR.ok : Html.COLOR.warn) + '<br1>';
+            body += Html.line(Html.TEXTURE.blank, Html.WIDTH, 5);
+        }
         bots.forEach((bot) => {
             const action = isAdd
                 ? (bot.trust >= BotFriendship.FRIEND_TRUST ? Html.link('Add friend', `bot-friends request ${bot.name} ${currentPage}`, { color: Html.COLOR.ok }) : Html.font(`trust ${bot.trust}/${BotFriendship.FRIEND_TRUST}`, Html.COLOR.muted))
@@ -36,7 +49,15 @@ function render(session, mode = 'friends', currentPage = 0) {
 
 function handler(session, parts) {
     const mode = parts[1] || 'friends';
-    if (mode === 'request' && parts[2]) return LifeState.findByName(parts[2]).then((state) => BotFriendship.request(session, state).then(() => render(session, 'add', parts[3])));
+    if (mode === 'request' && parts[2]) {
+        return LifeState.findByName(parts[2]).then((state) => BotFriendship.request(session, state).then((result) => {
+            const name = state?.name || parts[2];
+            const message = result.ok
+                ? `${name} accepted your friend request.`
+                : `${name} declined the request: ${requestReasonText(result.reason)}.`;
+            return render(session, 'add', parts[3], { ok: result.ok, message });
+        }));
+    }
     if (mode === 'const' && parts[2]) return BotFriendship.toggleConst(session, parts[2]).then(() => render(session, 'friends', parts[3]));
     if (mode === 'form') return BotFriendship.selected(session).then((bots) => bots.reduce((chain, bot) => chain.then(() => World.inviteFriendByName(session, session.actor, bot.characterName || bot.name, undefined, 'friend_const')), Promise.resolve()).then(() => render(session)));
     render(session, mode, parts[2]);
