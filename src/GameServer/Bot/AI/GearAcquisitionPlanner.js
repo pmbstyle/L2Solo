@@ -466,7 +466,7 @@ function partyNeedAssessmentForSource(state = {}, source = {}) {
     // hard party need, while a normally equipped bot near the target level can
     // still progress alone and merely advertise a preferred party.
     const unpreparedSupport = ['healer', 'buffer'].includes(readiness.role)
-        && (!readiness.hasWeapon || readiness.armorCount < 2);
+        && readiness.armorCount < 2;
     if (!readiness.hasWeapon) return { need: 'required', reason: 'missing_weapon' };
     if (unpreparedSupport) return { need: 'required', reason: 'unprepared_support' };
     if (margin < -2) return { need: 'required', reason: 'underleveled' };
@@ -616,6 +616,7 @@ function planFor(state = {}, options = {}) {
         const offer = marketOfferForTarget(target, state, options);
         const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
         const buy = offer && marketEffort(offer, state) <= directKills;
+        const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
             status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
             rateModelVersion: RATE_MODEL_VERSION,
@@ -624,10 +625,10 @@ function planFor(state = {}, options = {}) {
             market: { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType },
             recipeId: null, materials: [], next: null
         } : source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: soloSafeForSource(state, source),
-            partyNeed: partyNeedForSource(state, source),
-            partyNeedReason: partyNeedReasonForSource(state, source),
-            requiresParty: partyNeedForSource(state, source) === 'required',
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
+            partyNeed: sourceAssessment.need,
+            partyNeedReason: sourceAssessment.reason,
+            requiresParty: sourceAssessment.need === 'required',
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(1 / Math.max(source.expectedYield, 0.000001)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
@@ -658,7 +659,8 @@ function planFor(state = {}, options = {}) {
         : Infinity;
     const offer = marketOfferForTarget(target.item, state, options);
     const buy = offer && marketEffort(offer, state) <= Math.min(directKills, craftKills);
-    const soloSafe = direct && soloSafeForSource(state, direct);
+    const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
+    const soloSafe = direct && directAssessment.need === 'solo_ok';
     const strategy = buy ? 'market'
         : direct && (!target.recipe || soloSafe && directKills <= craftKills * 0.8) ? 'direct_drop'
             : target.recipe ? 'craft' : 'blocked';
@@ -676,12 +678,11 @@ function planFor(state = {}, options = {}) {
     // A ready final recipe or component is a station action, not a request to
     // fight at the next (possibly unsafe) material source.  Let it leave the
     // party gate and finish the prepared manufacture first.
-    const partyNeed = !readyToCraft && !componentReady && next
-        ? partyNeedForSource(state, next)
-        : 'solo_ok';
-    const partyNeedReason = !readyToCraft && !componentReady && next
-        ? partyNeedReasonForSource(state, next)
-        : 'solo_ready';
+    const nextAssessment = !readyToCraft && !componentReady && next
+        ? partyNeedAssessmentForSource(state, next)
+        : { need: 'solo_ok', reason: 'solo_ready' };
+    const partyNeed = nextAssessment.need;
+    const partyNeedReason = nextAssessment.reason;
     const requiresParty = partyNeed === 'required';
 
     return {

@@ -71,6 +71,34 @@ async function run() {
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
     assert.strictEqual(events.length, 1);
 
+    const sharedParties = [
+        { partyId: 'bgp_shared_a', leaderId: 50, memberIds: [50, 51, 52, 53], spotId: 'cruma', stats: {} },
+        { partyId: 'bgp_shared_b', leaderId: 54, memberIds: [54, 55, 56, 57], spotId: 'cruma', stats: {} }
+    ];
+    const sharedMembers = new Map(sharedParties.map((sharedParty) => [
+        sharedParty.partyId,
+        sharedParty.memberIds.map((characterId, index) => ({
+            characterId,
+            name: `Member${characterId}`,
+            level: 15,
+            spotId: 'cruma',
+            party: { role: ['tank', 'healer', 'buffer', 'dps'][index] }
+        }))
+    ]));
+    const sharedAssignments = [];
+    PartyState.active = () => sharedParties;
+    LifeState.statesForParties = () => Promise.resolve(sharedMembers);
+    LifeState.assignParty = (state, partyId) => {
+        sharedAssignments.push({ characterId: state.characterId, partyId });
+        return Promise.resolve(state);
+    };
+    const sharedCandidates = await PopulationService.recruitBackgroundMembers([
+        { characterId: 60, name: 'SharedOne', level: 15, spotId: 'cruma', party: { role: 'dps' } },
+        { characterId: 61, name: 'SharedTwo', level: 15, spotId: 'cruma', party: { role: 'dps' } }
+    ]);
+    assert.deepStrictEqual([...sharedCandidates].sort((a, b) => a - b), [60, 61], 'a candidate must be claimed by only one active party per formation pass');
+    assert.deepStrictEqual(sharedAssignments.map((entry) => entry.characterId).sort((a, b) => a - b), [60, 61]);
+
     const fairGroups = PopulationService.groupPartyCandidatesBySpot([
         { characterId: 101, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
         { characterId: 102, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },

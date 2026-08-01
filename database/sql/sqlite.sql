@@ -178,6 +178,25 @@ CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
 CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
 CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS bot_life_state_party_request_filter
+    ON bot_life_state(
+        phase,
+        partyId,
+        activity,
+        json_extract(statsJson, '$.partyRequest.status'),
+        json_extract(statsJson, '$.partyRequest.priority')
+    );
+CREATE INDEX IF NOT EXISTS bot_life_state_party_objective_spot
+    ON bot_life_state(
+        phase,
+        partyId,
+        activity,
+        COALESCE(
+            json_extract(statsJson, '$.partyRequest.spotId'),
+            json_extract(statsJson, '$.equipmentPlan.next.spotId'),
+            spotId
+        )
+    );
 
 CREATE TABLE IF NOT EXISTS bot_goal_state (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,

@@ -203,10 +203,6 @@ function partyObjectiveForState(state) {
     return partyObjectiveForPlan(state?.stats?.equipmentPlan);
 }
 
-function partyRequestActive(request) {
-    return request?.status === 'open' || request?.status === 'deferred';
-}
-
 function partyObjectivesShareRoute(left, right) {
     return Boolean(left && right
         && String(left.spotId || '') === String(right.spotId || '')
@@ -877,12 +873,15 @@ const PopulationService = {
             const timestamp = Date.now();
             const cleanupInterval = Math.max(5000, Number(Config.partyRequestCleanupIntervalMs) || 30000);
             const cleanup = timestamp >= this.nextPartyRequestCleanupAt
-                ? LifeState.expireStalePartyRequests(Config.partyRequestCleanupBatchSize).finally(() => {
+                ? LifeState.expireStalePartyRequests(Config.partyRequestCleanupBatchSize).catch((error) => {
+                    utils.infoWarn('BotPopulation', 'party request cleanup failed: %s', error?.message || error);
+                    return 0;
+                }).finally(() => {
                     this.nextPartyRequestCleanupAt = Date.now() + cleanupInterval;
                 })
                 : Promise.resolve(0);
             return timedStage('cleanup', () => cleanup)
-            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(true)))
+            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(false)))
             .then((partyWaitCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
                 .then((states) => ({ states, partyWaitBacklog: partyWaitCount > 0 }))
                 .then(({ states, partyWaitBacklog }) => {
@@ -945,7 +944,8 @@ const PopulationService = {
 
                     const leader = PartyComposition.chooseLeader(members);
                     const objectiveMember = members.find((member) => (
-                        member.stats?.partyRequest?.priority === 'required'
+                        member.stats?.partyRequest?.status === 'open'
+                        && member.stats?.partyRequest?.priority === 'required'
                     )) || members.find((member) => partyObjectiveForState(member)) || leader;
                     const objective = partyObjectiveForState(objectiveMember);
                     const partySpot = partySpotForLeader(leader, objective?.spotId || null);
@@ -1227,13 +1227,13 @@ const PopulationService = {
                 if (members.length < Config.partyMinSize) return null;
                 const partyObjective = party.stats?.objective || null;
                 const nearby = candidates.filter((state) => (
-                    !claimed.has(Number(state.characterId)) &&
-                    partyObjective
+                    !claimed.has(Number(state.characterId))
+                    && (partyObjective
                         ? (partyObjectiveKeyForState(state) === partyObjective.objectiveKey
                             || partyObjectivesShareRoute(partyObjective, partyObjectiveForState(state))
                             || (state.stats?.partyRequest?.priority !== 'required'
                                 && partyObjectiveSpotForState(state) === partyObjective.spotId))
-                        : state.spotId === party.spotId
+                        : state.spotId === party.spotId)
                 ));
                 const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
                 if (!recruits.length) return null;

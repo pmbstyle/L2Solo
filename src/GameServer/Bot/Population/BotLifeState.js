@@ -728,6 +728,7 @@ function expireStalePartyRequests(limit = 0) {
             if (!cached) return;
             const request = parseJson(row.statsJson, {}).partyRequest;
             if (request?.status !== 'open') return;
+            if (cached.stats?.partyRequest?.status !== 'open') return;
             cache.set(characterId, {
                 ...cached,
                 updatedAt: timestamp,
