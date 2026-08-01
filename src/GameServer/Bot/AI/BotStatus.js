@@ -7,6 +7,7 @@ const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -338,6 +339,7 @@ const BotStatus = {
             nearby: nearbySnapshot(bot),
             trade: tradeSnapshot(session, bot),
             persona: personaSnapshot(session),
+            policy: HotBotPolicyOverlay.status(session),
             social: session.socialSummary || null,
             lastSocialEvent: session.lastSocialEvent || null,
             blockers: []

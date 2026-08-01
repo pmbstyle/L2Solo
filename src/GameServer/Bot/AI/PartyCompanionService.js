@@ -108,6 +108,7 @@ function updateSettings(leaderSession, patch = {}) {
     });
     const next = getSettings(leaderSession);
     membersForLeader(leaderSession).forEach((companionSession) => {
+        companionSession.autoTaunt = next.pullMode !== 'off';
         Promise.resolve(BotEventJournal.record({
             playerId: leaderSession?.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
@@ -601,6 +602,7 @@ function cancelCompanionAction(companionSession) {
 }
 
 function detachState(companionSession, plan = 'hunting') {
+    invoke('GameServer/Bot/AI/HotBotPolicyOverlay').clearForPartyDetach(companionSession);
     cancelCompanionAction(companionSession);
     companionSession.plan = plan;
     companionSession.followPlayerSession = null;

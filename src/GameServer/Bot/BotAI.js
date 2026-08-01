@@ -8,6 +8,7 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -135,6 +136,7 @@ const BotAI = {
 
     stop(session) {
         session.aiActive = false;
+        HotBotPolicyOverlay.clearForCold(session);
         if (session.aiTimeout) {
             clearTimeout(session.aiTimeout);
             session.aiTimeout = null;
@@ -325,7 +327,14 @@ const BotAI = {
 
         PopulationService.recordHotTick(session);
         const botDead = bot.isDead();
-        if (botDead) clearTacticalState(session);
+        if (botDead) {
+            clearTacticalState(session);
+            HotBotPolicyOverlay.clearForDeath(session);
+        } else {
+            // TTL expiry is intentionally lazy and bounded to hot ticks; no
+            // background timer is needed for a session-local preference.
+            HotBotPolicyOverlay.get(session);
+        }
         session.botStatus = BotStatus.getStatus(session);
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
@@ -523,7 +532,9 @@ const BotAI = {
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
-        const decision = options.basicAttackOnly ? null : BotCombatUtility.select(bot, npc, role);
+        const decision = options.basicAttackOnly
+            ? null
+            : BotCombatUtility.select(bot, npc, role, HotBotPolicyOverlay.combatPolicy(session));
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',

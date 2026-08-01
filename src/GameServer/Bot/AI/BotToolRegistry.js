@@ -1,4 +1,5 @@
 const BotToolAudit = invoke('GameServer/Bot/AI/BotToolAudit');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 const definitions = new Map();
 
@@ -31,6 +32,9 @@ function worldRevision(session) {
         try { return Math.round(Number(read?.() || 0) / 25); } catch (_) { return 0; }
     };
     const inventory = actor.backpack?.fetchItems?.() || [];
+    const leader = session.partyCompanion === true ? session.followPlayerSession : null;
+    const partySettings = leader?.partyCompanionSettings || {};
+    const overlay = HotBotPolicyOverlay.get(session);
     return [
         actorId(session),
         text(session.plan, 32),
@@ -41,13 +45,19 @@ function worldRevision(session) {
         Number(actor.isDead?.() ? 1 : 0),
         Number(session.partyCompanion === true ? 1 : 0),
         Number(session.botStay === true ? 1 : 0),
-        inventory.length
+        inventory.length,
+        Number(overlay?.updatedAt || 0),
+        String(partySettings.pullMode || ''),
+        Number(partySettings.pullerId || 0)
     ].join(':');
 }
 
 function isPkLocked(session, action) {
     return session?.plan === 'pk_hunting' && new Set([
-        'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot'
+        'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+        'set_pull_policy', 'assign_puller', 'unassign_puller',
+        'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
+        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment'
     ]).has(action);
 }
 
@@ -61,6 +71,9 @@ function register(definition) {
     definitions.set(String(definition.name), {
         mutating: true,
         description: '',
+        kind: definition.mutating === false ? 'read' : 'mutation',
+        risk: 'low',
+        parameters: null,
         ...definition,
         name: String(definition.name)
     });
@@ -72,7 +85,10 @@ function descriptors(session = null) {
         .filter((definition) => isAvailable(definition, session))
         .map((definition) => ({
             action: definition.name,
-            description: definition.description
+            description: definition.description,
+            kind: definition.kind,
+            risk: definition.risk,
+            parameters: definition.parameters || null
         }));
 }
 
@@ -134,6 +150,11 @@ function execute(context = {}) {
             expectedRevision,
             currentRevision
         });
+        return rejected;
+    }
+    if (definition.mutating && Number(decision.confidence || 0) < 0.45) {
+        const rejected = result(false, 'low_confidence');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
         return rejected;
     }
 

@@ -25,7 +25,32 @@ function reserveRatio(role) {
     return 0.10;
 }
 
-function evaluate(bot, target, skill, role) {
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function policyAdjustment(skill, role, range, cost, maxMp, policy = {}) {
+    const skillId = String(skill?.fetchSelfId?.() || '');
+    const priorities = policy.skillPriorities || {};
+    let adjustment = clamp(Number(priorities[skillId] || 0), -50, 50);
+    const stance = policy.stance || policy.combatStance || 'balanced';
+
+    // Stance is only a bounded scoring hint for the offensive planner. It
+    // cannot bypass learned-skill, range, cooldown, MP, or safety checks, and
+    // support/revival planners never call this utility for emergency actions.
+    if (stance === 'aggressive') {
+        adjustment += Math.min(18, Math.max(0, Number(skill.fetchPower?.() || 0) / 40));
+    } else if (stance === 'defensive') {
+        const affordableReserve = (maxMp - cost) / Math.max(1, maxMp);
+        adjustment += affordableReserve >= reserveRatio(role) ? 10 : -8;
+    } else if (stance === 'ranged') {
+        adjustment += range >= 400 ? 18 : -18;
+    }
+
+    return Math.round(clamp(adjustment, -68, 68));
+}
+
+function evaluate(bot, target, skill, role, policy = {}) {
     if (!skill || skill.fetchPassive?.()) return null;
     // SkillRequest rejects a skill still on reuse after the combat planner has
     // already committed to it. Treat that as unavailable here so a melee bot
@@ -88,19 +113,24 @@ function evaluate(bot, target, skill, role) {
         score += 90;
         reasons.push('tank_control');
     }
-    return { skill, score: Math.round(score), reasons, cost, range, power };
+    const adjustment = policyAdjustment(skill, role, range, cost, maxMp, policy);
+    if (adjustment) {
+        score += adjustment;
+        reasons.push(`policy_${adjustment > 0 ? 'up' : 'down'}:${adjustment}`);
+    }
+    return { skill, score: Math.round(score), reasons, cost, range, power, policyAdjustment: adjustment };
 }
 
-function select(bot, target, role) {
+function select(bot, target, role, policy = {}) {
     const skills = bot?.skillset?.skills || [];
     const candidates = role === 'mage'
         ? skills.filter((skill) => skill.fetchSpell?.() === true)
         : skills;
 
     return candidates
-        .map((skill) => evaluate(bot, target, skill, role))
+        .map((skill) => evaluate(bot, target, skill, role, policy))
         .filter(Boolean)
         .sort((a, b) => b.score - a.score)[0] || null;
 }
 
-module.exports = { OFFENSIVE_TYPES, evaluate, select };
+module.exports = { OFFENSIVE_TYPES, evaluate, select, policyAdjustment };

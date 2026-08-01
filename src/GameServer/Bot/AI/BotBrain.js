@@ -116,6 +116,48 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 enum: ['', 'might', 'shield', 'haste', 'windwalk'],
                 description: 'Buff type for buff_target, or empty string.'
             },
+            pullMode: {
+                type: 'string',
+                enum: ['', 'auto', 'leader', 'bot', 'off'],
+                description: 'Temporary party pull mode for set_pull_policy.'
+            },
+            pullPermission: {
+                type: 'string',
+                enum: ['', 'allow', 'deny'],
+                description: 'Temporary party pull permission for set_pull_policy.'
+            },
+            pullerId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Target companion actor id; normally the addressed bot.'
+            },
+            skillId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Learned offensive skill self id for priority tools.'
+            },
+            skillPriority: {
+                type: 'number',
+                minimum: -50,
+                maximum: 50,
+                description: 'Bounded temporary score weight. Zero clears the preference.'
+            },
+            combatStance: {
+                type: 'string',
+                enum: ['', 'balanced', 'aggressive', 'defensive', 'ranged'],
+                description: 'Bounded offensive combat stance.'
+            },
+            itemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Inventory object id for equip_candidate.'
+            },
+            policyTtlMs: {
+                type: 'number',
+                minimum: 5000,
+                maximum: 1800000,
+                description: 'Optional hot policy lifetime, clamped by the server.'
+            },
             reason: {
                 type: 'string',
                 description: 'Short private reason for logs/status.'
@@ -145,6 +187,10 @@ function systemPrompt() {
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
+        'Party pull, skill preference, stance, and equipment tools are temporary hot-session controls. They require the current human party leader; never invent authority.',
+        'Pull permission, pull mode, and assigned puller are separate. Unassigning one puller returns to the existing automatic policy and does not globally disable pulling.',
+        'Skill priorities are bounded hints to the deterministic offensive scorer. Emergency healing, defense, resurrection, cooldowns, MP, range, and C4 compatibility always win.',
+        'Equipment tools may only use safe candidates from actual inventory and native persistence. Never equip quest, incompatible, over-grade, or non-upgrade items.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action.',
         'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',

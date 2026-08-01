@@ -216,25 +216,20 @@ function canApplyNow(session, options = {}) {
     return true;
 }
 
-function applyBestUpgrades(session, options = {}) {
-    if (!canApplyNow(session, options)) return [];
+function safeCandidate(session, itemId) {
+    const actor = session?.actor;
+    const items = actor?.backpack?.fetchItems ? actor.backpack.fetchItems() : [];
+    const item = items.find((candidate) => Number(candidate.fetchId?.()) === Number(itemId || 0));
+    if (!item) return { item: null, slot: null, reason: 'item_not_found' };
+    if (!isSuitableItem(actor, item)) return { item, slot: null, reason: 'incompatible_item' };
 
+    const slot = bestUpgradeSlot(actor, item, new Map());
+    if (!slot) return { item, slot: null, reason: 'not_an_upgrade' };
+    return { item, slot, score: scoreItem(actor, item), reason: null };
+}
+
+function refreshAfterEquipment(session, upgrades) {
     const actor = session.actor;
-    session.lastEquipmentUpgradeCheckAt = Date.now();
-    const upgrades = findBestUpgrades(session);
-    if (upgrades.length === 0) return [];
-
-    upgrades.forEach(({ item, slot }) => {
-        if (Number(item.fetchSlot()) !== Number(slot)) {
-            item.setSlot(slot);
-        }
-        if ([ARMOR_SLOTS.earringRight, ARMOR_SLOTS.ringRight].includes(Number(slot)) && actor.backpack.fetchPaperdollId(slot)) {
-            actor.backpack.unequipGear(session, slot);
-            item.setSlot(slot);
-        }
-        actor.backpack.equipGear(session, item);
-    });
-
     // A weapon upgrade can change both the grade and the compatible shot kind.
     // Restock and re-enable after equipping; bots cannot send a client hotbar
     // toggle themselves.
@@ -256,12 +251,67 @@ function applyBestUpgrades(session, options = {}) {
         actor.fetchName(),
         upgrades.map(({ item }) => item.fetchName()).join(', ')
     );
+}
 
+function applyUpgradeEntries(session, upgrades) {
+    const actor = session.actor;
+    upgrades.forEach(({ item, slot }) => {
+        if (Number(item.fetchSlot()) !== Number(slot)) {
+            item.setSlot(slot);
+        }
+        if ([ARMOR_SLOTS.earringRight, ARMOR_SLOTS.ringRight].includes(Number(slot)) && actor.backpack.fetchPaperdollId(slot)) {
+            actor.backpack.unequipGear(session, slot);
+            item.setSlot(slot);
+        }
+        actor.backpack.equipGear(session, item);
+    });
+    refreshAfterEquipment(session, upgrades);
     return upgrades;
 }
 
+function applyBestUpgrades(session, options = {}) {
+    if (!canApplyNow(session, options)) return [];
+
+    const actor = session.actor;
+    session.lastEquipmentUpgradeCheckAt = Date.now();
+    const upgrades = findBestUpgrades(session);
+    if (upgrades.length === 0) return [];
+
+    return applyUpgradeEntries(session, upgrades);
+}
+
+function listSafeLoadouts(session) {
+    return findBestUpgrades(session).map(({ item, slot, score }) => ({
+        itemId: item.fetchId(),
+        selfId: item.fetchSelfId(),
+        name: item.fetchName(),
+        slot,
+        score,
+        rank: item.fetchRank?.() || 'none',
+        kind: item.fetchKind()
+    }));
+}
+
+function applyCandidate(session, itemId, options = {}) {
+    if (!canApplyNow(session, options)) return { applied: false, reason: 'unsafe_combat_state' };
+    session.lastEquipmentUpgradeCheckAt = Date.now();
+    const candidate = safeCandidate(session, itemId);
+    if (candidate.reason) return { applied: false, reason: candidate.reason };
+    applyUpgradeEntries(session, [{ item: candidate.item, slot: candidate.slot, score: candidate.score }]);
+    return {
+        applied: true,
+        reason: 'equipment_equipped',
+        itemId: candidate.item.fetchId(),
+        name: candidate.item.fetchName(),
+        slot: candidate.slot,
+        score: candidate.score
+    };
+}
+
 module.exports = {
+    applyCandidate,
     applyBestUpgrades,
     findBestUpgrades,
+    listSafeLoadouts,
     scoreItem
 };
