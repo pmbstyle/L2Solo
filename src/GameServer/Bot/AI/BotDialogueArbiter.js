@@ -1,5 +1,6 @@
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
+const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 
 function fallbackText(botSession, reason) {
     const plan = botSession?.plan || 'hunting';
@@ -51,6 +52,7 @@ function route(input = {}) {
             requestId: input.requestId,
             conversation: turn.context,
             conversationTurn: turn,
+            worldRevision: BotAgentTools.worldRevision(input.botSession),
             allowFallback: input.allowFallback !== false,
             queued: input.queued === true
         };

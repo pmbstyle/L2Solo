@@ -222,6 +222,22 @@ function applySchemaMigrations() {
             CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
             CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
             CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+        `)],
+        [5, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                turnId TEXT,
+                toolName TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                worldRevision TEXT,
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

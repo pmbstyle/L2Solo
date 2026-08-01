@@ -3,6 +3,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const BotToolRegistry = invoke('GameServer/Bot/AI/BotToolRegistry');
 
 const ACTIONS = [
     'none',
@@ -181,7 +182,7 @@ function applyHealTarget(session, bot, decision, targetSession) {
     return { applied: true, reason: 'heal_requested' };
 }
 
-function execute(session, decision, visiblePlayers) {
+function executeLegacy(session, decision, visiblePlayers) {
     const bot = session.actor;
     if (!bot || !decision || Number(decision.confidence || 0) < 0.45) {
         return { applied: false, reason: 'low_confidence_or_missing_context' };
@@ -294,6 +295,59 @@ function execute(session, decision, visiblePlayers) {
     return { applied: false, reason: `unknown_action:${action}` };
 }
 
+function registerTools() {
+    const descriptions = {
+        none: 'Do nothing when no useful response is needed.',
+        say: 'Send a short in-character reply to the target visible player.',
+        follow_player: 'Approach a visible player. Real party follow still requires an invite.',
+        stay_here: 'Hold the current position.',
+        hunt: 'Return to independent hunting.',
+        rest: 'Sit and recover.',
+        shop: 'Go to town for normal restock behavior.',
+        move_to_spot: 'Move to one of the provided candidate spot ids.',
+        buff_target: 'Apply a supported buff to a visible player if class, MP, and range allow it.',
+        heal_target: 'Heal a visible player if class, MP, and range allow it.'
+    };
+
+    ACTIONS.forEach((name) => {
+        BotToolRegistry.register({
+            name,
+            description: descriptions[name],
+            mutating: !['none', 'say'].includes(name),
+            available(session) {
+                if (!session) return true;
+                if (session.plan === 'merchant' || session.plan === 'getting_buffed') {
+                    return ['none', 'say'].includes(name);
+                }
+                if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
+                if (name === 'buff_target') {
+                    try { if (!BotRoles.canBuff(session.actor)) return false; } catch (_) { return true; }
+                }
+                if (name === 'heal_target') {
+                    try { if (!BotRoles.isHealer(session.actor)) return false; } catch (_) { return true; }
+                }
+                return true;
+            },
+            execute(context) {
+                return executeLegacy(context.session, context.decision, context.visiblePlayers || []);
+            }
+        });
+    });
+}
+
+registerTools();
+
+function execute(session, decision, visiblePlayers, requestContext = null) {
+    const outcome = BotToolRegistry.execute({
+        session,
+        decision,
+        visiblePlayers,
+        requestContext,
+        expectedWorldRevision: requestContext?.worldRevision
+    });
+    return { applied: outcome.applied, reason: outcome.reason };
+}
+
 function remember(session, decision, result, model) {
     if (!result?.applied) return;
     session.lastBrainDecision = {
@@ -312,24 +366,35 @@ function remember(session, decision, result, model) {
     };
 }
 
-function toolDescriptions() {
-    return [
-        { action: 'none', description: 'Do nothing when no useful response is needed.' },
-        { action: 'say', description: 'Send a short in-character reply to the target visible player.' },
-        { action: 'follow_player', description: 'Approach a visible player. Real party follow still requires an invite.' },
-        { action: 'stay_here', description: 'Hold the current position.' },
-        { action: 'hunt', description: 'Return to independent hunting.' },
-        { action: 'rest', description: 'Sit and recover.' },
-        { action: 'shop', description: 'Go to town for normal restock behavior.' },
-        { action: 'move_to_spot', description: 'Move to one of the provided candidate spot ids.' },
-        { action: 'buff_target', description: 'Apply a supported buff to a visible player if class, MP, and range allow it.' },
-        { action: 'heal_target', description: 'Heal a visible player if class, MP, and range allow it.' }
-    ];
+function toolDescriptions(session = null) {
+    return BotToolRegistry.descriptors(session);
+}
+
+function availableActions(session = null) {
+    return BotToolRegistry.availableNames(session);
+}
+
+function worldRevision(session) {
+    return BotToolRegistry.worldRevision(session);
+}
+
+function rejectionReply(result = {}) {
+    switch (result.reason) {
+        case 'stale_world_state': return 'The situation changed, so I did not make that move.';
+        case 'one_mutation_per_turn': return 'I can only change one thing at a time.';
+        case 'not_authorized': return 'I cannot change that under the current party authority.';
+        case 'pk_hunting_autonomous': return 'I am staying focused on my current fight.';
+        case 'tool_unavailable': return 'That action is not available to me right now.';
+        default: return 'I cannot do that safely right now.';
+    }
 }
 
 module.exports = {
     ACTIONS,
+    availableActions,
     execute,
     remember,
-    toolDescriptions
+    rejectionReply,
+    toolDescriptions,
+    worldRevision
 };

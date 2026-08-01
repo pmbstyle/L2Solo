@@ -91,13 +91,13 @@ function candidateSpots(status) {
         .slice(0, 6);
 }
 
-function schema() {
+function schema(allowedActions = BotAgentTools.ACTIONS) {
     return {
         type: 'object',
         properties: {
             action: {
                 type: 'string',
-                enum: BotAgentTools.ACTIONS
+                enum: allowedActions
             },
             reply: {
                 type: 'string',
@@ -124,6 +124,10 @@ function schema() {
                 type: 'number',
                 minimum: 0,
                 maximum: 1
+            },
+            worldRevision: {
+                type: 'string',
+                description: 'Echo the toolContext.worldRevision when selecting a mutating action.'
             }
         },
         required: ['action', 'reply', 'targetPlayerName', 'spotId', 'buffType', 'reason', 'confidence'],
@@ -156,8 +160,11 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
         bot: assembled?.bot || BotBrainContext.compactStatus(session, status, text),
         visiblePlayers,
         candidateSpots: candidateSpots(status),
-        allowedActions: BotAgentTools.ACTIONS,
-        tools: BotAgentTools.toolDescriptions(),
+        allowedActions: BotAgentTools.availableActions(session),
+        tools: BotAgentTools.toolDescriptions(session),
+        toolContext: {
+            worldRevision: BotAgentTools.worldRevision(session)
+        },
         constraints: {
             keepReplyShort: true,
             splitLongRepliesIntoChatLines: true,
@@ -188,7 +195,7 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         ],
         responseSchema: {
             name: 'bot_brain_decision',
-            schema: schema()
+            schema: schema(BotAgentTools.availableActions(session))
         }
     });
 
@@ -221,9 +228,24 @@ function recordConversationReply(session, decision, result, requestContext) {
 }
 
 function applyDecision(session, decision, visiblePlayers, requestContext) {
-    const result = BotAgentTools.execute(session, decision, visiblePlayers);
+    const result = BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     BotAgentTools.remember(session, decision, result, config().model);
     recordConversationReply(session, decision, result, requestContext);
+    if (!result.applied && requestContext?.playerSession?.actor) {
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const reply = BotAgentTools.rejectionReply(result);
+        BotManager.botTell(session, requestContext.playerSession, reply);
+        if (requestContext.conversationTurn) {
+            invoke('GameServer/Bot/AI/BotConversationService').recordFallback({
+                playerSession: requestContext.playerSession,
+                botSession: session,
+                turnId: requestContext.conversationTurn.turnId,
+                channel: requestContext.conversationTurn.channel,
+                text: reply,
+                reason: `tool_rejected:${result.reason}`
+            }).catch(() => {});
+        }
+    }
     return result.applied;
 }
 
