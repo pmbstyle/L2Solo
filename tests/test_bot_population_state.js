@@ -20,12 +20,16 @@ const originalUpdateSkillLevel = Database.updateSkillLevel;
 const originalUpdateCharacterClassId = Database.updateCharacterClassId;
 const statements = [];
 const classUpdates = [];
+let stalePartyRows = [];
 
 try {
     Database.execute = ([sql, params]) => {
         statements.push({ sql: String(sql), params });
         if (String(sql).startsWith('SELECT id, classId, level, exp, sp FROM characters')) {
             return Promise.resolve([{ id: 42, classId: 31, level: 42, exp: 0, sp: 0 }]);
+        }
+        if (String(sql).startsWith('SELECT characterId, statsJson FROM bot_life_state')) {
+            return Promise.resolve(stalePartyRows);
         }
         if (String(sql).startsWith('UPDATE bot_life_state')) {
             return Promise.resolve({ affectedRows: 2 });
@@ -67,28 +71,65 @@ try {
         assert(craftRecovery, 'bot life init must release stale craft waits after a restart');
         assert(craftRecovery.sql.includes("AND activity = 'crafting'"), 'only stale station waits should be recovered as hunters');
         assert.strictEqual(craftRecovery.params[1], craftRecovery.params[0], 'recovered craft waits must be due immediately for their replan');
-        const partyWaitMigration = statements.find((entry) => entry.sql.includes("migrated %d acquisition party waits") || entry.sql.includes("activity = 'party_wait'"));
-        assert(partyWaitMigration, 'startup must move legacy acquisition waits out of the rest scheduler');
+        const partyWaitMigration = statements.find((entry) => entry.sql.includes("SET activity = 'hunting'")
+            && entry.sql.includes("lastReason') = 'acquisition_party_wait'"));
+        assert(partyWaitMigration, 'startup must move legacy acquisition requests back to actionable hunting');
+        assert(partyWaitMigration.sql.includes("'$.partyWaitUntil', NULL"), 'startup must clear the obsolete blocking wait deadline');
+        const passivePartyRequestCleanup = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.partyRequest')")
+            && entry.sql.includes("activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead')"));
+        assert(passivePartyRequestCleanup, 'startup must clear party requests from passive activities that cannot join formation');
+        const stalePartyRequestCleanup = statements.find((entry) => entry.sql.includes("'$.partyRequest.deferredUntil'")
+            && entry.sql.includes("'$.partyRequest.requestedAt'")
+            && entry.sql.includes("'$.partyRequest.status', 'deferred'"));
+        assert(stalePartyRequestCleanup, 'startup must defer party requests that already exceeded their priority-specific TTL');
         const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
-            vitals: {}, stats: { classId: 31 }, inventory: {}
+            vitals: {}, stats: {
+                classId: 31,
+                partyRequest: {
+                    status: 'open',
+                    priority: 'required',
+                    requestedAt: Date.now() - 60 * 60 * 1000,
+                    objectiveKey: 'farm:probe:99'
+                }
+            }, inventory: {}
         }, 'persistence_probe').then(() => {
             const save = statements.find((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE'));
             assert(save.sql.includes('nextResolveAt = excluded.nextResolveAt'), 'persisted cold resolve timing must advance after every tick');
             assert(save.sql.includes('lastResolvedAt = excluded.lastResolvedAt'), 'persisted cold resolve history must survive an upsert');
             assert(save.sql.includes('inventorySummary = excluded.inventorySummary'), 'background drop rewards must persist after an upsert');
-            return BotLifeState.migrateLegacyClassProgression(1).then((migrated) => {
+            stalePartyRows = [{
+                characterId: 42,
+                statsJson: JSON.stringify({
+                    partyRequest: {
+                        status: 'open',
+                        priority: 'required',
+                        requestedAt: Date.now() - 60 * 60 * 1000,
+                        objectiveKey: 'farm:probe:99'
+                    }
+                })
+            }];
+            const cleanupStart = statements.length;
+            return BotLifeState.expireStalePartyRequests(100).then((expired) => {
+                assert.strictEqual(expired, 2, 'TTL cleanup should report the affected rows');
+                const cleanupUpdate = statements.slice(cleanupStart).find((entry) => entry.sql.startsWith('UPDATE bot_life_state'));
+                assert(cleanupUpdate, 'periodic TTL cleanup must execute its update');
+                assert.strictEqual(cleanupUpdate.params.length, 6, 'bounded TTL cleanup must bind only the predicates present in its subquery');
+                assert.strictEqual(BotLifeState.cachedState(42).stats.partyRequest.status, 'deferred', 'TTL cleanup must refresh the lifecycle cache');
+                assert.strictEqual(BotLifeState.partyRequestSummary().total, 0, 'TTL cleanup must remove expired requests from telemetry');
+            });
+        }).then(() => BotLifeState.migrateLegacyClassProgression(1).then((migrated) => {
                 assert.strictEqual(migrated.length, 1, 'legacy cold bots without progression markers must be migrated');
                 const classUpdate = classUpdates.at(-1);
                 assert(classUpdate, 'migration must persist the profession on the physical character');
                 assert.ok([36, 37].includes(classUpdate.classId), 'migration must use the physical character class as its source of truth');
                 return BotLifeState.dueCold(5, 1000);
-            });
-        }).then(() => {
+            }))
+        .then(() => {
             const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
             assert(due.sql.includes('rateModelVersion'), 'due cold states must prioritize persisted plans from an older drop-rate model');
             assert(due.sql.includes(`< ${GearPlanner.RATE_MODEL_VERSION}`), 'due cold states must prioritize plans from the current model rollout rather than a stale hard-coded version');
@@ -109,20 +150,37 @@ try {
             }, 'bgp_probe', 'healer', 42).then((assigned) => {
                 assert.strictEqual(assigned.activity, 'grouped', 'a formed party must release its waiting member into the group lifecycle');
                 assert.strictEqual(assigned.stats.partyWaitUntil, null, 'assigned members must not retain an obsolete wait deadline');
-                return BotLifeState.coldPartyCandidates(5);
+                assert.strictEqual(assigned.stats.partyRequest, null, 'assigned members must clear the outstanding party request');
+                return BotLifeState.assignParty({
+                    characterId: 46,
+                    name: 'RestingPartyProbe',
+                    phase: 'cold',
+                    activity: 'resting',
+                    timing: { nextResolveAt: 9000 },
+                    stats: {
+                        restUntil: Date.now() + 60000,
+                        partyRequest: { status: 'open', priority: 'required' }
+                    },
+                    vitals: {},
+                    inventory: {}
+                }, 'bgp_probe', 'dps', 42).then((restingAssigned) => {
+                    assert.strictEqual(restingAssigned.activity, 'resting', 'assigning a resting requester must not wake it into combat');
+                    assert(restingAssigned.stats.restUntil > Date.now(), 'assigning a resting requester must preserve its recovery deadline');
+                    return BotLifeState.coldPartyCandidates(5);
+                });
             }).then(() => {
                 const candidates = statements.find((entry) => entry.sql.includes("activity IN ('hunting', 'resting', 'party_wait')"));
                 assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
                 return BotLifeState.coldPartyCandidates(5, true);
             }).then(() => {
-                const requiredCandidates = statements.find((entry) => entry.sql.includes("states.activity = 'party_wait'"));
-                assert(requiredCandidates, 'a real party-wait backlog must reserve formation capacity ahead of elective hunting parties');
+                const requiredCandidates = statements.find((entry) => entry.sql.includes("$.partyRequest.priority") && entry.sql.includes("'required'"));
+                assert(requiredCandidates, 'required party requests must reserve formation capacity ahead of elective hunting parties');
                 return BotLifeState.coldPartyCandidateCount(true).then(() => {
                     const count = statements.find((entry) => entry.sql.includes('COUNT(*) AS candidateCount'));
                     assert(count, 'party capacity planning must be able to measure the full wait backlog');
                     return BotLifeState.coldPartyCandidatesForSpots(['cruma', 'dion'], 3, true);
                 }).then(() => {
-                    const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY states.spotId'));
+                    const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY'));
                     assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
                 }).then(() => {
                     const member = {
@@ -159,12 +217,29 @@ try {
                         }
                     });
                 });
-            }).then(() => {
-                const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);
-                const persistedStats = JSON.parse(partySave.params[27]);
-                assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
-                assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
-            });
+                }).then(() => {
+                    const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);
+                    const persistedStats = JSON.parse(partySave.params[27]);
+                    assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
+                    assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
+                    return BotLifeState.applyResolve({
+                        characterId: 45,
+                        name: 'DeadPartyRequestProbe',
+                        phase: 'cold',
+                        activity: 'hunting',
+                        stats: { partyRequest: { status: 'open', priority: 'required' } },
+                        timing: {},
+                        vitals: {},
+                        inventory: {}
+                    }, {
+                        patch: { activity: 'dead', vitals: {} },
+                        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                        nextResolveAt: 10000,
+                        debug: { fights: 1, deaths: 1 }
+                    }).then((deadState) => {
+                        assert.strictEqual(deadState.stats.partyRequest, null, 'dead bots must not retain open party requests');
+                    });
+                });
         }).then(() => {
             console.log('Bot population state checks passed');
         });

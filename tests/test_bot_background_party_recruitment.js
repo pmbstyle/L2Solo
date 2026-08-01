@@ -14,6 +14,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const originals = {
     active: PartyState.active,
     statesForParty: LifeState.statesForParty,
+    statesForParties: LifeState.statesForParties,
     assignParty: LifeState.assignParty,
     partyRequirementCounts: LifeState.partyRequirementCounts,
     clearParty: LifeState.clearParty,
@@ -49,6 +50,7 @@ async function run() {
 
     PartyState.active = () => [party];
     LifeState.statesForParty = () => Promise.resolve(members);
+    LifeState.statesForParties = () => Promise.resolve(new Map([['bgp_1', members]]));
     LifeState.assignParty = (state, partyId, role, leaderId) => {
         assigned.push({ state, partyId, role, leaderId });
         return Promise.resolve(state);
@@ -69,6 +71,34 @@ async function run() {
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
     assert.strictEqual(events.length, 1);
 
+    const sharedParties = [
+        { partyId: 'bgp_shared_a', leaderId: 50, memberIds: [50, 51, 52, 53], spotId: 'cruma', stats: {} },
+        { partyId: 'bgp_shared_b', leaderId: 54, memberIds: [54, 55, 56, 57], spotId: 'cruma', stats: {} }
+    ];
+    const sharedMembers = new Map(sharedParties.map((sharedParty) => [
+        sharedParty.partyId,
+        sharedParty.memberIds.map((characterId, index) => ({
+            characterId,
+            name: `Member${characterId}`,
+            level: 15,
+            spotId: 'cruma',
+            party: { role: ['tank', 'healer', 'buffer', 'dps'][index] }
+        }))
+    ]));
+    const sharedAssignments = [];
+    PartyState.active = () => sharedParties;
+    LifeState.statesForParties = () => Promise.resolve(sharedMembers);
+    LifeState.assignParty = (state, partyId) => {
+        sharedAssignments.push({ characterId: state.characterId, partyId });
+        return Promise.resolve(state);
+    };
+    const sharedCandidates = await PopulationService.recruitBackgroundMembers([
+        { characterId: 60, name: 'SharedOne', level: 15, spotId: 'cruma', party: { role: 'dps' } },
+        { characterId: 61, name: 'SharedTwo', level: 15, spotId: 'cruma', party: { role: 'dps' } }
+    ]);
+    assert.deepStrictEqual([...sharedCandidates].sort((a, b) => a - b), [60, 61], 'a candidate must be claimed by only one active party per formation pass');
+    assert.deepStrictEqual(sharedAssignments.map((entry) => entry.characterId).sort((a, b) => a - b), [60, 61]);
+
     const fairGroups = PopulationService.groupPartyCandidatesBySpot([
         { characterId: 101, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
         { characterId: 102, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
@@ -80,6 +110,19 @@ async function run() {
         activePartiesBySpot: new Map([['crowded', 5]])
     });
     assert.strictEqual(fairGroups[0][0].spotId, 'under_served', 'party-wait groups must prefer a ground with no existing party over a larger but already saturated queue');
+
+    const objectiveGroups = PopulationService.groupPartyCandidatesByObjective([
+        { characterId: 111, level: 25, spotId: 'fallback', activity: 'hunting', stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'direct_drop:cruma:701:88', spotId: 'cruma' } } },
+        { characterId: 112, level: 26, spotId: 'fallback', activity: 'hunting', stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'direct_drop:cruma:701:88', spotId: 'cruma' } } },
+        { characterId: 113, level: 25, spotId: 'fallback', activity: 'hunting', stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'craft:cruma:701:1988', spotId: 'cruma' } } }
+    ], { prioritizePartyWait: true });
+    assert.strictEqual(objectiveGroups.length, 2, 'party formation must keep different acquisition objectives separate even on one spot');
+    assert.strictEqual(objectiveGroups[0].length, 2, 'compatible requesters must share an objective group');
+    assert.strictEqual(
+        PopulationService.partyTargetNpcId({ stats: { objective: { strategy: 'craft', npcId: 701 } } }, { stats: {} }),
+        701,
+        'craft acquisition objectives must forward their material NPC to party combat'
+    );
 
     const electiveParty = { partyId: 'bgp_elective', leaderId: 11, memberIds: [11, 12], spotId: 'cruma', startedAt: 1 };
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
@@ -193,6 +236,7 @@ run().catch((err) => {
 }).finally(() => {
     PartyState.active = originals.active;
     LifeState.statesForParty = originals.statesForParty;
+    LifeState.statesForParties = originals.statesForParties;
     LifeState.assignParty = originals.assignParty;
     LifeState.partyRequirementCounts = originals.partyRequirementCounts;
     LifeState.clearParty = originals.clearParty;

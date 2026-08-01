@@ -33,10 +33,21 @@ const handAxeSource = GearAcquisitionPlanner.sourceForItem(handAxe.selfId, [were
 assert(handAxeSource, 'a direct equipment source must retain its real dropper');
 assert.strictEqual(handAxeSource.npcLevel, 28, 'a direct equipment source must retain its NPC level instead of its mixed-spot average');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20 }, handAxeSource), false, 'a level-20 bot must not solo a level-28 item target just because its grid also contains lower-level mobs');
-assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 28 }), true, 'a bot should solo only sources below its combat safety margin');
-assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 30 }, { spotLevel: 29 }), false, 'a bot must not call an equal-level source solo-safe');
+const gearedLevel30 = {
+    level: 30,
+    inventory: Object.fromEntries([7, 10, 11].map((slot) => {
+        const item = DataCache.items.find((entry) => Number(entry.etc?.slot) === slot && entry.template?.name && entry.template.name !== '0');
+        return [item.selfId, { selfId: item.selfId, amount: 1, equipped: true }];
+    }))
+};
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource(gearedLevel30, { spotLevel: 28 }), true, 'a geared bot should solo a source below its combat safety margin');
+assert.strictEqual(GearAcquisitionPlanner.partyNeedForSource(gearedLevel30, { spotLevel: 32 }), 'preferred', 'a near-level source should advertise a party without blocking progress');
+assert.strictEqual(GearAcquisitionPlanner.partyNeedReasonForSource(gearedLevel30, { spotLevel: 32 }), 'tight_level_margin', 'party telemetry must explain a preferred level-margin request');
+assert.strictEqual(GearAcquisitionPlanner.partyNeedForSource(gearedLevel30, { spotLevel: 36 }), 'required', 'a materially stronger source must still require a party');
+assert.strictEqual(GearAcquisitionPlanner.partyNeedReasonForSource(gearedLevel30, { spotLevel: 36 }), 'underleveled', 'party telemetry must explain a required level-gap request');
+assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource(gearedLevel30, { spotLevel: 30 }), true, 'a normally equipped bot must not wait for a same-level source');
 assert.strictEqual(
-    GearAcquisitionPlanner.bestSourceForState([{ spotLevel: 32, id: 'dangerous' }, { spotLevel: 27, id: 'safe' }], { level: 30 }).id,
+    GearAcquisitionPlanner.bestSourceForState([{ spotLevel: 32, id: 'dangerous' }, { spotLevel: 27, id: 'safe' }], gearedLevel30).id,
     'safe',
     'material planning must prefer a viable lower-yield solo source over a dangerous one'
 );
@@ -148,6 +159,7 @@ const healerReadiness = GearAcquisitionPlanner.combatReadiness({ level: 20, stat
 assert(tankReadiness.effectiveLevel > healerReadiness.effectiveLevel, 'readiness must recognise that a geared tank can take safer solo routes than an unprepared support');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20, stats: { role: 'tank' }, inventory: { 1: { selfId: 1, amount: 1, equipped: true } } }, lowDSource), true, 'a tank may solo an entry D route when its actual kit supports it');
 assert.strictEqual(GearAcquisitionPlanner.soloSafeForSource({ level: 20, stats: { role: 'healer' }, inventory: {} }, lowDSource), false, 'an unprepared support must wait for party help at the same route');
+assert.strictEqual(GearAcquisitionPlanner.partyNeedReasonForSource({ level: 20, stats: { role: 'healer' }, inventory: {} }, lowDSource), 'missing_weapon', 'missing equipment must be visible as the party requirement reason');
 assert(Number(target.item.template.price) <= 2290000, 'a new C-grade bot must begin with an entry-tier weapon target');
 const station = ColdCraftingService.stationForRecipe(target.recipe.recipeId);
 assert(station, 'a selected equipment recipe must be published by a Giran crafting station');

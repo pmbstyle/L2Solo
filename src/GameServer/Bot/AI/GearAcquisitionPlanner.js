@@ -117,6 +117,8 @@ function combatReadiness(state = {}) {
 
     return {
         role,
+        hasWeapon: Boolean(weapon),
+        armorCount: armor.length,
         weaponRank,
         armorRank,
         effectiveLevel: Math.max(1, Number(state.level || 1))
@@ -451,11 +453,47 @@ function soloSafeForSource(state = {}, source = {}) {
     // A target can be much stronger than the average of a mixed-level grid.
     // Safety must be evaluated against the NPC that actually drops the item,
     // not against incidental low-level mobs around it.
-    return combatReadiness(state).effectiveLevel >= Number(source.npcLevel || source.spotLevel || Infinity) + 2;
+    return partyNeedForSource(state, source) === 'solo_ok';
+}
+
+function partyNeedAssessmentForSource(state = {}, source = {}) {
+    const readiness = combatReadiness(state);
+    const targetLevel = Number(source?.npcLevel || source?.spotLevel || Infinity);
+    const margin = readiness.effectiveLevel - targetLevel;
+
+    // A support with no weapon/armour cannot be treated as a safe solo farmer,
+    // even when the level arithmetic happens to look favourable.  This is a
+    // hard party need, while a normally equipped bot near the target level can
+    // still progress alone and merely advertise a preferred party.
+    const unpreparedSupport = ['healer', 'buffer'].includes(readiness.role)
+        && readiness.armorCount < 2;
+    if (!readiness.hasWeapon) return { need: 'required', reason: 'missing_weapon' };
+    if (unpreparedSupport) return { need: 'required', reason: 'unprepared_support' };
+    if (margin < -2) return { need: 'required', reason: 'underleveled' };
+    if (margin < 0) return { need: 'preferred', reason: 'tight_level_margin' };
+    return { need: 'solo_ok', reason: 'solo_ready' };
+}
+
+function partyNeedForSource(state = {}, source = {}) {
+    return partyNeedAssessmentForSource(state, source).need;
+}
+
+function partyNeedReasonForSource(state = {}, source = {}) {
+    return partyNeedAssessmentForSource(state, source).reason;
 }
 
 function bestSourceForState(sources = [], state = {}) {
     return sources.find((source) => soloSafeForSource(state, source)) || sources[0] || null;
+}
+
+function safeFallbackForPlan(state = {}, plan = {}, spots = []) {
+    if (!plan || !['active', 'blocked'].includes(plan.status)) return null;
+    const itemId = plan.strategy === 'direct_drop'
+        ? Number(plan.target?.selfId || 0)
+        : Number(plan.next?.itemId || 0);
+    if (!itemId) return null;
+    return sourceForItem(itemId, spots, state)
+        .find((source) => partyNeedForSource(state, source) === 'solo_ok') || null;
 }
 
 function sourceIndexFor(spots = []) {
@@ -578,6 +616,7 @@ function planFor(state = {}, options = {}) {
         const offer = marketOfferForTarget(target, state, options);
         const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
         const buy = offer && marketEffort(offer, state) <= directKills;
+        const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
             status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
             rateModelVersion: RATE_MODEL_VERSION,
@@ -586,7 +625,10 @@ function planFor(state = {}, options = {}) {
             market: { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType },
             recipeId: null, materials: [], next: null
         } : source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: soloSafeForSource(state, source), requiresParty: !soloSafeForSource(state, source),
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
+            partyNeed: sourceAssessment.need,
+            partyNeedReason: sourceAssessment.reason,
+            requiresParty: sourceAssessment.need === 'required',
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(1 / Math.max(source.expectedYield, 0.000001)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
@@ -617,7 +659,8 @@ function planFor(state = {}, options = {}) {
         : Infinity;
     const offer = marketOfferForTarget(target.item, state, options);
     const buy = offer && marketEffort(offer, state) <= Math.min(directKills, craftKills);
-    const soloSafe = direct && soloSafeForSource(state, direct);
+    const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
+    const soloSafe = direct && directAssessment.need === 'solo_ok';
     const strategy = buy ? 'market'
         : direct && (!target.recipe || soloSafe && directKills <= craftKills * 0.8) ? 'direct_drop'
             : target.recipe ? 'craft' : 'blocked';
@@ -635,8 +678,12 @@ function planFor(state = {}, options = {}) {
     // A ready final recipe or component is a station action, not a request to
     // fight at the next (possibly unsafe) material source.  Let it leave the
     // party gate and finish the prepared manufacture first.
-    const requiresParty = !readyToCraft && !componentReady
-        && Boolean(next && !soloSafeForSource(state, next));
+    const nextAssessment = !readyToCraft && !componentReady && next
+        ? partyNeedAssessmentForSource(state, next)
+        : { need: 'solo_ok', reason: 'solo_ready' };
+    const partyNeed = nextAssessment.need;
+    const partyNeedReason = nextAssessment.reason;
+    const requiresParty = partyNeed === 'required';
 
     return {
         status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : strategy === 'market' || next ? 'active' : 'blocked',
@@ -648,6 +695,8 @@ function planFor(state = {}, options = {}) {
         recipeId: target.recipe ? Number(target.recipe.recipeId) : null,
         strategy,
         soloSafe,
+        partyNeed,
+        partyNeedReason,
         requiresParty,
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
         market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
@@ -677,4 +726,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, itemDropChance, itemDropYield, soloSafeForSource, bestSourceForState, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
