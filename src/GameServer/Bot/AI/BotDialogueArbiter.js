@@ -1,4 +1,5 @@
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 
 function fallbackText(botSession, reason) {
     const plan = botSession?.plan || 'hunting';
@@ -54,18 +55,25 @@ function route(input = {}) {
             queued: input.queued === true
         };
 
-        const started = BotBrain.maybeThink(
-            input.botSession,
-            'player_chat',
+        return BotContextAssembler.assemble({
+            session: input.botSession,
             status,
-            turn.playerText,
+            text: turn.playerText,
             requestContext
-        );
+        }).then((assembledContext) => {
+            const started = BotBrain.maybeThink(
+                input.botSession,
+                'player_chat',
+                status,
+                turn.playerText,
+                { ...requestContext, assembledContext }
+            );
 
-        if (!started && input.allowFallback !== false) {
-            return deliverFallback(input, turn, 'not_started');
-        }
-        return { ok: true, started, queued: input.queued === true, turn };
+            if (!started && input.allowFallback !== false) {
+                return deliverFallback(input, turn, 'not_started');
+            }
+            return { ok: true, started, queued: input.queued === true, turn, assembledContext };
+        });
     }).catch((error) => {
         if (input.allowFallback === false || !input.playerSession?.actor || !input.botSession?.actor) {
             return { ok: false, reason: 'conversation_error' };

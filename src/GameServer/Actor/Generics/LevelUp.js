@@ -53,6 +53,17 @@ function levelUp(session, actor, nextLevel) {
     // Level up effect
     session.dataSendToMeAndOthers(ServerResponse.socialAction(id, 15), actor);
     ConsoleText.transmit(session, ConsoleText.caption.levelUp);
+    if (isBot) {
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            botId: id,
+            eventType: 'level_up',
+            summary: `${actor.fetchName?.() || 'Bot'} reached level ${nextLevel}.`,
+            weight: 4,
+            dedupeKey: `level:${nextLevel}`,
+            coalesceWindowMs: 60 * 60 * 1000,
+            meta: { level: Number(nextLevel) }
+        })).catch(() => {});
+    }
 
     // Update database with new hp, mp
     CharacterWriteQueue.vitals(id, hp, maxHp, mp, maxMp);

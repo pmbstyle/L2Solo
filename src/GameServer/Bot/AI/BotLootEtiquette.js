@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const ADENA_ID = 57;
@@ -245,6 +246,17 @@ const BotLootEtiquette = {
             botSession.lastLootRequestAt = current;
             playerSession.lastLootRequestAt = current;
 
+            Promise.resolve(BotEventJournal.record({
+                playerId: playerSession.actor.fetchId(),
+                botId: botSession.actor.fetchId(),
+                eventType: 'loot_request',
+                summary: `${botSession.actor.fetchName?.() || 'Bot'} asked for ${amount} ${info.name}.`,
+                weight: 3,
+                dedupeKey: `loot:${botSession.actor.fetchId()}:${selfId}`,
+                coalesceWindowMs: REQUEST_TTL_MS,
+                meta: { itemId: selfId, amount, reason: demand.reason }
+            })).catch(() => {});
+
             const BotManager = invoke('GameServer/Bot/BotManager');
             BotManager.botTell(botSession, playerSession, `If you don't need ${info.name}, could you trade it to me? I can use it for ${request.reason}.`);
             console.info("BotLoot :: %s requested %d %s from %s (%s, score %d)", actorName(botSession), amount, info.name, actorName(playerSession), request.reason, demand.score);
@@ -270,6 +282,16 @@ const BotLootEtiquette = {
 
         request.fulfilled = true;
         removeRequest(playerSession, botSession, request);
+        Promise.resolve(BotEventJournal.record({
+            playerId: playerSession.actor?.fetchId?.(),
+            botId: botSession.actor?.fetchId?.(),
+            eventType: 'loot_received',
+            summary: `${botSession.actor?.fetchName?.() || 'Bot'} received ${request.amount} ${request.itemName}.`,
+            weight: 4,
+            dedupeKey: `loot_received:${botSession.actor?.fetchId?.()}:${request.selfId}`,
+            coalesceWindowMs: 30000,
+            meta: { itemId: request.selfId, amount: request.amount }
+        })).catch(() => {});
         console.info("BotLoot :: %s fulfilled %s request from %s", actorName(playerSession), request.itemName, actorName(botSession));
         return request;
     }

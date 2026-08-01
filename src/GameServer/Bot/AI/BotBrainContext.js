@@ -247,10 +247,12 @@ function skillsSnapshot(actor, text = '') {
     };
 }
 
-function compactStatus(session, status, text = '') {
+function compactStatus(session, status, text = '', options = {}) {
     if (!status || !status.available) return status;
 
     const actor = session?.actor;
+    const includeInventory = options.includeInventory !== false;
+    const includeSkills = options.includeSkills !== false;
     return {
         name: status.name,
         level: status.level,
@@ -268,9 +270,9 @@ function compactStatus(session, status, text = '') {
         blockers: status.blockers,
         spot: compactSpot(status.spot),
         buffs: buffSnapshot(actor, status),
-        equipment: equipmentSnapshot(actor),
-        inventory: inventorySnapshot(actor, text),
-        skills: skillsSnapshot(actor, text),
+        equipment: options.includeEquipment === false ? null : equipmentSnapshot(actor),
+        inventory: includeInventory ? inventorySnapshot(actor, text) : null,
+        skills: includeSkills ? skillsSnapshot(actor, text) : null,
         roleDecision: status.roleDecision || null,
         persona: status.persona || null,
         social: status.social || null

@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
@@ -59,6 +60,15 @@ function beginEscape(session, bot, town) {
         session.townEscape = undefined;
         const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
         TeleportTo(session, bot, { locX: town.x, locY: town.y, locZ: town.z });
+        Promise.resolve(BotEventJournal.record({
+            botId: bot.fetchId(),
+            eventType: 'travel_complete',
+            summary: `${bot.fetchName?.() || 'Bot'} arrived in ${town.name}.`,
+            weight: 3,
+            dedupeKey: `travel:${bot.fetchId()}:${town.name}`,
+            coalesceWindowMs: 30000,
+            meta: { town: town.name, mode: 'scroll_of_escape' }
+        })).catch(() => {});
     }, SOE_CAST_MS);
 }
 

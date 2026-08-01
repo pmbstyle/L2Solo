@@ -38,6 +38,16 @@ async function tradeDone(session, buffer) {
             lootRequest ? 'gave_useful_loot' : 'trade_completed',
             detail
         );
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            playerId: session.actor?.fetchId?.(),
+            botId: result.partnerSession?.actor?.fetchId?.(),
+            eventType: 'trade_completed',
+            summary: `${session.actor?.fetchName?.() || 'Player'} traded ${detail}.`,
+            weight: 4,
+            dedupeKey: `trade:${session.actor?.fetchId?.()}:${result.partnerSession?.actor?.fetchId?.()}:${detail}`,
+            coalesceWindowMs: 30 * 1000,
+            meta: { itemCount: result.moved?.length || 0 }
+        })).catch(() => {});
         BotManager.botTell(
             result.partnerSession,
             session,

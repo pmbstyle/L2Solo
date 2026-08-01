@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
 const DEFAULT_PARTY_SETTINGS = {
@@ -105,7 +106,20 @@ function updateSettings(leaderSession, patch = {}) {
             settings[key] = patch[key];
         }
     });
-    return getSettings(leaderSession);
+    const next = getSettings(leaderSession);
+    membersForLeader(leaderSession).forEach((companionSession) => {
+        Promise.resolve(BotEventJournal.record({
+            playerId: leaderSession?.actor?.fetchId?.(),
+            botId: companionSession.actor?.fetchId?.(),
+            eventType: 'policy_change',
+            summary: `${leaderSession.actor?.fetchName?.() || 'Leader'} changed party policy for ${companionSession.actor?.fetchName?.() || 'the companion'}.`,
+            weight: 2,
+            dedupeKey: `policy:${leaderSession.actor?.fetchId?.()}:${JSON.stringify(patch)}`,
+            coalesceWindowMs: 15000,
+            meta: { patch, settings: next }
+        })).catch(() => {});
+    });
+    return next;
 }
 
 function distributionForLeader(leaderSession) {
@@ -119,6 +133,18 @@ function setDistribution(leaderSession, distribution) {
         settings.distribution = next;
         // Turn order is meaningful only for the currently selected rule.
         settings.itemLastLootIndex = -1;
+        membersForLeader(leaderSession).forEach((companionSession) => {
+            Promise.resolve(BotEventJournal.record({
+                playerId: leaderSession?.actor?.fetchId?.(),
+                botId: companionSession.actor?.fetchId?.(),
+                eventType: 'policy_change',
+                summary: `${leaderSession.actor?.fetchName?.() || 'Leader'} changed loot distribution to ${next}.`,
+                weight: 2,
+                dedupeKey: `distribution:${leaderSession.actor?.fetchId?.()}:${next}`,
+                coalesceWindowMs: 15000,
+                meta: { distribution: next }
+            })).catch(() => {});
+        });
     }
     return settings.distribution;
 }
@@ -732,6 +758,15 @@ const PartyCompanionService = {
         }
 
         refreshLeaderView(leaderSession);
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            playerId: leader.fetchId(),
+            botId: bot.fetchId(),
+            eventType: 'party_join',
+            summary: `${bot.fetchName?.() || 'Companion'} joined ${leader.fetchName?.() || 'the player'}'s party.`,
+            weight: 5,
+            dedupeKey: `party_join:${leader.fetchId()}:${bot.fetchId()}`,
+            coalesceWindowMs: 5000
+        })).catch(() => {});
         return true;
     },
 
@@ -755,6 +790,16 @@ const PartyCompanionService = {
         }
 
         refreshLeaderView(leaderSession, options);
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            playerId: leaderSession.actor?.fetchId?.(),
+            botId: companionSession.actor?.fetchId?.(),
+            eventType: 'party_leave',
+            summary: `${companionSession.actor?.fetchName?.() || 'Companion'} left the party.`,
+            weight: 5,
+            dedupeKey: `party_leave:${leaderSession.actor?.fetchId?.()}:${companionSession.actor?.fetchId?.()}`,
+            coalesceWindowMs: 5000,
+            meta: { event: event || null, source }
+        })).catch(() => {});
         return true;
     },
 

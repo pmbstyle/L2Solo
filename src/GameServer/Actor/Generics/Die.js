@@ -29,6 +29,16 @@ function die(session, actor) {
     actor.state.destructor();
     actor.state.setDead(true);
     session.dataSendToMeAndOthers(ServerResponse.die(actor.fetchId()), actor);
+    if (session?.accountId?.startsWith?.('bot_')) {
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            botId: actor.fetchId(),
+            eventType: 'death',
+            summary: `${actor.fetchName?.() || 'Bot'} died.`,
+            weight: 5,
+            dedupeKey: `death:${actor.fetchId()}`,
+            coalesceWindowMs: 5000
+        })).catch(() => {});
+    }
 }
 
 module.exports = die;

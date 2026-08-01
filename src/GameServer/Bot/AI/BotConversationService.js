@@ -1,4 +1,5 @@
 const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
+const BotConversationSummarizer = invoke('GameServer/Bot/AI/BotConversationSummarizer');
 
 const DEFAULT_RECENT_TURNS = BotConversationStore.DEFAULT_RECENT_TURNS;
 let turnSequence = 0;
@@ -100,7 +101,14 @@ function recordBotReply(input = {}) {
         requestId: input.requestId,
         delivered: input.delivered !== false,
         meta: input.meta || null
-    }).then(() => true).catch(() => false);
+    }).then(() => {
+        BotConversationSummarizer.summarize({
+            playerId: actorId(input.playerSession),
+            botId: actorId(input.botSession),
+            requestId: input.requestId
+        }).catch(() => {});
+        return true;
+    }).catch(() => false);
 }
 
 function recordFallback(input = {}) {
@@ -123,6 +131,18 @@ const BotConversationService = {
     recordBotReply,
     recordFallback,
     contextFor,
+    maybeSummarize(input = {}) {
+        if (!validPair(input.playerSession, input.botSession)) {
+            return Promise.resolve({ ok: false, reason: 'invalid_hot_dialogue_pair' });
+        }
+        return BotConversationSummarizer.summarize({
+            playerId: actorId(input.playerSession),
+            botId: actorId(input.botSession),
+            requestId: input.requestId,
+            threshold: input.threshold,
+            limit: input.limit
+        });
+    },
     resetSequence() {
         turnSequence = 0;
     }

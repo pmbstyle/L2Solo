@@ -8,6 +8,7 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 function findStoreSession(actorId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
@@ -103,6 +104,15 @@ module.exports = {
         // In town! Wait and pretend to shop
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
+            Promise.resolve(BotEventJournal.record({
+                botId: bot.fetchId(),
+                eventType: 'shopping_started',
+                summary: `${bot.fetchName?.() || 'Bot'} reached ${target.town || 'town'} to shop and restock.`,
+                weight: 2,
+                dedupeKey: `shopping:${bot.fetchId()}:${target.town || 'town'}`,
+                coalesceWindowMs: 30000,
+                meta: { town: target.town || null }
+            })).catch(() => {});
             this.sellAndRestock(session, bot, Generics, BotAI);
         }
     },
@@ -241,6 +251,15 @@ module.exports = {
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
             BotAI.say(session, returningToCompanion ? "All set. Returning to you." : "All stocked up! Returning to the hunting spot.");
             session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
+            Promise.resolve(BotEventJournal.record({
+                botId: bot.fetchId(),
+                eventType: 'shopping_completed',
+                summary: `${bot.fetchName?.() || 'Bot'} finished shopping and returned to ${session.plan}.`,
+                weight: 2,
+                dedupeKey: `shopping_done:${bot.fetchId()}`,
+                coalesceWindowMs: 30000,
+                meta: { plan: session.plan }
+            })).catch(() => {});
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
