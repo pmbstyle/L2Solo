@@ -2,33 +2,12 @@ const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const cooldowns = new Map();
 
-function bool(value, fallback = false) {
-    if (value === undefined || value === null || value === '') return fallback;
-    if (typeof value === 'boolean') return value;
-    return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
-}
-
-function num(value, fallback) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function config() {
-    const optn = options.default.OpenRouter || {};
-    return {
-        enabled: bool(optn.enabled, false),
-        apiKey: process.env.OPENROUTER_API_KEY || optn.apiKey || '',
-        model: process.env.OPENROUTER_MODEL || optn.model || 'google/gemini-2.5-flash-lite',
-        temperature: num(optn.temperature, 0.35),
-        maxTokens: num(optn.maxTokens, 120),
-        timeoutMs: num(optn.timeoutMs, 3500),
-        remoteChatCooldownMs: num(optn.remoteChatCooldownMs, 10000),
-        debug: bool(optn.debug, false)
-    };
+    return OpenRouterGateway.config({ maxTokens: 120 });
 }
 
 function playerSummary(playerSession) {
@@ -165,70 +144,44 @@ function systemPrompt() {
     ].join(' ');
 }
 
-async function requestLlmReply(payload, cfg) {
-    if (typeof fetch !== 'function') return null;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), cfg.timeoutMs);
-
-    try {
-        const response = await fetch(OPENROUTER_URL, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${cfg.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost',
-                'X-OpenRouter-Title': 'L2Node Bots'
-            },
-            body: JSON.stringify({
-                model: cfg.model,
-                messages: [
-                    { role: 'system', content: systemPrompt() },
-                    { role: 'user', content: JSON.stringify(payload) }
-                ],
-                temperature: cfg.temperature,
-                max_tokens: cfg.maxTokens,
-                response_format: {
-                    type: 'json_schema',
-                    json_schema: {
-                        name: 'bot_remote_chat',
-                        strict: true,
-                        schema: schema()
-                    }
-                }
-            }),
-            signal: controller.signal
-        });
-
-        if (!response.ok) {
-            const detail = await response.text().catch(() => '');
-            utils.infoWarn('BotRemoteChat', 'OpenRouter request failed: %d %s', response.status, detail.slice(0, 180));
-            return null;
+async function requestLlmReply(payload, cfg, sessionId) {
+    const result = await OpenRouterGateway.request({
+        config: cfg,
+        circuitKey: 'cold',
+        requestId: `cold-${sessionId || 'bot'}-${Date.now()}`,
+        sessionId,
+        messages: [
+            { role: 'system', content: systemPrompt() },
+            { role: 'user', content: JSON.stringify(payload) }
+        ],
+        responseSchema: {
+            name: 'bot_remote_chat',
+            schema: schema()
         }
-
-        const json = await response.json();
-        const content = json.choices?.[0]?.message?.content;
-        if (!content) return null;
-
-        const parsed = JSON.parse(content);
-        const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
-        const reply = BotChatText.normalize(parsed.reply).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
-        if (!reply || Number(parsed.confidence || 0) < 0.35) return null;
-
+    });
+    if (!result.ok) {
         return {
-            reply,
-            intent: parsed.intent || 'none',
-            reason: parsed.reason || 'llm',
-            llm: true
+            providerFailure: true,
+            providerOutcome: result.reason,
+            usage: result.usage,
+            llmTelemetry: result.telemetry
         };
-    } catch (err) {
-        if (err.name !== 'AbortError') {
-            utils.infoWarn('BotRemoteChat', 'OpenRouter error: %s', err.message);
-        }
-        return null;
-    } finally {
-        clearTimeout(timeout);
     }
+    if (!result.data) return null;
+
+    const parsed = result.data;
+    const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+    const reply = BotChatText.normalize(parsed.reply).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
+    if (!reply || Number(parsed.confidence || 0) < 0.35) return null;
+
+    return {
+        reply,
+        intent: parsed.intent || 'none',
+        reason: parsed.reason || 'llm',
+        llm: true,
+        usage: result.usage,
+        llmTelemetry: result.telemetry
+    };
 }
 
 const BotRemoteChat = {
@@ -289,7 +242,19 @@ const BotRemoteChat = {
             const llmReady = cfg.enabled && !!cfg.apiKey;
             if (!llmReady) return fallback;
 
-            return requestLlmReply(payload, cfg).then((result) => result || fallback);
+            const sessionId = `cold-bot:${state.characterId}:player:${playerSession.actor.fetchId()}`;
+            return requestLlmReply(payload, cfg, sessionId).then((result) => {
+                if (result?.providerFailure) {
+                    state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                    return {
+                        ...fallback,
+                        providerOutcome: result.providerOutcome,
+                        usage: result.usage || null,
+                        llmTelemetry: result.llmTelemetry || null
+                    };
+                }
+                return result || fallback;
+            });
         }).then((result) => {
             BotSocialMemory.recordEvent(playerSession, state, 'chat', result.reason || 'remote_chat');
             return result;

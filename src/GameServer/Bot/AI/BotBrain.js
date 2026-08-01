@@ -1,37 +1,12 @@
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
+const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-
-function bool(value, fallback = false) {
-    if (value === undefined || value === null || value === '') return fallback;
-    if (typeof value === 'boolean') return value;
-    return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
-}
-
-function num(value, fallback) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 function config() {
-    const optn = options.default.OpenRouter || {};
-    return {
-        enabled: bool(optn.enabled, false),
-        apiKey: process.env.OPENROUTER_API_KEY || optn.apiKey || '',
-        model: process.env.OPENROUTER_MODEL || optn.model || 'google/gemini-2.5-flash-lite',
-        temperature: num(optn.temperature, 0.35),
-        maxTokens: num(optn.maxTokens, 160),
-        timeoutMs: num(optn.timeoutMs, 3500),
-        cooldownMs: num(optn.cooldownMs, 45000),
-        chatCooldownMs: num(optn.chatCooldownMs, 12000),
-        visibilityRadius: num(optn.visibilityRadius, 6000),
-        maxPromptPrice: num(optn.maxPromptPrice, 0),
-        maxCompletionPrice: num(optn.maxCompletionPrice, 0),
-        debug: bool(optn.debug, false)
-    };
+    return OpenRouterGateway.config({ maxTokens: 160 });
 }
 
 function debugSkip(session, cfg, reason) {
@@ -191,78 +166,53 @@ function userPayload(event, session, status, visiblePlayers, text) {
     };
 }
 
-async function requestDecision(payload, cfg) {
-    if (typeof fetch !== 'function') {
-        utils.infoWarn('BotBrain', 'global fetch is unavailable; OpenRouter brain disabled for this runtime');
-        return null;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), cfg.timeoutMs);
-
-    const provider = {};
-    if (cfg.maxPromptPrice > 0 || cfg.maxCompletionPrice > 0) {
-        provider.max_price = {};
-        if (cfg.maxPromptPrice > 0) provider.max_price.prompt = cfg.maxPromptPrice;
-        if (cfg.maxCompletionPrice > 0) provider.max_price.completion = cfg.maxCompletionPrice;
-    }
-
-    const body = {
-        model: cfg.model,
+async function requestDecision(payload, cfg, session, requestContext, visiblePlayers) {
+    const botId = session?.actor?.fetchId?.() || session?.accountId || 'unknown';
+    const playerId = requestContext?.playerSession?.actor?.fetchId?.() ||
+        requestContext?.playerId ||
+        visiblePlayers?.[0]?.id ||
+        'nearby';
+    const result = await OpenRouterGateway.request({
+        config: cfg,
+        circuitKey: 'hot',
+        requestId: requestContext?.requestId || `hot-${botId}-${Date.now()}`,
+        sessionId: `hot-bot:${botId}:player:${playerId}`,
         messages: [
             { role: 'system', content: systemPrompt() },
             { role: 'user', content: JSON.stringify(payload) }
         ],
-        temperature: cfg.temperature,
-        max_tokens: cfg.maxTokens,
-        response_format: {
-            type: 'json_schema',
-            json_schema: {
-                name: 'bot_brain_decision',
-                strict: true,
-                schema: schema()
-            }
+        responseSchema: {
+            name: 'bot_brain_decision',
+            schema: schema()
         }
+    });
+
+    if (!result.ok) return result;
+    return {
+        ...result.data,
+        usage: result.usage,
+        llmTelemetry: result.telemetry
     };
+}
 
-    if (Object.keys(provider).length > 0) {
-        body.provider = provider;
-    }
+function recordConversationReply(session, decision, result, requestContext) {
+    const turn = requestContext?.conversationTurn;
+    const action = decision?.action;
+    if (!turn || !result?.applied || !decision?.reply || ['none', 'buff_target', 'heal_target'].includes(action)) return;
+    const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+    const reply = BotChatText.normalize(decision.reply)
+        .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
+    if (!reply) return;
 
-    try {
-        const response = await fetch(OPENROUTER_URL, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${cfg.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost',
-                'X-OpenRouter-Title': 'L2Node Bots'
-            },
-            body: JSON.stringify(body),
-            signal: controller.signal
-        });
-
-        if (!response.ok) {
-            const detail = await response.text().catch(() => '');
-            utils.infoWarn('BotBrain', 'OpenRouter request failed: %d %s', response.status, detail.slice(0, 180));
-            return null;
-        }
-
-        const json = await response.json();
-        const content = json.choices?.[0]?.message?.content;
-        if (!content) return null;
-
-        const decision = JSON.parse(content);
-        decision.usage = json.usage || null;
-        return decision;
-    } catch (err) {
-        if (err.name !== 'AbortError') {
-            utils.infoWarn('BotBrain', 'OpenRouter error: %s', err.message);
-        }
-        return null;
-    } finally {
-        clearTimeout(timeout);
-    }
+    invoke('GameServer/Bot/AI/BotConversationService').recordBotReply({
+        playerSession: requestContext.playerSession,
+        botSession: session,
+        turnId: turn.turnId,
+        channel: turn.channel,
+        text: reply,
+        requestId: requestContext.requestId,
+        meta: { action, reason: result.reason || null }
+    }).catch(() => {});
 }
 
 function applyDecision(session, decision, visiblePlayers) {

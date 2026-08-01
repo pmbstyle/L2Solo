@@ -149,9 +149,15 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
+    const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+    BotPartyChat.expectSkillResult(session, {
+        target,
+        targetSession,
+        skill,
+        kind: 'support'
+    });
     invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
-    say(session, decision.reply || `${BotBuffs.SUPPORT_BUFFS[buffType].name} on ${target.fetchName()}.`, targetSession);
-    return { applied: true, reason: `buff:${buffType}` };
+    return { applied: true, reason: `buff_requested:${buffType}` };
 }
 
 function applyHealTarget(session, bot, decision, targetSession) {
@@ -163,10 +169,16 @@ function applyHealTarget(session, bot, decision, targetSession) {
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_heal' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
+    const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+    BotPartyChat.expectSkillResult(session, {
+        target,
+        targetSession,
+        skill,
+        kind: 'heal'
+    });
     invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
-    say(session, decision.reply || `Healing you, ${target.fetchName()}.`, targetSession);
 
-    return { applied: true, reason: 'heal_target' };
+    return { applied: true, reason: 'heal_requested' };
 }
 
 function execute(session, decision, visiblePlayers) {
@@ -291,8 +303,10 @@ function remember(session, decision, result, model) {
         at: Date.now(),
         model,
         usage: decision.usage ? {
-            promptTokens: decision.usage.prompt_tokens,
-            completionTokens: decision.usage.completion_tokens,
+            promptTokens: decision.usage.promptTokens ?? decision.usage.prompt_tokens,
+            completionTokens: decision.usage.completionTokens ?? decision.usage.completion_tokens,
+            cachedPromptTokens: decision.usage.cachedPromptTokens ?? decision.usage.prompt_tokens_details?.cached_tokens,
+            totalTokens: decision.usage.totalTokens ?? decision.usage.total_tokens,
             cost: decision.usage.cost
         } : null
     };
