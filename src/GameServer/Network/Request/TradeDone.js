@@ -30,8 +30,15 @@ async function tradeDone(session, buffer) {
             return;
         }
 
+        if (result.idempotent) {
+            session.dataSendToMe(ServerResponse.tradeDone(true));
+            return;
+        }
+
         const detail = describeMovedItems(result.moved);
-        const lootRequest = BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
+        const lootRequest = result.direction === 'bot_outbound'
+            ? null
+            : BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
         BotSocialMemory.recordEvent(
             session,
             result.partnerSession,

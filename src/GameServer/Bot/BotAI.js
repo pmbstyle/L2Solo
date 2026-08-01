@@ -9,6 +9,7 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -330,6 +331,7 @@ const BotAI = {
         if (botDead) {
             clearTacticalState(session);
             HotBotPolicyOverlay.clearForDeath(session);
+            BotTradeService.cleanup(session, 'death');
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
             // background timer is needed for a session-local preference.

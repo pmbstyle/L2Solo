@@ -393,6 +393,65 @@ const Database = {
         }, 'inventory:sync-summary'));
     },
 
+    transferInventoryBetweenCharacters(transfers = []) {
+        const entries = (transfers || []).map((transfer) => ({
+            fromCharacterId: Number(transfer.fromCharacterId),
+            toCharacterId: Number(transfer.toCharacterId),
+            sourceItemId: Number(transfer.sourceItemId),
+            selfId: Number(transfer.selfId),
+            amount: Math.floor(Number(transfer.amount)),
+            stackable: transfer.stackable ? 1 : 0,
+            name: transfer.name || '',
+            slot: Number(transfer.slot || 0),
+            petData: transfer.petData
+                ? (typeof transfer.petData === 'string' ? transfer.petData : JSON.stringify(transfer.petData))
+                : null
+        }));
+        const characterIds = entries.flatMap((entry) => [entry.fromCharacterId, entry.toCharacterId]);
+        return withCharacterFlushes(characterIds, () => inTransaction(() => {
+            if (!entries.length) throw new Error('empty inventory transfer');
+
+            const sources = entries.map((entry) => {
+                if (!entry.fromCharacterId || !entry.toCharacterId || !entry.sourceItemId || !entry.selfId || entry.amount <= 0) {
+                    throw new Error('invalid inventory transfer');
+                }
+                const source = one('SELECT id, selfId, name, amount, equipped, slot, petData FROM items WHERE id = ? AND characterId = ?', [entry.sourceItemId, entry.fromCharacterId]);
+                if (!source || Number(source.selfId) !== entry.selfId || Number(source.amount) < entry.amount || Number(source.equipped) !== 0) {
+                    throw new Error('inventory item changed');
+                }
+                return { entry, source };
+            });
+
+            const moved = [];
+            sources.forEach(({ entry, source }) => {
+                const remaining = Number(source.amount) - entry.amount;
+                if (remaining <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [entry.sourceItemId, entry.fromCharacterId]);
+                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remaining, entry.sourceItemId, entry.fromCharacterId]);
+
+                let target = null;
+                if (entry.stackable) {
+                    target = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [entry.toCharacterId, entry.selfId]);
+                }
+                let targetItemId;
+                if (target) {
+                    targetItemId = Number(target.id);
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(target.amount) + entry.amount, targetItemId, entry.toCharacterId]);
+                } else {
+                    targetItemId = write(
+                        'INSERT INTO items (selfId, name, amount, equipped, slot, petData, characterId) VALUES (?, ?, ?, 0, ?, ?, ?)',
+                        [entry.selfId, entry.name || source.name || `Item ${entry.selfId}`, entry.amount, entry.slot, entry.petData || source.petData || null, entry.toCharacterId]
+                    ).insertId;
+                }
+                moved.push({
+                    ...entry,
+                    targetItemId: Number(targetItemId),
+                    remaining
+                });
+            });
+            return moved;
+        }, 'trade:inventory-transfer'));
+    },
+
     createAccount(username, password) {
         return insert('accounts', { username, password }, 'account:create');
     },

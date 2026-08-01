@@ -187,8 +187,11 @@ function nearbySnapshot(bot) {
 function tradeSnapshot(session, bot) {
     const store = bot.fetchPrivateStore && bot.fetchPrivateStore();
     const loot = session.lastLootRequest || null;
+    const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+    const active = BotTradeService.activeTradeSummary(session);
 
     return {
+        active,
         store: store ? {
             type: store.storeType === 3 ? 'buy' : 'sell',
             title: store.title || '',

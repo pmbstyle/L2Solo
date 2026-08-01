@@ -152,6 +152,17 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 minimum: 0,
                 description: 'Inventory object id for equip_candidate.'
             },
+            tradeItemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Inventory object id for offer_resources or update_trade_offer.'
+            },
+            tradeAmount: {
+                type: 'number',
+                minimum: 0,
+                maximum: 10000,
+                description: 'Bounded quantity for an outbound trade line.'
+            },
             policyTtlMs: {
                 type: 'number',
                 minimum: 5000,
@@ -193,7 +204,7 @@ function systemPrompt() {
         'Equipment tools may only use safe candidates from actual inventory and native persistence. Never equip quest, incompatible, over-grade, or non-upgrade items.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action.',
-        'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',
+        'Trade tools can open a native window only with the current party leader, reserve safe inventory without mutating it, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }

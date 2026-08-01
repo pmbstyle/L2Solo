@@ -9,6 +9,7 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const Attack = invoke('GameServer/Actor/Attack');
+const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 
 const ACTIONS = [
     'none',
@@ -29,14 +30,19 @@ const ACTIONS = [
     'set_combat_stance',
     'list_safe_loadouts',
     'equip_candidate',
-    'optimize_equipment'
+    'optimize_equipment',
+    'propose_trade',
+    'offer_resources',
+    'update_trade_offer',
+    'cancel_trade'
 ];
 
 const PK_LOCKED_ACTIONS = new Set([
     'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
     'set_pull_policy', 'assign_puller', 'unassign_puller',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
-    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment'
+    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
+    'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
 ]);
 
 function clean(text) {
@@ -475,6 +481,49 @@ function optimizeEquipment(context) {
     };
 }
 
+function proposeTrade(context) {
+    const player = context?.requestContext?.playerSession;
+    const result = BotTradeService.startBotTrade(context.session, player);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'trade_proposed',
+        trade: BotTradeService.activeTradeSummary(context.session)
+    };
+}
+
+function offerResources(context) {
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.offerBotItem(context.session, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'resources_offered',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
+    };
+}
+
+function updateTradeOffer(context) {
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.updateOffer(context.session, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'trade_offer_updated',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
+    };
+}
+
+function cancelBotTrade(context) {
+    if (!context.session?.activeTrade) return { applied: true, reason: 'trade_not_active' };
+    BotTradeService.cancel(context.session, 'bot_requested', true);
+    return { applied: true, reason: 'trade_cancelled' };
+}
+
 function registerTools() {
     const descriptions = {
         none: 'Do nothing when no useful response is needed.',
@@ -495,13 +544,18 @@ function registerTools() {
         set_combat_stance: 'Set a bounded offensive combat stance; safety and support priorities remain authoritative.',
         list_safe_loadouts: 'List inventory equipment candidates that are compatible and strictly improve a slot.',
         equip_candidate: 'Equip one validated inventory upgrade through the native backpack persistence path.',
-        optimize_equipment: 'Equip all currently safe inventory upgrades through the native backpack path.'
+        optimize_equipment: 'Equip all currently safe inventory upgrades through the native backpack path.',
+        propose_trade: 'Open a native trade window with the authorized party leader before offering any resources.',
+        offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
+        update_trade_offer: 'Change one reserved bot trade line after revalidating inventory truth.',
+        cancel_trade: 'Cancel the open native trade and release every reservation.'
     };
 
     const controlActions = new Set([
         'set_pull_policy', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
-        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment'
+        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
+        'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
     ]);
     const executors = {
         set_pull_policy: applyPullPolicy,
@@ -512,7 +566,11 @@ function registerTools() {
         set_combat_stance: setCombatStance,
         list_safe_loadouts: listSafeLoadouts,
         equip_candidate: equipCandidate,
-        optimize_equipment: optimizeEquipment
+        optimize_equipment: optimizeEquipment,
+        propose_trade: proposeTrade,
+        offer_resources: offerResources,
+        update_trade_offer: updateTradeOffer,
+        cancel_trade: cancelBotTrade
     };
 
     ACTIONS.forEach((name) => {
@@ -529,6 +587,8 @@ function registerTools() {
                 }
                 if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
                 if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
+                if (name === 'propose_trade' && session.activeTrade) return false;
+                if (['offer_resources', 'update_trade_offer', 'cancel_trade'].includes(name) && !session.activeTrade) return false;
                 if (name === 'buff_target') {
                     try { if (!BotRoles.canBuff(session.actor)) return false; } catch (_) { return true; }
                 }
@@ -608,6 +668,14 @@ function rejectionReply(result = {}) {
         case 'skill_incompatible': return 'That skill cannot be used as a combat preference.';
         case 'invalid_skill_priority':
         case 'invalid_combat_stance': return 'That preference is outside my safe combat settings.';
+        case 'not_authorized_relationship': return 'I only open a resource trade with my current party leader.';
+        case 'item_not_tradable':
+        case 'retain_minimum':
+        case 'reservation_lost': return 'I cannot safely offer that inventory item.';
+        case 'gift_budget_exceeded': return 'I need to keep my resource gifts within a safe budget.';
+        case 'trade_line_limit': return 'The trade already has the maximum number of item lines.';
+        case 'no_active_trade': return 'There is no open trade to change.';
+        case 'database_failed': return 'The trade was not committed because persistence failed.';
         default: return 'I cannot do that safely right now.';
     }
 }
