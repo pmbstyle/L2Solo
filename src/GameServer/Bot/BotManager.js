@@ -4,7 +4,6 @@ const DataCache   = invoke('GameServer/DataCache');
 const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
-const BotBrain    = invoke('GameServer/Bot/AI/BotBrain');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
@@ -21,6 +20,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
+const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
@@ -850,7 +850,16 @@ const BotManager = {
                     if (groupAddress && !addressedToBot && !selectedBot && !companionBot) {
                         brainGroupResponderPicked = true;
                     }
-                    BotBrain.maybeThink(session, 'player_chat', BotAI.getStatus(session), rawText);
+                    BotDialogueArbiter.route({
+                        playerSession,
+                        botSession: session,
+                        text: rawText,
+                        channel: 'local_chat',
+                        source: 'local_chat',
+                        allowFallback: true
+                    }).catch((error) => {
+                        utils.infoWarn('BotDialogue', 'local chat route failed: %s', error.message);
+                    });
                 }
             }
         });

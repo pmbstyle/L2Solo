@@ -142,16 +142,18 @@ function systemPrompt() {
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
+        'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action.',
         'Do not offer trading, selling, price negotiation, or private stores; those tools are intentionally unavailable for now.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }
 
-function userPayload(event, session, status, visiblePlayers, text) {
+function userPayload(event, session, status, visiblePlayers, text, requestContext = null) {
+    const assembled = requestContext?.assembledContext;
     return {
         event,
         playerMessage: text || '',
-        bot: BotBrainContext.compactStatus(session, status, text),
+        bot: assembled?.bot || BotBrainContext.compactStatus(session, status, text),
         visiblePlayers,
         candidateSpots: candidateSpots(status),
         allowedActions: BotAgentTools.ACTIONS,
@@ -162,6 +164,9 @@ function userPayload(event, session, status, visiblePlayers, text) {
             avoidSpam: true,
             noCombatMicromanagement: true
         },
+        conversation: requestContext?.conversation || null,
+        contextFragments: assembled?.fragments || null,
+        contextTelemetry: assembled?.telemetry || null,
         lastDecision: session.lastBrainDecision || null
     };
 }
@@ -215,10 +220,45 @@ function recordConversationReply(session, decision, result, requestContext) {
     }).catch(() => {});
 }
 
-function applyDecision(session, decision, visiblePlayers) {
+function applyDecision(session, decision, visiblePlayers, requestContext) {
     const result = BotAgentTools.execute(session, decision, visiblePlayers);
     BotAgentTools.remember(session, decision, result, config().model);
+    recordConversationReply(session, decision, result, requestContext);
     return result.applied;
+}
+
+function rememberTelemetry(session, result) {
+    const telemetry = result?.llmTelemetry || result?.telemetry;
+    if (!telemetry) return;
+
+    session.lastBrainTelemetry = {
+        ...telemetry,
+        usage: result.usage || telemetry.usage || null
+    };
+}
+
+function fallbackReply(session, requestContext, outcome) {
+    const playerSession = requestContext?.playerSession;
+    if (!playerSession?.actor || !session?.actor) return false;
+
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const plan = session.plan || 'hunting';
+    const reply = outcome === 'timeout'
+        ? 'Give me a moment. I am still sorting things out.'
+        : `I am ${plan} right now.`;
+
+    BotManager.botTell(session, playerSession, reply);
+    if (requestContext?.conversationTurn) {
+        invoke('GameServer/Bot/AI/BotConversationService').recordFallback({
+            playerSession,
+            botSession: session,
+            turnId: requestContext.conversationTurn.turnId,
+            channel: requestContext.conversationTurn.channel,
+            text: reply,
+            reason: outcome || 'fallback'
+        }).catch(() => {});
+    }
+    return true;
 }
 
 const BotBrain = {
@@ -229,7 +269,7 @@ const BotBrain = {
 
     visibleRealPlayers,
 
-    maybeThink(session, event, status, text = '') {
+    maybeThink(session, event, status, text = '', requestContext = null) {
         const cfg = config();
         const bot = session.actor;
         if (!bot) return false;
@@ -246,6 +286,16 @@ const BotBrain = {
             return false;
         }
         if (session.brainInFlight) {
+            if (requestContext?.conversationTurn) {
+                session.pendingBrainTurn = {
+                    event,
+                    status,
+                    text,
+                    requestContext
+                };
+                debugSkip(session, cfg, 'request_queued');
+                return true;
+            }
             debugSkip(session, cfg, 'request_in_flight');
             return false;
         }
@@ -274,7 +324,7 @@ const BotBrain = {
 
         const cooldown = event === 'player_chat' ? cfg.chatCooldownMs : cfg.cooldownMs;
         const lastAt = event === 'player_chat' ? session.lastBrainChatAt : session.lastBrainThinkAt;
-        if (lastAt && Date.now() - lastAt < cooldown) {
+        if (lastAt && requestContext?.queued !== true && Date.now() - lastAt < cooldown) {
             debugSkip(session, cfg, `cooldown:${event}`);
             return false;
         }
@@ -291,15 +341,50 @@ const BotBrain = {
         }
 
         session.brainInFlight = true;
-        const payload = userPayload(event, session, status, visiblePlayers, text);
+        const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
+        if (requestContext?.assembledContext?.telemetry) {
+            session.lastBrainContextTelemetry = {
+                ...requestContext.assembledContext.telemetry,
+                estimatedTokens: requestContext.assembledContext.estimatedTokens,
+                budget: requestContext.assembledContext.budget,
+                hardMaxTokens: requestContext.assembledContext.hardMaxTokens,
+                at: Date.now()
+            };
+        }
         if (cfg.debug) {
             utils.infoSuccess('BotBrain', '%s requesting %s decision via %s', bot.fetchName(), event, cfg.model);
         }
 
-        requestDecision(payload, cfg).then((decision) => {
-            applyDecision(session, decision, visiblePlayers);
+        requestDecision(payload, cfg, session, requestContext, visiblePlayers).then((result) => {
+            rememberTelemetry(session, result);
+            if (result?.ok === false) {
+                fallbackReply(session, requestContext, result.reason);
+                return;
+            }
+            applyDecision(session, result, visiblePlayers, requestContext);
+        }).catch((err) => {
+            utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
+            fallbackReply(session, requestContext, 'provider_error');
         }).finally(() => {
             session.brainInFlight = false;
+            const pending = session.pendingBrainTurn;
+            session.pendingBrainTurn = null;
+            if (pending) {
+                const waitMs = Math.max(
+                    0,
+                    cfg.chatCooldownMs - (Date.now() - Number(session.lastBrainChatAt || 0))
+                );
+                setTimeout(() => {
+                    const started = BotBrain.maybeThink(
+                        session,
+                        pending.event,
+                        pending.status,
+                        pending.text,
+                        { ...pending.requestContext, queued: true }
+                    );
+                    if (!started) fallbackReply(session, pending.requestContext, 'queued_not_started');
+                }, waitMs);
+            }
         });
 
         return true;

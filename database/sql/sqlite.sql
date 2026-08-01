@@ -239,6 +239,52 @@ CREATE TABLE IF NOT EXISTS bot_social_memory (
     PRIMARY KEY(playerId, botId)
 );
 
+CREATE TABLE IF NOT EXISTS bot_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    summary TEXT NOT NULL DEFAULT '',
+    summaryThroughId INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_conversations_bot_updated ON bot_conversations(botId, updatedAt DESC);
+
+CREATE TABLE IF NOT EXISTS bot_conversation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversationId INTEGER NOT NULL REFERENCES bot_conversations(id) ON DELETE CASCADE,
+    turnId TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('player', 'bot', 'system')),
+    channel TEXT NOT NULL DEFAULT 'local',
+    text TEXT NOT NULL DEFAULT '',
+    requestId TEXT,
+    delivered INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    metaJson TEXT,
+    UNIQUE(conversationId, turnId, role)
+);
+CREATE INDEX IF NOT EXISTS bot_conversation_messages_recent ON bot_conversation_messages(conversationId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_conversation_messages_turn ON bot_conversation_messages(conversationId, turnId, role);
+
+CREATE TABLE IF NOT EXISTS bot_activity_journal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    eventType TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    weight INTEGER NOT NULL DEFAULT 1,
+    dedupeKey TEXT,
+    count INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+
 CREATE TABLE IF NOT EXISTS bot_friendships (
     playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,

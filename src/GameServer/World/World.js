@@ -273,21 +273,20 @@ const World = {
         }
 
         const BotManager = invoke('GameServer/Bot/BotManager');
-        const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const BotRemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
+        const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
 
         const hotSession = BotManager.findSessionByName(lookup);
         if (hotSession) {
-            BotSocialMemory.recordEvent(session, hotSession, 'chat', source);
-            const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
-            const BotAI = invoke('GameServer/Bot/BotAI');
-            const started = BotBrain.maybeThink(hotSession, 'player_chat', BotAI.getStatus(hotSession), message);
-            if (!started) {
-                const plan = hotSession.plan || 'hunting';
-                BotManager.botTell(hotSession, session, `I hear you. I'm ${plan} right now.`);
-            }
-            return Promise.resolve(true);
+            return BotDialogueArbiter.route({
+                playerSession: session,
+                botSession: hotSession,
+                text: message,
+                channel: source,
+                source,
+                allowFallback: true
+            }).then((result) => result?.ok !== false);
         }
 
         return LifeState.findByName(lookup).then((state) => {
