@@ -1,4 +1,5 @@
 const Database = invoke('Database');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 const TABLE = 'bot_background_parties';
 const cache = new Map();
@@ -23,19 +24,35 @@ function parseJson(raw, fallback) {
     }
 }
 
+function rotationExpiry(partyId, startedAt) {
+    const maxAge = Math.max(0, Number(Config.partySessionMaxMs) || 0);
+    const jitter = Math.min(maxAge, Math.max(0, Number(Config.partySessionJitterMs) || 0));
+    if (!maxAge || !startedAt) return 0;
+    let hash = 0;
+    for (const char of String(partyId || '')) hash = ((hash * 31) + char.charCodeAt(0)) | 0;
+    const span = jitter * 2 + 1;
+    const offset = jitter ? Math.abs(hash) % span - jitter : 0;
+    return Number(startedAt) + maxAge + offset;
+}
+
 function normalize(row) {
+    const startedAt = Number(row.startedAt || 0);
+    const stats = parseJson(row.statsJson, {});
+    if (row.status === 'active' && startedAt && !Number(stats.sessionExpiresAt || 0)) {
+        stats.sessionExpiresAt = rotationExpiry(row.partyId, startedAt);
+    }
     return {
         partyId: row.partyId || '',
         leaderId: Number(row.leaderId || 0),
         memberIds: parseJson(row.memberIdsJson, []).map((id) => Number(id)).filter(Boolean),
         spotId: row.spotId || null,
-        startedAt: Number(row.startedAt || 0),
+        startedAt,
         nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null,
         cohesion: Number(row.cohesion || 0),
         risk: Number(row.risk || 0),
         status: row.status || 'active',
         roleCoverage: parseJson(row.roleCoverageJson, {}),
-        stats: parseJson(row.statsJson, {}),
+        stats,
         updatedAt: Number(row.updatedAt || 0)
     };
 }

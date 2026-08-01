@@ -44,5 +44,6 @@ assert(component[0].summary.includes('intermediate resource'), 'component readin
 const travel = CraftTelemetry.stationTravelEvent({ ...state, stats: { equipmentPlan: initial } }, { stationId: 'resource_core', reason: 'component_craft' });
 assert.strictEqual(travel.type, 'craft_station_travel');
 assert.strictEqual(travel.meta.stationId, 'resource_core');
+assert.doesNotThrow(() => CraftTelemetry.stationTravelEvent(state, null), 'telemetry must tolerate a cleared travel state');
 
 console.log('Bot craft telemetry checks passed');

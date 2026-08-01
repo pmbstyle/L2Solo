@@ -12,7 +12,7 @@ function profileFor(state) {
 function backgroundIntent(state = {}) {
     const persona = profileFor(state);
     if (!persona) return { accept: true, reason: 'no_persona', score: null, persona: null };
-    if (state.activity === 'party_wait') {
+    if (state.activity === 'party_wait' || state.stats?.partyRequest?.priority === 'required') {
         return { accept: true, reason: 'goal_requires_party', score: 100, persona };
     }
 

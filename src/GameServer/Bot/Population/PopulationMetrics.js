@@ -21,6 +21,8 @@ function emptyCounters() {
         dbFlushes: 0,
         schedulerRuns: 0,
         schedulerSkips: 0,
+        schedulerBudgetStops: 0,
+        partyFormationBudgetStops: 0,
         schedulerYields: 0,
         schedulerOverruns: 0,
         slowResolves: 0
@@ -56,7 +58,9 @@ const PopulationMetrics = {
     interval: {
         resolveDurationsMs: [],
         schedulerDurationsMs: [],
-        schedulerSliceDurationsMs: []
+        schedulerSliceDurationsMs: [],
+        partyFormationDurationsMs: [],
+        partyFormationStageDurationsMs: new Map()
     },
     timer: null,
 
@@ -177,6 +181,34 @@ const PopulationMetrics = {
         this.counters.schedulerSkips += 1;
     },
 
+    recordSchedulerBudgetStop() {
+        this.counters.schedulerBudgetStops += 1;
+    },
+
+    recordPartyFormationBudgetStop() {
+        this.counters.partyFormationBudgetStops += 1;
+    },
+
+    recordPartyFormationDuration(ms) {
+        const value = Math.max(0, Number(ms) || 0);
+        this.interval.partyFormationDurationsMs.push(value);
+        if (this.interval.partyFormationDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.partyFormationDurationsMs.shift();
+        }
+    },
+
+    recordPartyFormationStage(stage, ms) {
+        const key = String(stage || 'unknown');
+        const values = this.interval.partyFormationStageDurationsMs.get(key) || [];
+        values.push(Math.max(0, Number(ms) || 0));
+        if (values.length > Config.resolveSampleLimit) values.shift();
+        this.interval.partyFormationStageDurationsMs.set(key, values);
+    },
+
+    currentEventLoopLag() {
+        return Number(this.eventLoop.lagMs || 0);
+    },
+
     snapshot() {
         const elapsedMs = Math.max(1, now() - (this.startedAt || now()));
         const delta = {};
@@ -189,9 +221,14 @@ const PopulationMetrics = {
         const resolveStats = stats(this.interval.resolveDurationsMs);
         const schedulerStats = stats(this.interval.schedulerDurationsMs);
         const schedulerSliceStats = stats(this.interval.schedulerSliceDurationsMs);
+        const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
+        const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
+            .map(([stage, values]) => [stage, stats(values)]));
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
+        this.interval.partyFormationDurationsMs = [];
+        this.interval.partyFormationStageDurationsMs = new Map();
 
         return {
             uptimeMs: elapsedMs,
@@ -201,6 +238,8 @@ const PopulationMetrics = {
             resolve: resolveStats,
             scheduler: schedulerStats,
             schedulerSlice: schedulerSliceStats,
+            partyFormation: partyFormationStats,
+            partyFormationStages,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }

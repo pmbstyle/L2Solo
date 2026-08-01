@@ -627,25 +627,25 @@ function recoverStaleCraftWaits() {
 
 function migrateAcquisitionPartyWaits() {
     const timestamp = now();
-    const replanAt = timestamp + Config.partyWaitReplanMs;
+    const replanAt = timestamp + 30000;
     return Database.execute([
         `UPDATE ${TABLE}
-        SET activity = 'party_wait',
+        SET activity = 'hunting',
             activityStartedAt = ?,
             nextResolveAt = ?,
             statsJson = json_set(
                 COALESCE(statsJson, '{}'),
-                '$.partyWaitUntil', CAST(? AS INTEGER),
+                '$.partyWaitUntil', NULL,
                 '$.restUntil', NULL,
-                '$.lastReason', 'acquisition_party_wait'
+                '$.lastReason', 'party_request_recovery'
             ),
             updatedAt = ?
         WHERE phase = 'cold'
-        AND activity = 'resting'
+        AND activity IN ('resting', 'party_wait')
         AND (partyId IS NULL OR partyId = '')
         AND json_extract(statsJson, '$.lastReason') = 'acquisition_party_wait'
         AND COALESCE(CAST(json_extract(statsJson, '$.restUntil') AS INTEGER), 0) = 0`,
-        [timestamp, replanAt, replanAt, timestamp]
+        [timestamp, replanAt, timestamp]
     ]).then((result) => {
         const migrated = Number(result?.affectedRows || 0);
         if (migrated > 0) {
@@ -653,6 +653,111 @@ function migrateAcquisitionPartyWaits() {
         }
         return migrated;
     });
+}
+
+function clearPassivePartyRequests() {
+    const timestamp = now();
+    return Database.execute([
+        `UPDATE ${TABLE}
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.partyRequest'),
+            updatedAt = ?
+        WHERE phase = 'cold'
+        AND (partyId IS NULL OR partyId = '')
+        AND activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead')
+        AND json_extract(statsJson, '$.partyRequest.status') = 'open'`,
+        [timestamp]
+    ]).then((result) => {
+        const cleared = Number(result?.affectedRows || 0);
+        if (cleared > 0) {
+            utils.infoWarn('BotLife', 'cleared %d passive party requests on startup', cleared);
+        }
+        return cleared;
+    });
+}
+
+function expireStalePartyRequests(limit = 0) {
+    const timestamp = now();
+    const requiredMaxAge = Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000);
+    const preferredMaxAge = Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
+    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+    // Spread the next eligible formation attempts over at most two minutes so
+    // a restart cannot turn one historical queue into a new SQLite spike.
+    const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
+    const safeLimit = Math.max(0, Math.min(500, Number(limit) || 0));
+    const staleSelection = `phase = 'cold'
+        AND (partyId IS NULL OR partyId = '')
+        AND activity IN ('hunting', 'resting', 'party_wait')
+        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
+        AND CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER) <=
+            CASE WHEN json_extract(statsJson, '$.partyRequest.priority') = 'required' THEN ? ELSE ? END`;
+    const target = safeLimit > 0
+        ? `characterId IN (
+                SELECT characterId FROM ${TABLE}
+                WHERE ${staleSelection}
+                ORDER BY updatedAt ASC, characterId ASC
+                LIMIT ${safeLimit}
+            )`
+        : staleSelection;
+    const sql = `UPDATE ${TABLE}
+        SET statsJson = json_set(
+                COALESCE(statsJson, '{}'),
+                '$.partyRequest.status', 'deferred',
+                '$.partyRequest.deferredUntil', ? + (ABS(characterId) % ?),
+                '$.partyRequest.expiredAt', ?,
+                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1
+            ),
+            updatedAt = ?
+        WHERE ${target}`;
+    const params = [
+        timestamp + cooldownMs,
+        Math.max(1, staggerMs),
+        timestamp,
+        timestamp,
+        timestamp - requiredMaxAge,
+        timestamp - preferredMaxAge
+    ];
+    const staleParams = [timestamp - requiredMaxAge, timestamp - preferredMaxAge];
+    const selectStale = () => Database.execute([
+        `SELECT characterId, statsJson FROM ${TABLE} WHERE ${target}`,
+        staleParams
+    ]);
+    const updateCache = (rows) => {
+        (rows || []).forEach((row) => {
+            const characterId = Number(row.characterId || 0);
+            const cached = cache.get(characterId);
+            if (!cached) return;
+            const request = parseJson(row.statsJson, {}).partyRequest;
+            if (request?.status !== 'open') return;
+            cache.set(characterId, {
+                ...cached,
+                updatedAt: timestamp,
+                stats: {
+                    ...(cached.stats || {}),
+                    partyRequest: {
+                        ...request,
+                        status: 'deferred',
+                        deferredUntil: timestamp + cooldownMs + (Math.abs(characterId) % Math.max(1, staggerMs)),
+                        expiredAt: timestamp,
+                        attempts: Number(request.attempts || 0) + 1
+                    }
+                }
+            });
+        });
+    };
+    const waitForPending = (rows) => Promise.all((rows || [])
+        .map((row) => pendingWrites.get(Number(row.characterId || 0)))
+        .filter(Boolean)
+        .map((pending) => pending.catch(() => null)));
+    return selectStale()
+        .then((rows) => waitForPending(rows).then(() => selectStale()))
+        .then((rows) => Database.execute([sql, params]).then((result) => {
+            if (Number(result?.affectedRows || 0) > 0) updateCache(rows);
+            const expired = Number(result?.affectedRows || 0);
+            if (expired > 0) {
+                utils.infoWarn('BotLife', 'deferred %d stale party requests', expired);
+            }
+            return expired;
+        }));
 }
 
 function discardInvalidEquipmentPlans() {
@@ -682,7 +787,7 @@ const BotLifeState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
@@ -1145,24 +1250,33 @@ const BotLifeState = {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
         const activityClause = partyRequiredOnly
-            ? "activity = 'party_wait'"
+            ? `activity IN ('hunting', 'resting', 'party_wait')
+                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
+                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
+        const stateActivityClause = partyRequiredOnly
+            ? `states.activity IN ('hunting', 'resting', 'party_wait')
+                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
+                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
+            : "states.activity IN ('hunting', 'resting', 'party_wait')";
+        const objectiveSpot = "COALESCE(json_extract(statsJson, '$.partyRequest.spotId'), json_extract(statsJson, '$.equipmentPlan.next.spotId'), spotId)";
+        const stateObjectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
 
         return Database.execute([
             `SELECT states.* FROM ${TABLE} states
             INNER JOIN (
-                SELECT spotId, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+                SELECT ${objectiveSpot} AS candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
                 FROM ${TABLE}
                 WHERE phase = 'cold'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
                 AND ${activityClause}
-                GROUP BY spotId
-            ) party_spots ON party_spots.spotId = states.spotId
+                GROUP BY candidateSpot
+            ) party_spots ON party_spots.candidateSpot = ${stateObjectiveSpot}
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
-            AND states.${activityClause}
+            AND ${stateActivityClause}
             ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
@@ -1176,10 +1290,39 @@ const BotLifeState = {
         });
     },
 
+    statesForParties(partyIds = []) {
+        const ids = [...new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean))];
+        if (!initialized || !ids.length) return Promise.resolve(new Map());
+
+        const placeholders = ids.map(() => '?').join(', ');
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND partyId IN (${placeholders})
+            ORDER BY partyId ASC, level DESC, characterId ASC`,
+            ids
+        ]).then((rows) => {
+            const grouped = new Map(ids.map((partyId) => [partyId, []]));
+            rows.forEach((row) => {
+                const state = normalize(row);
+                cache.set(state.characterId, state);
+                const partyId = String(row.partyId || '');
+                if (!grouped.has(partyId)) grouped.set(partyId, []);
+                grouped.get(partyId).push(state);
+            });
+            return grouped;
+        }).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch %d parties: %s', ids.length, err.message);
+            return new Map(ids.map((partyId) => [partyId, []]));
+        });
+    },
+
     coldPartyCandidateCount(partyRequiredOnly = false) {
         if (!initialized) return Promise.resolve(0);
         const activityClause = partyRequiredOnly
-            ? "activity = 'party_wait'"
+            ? `activity IN ('hunting', 'resting', 'party_wait')
+                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
+                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
@@ -1202,20 +1345,23 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(100, Number(limitPerSpot) || 40));
         const placeholders = uniqueSpots.map(() => '?').join(', ');
         const activityClause = partyRequiredOnly
-            ? "states.activity = 'party_wait'"
+            ? `states.activity IN ('hunting', 'resting', 'party_wait')
+                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
+                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
             : "states.activity IN ('hunting', 'resting', 'party_wait')";
+        const objectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
 
         return Database.execute([
             `SELECT * FROM (
                 SELECT states.*,
                     ROW_NUMBER() OVER (
-                        PARTITION BY states.spotId
+                        PARTITION BY ${objectiveSpot}
                         ORDER BY states.updatedAt ASC, states.level ASC, states.characterId ASC
                     ) AS candidateRank
                 FROM ${TABLE} states
                 WHERE states.phase = 'cold'
                 AND (states.partyId IS NULL OR states.partyId = '')
-                AND states.spotId IN (${placeholders})
+                AND ${objectiveSpot} IN (${placeholders})
                 AND ${activityClause}
             ) ranked
             WHERE candidateRank <= ${safeLimit}
@@ -1261,8 +1407,10 @@ const BotLifeState = {
     assignParty(state, partyId, role = 'dps', leaderId = 0) {
         if (!state || !partyId) return Promise.resolve(null);
 
+        const hasPartyRequest = state.stats?.partyRequest?.status === 'open';
         const wasWaitingForParty = state.activity === 'party_wait'
-            || state.stats?.lastReason === 'acquisition_party_wait';
+            || state.stats?.lastReason === 'acquisition_party_wait'
+            || (hasPartyRequest && state.activity !== 'resting');
         const timestamp = now();
         const nextState = {
             ...state,
@@ -1278,9 +1426,10 @@ const BotLifeState = {
                 role,
                 leaderId,
                 backgroundPartyId: partyId,
-                partyWaitUntil: wasWaitingForParty ? null : state.stats?.partyWaitUntil || null,
+                partyWaitUntil: null,
                 restUntil: wasWaitingForParty ? null : state.stats?.restUntil || null,
-                lastReason: wasWaitingForParty ? 'party_assigned' : state.stats?.lastReason
+                lastReason: wasWaitingForParty ? 'party_assigned' : state.stats?.lastReason,
+                partyRequest: null
             },
             timing: {
                 ...(state.timing || {}),
@@ -1424,6 +1573,7 @@ const BotLifeState = {
                 // Keep lifecycle telemetry from this resolve authoritative over
                 // that snapshot, which still contains the previous tick's data.
                 ...(targetCombat ? { targetCombat } : {}),
+                ...(nextActivity === 'dead' ? { partyRequest: null } : {}),
                 lastResolveDebug: compactResolveDebug(result.debug),
                 equipment: equipmentSummaryFromInventory(equippedInventory)
             },
@@ -1549,10 +1699,23 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break') {
         if (!state?.characterId) return Promise.resolve(null);
+        const releasedFromObjective = ['party_objective_complete', 'party_session_rotation'].includes(reason);
+        const nextActivity = releasedFromObjective && state.activity === 'grouped'
+            ? 'hunting'
+            : state.activity;
         const nextState = {
             ...state,
+            activity: nextActivity,
             party: { ...(state.party || {}), partyId: null, leaderId: null },
-            stats: { ...(state.stats || {}), backgroundPartyId: null, partyBreakReason: reason },
+            stats: {
+                ...(state.stats || {}),
+                backgroundPartyId: null,
+                partyBreakReason: reason,
+                partyRequest: null
+            },
+            timing: releasedFromObjective
+                ? { ...(state.timing || {}), activityStartedAt: now(), nextResolveAt: now() + 30000 }
+                : state.timing,
             updatedAt: now()
         };
         const row = rowFromState(nextState);
@@ -1802,6 +1965,29 @@ const BotLifeState = {
             });
             return summary;
         }, { bots: 0, resolves: 0, defeated: 0, targetKills: 0, interruptions: 0 });
+    },
+
+    partyRequestSummary(timestamp = now()) {
+        return Array.from(cache.values()).reduce((summary, state) => {
+            const request = state.stats?.partyRequest;
+            if (request?.status !== 'open') return summary;
+            const priority = request.priority === 'required' ? 'required' : 'preferred';
+            summary.total += 1;
+            summary[priority] += 1;
+            if (priority === 'required') {
+                const reason = request.partyNeedReason || 'unknown';
+                summary.requiredReasons[reason] = (summary.requiredReasons[reason] || 0) + 1;
+            }
+            if (state.activity === 'party_wait') summary.blocked += 1;
+            const ageMs = Math.max(0, timestamp - Number(request.requestedAt || timestamp));
+            summary.maxAgeMs = Math.max(summary.maxAgeMs, ageMs);
+            return summary;
+        }, { total: 0, required: 0, preferred: 0, blocked: 0, maxAgeMs: 0, requiredReasons: {} });
+    },
+
+    expireStalePartyRequests(limit = 0) {
+        if (!initialized) return Promise.resolve(0);
+        return expireStalePartyRequests(limit);
     },
 
     cachedState(characterId) {

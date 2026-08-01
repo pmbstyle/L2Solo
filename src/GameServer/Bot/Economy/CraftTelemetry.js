@@ -93,6 +93,7 @@ function progressEvents(before = {}, plan = {}, after = {}) {
 }
 
 function stationTravelEvent(state, travel = {}) {
+    travel = travel || {};
     return {
         type: 'craft_station_travel',
         summary: `${state.name} is traveling to ${travel.stationId} to ${travel.reason === 'component_craft' ? 'craft a component' : 'craft equipment'}`,
