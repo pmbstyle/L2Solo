@@ -51,7 +51,23 @@ function main() {
     const secondMutation = BotAgentTools.execute(session, decision('rest', 'turn-1'), [], context('turn-1'));
     assert.deepStrictEqual(secondMutation, { applied: false, reason: 'one_mutation_per_turn' });
 
-    const audit = BotToolAudit.recent({ botId: 200, limit: 10 });
+    const softFreshness = BotAgentTools.execute(
+        session,
+        { ...decision('say', 'turn-2'), reply: 'hello' },
+        [],
+        { ...context('turn-2'), worldRevision: 'obsolete-before-llm' }
+    );
+    assert.strictEqual(softFreshness.applied, true, 'low-risk dialogue must not fail on a moved world revision');
+
+    const strictFreshness = BotAgentTools.execute(
+        session,
+        decision('move_to_spot', 'turn-3'),
+        [],
+        { ...context('turn-3'), worldRevision: 'obsolete-before-llm' }
+    );
+    assert.deepStrictEqual(strictFreshness, { applied: false, reason: 'stale_world_state' });
+
+    const audit = BotToolAudit.recent({ botId: 200, limit: 20 });
     assert(audit.some((event) => event.outcome === 'requested'));
     assert(audit.some((event) => event.outcome === 'applied'));
     assert(audit.some((event) => event.reason === 'one_mutation_per_turn'));

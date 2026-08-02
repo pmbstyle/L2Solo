@@ -3,6 +3,9 @@ const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const definitions = new Map();
+const SOFT_FRESHNESS_ACTIONS = new Set([
+    'none', 'say', 'follow_player', 'stay_here', 'hunt', 'rest'
+]);
 
 function text(value, max = 160) {
     return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -71,6 +74,10 @@ function isPkLocked(session, action) {
     ]).has(action);
 }
 
+function requiresFreshWorld(action) {
+    return !SOFT_FRESHNESS_ACTIONS.has(String(action || ''));
+}
+
 function isAvailable(definition, session) {
     if (typeof definition.available !== 'function') return true;
     return definition.available(session) !== false;
@@ -122,14 +129,15 @@ function audit(context, outcome, reason, meta = {}) {
             playerId: playerId(context),
             turnId: turnId(context),
             outcome,
-            reason
+            reason,
+            phase: outcome === 'requested' ? 'request' : 'result'
         },
         'tool'
     );
     const status = outcome === 'rejected'
         ? LangfuseTracing.observationStatus({ applied: false, reason })
         : {};
-    observation?.end({ outcome, reason, ...meta }, status);
+    observation?.end({ outcome, reason, phase: outcome === 'requested' ? 'request' : 'result', ...meta }, status);
     BotToolAudit.record({
         playerId: playerId(context),
         botId: actorId(context.session),
@@ -159,7 +167,8 @@ function execute(context = {}) {
 
     audit({ ...context, decision: { ...decision, action } }, 'requested', 'requested', {
         expectedRevision,
-        currentRevision
+        currentRevision,
+        freshness: requiresFreshWorld(action) ? 'strict' : 'soft'
     });
 
     if (!definition) {
@@ -177,11 +186,12 @@ function execute(context = {}) {
         audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
         return rejected;
     }
-    if (expectedRevision && expectedRevision !== currentRevision) {
+    if (expectedRevision && expectedRevision !== currentRevision && requiresFreshWorld(action)) {
         const rejected = result(false, 'stale_world_state');
         audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason, {
             expectedRevision,
-            currentRevision
+            currentRevision,
+            freshness: 'strict'
         });
         return rejected;
     }
