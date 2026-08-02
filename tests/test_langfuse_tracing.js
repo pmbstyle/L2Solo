@@ -10,7 +10,7 @@ function main() {
         { level: 'ERROR', statusMessage: 'schema_error' }
     );
     assert.deepStrictEqual(
-        LangfuseTracing.observationStatus({ ok: true, applied: false, reason: 'stale_world_state' }),
+        LangfuseTracing.observationStatus({ ok: false, applied: false, reason: 'stale_world_state' }),
         { level: 'WARNING', statusMessage: 'stale_world_state' }
     );
     assert.deepStrictEqual(

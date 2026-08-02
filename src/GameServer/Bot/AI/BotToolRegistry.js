@@ -4,7 +4,7 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const definitions = new Map();
 const SOFT_FRESHNESS_ACTIONS = new Set([
-    'none', 'say', 'follow_player', 'stay_here', 'hunt', 'rest'
+    'none', 'say', 'follow_player', 'hunt', 'rest'
 ]);
 
 function text(value, max = 160) {

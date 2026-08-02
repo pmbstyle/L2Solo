@@ -114,6 +114,12 @@ function observationStatus(value) {
     ).toLowerCase();
     const reason = String(value?.actionResult?.reason || '').toLowerCase();
 
+    if (outcome === 'stale_world_state' || reason === 'stale_world_state') {
+        return {
+            level: 'WARNING',
+            statusMessage: text(value?.reason || reason || outcome || 'action_rejected', 240)
+        };
+    }
     if (value?.ok === false || [
         'schema_error', 'provider_error', 'timeout', 'circuit_open', 'missing_api_key',
         'disabled', 'transport_error'
@@ -123,7 +129,7 @@ function observationStatus(value) {
             statusMessage: text(value?.reason || telemetry.statusMessage || outcome || 'failed', 240)
         };
     }
-    if (value?.applied === false || value?.actionResult?.ok === false || outcome === 'stale_world_state' || reason === 'stale_world_state') {
+    if (value?.applied === false || value?.actionResult?.ok === false) {
         return {
             level: 'WARNING',
             statusMessage: text(value?.reason || reason || outcome || 'action_rejected', 240)
