@@ -88,7 +88,8 @@ async function main() {
         repairBodies.push(JSON.parse(init.body));
         if (repairBodies.length === 1) {
             return response({
-                choices: [{ message: { content: '{"reply":', finish_reason: 'length' } }]
+                choices: [{ message: { content: '{"reply":' } }],
+                usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 }
             });
         }
         return response({
@@ -110,6 +111,7 @@ async function main() {
     assert.strictEqual(repaired.telemetry.attempts, 2);
     assert.strictEqual(repaired.telemetry.repairTriggered, true);
     assert.strictEqual(repaired.telemetry.initialRawContent, '{"reply":');
+    assert.strictEqual(repaired.usage.totalTokens, 24, 'repair usage must include both provider attempts');
 
     OpenRouterGateway.resetCircuit();
     OpenRouterGateway.setTransport(async () => response({ error: { message: 'unavailable' } }, 503));

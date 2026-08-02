@@ -8,6 +8,7 @@ const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant', 'getting_buffed'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
@@ -356,6 +357,55 @@ function orderedConversation(conversation) {
     return { ...conversation, recentTurns };
 }
 
+function validateDecisionResult(result, session) {
+    if (result?.ok === false) return result;
+    const action = String(result?.action || '');
+    const allowed = BotAgentTools.availableActions(session);
+    if (!action || !allowed.includes(action) || typeof result?.reply !== 'string') {
+        return {
+            ...result,
+            ok: false,
+            reason: 'schema_error',
+            telemetry: {
+                ...(result?.llmTelemetry || result?.telemetry || {}),
+                outcome: 'schema_error',
+                validation: 'decision_shape'
+            }
+        };
+    }
+    return result;
+}
+
+function isPartyRequest(text) {
+    return /\b(party|group|team|join|invite)\b|пати|групп|команд|присоедин/i.test(String(text || ''));
+}
+
+function applyPartyPolicy(session, decision, requestContext, text) {
+    if (!isPartyRequest(text) || !requestContext?.playerSession) return decision;
+    if (session.partyCompanion === true && session.followPlayerSession === requestContext.playerSession) {
+        return {
+            ...decision,
+            action: 'say',
+            reply: 'I am already with you. Let me know what you need.',
+            reason: 'party_policy:already_grouped',
+            confidence: Math.max(0.9, Number(decision.confidence || 0))
+        };
+    }
+
+    const availability = BotAvailability.evaluate(requestContext.playerSession, session);
+    const reply = availability.available
+        ? 'I am open to a party. Send me an invite and I will decide in the moment.'
+        : `I cannot join right now: ${availability.reasonText || availability.reason || 'not available'}.`;
+    return {
+        ...decision,
+        action: 'say',
+        reply,
+        targetPlayerName: requestContext.playerSession.actor.fetchName?.() || decision.targetPlayerName || '',
+        reason: `party_policy:${availability.reason || 'available'}`,
+        confidence: Math.max(0.9, Number(decision.confidence || 0))
+    };
+}
+
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
@@ -378,7 +428,17 @@ function recordConversationReply(session, decision, result, requestContext) {
 
 function queueConversationWrite(session, work) {
     const previous = session.lastConversationWrite || Promise.resolve();
-    const next = previous.catch(() => {}).then(work).catch(() => false);
+    const persist = () => LangfuseTracing.withObservation(
+        'bot.conversation.persist',
+        { botId: session?.actor?.fetchId?.() || session?.accountId || null },
+        {
+            botId: session?.actor?.fetchId?.() || session?.accountId || null,
+            source: 'hot_dialogue'
+        },
+        work,
+        'chain'
+    );
+    const next = previous.catch(() => {}).then(persist).catch(() => false);
     session.lastConversationWrite = next;
     return next;
 }
@@ -492,6 +552,8 @@ const BotBrain = {
         const cfg = config();
         return cfg.enabled && !!cfg.apiKey;
     },
+
+    applyPartyPolicy,
 
     visibleRealPlayers,
 
@@ -659,7 +721,7 @@ const BotBrain = {
                     // previous bot reply may finish while this request waits
                     // in the FIFO. Refresh the bounded context at dequeue so
                     // the next prompt sees the latest delivered turn.
-                     if (pending.event === 'player_chat' && requestContext.playerSession) {
+                    if (pending.event === 'player_chat' && requestContext.playerSession) {
                         try {
                             const fresh = await BotConversationService.contextFor(
                                 requestContext.playerSession,
@@ -699,14 +761,62 @@ const BotBrain = {
         };
         const runTurn = async () => {
             try {
-                providerResult = await requestDecision(payload, cfg, session, requestContext, visiblePlayers);
-                recordInferenceEvent(session, event, providerResult, requestContext);
+                const stageMetadata = {
+                    botId: bot.fetchId?.(),
+                    playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
+                    turnId,
+                    requestId: requestContext?.requestId || turnId,
+                    sessionId: conversationSessionId(session, requestContext)
+                };
+                LangfuseTracing.withObservation(
+                    'bot.context.assemble',
+                    {
+                        fragments: requestContext?.assembledContext?.telemetry?.included || [],
+                        estimatedTokens: requestContext?.assembledContext?.estimatedTokens || null
+                    },
+                    stageMetadata,
+                    async () => ({
+                        included: requestContext?.assembledContext?.telemetry?.included || [],
+                        estimatedTokens: requestContext?.assembledContext?.estimatedTokens || null
+                    }),
+                    'chain'
+                ).catch(() => {});
+                providerResult = await LangfuseTracing.withObservation(
+                    'bot.schema.validate',
+                    { event, requestedAction: null },
+                    stageMetadata,
+                    async () => validateDecisionResult(
+                        await requestDecision(payload, cfg, session, requestContext, visiblePlayers),
+                        session
+                    ),
+                    'chain'
+                );
                 rememberTelemetry(session, providerResult);
                 if (providerResult?.ok === false) {
-                    fallbackReply(session, requestContext, providerResult.reason);
+                    recordInferenceEvent(session, event, providerResult, requestContext);
+                    const playerVisibleReply = fallbackReply(session, requestContext, providerResult.reason);
+                    providerResult = {
+                        ...providerResult,
+                        applied: false,
+                        traceOutput: {
+                            providerOutcome: providerResult.reason || providerResult.telemetry?.outcome || 'provider_error',
+                            requestedAction: null,
+                            toolOutcome: null,
+                            applied: false,
+                            playerVisibleReply: playerVisibleReply || null
+                        }
+                    };
                     return providerResult;
                 }
-                const actionResult = applyDecision(session, providerResult, visiblePlayers, requestContext);
+                providerResult = applyPartyPolicy(session, providerResult, requestContext, text);
+                recordInferenceEvent(session, event, providerResult, requestContext);
+                const actionResult = await LangfuseTracing.withObservation(
+                    'bot.reply.deliver',
+                    { action: providerResult.action || null, reply: providerResult.reply || null },
+                    stageMetadata,
+                    async () => applyDecision(session, providerResult, visiblePlayers, requestContext),
+                    'chain'
+                );
                 const playerVisibleReply = actionResult.applied
                     ? providerResult.reply || null
                     : BotAgentTools.rejectionReply(actionResult);
@@ -731,7 +841,14 @@ const BotBrain = {
                 };
                 recordInferenceEvent(session, event, providerResult, requestContext);
                 utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
-                fallbackReply(session, requestContext, 'provider_error');
+                const playerVisibleReply = fallbackReply(session, requestContext, 'provider_error');
+                providerResult.traceOutput = {
+                    providerOutcome: 'provider_error',
+                    requestedAction: null,
+                    toolOutcome: null,
+                    applied: false,
+                    playerVisibleReply: playerVisibleReply || null
+                };
                 return providerResult;
             } finally {
                 finishTurn();

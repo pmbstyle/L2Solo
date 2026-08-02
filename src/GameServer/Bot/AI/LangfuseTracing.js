@@ -123,7 +123,7 @@ function observationStatus(value) {
             statusMessage: text(value?.reason || telemetry.statusMessage || outcome || 'failed', 240)
         };
     }
-    if (value?.applied === false || outcome === 'stale_world_state' || reason === 'stale_world_state') {
+    if (value?.applied === false || value?.actionResult?.ok === false || outcome === 'stale_world_state' || reason === 'stale_world_state') {
         return {
             level: 'WARNING',
             statusMessage: text(value?.reason || reason || outcome || 'action_rejected', 240)

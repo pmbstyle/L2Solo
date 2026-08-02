@@ -217,16 +217,38 @@ function repairConfig(spec) {
     };
 }
 
+function combinedUsage(first, second) {
+    if (!first && !second) return null;
+    const left = first || {};
+    const right = second || {};
+    const sum = (key) => Number(left[key] || 0) + Number(right[key] || 0);
+    const cost = Number.isFinite(Number(left.cost)) || Number.isFinite(Number(right.cost))
+        ? Number(left.cost || 0) + Number(right.cost || 0)
+        : null;
+    return {
+        promptTokens: sum('promptTokens'),
+        completionTokens: sum('completionTokens'),
+        totalTokens: sum('totalTokens'),
+        cachedPromptTokens: sum('cachedPromptTokens'),
+        cacheWriteTokens: sum('cacheWriteTokens'),
+        cost
+    };
+}
+
 function repairedResult(initial, repaired) {
     const telemetry = repaired?.telemetry || {};
+    const usage = combinedUsage(initial?.usage, repaired?.usage);
     return {
         ...repaired,
+        usage,
         telemetry: {
             ...telemetry,
+            usage,
             attempts: 2,
             repairTriggered: true,
             initialOutcome: initial?.reason || null,
-            initialRawContent: initial?.telemetry?.rawContent || null
+            initialRawContent: initial?.telemetry?.rawContent || null,
+            initialUsage: initial?.usage || null
         }
     };
 }

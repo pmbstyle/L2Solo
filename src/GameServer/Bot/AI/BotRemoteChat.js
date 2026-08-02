@@ -267,21 +267,33 @@ function activateNearPlayer(playerSession, state) {
 
 function recordReply(playerSession, state, turn, result, extra = {}) {
     if (!result?.reply) return Promise.resolve(false);
-    return BotConversationService.recordBotReply({
-        playerSession,
-        botSession: state,
-        turnId: turn.turnId,
-        channel: turn.channel,
-        text: result.reply,
-        requestId: turn.turnId,
-        delivered: true,
-        meta: {
-            action: result.action || 'say',
-            reason: result.reason || null,
-            providerOutcome: result.providerOutcome || null,
-            ...extra
-        }
-    });
+    return LangfuseTracing.withObservation(
+        'bot.conversation.persist',
+        { botId: state.characterId, playerId: playerSession.actor.fetchId(), turnId: turn.turnId },
+        {
+            source: 'cold_chat',
+            botId: state.characterId,
+            playerId: playerSession.actor.fetchId(),
+            turnId: turn.turnId,
+            sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
+        },
+        () => BotConversationService.recordBotReply({
+            playerSession,
+            botSession: state,
+            turnId: turn.turnId,
+            channel: turn.channel,
+            text: result.reply,
+            requestId: turn.turnId,
+            delivered: true,
+            meta: {
+                action: result.action || 'say',
+                reason: result.reason || null,
+                providerOutcome: result.providerOutcome || null,
+                ...extra
+            }
+        }),
+        'chain'
+    );
 }
 
 function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
@@ -349,7 +361,22 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 const llmReady = cfg.enabled && !!cfg.apiKey;
                 if (!llmReady) return recordReply(playerSession, state, turn, fallback).then(() => fallback);
 
-                return requestLlmReply(payload, cfg, turn, state, playerSession).then((result) => {
+                const stageMetadata = {
+                    event: 'cold_chat',
+                    source: 'cold_chat',
+                    botId: state.characterId,
+                    playerId: playerSession.actor.fetchId(),
+                    turnId: turn.turnId,
+                    requestId: turn.turnId,
+                    sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
+                };
+                return LangfuseTracing.withObservation(
+                    'bot.schema.validate',
+                    { event: 'cold_chat', responseSchema: 'bot_remote_chat' },
+                    stageMetadata,
+                    () => requestLlmReply(payload, cfg, turn, state, playerSession),
+                    'chain'
+                ).then((result) => {
                     if (result?.providerFailure) {
                         state.lastRemoteChatTelemetry = result.llmTelemetry || null;
                         const failed = {
