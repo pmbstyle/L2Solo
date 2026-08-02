@@ -342,6 +342,46 @@ function rememberTelemetry(session, result) {
     };
 }
 
+function recordInferenceEvent(session, event, result, requestContext = null, extra = {}) {
+    const botId = session?.actor?.fetchId?.();
+    if (!botId) return;
+    const telemetry = result?.llmTelemetry || result?.telemetry || {};
+    const usage = result?.usage || telemetry.usage || {};
+    const outcome = result?.ok === false
+        ? result.reason || telemetry.outcome || 'provider_failure'
+        : telemetry.outcome || 'success';
+    const action = result?.action || null;
+    const decisionReason = result?.reason || null;
+    const requestId = telemetry.requestId || requestContext?.requestId || `${event}-${Date.now()}`;
+    const playerId = requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null;
+    const name = session.actor.fetchName?.() || 'bot';
+
+    BotEventJournal.record({
+        playerId,
+        botId,
+        eventType: 'llm_decision',
+        summary: `${name} ${event} outcome=${outcome}${action ? ` action=${action}` : ''}`,
+        dedupeKey: `request:${requestId}`,
+        meta: {
+            event,
+            outcome,
+            model: telemetry.model || config().model,
+            action,
+            reason: decisionReason,
+            confidence: Number.isFinite(Number(result?.confidence)) ? Number(result.confidence) : null,
+            latencyMs: Number(telemetry.latencyMs || 0),
+            providerStatus: telemetry.status || null,
+            usage: {
+                promptTokens: Number(usage.promptTokens || 0),
+                completionTokens: Number(usage.completionTokens || 0),
+                totalTokens: Number(usage.totalTokens || 0),
+                cost: Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null
+            },
+            ...extra
+        }
+    }).catch(() => {});
+}
+
 function fallbackReply(session, requestContext, outcome) {
     const playerSession = requestContext?.playerSession;
     if (!playerSession?.actor || !session?.actor) return false;
@@ -489,6 +529,7 @@ const BotBrain = {
         let providerResult = null;
         requestDecision(payload, cfg, session, requestContext, visiblePlayers).then((result) => {
             providerResult = result;
+            recordInferenceEvent(session, event, result, requestContext);
             rememberTelemetry(session, result);
             if (result?.ok === false) {
                 fallbackReply(session, requestContext, result.reason);
@@ -496,6 +537,11 @@ const BotBrain = {
             }
             applyDecision(session, result, visiblePlayers, requestContext);
         }).catch((err) => {
+            recordInferenceEvent(session, event, {
+                ok: false,
+                reason: 'provider_error',
+                telemetry: { outcome: 'provider_error' }
+            }, requestContext);
             utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
             fallbackReply(session, requestContext, 'provider_error');
         }).finally(() => {

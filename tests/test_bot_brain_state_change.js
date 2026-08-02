@@ -4,6 +4,7 @@ require('../src/Global');
 
 const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const World = invoke('GameServer/World/World');
 
@@ -54,6 +55,7 @@ async function main() {
         World.user = { sessions: [playerSession, botSession] };
         World.fetchVisibleUsers = () => [playerSession];
         BotInferenceBudget.reset();
+        BotEventJournal.resetMemory();
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.setTransport(async (_url, init) => {
             requests.push(JSON.parse(init.body));
@@ -95,6 +97,12 @@ async function main() {
         const payload = JSON.parse(requests[0].messages[1].content);
         assert.strictEqual(payload.event, 'state_change');
         assert.strictEqual(BotInferenceBudget.status(botSession).requests, 1);
+        const recent = await BotEventJournal.recent({ botId: botSession.actor.fetchId(), limit: 10 });
+        const decisionEvent = recent.find((event) => event.eventType === 'llm_decision');
+        assert(decisionEvent, 'provider decisions should be available in the bounded activity journal');
+        assert.strictEqual(decisionEvent.meta.event, 'state_change');
+        assert.strictEqual(decisionEvent.meta.action, 'none');
+        assert(!JSON.stringify(decisionEvent).includes('High-level state changed: test'), 'raw prompt text must not enter the journal');
 
         options.default.OpenRouter.enabled = false;
         assert.strictEqual(
