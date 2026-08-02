@@ -300,6 +300,30 @@ CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
 
+CREATE TABLE IF NOT EXISTS bot_negotiations (
+    id TEXT PRIMARY KEY,
+    playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    itemObjectId INTEGER NOT NULL,
+    itemSelfId INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    referenceUnitPrice INTEGER NOT NULL,
+    desiredUnitPrice INTEGER NOT NULL,
+    minimumUnitPrice INTEGER NOT NULL,
+    maximumUnitPrice INTEGER NOT NULL,
+    currentUnitPrice INTEGER NOT NULL,
+    agreedTotalPrice INTEGER,
+    round INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_negotiations_pair_recent ON bot_negotiations(playerId, botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_negotiations_bot_recent ON bot_negotiations(botId, updatedAt DESC);
+
 CREATE TABLE IF NOT EXISTS bot_friendships (
     playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,

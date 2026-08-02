@@ -36,6 +36,8 @@ async function tradeDone(session, buffer) {
         }
 
         const detail = describeMovedItems(result.moved);
+        const receivedByBot = describeMovedItems((result.moved || []).filter((item) => item.direction === 'player_to_bot'));
+        const receivedByPlayer = describeMovedItems((result.moved || []).filter((item) => item.direction === 'bot_to_player'));
         const lootRequest = result.direction === 'bot_outbound'
             ? null
             : BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
@@ -58,7 +60,13 @@ async function tradeDone(session, buffer) {
         BotManager.botTell(
             result.partnerSession,
             session,
-            lootRequest ? `Thanks, that's exactly what I needed: ${detail}.` : `Thanks for the trade. I got ${detail}.`
+            result.negotiationId
+                ? `The agreed price is settled. I received ${receivedByBot || 'your payment'} for ${receivedByPlayer || 'the item'}.`
+                : lootRequest
+                    ? `Thanks, that's exactly what I needed: ${detail}.`
+                    : result.direction === 'bot_outbound'
+                        ? `Trade complete. I sent ${receivedByPlayer || 'the agreed resources'}.`
+                        : `Thanks for the trade. I got ${detail}.`
         );
         BotEquipmentUpgrade.applyBestUpgrades(result.partnerSession, { force: true });
 

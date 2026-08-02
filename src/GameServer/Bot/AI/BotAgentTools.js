@@ -10,6 +10,7 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const Attack = invoke('GameServer/Actor/Attack');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
 
 const ACTIONS = [
     'none',
@@ -34,7 +35,12 @@ const ACTIONS = [
     'propose_trade',
     'offer_resources',
     'update_trade_offer',
-    'cancel_trade'
+    'cancel_trade',
+    'quote_item',
+    'counter_offer',
+    'accept_price',
+    'decline_price',
+    'open_negotiated_trade'
 ];
 
 const PK_LOCKED_ACTIONS = new Set([
@@ -42,7 +48,8 @@ const PK_LOCKED_ACTIONS = new Set([
     'set_pull_policy', 'assign_puller', 'unassign_puller',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
     'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-    'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+    'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+    'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
 ]);
 
 function clean(text) {
@@ -524,6 +531,76 @@ function cancelBotTrade(context) {
     return { applied: true, reason: 'trade_cancelled' };
 }
 
+function negotiationPlayer(context) {
+    return context?.requestContext?.playerSession || null;
+}
+
+function negotiationItemId(decision) {
+    return decision.negotiationItemId || decision.tradeItemId || decision.itemId;
+}
+
+function negotiationPrice(decision) {
+    return decision.negotiationPrice ?? decision.price;
+}
+
+function quoteItem(context) {
+    const result = BotNegotiationService.quoteItem(
+        context.session,
+        negotiationPlayer(context),
+        negotiationItemId(context.decision),
+        context.decision.negotiationAmount || context.decision.tradeAmount || context.decision.amount
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'price_quoted', negotiation: result.negotiation };
+}
+
+function counterOffer(context) {
+    const result = BotNegotiationService.counterOffer(
+        context.session,
+        negotiationPlayer(context),
+        negotiationPrice(context.decision)
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'price_countered', negotiation: result.negotiation };
+}
+
+function acceptPrice(context) {
+    const decision = context.decision;
+    const totalPrice = Object.prototype.hasOwnProperty.call(decision, 'negotiationPrice') || Object.prototype.hasOwnProperty.call(decision, 'price')
+        ? negotiationPrice(decision)
+        : null;
+    const result = BotNegotiationService.acceptPrice(context.session, negotiationPlayer(context), totalPrice);
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'price_accepted', negotiation: result.negotiation };
+}
+
+function declinePrice(context) {
+    const result = BotNegotiationService.declinePrice(context.session, negotiationPlayer(context), 'bot_declined');
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return { applied: true, reason: 'price_declined', negotiation: result.negotiation };
+}
+
+function openNegotiatedTrade(context) {
+    const result = BotNegotiationService.openNegotiatedTrade(context.session, negotiationPlayer(context));
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'native_trade_open', trade: result.trade, negotiation: result.negotiation };
+}
+
+function isAuthorizedNegotiationParticipant(context) {
+    const session = context?.session;
+    const player = negotiationPlayer(context);
+    if (!player?.actor || String(player.accountId || '').startsWith('bot_') || player.actor.fetchIsOnline?.() === false) return false;
+    if (session?.activeNegotiation && session.activeNegotiation.playerSession !== player) return false;
+    if (session?.partyCompanion === true) return session.followPlayerSession === player;
+    return session?.plan === 'merchant' || session?.plan === 'following';
+}
+
+function economyActionAvailable(session, name) {
+    if (!BotNegotiationService.enabled()) return false;
+    if (name === 'quote_item') return !session.activeNegotiation;
+    return !!session.activeNegotiation;
+}
+
 function registerTools() {
     const descriptions = {
         none: 'Do nothing when no useful response is needed.',
@@ -548,7 +625,12 @@ function registerTools() {
         propose_trade: 'Open a native trade window with the authorized party leader before offering any resources.',
         offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
         update_trade_offer: 'Change one reserved bot trade line after revalidating inventory truth.',
-        cancel_trade: 'Cancel the open native trade and release every reservation.'
+        cancel_trade: 'Cancel the open native trade and release every reservation.',
+        quote_item: 'Quote one safe bot inventory item using server-owned market and persona bounds.',
+        counter_offer: 'Set a bounded counter price within the active negotiation range.',
+        accept_price: 'Accept the current server-bounded price before opening native trade.',
+        decline_price: 'Decline the active negotiation and release its stock reservation.',
+        open_negotiated_trade: 'Open native trade only after the bounded price has been accepted.'
     };
 
     const controlActions = new Set([
@@ -556,6 +638,9 @@ function registerTools() {
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
         'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+    ]);
+    const economyActions = new Set([
+        'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]);
     const executors = {
         set_pull_policy: applyPullPolicy,
@@ -570,7 +655,12 @@ function registerTools() {
         propose_trade: proposeTrade,
         offer_resources: offerResources,
         update_trade_offer: updateTradeOffer,
-        cancel_trade: cancelBotTrade
+        cancel_trade: cancelBotTrade,
+        quote_item: quoteItem,
+        counter_offer: counterOffer,
+        accept_price: acceptPrice,
+        decline_price: declinePrice,
+        open_negotiated_trade: openNegotiatedTrade
     };
 
     ACTIONS.forEach((name) => {
@@ -582,11 +672,15 @@ function registerTools() {
             mutating: !['none', 'say', 'list_safe_loadouts'].includes(name),
             available(session) {
                 if (!session) return true;
-                if (session.plan === 'merchant' || session.plan === 'getting_buffed') {
+                if (session.plan === 'merchant') {
+                    return ['none', 'say'].includes(name) || economyActions.has(name) && economyActionAvailable(session, name);
+                }
+                if (session.plan === 'getting_buffed') {
                     return ['none', 'say'].includes(name);
                 }
                 if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
                 if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
+                if (economyActions.has(name) && !economyActionAvailable(session, name)) return false;
                 if (name === 'propose_trade' && session.activeTrade) return false;
                 if (['offer_resources', 'update_trade_offer', 'cancel_trade'].includes(name) && !session.activeTrade) return false;
                 if (name === 'buff_target') {
@@ -597,7 +691,9 @@ function registerTools() {
                 }
                 return true;
             },
-            authorize: controlActions.has(name) ? isAuthorizedPartyLeader : undefined,
+            authorize: controlActions.has(name)
+                ? isAuthorizedPartyLeader
+                : economyActions.has(name) ? isAuthorizedNegotiationParticipant : undefined,
             execute(context) {
                 if (executors[name]) return executors[name](context);
                 return executeLegacy(context.session, context.decision, context.visiblePlayers || []);
@@ -676,6 +772,24 @@ function rejectionReply(result = {}) {
         case 'trade_line_limit': return 'The trade already has the maximum number of item lines.';
         case 'no_active_trade': return 'There is no open trade to change.';
         case 'database_failed': return 'The trade was not committed because persistence failed.';
+        case 'negotiation_disabled': return 'Price negotiation is not available right now.';
+        case 'bot_not_trading': return 'I am not offering a negotiated market trade in this state.';
+        case 'item_not_negotiable':
+        case 'stock_reserved':
+        case 'insufficient_stock': return 'I cannot safely quote that stock item.';
+        case 'negotiation_active': return 'There is already an active price discussion.';
+        case 'no_active_negotiation': return 'There is no active price discussion to change.';
+        case 'price_out_of_bounds':
+        case 'price_must_be_whole_unit':
+        case 'price_mismatch': return 'That price is outside my server-approved negotiation range.';
+        case 'round_limit': return 'We have reached the maximum number of counter-offers.';
+        case 'price_not_accepted':
+        case 'negotiation_not_ready': return 'The price must be accepted before I open native trade.';
+        case 'trade_active': return 'I will finish the current native trade before opening another one.';
+        case 'negotiated_item_mismatch':
+        case 'negotiated_price_mismatch': return 'The native trade does not match our accepted price.';
+        case 'stock_changed': return 'That stock changed before we could finish the agreement.';
+        case 'insufficient_funds': return 'You need enough Adena for the agreed price while keeping a safe reserve.';
         default: return 'I cannot do that safely right now.';
     }
 }

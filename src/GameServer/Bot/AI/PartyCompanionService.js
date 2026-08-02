@@ -602,6 +602,7 @@ function cancelCompanionAction(companionSession) {
 }
 
 function detachState(companionSession, plan = 'hunting') {
+    try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (_) { /* optional hot trade modules */ }
     invoke('GameServer/Bot/AI/HotBotPolicyOverlay').clearForPartyDetach(companionSession);
     cancelCompanionAction(companionSession);
     companionSession.plan = plan;

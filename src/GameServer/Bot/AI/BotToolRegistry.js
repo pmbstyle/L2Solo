@@ -51,7 +51,11 @@ function worldRevision(session) {
         Number(partySettings.pullerId || 0),
         String(session.activeTrade?.id || ''),
         Number(session.activeTrade?.botItems?.size || 0),
-        Number(session.activeTrade?.playerItems?.size || 0)
+        Number(session.activeTrade?.playerItems?.size || 0),
+        String(session.activeNegotiation?.id || ''),
+        String(session.activeNegotiation?.state || ''),
+        Number(session.activeNegotiation?.round || 0),
+        Number(session.activeNegotiation?.currentUnitPrice || 0)
     ].join(':');
 }
 
@@ -61,7 +65,8 @@ function isPkLocked(session, action) {
         'set_pull_policy', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-        'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+        'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+        'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]).has(action);
 }
 

@@ -100,6 +100,9 @@ function cancelTrade(trade, reason = 'cancelled', notify = true) {
     if (!trade || ['cancelled', 'committed'].includes(trade.state)) return false;
     trade.state = 'cancelled';
     trade.cancelReason = reason;
+    if (trade.negotiationId) {
+        try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (_) { /* optional negotiation module */ }
+    }
     releaseReservations(trade);
     if (notify) sendToPlayer(trade, ServerResponse.tradeDone(false));
     clearAttachedTrade(trade);
@@ -154,9 +157,9 @@ function createTrade(playerSession, botSession, direction) {
     };
 }
 
-function canStart(playerSession, botSession) {
+function canStart(playerSession, botSession, { allowMerchant = false } = {}) {
     if (!isRealPlayerSession(playerSession) || !isBotSession(botSession) || !botSession.actor) return 'invalid_target';
-    if (botSession.plan === 'merchant') return 'merchant_store';
+    if (botSession.plan === 'merchant' && !allowMerchant) return 'merchant_store';
     if (actorDistance(playerSession.actor, botSession.actor) > TRADE_RANGE) return 'too_far';
     return null;
 }
@@ -173,16 +176,27 @@ function startPlayerTrade(playerSession, targetSession) {
     return { ok: true, trade };
 }
 
-function startBotTrade(botSession, playerSession) {
-    const reason = canStart(playerSession, botSession);
+function openBotTrade(botSession, playerSession, negotiation = null) {
+    const reason = canStart(playerSession, botSession, { allowMerchant: !!negotiation });
     if (reason) return { ok: false, reason };
-    if (botSession.partyCompanion !== true || botSession.followPlayerSession !== playerSession) {
+    if (!negotiation && (botSession.partyCompanion !== true || botSession.followPlayerSession !== playerSession)) {
         return { ok: false, reason: 'not_authorized_relationship' };
+    }
+    if (negotiation && (negotiation.botSession !== botSession || negotiation.playerSession !== playerSession || negotiation.state !== 'accepted')) {
+        return { ok: false, reason: 'negotiation_not_ready' };
+    }
+    if (negotiation && (activeTradeFor(playerSession) || activeTradeFor(botSession))) {
+        return { ok: false, reason: 'trade_active' };
     }
 
     cancel(playerSession, 'replaced', false);
     cancel(botSession, 'replaced', false);
     const trade = createTrade(playerSession, botSession, 'bot_outbound');
+    if (negotiation) {
+        trade.negotiationId = negotiation.id;
+        trade.expectedNegotiatedItem = { objectId: negotiation.itemObjectId, count: negotiation.quantity };
+        trade.expectedAdena = negotiation.agreedTotalPrice;
+    }
     attachTrade(trade);
     if (playerSession.dataSendToMe) {
         playerSession.dataSendToMe(ServerResponse.tradeStart(
@@ -191,7 +205,22 @@ function startBotTrade(botSession, playerSession) {
         ));
     }
     console.info("BotTrade :: %s opened outbound trade with %s", actorName(botSession), actorName(playerSession));
+    if (negotiation) {
+        const offered = offerBotItem(botSession, negotiation.itemObjectId, negotiation.quantity);
+        if (!offered.ok) {
+            cancelTrade(trade, offered.reason, true);
+            return { ok: false, reason: offered.reason };
+        }
+    }
     return { ok: true, trade };
+}
+
+function startBotTrade(botSession, playerSession) {
+    return openBotTrade(botSession, playerSession);
+}
+
+function startNegotiatedTrade(botSession, playerSession, negotiation) {
+    return openBotTrade(botSession, playerSession, negotiation);
 }
 
 function lineMapFor(trade, session) {
@@ -344,6 +373,11 @@ async function commit(playerSession) {
     if (!trade || trade.playerSession !== playerSession) return { ok: false, reason: 'no_active_trade' };
     if (trade.playerItems.size === 0 && trade.botItems.size === 0) return { ok: false, reason: 'empty_or_invalid_trade' };
 
+    if (trade.negotiationId) {
+        const validation = invoke('GameServer/Bot/Economy/BotNegotiationService').validateTrade(trade);
+        if (!validation.ok) return validation;
+    }
+
     const entries = transferEntries(trade);
     for (const entry of entries) {
         const validation = validateLine(trade, entry.fromSession, entry.line, { botSide: entry.fromSession === trade.botSession });
@@ -381,9 +415,13 @@ async function commit(playerSession) {
         ok: true,
         tradeId: trade.id,
         direction: trade.direction,
+        negotiationId: trade.negotiationId || null,
         partnerSession: trade.botSession,
         moved: publicMoved(entries)
     };
+    if (trade.negotiationId) {
+        try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (_) { /* optional negotiation module */ }
+    }
     releaseReservations(trade);
     clearAttachedTrade(trade);
     // Keep replay data serializable and detached from live session graphs.
@@ -400,7 +438,9 @@ function cancel(session, reason = 'cancelled', notify = true) {
 }
 
 function cleanup(session, reason = 'lifecycle') {
-    return cancel(session, reason, true);
+    const cancelled = cancel(session, reason, true);
+    if (cancelled) return true;
+    try { return invoke('GameServer/Bot/Economy/BotNegotiationService').cleanup(session, reason); } catch (_) { return false; }
 }
 
 function activeTradeSummary(session) {
@@ -410,6 +450,8 @@ function activeTradeSummary(session) {
     return {
         id: trade.id,
         direction: trade.direction,
+        negotiationId: trade.negotiationId || null,
+        expectedAdena: trade.expectedAdena || null,
         createdAt: trade.createdAt,
         expiresAt: trade.expiresAt,
         playerConfirmed: trade.playerConfirmed,
@@ -432,6 +474,7 @@ module.exports = {
     commit,
     isTradableItem: isSafeOfferItem,
     offerBotItem,
+    startNegotiatedTrade,
     startBotTrade,
     startPlayerTrade,
     updateOffer

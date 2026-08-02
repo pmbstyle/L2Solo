@@ -188,10 +188,13 @@ function tradeSnapshot(session, bot) {
     const store = bot.fetchPrivateStore && bot.fetchPrivateStore();
     const loot = session.lastLootRequest || null;
     const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+    const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
     const active = BotTradeService.activeTradeSummary(session);
+    const negotiation = BotNegotiationService.activeSummary(session);
 
     return {
         active,
+        negotiation,
         store: store ? {
             type: store.storeType === 3 ? 'buy' : 'sell',
             title: store.title || '',

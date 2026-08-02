@@ -163,6 +163,23 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 maximum: 10000,
                 description: 'Bounded quantity for an outbound trade line.'
             },
+            negotiationItemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Actual bot inventory object id for quote_item.'
+            },
+            negotiationAmount: {
+                type: 'number',
+                minimum: 1,
+                maximum: 100,
+                description: 'Bounded quantity for a negotiated stock item.'
+            },
+            negotiationPrice: {
+                type: 'number',
+                minimum: 1,
+                maximum: 1000000000,
+                description: 'Total Adena price for a bounded counter or accepted quote.'
+            },
             policyTtlMs: {
                 type: 'number',
                 minimum: 5000,
@@ -204,7 +221,7 @@ function systemPrompt() {
         'Equipment tools may only use safe candidates from actual inventory and native persistence. Never equip quest, incompatible, over-grade, or non-upgrade items.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action.',
-        'Trade tools can open a native window only with the current party leader, reserve safe inventory without mutating it, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
+        'Resource-gift trade tools can open a native window only with the current party leader; negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }
