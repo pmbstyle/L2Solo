@@ -50,7 +50,7 @@ function validPair(playerSession, botSession) {
         playerSession?.actor &&
         actorId(playerSession) > 0 &&
         actorId(botSession) > 0 &&
-        !String(playerSession.accountId || '').startsWith('bot_') &&
+        !String(playerSession.accountId || '').toLowerCase().startsWith('bot_') &&
         isBotIdentity(botSession)
     );
 }
