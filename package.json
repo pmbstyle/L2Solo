@@ -14,6 +14,9 @@
         "wipe:bots": "node scripts/wipe-bots.js"
     },
     "dependencies": {
+        "@langfuse/otel": "^5.10.0",
+        "@langfuse/tracing": "^5.10.0",
+        "@opentelemetry/sdk-node": "^0.221.0",
         "blowfish-ecb": "^1.0.2",
         "eslint": "^8.36.0",
         "explicit-json": "^1.0.5",

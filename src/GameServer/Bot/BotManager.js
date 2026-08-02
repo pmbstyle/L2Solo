@@ -753,6 +753,28 @@ const BotManager = {
             const directCommandTarget = addressedToBot || selectedBot || companionBot;
             const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
 
+            // When the developer LLM path is enabled, every addressed hot-bot
+            // message must enter the same conversation pipeline. The legacy
+            // regex replies intentionally remain only as the disabled-mode
+            // fallback; otherwise they silently bypass OpenRouter and lose
+            // the persona, memory, and Langfuse trace for the turn.
+            const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+            const llmAddressed = BotBrain.isEnabled() && (directCommandTarget || (groupAddress && !brainGroupResponderPicked));
+            if (llmAddressed) {
+                if (groupAddress && !directCommandTarget) brainGroupResponderPicked = true;
+                BotDialogueArbiter.route({
+                    playerSession,
+                    botSession: session,
+                    text: rawText,
+                    channel: 'local_chat',
+                    source: 'local_chat',
+                    allowFallback: true
+                }).catch((error) => {
+                    utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
+                });
+                return;
+            }
+
             if (directCommandTarget && INSULT_PATTERN.test(rawText)) {
                 handledByRule = true;
                 BotSocialMemory.recordEvent(playerSession, session, 'insulted', 'chat');

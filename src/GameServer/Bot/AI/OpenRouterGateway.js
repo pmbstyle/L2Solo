@@ -1,14 +1,15 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
     model: 'google/gemini-2.5-flash-lite',
     temperature: 0.35,
-    maxTokens: 160,
+    maxTokens: 320,
     timeoutMs: 3500,
     cooldownMs: 45000,
-    chatCooldownMs: 12000,
+    chatCooldownMs: 0,
     remoteChatCooldownMs: 10000,
     visibilityRadius: 6000,
     maxPromptPrice: 0,
@@ -183,7 +184,11 @@ function telemetry(request, cfg, outcome, startedAt, extra = {}) {
         outcome,
         latencyMs: Date.now() - startedAt,
         status: extra.status || null,
-        usage: extra.usage || null
+        usage: extra.usage || null,
+        finishReason: extra.finishReason || null,
+        providerRequestId: extra.providerRequestId || null,
+        rawContent: extra.rawContent || null,
+        responsePreview: extra.responsePreview || null
     };
 }
 
@@ -240,8 +245,27 @@ function parseContent(content) {
     return JSON.parse(content);
 }
 
-async function request(spec = {}) {
-    const cfg = config(spec.config || {});
+function validateContent(data, responseSchema) {
+    if (!responseSchema?.schema) return null;
+    try {
+        const Validator = require('jsonschema').Validator;
+        const validation = new Validator().validate(data, responseSchema.schema);
+        if (validation.valid) return null;
+        return validation.errors
+            .slice(0, 4)
+            .map((error) => `${error.property || 'response'}:${error.message}`)
+            .join('; ')
+            .slice(0, 480);
+    } catch (error) {
+        return `validator_error:${error.message}`.slice(0, 480);
+    }
+}
+
+async function requestUntraced(spec = {}) {
+    const cfg = config({
+        ...(spec.config || {}),
+        ...(spec.timeoutMs !== undefined ? { timeoutMs: spec.timeoutMs } : {})
+    });
     const requestData = {
         ...spec,
         requestId: requestId(spec.requestId),
@@ -252,13 +276,17 @@ async function request(spec = {}) {
 
     if (!cfg.enabled) return complete(requestData, cfg, 'disabled', startedAt);
     if (!cfg.apiKey) return complete(requestData, cfg, 'missing_api_key', startedAt);
-    if (circuitIsOpen(cfg, requestData.circuitKey)) return complete(requestData, cfg, 'circuit_open', startedAt);
+    if (requestData.circuitBreaker !== false && circuitIsOpen(cfg, requestData.circuitKey)) {
+        return complete(requestData, cfg, 'circuit_open', startedAt);
+    }
 
     const fetcher = transport || global.fetch;
     if (typeof fetcher !== 'function') return complete(requestData, cfg, 'provider_error', startedAt);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Math.max(1, cfg.timeoutMs));
+    const timeout = cfg.timeoutMs > 0
+        ? setTimeout(() => controller.abort(), Math.max(1, cfg.timeoutMs))
+        : null;
     const body = {
         model: cfg.model,
         messages: Array.isArray(requestData.messages) ? requestData.messages : [],
@@ -299,41 +327,118 @@ async function request(spec = {}) {
         if (!response?.ok) {
             markFailure(cfg, requestData.circuitKey);
             return complete(requestData, cfg, 'provider_error', startedAt, {
-                status: Number(response?.status || 0) || null
+                status: Number(response?.status || 0) || null,
+                responsePreview: String(response?.statusText || '').slice(0, 240)
             });
         }
 
         const json = await response.json();
-        const content = json.choices?.[0]?.message?.content;
+        const choice = json.choices?.[0] || {};
+        const content = choice.message?.content;
+        const finishReason = choice.finish_reason || null;
+        const rawContent = typeof content === 'string' ? content.slice(0, 12000) : null;
         let data;
         try {
             data = parseContent(content);
         } catch (_) {
             markFailure(cfg, requestData.circuitKey);
             return complete(requestData, cfg, 'schema_error', startedAt, {
-                usage: normalizeUsage(json.usage)
+                usage: normalizeUsage(json.usage),
+                finishReason,
+                providerRequestId: json.id || null,
+                rawContent,
+                responsePreview: finishReason === 'length' ? 'provider_output_truncated' : null
             });
         }
 
         if (!data) {
             markFailure(cfg, requestData.circuitKey);
             return complete(requestData, cfg, 'schema_error', startedAt, {
-                usage: normalizeUsage(json.usage)
+                usage: normalizeUsage(json.usage),
+                finishReason,
+                providerRequestId: json.id || null,
+                rawContent
+            });
+        }
+
+        const validationError = validateContent(data, requestData.responseSchema);
+        if (validationError) {
+            markFailure(cfg, requestData.circuitKey);
+            return complete(requestData, cfg, 'schema_error', startedAt, {
+                usage: normalizeUsage(json.usage),
+                finishReason,
+                providerRequestId: json.id || null,
+                rawContent,
+                responsePreview: validationError
             });
         }
 
         markSuccess(requestData.circuitKey);
         return complete(requestData, cfg, 'success', startedAt, {
             data,
-            usage: normalizeUsage(json.usage)
+            usage: normalizeUsage(json.usage),
+            finishReason,
+            providerRequestId: json.id || null,
+            rawContent
         });
     } catch (err) {
         const outcome = err?.name === 'AbortError' ? 'timeout' : 'provider_error';
         markFailure(cfg, requestData.circuitKey);
         return complete(requestData, cfg, outcome, startedAt);
     } finally {
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
     }
+}
+
+async function request(spec = {}) {
+    const input = {
+        messages: spec.messages || [],
+        responseSchema: spec.responseSchema?.name || null,
+        model: spec.config?.model || config().model
+    };
+    const metadata = {
+        requestId: spec.requestId || null,
+        sessionId: spec.sessionId || null,
+        circuitKey: spec.circuitKey || null,
+        source: spec.source || 'openrouter',
+        model: spec.config?.model || config().model,
+        botId: spec.botId || null,
+        playerId: spec.playerId || null,
+        turnId: spec.turnId || null
+    };
+    return LangfuseTracing.withObservation(
+        'openrouter.generation',
+        input,
+        metadata,
+        async (observation) => {
+            const result = await requestUntraced(spec);
+            if (observation && result?.telemetry) {
+                const usage = result.usage || result.telemetry.usage || {};
+                observation.update({
+                    model: result.telemetry.model || null,
+                    modelParameters: {
+                        temperature: Number((spec.config || {}).temperature ?? config().temperature),
+                        max_tokens: Number((spec.config || {}).maxTokens ?? config().maxTokens)
+                    },
+                    usageDetails: {
+                        input: Number(usage.promptTokens || 0),
+                        output: Number(usage.completionTokens || 0),
+                        total: Number(usage.totalTokens || 0)
+                    },
+                    costDetails: Number.isFinite(Number(usage.cost)) ? { total: Number(usage.cost) } : undefined,
+                    metadata: {
+                        outcome: result.telemetry.outcome,
+                        status: result.telemetry.status,
+                        finishReason: result.telemetry.finishReason
+                    }
+                });
+                result.telemetry.traceId = observation.traceId || LangfuseTracing.activeTraceId();
+                result.telemetry.observationId = observation.id || null;
+            }
+            return result;
+        },
+        'generation'
+    );
 }
 
 const OpenRouterGateway = {

@@ -1,5 +1,6 @@
 const BotToolAudit = invoke('GameServer/Bot/AI/BotToolAudit');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const definitions = new Map();
 
@@ -106,6 +107,23 @@ function availableNames(session = null) {
 }
 
 function audit(context, outcome, reason, meta = {}) {
+    const observation = LangfuseTracing.startObservation(
+        `bot.tool.${text(context.decision?.action || 'unknown', 64)}`,
+        {
+            action: context.decision?.action || null,
+            arguments: context.decision || null,
+            expectedWorldRevision: context.expectedWorldRevision || null
+        },
+        {
+            botId: actorId(context.session),
+            playerId: playerId(context),
+            turnId: turnId(context),
+            outcome,
+            reason
+        },
+        'tool'
+    );
+    observation?.end({ outcome, reason, ...meta });
     BotToolAudit.record({
         playerId: playerId(context),
         botId: actorId(context.session),

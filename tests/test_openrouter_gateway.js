@@ -137,6 +137,36 @@ async function main() {
     assert.strictEqual(timedOut.reason, 'timeout');
 
     OpenRouterGateway.resetCircuit();
+    let interactiveSignalAborted = false;
+    OpenRouterGateway.setTransport(async (_url, init) => {
+        init.signal.addEventListener('abort', () => { interactiveSignalAborted = true; }, { once: true });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return response({ choices: [{ message: { content: JSON.stringify({ reply: 'no artificial timeout' }) } }] });
+    });
+    const interactive = await OpenRouterGateway.request({
+        config: { ...baseConfig, timeoutMs: 0 },
+        circuitKey: 'interactive-bot:1:player:2',
+        circuitBreaker: false,
+        requestId: 'interactive-no-timeout'
+    });
+    assert.strictEqual(interactive.ok, true, 'interactive chat must wait for the provider instead of timing out locally');
+    assert.strictEqual(interactiveSignalAborted, false, 'interactive chat must not abort the provider request');
+
+    OpenRouterGateway.resetCircuit();
+    OpenRouterGateway.setTransport(async () => response({ error: { message: 'background failure' } }, 503));
+    for (let index = 0; index < 3; index += 1) {
+        await OpenRouterGateway.request({ config: baseConfig, circuitKey: 'background', requestId: `background-failure-${index}` });
+    }
+    OpenRouterGateway.setTransport(async () => response({ choices: [{ message: { content: JSON.stringify({ reply: 'interactive recovered' }) } }] }));
+    const circuitBypass = await OpenRouterGateway.request({
+        config: baseConfig,
+        circuitKey: 'background',
+        circuitBreaker: false,
+        requestId: 'interactive-circuit-bypass'
+    });
+    assert.strictEqual(circuitBypass.ok, true, 'interactive chat must not inherit a background circuit breaker');
+
+    OpenRouterGateway.resetCircuit();
     OpenRouterGateway.setTransport(async () => response({
         choices: [{ message: { content: '{not-json' } }]
     }));

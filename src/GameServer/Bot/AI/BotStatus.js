@@ -10,6 +10,7 @@ const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -349,6 +350,11 @@ const BotStatus = {
             trade: tradeSnapshot(session, bot),
             ambient,
             inference: BotInferenceBudget.snapshot(session),
+            llm: {
+                last: session.lastBrainTelemetry || null,
+                context: session.lastBrainContextTelemetry || null,
+                langfuse: LangfuseTracing.status()
+            },
             persona: personaSnapshot(session),
             policy: HotBotPolicyOverlay.status(session),
             social: session.socialSummary || null,

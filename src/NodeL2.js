@@ -1,5 +1,8 @@
 require('./Global');
 
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+LangfuseTracing.init();
+
 // User imports
 const AuthSession = invoke('AuthenticationServer/Session');
 const GameSession = invoke('GameServer/Session');
@@ -24,6 +27,7 @@ function shutdown(signal) {
     forceExit.unref?.();
     CharacterWriteQueue.flushAll()
         .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
+        .then(() => LangfuseTracing.shutdown())
         .finally(() => process.exit(0));
 }
 

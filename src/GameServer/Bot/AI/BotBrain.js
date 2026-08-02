@@ -4,13 +4,13 @@ const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
-const MAX_PENDING_BRAIN_TURNS = 4;
-
 function config() {
-    return OpenRouterGateway.config({ maxTokens: 160 });
+    return OpenRouterGateway.config({ maxTokens: 320 });
 }
 
 function debugSkip(session, cfg, reason) {
@@ -60,7 +60,7 @@ function compactPlayer(session, botLoc) {
     };
 }
 
-function visibleRealPlayers(session, bot, cfg = config()) {
+function visibleRealPlayers(session, bot, cfg = config(), requestContext = null) {
     if (!bot) return [];
 
     const World = invoke('GameServer/World/World');
@@ -71,7 +71,13 @@ function visibleRealPlayers(session, bot, cfg = config()) {
         .filter((player) => player.distance <= cfg.visibilityRadius)
         .sort((a, b) => a.distance - b.distance);
 
-    return visible;
+    const directSession = requestContext?.playerSession;
+    if (isRealPlayer(directSession)) {
+        const direct = compactPlayer(directSession, botLoc);
+        if (!visible.some((player) => Number(player.id) === Number(direct.id))) visible.push(direct);
+    }
+
+    return visible.sort((a, b) => a.distance - b.distance);
 }
 
 function candidateSpots(status) {
@@ -283,9 +289,17 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         'nearby';
     const result = await OpenRouterGateway.request({
         config: cfg,
-        circuitKey: 'hot',
+        circuitKey: requestContext?.conversationTurn
+            ? `hot-chat:${botId}:${playerId}`
+            : 'hot-background',
+        circuitBreaker: requestContext?.conversationTurn ? false : true,
+        timeoutMs: requestContext?.conversationTurn ? 0 : cfg.timeoutMs,
         requestId: requestContext?.requestId || `hot-${botId}-${Date.now()}`,
         sessionId: `hot-bot:${botId}:player:${playerId}`,
+        source: requestContext?.source || requestContext?.channel || 'hot_brain',
+        botId,
+        playerId,
+        turnId: requestContext?.conversationTurn?.turnId || requestContext?.requestId || null,
         messages: [
             { role: 'system', content: systemPrompt() },
             { role: 'user', content: JSON.stringify(payload) }
@@ -307,7 +321,7 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
-    if (!turn || !result?.applied || !decision?.reply || ['none', 'buff_target', 'heal_target'].includes(action)) return;
+    if (!turn || !result?.applied || !decision?.reply || ['buff_target', 'heal_target'].includes(action)) return;
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
     const reply = BotChatText.normalize(decision.reply)
         .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
@@ -327,6 +341,12 @@ function recordConversationReply(session, decision, result, requestContext) {
 function applyDecision(session, decision, visiblePlayers, requestContext) {
     const result = BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     BotAgentTools.remember(session, decision, result, config().model);
+    if (result.applied && decision.action === 'none' && decision.reply && requestContext?.playerSession?.actor) {
+        // `none` means “no world mutation”, not “drop the player's message”.
+        // A direct hot dialogue still needs a visible reply when the model
+        // chooses to speak without selecting a tool.
+        invoke('GameServer/Bot/BotManager').botTell(session, requestContext.playerSession, decision.reply);
+    }
     recordConversationReply(session, decision, result, requestContext);
     if (!result.applied && requestContext?.playerSession?.actor) {
         const BotManager = invoke('GameServer/Bot/BotManager');
@@ -455,10 +475,6 @@ const BotBrain = {
                     requestContext
                 };
                 const queue = session.pendingBrainTurns || (session.pendingBrainTurns = []);
-                if (queue.length >= MAX_PENDING_BRAIN_TURNS) {
-                    const dropped = queue.shift();
-                    if (dropped?.requestContext) fallbackReply(session, dropped.requestContext, 'queued_overflow');
-                }
                 queue.push(pending);
                 session.pendingBrainTurn = queue[0];
                 debugSkip(session, cfg, 'request_queued');
@@ -484,15 +500,15 @@ const BotBrain = {
             return false;
         }
 
-        const visiblePlayers = visibleRealPlayers(session, bot, cfg);
+        const visiblePlayers = visibleRealPlayers(session, bot, cfg, requestContext);
         if (visiblePlayers.length === 0) {
             debugSkip(session, cfg, 'no_visible_real_players');
             return false;
         }
 
-        const cooldown = event === 'player_chat' ? cfg.chatCooldownMs : cfg.cooldownMs;
-        const lastAt = event === 'player_chat' ? session.lastBrainChatAt : session.lastBrainThinkAt;
-        if (lastAt && requestContext?.queued !== true && Date.now() - lastAt < cooldown) {
+        const cooldown = cfg.cooldownMs;
+        const lastAt = session.lastBrainThinkAt;
+        if (event !== 'player_chat' && lastAt && requestContext?.queued !== true && Date.now() - lastAt < cooldown) {
             debugSkip(session, cfg, `cooldown:${event}`);
             return false;
         }
@@ -502,15 +518,15 @@ const BotBrain = {
             return false;
         }
 
-        if (event === 'player_chat') {
-            session.lastBrainChatAt = Date.now();
-        } else {
+        if (event !== 'player_chat') {
             session.lastBrainThinkAt = Date.now();
         }
 
         const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
         const admission = BotInferenceBudget.reserve(session, {
             event,
+            bypass: event === 'player_chat',
+            priority: event === 'player_chat' ? 'interactive' : 'normal',
             estimatedPromptTokens: estimateRequestPromptTokens(payload, session),
             maxCompletionTokens: cfg.maxTokens
         });
@@ -534,6 +550,18 @@ const BotBrain = {
         }
 
         session.brainInFlight = true;
+        const turnId = requestContext?.conversationTurn?.turnId || requestContext?.requestId || `${event}:${bot.fetchId?.()}:${Date.now()}`;
+        if (requestContext && !requestContext.requestId) requestContext.requestId = turnId;
+        const turnPersistence = BotLLMTurnStore.begin({
+            turnId,
+            requestId: requestContext?.requestId || turnId,
+            playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId,
+            botId: bot.fetchId?.(),
+            eventType: event,
+            channel: requestContext?.channel,
+            model: cfg.model,
+            meta: { source: requestContext?.source || event }
+        }).then(() => BotLLMTurnStore.markStarted({ turnId })).catch(() => false);
         if (requestContext?.assembledContext?.telemetry) {
             session.lastBrainContextTelemetry = {
                 ...requestContext.assembledContext.telemetry,
@@ -548,36 +576,33 @@ const BotBrain = {
         }
 
         let providerResult = null;
-        requestDecision(payload, cfg, session, requestContext, visiblePlayers).then((result) => {
-            providerResult = result;
-            recordInferenceEvent(session, event, result, requestContext);
-            rememberTelemetry(session, result);
-            if (result?.ok === false) {
-                fallbackReply(session, requestContext, result.reason);
-                return;
-            }
-            applyDecision(session, result, visiblePlayers, requestContext);
-        }).catch((err) => {
-            recordInferenceEvent(session, event, {
-                ok: false,
-                reason: 'provider_error',
-                telemetry: { outcome: 'provider_error' }
-            }, requestContext);
-            utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
-            fallbackReply(session, requestContext, 'provider_error');
-        }).finally(() => {
+        const finishTurn = () => {
             BotInferenceBudget.settle(admission.reservation, providerResult?.usage);
+            const finalTelemetry = providerResult?.llmTelemetry || providerResult?.telemetry || {};
+            turnPersistence.then(() => BotLLMTurnStore.finish({
+                turnId,
+                ok: providerResult?.ok !== false,
+                outcome: providerResult?.ok === false ? providerResult.reason : finalTelemetry.outcome,
+                model: finalTelemetry.model || cfg.model,
+                traceId: finalTelemetry.traceId || null,
+                usage: providerResult?.usage || finalTelemetry.usage,
+                error: providerResult?.ok === false ? providerResult.reason : '',
+                meta: {
+                    event,
+                    action: providerResult?.action || null,
+                    traceId: finalTelemetry.traceId || null,
+                    observationId: finalTelemetry.observationId || null,
+                    finishReason: finalTelemetry.finishReason || null,
+                    status: finalTelemetry.status || null
+                }
+            })).catch(() => {});
             session.lastBrainBudget = BotInferenceBudget.status(session);
             session.brainInFlight = false;
             const queue = session.pendingBrainTurns || [];
             const pending = queue.shift() || null;
             session.pendingBrainTurn = queue[0] || null;
             if (pending) {
-                const waitMs = Math.max(
-                    0,
-                    cfg.chatCooldownMs - (Date.now() - Number(session.lastBrainChatAt || 0))
-                );
-                setTimeout(() => {
+                Promise.resolve().then(() => {
                     const started = BotBrain.maybeThink(
                         session,
                         pending.event,
@@ -586,8 +611,47 @@ const BotBrain = {
                         { ...pending.requestContext, queued: true }
                     );
                     if (!started) fallbackReply(session, pending.requestContext, 'queued_not_started');
-                }, waitMs);
+                });
             }
+        };
+        const runTurn = async () => {
+            try {
+                providerResult = await requestDecision(payload, cfg, session, requestContext, visiblePlayers);
+                recordInferenceEvent(session, event, providerResult, requestContext);
+                rememberTelemetry(session, providerResult);
+                if (providerResult?.ok === false) {
+                    fallbackReply(session, requestContext, providerResult.reason);
+                    return;
+                }
+                applyDecision(session, providerResult, visiblePlayers, requestContext);
+            } catch (err) {
+                providerResult = {
+                    ok: false,
+                    reason: 'provider_error',
+                    telemetry: { outcome: 'provider_error' }
+                };
+                recordInferenceEvent(session, event, providerResult, requestContext);
+                utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
+                fallbackReply(session, requestContext, 'provider_error');
+            } finally {
+                finishTurn();
+            }
+        };
+        LangfuseTracing.withObservation(
+            'hot-bot.dialogue',
+            payload,
+            {
+                event,
+                botId: bot.fetchId?.(),
+                playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
+                turnId,
+                requestId: requestContext?.requestId || turnId,
+                source: requestContext?.source || event
+            },
+            runTurn,
+            'agent'
+        ).catch((error) => {
+            utils.infoWarn('Langfuse', 'hot-bot observation failed: %s', error.message);
         });
 
         return true;

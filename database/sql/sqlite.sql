@@ -300,6 +300,31 @@ CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
 
+CREATE TABLE IF NOT EXISTS bot_llm_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turnId TEXT NOT NULL UNIQUE,
+    playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    eventType TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'queued',
+    requestId TEXT,
+    traceId TEXT,
+    startedAt INTEGER,
+    finishedAt INTEGER,
+    outcome TEXT,
+    model TEXT,
+    promptTokens INTEGER NOT NULL DEFAULT 0,
+    completionTokens INTEGER NOT NULL DEFAULT 0,
+    totalTokens INTEGER NOT NULL DEFAULT 0,
+    cost REAL,
+    error TEXT NOT NULL DEFAULT '',
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+
 CREATE TABLE IF NOT EXISTS bot_negotiations (
     id TEXT PRIMARY KEY,
     playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,

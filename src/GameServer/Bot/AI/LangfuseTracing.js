@@ -1,0 +1,244 @@
+const fs = require('fs');
+const path = require('path');
+
+let sdk = null;
+let processor = null;
+let tracing = null;
+let initialized = false;
+let initError = null;
+let envCache = { filename: null, values: {} };
+
+function bool(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value === 'boolean') return value;
+    return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+function number(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function text(value, max = 240) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function parseEnvFile(filename) {
+    if (!filename) return {};
+    if (envCache.filename === String(filename)) return envCache.values;
+    try {
+        const absolute = path.resolve(String(filename));
+        if (!fs.existsSync(absolute)) {
+            envCache = { filename: String(filename), values: {} };
+            return envCache.values;
+        }
+        const values = Object.fromEntries(fs.readFileSync(absolute, 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#'))
+            .map((line) => {
+                const index = line.indexOf('=');
+                if (index < 1) return null;
+                const key = line.slice(0, index).trim();
+                let value = line.slice(index + 1).trim();
+                if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.slice(1, -1);
+                }
+                return [key, value];
+            })
+            .filter(Boolean));
+        envCache = { filename: String(filename), values };
+        return values;
+    } catch (_) {
+        return {};
+    }
+}
+
+function config(overrides = {}) {
+    const option = options.default.Langfuse || {};
+    const fileEnv = parseEnvFile(option.envFile);
+    const value = (key, fallback = '') => process.env[key] || fileEnv[key] || option[key] || fallback;
+    const source = {
+        enabled: bool(process.env.LANGFUSE_ENABLED || option.enabled, false),
+        baseUrl: value('LANGFUSE_BASE_URL', 'http://localhost:3000'),
+        publicKey: value('LANGFUSE_PUBLIC_KEY') || value('LANGFUSE_INIT_PROJECT_PUBLIC_KEY'),
+        secretKey: value('LANGFUSE_SECRET_KEY') || value('LANGFUSE_INIT_PROJECT_SECRET_KEY'),
+        environment: value('LANGFUSE_TRACING_ENVIRONMENT', 'development'),
+        release: value('LANGFUSE_RELEASE', utils.buildNumber?.() || 'nodel2'),
+        serviceName: text(option.serviceName || process.env.OTEL_SERVICE_NAME || 'nodel2', 80),
+        flushAt: Math.max(1, number(option.flushAt, 10)),
+        flushInterval: Math.max(1, number(option.flushInterval, 1)),
+        captureInput: bool(option.captureInput, true),
+        captureOutput: bool(option.captureOutput, true),
+        debug: bool(option.debug, false)
+    };
+    return {
+        ...source,
+        ...overrides,
+        enabled: bool(overrides.enabled, source.enabled),
+        baseUrl: overrides.baseUrl || source.baseUrl,
+        publicKey: overrides.publicKey || source.publicKey,
+        secretKey: overrides.secretKey || source.secretKey,
+        captureInput: bool(overrides.captureInput, source.captureInput),
+        captureOutput: bool(overrides.captureOutput, source.captureOutput),
+        flushAt: Math.max(1, number(overrides.flushAt, source.flushAt)),
+        flushInterval: Math.max(1, number(overrides.flushInterval, source.flushInterval))
+    };
+}
+
+function serializable(value, limit = 24000) {
+    try {
+        const raw = JSON.stringify(value ?? null);
+        return raw.length > limit ? `${raw.slice(0, limit)}…` : value;
+    } catch (_) {
+        return text(value, limit);
+    }
+}
+
+function observationInput(value, cfg) {
+    if (cfg.captureInput) return serializable(value);
+    return { captured: false, type: typeof value };
+}
+
+function observationOutput(value, cfg) {
+    if (cfg.captureOutput) return serializable(value);
+    return { captured: false, type: typeof value };
+}
+
+function updateObservation(observation, attributes) {
+    if (typeof observation?.update === 'function') observation.update(attributes);
+}
+
+function init(overrides = {}) {
+    if (initialized) return status();
+    const cfg = config(overrides);
+    if (!cfg.enabled) return status();
+    if (!cfg.publicKey || !cfg.secretKey) {
+        initError = 'missing_credentials';
+        if (cfg.debug) utils.infoWarn('Langfuse', 'enabled but credentials are missing');
+        return status();
+    }
+
+    try {
+        const { NodeSDK } = require('@opentelemetry/sdk-node');
+        const { LangfuseSpanProcessor } = require('@langfuse/otel');
+        tracing = require('@langfuse/tracing');
+        processor = new LangfuseSpanProcessor({
+            publicKey: cfg.publicKey,
+            secretKey: cfg.secretKey,
+            baseUrl: cfg.baseUrl,
+            flushAt: cfg.flushAt,
+            flushInterval: cfg.flushInterval,
+            environment: cfg.environment,
+            release: cfg.release,
+            exportMode: 'batched'
+        });
+        sdk = new NodeSDK({
+            serviceName: cfg.serviceName,
+            spanProcessors: [processor]
+        });
+        sdk.start();
+        initialized = true;
+        if (cfg.debug) utils.infoSuccess('Langfuse', 'tracing enabled at %s', cfg.baseUrl);
+    } catch (error) {
+        initError = text(error.message, 240);
+        initialized = false;
+        if (cfg.debug) utils.infoWarn('Langfuse', 'initialization failed: %s', initError);
+    }
+    return status();
+}
+
+function status() {
+    const cfg = config();
+    return {
+        configured: !!(cfg.publicKey && cfg.secretKey),
+        enabled: cfg.enabled,
+        initialized,
+        baseUrl: cfg.baseUrl,
+        error: initError
+    };
+}
+
+function withObservation(name, input, metadata, work, asType = 'span') {
+    const cfg = config();
+    if (!initialized || !tracing?.startActiveObservation) return work(null);
+    return tracing.startActiveObservation(String(name), async (observation) => {
+        try {
+            tracing.propagateAttributes?.({
+                userId: text(metadata?.playerId, 200) || undefined,
+                sessionId: text(metadata?.turnId || metadata?.sessionId, 200) || undefined,
+                traceName: text(name, 200),
+                metadata: Object.fromEntries(Object.entries(metadata || {})
+                    .filter(([, value]) => value !== undefined && value !== null)
+                    .map(([key, value]) => [key, text(value, 200)]))
+            });
+        } catch (_) {
+            // Propagation is auxiliary; an invalid dimension must never block a turn.
+        }
+        updateObservation(observation, { input: observationInput(input, cfg), metadata: serializable(metadata || {}) });
+        try {
+            const result = await work(observation);
+            updateObservation(observation, { output: observationOutput(result, cfg) });
+            return result;
+        } catch (error) {
+            updateObservation(observation, {
+                level: 'ERROR',
+                statusMessage: text(error.message, 240),
+                output: observationOutput({ error: error.message }, cfg)
+            });
+            throw error;
+        }
+    }, { asType, endOnExit: true });
+}
+
+function startObservation(name, input, metadata, asType = 'span') {
+    if (!initialized || !tracing?.startObservation) return null;
+    const cfg = config();
+    try {
+        const observation = tracing.startObservation(String(name), {
+            input: observationInput(input, cfg),
+            metadata: serializable(metadata || {})
+        }, { asType });
+        return {
+            update(value = {}) {
+                updateObservation(observation, {
+                    ...value,
+                    output: value.output === undefined ? undefined : observationOutput(value.output, cfg)
+                });
+            },
+            end(value) {
+                if (value !== undefined) observation.update({ output: observationOutput(value, cfg) });
+                observation.end();
+            },
+            traceId: observation.traceId,
+            id: observation.id
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function activeTraceId() {
+    try { return tracing?.getActiveTraceId?.() || null; } catch (_) { return null; }
+}
+
+async function shutdown() {
+    if (!sdk) return;
+    try { await sdk.shutdown(); } catch (error) {
+        if (config().debug) utils.infoWarn('Langfuse', 'shutdown failed: %s', error.message);
+    } finally {
+        sdk = null;
+        processor = null;
+        initialized = false;
+    }
+}
+
+module.exports = {
+    config,
+    init,
+    status,
+    withObservation,
+    startObservation,
+    activeTraceId,
+    shutdown
+};

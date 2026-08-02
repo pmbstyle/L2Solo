@@ -263,6 +263,32 @@ function applySchemaMigrations() {
             );
             CREATE INDEX IF NOT EXISTS bot_negotiations_pair_recent ON bot_negotiations(playerId, botId, updatedAt DESC);
             CREATE INDEX IF NOT EXISTS bot_negotiations_bot_recent ON bot_negotiations(botId, updatedAt DESC);
+        `)],
+        [7, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_llm_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                turnId TEXT NOT NULL UNIQUE,
+                playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                eventType TEXT NOT NULL,
+                channel TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL DEFAULT 'queued',
+                requestId TEXT,
+                traceId TEXT,
+                startedAt INTEGER,
+                finishedAt INTEGER,
+                outcome TEXT,
+                model TEXT,
+                promptTokens INTEGER NOT NULL DEFAULT 0,
+                completionTokens INTEGER NOT NULL DEFAULT 0,
+                totalTokens INTEGER NOT NULL DEFAULT 0,
+                cost REAL,
+                error TEXT NOT NULL DEFAULT '',
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
+            CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
+            CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
