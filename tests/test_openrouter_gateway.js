@@ -83,6 +83,35 @@ async function main() {
     assert.deepStrictEqual(captured.body.response_format.json_schema.schema, schema.schema);
 
     OpenRouterGateway.resetCircuit();
+    const repairBodies = [];
+    OpenRouterGateway.setTransport(async (_url, init) => {
+        repairBodies.push(JSON.parse(init.body));
+        if (repairBodies.length === 1) {
+            return response({
+                choices: [{ message: { content: '{"reply":', finish_reason: 'length' } }]
+            });
+        }
+        return response({
+            choices: [{ message: { content: JSON.stringify({ reply: 'repaired' }) } }],
+            usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 }
+        });
+    });
+    const repaired = await OpenRouterGateway.request({
+        config: { ...baseConfig, maxTokens: 320 },
+        requestId: 'gateway-repair',
+        messages: [{ role: 'user', content: 'repair me' }],
+        responseSchema: schema,
+        repairSchema: true
+    });
+    assert.strictEqual(repaired.ok, true);
+    assert.deepStrictEqual(repaired.data, { reply: 'repaired' });
+    assert.strictEqual(repairBodies[0].max_tokens, 320);
+    assert.strictEqual(repairBodies[1].max_tokens, 640);
+    assert.strictEqual(repaired.telemetry.attempts, 2);
+    assert.strictEqual(repaired.telemetry.repairTriggered, true);
+    assert.strictEqual(repaired.telemetry.initialRawContent, '{"reply":');
+
+    OpenRouterGateway.resetCircuit();
     OpenRouterGateway.setTransport(async () => response({ error: { message: 'unavailable' } }, 503));
     for (let index = 0; index < 3; index += 1) {
         const failed = await OpenRouterGateway.request({ config: baseConfig, requestId: `failure-${index}` });

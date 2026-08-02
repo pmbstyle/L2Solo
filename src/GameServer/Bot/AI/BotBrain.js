@@ -12,7 +12,7 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant', 'getting_buffed'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
 function config() {
-    return OpenRouterGateway.config({ maxTokens: 320 });
+    return OpenRouterGateway.config({ maxTokens: 640 });
 }
 
 function debugSkip(session, cfg, reason) {
@@ -278,7 +278,8 @@ function estimateRequestPromptTokens(payload, session) {
         responseSchema: {
             name: 'bot_brain_decision',
             schema: schema(BotAgentTools.availableActions(session))
-        }
+        },
+        repairSchema: true
     });
 }
 

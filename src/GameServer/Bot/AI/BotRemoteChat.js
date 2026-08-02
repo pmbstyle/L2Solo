@@ -185,7 +185,8 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
         responseSchema: {
             name: 'bot_remote_chat',
             schema: schema()
-        }
+        },
+        repairSchema: true
     });
     if (!result.ok) {
         return {

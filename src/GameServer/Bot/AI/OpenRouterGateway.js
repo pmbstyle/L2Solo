@@ -194,7 +194,40 @@ function telemetry(request, cfg, outcome, startedAt, extra = {}) {
         finishReason: extra.finishReason || null,
         providerRequestId: extra.providerRequestId || null,
         rawContent: extra.rawContent || null,
-        responsePreview: extra.responsePreview || null
+        responsePreview: extra.responsePreview || null,
+        attempts: Number(extra.attempts || 1),
+        repairTriggered: extra.repairTriggered === true,
+        initialOutcome: extra.initialOutcome || null,
+        initialRawContent: extra.initialRawContent || null
+    };
+}
+
+function shouldRepairSchema(spec, result) {
+    return spec.repairSchema === true &&
+        spec.responseSchema?.schema &&
+        result?.reason === 'schema_error' &&
+        spec.schemaRepairAttempt !== true;
+}
+
+function repairConfig(spec) {
+    const current = Number(spec.config?.maxTokens || config().maxTokens);
+    return {
+        ...(spec.config || {}),
+        maxTokens: Math.min(640, Math.max(512, current * 2))
+    };
+}
+
+function repairedResult(initial, repaired) {
+    const telemetry = repaired?.telemetry || {};
+    return {
+        ...repaired,
+        telemetry: {
+            ...telemetry,
+            attempts: 2,
+            repairTriggered: true,
+            initialOutcome: initial?.reason || null,
+            initialRawContent: initial?.telemetry?.rawContent || null
+        }
     };
 }
 
@@ -417,14 +450,26 @@ async function request(spec = {}) {
         input,
         metadata,
         async (observation) => {
-            const result = await requestUntraced(spec);
+            let result = await requestUntraced(spec);
+            if (shouldRepairSchema(spec, result)) {
+                const repaired = await requestUntraced({
+                    ...spec,
+                    config: repairConfig(spec),
+                    schemaRepairAttempt: true,
+                    circuitBreaker: false
+                });
+                result = repairedResult(result, repaired);
+            }
             if (observation && result?.telemetry) {
                 const usage = result.usage || result.telemetry.usage || {};
+                const effectiveMaxTokens = result.telemetry.repairTriggered
+                    ? repairConfig(spec).maxTokens
+                    : Number((spec.config || {}).maxTokens ?? config().maxTokens);
                 observation.update({
                     model: result.telemetry.model || null,
                     modelParameters: {
                         temperature: Number((spec.config || {}).temperature ?? config().temperature),
-                        max_tokens: Number((spec.config || {}).maxTokens ?? config().maxTokens)
+                        max_tokens: effectiveMaxTokens
                     },
                     usageDetails: {
                         input: Number(usage.promptTokens || 0),
