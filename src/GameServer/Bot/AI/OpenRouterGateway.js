@@ -10,6 +10,7 @@ const DEFAULTS = Object.freeze({
     timeoutMs: 3500,
     cooldownMs: 45000,
     chatCooldownMs: 0,
+    backgroundInferenceEnabled: false,
     remoteChatCooldownMs: 10000,
     visibilityRadius: 6000,
     maxPromptPrice: 0,
@@ -66,6 +67,7 @@ function config(overrides = {}) {
         timeoutMs: num(optn.timeoutMs, DEFAULTS.timeoutMs),
         cooldownMs: num(optn.cooldownMs, DEFAULTS.cooldownMs),
         chatCooldownMs: num(optn.chatCooldownMs, DEFAULTS.chatCooldownMs),
+        backgroundInferenceEnabled: bool(optn.backgroundInferenceEnabled, DEFAULTS.backgroundInferenceEnabled),
         remoteChatCooldownMs: num(optn.remoteChatCooldownMs, DEFAULTS.remoteChatCooldownMs),
         visibilityRadius: num(optn.visibilityRadius, DEFAULTS.visibilityRadius),
         maxPromptPrice: num(optn.maxPromptPrice, DEFAULTS.maxPromptPrice),
@@ -95,6 +97,10 @@ function config(overrides = {}) {
         timeoutMs: num(overrides.timeoutMs, source.timeoutMs),
         maxPromptPrice: num(overrides.maxPromptPrice, source.maxPromptPrice),
         maxCompletionPrice: num(overrides.maxCompletionPrice, source.maxCompletionPrice),
+        backgroundInferenceEnabled: bool(
+            overrides.backgroundInferenceEnabled,
+            source.backgroundInferenceEnabled
+        ),
         usageInclude: bool(overrides.usageInclude, source.usageInclude),
         requireProviderParameters: bool(
             overrides.requireProviderParameters,

@@ -48,6 +48,7 @@ async function main() {
             model: 'test/state-change',
             cooldownMs: 0,
             chatCooldownMs: 0,
+            backgroundInferenceEnabled: true,
             hotBotMaxRequestsPerMinute: 5,
             hotBotPromptTokenBudgetPerMinute: 12000,
             hotBotCompletionTokenBudgetPerMinute: 2400
@@ -109,6 +110,13 @@ async function main() {
             BotBrain.maybeThink(botSession, 'state_change', { available: true }, 'disabled probe'),
             false,
             'disabled OpenRouter must keep state-change routing inert'
+        );
+        options.default.OpenRouter.enabled = true;
+        options.default.OpenRouter.backgroundInferenceEnabled = false;
+        assert.strictEqual(
+            BotBrain.maybeThink(botSession, 'state_change', { available: true }, 'background-disabled probe'),
+            false,
+            'background inference must be opt-in even when OpenRouter is enabled'
         );
         console.log('Bot brain state-change checks passed');
     } finally {

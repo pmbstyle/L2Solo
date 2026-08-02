@@ -57,19 +57,30 @@ function handlePrivateTell(session, data) {
     const botSession = BotManager.findSessionByName(target);
     if (botSession) {
         session.dataSendToMe(ServerResponse.speak(session.actor, data));
-        World.messageBotByName(session, session.actor, target, text, 'client_tell');
-        return;
+        return World.messageBotByName(session, session.actor, target, text, 'client_tell');
     }
 
     const targetSession = findOnlineUserByName(target);
-    if (!targetSession) {
-        session.dataSendToMe(ServerResponse.actionFailed());
-        return;
+    if (targetSession) {
+        const packet = ServerResponse.speak(session.actor, data);
+        targetSession.dataSendToMe(packet);
+        session.dataSendToMe(packet);
+        return Promise.resolve(true);
     }
 
-    const packet = ServerResponse.speak(session.actor, data);
-    targetSession.dataSendToMe(packet);
-    session.dataSendToMe(packet);
+    // Cold bots have no online actor, but their persistent life-state is still
+    // a valid private-tell target. Resolve that identity before rejecting the
+    // tell so the message can enter the same cold LLM dialogue path.
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    return LifeState.findByName(target).then((state) => {
+        if (!state) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        }
+
+        session.dataSendToMe(ServerResponse.speak(session.actor, data));
+        return World.messageBotByName(session, session.actor, target, text, 'client_tell');
+    });
 }
 
 function consume(session, data) {

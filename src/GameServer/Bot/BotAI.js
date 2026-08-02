@@ -11,6 +11,7 @@ const TownRespawn = invoke('GameServer/World/TownRespawn');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -179,6 +180,7 @@ const BotAI = {
         session.pendingBrainTurns = [];
         session.pendingBrainTurn = null;
         HotBotPolicyOverlay.clearForCold(session);
+        ChatArrivalState.clear(session, 'ai_stop');
         try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
         try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }
         if (session.aiTimeout) {
@@ -382,7 +384,16 @@ const BotAI = {
             HotBotPolicyOverlay.get(session);
         }
         session.botStatus = BotStatus.getStatus(session);
-        if (!botDead) maybeTriggerStateChange(session, session.botStatus);
+        // Autonomous state changes remain owned by the deterministic brain.
+        // LLM inference is reserved for explicit player communication.
+
+        // A cold bot explicitly asked to come is temporarily held near the
+        // player. Keep this deterministic and independent from the LLM so the
+        // normal hunting state cannot immediately overwrite the arrival.
+        if (!botDead && ChatArrivalState.tick(session, bot)) {
+            session.botStatus = BotStatus.getStatus(session);
+            return;
+        }
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const World = invoke('GameServer/World/World');

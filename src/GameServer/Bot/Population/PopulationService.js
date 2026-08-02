@@ -805,6 +805,7 @@ const PopulationService = {
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
+                if (session.chatArrivalActive) return false;
                 if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return false;
                 // Red-name bots are part of the visible PK population, not
                 // disposable ambient population. Keep them hot until their

@@ -8,6 +8,19 @@ function actorId(session) {
     return Number(session?.actor?.fetchId?.() || session?.characterId || 0);
 }
 
+function actorName(session) {
+    return session?.actor?.fetchName?.() || session?.name || null;
+}
+
+function isBotIdentity(session) {
+    if (!session) return false;
+    const account = String(session.accountId || session.accountName || '').toLowerCase();
+    if (account.startsWith('bot_')) return true;
+    // Cold life-state snapshots have no live actor, but remain authoritative
+    // bot identities for conversation persistence.
+    return !session.actor && actorId(session) > 0 && !!actorName(session);
+}
+
 function normalizeChannel(value) {
     return String(value || 'local').toLowerCase().replace(/[^a-z0-9_:-]/g, '_').slice(0, 32) || 'local';
 }
@@ -19,11 +32,10 @@ function normalizeText(value) {
 function validPair(playerSession, botSession) {
     return !!(
         playerSession?.actor &&
-        botSession?.actor &&
         actorId(playerSession) > 0 &&
         actorId(botSession) > 0 &&
         !String(playerSession.accountId || '').startsWith('bot_') &&
-        String(botSession.accountId || '').startsWith('bot_')
+        isBotIdentity(botSession)
     );
 }
 
@@ -70,7 +82,7 @@ function beginTurn(input = {}) {
         meta: {
             source: input.source || channel,
             playerName: input.playerSession.actor.fetchName?.() || null,
-            botName: input.botSession.actor.fetchName?.() || null
+            botName: actorName(input.botSession)
         }
     }).then((stored) => BotConversationStore.context(playerId, botId, {
         limit: input.recentTurns || DEFAULT_RECENT_TURNS

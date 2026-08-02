@@ -53,6 +53,8 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 }
 
 const World = {
+    waitForBotSession,
+
     init() {
         this.user  = { sessions : [], revision: 0 };
         this.npc   = { spawns   : [], grid: {}, nextId: 1000000 };

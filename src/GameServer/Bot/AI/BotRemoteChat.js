@@ -3,11 +3,24 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 
-const cooldowns = new Map();
+// A player can send several tells while the provider is answering.  Keep the
+// pair ordered so each request sees the previous answer in conversation
+// history, but do not add an artificial delay or discard any message.
+const queues = new Map();
 
 function config() {
-    return OpenRouterGateway.config({ maxTokens: 120 });
+    return OpenRouterGateway.config({ maxTokens: 160, timeoutMs: 0 });
+}
+
+function enqueue(key, work) {
+    const previous = queues.get(key) || Promise.resolve();
+    const current = previous.catch(() => {}).then(work);
+    queues.set(key, current);
+    return current.finally(() => {
+        if (queues.get(key) === current) queues.delete(key);
+    });
 }
 
 function playerSummary(playerSession) {
@@ -31,11 +44,13 @@ function stateSummary(state) {
         id: state.characterId,
         name: state.name,
         level: state.level,
+        classId: state.classId || state.stats?.classId || null,
         phase: state.phase,
         activity: state.activity,
         homeRegion: state.homeRegion,
         currentRegion: state.currentRegion,
         spotId: state.spotId,
+        loc: state.loc || null,
         hpPct: state.vitals?.maxHp ? Math.round((state.vitals.hp / state.vitals.maxHp) * 100) : null,
         mpPct: state.vitals?.maxMp ? Math.round((state.vitals.mp / state.vitals.maxMp) * 100) : null,
         adena: state.adena,
@@ -59,7 +74,7 @@ function personaForState(state) {
 }
 
 function compactEvents(events) {
-    return events.map((event) => ({
+    return (events || []).map((event) => ({
         type: event.type,
         summary: event.summary,
         ageSec: event.createdAt ? Math.max(0, Math.round((Date.now() - event.createdAt) / 1000)) : null
@@ -110,13 +125,13 @@ function schema() {
     return {
         type: 'object',
         properties: {
+            action: {
+                type: 'string',
+                enum: ['say', 'none', 'come_to_player']
+            },
             reply: {
                 type: 'string',
-                description: 'Short in-character private reply. Long factual lists may be up to 360 chars.'
-            },
-            intent: {
-                type: 'string',
-                enum: ['none', 'open_to_party', 'decline_party', 'keep_hunting', 'resting', 'traveling']
+                description: 'Short in-character private reply. Do not claim arrival until the server confirms it.'
             },
             reason: {
                 type: 'string',
@@ -128,28 +143,40 @@ function schema() {
                 maximum: 1
             }
         },
-        required: ['reply', 'intent', 'reason', 'confidence'],
+        required: ['action', 'reply', 'reason', 'confidence'],
         additionalProperties: false
     };
 }
 
 function systemPrompt() {
     return [
-        'You are replying as one Lineage 2 bot in private chat.',
-        'Use only the provided state, persona, social memory, availability, and life events.',
+        'You are replying as one Lineage 2 bot in a private chat while the bot is cold/off-screen.',
+        'The state below is a persistent snapshot of the bot life, not a live actor. Use only the provided state, persona, social memory, availability, conversation, and life events.',
         'The persona shapes tone and high-level preferences, never facts, safety, or available actions.',
-        'Do not invent items, rewards, locations, levels, party membership, or combat results.',
+        'Do not invent items, rewards, locations, levels, party membership, combat results, or live observations.',
         'Keep the reply short, grounded, and in character.',
-        'You may express a high-level intent, but server code decides all real actions.'
+        'Use action=say for ordinary conversation and action=none when no reply is needed.',
+        'Use action=come_to_player only when the player explicitly asks this bot to come, arrive, teleport, or meet them here.',
+        'The server will validate availability and perform the arrival. Never claim that the bot arrived or joined a party before the server confirms the action.',
+        'A cold chat never activates the bot by itself unless the validated action is come_to_player.'
     ].join(' ');
 }
 
-async function requestLlmReply(payload, cfg, sessionId) {
+async function requestLlmReply(payload, cfg, turn, state, playerSession) {
+    const playerId = playerSession.actor.fetchId();
+    const botId = Number(state.characterId || 0);
+    const sessionId = `cold-bot:${botId}:player:${playerId}`;
     const result = await OpenRouterGateway.request({
         config: cfg,
-        circuitKey: 'cold',
-        requestId: `cold-${sessionId || 'bot'}-${Date.now()}`,
+        circuitKey: `cold-chat:${botId}:${playerId}`,
+        circuitBreaker: false,
+        timeoutMs: 0,
+        requestId: turn.turnId,
         sessionId,
+        source: 'cold_chat',
+        botId,
+        playerId,
+        turnId: turn.turnId,
         messages: [
             { role: 'system', content: systemPrompt() },
             { role: 'user', content: JSON.stringify(payload) }
@@ -171,94 +198,176 @@ async function requestLlmReply(payload, cfg, sessionId) {
 
     const parsed = result.data;
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
-    const reply = BotChatText.normalize(parsed.reply).slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
+    const reply = BotChatText.normalize(parsed.reply)
+        .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
     if (!reply || Number(parsed.confidence || 0) < 0.35) return null;
 
     return {
         reply,
-        intent: parsed.intent || 'none',
+        action: parsed.action || 'say',
         reason: parsed.reason || 'llm',
+        confidence: Number(parsed.confidence || 0),
         llm: true,
         usage: result.usage,
         llmTelemetry: result.telemetry
     };
 }
 
+function playerLocation(playerSession) {
+    const actor = playerSession?.actor;
+    if (!actor) return null;
+    return {
+        locX: actor.fetchLocX(),
+        locY: actor.fetchLocY(),
+        locZ: actor.fetchLocZ()
+    };
+}
+
+function activateNearPlayer(playerSession, state) {
+    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const World = invoke('GameServer/World/World');
+    const availability = BotAvailability.evaluateState(playerSession, state, { ignoreDistance: true });
+    if (!availability.available) {
+        return Promise.resolve({ ok: false, reason: availability.reason, availability });
+    }
+
+    return PopulationService.requestActivation(state, 'remote_chat_come', {
+        playerLoc: playerLocation(playerSession),
+        forceNearPlayer: true,
+        readyOnActivation: true,
+        recoverOnActivation: true
+    }).then((activation) => {
+        if (!activation?.ok) return { ok: false, reason: activation?.reason || 'activation_failed' };
+        return World.waitForBotSession(BotManager, state.name, 40).then((targetSession) => {
+            if (!targetSession) return { ok: false, reason: 'activation_session_timeout' };
+
+            const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
+            ChatArrivalState.start(targetSession, playerSession);
+            return { ok: true, targetSession, activation };
+        });
+    });
+}
+
+function recordReply(playerSession, state, turn, result, extra = {}) {
+    if (!result?.reply) return Promise.resolve(false);
+    return BotConversationService.recordBotReply({
+        playerSession,
+        botSession: state,
+        turnId: turn.turnId,
+        channel: turn.channel,
+        text: result.reply,
+        requestId: turn.turnId,
+        delivered: true,
+        meta: {
+            action: result.action || 'say',
+            reason: result.reason || null,
+            providerOutcome: result.providerOutcome || null,
+            ...extra
+        }
+    });
+}
+
+function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
+    const cfg = config();
+    const availability = BotAvailability.evaluateState(playerSession, state);
+    const fallback = {
+        ok: true,
+        reply: fallbackReply(state, availability, text),
+        action: 'say',
+        reason: 'fallback'
+    };
+    const begin = BotConversationService.beginTurn({
+        playerSession,
+        botSession: state,
+        text,
+        channel,
+        source: 'cold_chat'
+    });
+
+    return Promise.all([
+        begin,
+        LifeEvents.recentForBot(state.characterId, 5)
+    ]).then(([turn, events]) => {
+        const memory = BotSocialMemory.getSnapshot(playerSession, state);
+        const payload = {
+            event: 'cold_chat',
+            playerMessage: String(text || '').slice(0, 240),
+            player: playerSummary(playerSession),
+            bot: stateSummary(state),
+            social: {
+                relationship: BotSocialMemory.relationship(memory),
+                trust: memory.trust,
+                familiarity: memory.familiarity,
+                groupRuns: memory.groupRuns,
+                tradesCompleted: memory.tradesCompleted
+            },
+            availability: {
+                available: availability.available,
+                reason: availability.reason,
+                reasonText: availability.reasonText
+            },
+            recentEvents: compactEvents(events),
+            conversation: turn.context,
+            constraints: {
+                privateReply: true,
+                remainColdUnlessCome: true,
+                noCombatMicromanagement: true,
+                noInventedFacts: true
+            }
+        };
+
+        const llmReady = cfg.enabled && !!cfg.apiKey;
+        if (!llmReady) return recordReply(playerSession, state, turn, fallback).then(() => fallback);
+
+        return requestLlmReply(payload, cfg, turn, state, playerSession).then((result) => {
+            if (result?.providerFailure) {
+                state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                const failed = {
+                    ...fallback,
+                    providerOutcome: result.providerOutcome,
+                    usage: result.usage || null,
+                    llmTelemetry: result.llmTelemetry || null
+                };
+                return recordReply(playerSession, state, turn, failed).then(() => failed);
+            }
+            const reply = result || fallback;
+            if (reply.action === 'come_to_player') {
+                return activateNearPlayer(playerSession, state).then((actionResult) => {
+                    const confirmed = actionResult.ok;
+                    const actionReply = confirmed
+                        ? reply
+                        : {
+                            ...fallback,
+                            reason: `come_to_player:${actionResult.reason || 'rejected'}`,
+                            providerOutcome: 'action_rejected'
+                        };
+                    return recordReply(playerSession, state, turn, actionReply, {
+                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                    }).then(() => ({
+                        ...actionReply,
+                        action: confirmed ? 'come_to_player' : 'say',
+                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                    }));
+                });
+            }
+            return recordReply(playerSession, state, turn, reply).then(() => reply);
+        });
+    });
+}
+
 const BotRemoteChat = {
-    replyForState(playerSession, state, text) {
+    replyForState(playerSession, state, text, channel = 'client_tell') {
         if (!playerSession?.actor || !state) {
             return Promise.resolve({ ok: false, reason: 'missing_context' });
         }
 
-        const cfg = config();
         const key = `${playerSession.actor.fetchId()}:${state.characterId}`;
-        const lastAt = cooldowns.get(key) || 0;
-        if (lastAt && Date.now() - lastAt < cfg.remoteChatCooldownMs) {
-            return Promise.resolve({
-                ok: true,
-                reply: `Give me a moment, I'm still sorting things out.`,
-                intent: 'none',
-                reason: 'cooldown'
+        return enqueue(key, () => replyForStateNow(playerSession, state, text, channel))
+            .then((result) => {
+                BotSocialMemory.recordEvent(playerSession, state, 'chat', result.reason || 'remote_chat');
+                return result;
             });
-        }
-        cooldowns.set(key, Date.now());
-
-        const availability = BotAvailability.evaluateState(playerSession, state);
-        return LifeEvents.recentForBot(state.characterId, 5).then((events) => {
-            const memory = BotSocialMemory.getSnapshot(playerSession, state);
-            const payload = {
-                event: 'remote_chat',
-                playerMessage: String(text || '').slice(0, 240),
-                player: playerSummary(playerSession),
-                bot: stateSummary(state),
-                social: {
-                    relationship: BotSocialMemory.relationship(memory),
-                    trust: memory.trust,
-                    familiarity: memory.familiarity,
-                    groupRuns: memory.groupRuns,
-                    tradesCompleted: memory.tradesCompleted
-                },
-                availability: {
-                    available: availability.available,
-                    reason: availability.reason,
-                    reasonText: availability.reasonText
-                },
-                recentEvents: compactEvents(events),
-                constraints: {
-                    privateReply: true,
-                    noActivation: true,
-                    noCombatMicromanagement: true,
-                    noInventedFacts: true
-                }
-            };
-
-            const fallback = {
-                ok: true,
-                reply: fallbackReply(state, availability, text),
-                intent: 'none',
-                reason: 'fallback'
-            };
-
-            const llmReady = cfg.enabled && !!cfg.apiKey;
-            if (!llmReady) return fallback;
-
-            const sessionId = `cold-bot:${state.characterId}:player:${playerSession.actor.fetchId()}`;
-            return requestLlmReply(payload, cfg, sessionId).then((result) => {
-                if (result?.providerFailure) {
-                    state.lastRemoteChatTelemetry = result.llmTelemetry || null;
-                    return {
-                        ...fallback,
-                        providerOutcome: result.providerOutcome,
-                        usage: result.usage || null,
-                        llmTelemetry: result.llmTelemetry || null
-                    };
-                }
-                return result || fallback;
-            });
-        }).then((result) => {
-            BotSocialMemory.recordEvent(playerSession, state, 'chat', result.reason || 'remote_chat');
-            return result;
-        });
     }
 };
 

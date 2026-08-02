@@ -458,6 +458,10 @@ const BotBrain = {
             debugSkip(session, cfg, `event_not_chat:${event}`);
             return false;
         }
+        if (event !== 'player_chat' && cfg.backgroundInferenceEnabled !== true) {
+            debugSkip(session, cfg, 'background_inference_disabled');
+            return false;
+        }
         if (!cfg.enabled) {
             debugSkip(session, cfg, 'disabled');
             return false;
