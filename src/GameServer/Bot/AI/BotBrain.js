@@ -6,6 +6,7 @@ const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
+const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
 
 function config() {
     return OpenRouterGateway.config({ maxTokens: 160 });
@@ -212,8 +213,9 @@ function systemPrompt() {
         'You are the slow high-level brain for one Lineage 2 bot.',
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
         'Only choose small, high-level social or intent changes.',
-        'React only when a real visible player writes to this bot or nearby bots.',
+        'For player-facing events, react only when a real visible player writes to this bot or nearby bots; state_change is a bounded server signal.',
         'For player_chat, react only if the message is addressed to this bot, nearby bots, or clearly asks for help.',
+        'For state_change, treat the player-visible state transition as a prompt to make at most one small high-level choice; do not narrate private internal events as facts.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
@@ -378,7 +380,7 @@ const BotBrain = {
         const cfg = config();
         const bot = session.actor;
         if (!bot) return false;
-        if (event !== 'player_chat') {
+        if (!ALLOWED_EVENTS.has(event)) {
             debugSkip(session, cfg, `event_not_chat:${event}`);
             return false;
         }
@@ -434,7 +436,7 @@ const BotBrain = {
             return false;
         }
 
-        if (event !== 'player_chat' && Math.random() > 0.12) {
+        if (event === 'state_change' && Math.random() > 0.12) {
             debugSkip(session, cfg, 'ambient_sample_skip');
             return false;
         }

@@ -8,6 +8,7 @@ const tests = [
     'tests/test_bot_ai_visibility.js',
     'tests/test_openrouter_gateway.js',
     'tests/test_bot_inference_budget.js',
+    'tests/test_bot_brain_state_change.js',
     'tests/test_bot_conversation_store.js',
     'tests/test_bot_dialogue_arbiter.js',
     'tests/test_hot_bot_conversation_flow.js',
