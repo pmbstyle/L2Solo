@@ -9,6 +9,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -347,6 +348,7 @@ const BotStatus = {
             nearby: nearbySnapshot(bot),
             trade: tradeSnapshot(session, bot),
             ambient,
+            inference: BotInferenceBudget.snapshot(session),
             persona: personaSnapshot(session),
             policy: HotBotPolicyOverlay.status(session),
             social: session.socialSummary || null,
@@ -369,6 +371,7 @@ const BotStatus = {
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
         const ambient = status.ambient ? ` mood=${status.ambient.mood}/${status.ambient.intent}` : '';
+        const inference = status.inference ? ` llm=${status.inference.requests}/${status.inference.maxRequests}` : '';
         const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
         const targetDecision = status.decisions?.target ? ` targetScore=${status.decisions.target.score}` : '';
         const combatDecision = status.decisions?.combat
@@ -382,7 +385,7 @@ const BotStatus = {
         const buffs = status.buffs?.needsRefresh ? ' buffs=refresh' : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${ambient}${social}${roleDecision}${targetDecision}${combatDecision}${pvpDecision}${build}${path}${buffs}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${ambient}${inference}${social}${roleDecision}${targetDecision}${combatDecision}${pvpDecision}${build}${path}${buffs}${blockers}`;
     }
 };
 

@@ -2,6 +2,8 @@ const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
 
@@ -253,6 +255,10 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
     };
 }
 
+function estimatePromptTokens(payload) {
+    try { return Math.max(1, Math.ceil(JSON.stringify(payload).length / 4)); } catch (_) { return 1; }
+}
+
 async function requestDecision(payload, cfg, session, requestContext, visiblePlayers) {
     const botId = session?.actor?.fetchId?.() || session?.accountId || 'unknown';
     const playerId = requestContext?.playerSession?.actor?.fetchId?.() ||
@@ -342,6 +348,8 @@ function fallbackReply(session, requestContext, outcome) {
     const plan = session.plan || 'hunting';
     const reply = outcome === 'timeout'
         ? 'Give me a moment. I am still sorting things out.'
+        : String(outcome || '').startsWith('inference_budget_')
+            ? 'Give me a moment. I have a lot to sort through right now.'
         : `I am ${plan} right now.`;
 
     BotManager.botTell(session, playerSession, reply);
@@ -437,8 +445,32 @@ const BotBrain = {
             session.lastBrainThinkAt = Date.now();
         }
 
-        session.brainInFlight = true;
         const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
+        const admission = BotInferenceBudget.reserve(session, {
+            event,
+            estimatedPromptTokens: requestContext?.assembledContext?.estimatedTokens || estimatePromptTokens(payload),
+            maxCompletionTokens: cfg.maxTokens
+        });
+        if (!admission.ok) {
+            session.lastBrainBudget = {
+                ...BotInferenceBudget.status(session),
+                deniedReason: admission.reason,
+                retryAfterMs: admission.retryAfterMs,
+                at: Date.now()
+            };
+            BotEventJournal.record({
+                botId: bot.fetchId?.(),
+                eventType: 'llm_budget',
+                summary: `${bot.fetchName?.() || 'bot'} inference denied: ${admission.reason}`,
+                dedupeKey: `deny:${admission.reason}`,
+                meta: { reason: admission.reason, retryAfterMs: admission.retryAfterMs }
+            }).catch(() => {});
+            debugSkip(session, cfg, admission.reason);
+            fallbackReply(session, requestContext, admission.reason);
+            return true;
+        }
+
+        session.brainInFlight = true;
         if (requestContext?.assembledContext?.telemetry) {
             session.lastBrainContextTelemetry = {
                 ...requestContext.assembledContext.telemetry,
@@ -452,7 +484,9 @@ const BotBrain = {
             utils.infoSuccess('BotBrain', '%s requesting %s decision via %s', bot.fetchName(), event, cfg.model);
         }
 
+        let providerResult = null;
         requestDecision(payload, cfg, session, requestContext, visiblePlayers).then((result) => {
+            providerResult = result;
             rememberTelemetry(session, result);
             if (result?.ok === false) {
                 fallbackReply(session, requestContext, result.reason);
@@ -463,6 +497,8 @@ const BotBrain = {
             utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
             fallbackReply(session, requestContext, 'provider_error');
         }).finally(() => {
+            BotInferenceBudget.settle(admission.reservation, providerResult?.usage);
+            session.lastBrainBudget = BotInferenceBudget.status(session);
             session.brainInFlight = false;
             const pending = session.pendingBrainTurn;
             session.pendingBrainTurn = null;

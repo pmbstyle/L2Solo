@@ -17,6 +17,10 @@ const DEFAULTS = Object.freeze({
     requireProviderParameters: true,
     circuitBreakerFailureThreshold: 3,
     circuitBreakerOpenMs: 30000,
+    hotBotBudgetEnabled: true,
+    hotBotMaxRequestsPerMinute: 6,
+    hotBotPromptTokenBudgetPerMinute: 12000,
+    hotBotCompletionTokenBudgetPerMinute: 2400,
     debug: false
 });
 
@@ -72,6 +76,10 @@ function config(overrides = {}) {
             DEFAULTS.circuitBreakerFailureThreshold
         ),
         circuitBreakerOpenMs: num(optn.circuitBreakerOpenMs, DEFAULTS.circuitBreakerOpenMs),
+        hotBotBudgetEnabled: bool(optn.hotBotBudgetEnabled, DEFAULTS.hotBotBudgetEnabled),
+        hotBotMaxRequestsPerMinute: num(optn.hotBotMaxRequestsPerMinute, DEFAULTS.hotBotMaxRequestsPerMinute),
+        hotBotPromptTokenBudgetPerMinute: num(optn.hotBotPromptTokenBudgetPerMinute, DEFAULTS.hotBotPromptTokenBudgetPerMinute),
+        hotBotCompletionTokenBudgetPerMinute: num(optn.hotBotCompletionTokenBudgetPerMinute, DEFAULTS.hotBotCompletionTokenBudgetPerMinute),
         debug: bool(optn.debug, DEFAULTS.debug)
     };
 
@@ -96,6 +104,10 @@ function config(overrides = {}) {
             num(overrides.circuitBreakerFailureThreshold, source.circuitBreakerFailureThreshold)
         ),
         circuitBreakerOpenMs: Math.max(0, num(overrides.circuitBreakerOpenMs, source.circuitBreakerOpenMs)),
+        hotBotBudgetEnabled: bool(overrides.hotBotBudgetEnabled, source.hotBotBudgetEnabled),
+        hotBotMaxRequestsPerMinute: Math.max(1, num(overrides.hotBotMaxRequestsPerMinute, source.hotBotMaxRequestsPerMinute)),
+        hotBotPromptTokenBudgetPerMinute: Math.max(240, num(overrides.hotBotPromptTokenBudgetPerMinute, source.hotBotPromptTokenBudgetPerMinute)),
+        hotBotCompletionTokenBudgetPerMinute: Math.max(64, num(overrides.hotBotCompletionTokenBudgetPerMinute, source.hotBotCompletionTokenBudgetPerMinute)),
         debug: bool(overrides.debug, source.debug)
     };
 }

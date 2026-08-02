@@ -276,6 +276,7 @@ function compactStatus(session, status, text = '', options = {}) {
         roleDecision: status.roleDecision || null,
         trade: status.trade || null,
         ambient: status.ambient || null,
+        inference: status.inference || null,
         policy: status.policy || null,
         persona: status.persona || null,
         social: status.social || null
