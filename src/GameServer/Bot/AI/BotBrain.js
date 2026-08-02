@@ -334,6 +334,27 @@ function compactActionResult(result) {
     };
 }
 
+function orderedConversation(conversation) {
+    if (!conversation?.recentTurns?.length) return conversation;
+    const groups = new Map();
+    conversation.recentTurns.forEach((turn, index) => {
+        const key = turn.turnId || `anonymous:${index}`;
+        const group = groups.get(key) || { firstIndex: index, turns: [] };
+        group.turns.push({ turn, index });
+        groups.set(key, group);
+    });
+    const recentTurns = [...groups.values()]
+        .sort((left, right) => left.firstIndex - right.firstIndex)
+        .flatMap((group) => group.turns
+            .sort((left, right) => {
+                const leftRole = left.turn.role === 'player' ? 0 : 1;
+                const rightRole = right.turn.role === 'player' ? 0 : 1;
+                return leftRole - rightRole || left.index - right.index;
+            })
+            .map(({ turn }) => turn));
+    return { ...conversation, recentTurns };
+}
+
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
@@ -533,6 +554,8 @@ const BotBrain = {
             return false;
         }
 
+        if (requestContext && !requestContext.enqueuedAt) requestContext.enqueuedAt = Date.now();
+
         const cooldown = cfg.cooldownMs;
         const lastAt = session.lastBrainThinkAt;
         if (event !== 'player_chat' && lastAt && requestContext?.queued !== true && Date.now() - lastAt < cooldown) {
@@ -635,7 +658,7 @@ const BotBrain = {
                     // previous bot reply may finish while this request waits
                     // in the FIFO. Refresh the bounded context at dequeue so
                     // the next prompt sees the latest delivered turn.
-                    if (pending.event === 'player_chat' && requestContext.playerSession) {
+                     if (pending.event === 'player_chat' && requestContext.playerSession) {
                         try {
                             const fresh = await BotConversationService.contextFor(
                                 requestContext.playerSession,
@@ -644,16 +667,19 @@ const BotBrain = {
                             const previousCount = requestContext.conversation?.recentTurns?.length || 0;
                             if ((fresh?.recentTurns?.length || 0) >= previousCount) {
                                 requestContext.conversation = fresh;
-                                requestContext.assembledContext = await BotContextAssembler.assemble({
-                                    session,
-                                    status: pending.status,
-                                    text: pending.text,
-                                    requestContext
-                                });
                             }
                         } catch (_) {
                             // Keep the ingress snapshot if persistence is
                             // temporarily unavailable.
+                        }
+                        requestContext.conversation = orderedConversation(requestContext.conversation);
+                        if (requestContext.assembledContext) {
+                            requestContext.assembledContext = await BotContextAssembler.assemble({
+                                session,
+                                status: pending.status,
+                                text: pending.text,
+                                requestContext
+                            });
                         }
                     }
                     const started = BotBrain.maybeThink(
@@ -720,7 +746,10 @@ const BotBrain = {
                 turnId,
                 requestId: requestContext?.requestId || turnId,
                 source: requestContext?.source || event,
-                sessionId: conversationSessionId(session, requestContext)
+                sessionId: conversationSessionId(session, requestContext),
+                queueWaitMs: requestContext?.enqueuedAt
+                    ? Math.max(0, Date.now() - requestContext.enqueuedAt)
+                    : 0
             },
             runTurn,
             'agent'

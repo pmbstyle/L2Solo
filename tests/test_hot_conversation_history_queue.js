@@ -92,7 +92,7 @@ async function main() {
         const secondPayload = JSON.parse(requests[1].messages[1].content);
         assert.deepStrictEqual(
             secondPayload.conversation.recentTurns.map((turn) => turn.text),
-            ['first message', 'second message', 'first reply']
+            ['first message', 'first reply', 'second message']
         );
         console.log('Hot conversation queue history checks passed');
     } finally {
