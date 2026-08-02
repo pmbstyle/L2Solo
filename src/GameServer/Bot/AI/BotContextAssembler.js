@@ -19,12 +19,31 @@ function trimText(value, max) {
 }
 
 function compactRecentTurns(turns, max = 8) {
-    return (turns || []).slice(-max).map((turn) => ({
-        role: turn.role,
-        channel: turn.channel,
-        text: trimText(turn.text, 240),
-        createdAt: turn.createdAt
-    }));
+    return (turns || []).slice(-max).map((turn) => {
+        const compact = {
+            role: turn.role,
+            channel: turn.channel,
+            text: trimText(turn.text, 240),
+            createdAt: turn.createdAt
+        };
+        const meta = compactTurnMeta(turn.meta);
+        if (meta) compact.meta = meta;
+        return compact;
+    });
+}
+
+function compactTurnMeta(meta = {}) {
+    const result = {};
+    ['action', 'reason', 'providerOutcome', 'serverApplied'].forEach((key) => {
+        if (meta[key] !== undefined && meta[key] !== null) result[key] = meta[key];
+    });
+    if (meta.actionResult && typeof meta.actionResult === 'object') {
+        result.actionResult = {
+            ok: meta.actionResult.ok === true,
+            reason: meta.actionResult.reason || null
+        };
+    }
+    return Object.keys(result).length ? result : null;
 }
 
 function compactJournal(events, max = 10) {
@@ -85,7 +104,6 @@ async function assemble(input = {}) {
 
     const conversation = requestContext.conversation || null;
     const fragments = [
-        { id: 'bot_state', priority: 100, value: bot },
         {
             id: 'conversation_summary',
             priority: 95,
@@ -104,7 +122,9 @@ async function assemble(input = {}) {
     ].filter((fragment) => fragment.value !== null && fragment.value !== undefined);
 
     const selected = [];
-    let used = 0;
+    // `bot` is a canonical payload field (rather than a duplicated fragment),
+    // but it still consumes the same prompt budget.
+    let used = estimateTokens(bot);
     fragments.sort((a, b) => b.priority - a.priority).forEach((fragment) => {
         const cost = estimateTokens(fragment.value);
         if (used + cost <= budget) {
@@ -126,14 +146,14 @@ async function assemble(input = {}) {
     // The status is kept as a separate compatibility field, but the bounded
     // fragments are the canonical prompt input. Never let a malformed fixture
     // or a long player name break the hard cap.
-    let serializedCost = estimateTokens(selected.map((fragment) => ({ id: fragment.id, value: fragment.value })));
+    let serializedCost = estimateTokens({ bot, fragments: selected.map((fragment) => ({ id: fragment.id, value: fragment.value })) });
     if (serializedCost > hardMaxTokens) {
         const overflow = serializedCost - hardMaxTokens;
         const last = selected[selected.length - 1];
         if (last) {
             const fitted = fitFragment(last, Math.max(48, estimateTokens(last.value) - overflow));
             selected[selected.length - 1] = fitted;
-            serializedCost = estimateTokens(selected.map((fragment) => ({ id: fragment.id, value: fragment.value })));
+            serializedCost = estimateTokens({ bot, fragments: selected.map((fragment) => ({ id: fragment.id, value: fragment.value })) });
         }
     }
 

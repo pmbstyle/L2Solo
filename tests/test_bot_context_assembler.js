@@ -35,7 +35,7 @@ async function main() {
                 }
             }
         });
-        assert(assembled.fragments.some((fragment) => fragment.id === 'bot_state'));
+        assert(assembled.bot?.name === 'BoundedBot', 'authoritative bot state should remain a canonical payload field');
         assert(assembled.fragments.some((fragment) => fragment.id === 'recent_dialogue'));
         assert(assembled.fragments.some((fragment) => fragment.id === 'authoritative_events'));
         assert(assembled.telemetry.skillIntent, 'skill intent should include the skill fragment path');

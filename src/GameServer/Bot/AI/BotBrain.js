@@ -210,19 +210,18 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 description: 'Echo the toolContext.worldRevision when selecting a mutating action.'
             }
         },
-        required: ['action', 'reply', 'targetPlayerName', 'spotId', 'buffType', 'reason', 'confidence'],
+        required: ['action', 'reply', 'reason', 'confidence'],
         additionalProperties: false
     };
 }
 
 function systemPrompt() {
     return [
-        'You are the slow high-level brain for one Lineage 2 bot.',
+        'You are the interactive high-level dialogue brain for one Lineage 2 bot.',
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
-        'Only choose small, high-level social or intent changes.',
-        'For player-facing events, react only when a real visible player writes to this bot or nearby bots; state_change is a bounded server signal.',
-        'For player_chat, react only if the message is addressed to this bot, nearby bots, or clearly asks for help.',
-        'For state_change, treat the player-visible state transition as a prompt to make at most one small high-level choice; do not narrate private internal events as facts.',
+        'Only choose one small, high-level social or intent change for the explicit player message in this turn.',
+        'Never invent a background request, ambient prompt, player intent, or private internal event.',
+        'A player-facing reply must be grounded in the authoritative bot state and conversation context.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
@@ -232,7 +231,7 @@ function systemPrompt() {
         'Equipment tools may only use safe candidates from actual inventory and native persistence. Never equip quest, incompatible, over-grade, or non-upgrade items.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
-        'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action.',
+        'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
         'Resource-gift trade tools can open a native window only with the current party leader; negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
@@ -285,8 +284,7 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
     const botId = session?.actor?.fetchId?.() || session?.accountId || 'unknown';
     const playerId = requestContext?.playerSession?.actor?.fetchId?.() ||
         requestContext?.playerId ||
-        visiblePlayers?.[0]?.id ||
-        'nearby';
+        null;
     const result = await OpenRouterGateway.request({
         config: cfg,
         circuitKey: requestContext?.conversationTurn
@@ -295,7 +293,7 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         circuitBreaker: requestContext?.conversationTurn ? false : true,
         timeoutMs: requestContext?.conversationTurn ? 0 : cfg.timeoutMs,
         requestId: requestContext?.requestId || `hot-${botId}-${Date.now()}`,
-        sessionId: `hot-bot:${botId}:player:${playerId}`,
+        sessionId: `hot-bot:${botId}:player:${playerId || 'none'}`,
         source: requestContext?.source || requestContext?.channel || 'hot_brain',
         botId,
         playerId,
@@ -334,7 +332,7 @@ function recordConversationReply(session, decision, result, requestContext) {
         channel: turn.channel,
         text: reply,
         requestId: requestContext.requestId,
-        meta: { action, reason: result.reason || null }
+        meta: { action, reason: result.reason || null, serverApplied: result.applied === true }
     }).catch(() => {});
 }
 
@@ -625,9 +623,10 @@ const BotBrain = {
                 rememberTelemetry(session, providerResult);
                 if (providerResult?.ok === false) {
                     fallbackReply(session, requestContext, providerResult.reason);
-                    return;
+                    return providerResult;
                 }
-                applyDecision(session, providerResult, visiblePlayers, requestContext);
+                const applied = applyDecision(session, providerResult, visiblePlayers, requestContext);
+                return { ...providerResult, applied };
             } catch (err) {
                 providerResult = {
                     ok: false,
@@ -637,6 +636,7 @@ const BotBrain = {
                 recordInferenceEvent(session, event, providerResult, requestContext);
                 utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
                 fallbackReply(session, requestContext, 'provider_error');
+                return providerResult;
             } finally {
                 finishTurn();
             }

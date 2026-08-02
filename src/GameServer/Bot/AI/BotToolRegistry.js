@@ -107,11 +107,14 @@ function availableNames(session = null) {
 }
 
 function audit(context, outcome, reason, meta = {}) {
+    const argumentsForTrace = { ...(context.decision || {}) };
+    delete argumentsForTrace.usage;
+    delete argumentsForTrace.llmTelemetry;
     const observation = LangfuseTracing.startObservation(
         `bot.tool.${text(context.decision?.action || 'unknown', 64)}`,
         {
             action: context.decision?.action || null,
-            arguments: context.decision || null,
+            arguments: argumentsForTrace,
             expectedWorldRevision: context.expectedWorldRevision || null
         },
         {

@@ -29,6 +29,22 @@ function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim().slice(0, BotConversationStore.MAX_TEXT_CHARS);
 }
 
+function conversationMeta(meta) {
+    if (!meta || typeof meta !== 'object') return null;
+    const compact = {};
+    ['action', 'reason', 'providerOutcome'].forEach((key) => {
+        if (meta[key]) compact[key] = meta[key];
+    });
+    if (meta.serverApplied === true) compact.serverApplied = true;
+    if (meta.actionResult && typeof meta.actionResult === 'object') {
+        compact.actionResult = {
+            ok: meta.actionResult.ok === true,
+            reason: meta.actionResult.reason || null
+        };
+    }
+    return Object.keys(compact).length ? compact : null;
+}
+
 function validPair(playerSession, botSession) {
     return !!(
         playerSession?.actor &&
@@ -48,13 +64,18 @@ function nextTurnId(input = {}) {
 function contextView(context) {
     return {
         summary: context?.summary || null,
-        recentTurns: (context?.recentTurns || []).map((turn) => ({
-            turnId: turn.turnId,
-            role: turn.role,
-            channel: turn.channel,
-            text: turn.text,
-            createdAt: turn.createdAt
-        })),
+        recentTurns: (context?.recentTurns || []).map((turn) => {
+            const compact = {
+                turnId: turn.turnId,
+                role: turn.role,
+                channel: turn.channel,
+                text: turn.text,
+                createdAt: turn.createdAt
+            };
+            const meta = conversationMeta(turn.meta);
+            if (meta) compact.meta = meta;
+            return compact;
+        }),
         version: Number(context?.version || 0)
     };
 }

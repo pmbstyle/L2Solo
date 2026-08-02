@@ -11,13 +11,34 @@ function pairKey(playerId, botId) {
     return `${Number(playerId)}:${Number(botId)}`;
 }
 
+function compactMeta(meta) {
+    if (!meta || typeof meta !== 'object') return null;
+    const result = {};
+    ['action', 'reason', 'providerOutcome'].forEach((key) => {
+        if (meta[key]) result[key] = meta[key];
+    });
+    if (meta.serverApplied === true) result.serverApplied = true;
+    if (meta.actionResult && typeof meta.actionResult === 'object') {
+        result.actionResult = {
+            ok: meta.actionResult.ok === true,
+            reason: meta.actionResult.reason || null
+        };
+    }
+    return Object.keys(result).length ? result : null;
+}
+
 function compactTurns(turns) {
-    return (turns || []).map((turn) => ({
-        id: turn.id,
-        role: turn.role,
-        channel: turn.channel,
-        text: turn.text
-    }));
+    return (turns || []).map((turn) => {
+        const compact = {
+            id: turn.id,
+            role: turn.role,
+            channel: turn.channel,
+            text: turn.text
+        };
+        const meta = compactMeta(turn.meta);
+        if (meta) compact.meta = meta;
+        return compact;
+    });
 }
 
 function estimateTokens(value) {
@@ -86,7 +107,7 @@ async function summarize(input = {}) {
         const messages = [
             {
                 role: 'system',
-                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
+                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, refusal, fallback, or failed action did not happen. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
             },
             { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
         ];
@@ -101,9 +122,14 @@ async function summarize(input = {}) {
         try {
             result = await OpenRouterGateway.request({
                 config: cfg,
-                circuitKey: 'hot-summary',
+                circuitKey: `conversation-summary:${botId}:${playerId}`,
+                circuitBreaker: false,
+                timeoutMs: 0,
                 requestId: input.requestId || `summary-${botId}-${playerId}-${Date.now()}`,
                 sessionId: `hot-summary:${botId}:player:${playerId}`,
+                source: 'conversation_summary',
+                botId,
+                playerId,
                 messages,
                 responseSchema: schema()
             });

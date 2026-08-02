@@ -4,6 +4,7 @@ const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 // A player can send several tells while the provider is answering.  Keep the
 // pair ordered so each request sees the previous answer in conversation
@@ -224,29 +225,43 @@ function playerLocation(playerSession) {
 }
 
 function activateNearPlayer(playerSession, state) {
-    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-    const BotManager = invoke('GameServer/Bot/BotManager');
-    const World = invoke('GameServer/World/World');
-    const availability = BotAvailability.evaluateState(playerSession, state, { ignoreDistance: true });
-    if (!availability.available) {
-        return Promise.resolve({ ok: false, reason: availability.reason, availability });
-    }
+    const run = () => {
+        const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const World = invoke('GameServer/World/World');
+        const availability = BotAvailability.evaluateState(playerSession, state, { ignoreDistance: true });
+        if (!availability.available) {
+            return Promise.resolve({ ok: false, reason: availability.reason, availability });
+        }
 
-    return PopulationService.requestActivation(state, 'remote_chat_come', {
-        playerLoc: playerLocation(playerSession),
-        forceNearPlayer: true,
-        readyOnActivation: true,
-        recoverOnActivation: true
-    }).then((activation) => {
-        if (!activation?.ok) return { ok: false, reason: activation?.reason || 'activation_failed' };
-        return World.waitForBotSession(BotManager, state.name, 40).then((targetSession) => {
-            if (!targetSession) return { ok: false, reason: 'activation_session_timeout' };
+        return PopulationService.requestActivation(state, 'remote_chat_come', {
+            playerLoc: playerLocation(playerSession),
+            forceNearPlayer: true,
+            readyOnActivation: true,
+            recoverOnActivation: true
+        }).then((activation) => {
+            if (!activation?.ok) return { ok: false, reason: activation?.reason || 'activation_failed' };
+            return World.waitForBotSession(BotManager, state.name, 40).then((targetSession) => {
+                if (!targetSession) return { ok: false, reason: 'activation_session_timeout' };
 
-            const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
-            ChatArrivalState.start(targetSession, playerSession);
-            return { ok: true, targetSession, activation };
+                const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
+                ChatArrivalState.start(targetSession, playerSession);
+                return { ok: true, targetSession, activation };
+            });
         });
-    });
+    };
+    return LangfuseTracing.withObservation(
+        'bot.tool.come_to_player',
+        { player: playerSummary(playerSession), bot: stateSummary(state), playerLoc: playerLocation(playerSession) },
+        {
+            source: 'cold_chat',
+            tool: 'come_to_player',
+            botId: state.characterId,
+            playerId: playerSession.actor.fetchId()
+        },
+        run,
+        'tool'
+    );
 }
 
 function recordReply(playerSession, state, turn, result, extra = {}) {
@@ -317,42 +332,57 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             }
         };
 
-        const llmReady = cfg.enabled && !!cfg.apiKey;
-        if (!llmReady) return recordReply(playerSession, state, turn, fallback).then(() => fallback);
+        return LangfuseTracing.withObservation(
+            'cold-bot.dialogue',
+            payload,
+            {
+                event: 'cold_chat',
+                source: 'cold_chat',
+                botId: state.characterId,
+                playerId: playerSession.actor.fetchId(),
+                turnId: turn.turnId,
+                requestId: turn.turnId
+            },
+            async () => {
+                const llmReady = cfg.enabled && !!cfg.apiKey;
+                if (!llmReady) return recordReply(playerSession, state, turn, fallback).then(() => fallback);
 
-        return requestLlmReply(payload, cfg, turn, state, playerSession).then((result) => {
-            if (result?.providerFailure) {
-                state.lastRemoteChatTelemetry = result.llmTelemetry || null;
-                const failed = {
-                    ...fallback,
-                    providerOutcome: result.providerOutcome,
-                    usage: result.usage || null,
-                    llmTelemetry: result.llmTelemetry || null
-                };
-                return recordReply(playerSession, state, turn, failed).then(() => failed);
-            }
-            const reply = result || fallback;
-            if (reply.action === 'come_to_player') {
-                return activateNearPlayer(playerSession, state).then((actionResult) => {
-                    const confirmed = actionResult.ok;
-                    const actionReply = confirmed
-                        ? reply
-                        : {
+                return requestLlmReply(payload, cfg, turn, state, playerSession).then((result) => {
+                    if (result?.providerFailure) {
+                        state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                        const failed = {
                             ...fallback,
-                            reason: `come_to_player:${actionResult.reason || 'rejected'}`,
-                            providerOutcome: 'action_rejected'
+                            providerOutcome: result.providerOutcome,
+                            usage: result.usage || null,
+                            llmTelemetry: result.llmTelemetry || null
                         };
-                    return recordReply(playerSession, state, turn, actionReply, {
-                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
-                    }).then(() => ({
-                        ...actionReply,
-                        action: confirmed ? 'come_to_player' : 'say',
-                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
-                    }));
+                        return recordReply(playerSession, state, turn, failed).then(() => failed);
+                    }
+                    const reply = result || fallback;
+                    if (reply.action === 'come_to_player') {
+                        return activateNearPlayer(playerSession, state).then((actionResult) => {
+                            const confirmed = actionResult.ok;
+                            const actionReply = confirmed
+                                ? reply
+                                : {
+                                    ...fallback,
+                                    reason: `come_to_player:${actionResult.reason || 'rejected'}`,
+                                    providerOutcome: 'action_rejected'
+                                };
+                            return recordReply(playerSession, state, turn, actionReply, {
+                                actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                            }).then(() => ({
+                                ...actionReply,
+                                action: confirmed ? 'come_to_player' : 'say',
+                                actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                            }));
+                        });
+                    }
+                    return recordReply(playerSession, state, turn, reply).then(() => reply);
                 });
-            }
-            return recordReply(playerSession, state, turn, reply).then(() => reply);
-        });
+            },
+            'agent'
+        );
     });
 }
 
