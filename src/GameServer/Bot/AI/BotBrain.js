@@ -1,5 +1,7 @@
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
+const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
+const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
@@ -325,7 +327,7 @@ function recordConversationReply(session, decision, result, requestContext) {
         .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
     if (!reply) return;
 
-    invoke('GameServer/Bot/AI/BotConversationService').recordBotReply({
+    queueConversationWrite(session, () => BotConversationService.recordBotReply({
         playerSession: requestContext.playerSession,
         botSession: session,
         turnId: turn.turnId,
@@ -333,7 +335,14 @@ function recordConversationReply(session, decision, result, requestContext) {
         text: reply,
         requestId: requestContext.requestId,
         meta: { action, reason: result.reason || null, serverApplied: result.applied === true }
-    }).catch(() => {});
+    }));
+}
+
+function queueConversationWrite(session, work) {
+    const previous = session.lastConversationWrite || Promise.resolve();
+    const next = previous.catch(() => {}).then(work).catch(() => false);
+    session.lastConversationWrite = next;
+    return next;
 }
 
 function applyDecision(session, decision, visiblePlayers, requestContext) {
@@ -351,14 +360,14 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
         const reply = BotAgentTools.rejectionReply(result);
         BotManager.botTell(session, requestContext.playerSession, reply);
         if (requestContext.conversationTurn) {
-            invoke('GameServer/Bot/AI/BotConversationService').recordFallback({
+            queueConversationWrite(session, () => BotConversationService.recordFallback({
                 playerSession: requestContext.playerSession,
                 botSession: session,
                 turnId: requestContext.conversationTurn.turnId,
                 channel: requestContext.conversationTurn.channel,
                 text: reply,
                 reason: `tool_rejected:${result.reason}`
-            }).catch(() => {});
+            }));
         }
     }
     return result.applied;
@@ -428,14 +437,14 @@ function fallbackReply(session, requestContext, outcome) {
 
     BotManager.botTell(session, playerSession, reply);
     if (requestContext?.conversationTurn) {
-        invoke('GameServer/Bot/AI/BotConversationService').recordFallback({
+        queueConversationWrite(session, () => BotConversationService.recordFallback({
             playerSession,
             botSession: session,
             turnId: requestContext.conversationTurn.turnId,
             channel: requestContext.conversationTurn.channel,
             text: reply,
             reason: outcome || 'fallback'
-        }).catch(() => {});
+        }));
     }
     return true;
 }
@@ -604,16 +613,45 @@ const BotBrain = {
             const pending = queue.shift() || null;
             session.pendingBrainTurn = queue[0] || null;
             if (pending) {
-                Promise.resolve().then(() => {
+                const startPending = () => Promise.resolve().then(async () => {
+                    let requestContext = { ...pending.requestContext, queued: true };
+                    // The player turn is persisted before admission, but the
+                    // previous bot reply may finish while this request waits
+                    // in the FIFO. Refresh the bounded context at dequeue so
+                    // the next prompt sees the latest delivered turn.
+                    if (pending.event === 'player_chat' && requestContext.playerSession) {
+                        try {
+                            const fresh = await BotConversationService.contextFor(
+                                requestContext.playerSession,
+                                session
+                            );
+                            const previousCount = requestContext.conversation?.recentTurns?.length || 0;
+                            if ((fresh?.recentTurns?.length || 0) >= previousCount) {
+                                requestContext.conversation = fresh;
+                                requestContext.assembledContext = await BotContextAssembler.assemble({
+                                    session,
+                                    status: pending.status,
+                                    text: pending.text,
+                                    requestContext
+                                });
+                            }
+                        } catch (_) {
+                            // Keep the ingress snapshot if persistence is
+                            // temporarily unavailable.
+                        }
+                    }
                     const started = BotBrain.maybeThink(
                         session,
                         pending.event,
                         pending.status,
                         pending.text,
-                        { ...pending.requestContext, queued: true }
+                        requestContext
                     );
-                    if (!started) fallbackReply(session, pending.requestContext, 'queued_not_started');
+                    if (!started) fallbackReply(session, requestContext, 'queued_not_started');
                 });
+                Promise.resolve(session.lastConversationWrite)
+                    .catch(() => {})
+                    .then(startPending);
             }
         };
         const runTurn = async () => {
