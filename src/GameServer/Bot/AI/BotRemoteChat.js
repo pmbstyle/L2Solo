@@ -332,7 +332,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             }
         };
 
-        return LangfuseTracing.withObservation(
+        return LangfuseTracing.withRootObservation(
             'cold-bot.dialogue',
             payload,
             {
@@ -341,7 +341,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 botId: state.characterId,
                 playerId: playerSession.actor.fetchId(),
                 turnId: turn.turnId,
-                requestId: turn.turnId
+                requestId: turn.turnId,
+                sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
             },
             async () => {
                 const llmReady = cfg.enabled && !!cfg.apiKey;

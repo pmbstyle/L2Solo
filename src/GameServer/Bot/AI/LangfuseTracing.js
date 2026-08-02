@@ -7,6 +7,8 @@ let tracing = null;
 let initialized = false;
 let initError = null;
 let envCache = { filename: null, values: {} };
+let otelContext = null;
+let rootContext = null;
 
 function bool(value, fallback = false) {
     if (value === undefined || value === null || value === '') return fallback;
@@ -105,6 +107,35 @@ function observationOutput(value, cfg) {
     return { captured: false, type: typeof value };
 }
 
+function observationStatus(value) {
+    const telemetry = value?.llmTelemetry || value?.telemetry || {};
+    const outcome = String(
+        value?.traceOutcome || value?.outcome || value?.reason || telemetry.outcome || ''
+    ).toLowerCase();
+    const reason = String(value?.actionResult?.reason || '').toLowerCase();
+
+    if (value?.ok === false || [
+        'schema_error', 'provider_error', 'timeout', 'circuit_open', 'missing_api_key',
+        'disabled', 'transport_error'
+    ].includes(outcome)) {
+        return {
+            level: 'ERROR',
+            statusMessage: text(value?.reason || telemetry.statusMessage || outcome || 'failed', 240)
+        };
+    }
+    if (value?.applied === false || outcome === 'stale_world_state' || reason === 'stale_world_state') {
+        return {
+            level: 'WARNING',
+            statusMessage: text(value?.reason || reason || outcome || 'action_rejected', 240)
+        };
+    }
+    return {};
+}
+
+function traceOutput(value) {
+    return value?.traceOutput === undefined ? value : value.traceOutput;
+}
+
 function updateObservation(observation, attributes) {
     if (typeof observation?.update === 'function') observation.update(attributes);
 }
@@ -122,6 +153,9 @@ function init(overrides = {}) {
     try {
         const { NodeSDK } = require('@opentelemetry/sdk-node');
         const { LangfuseSpanProcessor } = require('@langfuse/otel');
+        const api = require('@opentelemetry/api');
+        otelContext = api.context;
+        rootContext = api.ROOT_CONTEXT;
         tracing = require('@langfuse/tracing');
         processor = new LangfuseSpanProcessor({
             publicKey: cfg.publicKey,
@@ -166,7 +200,7 @@ function withObservation(name, input, metadata, work, asType = 'span') {
         try {
             tracing.propagateAttributes?.({
                 userId: text(metadata?.playerId, 200) || undefined,
-                sessionId: text(metadata?.turnId || metadata?.sessionId, 200) || undefined,
+                sessionId: text(metadata?.sessionId || metadata?.turnId, 200) || undefined,
                 traceName: text(name, 200),
                 metadata: Object.fromEntries(Object.entries(metadata || {})
                     .filter(([, value]) => value !== undefined && value !== null)
@@ -178,7 +212,10 @@ function withObservation(name, input, metadata, work, asType = 'span') {
         updateObservation(observation, { input: observationInput(input, cfg), metadata: serializable(metadata || {}) });
         try {
             const result = await work(observation);
-            updateObservation(observation, { output: observationOutput(result, cfg) });
+            updateObservation(observation, {
+                output: observationOutput(traceOutput(result), cfg),
+                ...observationStatus(result)
+            });
             return result;
         } catch (error) {
             updateObservation(observation, {
@@ -189,6 +226,11 @@ function withObservation(name, input, metadata, work, asType = 'span') {
             throw error;
         }
     }, { asType, endOnExit: true });
+}
+
+function withRootObservation(name, input, metadata, work, asType = 'span') {
+    if (!otelContext?.with || !rootContext) return withObservation(name, input, metadata, work, asType);
+    return otelContext.with(rootContext, () => withObservation(name, input, metadata, work, asType));
 }
 
 function startObservation(name, input, metadata, asType = 'span') {
@@ -206,8 +248,12 @@ function startObservation(name, input, metadata, asType = 'span') {
                     output: value.output === undefined ? undefined : observationOutput(value.output, cfg)
                 });
             },
-            end(value) {
-                if (value !== undefined) observation.update({ output: observationOutput(value, cfg) });
+            end(value, status = {}) {
+                const attributes = {};
+                if (value !== undefined) attributes.output = observationOutput(value, cfg);
+                if (status.level) attributes.level = status.level;
+                if (status.statusMessage) attributes.statusMessage = text(status.statusMessage, 240);
+                if (Object.keys(attributes).length > 0) observation.update(attributes);
                 observation.end();
             },
             traceId: observation.traceId,
@@ -238,7 +284,9 @@ module.exports = {
     init,
     status,
     withObservation,
+    withRootObservation,
     startObservation,
+    observationStatus,
     activeTraceId,
     shutdown
 };

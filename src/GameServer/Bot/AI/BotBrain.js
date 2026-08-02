@@ -318,6 +318,22 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
     };
 }
 
+function conversationSessionId(session, requestContext) {
+    const botId = session?.actor?.fetchId?.() || session?.accountId || 'unknown';
+    const playerId = requestContext?.playerSession?.actor?.fetchId?.() ||
+        requestContext?.playerId || 'none';
+    return `hot-bot:${botId}:player:${playerId}`;
+}
+
+function compactActionResult(result) {
+    if (!result) return null;
+    return {
+        ok: result.applied === true,
+        reason: result.reason || null,
+        idempotent: result.idempotent === true
+    };
+}
+
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
@@ -370,7 +386,7 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
             }));
         }
     }
-    return result.applied;
+    return result;
 }
 
 function rememberTelemetry(session, result) {
@@ -446,7 +462,7 @@ function fallbackReply(session, requestContext, outcome) {
             reason: outcome || 'fallback'
         }));
     }
-    return true;
+    return reply;
 }
 
 const BotBrain = {
@@ -663,8 +679,23 @@ const BotBrain = {
                     fallbackReply(session, requestContext, providerResult.reason);
                     return providerResult;
                 }
-                const applied = applyDecision(session, providerResult, visiblePlayers, requestContext);
-                return { ...providerResult, applied };
+                const actionResult = applyDecision(session, providerResult, visiblePlayers, requestContext);
+                const playerVisibleReply = actionResult.applied
+                    ? providerResult.reply || null
+                    : BotAgentTools.rejectionReply(actionResult);
+                providerResult = {
+                    ...providerResult,
+                    applied: actionResult.applied === true,
+                    actionResult: compactActionResult(actionResult),
+                    traceOutput: {
+                        providerOutcome: providerResult.llmTelemetry?.outcome || providerResult.telemetry?.outcome || 'success',
+                        requestedAction: providerResult.action || null,
+                        toolOutcome: compactActionResult(actionResult),
+                        applied: actionResult.applied === true,
+                        playerVisibleReply
+                    }
+                };
+                return providerResult;
             } catch (err) {
                 providerResult = {
                     ok: false,
@@ -679,7 +710,7 @@ const BotBrain = {
                 finishTurn();
             }
         };
-        LangfuseTracing.withObservation(
+        LangfuseTracing.withRootObservation(
             'hot-bot.dialogue',
             payload,
             {
@@ -688,7 +719,8 @@ const BotBrain = {
                 playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
                 turnId,
                 requestId: requestContext?.requestId || turnId,
-                source: requestContext?.source || event
+                source: requestContext?.source || event,
+                sessionId: conversationSessionId(session, requestContext)
             },
             runTurn,
             'agent'

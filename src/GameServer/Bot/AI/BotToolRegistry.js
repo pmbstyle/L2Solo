@@ -126,7 +126,10 @@ function audit(context, outcome, reason, meta = {}) {
         },
         'tool'
     );
-    observation?.end({ outcome, reason, ...meta });
+    const status = outcome === 'rejected'
+        ? LangfuseTracing.observationStatus({ applied: false, reason })
+        : {};
+    observation?.end({ outcome, reason, ...meta }, status);
     BotToolAudit.record({
         playerId: playerId(context),
         botId: actorId(context.session),
