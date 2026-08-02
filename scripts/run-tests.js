@@ -35,6 +35,7 @@ const tests = [
     'tests/test_bot_agent_support_confirmation.js',
     'tests/test_bot_combat_skill_selection.js',
     'tests/test_bot_conversation.js',
+    'tests/test_bot_ambient_director.js',
     'tests/test_bot_death_respawn.js',
     'tests/test_bot_gear.js',
     'tests/test_bot_economy_pricing.js',

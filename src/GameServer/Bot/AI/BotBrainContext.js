@@ -275,6 +275,7 @@ function compactStatus(session, status, text = '', options = {}) {
         skills: includeSkills ? skillsSnapshot(actor, text) : null,
         roleDecision: status.roleDecision || null,
         trade: status.trade || null,
+        ambient: status.ambient || null,
         policy: status.policy || null,
         persona: status.persona || null,
         social: status.social || null

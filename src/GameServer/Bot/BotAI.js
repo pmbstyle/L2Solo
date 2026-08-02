@@ -138,6 +138,7 @@ const BotAI = {
     stop(session) {
         session.aiActive = false;
         HotBotPolicyOverlay.clearForCold(session);
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
         if (session.aiTimeout) {
             clearTimeout(session.aiTimeout);
             session.aiTimeout = null;
@@ -332,6 +333,7 @@ const BotAI = {
             clearTacticalState(session);
             HotBotPolicyOverlay.clearForDeath(session);
             BotTradeService.cleanup(session, 'death');
+            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
             // background timer is needed for a session-local preference.

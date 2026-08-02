@@ -34,6 +34,7 @@ const Cooldown = {
         if (!session || !session.actor || !state) return Promise.resolve({ ok: false, reason: 'missing_state' });
         const BotManager = invoke('GameServer/Bot/BotManager');
         try { invoke('GameServer/Bot/BotTradeService').cleanup(session, 'cold_transition'); } catch (_) { /* optional hot trade modules */ }
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'cold_transition'); } catch (_) { /* optional ambient module */ }
         return LifeState.upsertState(state, reason).then((saved) => {
             if (!saved) return { ok: false, reason: 'state_save_failed' };
 

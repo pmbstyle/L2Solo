@@ -20,6 +20,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
+const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
@@ -1062,16 +1063,24 @@ const BotManager = {
             return dist < BotConversation.CONVERSATION_RANGE;
         });
 
-        if (targetSession && BotConversation.canStart(botSession, targetSession)) {
-            this.triggerConversation(botSession, targetSession);
+        if (!targetSession) return false;
+        if (BotAmbientDirector.enabled()) {
+            const started = BotAmbientDirector.start(botSession, targetSession);
+            if (!started.ok) return false;
+            return this.triggerConversation(botSession, targetSession, started.conversation, started.scene);
         }
+        if (BotConversation.canStart(botSession, targetSession)) {
+            return this.triggerConversation(botSession, targetSession);
+        }
+        return false;
     },
 
-    triggerConversation(botSession, targetSession) {
-        const conversation = BotConversation.start(botSession, targetSession);
+    triggerConversation(botSession, targetSession, existingConversation = null, ambientScene = null) {
+        const conversation = existingConversation || BotConversation.start(botSession, targetSession);
         if (!conversation) return false;
 
         const deliver = (index) => {
+            if (ambientScene?.cancelled || ambientScene?.finished) return;
             const line = conversation.lines[index];
             if (!line?.speaker?.actor) return;
             this.botSay(line.speaker, line.text);
@@ -1080,7 +1089,9 @@ const BotManager = {
         deliver(0);
         setTimeout(() => deliver(1), 2200);
         setTimeout(() => deliver(2), 4300);
-        setTimeout(() => BotConversation.finish(conversation), 6500);
+        setTimeout(() => ambientScene
+            ? BotAmbientDirector.finish(ambientScene, 'completed')
+            : BotConversation.finish(conversation), 6500);
         return true;
     },
 
