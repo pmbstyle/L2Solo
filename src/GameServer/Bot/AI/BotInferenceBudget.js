@@ -103,6 +103,10 @@ function reserve(session, input = {}) {
     return { ok: true, reservation, status: status(session, now) };
 }
 
+function reserveForBotId(botId, input = {}) {
+    return reserve({ characterId: Number(botId) }, input);
+}
+
 function settle(reservation, usage = null) {
     if (!reservation || reservation.settled) return false;
     const prompt = usageValue(usage, 'promptTokens');
@@ -167,6 +171,7 @@ function status(session, now = Date.now()) {
 const BotInferenceBudget = {
     WINDOW_MS,
     reserve,
+    reserveForBotId,
     settle,
     status,
     snapshot: status,

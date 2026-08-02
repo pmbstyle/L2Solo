@@ -176,6 +176,8 @@ const BotAI = {
 
     stop(session) {
         session.aiActive = false;
+        session.pendingBrainTurns = [];
+        session.pendingBrainTurn = null;
         HotBotPolicyOverlay.clearForCold(session);
         try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
         try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }

@@ -32,6 +32,36 @@ function ttl(value) {
     return clamp(Math.floor(requested), MIN_TTL_MS, MAX_TTL_MS);
 }
 
+function partyCompanionService() {
+    try { return invoke('GameServer/Bot/AI/PartyCompanionService'); } catch (_) { return null; }
+}
+
+function pullValue(value) {
+    return Number(value || 0) || null;
+}
+
+function restorePullPolicy(session, overlay) {
+    const leader = overlay?.ownerSession;
+    const restore = overlay?.pullRestore;
+    const applied = overlay?.pullApplied;
+    const service = partyCompanionService();
+    if (!leader || !restore || !applied || !service?.getSettings || !service?.updateSettings) return;
+
+    const current = service.getSettings(leader);
+    if (String(current?.pullMode || 'auto') !== String(applied.mode || 'auto') ||
+        pullValue(current?.pullerId) !== pullValue(applied.pullerId)) {
+        // Another authoritative party action changed the policy. Do not
+        // overwrite that newer decision while cleaning up this overlay.
+        return;
+    }
+
+    service.updateSettings(leader, {
+        pullMode: restore.pullMode || 'auto',
+        pullerId: pullValue(restore.pullerId)
+    });
+    service.refreshPanel?.(leader);
+}
+
 function normalizePriorities(value) {
     if (!value || typeof value !== 'object') return {};
     return Object.entries(value)
@@ -63,7 +93,9 @@ function prune(session) {
     const overlay = session?.hotPolicyOverlay;
     if (!overlay) return null;
     if (Number(overlay.expiresAt || 0) > now()) return overlay;
+    restorePullPolicy(session, overlay);
     delete session.hotPolicyOverlay;
+    session.lastHotPolicyReset = { reason: 'expired', at: now() };
     return null;
 }
 
@@ -79,6 +111,8 @@ function set(session, patch = {}, context = {}) {
         ...previous,
         ownerId: Number(context.ownerId || previous.ownerId || 0) || null,
         ownerName: context.ownerName || previous.ownerName || null,
+        ownerSession: context.ownerSession || previous.ownerSession || null,
+        pullRestore: context.pullRestore || previous.pullRestore || null,
         reason: String(context.reason || patch.reason || previous.reason || 'player_request').slice(0, 160),
         createdAt: Number(previous.createdAt || now()),
         updatedAt: now(),
@@ -87,6 +121,14 @@ function set(session, patch = {}, context = {}) {
         combatStance: normalizeStance(patch.combatStance ?? previous.combatStance),
         pull: normalizePull(patch.pull ?? previous.pull)
     };
+
+    if (patch.pull !== undefined) {
+        updated.pullApplied = updated.pull
+            ? { mode: updated.pull.mode || 'auto', pullerId: pullValue(updated.pull.pullerId) }
+            : null;
+    } else if (previous.pullApplied) {
+        updated.pullApplied = { ...previous.pullApplied };
+    }
 
     // An explicitly cleared field must not be resurrected by the old object.
     if (patch.skillPriorities === null) updated.skillPriorities = {};
@@ -99,6 +141,7 @@ function set(session, patch = {}, context = {}) {
 
 function clear(session, reason = 'lifecycle') {
     if (!session?.hotPolicyOverlay) return false;
+    restorePullPolicy(session, session.hotPolicyOverlay);
     delete session.hotPolicyOverlay;
     session.lastHotPolicyReset = { reason, at: now() };
     return true;

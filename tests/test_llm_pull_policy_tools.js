@@ -4,6 +4,7 @@ require('../src/Global');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 function actor(id, name) {
     return {
@@ -45,6 +46,7 @@ const bot = {
 BotManager.sessions = [bot];
 
 const originalRefreshPanel = PartyCompanionService.refreshPanel;
+const originalNow = Date.now;
 PartyCompanionService.refreshPanel = () => {};
 
 try {
@@ -70,7 +72,17 @@ try {
     const repeatUnassign = BotAgentTools.execute(bot, decision('unassign_puller', 'pull-4'), [], context('pull-4'));
     assert.strictEqual(repeatUnassign.applied, true);
     assert.strictEqual(PartyCompanionService.getSettings(leader).pullMode, 'auto', 'unassign must not disable autonomous pulls');
+
+    leader.partyCompanionSettings.pullMode = 'off';
+    leader.partyCompanionSettings.pullerId = null;
+    Date.now = () => 100000;
+    const temporary = BotAgentTools.execute(bot, decision('assign_puller', 'pull-5', { policyTtlMs: 5000 }), [], context('pull-5'));
+    assert.strictEqual(temporary.applied, true);
+    Date.now = () => 106000;
+    assert.strictEqual(HotBotPolicyOverlay.status(bot), null, 'expired policy overlay should be removed');
+    assert.strictEqual(PartyCompanionService.getSettings(leader).pullMode, 'off', 'expired pull policy must restore the previous party setting');
     console.log('LLM pull policy tool checks passed');
 } finally {
+    Date.now = originalNow;
     PartyCompanionService.refreshPanel = originalRefreshPanel;
 }

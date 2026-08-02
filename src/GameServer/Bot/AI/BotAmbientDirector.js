@@ -9,6 +9,7 @@ const MAX_REASON_CHARS = 120;
 
 const MOODS = Object.freeze(['calm', 'focused', 'sociable', 'restless', 'tired', 'guarded']);
 const activeScenes = new Map();
+const pairLastSceneAt = new Map();
 
 function bool(value, fallback = true) {
     if (value === undefined || value === null || value === '') return fallback;
@@ -162,6 +163,13 @@ function pairKey(first, second) {
     return [actorId(first), actorId(second)].sort((a, b) => a - b).join(':');
 }
 
+function prunePairHistory(now) {
+    const cooldown = pairCooldownMs();
+    for (const [key, at] of pairLastSceneAt.entries()) {
+        if (now - at >= cooldown) pairLastSceneAt.delete(key);
+    }
+}
+
 function distance2d(first, second) {
     const a = first?.actor;
     const b = second?.actor;
@@ -178,6 +186,7 @@ function expireSceneIfNeeded(session, now) {
 
 function eligible(initiator, responder, now = Date.now()) {
     if (!enabled()) return { ok: false, reason: 'ambient_disabled' };
+    prunePairHistory(now);
     expireSceneIfNeeded(initiator, now);
     expireSceneIfNeeded(responder, now);
     if (!isBotSession(initiator) || !isBotSession(responder)) return { ok: false, reason: 'bot_only_scene' };
@@ -197,11 +206,11 @@ function eligible(initiator, responder, now = Date.now()) {
         return { ok: false, reason: 'too_far', distance };
     }
 
-    const lastScene = Math.max(Number(initiator.ambientLastSceneAt || 0), Number(responder.ambientLastSceneAt || 0));
-    if (lastScene && now - lastScene < pairCooldownMs()) {
-        return { ok: false, reason: 'pair_cooldown', retryAfterMs: pairCooldownMs() - (now - lastScene) };
+    const pairAt = pairLastSceneAt.get(pairKey(initiator, responder)) || 0;
+    if (pairAt && now - pairAt < pairCooldownMs()) {
+        return { ok: false, reason: 'pair_cooldown', retryAfterMs: pairCooldownMs() - (now - pairAt) };
     }
-    if ([initiator, responder].some((session) => session.lastAmbientSceneAt && now - session.lastAmbientSceneAt < sceneCooldownMs())) {
+    if ([initiator, responder].some((session) => session.ambientLastSceneAt && now - session.ambientLastSceneAt < sceneCooldownMs())) {
         return { ok: false, reason: 'bot_cooldown' };
     }
     return { ok: true, distance };
@@ -244,6 +253,7 @@ function start(initiator, responder, now = Date.now()) {
     responder.ambientScene = scene;
     initiator.ambientLastSceneAt = now;
     responder.ambientLastSceneAt = now;
+    pairLastSceneAt.set(pairKey(initiator, responder), now);
     activeScenes.set(scene.id, scene);
     refresh(initiator, now);
     refresh(responder, now);
@@ -304,6 +314,7 @@ const BotAmbientDirector = {
     activeScenes() { return [...activeScenes.values()].map((scene) => ({ ...scene, conversation: undefined })); },
     reset() {
         activeScenes.clear();
+        pairLastSceneAt.clear();
     }
 };
 

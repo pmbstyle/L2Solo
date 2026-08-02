@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
@@ -22,6 +23,14 @@ function enabled() {
 
 function actorId(session) { return Number(session?.actor?.fetchId?.() || 0); }
 function actorName(session) { return session?.actor?.fetchName?.() || session?.accountId || 'unknown'; }
+
+function negotiationId(bot, player) {
+    sequence += 1;
+    const suffix = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `negotiation-${actorId(bot)}-${actorId(player)}-${suffix}-${sequence}`;
+}
 function isBot(session) { return !!session?.accountId && String(session.accountId).startsWith('bot_'); }
 function isPlayer(session) { return !!session?.actor && !isBot(session) && session.actor.fetchIsOnline?.() !== false; }
 
@@ -268,7 +277,7 @@ function quoteItem(bot, player, itemObjectId, amount = 1) {
 
     const policy = pricePolicy(bot, player, item, quantity);
     const negotiation = {
-        id: `negotiation-${++sequence}`,
+        id: negotiationId(bot, player),
         botSession: bot,
         playerSession: player,
         itemObjectId: Number(itemObjectId),

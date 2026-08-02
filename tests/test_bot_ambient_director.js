@@ -41,6 +41,7 @@ function bot(id, name, overrides = {}) {
 const now = 1_000_000;
 const aria = bot(2000101, 'Aria', { role: 'tank' });
 const belen = bot(2000102, 'Belen', { role: 'healer' });
+const clara = bot(2000109, 'Clara', { role: 'dps' });
 
 BotAmbientDirector.reset();
 assert.strictEqual(BotAmbientDirector.enabled(), true, 'ambient director should be enabled by default');
@@ -65,6 +66,11 @@ assert.strictEqual(
     BotAmbientDirector.eligible(aria, belen, now + 180000).ok,
     true,
     'the per-bot cooldown should eventually expire'
+);
+assert.strictEqual(
+    BotAmbientDirector.eligible(aria, clara, now + 100000).reason,
+    'bot_cooldown',
+    'a bot cooldown must apply even when the next scene uses a different pair'
 );
 
 const player = bot(2000103, 'VisiblePlayer', { accountId: 'player_1' });

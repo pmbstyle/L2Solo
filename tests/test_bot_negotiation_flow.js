@@ -96,6 +96,11 @@ try {
     bot.activeNegotiation.expiresAt = Date.now() - 1;
     assert.strictEqual(BotNegotiationService.activeSummary(bot), null, 'TTL expires an unanswered quote');
     assert.strictEqual(bot.botNegotiationReservations.size, 0);
+    const previousId = ttl.negotiation.id;
+    BotNegotiationService.reset();
+    const afterReset = BotNegotiationService.quoteItem(bot, player, 922, 1);
+    assert.strictEqual(afterReset.ok, true);
+    assert.notStrictEqual(afterReset.negotiation.id, previousId, 'negotiation IDs must remain unique across service resets');
     console.log('Bot negotiation flow checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalSnapshot;

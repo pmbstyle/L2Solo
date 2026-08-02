@@ -41,6 +41,7 @@ async function main() {
             enabled: true,
             apiKey: 'conversation-test-key',
             model: 'test/conversation',
+            negotiationEnabled: true,
             chatCooldownMs: 0,
             timeoutMs: 1000,
             circuitBreakerFailureThreshold: 5
@@ -49,7 +50,7 @@ async function main() {
         const botSession = {
             accountId: 'bot_flow',
             actor: actor(302, 'FlowBot', 100),
-            plan: 'resting'
+            plan: 'merchant'
         };
         World.user = { sessions: [playerSession, botSession] };
         BotBrainContext.compactStatus = (_session, status) => status;
@@ -87,6 +88,11 @@ async function main() {
         };
         const firstTurn = { turnId: 'flow-1', channel: 'local_chat' };
         const secondTurn = { turnId: 'flow-2', channel: 'local_chat' };
+        const thirdContext = {
+            ...secondContext,
+            recentTurns: [...secondContext.recentTurns, { turnId: 'flow-3', role: 'player', channel: 'local_chat', text: 'third', createdAt: 3 }]
+        };
+        const thirdTurn = { turnId: 'flow-3', channel: 'local_chat' };
         const firstStarted = BotBrain.maybeThink(
             botSession,
             'player_chat',
@@ -105,10 +111,19 @@ async function main() {
         );
         assert.strictEqual(secondStarted, true, 'one additional dialogue turn should queue while the first is in flight');
         assert.strictEqual(botSession.pendingBrainTurn.text, 'second');
+        const thirdStarted = BotBrain.maybeThink(
+            botSession,
+            'player_chat',
+            { available: true, mode: 'merchant', level: 10, name: 'FlowBot' },
+            'third',
+            { playerSession, conversation: thirdContext, conversationTurn: thirdTurn, requestId: 'flow-3' }
+        );
+        assert.strictEqual(thirdStarted, true);
+        assert.strictEqual(botSession.pendingBrainTurns.length, 2, 'queued turns should be retained in FIFO order');
 
         firstRequestRelease();
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        assert.strictEqual(requests.length, 2, 'the queued turn should be submitted after the first turn completes');
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        assert.strictEqual(requests.length, 3, 'all queued turns should be submitted after the first turn completes');
         const secondPayload = JSON.parse(requests[1].messages[1].content);
         assert.deepStrictEqual(
             secondPayload.conversation.recentTurns.map((turn) => turn.text),

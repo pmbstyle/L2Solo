@@ -1,5 +1,6 @@
 const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 
 const SUMMARY_THRESHOLD_MESSAGES = 24;
 const SUMMARY_RECENT_TURNS = BotConversationStore.DEFAULT_RECENT_TURNS;
@@ -17,6 +18,10 @@ function compactTurns(turns) {
         channel: turn.channel,
         text: turn.text
     }));
+}
+
+function estimateTokens(value) {
+    try { return Math.max(1, Math.ceil(JSON.stringify(value).length / 4)); } catch (_) { return 1; }
 }
 
 function schema() {
@@ -78,20 +83,35 @@ async function summarize(input = {}) {
         }
 
         const cfg = OpenRouterGateway.config({ maxTokens: SUMMARY_MAX_TOKENS, temperature: 0.1 });
-        const result = await OpenRouterGateway.request({
-            config: cfg,
-            circuitKey: 'hot-summary',
-            requestId: input.requestId || `summary-${botId}-${playerId}-${Date.now()}`,
-            sessionId: `hot-summary:${botId}:player:${playerId}`,
-            messages: [
-                {
-                    role: 'system',
-                    content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
-                },
-                { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
-            ],
-            responseSchema: schema()
+        const messages = [
+            {
+                role: 'system',
+                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
+            },
+            { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
+        ];
+        const admission = BotInferenceBudget.reserveForBotId(botId, {
+            event: 'conversation_summary',
+            estimatedPromptTokens: estimateTokens({ messages, responseSchema: schema() }),
+            maxCompletionTokens: cfg.maxTokens
         });
+        if (!admission.ok) return { ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs };
+
+        let result = null;
+        try {
+            result = await OpenRouterGateway.request({
+                config: cfg,
+                circuitKey: 'hot-summary',
+                requestId: input.requestId || `summary-${botId}-${playerId}-${Date.now()}`,
+                sessionId: `hot-summary:${botId}:player:${playerId}`,
+                messages,
+                responseSchema: schema()
+            });
+        } catch (_) {
+            return { ok: false, reason: 'summary_provider_error' };
+        } finally {
+            BotInferenceBudget.settle(admission.reservation, result?.usage);
+        }
         if (!result.ok) return { ok: false, reason: result.reason || 'summary_provider_error' };
 
         const summary = normalizeSummary(result.data);

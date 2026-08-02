@@ -4,10 +4,12 @@ require('../src/Global');
 const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
 const BotConversationSummarizer = invoke('GameServer/Bot/AI/BotConversationSummarizer');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 
 async function main() {
     BotConversationStore.resetMemory();
     BotConversationSummarizer.reset();
+    BotInferenceBudget.reset();
     options.default.OpenRouter = {
         enabled: true,
         apiKey: 'test-key',
@@ -44,6 +46,7 @@ async function main() {
         }
         const first = await BotConversationSummarizer.summarize({ playerId: 10, botId: 20, threshold: 24 });
         assert.strictEqual(first.ok, true);
+        assert.strictEqual(BotInferenceBudget.status({ actor: { fetchId: () => 20 } }).requests, 1, 'summary inference must consume the bot budget');
         assert.match(first.summary, /Open topics/);
         const compacted = await BotConversationStore.context(10, 20, { limit: 20 });
         assert.match(compacted.summary, /concise answers/);
@@ -82,6 +85,7 @@ async function main() {
     } finally {
         OpenRouterGateway.resetTransport();
         OpenRouterGateway.resetCircuit();
+        BotInferenceBudget.reset();
         options.default.OpenRouter = {};
     }
 }

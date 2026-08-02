@@ -342,19 +342,32 @@ function isAuthorizedPartyLeader(context) {
     return Number(player.actor.fetchId?.()) === Number(leader.actor.fetchId?.());
 }
 
-function controllerContext(context) {
+function controllerContext(context, policyContext = {}) {
     const player = context?.requestContext?.playerSession;
     return {
         ownerId: player?.actor?.fetchId?.() || null,
         ownerName: player?.actor?.fetchName?.() || null,
+        ownerSession: player || null,
         reason: context?.decision?.reason || 'player_policy_request',
-        ttlMs: context?.decision?.policyTtlMs
+        ttlMs: context?.decision?.policyTtlMs,
+        ...policyContext
     };
 }
 
-function policyActionResult(session, patch, context, reason) {
-    const policy = HotBotPolicyOverlay.set(session, patch, controllerContext(context));
+function policyActionResult(session, patch, context, reason, policyContext = {}) {
+    const policy = HotBotPolicyOverlay.set(session, patch, controllerContext(context, policyContext));
     return { applied: true, reason, policy: HotBotPolicyOverlay.status(session) || policy };
+}
+
+function inheritedPullRestore(session, current) {
+    const existing = HotBotPolicyOverlay.get(session);
+    const applied = existing?.pullApplied;
+    if (!existing || !applied) return null;
+    if (String(current?.pullMode || 'auto') !== String(applied.mode || 'auto') ||
+        Number(current?.pullerId || 0) !== Number(applied.pullerId || 0)) {
+        return null;
+    }
+    return existing.pullRestore || null;
 }
 
 function applyPullPolicy(context) {
@@ -363,6 +376,7 @@ function applyPullPolicy(context) {
     if (!leader) return { applied: false, reason: 'not_a_party_companion' };
 
     const current = PartyCompanionService.getSettings(leader);
+    const inheritedRestore = inheritedPullRestore(session, current);
     const requestedPermission = String(context.decision.pullPermission || '').toLowerCase();
     const requestedMode = String(context.decision.pullMode || '').toLowerCase();
     const permission = ['allow', 'deny'].includes(requestedPermission)
@@ -378,7 +392,12 @@ function applyPullPolicy(context) {
     PartyCompanionService.refreshPanel(leader);
     return policyActionResult(session, {
         pull: { permission, mode, pullerId }
-    }, context, `pull_policy:${permission}:${mode}`);
+    }, context, `pull_policy:${permission}:${mode}`, {
+        pullRestore: inheritedRestore || {
+            pullMode: current.pullMode || 'auto',
+            pullerId: current.pullerId
+        }
+    });
 }
 
 function assignPuller(context) {
@@ -388,6 +407,8 @@ function assignPuller(context) {
     const requestedId = Number(context.decision.pullerId || 0);
     if (requestedId && requestedId !== Number(session.actor.fetchId())) return { applied: false, reason: 'puller_must_be_target' };
 
+    const current = PartyCompanionService.getSettings(leader);
+    const inheritedRestore = inheritedPullRestore(session, current);
     PartyCompanionService.updateSettings(leader, {
         pullMode: 'bot',
         pullerId: session.actor.fetchId()
@@ -395,7 +416,12 @@ function assignPuller(context) {
     PartyCompanionService.refreshPanel(leader);
     return policyActionResult(session, {
         pull: { permission: 'allow', mode: 'bot', pullerId: session.actor.fetchId() }
-    }, context, 'puller_assigned');
+    }, context, 'puller_assigned', {
+        pullRestore: inheritedRestore || {
+            pullMode: current.pullMode || 'auto',
+            pullerId: current.pullerId
+        }
+    });
 }
 
 function unassignPuller(context) {
@@ -409,11 +435,17 @@ function unassignPuller(context) {
 
     // Unassigning one member returns to the existing automatic policy. It
     // never turns pull off globally and never silently assigns another bot.
+    const inheritedRestore = inheritedPullRestore(session, settings);
     PartyCompanionService.updateSettings(leader, { pullMode: 'auto', pullerId: null });
     PartyCompanionService.refreshPanel(leader);
     return policyActionResult(session, {
         pull: { permission: 'allow', mode: 'auto', pullerId: null }
-    }, context, 'puller_unassigned');
+    }, context, 'puller_unassigned', {
+        pullRestore: inheritedRestore || {
+            pullMode: settings.pullMode || 'auto',
+            pullerId: settings.pullerId
+        }
+    });
 }
 
 function learnedSkill(session, skillId) {

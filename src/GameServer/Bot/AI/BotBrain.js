@@ -7,6 +7,7 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
+const MAX_PENDING_BRAIN_TURNS = 4;
 
 function config() {
     return OpenRouterGateway.config({ maxTokens: 160 });
@@ -261,6 +262,19 @@ function estimatePromptTokens(payload) {
     try { return Math.max(1, Math.ceil(JSON.stringify(payload).length / 4)); } catch (_) { return 1; }
 }
 
+function estimateRequestPromptTokens(payload, session) {
+    return estimatePromptTokens({
+        messages: [
+            { role: 'system', content: systemPrompt() },
+            { role: 'user', content: JSON.stringify(payload) }
+        ],
+        responseSchema: {
+            name: 'bot_brain_decision',
+            schema: schema(BotAgentTools.availableActions(session))
+        }
+    });
+}
+
 async function requestDecision(payload, cfg, session, requestContext, visiblePlayers) {
     const botId = session?.actor?.fetchId?.() || session?.accountId || 'unknown';
     const playerId = requestContext?.playerSession?.actor?.fetchId?.() ||
@@ -434,12 +448,19 @@ const BotBrain = {
         }
         if (session.brainInFlight) {
             if (requestContext?.conversationTurn) {
-                session.pendingBrainTurn = {
+                const pending = {
                     event,
                     status,
                     text,
                     requestContext
                 };
+                const queue = session.pendingBrainTurns || (session.pendingBrainTurns = []);
+                if (queue.length >= MAX_PENDING_BRAIN_TURNS) {
+                    const dropped = queue.shift();
+                    if (dropped?.requestContext) fallbackReply(session, dropped.requestContext, 'queued_overflow');
+                }
+                queue.push(pending);
+                session.pendingBrainTurn = queue[0];
                 debugSkip(session, cfg, 'request_queued');
                 return true;
             }
@@ -450,7 +471,7 @@ const BotBrain = {
             debugSkip(session, cfg, 'dead');
             return false;
         }
-        if (session.plan === 'merchant') {
+        if (session.plan === 'merchant' && event !== 'player_chat') {
             debugSkip(session, cfg, 'merchant_plan');
             return false;
         }
@@ -490,7 +511,7 @@ const BotBrain = {
         const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
         const admission = BotInferenceBudget.reserve(session, {
             event,
-            estimatedPromptTokens: requestContext?.assembledContext?.estimatedTokens || estimatePromptTokens(payload),
+            estimatedPromptTokens: estimateRequestPromptTokens(payload, session),
             maxCompletionTokens: cfg.maxTokens
         });
         if (!admission.ok) {
@@ -548,8 +569,9 @@ const BotBrain = {
             BotInferenceBudget.settle(admission.reservation, providerResult?.usage);
             session.lastBrainBudget = BotInferenceBudget.status(session);
             session.brainInFlight = false;
-            const pending = session.pendingBrainTurn;
-            session.pendingBrainTurn = null;
+            const queue = session.pendingBrainTurns || [];
+            const pending = queue.shift() || null;
+            session.pendingBrainTurn = queue[0] || null;
             if (pending) {
                 const waitMs = Math.max(
                     0,
