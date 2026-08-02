@@ -45,6 +45,10 @@ function knownCost(bucket) {
     return bucket.entries.reduce((total, entry) => total + (Number.isFinite(Number(entry.cost)) ? Number(entry.cost) : 0), 0);
 }
 
+function bypassedCount(bucket) {
+    return bucket.entries.reduce((total, entry) => total + (entry.bypass === true ? 1 : 0), 0);
+}
+
 function rejection(bucket, reason, now, retryAfterMs = 0) {
     bucket.lastDeniedAt = now;
     bucket.lastDeniedReason = reason;
@@ -61,7 +65,7 @@ function reserve(session, input = {}) {
     if (!id) return { ok: false, reason: 'missing_bot' };
 
     const cfg = config();
-    if (cfg.hotBotBudgetEnabled === false || input.bypass === true) {
+    if (cfg.hotBotBudgetEnabled === false) {
         return { ok: true, bypassed: true, reservation: null, status: status(session) };
     }
 
@@ -74,15 +78,15 @@ function reserve(session, input = {}) {
     const promptTokens = nonNegative(input.estimatedPromptTokens);
     const completionTokens = nonNegative(input.maxCompletionTokens ?? cfg.maxTokens);
 
-    if (bucket.entries.length >= maxRequests) {
+    if (input.bypass !== true && bucket.entries.length >= maxRequests) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_requests', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
-    if (sum(bucket, 'promptTokens') + promptTokens > promptBudget) {
+    if (input.bypass !== true && sum(bucket, 'promptTokens') + promptTokens > promptBudget) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_prompt_tokens', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
-    if (sum(bucket, 'completionTokens') + completionTokens > completionBudget) {
+    if (input.bypass !== true && sum(bucket, 'completionTokens') + completionTokens > completionBudget) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_completion_tokens', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
@@ -96,11 +100,12 @@ function reserve(session, input = {}) {
         reservedPromptTokens: promptTokens,
         reservedCompletionTokens: completionTokens,
         settled: false,
+        bypass: input.bypass === true,
         event: String(input.event || 'hot_decision').slice(0, 48),
         priority: String(input.priority || 'normal').slice(0, 24)
     };
     bucket.entries.push(reservation);
-    return { ok: true, reservation, status: status(session, now) };
+    return { ok: true, bypassed: input.bypass === true, reservation, status: status(session, now) };
 }
 
 function reserveForBotId(botId, input = {}) {
@@ -127,6 +132,7 @@ function status(session, now = Date.now()) {
             enabled: cfg.hotBotBudgetEnabled !== false,
             windowMs: WINDOW_MS,
             requests: 0,
+            bypassedRequests: 0,
             maxRequests: Math.max(1, Math.floor(number(cfg.hotBotMaxRequestsPerMinute, 6))),
             promptTokens: 0,
             promptBudget: Math.max(240, number(cfg.hotBotPromptTokenBudgetPerMinute, 12000)),
@@ -153,6 +159,7 @@ function status(session, now = Date.now()) {
         enabled: cfg.hotBotBudgetEnabled !== false,
         windowMs: WINDOW_MS,
         requests: bucket.entries.length,
+        bypassedRequests: bypassedCount(bucket),
         maxRequests,
         promptTokens,
         promptBudget,

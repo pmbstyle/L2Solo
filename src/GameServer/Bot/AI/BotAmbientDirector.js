@@ -5,6 +5,7 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const DEFAULT_SCENE_COOLDOWN_MS = 3 * 60 * 1000;
 const DEFAULT_PAIR_COOLDOWN_MS = 90 * 1000;
 const DEFAULT_SCENE_TTL_MS = 8 * 1000;
+const DEFAULT_STATE_TTL_MS = 5 * 1000;
 const MAX_REASON_CHARS = 120;
 
 const MOODS = Object.freeze(['calm', 'focused', 'sociable', 'restless', 'tired', 'guarded']);
@@ -109,7 +110,10 @@ function deriveMood(session) {
 }
 
 function snapshot(session, now = Date.now()) {
-    const current = session?.ambientState || refresh(session, now);
+    const previous = session?.ambientState;
+    const current = !previous || now - Number(previous.updatedAt || 0) >= stateTtlMs()
+        ? refresh(session, now)
+        : previous;
     const scene = session?.ambientScene;
     return {
         mood: MOODS.includes(current.mood) ? current.mood : 'calm',
@@ -157,6 +161,10 @@ function pairCooldownMs() {
 
 function sceneTtlMs() {
     return Math.max(2500, number(config().ambientSceneTtlMs, DEFAULT_SCENE_TTL_MS));
+}
+
+function stateTtlMs() {
+    return Math.max(1000, number(config().ambientStateTtlMs, DEFAULT_STATE_TTL_MS));
 }
 
 function pairKey(first, second) {
@@ -302,6 +310,7 @@ const BotAmbientDirector = {
     DEFAULT_SCENE_COOLDOWN_MS,
     DEFAULT_PAIR_COOLDOWN_MS,
     DEFAULT_SCENE_TTL_MS,
+    DEFAULT_STATE_TTL_MS,
     enabled,
     deriveMood,
     refresh,

@@ -44,6 +44,18 @@ try {
     assert.strictEqual(mid.completionTokens, 50);
     assert.strictEqual(mid.remainingRequests, 0);
 
+    const mandatoryChat = BotInferenceBudget.reserve(bot, {
+        event: 'player_chat',
+        bypass: true,
+        estimatedPromptTokens: 999,
+        maxCompletionTokens: 999,
+        now: 3000
+    });
+    assert.strictEqual(mandatoryChat.ok, true, 'explicit player chat must remain admissible over the soft quota');
+    assert.strictEqual(mandatoryChat.bypassed, true);
+    BotInferenceBudget.settle(mandatoryChat.reservation, { promptTokens: 30, completionTokens: 12 });
+    assert.strictEqual(BotInferenceBudget.status(bot, 3000).bypassedRequests, 1);
+
     const requestDenied = BotInferenceBudget.reserve(bot, {
         estimatedPromptTokens: 1,
         maxCompletionTokens: 1,

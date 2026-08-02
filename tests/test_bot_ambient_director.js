@@ -85,6 +85,12 @@ assert.strictEqual(BotAmbientDirector.deriveMood(lowVitals).mood, 'tired', 'low 
 const commerce = bot(2000106, 'Merchant', { plan: 'merchant', activeTrade: { id: 'trade-1' } });
 assert.strictEqual(BotAmbientDirector.deriveMood(commerce).mood, 'focused', 'commerce should keep mood focused');
 
+const staleAmbient = bot(2000110, 'FreshMood');
+staleAmbient.ambientState = { mood: 'tired', intent: 'recover', reason: 'old_snapshot', updatedAt: now };
+const refreshedAmbient = BotAmbientDirector.snapshot(staleAmbient, now + BotAmbientDirector.DEFAULT_STATE_TTL_MS + 1);
+assert.strictEqual(refreshedAmbient.mood, 'sociable', 'ambient mood must refresh after its TTL');
+assert.strictEqual(refreshedAmbient.reason, 'social_persona');
+
 const staleA = bot(2000107, 'StaleA');
 const staleB = bot(2000108, 'StaleB');
 const stale = BotAmbientDirector.start(staleA, staleB, now + 400000);
