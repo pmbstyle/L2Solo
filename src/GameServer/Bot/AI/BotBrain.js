@@ -9,7 +9,7 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
-const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant'];
+const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant', 'getting_buffed'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
 function config() {
     return OpenRouterGateway.config({ maxTokens: 320 });
@@ -494,7 +494,7 @@ const BotBrain = {
             debugSkip(session, cfg, 'request_in_flight');
             return false;
         }
-        if (bot.isDead && bot.isDead()) {
+        if (event !== 'player_chat' && bot.isDead && bot.isDead()) {
             debugSkip(session, cfg, 'dead');
             return false;
         }
@@ -502,11 +502,11 @@ const BotBrain = {
             debugSkip(session, cfg, 'merchant_plan');
             return false;
         }
-        if (session.plan === 'getting_buffed') {
+        if (event !== 'player_chat' && session.plan === 'getting_buffed') {
             debugSkip(session, cfg, 'refreshing_buffs');
             return false;
         }
-        if (!ALLOWED_PLANS.includes(session.plan || 'hunting')) {
+        if (event !== 'player_chat' && !ALLOWED_PLANS.includes(session.plan || 'hunting')) {
             debugSkip(session, cfg, `plan_not_allowed:${session.plan}`);
             return false;
         }

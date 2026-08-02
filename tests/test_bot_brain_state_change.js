@@ -118,6 +118,28 @@ async function main() {
             false,
             'background inference must be opt-in even when OpenRouter is enabled'
         );
+
+        // An explicit tell is still an interactive LLM turn while the hot bot
+        // is dead or in a transient deterministic plan.
+        options.default.OpenRouter.backgroundInferenceEnabled = false;
+        botSession.plan = 'fleeing';
+        botSession.actor.isDead = () => true;
+        const beforeChat = requests.length;
+        assert.strictEqual(
+            BotBrain.maybeThink(botSession, 'player_chat', {
+                available: true,
+                mode: 'fleeing',
+                level: 20,
+                vitals: { hpPct: 0, mpPct: 0 }
+            },
+            'Are you alive?',
+            { playerSession }
+            ),
+            true,
+            'player chat must enter the LLM path even for a dead/transient hot bot'
+        );
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        assert.strictEqual(requests.length, beforeChat + 1);
         console.log('Bot brain state-change checks passed');
     } finally {
         Math.random = originalRandom;
