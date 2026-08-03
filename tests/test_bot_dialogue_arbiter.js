@@ -115,7 +115,10 @@ async function main() {
         assert.strictEqual(fallback.started, false);
         assert.strictEqual(fallbackReplies.length, 1);
         const fallbackContext = await BotConversationService.contextFor(player, bot, { limit: 10 });
-        assert.ok(fallbackContext.recentTurns.some((turn) => turn.text === fallback.reply));
+        assert.ok(
+            !fallbackContext.recentTurns.some((turn) => turn.text === fallback.reply),
+            'deterministic fallback replies must not become model-visible history'
+        );
 
         const world = invoke('GameServer/World/World');
         world.user = { sessions: [player, bot] };

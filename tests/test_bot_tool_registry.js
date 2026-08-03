@@ -46,7 +46,7 @@ function main() {
     BotToolAudit.resetMemory();
     const session = { accountId: 'bot_registry', plan: 'hunting', actor: actor(), dataSendToOthers() {} };
     const first = BotAgentTools.execute(session, decision('stay_here', 'turn-1'), [], context('turn-1'));
-    assert.deepStrictEqual(first, { applied: true, reason: 'stay_here' });
+    assert.deepStrictEqual(first, { applied: true, reason: 'stay_here', replyDelivered: true });
     assert.strictEqual(session.botStay, true);
 
     const replay = BotAgentTools.execute(session, decision('stay_here', 'turn-1'), [], context('turn-1'));
@@ -84,7 +84,7 @@ function main() {
     );
     assert.deepStrictEqual(
         preparedFreshness,
-        { applied: false, reason: 'invalid_spot' },
+        { applied: false, reason: 'invalid_spot', replyDelivered: false },
         'strict tools must validate against the revision captured for the actual prompt'
     );
 
