@@ -7,6 +7,11 @@ const DEFAULTS = Object.freeze({
     model: 'google/gemini-2.5-flash-lite',
     temperature: 0.35,
     maxTokens: 320,
+    maxCompletionTokens: null,
+    interactiveMaxCompletionTokens: 0,
+    reasoningEnabled: true,
+    reasoningEffort: 'high',
+    reasoningExclude: true,
     timeoutMs: 3500,
     cooldownMs: 45000,
     chatCooldownMs: 0,
@@ -60,6 +65,12 @@ function num(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function nullableNum(value, fallback = null) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function config(overrides = {}) {
     const optn = options.default.OpenRouter || {};
     const source = {
@@ -69,6 +80,14 @@ function config(overrides = {}) {
         model: process.env.OPENROUTER_MODEL || optn.model || DEFAULTS.model,
         temperature: num(optn.temperature, DEFAULTS.temperature),
         maxTokens: num(optn.maxTokens, DEFAULTS.maxTokens),
+        maxCompletionTokens: nullableNum(optn.maxCompletionTokens, DEFAULTS.maxCompletionTokens),
+        interactiveMaxCompletionTokens: nullableNum(
+            optn.interactiveMaxCompletionTokens,
+            DEFAULTS.interactiveMaxCompletionTokens
+        ),
+        reasoningEnabled: bool(optn.reasoningEnabled, DEFAULTS.reasoningEnabled),
+        reasoningEffort: String(optn.reasoningEffort || DEFAULTS.reasoningEffort),
+        reasoningExclude: bool(optn.reasoningExclude, DEFAULTS.reasoningExclude),
         timeoutMs: num(optn.timeoutMs, DEFAULTS.timeoutMs),
         cooldownMs: num(optn.cooldownMs, DEFAULTS.cooldownMs),
         chatCooldownMs: num(optn.chatCooldownMs, DEFAULTS.chatCooldownMs),
@@ -104,6 +123,14 @@ function config(overrides = {}) {
         model: overrides.model || source.model,
         temperature: num(overrides.temperature, source.temperature),
         maxTokens: num(overrides.maxTokens, source.maxTokens),
+        maxCompletionTokens: nullableNum(overrides.maxCompletionTokens, source.maxCompletionTokens),
+        interactiveMaxCompletionTokens: nullableNum(
+            overrides.interactiveMaxCompletionTokens,
+            source.interactiveMaxCompletionTokens
+        ),
+        reasoningEnabled: bool(overrides.reasoningEnabled, source.reasoningEnabled),
+        reasoningEffort: String(overrides.reasoningEffort || source.reasoningEffort),
+        reasoningExclude: bool(overrides.reasoningExclude, source.reasoningExclude),
         timeoutMs: num(overrides.timeoutMs, source.timeoutMs),
         maxPromptPrice: num(overrides.maxPromptPrice, source.maxPromptPrice),
         maxCompletionPrice: num(overrides.maxCompletionPrice, source.maxCompletionPrice),
@@ -224,11 +251,27 @@ function shouldRepairSchema(spec, result) {
         spec.schemaRepairAttempt !== true;
 }
 
+function completionLimit(cfg, request = {}) {
+    const configured = request.maxCompletionTokens !== undefined
+        ? request.maxCompletionTokens
+        : request.interactive === true
+            ? cfg.interactiveMaxCompletionTokens
+            : (cfg.maxCompletionTokens ?? cfg.maxTokens);
+    const value = Number(configured);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
 function repairConfig(spec) {
-    const current = Number(spec.config?.maxTokens || config().maxTokens);
+    const source = config(spec.config || {});
+    const current = completionLimit(source, spec);
+    const rescue = current === null
+        ? 32768
+        : Math.max(2048, current * 2);
     return {
         ...(spec.config || {}),
-        maxTokens: Math.min(640, Math.max(512, current * 2))
+        maxTokens: rescue,
+        maxCompletionTokens: rescue,
+        interactiveMaxCompletionTokens: rescue
     };
 }
 
@@ -243,6 +286,8 @@ function combinedUsage(first, second) {
     return {
         promptTokens: sum('promptTokens'),
         completionTokens: sum('completionTokens'),
+        reasoningTokens: sum('reasoningTokens'),
+        visibleCompletionTokens: sum('visibleCompletionTokens'),
         totalTokens: sum('totalTokens'),
         cachedPromptTokens: sum('cachedPromptTokens'),
         cacheWriteTokens: sum('cacheWriteTokens'),
@@ -305,9 +350,19 @@ function markSuccess(key = 'default') {
 
 function normalizeUsage(usage) {
     if (!usage || typeof usage !== 'object') return null;
+    const completionTokens = Number(usage.completion_tokens || usage.completionTokens || 0);
+    const reasoningTokens = Number(
+        usage.completion_tokens_details?.reasoning_tokens ??
+        usage.completionTokensDetails?.reasoningTokens ??
+        usage.reasoning_tokens ??
+        usage.reasoningTokens ??
+        0
+    );
     return {
         promptTokens: Number(usage.prompt_tokens || 0),
-        completionTokens: Number(usage.completion_tokens || 0),
+        completionTokens,
+        reasoningTokens: Math.max(0, reasoningTokens),
+        visibleCompletionTokens: Math.max(0, completionTokens - Math.max(0, reasoningTokens)),
         totalTokens: Number(usage.total_tokens || 0),
         cachedPromptTokens: Number(usage.prompt_tokens_details?.cached_tokens || 0),
         cacheWriteTokens: Number(usage.prompt_tokens_details?.cache_write_tokens || 0),
@@ -366,9 +421,18 @@ async function requestUntraced(spec = {}) {
     const body = {
         model: cfg.model,
         messages: Array.isArray(requestData.messages) ? requestData.messages : [],
-        temperature: cfg.temperature,
-        max_tokens: cfg.maxTokens
+        temperature: cfg.temperature
     };
+
+    const maxCompletionTokens = completionLimit(cfg, requestData);
+    if (maxCompletionTokens !== null) body.max_completion_tokens = maxCompletionTokens;
+
+    if (cfg.reasoningEnabled) {
+        body.reasoning = {
+            effort: cfg.reasoningEffort,
+            exclude: cfg.reasoningExclude
+        };
+    }
 
     if (requestData.responseSchema) {
         body.response_format = {
@@ -470,7 +534,8 @@ async function request(spec = {}) {
     const input = {
         messages: spec.messages || [],
         responseSchema: spec.responseSchema?.name || null,
-        model: spec.config?.model || config().model
+        model: spec.config?.model || config().model,
+        interactive: spec.interactive === true
     };
     const metadata = {
         requestId: spec.requestId || null,
@@ -499,25 +564,41 @@ async function request(spec = {}) {
             }
             if (observation && result?.telemetry) {
                 const usage = result.usage || result.telemetry.usage || {};
-                const effectiveMaxTokens = result.telemetry.repairTriggered
-                    ? repairConfig(spec).maxTokens
-                    : Number((spec.config || {}).maxTokens ?? config().maxTokens);
+                const effectiveConfig = config(result.telemetry.repairTriggered
+                    ? repairConfig(spec)
+                    : (spec.config || {}));
+                const effectiveMaxTokens = completionLimit(effectiveConfig, {
+                    ...spec,
+                    interactive: spec.interactive === true
+                });
+                const modelParameters = {
+                    temperature: Number((spec.config || {}).temperature ?? config().temperature),
+                    reasoning: {
+                        enabled: effectiveConfig.reasoningEnabled,
+                        effort: effectiveConfig.reasoningEffort,
+                        exclude: effectiveConfig.reasoningExclude
+                    }
+                };
+                if (effectiveMaxTokens !== null) modelParameters.max_completion_tokens = effectiveMaxTokens;
                 observation.update({
                     model: result.telemetry.model || null,
-                    modelParameters: {
-                        temperature: Number((spec.config || {}).temperature ?? config().temperature),
-                        max_tokens: effectiveMaxTokens
-                    },
+                    modelParameters,
                     usageDetails: {
                         input: Number(usage.promptTokens || 0),
                         output: Number(usage.completionTokens || 0),
+                        reasoning: Number(usage.reasoningTokens || 0),
+                        visible_output: Number(usage.visibleCompletionTokens || 0),
                         total: Number(usage.totalTokens || 0)
                     },
                     costDetails: Number.isFinite(Number(usage.cost)) ? { total: Number(usage.cost) } : undefined,
                     metadata: {
                         outcome: result.telemetry.outcome,
                         status: result.telemetry.status,
-                        finishReason: result.telemetry.finishReason
+                        finishReason: result.telemetry.finishReason,
+                        interactive: spec.interactive === true,
+                        reasoningTokens: Number(usage.reasoningTokens || 0),
+                        visibleCompletionTokens: Number(usage.visibleCompletionTokens || 0),
+                        maxCompletionTokens: effectiveMaxTokens
                     }
                 });
                 result.telemetry.traceId = observation.traceId || LangfuseTracing.activeTraceId();

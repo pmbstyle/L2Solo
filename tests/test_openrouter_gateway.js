@@ -48,6 +48,7 @@ async function main() {
                 prompt_tokens: 10,
                 completion_tokens: 3,
                 total_tokens: 13,
+                completion_tokens_details: { reasoning_tokens: 2 },
                 prompt_tokens_details: { cached_tokens: 4, cache_write_tokens: 5 },
                 cost: 0.01
             }
@@ -67,6 +68,8 @@ async function main() {
     assert.deepStrictEqual(success.usage, {
         promptTokens: 10,
         completionTokens: 3,
+        reasoningTokens: 2,
+        visibleCompletionTokens: 1,
         totalTokens: 13,
         cachedPromptTokens: 4,
         cacheWriteTokens: 5,
@@ -77,6 +80,8 @@ async function main() {
     assert.strictEqual(captured.headers.Authorization, 'Bearer test-key');
     assert.strictEqual(captured.body.session_id, 'hot-bot:1:player:2');
     assert.deepStrictEqual(captured.body.usage, { include: true });
+    assert.strictEqual(captured.body.max_completion_tokens, 320);
+    assert.deepStrictEqual(captured.body.reasoning, { effort: 'high', exclude: true });
     assert.strictEqual(captured.body.provider.require_parameters, true);
     assert.strictEqual(captured.body.response_format.type, 'json_schema');
     assert.strictEqual(captured.body.response_format.json_schema.strict, true);
@@ -106,8 +111,8 @@ async function main() {
     });
     assert.strictEqual(repaired.ok, true);
     assert.deepStrictEqual(repaired.data, { reply: 'repaired' });
-    assert.strictEqual(repairBodies[0].max_tokens, 320);
-    assert.strictEqual(repairBodies[1].max_tokens, 640);
+    assert.strictEqual(repairBodies[0].max_completion_tokens, 320);
+    assert.strictEqual(repairBodies[1].max_completion_tokens, 2048);
     assert.strictEqual(repaired.telemetry.attempts, 2);
     assert.strictEqual(repaired.telemetry.repairTriggered, true);
     assert.strictEqual(repaired.telemetry.initialRawContent, '{"reply":');

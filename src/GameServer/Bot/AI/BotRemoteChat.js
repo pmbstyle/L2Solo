@@ -13,7 +13,7 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const queues = new Map();
 
 function config() {
-    return OpenRouterGateway.config({ maxTokens: 160, timeoutMs: 0 });
+    return OpenRouterGateway.config({ timeoutMs: 0 });
 }
 
 function estimatePromptTokens(payload) {
@@ -176,6 +176,7 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
         config: cfg,
         circuitKey: `cold-chat:${botId}:${playerId}`,
         circuitBreaker: false,
+        interactive: true,
         timeoutMs: 0,
         requestId: turn.turnId,
         sessionId,

@@ -13,7 +13,7 @@ const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant', 'getting_buffed'];
 const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
 function config() {
-    return OpenRouterGateway.config({ maxTokens: 640 });
+    return OpenRouterGateway.config();
 }
 
 function debugSkip(session, cfg, reason) {
@@ -297,6 +297,7 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
             ? `hot-chat:${botId}:${playerId}`
             : 'hot-background',
         circuitBreaker: requestContext?.conversationTurn ? false : true,
+        interactive: !!requestContext?.conversationTurn,
         timeoutMs: requestContext?.conversationTurn ? 0 : cfg.timeoutMs,
         requestId: requestContext?.requestId || `hot-${botId}-${Date.now()}`,
         sessionId: `hot-bot:${botId}:player:${playerId || 'none'}`,
