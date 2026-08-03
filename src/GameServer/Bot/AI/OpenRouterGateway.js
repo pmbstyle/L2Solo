@@ -23,6 +23,11 @@ const DEFAULTS = Object.freeze({
     hotBotMaxRequestsPerMinute: 6,
     hotBotPromptTokenBudgetPerMinute: 12000,
     hotBotCompletionTokenBudgetPerMinute: 2400,
+    hotBotGlobalBudgetEnabled: true,
+    hotBotGlobalMaxInFlight: 32,
+    hotBotGlobalMaxRequestsPerMinute: 240,
+    hotBotGlobalPromptTokenBudgetPerMinute: 300000,
+    hotBotGlobalCompletionTokenBudgetPerMinute: 64000,
     debug: false
 });
 
@@ -83,6 +88,11 @@ function config(overrides = {}) {
         hotBotMaxRequestsPerMinute: num(optn.hotBotMaxRequestsPerMinute, DEFAULTS.hotBotMaxRequestsPerMinute),
         hotBotPromptTokenBudgetPerMinute: num(optn.hotBotPromptTokenBudgetPerMinute, DEFAULTS.hotBotPromptTokenBudgetPerMinute),
         hotBotCompletionTokenBudgetPerMinute: num(optn.hotBotCompletionTokenBudgetPerMinute, DEFAULTS.hotBotCompletionTokenBudgetPerMinute),
+        hotBotGlobalBudgetEnabled: bool(optn.hotBotGlobalBudgetEnabled, DEFAULTS.hotBotGlobalBudgetEnabled),
+        hotBotGlobalMaxInFlight: num(optn.hotBotGlobalMaxInFlight, DEFAULTS.hotBotGlobalMaxInFlight),
+        hotBotGlobalMaxRequestsPerMinute: num(optn.hotBotGlobalMaxRequestsPerMinute, DEFAULTS.hotBotGlobalMaxRequestsPerMinute),
+        hotBotGlobalPromptTokenBudgetPerMinute: num(optn.hotBotGlobalPromptTokenBudgetPerMinute, DEFAULTS.hotBotGlobalPromptTokenBudgetPerMinute),
+        hotBotGlobalCompletionTokenBudgetPerMinute: num(optn.hotBotGlobalCompletionTokenBudgetPerMinute, DEFAULTS.hotBotGlobalCompletionTokenBudgetPerMinute),
         debug: bool(optn.debug, DEFAULTS.debug)
     };
 
@@ -115,6 +125,11 @@ function config(overrides = {}) {
         hotBotMaxRequestsPerMinute: Math.max(1, num(overrides.hotBotMaxRequestsPerMinute, source.hotBotMaxRequestsPerMinute)),
         hotBotPromptTokenBudgetPerMinute: Math.max(240, num(overrides.hotBotPromptTokenBudgetPerMinute, source.hotBotPromptTokenBudgetPerMinute)),
         hotBotCompletionTokenBudgetPerMinute: Math.max(64, num(overrides.hotBotCompletionTokenBudgetPerMinute, source.hotBotCompletionTokenBudgetPerMinute)),
+        hotBotGlobalBudgetEnabled: bool(overrides.hotBotGlobalBudgetEnabled, source.hotBotGlobalBudgetEnabled),
+        hotBotGlobalMaxInFlight: Math.max(1, num(overrides.hotBotGlobalMaxInFlight, source.hotBotGlobalMaxInFlight)),
+        hotBotGlobalMaxRequestsPerMinute: Math.max(1, num(overrides.hotBotGlobalMaxRequestsPerMinute, source.hotBotGlobalMaxRequestsPerMinute)),
+        hotBotGlobalPromptTokenBudgetPerMinute: Math.max(240, num(overrides.hotBotGlobalPromptTokenBudgetPerMinute, source.hotBotGlobalPromptTokenBudgetPerMinute)),
+        hotBotGlobalCompletionTokenBudgetPerMinute: Math.max(64, num(overrides.hotBotGlobalCompletionTokenBudgetPerMinute, source.hotBotGlobalCompletionTokenBudgetPerMinute)),
         debug: bool(overrides.debug, source.debug)
     };
 }

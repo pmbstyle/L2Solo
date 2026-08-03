@@ -2,6 +2,7 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 
 const WINDOW_MS = 60 * 1000;
 const buckets = new Map();
+const globalBucket = { entries: [], inFlight: 0, lastDeniedAt: 0, lastDeniedReason: null };
 let reservationSequence = 0;
 
 function actorId(session) {
@@ -25,6 +26,17 @@ function config() {
 function bucketFor(id) {
     if (!buckets.has(id)) buckets.set(id, { entries: [], lastDeniedAt: 0, lastDeniedReason: null });
     return buckets.get(id);
+}
+
+function globalConfig() {
+    const cfg = config();
+    return {
+        enabled: cfg.hotBotGlobalBudgetEnabled !== false,
+        maxInFlight: Math.max(1, Math.floor(number(cfg.hotBotGlobalMaxInFlight, 32))),
+        maxRequests: Math.max(1, Math.floor(number(cfg.hotBotGlobalMaxRequestsPerMinute, 240))),
+        promptBudget: Math.max(240, number(cfg.hotBotGlobalPromptTokenBudgetPerMinute, 300000)),
+        completionBudget: Math.max(64, number(cfg.hotBotGlobalCompletionTokenBudgetPerMinute, 64000))
+    };
 }
 
 function prune(bucket, now) {
@@ -52,6 +64,17 @@ function bypassedCount(bucket) {
 function rejection(bucket, reason, now, retryAfterMs = 0) {
     bucket.lastDeniedAt = now;
     bucket.lastDeniedReason = reason;
+    return {
+        ok: false,
+        reason,
+        retryAfterMs: Math.max(0, Math.ceil(retryAfterMs)),
+        status: null
+    };
+}
+
+function globalRejection(reason, now, retryAfterMs = 0) {
+    globalBucket.lastDeniedAt = now;
+    globalBucket.lastDeniedReason = reason;
     return {
         ok: false,
         reason,
@@ -91,6 +114,38 @@ function reserve(session, input = {}) {
         return rejection(bucket, 'inference_budget_completion_tokens', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
 
+    const global = globalConfig();
+    if (global.enabled) {
+        prune(globalBucket, now);
+        if (globalBucket.inFlight >= global.maxInFlight) {
+            return globalRejection('inference_budget_global_concurrency', now, 1000);
+        }
+        if (globalBucket.entries.length >= global.maxRequests) {
+            const oldest = globalBucket.entries[0];
+            return globalRejection(
+                'inference_budget_global_requests',
+                now,
+                oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS
+            );
+        }
+        if (sum(globalBucket, 'promptTokens') + promptTokens > global.promptBudget) {
+            const oldest = globalBucket.entries[0];
+            return globalRejection(
+                'inference_budget_global_prompt_tokens',
+                now,
+                oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS
+            );
+        }
+        if (sum(globalBucket, 'completionTokens') + completionTokens > global.completionBudget) {
+            const oldest = globalBucket.entries[0];
+            return globalRejection(
+                'inference_budget_global_completion_tokens',
+                now,
+                oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS
+            );
+        }
+    }
+
     const reservation = {
         id: `inference-${id}-${++reservationSequence}`,
         botId: id,
@@ -102,9 +157,15 @@ function reserve(session, input = {}) {
         settled: false,
         bypass: input.bypass === true,
         event: String(input.event || 'hot_decision').slice(0, 48),
-        priority: String(input.priority || 'normal').slice(0, 24)
+        priority: String(input.priority || 'normal').slice(0, 24),
+        globalEntry: null
     };
     bucket.entries.push(reservation);
+    if (global.enabled) {
+        reservation.globalEntry = reservation;
+        globalBucket.entries.push(reservation);
+        globalBucket.inFlight += 1;
+    }
     return { ok: true, bypassed: input.bypass === true, reservation, status: status(session, now) };
 }
 
@@ -121,7 +182,34 @@ function settle(reservation, usage = null) {
     reservation.totalTokens = reservation.promptTokens + reservation.completionTokens;
     reservation.cost = Number.isFinite(Number(usage?.cost)) ? Number(usage.cost) : null;
     reservation.settled = true;
+    if (reservation.globalEntry) globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
     return true;
+}
+
+function globalStatus(now = Date.now()) {
+    const cfg = globalConfig();
+    prune(globalBucket, now);
+    const promptTokens = sum(globalBucket, 'promptTokens');
+    const completionTokens = sum(globalBucket, 'completionTokens');
+    const oldest = globalBucket.entries[0];
+    return {
+        enabled: cfg.enabled,
+        windowMs: WINDOW_MS,
+        inFlight: globalBucket.inFlight,
+        maxInFlight: cfg.maxInFlight,
+        requests: globalBucket.entries.length,
+        maxRequests: cfg.maxRequests,
+        promptTokens,
+        promptBudget: cfg.promptBudget,
+        completionTokens,
+        completionBudget: cfg.completionBudget,
+        remainingRequests: Math.max(0, cfg.maxRequests - globalBucket.entries.length),
+        remainingPromptTokens: Math.max(0, cfg.promptBudget - promptTokens),
+        remainingCompletionTokens: Math.max(0, cfg.completionBudget - completionTokens),
+        nextResetAt: oldest ? oldest.startedAt + WINDOW_MS : null,
+        lastDeniedReason: globalBucket.lastDeniedReason || null,
+        lastDeniedAt: globalBucket.lastDeniedAt || null
+    };
 }
 
 function status(session, now = Date.now()) {
@@ -143,7 +231,8 @@ function status(session, now = Date.now()) {
             remainingPromptTokens: 0,
             remainingCompletionTokens: 0,
             nextResetAt: null,
-            lastDeniedReason: null
+            lastDeniedReason: null,
+            global: globalStatus(now)
         };
     }
 
@@ -171,7 +260,8 @@ function status(session, now = Date.now()) {
         remainingCompletionTokens: Math.max(0, completionBudget - completionTokens),
         nextResetAt: oldest ? oldest.startedAt + WINDOW_MS : null,
         lastDeniedReason: bucket.lastDeniedReason || null,
-        lastDeniedAt: bucket.lastDeniedAt || null
+        lastDeniedAt: bucket.lastDeniedAt || null,
+        global: globalStatus(now)
     };
 }
 
@@ -182,13 +272,30 @@ const BotInferenceBudget = {
     settle,
     status,
     snapshot: status,
+    globalStatus,
     reset(session = null) {
         if (session) {
             const id = actorId(session);
-            if (id) buckets.delete(id);
+            if (id) {
+                const bucket = buckets.get(id);
+                if (bucket) {
+                    bucket.entries.forEach((entry) => {
+                        if (entry.globalEntry && !entry.settled) {
+                            globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
+                        }
+                        entry.globalEntry = null;
+                    });
+                }
+                globalBucket.entries = globalBucket.entries.filter((entry) => entry.botId !== id);
+                buckets.delete(id);
+            }
             return;
         }
         buckets.clear();
+        globalBucket.entries = [];
+        globalBucket.inFlight = 0;
+        globalBucket.lastDeniedAt = 0;
+        globalBucket.lastDeniedReason = null;
         reservationSequence = 0;
     },
     bucketCount() { return buckets.size; }

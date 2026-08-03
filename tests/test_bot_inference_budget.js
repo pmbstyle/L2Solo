@@ -18,6 +18,10 @@ try {
         hotBotMaxRequestsPerMinute: 2,
         hotBotPromptTokenBudgetPerMinute: 300,
         hotBotCompletionTokenBudgetPerMinute: 100,
+        hotBotGlobalMaxInFlight: 8,
+        hotBotGlobalMaxRequestsPerMinute: 20,
+        hotBotGlobalPromptTokenBudgetPerMinute: 5000,
+        hotBotGlobalCompletionTokenBudgetPerMinute: 5000,
         maxTokens: 40
     };
     BotInferenceBudget.reset();
@@ -81,6 +85,34 @@ try {
         now: 62001
     });
     assert.strictEqual(afterWindow.ok, true, 'entries should expire from the sliding window');
+
+    BotInferenceBudget.reset();
+    options.default.OpenRouter.hotBotGlobalMaxInFlight = 1;
+    const globalFirst = BotInferenceBudget.reserve(session(2000202), {
+        event: 'state_change', estimatedPromptTokens: 10, maxCompletionTokens: 10, now: 1000
+    });
+    assert.strictEqual(globalFirst.ok, true);
+    assert.strictEqual(BotInferenceBudget.globalStatus(1000).inFlight, 1);
+    const globalConcurrent = BotInferenceBudget.reserve(session(2000203), {
+        event: 'state_change', estimatedPromptTokens: 10, maxCompletionTokens: 10, now: 1001
+    });
+    assert.strictEqual(globalConcurrent.ok, false);
+    assert.strictEqual(globalConcurrent.reason, 'inference_budget_global_concurrency');
+    BotInferenceBudget.settle(globalFirst.reservation, { promptTokens: 5, completionTokens: 5 });
+    assert.strictEqual(BotInferenceBudget.globalStatus(1001).inFlight, 0);
+
+    options.default.OpenRouter.hotBotGlobalMaxRequestsPerMinute = 1;
+    BotInferenceBudget.reset();
+    const globalRequest = BotInferenceBudget.reserve(session(2000204), {
+        event: 'state_change', estimatedPromptTokens: 10, maxCompletionTokens: 10, now: 2000
+    });
+    assert.strictEqual(globalRequest.ok, true);
+    BotInferenceBudget.settle(globalRequest.reservation, { promptTokens: 5, completionTokens: 5 });
+    const globalRequestDenied = BotInferenceBudget.reserve(session(2000205), {
+        event: 'state_change', estimatedPromptTokens: 10, maxCompletionTokens: 10, now: 2001
+    });
+    assert.strictEqual(globalRequestDenied.ok, false);
+    assert.strictEqual(globalRequestDenied.reason, 'inference_budget_global_requests');
 
     options.default.OpenRouter.hotBotBudgetEnabled = false;
     BotInferenceBudget.reset();

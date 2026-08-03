@@ -3,6 +3,7 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
@@ -13,6 +14,10 @@ const queues = new Map();
 
 function config() {
     return OpenRouterGateway.config({ maxTokens: 160, timeoutMs: 0 });
+}
+
+function estimatePromptTokens(payload) {
+    try { return Math.max(1, Math.ceil(JSON.stringify(payload).length / 4)); } catch (_) { return 1; }
 }
 
 function enqueue(key, work) {
@@ -354,7 +359,24 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             }
         };
 
-        return LangfuseTracing.withRootObservation(
+        const llmReady = cfg.enabled && !!cfg.apiKey;
+        const estimatedPromptTokens = estimatePromptTokens({
+            messages: [
+                { role: 'system', content: systemPrompt() },
+                { role: 'user', content: JSON.stringify(payload) }
+            ]
+        });
+        const admission = llmReady
+            ? BotInferenceBudget.reserveForBotId(state.characterId, {
+                event: 'cold_chat',
+                bypass: true,
+                priority: 'interactive',
+                estimatedPromptTokens,
+                maxCompletionTokens: cfg.maxTokens
+            })
+            : { ok: false, reason: 'disabled', reservation: null };
+
+        const rootPromise = LangfuseTracing.withRootObservation(
             'cold-bot.dialogue',
             payload,
             {
@@ -367,7 +389,6 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
             },
             async () => {
-                const llmReady = cfg.enabled && !!cfg.apiKey;
                 const stageMetadata = {
                     event: 'cold_chat',
                     source: 'cold_chat',
@@ -401,7 +422,25 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     'chain'
                 );
 
-                if (!llmReady) return deliver(fallback);
+                if (!llmReady || !admission.ok) {
+                    if (llmReady && !admission.ok) {
+                        await LangfuseTracing.withObservation(
+                            'bot.inference.admission',
+                            { event: 'cold_chat', estimatedPromptTokens },
+                            { ...stageMetadata, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 },
+                            async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
+                            'chain'
+                        );
+                    }
+                    const failed = !llmReady
+                        ? fallback
+                        : {
+                            ...fallback,
+                            providerOutcome: admission.reason,
+                            reason: admission.reason
+                        };
+                    return deliver(failed);
+                }
 
                 const providerResult = await requestLlmReply(payload, cfg, turn, state, playerSession);
                 const result = await LangfuseTracing.withObservation(
@@ -447,6 +486,13 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             },
             'agent'
         );
+        return rootPromise.then((result) => {
+            BotInferenceBudget.settle(admission.reservation, result?.usage || result?.llmTelemetry?.usage);
+            return result;
+        }, (error) => {
+            BotInferenceBudget.settle(admission.reservation);
+            throw error;
+        });
     });
 }
 

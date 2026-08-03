@@ -643,14 +643,30 @@ const BotBrain = {
             requestContext.worldRevision = requestContext.preparedWorldRevision;
         }
         const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
+        const estimatedPromptTokens = estimateRequestPromptTokens(payload, session);
         const admission = BotInferenceBudget.reserve(session, {
             event,
             bypass: event === 'player_chat',
             priority: event === 'player_chat' ? 'interactive' : 'normal',
-            estimatedPromptTokens: estimateRequestPromptTokens(payload, session),
+            estimatedPromptTokens,
             maxCompletionTokens: cfg.maxTokens
         });
         if (!admission.ok) {
+            LangfuseTracing.withObservation(
+                'bot.inference.admission',
+                { event, estimatedPromptTokens },
+                {
+                    event,
+                    source: requestContext?.source || event,
+                    botId: bot.fetchId?.(),
+                    playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
+                    turnId: requestContext?.conversationTurn?.turnId || requestContext?.requestId || null,
+                    reason: admission.reason,
+                    retryAfterMs: admission.retryAfterMs || 0
+                },
+                async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
+                'chain'
+            ).catch(() => {});
             session.lastBrainBudget = {
                 ...BotInferenceBudget.status(session),
                 deniedReason: admission.reason,
