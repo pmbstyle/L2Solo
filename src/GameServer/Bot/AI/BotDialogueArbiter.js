@@ -2,6 +2,15 @@ const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService'
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+
+function recordDeliveredReply(input, turn, reply) {
+    if (!reply || !input?.playerSession || !input?.botSession) return;
+    PartyDialogueState.recordDeliveredReply(input.playerSession, input.botSession, reply, {
+        turnId: turn?.turnId || input.turnId || input.requestId || null,
+        channel: turn?.channel || input.channel || input.source || 'hot_dialogue'
+    });
+}
 
 function fallbackText(botSession, reason) {
     const plan = botSession?.plan || 'hunting';
@@ -66,6 +75,7 @@ function deliverFallback(input, turn, reason) {
                 async () => {
                     BotManager.botTell(input.botSession, input.playerSession, reply);
                     delivered = true;
+                    recordDeliveredReply(input, turn, reply);
                     return { ok: true, reply, delivered: true };
                 },
                 'chain'
@@ -97,6 +107,7 @@ function deliverFallback(input, turn, reason) {
             try {
                 BotManager.botTell(input.botSession, input.playerSession, reply);
                 delivered = true;
+                recordDeliveredReply(input, turn, reply);
             } catch (_) {
                 delivered = false;
             }

@@ -36,6 +36,11 @@ function isGroupAddress(text) {
     return /\b(?:bot|bots|guys|party|team|help|everyone|anyone|somebody|someone)\b/i.test(String(text || ''));
 }
 
+function isContinuationMessage(text) {
+    const value = String(text || '').trim().toLowerCase();
+    return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about)\b/.test(value);
+}
+
 function buildCandidates({ sessions = [], playerSession, partyChannel = false, hearingRadius = HEARING_RADIUS } = {}) {
     const player = playerSession?.actor;
     return sessions
@@ -70,6 +75,7 @@ function select({
     sessions,
     kind,
     now = Date.now(),
+    dialogueState = null,
     activeResponderId,
     activeResponderAt,
     hearingRadius = HEARING_RADIUS
@@ -103,11 +109,19 @@ function select({
         return { candidate: selected, candidates, status: 'matched', reason: 'selected', matchType: null };
     }
 
-    const activeAge = Number.isFinite(Number(activeResponderAt))
-        ? now - Number(activeResponderAt)
+    const state = dialogueState || {};
+    const inFlight = findById(candidates, state.inFlightBotId);
+    if (inFlight) {
+        return { candidate: inFlight, candidates, status: 'matched', reason: 'in_flight', matchType: null };
+    }
+
+    const previousId = state.lastDeliveredBotId ?? state.activeBotId ?? activeResponderId;
+    const previousAt = state.lastDeliveredAt || state.activeSince || activeResponderAt;
+    const activeAge = Number.isFinite(Number(previousAt))
+        ? now - Number(previousAt)
         : Infinity;
-    const active = activeAge >= 0 && activeAge <= ACTIVE_RESPONDER_TTL_MS
-        ? findById(candidates, activeResponderId)
+    const active = (partyChannel || isContinuationMessage(text)) && activeAge >= 0 && activeAge <= ACTIVE_RESPONDER_TTL_MS
+        ? findById(candidates, previousId)
         : null;
     if (active) {
         return { candidate: active, candidates, status: 'matched', reason: 'active_responder', matchType: null };
@@ -131,5 +145,6 @@ module.exports = {
     PARTY_CHANNEL_KIND,
     buildCandidates,
     isGroupAddress,
+    isContinuationMessage,
     select
 };

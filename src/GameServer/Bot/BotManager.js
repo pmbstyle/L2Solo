@@ -737,6 +737,7 @@ const BotManager = {
         const playerPt = new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ());
         const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
         const PartyDialogueRouter = invoke('GameServer/Bot/AI/PartyDialogueRouter');
+        const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
         const llmEnabled = BotBrain.isEnabled();
         const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
         const partyChannel = Number(data.kind) === 3;
@@ -748,13 +749,17 @@ const BotManager = {
                 playerSession,
                 sessions: this.sessions,
                 kind: data.kind,
+                dialogueState: PartyDialogueState.snapshot(playerSession),
                 activeResponderId: playerSession.botDialogueResponderId,
                 activeResponderAt: playerSession.botDialogueResponderAt
             });
             llmResponder = route.candidate;
             if (llmResponder) {
-                playerSession.botDialogueResponderId = llmResponder.id;
-                playerSession.botDialogueResponderAt = Date.now();
+                PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
+                    reason: route.reason,
+                    text: rawText,
+                    channel: partyChannel ? 'party_chat' : 'local_chat'
+                });
             }
         }
 
@@ -790,7 +795,12 @@ const BotManager = {
                     channel: partyChannel ? 'party_chat' : 'local_chat',
                     source: partyChannel ? 'party_chat' : 'local_chat',
                     allowFallback: true
+                }).then((result) => {
+                    if (result?.started === true || result?.queued === true || result?.delivered === true) return result;
+                    PartyDialogueState.clearInFlight(playerSession, session);
+                    return result;
                 }).catch((error) => {
+                    PartyDialogueState.clearInFlight(playerSession, session);
                     utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
                 });
                 return;

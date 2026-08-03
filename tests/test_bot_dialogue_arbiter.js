@@ -11,6 +11,7 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
 
 function actor(id, name, x = 0) {
     return {
@@ -188,6 +189,7 @@ async function main() {
 
         delete player.botDialogueResponderId;
         delete player.botDialogueResponderAt;
+        PartyDialogueState.reset(player);
         routes.length = 0;
         BotManager.handlePlayerSpeak(player, { text: 'nice weather today' });
         assert.deepStrictEqual(routes, [], 'unaddressed local chat must not fan out to hot bots');
@@ -198,6 +200,7 @@ async function main() {
 
         delete player.botDialogueResponderId;
         delete player.botDialogueResponderAt;
+        PartyDialogueState.reset(player);
         routes.length = 0;
         BotManager.handlePlayerSpeak(player, { kind: 3, text: 'party, regroup' });
         assert.deepStrictEqual(routes, ['Aria'], 'party chat must select one companion responder');

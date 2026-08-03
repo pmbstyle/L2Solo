@@ -9,6 +9,7 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
 
 const ALLOWED_EVENTS = new Set(['player_chat']);
 function config() {
@@ -468,6 +469,19 @@ function recordConversationReply(session, decision, result, requestContext) {
     }));
 }
 
+function recordDialogueDelivery(session, reply, requestContext) {
+    if (!reply || !requestContext?.playerSession || !requestContext?.conversationTurn) return;
+    PartyDialogueState.recordDeliveredReply(
+        requestContext.playerSession,
+        session,
+        reply,
+        {
+            turnId: requestContext.conversationTurn.turnId,
+            channel: requestContext.conversationTurn.channel
+        }
+    );
+}
+
 function queueConversationWrite(session, work, metadata = {}) {
     const previous = session.lastConversationWrite || Promise.resolve();
     const persist = () => LangfuseTracing.withObservation(
@@ -502,6 +516,7 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
                 invoke('GameServer/Bot/BotManager').botTell(session, playerSession, playerVisibleReply);
                 result = { ...result, replyDelivered: true, playerVisibleReply };
             }
+            if (result.replyDelivered === true) recordDialogueDelivery(session, playerVisibleReply, requestContext);
             recordConversationReply(session, decision, result, requestContext);
         }
         return { ...result, playerVisibleReply };
@@ -511,6 +526,7 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
         const reply = BotAgentTools.rejectionReply(result);
         BotManager.botTell(session, requestContext.playerSession, reply);
         playerVisibleReply = reply;
+        recordDialogueDelivery(session, reply, requestContext);
         if (requestContext.conversationTurn) {
             queueConversationWrite(session, () => BotConversationService.recordFallback({
                 playerSession: requestContext.playerSession,
@@ -588,6 +604,7 @@ function fallbackReply(session, requestContext, outcome, persistMetadata = {}) {
         : `I am ${plan} right now.`;
 
     BotManager.botTell(session, playerSession, reply);
+    recordDialogueDelivery(session, reply, requestContext);
     if (requestContext?.conversationTurn) {
         queueConversationWrite(
             session,
