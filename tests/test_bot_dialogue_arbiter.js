@@ -10,6 +10,7 @@ const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 function actor(id, name, x = 0) {
     return {
@@ -41,10 +42,13 @@ async function main() {
     const originalBotTell = BotManager.botTell;
     const originalRecordEvent = BotSocialMemory.recordEvent;
     const originalAssemble = BotContextAssembler.assemble;
+    const originalWithObservation = LangfuseTracing.withObservation;
+    const originalWithRootObservation = LangfuseTracing.withRootObservation;
     const originalSessions = BotManager.sessions;
     const originalRoute = BotDialogueArbiter.route;
     const originalWorldUser = invoke('GameServer/World/World').user;
 
+    const observations = [];
     try {
         const player = session('player_dialogue', actor(101, 'Slava'));
         const playerTwo = session('player_dialogue_two', actor(102, 'OtherPlayer'));
@@ -56,6 +60,14 @@ async function main() {
         BotBrain.maybeThink = (_bot, _event, _status, text, requestContext) => {
             captured.push({ text, requestContext });
             return true;
+        };
+        LangfuseTracing.withObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
+        };
+        LangfuseTracing.withRootObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
         };
 
         const first = await BotDialogueArbiter.route({
@@ -122,6 +134,7 @@ async function main() {
             'deterministic fallback replies must not become model-visible history'
         );
 
+        const observationsBeforeContextFailure = observations.length;
         BotContextAssembler.assemble = async () => { throw new Error('context assembly failed'); };
         const contextFailure = await BotDialogueArbiter.route({
             playerSession: player,
@@ -137,6 +150,25 @@ async function main() {
         assert(storedConversation.turns.some((turn) =>
             turn.turnId === 'arbiter-context-failure' && turn.role === 'bot' && turn.meta?.fallback === true
         ), 'context-error fallback must be persisted for audit while remaining hidden from the model');
+        assert.deepStrictEqual(
+            observations.slice(observationsBeforeContextFailure),
+            ['hot-bot.dialogue', 'bot.reply.deliver', 'bot.conversation.persist'],
+            'context-error fallback must retain a complete Langfuse trace'
+        );
+
+        LangfuseTracing.withRootObservation = () => Promise.reject(new Error('trace backend unavailable'));
+        const traceFailure = await BotDialogueArbiter.route({
+            playerSession: player,
+            botSession: bot,
+            channel: 'client_tell',
+            source: 'client_tell',
+            turnId: 'arbiter-trace-failure',
+            text: 'The trace backend must not block this fallback.'
+        });
+        assert.strictEqual(traceFailure.ok, true);
+        assert.strictEqual(traceFailure.delivered, true);
+        assert.strictEqual(traceFailure.persisted, true);
+        assert.strictEqual(fallbackReplies.length, 3, 'trace failures must fail open without dropping the player reply');
 
         const world = invoke('GameServer/World/World');
         world.user = { sessions: [player, bot] };
@@ -176,6 +208,8 @@ async function main() {
         BotManager.botTell = originalBotTell;
         BotSocialMemory.recordEvent = originalRecordEvent;
         BotContextAssembler.assemble = originalAssemble;
+        LangfuseTracing.withObservation = originalWithObservation;
+        LangfuseTracing.withRootObservation = originalWithRootObservation;
         BotManager.sessions = originalSessions;
         BotDialogueArbiter.route = originalRoute;
         invoke('GameServer/World/World').user = originalWorldUser;

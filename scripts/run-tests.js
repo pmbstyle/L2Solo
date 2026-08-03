@@ -18,6 +18,7 @@ const tests = [
     'tests/test_hot_bot_conversation_flow.js',
     'tests/test_hot_bot_schema_repair.js',
     'tests/test_hot_conversation_history_queue.js',
+    'tests/test_hot_bot_queue_failure.js',
     'tests/test_bot_activity_journal.js',
     'tests/test_bot_context_assembler.js',
     'tests/test_bot_conversation_summary.js',

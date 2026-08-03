@@ -433,14 +433,15 @@ function recordConversationReply(session, decision, result, requestContext) {
     }));
 }
 
-function queueConversationWrite(session, work) {
+function queueConversationWrite(session, work, metadata = {}) {
     const previous = session.lastConversationWrite || Promise.resolve();
     const persist = () => LangfuseTracing.withObservation(
         'bot.conversation.persist',
         { botId: session?.actor?.fetchId?.() || session?.accountId || null },
         {
             botId: session?.actor?.fetchId?.() || session?.accountId || null,
-            source: 'hot_dialogue'
+            source: 'hot_dialogue',
+            ...metadata
         },
         work,
         'chain'
@@ -537,7 +538,7 @@ function recordInferenceEvent(session, event, result, requestContext = null, ext
     }).catch(() => {});
 }
 
-function fallbackReply(session, requestContext, outcome) {
+function fallbackReply(session, requestContext, outcome, persistMetadata = {}) {
     const playerSession = requestContext?.playerSession;
     if (!playerSession?.actor || !session?.actor) return false;
 
@@ -551,16 +552,86 @@ function fallbackReply(session, requestContext, outcome) {
 
     BotManager.botTell(session, playerSession, reply);
     if (requestContext?.conversationTurn) {
-        queueConversationWrite(session, () => BotConversationService.recordFallback({
-            playerSession,
-            botSession: session,
-            turnId: requestContext.conversationTurn.turnId,
-            channel: requestContext.conversationTurn.channel,
-            text: reply,
-            reason: outcome || 'fallback'
-        }));
+        queueConversationWrite(
+            session,
+            () => BotConversationService.recordFallback({
+                playerSession,
+                botSession: session,
+                turnId: requestContext.conversationTurn.turnId,
+                channel: requestContext.conversationTurn.channel,
+                text: reply,
+                reason: outcome || 'fallback'
+            }),
+            persistMetadata
+        );
     }
     return reply;
+}
+
+function tracePreProviderFallback(session, requestContext, outcome, playerMessage = '', failure = null) {
+    const botId = session?.actor?.fetchId?.() || session?.accountId || null;
+    const playerId = requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null;
+    const turnId = requestContext?.conversationTurn?.turnId || requestContext?.requestId || null;
+    const metadata = {
+        event: 'player_chat',
+        source: requestContext?.source || requestContext?.channel || 'player_chat',
+        channel: requestContext?.channel || requestContext?.conversationTurn?.channel || null,
+        botId,
+        playerId,
+        turnId,
+        requestId: requestContext?.requestId || turnId,
+        sessionId: conversationSessionId(session, requestContext),
+        providerOutcome: outcome || 'pre_provider_error',
+        preProviderFallback: true,
+        error: failure?.message || null
+    };
+    let fallbackDelivered = false;
+
+    return LangfuseTracing.withRootObservation(
+        'hot-bot.dialogue',
+        {
+            event: 'player_chat',
+            playerMessage: playerMessage || '',
+            conversation: requestContext?.conversation || null
+        },
+        metadata,
+        async () => {
+            const delivery = await LangfuseTracing.withObservation(
+                'bot.reply.deliver',
+                { action: 'fallback', reason: outcome || 'pre_provider_error' },
+                metadata,
+                async () => {
+                    const reply = fallbackReply(session, requestContext, outcome, metadata);
+                    fallbackDelivered = !!reply;
+                    return { ok: !!reply, reply: reply || null, delivered: !!reply };
+                },
+                'chain'
+            );
+            await Promise.resolve(session?.lastConversationWrite).catch(() => false);
+            return {
+                ok: delivery?.delivered === true,
+                applied: false,
+                reason: outcome || 'pre_provider_error',
+                traceOutput: {
+                    providerOutcome: outcome || 'pre_provider_error',
+                    requestedAction: null,
+                    toolOutcome: null,
+                    applied: false,
+                    playerVisibleReply: delivery?.reply || null,
+                    replyDelivered: delivery?.delivered === true,
+                    error: failure?.message || null
+                }
+            };
+        },
+        'agent'
+    ).catch(async (traceError) => {
+        utils.infoWarn('Langfuse', 'pre-provider fallback trace failed for %s: %s', session?.actor?.fetchName?.() || 'bot', traceError.message);
+        if (!fallbackDelivered) {
+            try { fallbackReply(session, requestContext, outcome, metadata); } catch (_) { /* original failure is already logged */ }
+        }
+        await Promise.resolve(session?.lastConversationWrite).catch(() => false);
+        return false;
+    });
 }
 
 const BotBrain = {
@@ -800,18 +871,22 @@ const BotBrain = {
                         nextPending.text,
                         requestContext
                     );
-                    if (!started) fallbackReply(session, requestContext, 'queued_not_started');
+                    if (!started) {
+                        await tracePreProviderFallback(session, requestContext, 'queued_not_started', nextPending.text);
+                    }
                 });
                 const continuePending = (nextPending) => Promise.resolve(session.lastConversationWrite)
                     .catch(() => {})
                     .then(() => startPending(nextPending))
-                    .catch((error) => {
+                    .catch(async (error) => {
                         utils.infoWarn('BotBrain', 'queued dialogue failed for %s: %s', bot.fetchName(), error.message);
-                        try {
-                            fallbackReply(session, nextPending.requestContext, 'queued_context_error');
-                        } catch (fallbackError) {
-                            utils.infoWarn('BotBrain', 'queued dialogue fallback failed for %s: %s', bot.fetchName(), fallbackError.message);
-                        }
+                        await tracePreProviderFallback(
+                            session,
+                            nextPending.requestContext,
+                            'queued_context_error',
+                            nextPending.text,
+                            error
+                        );
 
                         const following = queue.shift() || null;
                         session.pendingBrainTurn = queue[0] || null;
