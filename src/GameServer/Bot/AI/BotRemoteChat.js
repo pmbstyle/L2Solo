@@ -373,9 +373,10 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 bypass: true,
                 priority: 'interactive',
                 estimatedPromptTokens,
-                maxCompletionTokens: cfg.maxTokens
+                maxCompletionTokens: 0
             })
             : { ok: false, reason: 'disabled', reservation: null };
+        let reservation = admission.reservation;
 
         const rootPromise = LangfuseTracing.withRootObservation(
             'cold-bot.dialogue',
@@ -423,13 +424,17 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     'chain'
                 );
 
-                if (!llmReady || !admission.ok) {
-                    if (llmReady && !admission.ok) {
+                const grantedAdmission = admission.ready
+                    ? await admission.ready
+                    : admission;
+                reservation = grantedAdmission?.reservation || reservation;
+                if (!llmReady || !grantedAdmission?.ok) {
+                    if (llmReady && !grantedAdmission?.ok) {
                         await LangfuseTracing.withObservation(
                             'bot.inference.admission',
                             { event: 'cold_chat', estimatedPromptTokens },
-                            { ...stageMetadata, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 },
-                            async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
+                            { ...stageMetadata, reason: grantedAdmission.reason, retryAfterMs: grantedAdmission.retryAfterMs || 0 },
+                            async () => ({ ok: false, reason: grantedAdmission.reason, retryAfterMs: grantedAdmission.retryAfterMs || 0 }),
                             'chain'
                         );
                     }
@@ -437,8 +442,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                         ? fallback
                         : {
                             ...fallback,
-                            providerOutcome: admission.reason,
-                            reason: admission.reason
+                            providerOutcome: grantedAdmission.reason,
+                            reason: grantedAdmission.reason
                         };
                     return deliver(failed);
                 }
@@ -488,10 +493,10 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             'agent'
         );
         return rootPromise.then((result) => {
-            BotInferenceBudget.settle(admission.reservation, result?.usage || result?.llmTelemetry?.usage);
+            BotInferenceBudget.settle(reservation, result?.usage || result?.llmTelemetry?.usage);
             return result;
         }, (error) => {
-            BotInferenceBudget.settle(admission.reservation);
+            BotInferenceBudget.settle(reservation);
             throw error;
         });
     });

@@ -101,6 +101,38 @@ try {
     BotInferenceBudget.settle(globalFirst.reservation, { promptTokens: 5, completionTokens: 5 });
     assert.strictEqual(BotInferenceBudget.globalStatus(1001).inFlight, 0);
 
+    BotInferenceBudget.reset();
+    options.default.OpenRouter.hotBotGlobalMaxInFlight = 8;
+    options.default.OpenRouter.hotBotGlobalMaxRequestsPerMinute = 1;
+    options.default.OpenRouter.hotBotGlobalPromptTokenBudgetPerMinute = 10;
+    options.default.OpenRouter.hotBotGlobalCompletionTokenBudgetPerMinute = 10;
+    const interactive = BotInferenceBudget.reserve(session(2000206), {
+        event: 'player_chat',
+        bypass: true,
+        estimatedPromptTokens: 9999,
+        maxCompletionTokens: 0,
+        now: 1500
+    });
+    assert.strictEqual(interactive.ok, true, 'direct chat must bypass global soft quotas');
+    BotInferenceBudget.settle(interactive.reservation, {
+        promptTokens: 9999,
+        completionTokens: 9999
+    });
+    assert.strictEqual(BotInferenceBudget.globalStatus(1500).promptTokens, 9999);
+    assert.strictEqual(
+        BotInferenceBudget.globalStatus(1500).remainingPromptTokens,
+        240,
+        'interactive usage is observable but excluded from the global soft quota'
+    );
+    const normalAfterInteractive = BotInferenceBudget.reserve(session(2000207), {
+        event: 'state_change',
+        estimatedPromptTokens: 1,
+        maxCompletionTokens: 1,
+        now: 1501
+    });
+    assert.strictEqual(normalAfterInteractive.ok, true, 'interactive usage must not starve background admission');
+    BotInferenceBudget.settle(normalAfterInteractive.reservation, { promptTokens: 1, completionTokens: 1 });
+
     options.default.OpenRouter.hotBotGlobalMaxRequestsPerMinute = 1;
     BotInferenceBudget.reset();
     const globalRequest = BotInferenceBudget.reserve(session(2000204), {

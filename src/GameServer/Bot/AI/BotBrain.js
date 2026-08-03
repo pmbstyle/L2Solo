@@ -650,7 +650,7 @@ const BotBrain = {
             bypass: event === 'player_chat',
             priority: event === 'player_chat' ? 'interactive' : 'normal',
             estimatedPromptTokens,
-            maxCompletionTokens: cfg.maxTokens
+            maxCompletionTokens: event === 'player_chat' ? 0 : cfg.maxTokens
         });
         if (!admission.ok) {
             LangfuseTracing.withObservation(
@@ -687,6 +687,13 @@ const BotBrain = {
         }
 
         session.brainInFlight = true;
+        let reservation = admission.reservation;
+        const admissionReady = admission.ready
+            ? admission.ready.then((granted) => {
+                reservation = granted?.reservation || null;
+                return granted;
+            })
+            : Promise.resolve(admission);
         const turnId = requestContext?.conversationTurn?.turnId || requestContext?.requestId || `${event}:${bot.fetchId?.()}:${Date.now()}`;
         if (requestContext && !requestContext.requestId) requestContext.requestId = turnId;
         const turnPersistence = BotLLMTurnStore.begin({
@@ -714,7 +721,7 @@ const BotBrain = {
 
         let providerResult = null;
         const finishTurn = () => {
-            BotInferenceBudget.settle(admission.reservation, providerResult?.usage);
+            BotInferenceBudget.settle(reservation, providerResult?.usage);
             const finalTelemetry = providerResult?.llmTelemetry || providerResult?.telemetry || {};
             turnPersistence.then(() => BotLLMTurnStore.finish({
                 turnId,
@@ -790,6 +797,15 @@ const BotBrain = {
         };
         const runTurn = async () => {
             try {
+                const grantedAdmission = await admissionReady;
+                if (!grantedAdmission?.ok) {
+                    providerResult = {
+                        ok: false,
+                        reason: grantedAdmission?.reason || 'inference_budget_unavailable',
+                        telemetry: { outcome: grantedAdmission?.reason || 'inference_budget_unavailable' }
+                    };
+                    return providerResult;
+                }
                 const stageMetadata = {
                     event,
                     source: requestContext?.source || event,

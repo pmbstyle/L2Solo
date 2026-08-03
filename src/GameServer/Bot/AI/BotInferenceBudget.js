@@ -3,6 +3,7 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const WINDOW_MS = 60 * 1000;
 const buckets = new Map();
 const globalBucket = { entries: [], inFlight: 0, lastDeniedAt: 0, lastDeniedReason: null };
+const globalWaiters = [];
 let reservationSequence = 0;
 
 function actorId(session) {
@@ -53,6 +54,18 @@ function sum(bucket, field) {
     return bucket.entries.reduce((total, entry) => total + nonNegative(entry[field]), 0);
 }
 
+function budgetEntries(bucket) {
+    return bucket.entries.filter((entry) => entry.bypass !== true);
+}
+
+function budgetCount(bucket) {
+    return budgetEntries(bucket).length;
+}
+
+function budgetSum(bucket, field) {
+    return budgetEntries(bucket).reduce((total, entry) => total + nonNegative(entry[field]), 0);
+}
+
 function knownCost(bucket) {
     return bucket.entries.reduce((total, entry) => total + (Number.isFinite(Number(entry.cost)) ? Number(entry.cost) : 0), 0);
 }
@@ -83,6 +96,35 @@ function globalRejection(reason, now, retryAfterMs = 0) {
     };
 }
 
+function queueInteractiveReservation(session, input, now) {
+    let resolveReady;
+    const ready = new Promise((resolve) => {
+        resolveReady = resolve;
+    });
+    globalWaiters.push({ session, input: { ...input }, now, resolve: resolveReady });
+    return {
+        ok: true,
+        bypassed: true,
+        queued: true,
+        reservation: null,
+        ready,
+        status: status(session, now)
+    };
+}
+
+function pumpGlobalWaiters() {
+    const global = globalConfig();
+    while (globalWaiters.length > 0 && (!global.enabled || globalBucket.inFlight < global.maxInFlight)) {
+        const waiter = globalWaiters.shift();
+        const result = reserve(waiter.session, {
+            ...waiter.input,
+            now: waiter.now,
+            _grantingQueued: true
+        });
+        waiter.resolve(result);
+    }
+}
+
 function reserve(session, input = {}) {
     const id = actorId(session);
     if (!id) return { ok: false, reason: 'missing_bot' };
@@ -101,15 +143,15 @@ function reserve(session, input = {}) {
     const promptTokens = nonNegative(input.estimatedPromptTokens);
     const completionTokens = nonNegative(input.maxCompletionTokens ?? cfg.maxTokens);
 
-    if (input.bypass !== true && bucket.entries.length >= maxRequests) {
+    if (input.bypass !== true && budgetCount(bucket) >= maxRequests) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_requests', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
-    if (input.bypass !== true && sum(bucket, 'promptTokens') + promptTokens > promptBudget) {
+    if (input.bypass !== true && budgetSum(bucket, 'promptTokens') + promptTokens > promptBudget) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_prompt_tokens', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
-    if (input.bypass !== true && sum(bucket, 'completionTokens') + completionTokens > completionBudget) {
+    if (input.bypass !== true && budgetSum(bucket, 'completionTokens') + completionTokens > completionBudget) {
         const oldest = bucket.entries[0];
         return rejection(bucket, 'inference_budget_completion_tokens', now, oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS);
     }
@@ -117,10 +159,13 @@ function reserve(session, input = {}) {
     const global = globalConfig();
     if (global.enabled) {
         prune(globalBucket, now);
-        if (globalBucket.inFlight >= global.maxInFlight) {
+        if (globalBucket.inFlight >= global.maxInFlight && input.bypass === true && input._grantingQueued !== true) {
+            return queueInteractiveReservation(session, input, now);
+        }
+        if (globalBucket.inFlight >= global.maxInFlight && input._grantingQueued !== true) {
             return globalRejection('inference_budget_global_concurrency', now, 1000);
         }
-        if (globalBucket.entries.length >= global.maxRequests) {
+        if (input.bypass !== true && budgetCount(globalBucket) >= global.maxRequests) {
             const oldest = globalBucket.entries[0];
             return globalRejection(
                 'inference_budget_global_requests',
@@ -128,7 +173,7 @@ function reserve(session, input = {}) {
                 oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS
             );
         }
-        if (sum(globalBucket, 'promptTokens') + promptTokens > global.promptBudget) {
+        if (input.bypass !== true && budgetSum(globalBucket, 'promptTokens') + promptTokens > global.promptBudget) {
             const oldest = globalBucket.entries[0];
             return globalRejection(
                 'inference_budget_global_prompt_tokens',
@@ -136,7 +181,7 @@ function reserve(session, input = {}) {
                 oldest ? WINDOW_MS - (now - oldest.startedAt) : WINDOW_MS
             );
         }
-        if (sum(globalBucket, 'completionTokens') + completionTokens > global.completionBudget) {
+        if (input.bypass !== true && budgetSum(globalBucket, 'completionTokens') + completionTokens > global.completionBudget) {
             const oldest = globalBucket.entries[0];
             return globalRejection(
                 'inference_budget_global_completion_tokens',
@@ -183,6 +228,7 @@ function settle(reservation, usage = null) {
     reservation.cost = Number.isFinite(Number(usage?.cost)) ? Number(usage.cost) : null;
     reservation.settled = true;
     if (reservation.globalEntry) globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
+    pumpGlobalWaiters();
     return true;
 }
 
@@ -191,6 +237,9 @@ function globalStatus(now = Date.now()) {
     prune(globalBucket, now);
     const promptTokens = sum(globalBucket, 'promptTokens');
     const completionTokens = sum(globalBucket, 'completionTokens');
+    const quotaPromptTokens = budgetSum(globalBucket, 'promptTokens');
+    const quotaCompletionTokens = budgetSum(globalBucket, 'completionTokens');
+    const quotaRequests = budgetCount(globalBucket);
     const oldest = globalBucket.entries[0];
     return {
         enabled: cfg.enabled,
@@ -203,12 +252,13 @@ function globalStatus(now = Date.now()) {
         promptBudget: cfg.promptBudget,
         completionTokens,
         completionBudget: cfg.completionBudget,
-        remainingRequests: Math.max(0, cfg.maxRequests - globalBucket.entries.length),
-        remainingPromptTokens: Math.max(0, cfg.promptBudget - promptTokens),
-        remainingCompletionTokens: Math.max(0, cfg.completionBudget - completionTokens),
+        remainingRequests: Math.max(0, cfg.maxRequests - quotaRequests),
+        remainingPromptTokens: Math.max(0, cfg.promptBudget - quotaPromptTokens),
+        remainingCompletionTokens: Math.max(0, cfg.completionBudget - quotaCompletionTokens),
         nextResetAt: oldest ? oldest.startedAt + WINDOW_MS : null,
         lastDeniedReason: globalBucket.lastDeniedReason || null,
-        lastDeniedAt: globalBucket.lastDeniedAt || null
+        lastDeniedAt: globalBucket.lastDeniedAt || null,
+        queuedRequests: globalWaiters.length
     };
 }
 
@@ -243,6 +293,9 @@ function status(session, now = Date.now()) {
     const completionBudget = Math.max(64, number(cfg.hotBotCompletionTokenBudgetPerMinute, 2400));
     const promptTokens = sum(bucket, 'promptTokens');
     const completionTokens = sum(bucket, 'completionTokens');
+    const quotaPromptTokens = budgetSum(bucket, 'promptTokens');
+    const quotaCompletionTokens = budgetSum(bucket, 'completionTokens');
+    const quotaRequests = budgetCount(bucket);
     const oldest = bucket.entries[0];
     return {
         enabled: cfg.hotBotBudgetEnabled !== false,
@@ -255,9 +308,9 @@ function status(session, now = Date.now()) {
         completionTokens,
         completionBudget,
         cost: knownCost(bucket),
-        remainingRequests: Math.max(0, maxRequests - bucket.entries.length),
-        remainingPromptTokens: Math.max(0, promptBudget - promptTokens),
-        remainingCompletionTokens: Math.max(0, completionBudget - completionTokens),
+        remainingRequests: Math.max(0, maxRequests - quotaRequests),
+        remainingPromptTokens: Math.max(0, promptBudget - quotaPromptTokens),
+        remainingCompletionTokens: Math.max(0, completionBudget - quotaCompletionTokens),
         nextResetAt: oldest ? oldest.startedAt + WINDOW_MS : null,
         lastDeniedReason: bucket.lastDeniedReason || null,
         lastDeniedAt: bucket.lastDeniedAt || null,
@@ -289,6 +342,13 @@ const BotInferenceBudget = {
                 globalBucket.entries = globalBucket.entries.filter((entry) => entry.botId !== id);
                 buckets.delete(id);
             }
+            for (let index = globalWaiters.length - 1; index >= 0; index -= 1) {
+                if (actorId(globalWaiters[index].session) === id) {
+                    globalWaiters[index].resolve({ ok: false, reason: 'inference_budget_reset' });
+                    globalWaiters.splice(index, 1);
+                }
+            }
+            pumpGlobalWaiters();
             return;
         }
         buckets.clear();
@@ -296,6 +356,9 @@ const BotInferenceBudget = {
         globalBucket.inFlight = 0;
         globalBucket.lastDeniedAt = 0;
         globalBucket.lastDeniedReason = null;
+        while (globalWaiters.length > 0) {
+            globalWaiters.shift().resolve({ ok: false, reason: 'inference_budget_reset' });
+        }
         reservationSequence = 0;
     },
     bucketCount() { return buckets.size; }
