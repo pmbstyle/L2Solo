@@ -758,7 +758,8 @@ const BotManager = {
                 PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
                     reason: route.reason,
                     text: rawText,
-                    channel: partyChannel ? 'party_chat' : 'local_chat'
+                    channel: partyChannel ? 'party_chat' : 'local_chat',
+                    spokespersonId: route.reason === 'party_spokesperson' ? llmResponder.id : undefined
                 });
             }
         }

@@ -16,11 +16,12 @@ function actor(id, name, x = 0) {
     };
 }
 
-function session(id, name, x = 0, companion = true) {
+function session(id, name, x = 0, companion = true, role = null) {
     const value = {
         actor: actor(id, name, x),
         partyCompanion: companion,
-        followPlayerSession: null
+        followPlayerSession: null,
+        role
     };
     return value;
 }
@@ -28,7 +29,7 @@ function session(id, name, x = 0, companion = true) {
 async function main() {
     const player = { actor: actor(100, 'Slava', 0) };
     const nice = session(1, 'NiceBot', 5000);
-    const healer = session(2, 'Healer', 100);
+    const healer = session(2, 'Mira', 100, true, 'healer');
     const unrelated = session(3, 'FarBot', 0, false);
     nice.followPlayerSession = player;
     healer.followPlayerSession = player;
@@ -63,6 +64,26 @@ async function main() {
         activeResponderAt: Date.now()
     });
     assert.strictEqual(result.reason, 'active_responder');
+    assert.strictEqual(result.candidate.session, healer);
+
+    nice.activeTrade = { playerSession: player };
+    result = PartyDialogueRouter.select({
+        text: 'is the price ready?',
+        playerSession: player,
+        sessions: [nice, healer],
+        kind: 3
+    });
+    assert.strictEqual(result.reason, 'pending_interaction');
+    assert.strictEqual(result.candidate.session, nice);
+    delete nice.activeTrade;
+
+    result = PartyDialogueRouter.select({
+        text: 'healer, keep us alive.',
+        playerSession: player,
+        sessions: [nice, healer],
+        kind: 3
+    });
+    assert.strictEqual(result.reason, 'role_healer');
     assert.strictEqual(result.candidate.session, healer);
 
     result = PartyDialogueRouter.select({

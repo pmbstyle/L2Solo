@@ -1,8 +1,20 @@
 const PartyAddressResolver = invoke('GameServer/Bot/AI/PartyAddressResolver');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const PARTY_CHANNEL_KIND = 3;
 const ACTIVE_RESPONDER_TTL_MS = 5 * 60 * 1000;
 const HEARING_RADIUS = 1500;
+
+const ROLE_ALIASES = {
+    tank: ['tank', 'frontline', 'guard'],
+    healer: ['healer', 'medic', 'healing'],
+    buffer: ['buffer', 'support'],
+    puller: ['puller', 'pull'],
+    dps: ['dps', 'damage', 'dd'],
+    mage: ['mage', 'caster'],
+    archer: ['archer', 'ranged'],
+    dagger: ['dagger', 'rogue']
+};
 
 function actorId(actor) {
     return actor && typeof actor.fetchId === 'function' ? actor.fetchId() : null;
@@ -41,14 +53,52 @@ function isContinuationMessage(text) {
     return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about)\b/.test(value);
 }
 
+function roleFor(session, actor) {
+    return String(
+        session?.partyRole ||
+        session?.role ||
+        session?.botStatus?.role ||
+        session?.roleDecision?.role ||
+        actor?.partyRole ||
+        actor?.role ||
+        BotRoles.inferRole(actor)
+    ).toLowerCase();
+}
+
+function isPuller(session, role) {
+    return session?.partyPuller === true ||
+        session?.isPuller === true ||
+        session?.roleDecision?.decision === 'party_pull' ||
+        role === 'puller';
+}
+
+function roleAddressMatches(text, candidates) {
+    const value = String(text || '').toLowerCase();
+    const requestedRoles = Object.entries(ROLE_ALIASES)
+        .filter(([, aliases]) => aliases.some((alias) => new RegExp(`\\b${alias}\\b`, 'i').test(value)))
+        .map(([role]) => role);
+    if (requestedRoles.length !== 1) return { status: requestedRoles.length > 1 ? 'ambiguous' : 'none', matches: [] };
+
+    const requested = requestedRoles[0];
+    const matches = candidates.filter((candidate) => (
+        requested === 'puller'
+            ? candidate.puller
+            : candidate.role === requested
+    ));
+    if (matches.length === 1) return { status: 'matched', matches, role: requested };
+    return { status: matches.length > 1 ? 'ambiguous' : 'none', matches, role: requested };
+}
+
 function buildCandidates({ sessions = [], playerSession, partyChannel = false, hearingRadius = HEARING_RADIUS } = {}) {
     const player = playerSession?.actor;
+    const configuredPullerId = Number(playerSession?.partyCompanionSettings?.pullerId || 0);
     return sessions
         .filter((session) => isOnline(session))
         .map((session) => {
             const actor = session.actor;
             const companion = isCompanion(session, playerSession);
             const distance = distanceBetween(actor, player);
+            const role = roleFor(session, actor);
             return {
                 session,
                 actor,
@@ -57,7 +107,12 @@ function buildCandidates({ sessions = [], playerSession, partyChannel = false, h
                 companion,
                 selected: typeof player?.fetchDestId === 'function' && player.fetchDestId() === actorId(actor),
                 distance,
-                role: session.partyRole || session.role || actor.partyRole || actor.role || null,
+                role,
+                puller: isPuller(session, role) || Number(actorId(actor)) === configuredPullerId,
+                pendingInteraction: !!(
+                    session.activeTrade?.playerSession === playerSession ||
+                    session.activeNegotiation?.playerSession === playerSession
+                ),
                 eligible: partyChannel ? companion : distance <= hearingRadius
             };
         })
@@ -109,6 +164,11 @@ function select({
         return { candidate: selected, candidates, status: 'matched', reason: 'selected', matchType: null };
     }
 
+    const pending = candidates.find((candidate) => candidate.pendingInteraction);
+    if (pending) {
+        return { candidate: pending, candidates, status: 'matched', reason: 'pending_interaction', matchType: null };
+    }
+
     const state = dialogueState || {};
     const inFlight = findById(candidates, state.inFlightBotId);
     if (inFlight) {
@@ -127,7 +187,28 @@ function select({
         return { candidate: active, candidates, status: 'matched', reason: 'active_responder', matchType: null };
     }
 
-    const spokesperson = candidates.find((candidate) => candidate.companion);
+    const roleOwner = roleAddressMatches(text, candidates);
+    if (roleOwner.status === 'matched') {
+        return {
+            candidate: roleOwner.matches[0],
+            candidates,
+            status: 'matched',
+            reason: `role_${roleOwner.role}`,
+            matchType: 'role'
+        };
+    }
+    if (roleOwner.status === 'ambiguous') {
+        return {
+            candidate: null,
+            candidates,
+            status: 'ambiguous',
+            reason: 'role_ambiguous',
+            matchType: 'role',
+            matches: roleOwner.matches
+        };
+    }
+
+    const spokesperson = findById(candidates, state.spokespersonId) || candidates.find((candidate) => candidate.companion);
     if (partyChannel && spokesperson) {
         return { candidate: spokesperson, candidates, status: 'matched', reason: 'party_spokesperson', matchType: null };
     }
@@ -146,5 +227,6 @@ module.exports = {
     buildCandidates,
     isGroupAddress,
     isContinuationMessage,
+    roleAddressMatches,
     select
 };
