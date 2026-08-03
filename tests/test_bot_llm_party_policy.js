@@ -50,7 +50,7 @@ function main() {
         }
     };
     const social = BotBrain.applyPartyPolicy(socialSession, decision(), { playerSession }, 'join our group');
-    assert.match(social.reply, /send me an invite/i);
+    assert.strictEqual(social.reply, decision().reply, 'available party policy must preserve the model personality');
     assert.strictEqual(social.reason, 'party_policy:available');
     console.log('LLM party policy checks passed');
 }

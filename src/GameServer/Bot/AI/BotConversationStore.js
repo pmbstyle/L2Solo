@@ -84,6 +84,10 @@ function orderedTurns(turns) {
     ));
 }
 
+function modelVisibleTurn(turn) {
+    return turn?.role !== 'bot' || turn?.meta?.fallback !== true;
+}
+
 function memoryEntry(playerId, botId) {
     const key = pairKey(playerId, botId);
     let entry = memory.get(key);
@@ -187,6 +191,7 @@ async function loadTurns(entry, limit = DEFAULT_RECENT_TURNS, includeCompacted =
     const summaryThroughOrdinal = Number(entry.conversation.summaryThroughOrdinal || 0);
     if (String(conversationId).startsWith('memory:')) {
         return orderedTurns(entry.turns)
+            .filter((turn) => modelVisibleTurn(turn))
             .filter((turn) => includeCompacted || (!turn.compacted && Number(turn.turnOrdinal || turn.id) > summaryThroughOrdinal))
             .slice(-count)
             .map(copyTurn);
@@ -202,16 +207,17 @@ async function loadTurns(entry, limit = DEFAULT_RECENT_TURNS, includeCompacted =
                  FROM bot_conversation_messages
                  WHERE conversationId = ? ${includeCompacted ? '' : 'AND compacted = 0 AND turnOrdinal > ?'}
                  ORDER BY turnOrdinal DESC, messageOrder DESC, id DESC
-                 LIMIT ?
+                LIMIT ?
              )
              ORDER BY turnOrdinal ASC, messageOrder ASC, id ASC`,
-            includeCompacted
-                ? [conversationId, count]
-                : [conversationId, summaryThroughOrdinal, count]
+                includeCompacted
+                ? [conversationId, count * 2]
+                : [conversationId, summaryThroughOrdinal, count * 2]
         ], 'bot-conversation:recent');
-        return rows.map(normalizeTurn);
+        return rows.map(normalizeTurn).filter((turn) => modelVisibleTurn(turn)).slice(-count);
     } catch (_) {
         return orderedTurns(entry.turns)
+            .filter((turn) => modelVisibleTurn(turn))
             .filter((turn) => includeCompacted || (!turn.compacted && Number(turn.turnOrdinal || turn.id) > summaryThroughOrdinal))
             .slice(-count)
             .map(copyTurn);

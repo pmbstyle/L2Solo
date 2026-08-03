@@ -300,11 +300,12 @@ function recordReply(playerSession, state, turn, result, extra = {}) {
             text: result.reply,
             requestId: turn.turnId,
             delivered: true,
-            meta: {
-                action: result.action || 'say',
-                reason: result.reason || null,
-                providerOutcome: result.providerOutcome || null,
-                ...extra
+                meta: {
+                    action: result.action || 'say',
+                    reason: result.reason || null,
+                    providerOutcome: result.providerOutcome || null,
+                    fallback: result.providerFailure === true || result.reason === 'fallback',
+                    ...extra
             }
         }),
         'chain'

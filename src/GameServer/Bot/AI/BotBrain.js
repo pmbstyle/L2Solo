@@ -337,7 +337,8 @@ function compactActionResult(result) {
     return {
         ok: result.applied === true,
         reason: result.reason || null,
-        idempotent: result.idempotent === true
+        idempotent: result.idempotent === true,
+        replyDelivered: result.replyDelivered === true
     };
 }
 
@@ -399,7 +400,7 @@ function applyPartyPolicy(session, decision, requestContext, text) {
 
     const availability = BotAvailability.evaluate(requestContext.playerSession, session);
     const reply = availability.available
-        ? 'I am open to a party. Send me an invite and I will decide in the moment.'
+        ? String(decision.reply || '').trim() || 'I am open to a party. Send me an invite and I will decide in the moment.'
         : `I cannot join right now: ${availability.reasonText || availability.reason || 'not available'}.`;
     return {
         ...decision,
@@ -414,7 +415,7 @@ function applyPartyPolicy(session, decision, requestContext, text) {
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
-    if (!turn || !result?.applied || !decision?.reply || ['buff_target', 'heal_target'].includes(action)) return;
+    if (!turn || !result?.applied || result.replyDelivered !== true || !decision?.reply || ['buff_target', 'heal_target'].includes(action)) return;
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
     const reply = BotChatText.normalize(decision.reply)
         .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
@@ -449,19 +450,28 @@ function queueConversationWrite(session, work) {
 }
 
 function applyDecision(session, decision, visiblePlayers, requestContext) {
-    const result = BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
+    let result = BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     BotAgentTools.remember(session, decision, result, config().model);
-    if (result.applied && decision.action === 'none' && decision.reply && requestContext?.playerSession?.actor) {
-        // `none` means “no world mutation”, not “drop the player's message”.
-        // A direct hot dialogue still needs a visible reply when the model
-        // chooses to speak without selecting a tool.
-        invoke('GameServer/Bot/BotManager').botTell(session, requestContext.playerSession, decision.reply);
+    const playerSession = requestContext?.playerSession;
+    let playerVisibleReply = null;
+    if (result.applied) {
+        // Skill requests are confirmed by the native cast/effect path. Do not
+        // persist or claim the model's speculative reply before that happens.
+        if (!['buff_target', 'heal_target'].includes(decision.action)) {
+            playerVisibleReply = decision.reply || null;
+            if (result.replyDelivered !== true && playerVisibleReply && playerSession?.actor) {
+                invoke('GameServer/Bot/BotManager').botTell(session, playerSession, playerVisibleReply);
+                result = { ...result, replyDelivered: true };
+            }
+            recordConversationReply(session, decision, result, requestContext);
+        }
+        return { ...result, playerVisibleReply };
     }
-    recordConversationReply(session, decision, result, requestContext);
     if (!result.applied && requestContext?.playerSession?.actor) {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const reply = BotAgentTools.rejectionReply(result);
         BotManager.botTell(session, requestContext.playerSession, reply);
+        playerVisibleReply = reply;
         if (requestContext.conversationTurn) {
             queueConversationWrite(session, () => BotConversationService.recordFallback({
                 playerSession: requestContext.playerSession,
@@ -473,7 +483,7 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
             }));
         }
     }
-    return result;
+    return { ...result, replyDelivered: !!playerVisibleReply, playerVisibleReply };
 }
 
 function rememberTelemetry(session, result) {
@@ -867,15 +877,16 @@ const BotBrain = {
                     async () => applyDecision(session, providerResult, visiblePlayers, requestContext),
                     'tool'
                 );
-                const playerVisibleReply = actionResult.applied
-                    ? providerResult.reply || null
-                    : BotAgentTools.rejectionReply(actionResult);
+                const playerVisibleReply = actionResult.playerVisibleReply ||
+                    (actionResult.applied && actionResult.replyDelivered ? providerResult.reply || null : null) ||
+                    (!actionResult.applied ? BotAgentTools.rejectionReply(actionResult) : null);
                 await LangfuseTracing.withObservation(
                     'bot.reply.deliver',
                     {
                         action: providerResult.action || null,
                         reply: playerVisibleReply,
-                        applied: actionResult.applied === true
+                        applied: actionResult.applied === true,
+                        delivered: actionResult.replyDelivered === true
                     },
                     stageMetadata,
                     async () => playerVisibleReply,
@@ -890,7 +901,8 @@ const BotBrain = {
                         requestedAction: providerResult.action || null,
                         toolOutcome: compactActionResult(actionResult),
                         applied: actionResult.applied === true,
-                        playerVisibleReply
+                        playerVisibleReply,
+                        replyDelivered: actionResult.replyDelivered === true
                     }
                 };
                 return providerResult;
