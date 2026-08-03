@@ -15,6 +15,7 @@ const tests = [
     'tests/test_bot_brain_state_change.js',
     'tests/test_bot_llm_party_policy.js',
     'tests/test_party_address_resolver.js',
+    'tests/test_party_dialogue_router.js',
     'tests/test_bot_tool_pending_audit.js',
     'tests/test_bot_conversation_store.js',
     'tests/test_bot_dialogue_arbiter.js',

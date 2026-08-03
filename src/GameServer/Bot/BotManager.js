@@ -736,40 +736,24 @@ const BotManager = {
         const SpeckMath = invoke('GameServer/SpeckMath');
         const playerPt = new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ());
         const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+        const PartyDialogueRouter = invoke('GameServer/Bot/AI/PartyDialogueRouter');
         const llmEnabled = BotBrain.isEnabled();
         const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
         const partyChannel = Number(data.kind) === 3;
-        const candidates = this.sessions
-            .filter((session) => session.actor)
-            .map((session) => {
-                const bot = session.actor;
-                const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()).distance(playerPt);
-                const botName = bot.fetchName().toLowerCase();
-                const shortBotName = botName.replace(/^bot_/, '');
-                return {
-                    session,
-                    distance,
-                    addressed: text.includes(botName) || text.includes(shortBotName),
-                    selected: typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId(),
-                    companion: session.followPlayerSession === playerSession && session.partyCompanion === true
-                };
-            })
-            .filter((candidate) => candidate.distance <= 1500);
 
         let llmResponder = null;
         if (llmEnabled) {
-            const explicit = candidates.find((candidate) => candidate.selected) ||
-                candidates.find((candidate) => candidate.addressed);
-            const activeId = Number(playerSession.botDialogueResponderId || 0);
-            const activeAt = Number(playerSession.botDialogueResponderAt || 0);
-            const active = activeId && Date.now() - activeAt <= 60000
-                ? candidates.find((candidate) => candidate.session.actor.fetchId() === activeId)
-                : null;
-            llmResponder = explicit || active ||
-                (partyChannel ? candidates.find((candidate) => candidate.companion) : null) ||
-                (groupAddress ? candidates[0] : null);
+            const route = PartyDialogueRouter.select({
+                text: rawText,
+                playerSession,
+                sessions: this.sessions,
+                kind: data.kind,
+                activeResponderId: playerSession.botDialogueResponderId,
+                activeResponderAt: playerSession.botDialogueResponderAt
+            });
+            llmResponder = route.candidate;
             if (llmResponder) {
-                playerSession.botDialogueResponderId = llmResponder.session.actor.fetchId();
+                playerSession.botDialogueResponderId = llmResponder.id;
                 playerSession.botDialogueResponderAt = Date.now();
             }
         }
@@ -780,7 +764,8 @@ const BotManager = {
             if (!bot) return;
 
             const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()).distance(playerPt);
-            if (distance > 1500) return; // Too far to hear
+            const partyCompanion = session.followPlayerSession === playerSession && session.partyCompanion === true;
+            if (distance > 1500 && !(partyChannel && partyCompanion)) return; // Party chat is roster-scoped, not proximity-scoped
 
             let handledByRule = false;
             const botName = bot.fetchName().toLowerCase();
