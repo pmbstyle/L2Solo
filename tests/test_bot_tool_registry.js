@@ -3,6 +3,7 @@ require('../src/Global');
 
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const BotToolAudit = invoke('GameServer/Bot/AI/BotToolAudit');
+const World = invoke('GameServer/World/World');
 
 function actor() {
     return {
@@ -39,6 +40,9 @@ function context(turnId) {
 }
 
 function main() {
+    const originalNpc = World.npc;
+    World.npc = { spawns: [] };
+    try {
     BotToolAudit.resetMemory();
     const session = { accountId: 'bot_registry', plan: 'hunting', actor: actor(), dataSendToOthers() {} };
     const first = BotAgentTools.execute(session, decision('stay_here', 'turn-1'), [], context('turn-1'));
@@ -67,11 +71,31 @@ function main() {
     );
     assert.deepStrictEqual(strictFreshness, { applied: false, reason: 'stale_world_state' });
 
+    const preparedRevision = BotAgentTools.worldRevision(session);
+    const preparedFreshness = BotAgentTools.execute(
+        session,
+        decision('move_to_spot', 'turn-4'),
+        [],
+        {
+            ...context('turn-4'),
+            worldRevision: 'obsolete-ingress-revision',
+            preparedWorldRevision: preparedRevision
+        }
+    );
+    assert.deepStrictEqual(
+        preparedFreshness,
+        { applied: false, reason: 'invalid_spot' },
+        'strict tools must validate against the revision captured for the actual prompt'
+    );
+
     const audit = BotToolAudit.recent({ botId: 200, limit: 20 });
     assert(audit.some((event) => event.outcome === 'requested'));
     assert(audit.some((event) => event.outcome === 'applied'));
     assert(audit.some((event) => event.reason === 'one_mutation_per_turn'));
     console.log('Bot tool registry checks passed');
+    } finally {
+        World.npc = originalNpc;
+    }
 }
 
 try {

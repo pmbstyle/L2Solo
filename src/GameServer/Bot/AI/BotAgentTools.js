@@ -742,7 +742,7 @@ function execute(session, decision, visiblePlayers, requestContext = null) {
         decision,
         visiblePlayers,
         requestContext,
-        expectedWorldRevision: requestContext?.worldRevision
+        expectedWorldRevision: requestContext?.preparedWorldRevision || requestContext?.worldRevision
     });
     const { idempotent, ...publicOutcome } = outcome;
     return { ...publicOutcome, applied: outcome.applied, reason: outcome.reason };

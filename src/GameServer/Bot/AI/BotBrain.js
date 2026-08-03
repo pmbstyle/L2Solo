@@ -242,6 +242,8 @@ function systemPrompt() {
 
 function userPayload(event, session, status, visiblePlayers, text, requestContext = null) {
     const assembled = requestContext?.assembledContext;
+    const preparedWorldRevision = requestContext?.preparedWorldRevision ||
+        requestContext?.worldRevision || BotAgentTools.worldRevision(session);
     return {
         event,
         playerMessage: text || '',
@@ -251,7 +253,7 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
         allowedActions: BotAgentTools.availableActions(session),
         tools: BotAgentTools.toolDescriptions(session),
         toolContext: {
-            worldRevision: BotAgentTools.worldRevision(session)
+            worldRevision: preparedWorldRevision
         },
         constraints: {
             keepReplyShort: true,
@@ -636,6 +638,10 @@ const BotBrain = {
             session.lastBrainThinkAt = Date.now();
         }
 
+        if (requestContext) {
+            requestContext.preparedWorldRevision = BotAgentTools.worldRevision(session);
+            requestContext.worldRevision = requestContext.preparedWorldRevision;
+        }
         const payload = userPayload(event, session, status, visiblePlayers, text, requestContext);
         const admission = BotInferenceBudget.reserve(session, {
             event,
@@ -718,11 +724,18 @@ const BotBrain = {
             if (pending) {
                 const startPending = () => Promise.resolve().then(async () => {
                     let requestContext = { ...pending.requestContext, queued: true };
+                    let pendingStatus = pending.status;
                     // The player turn is persisted before admission, but the
                     // previous bot reply may finish while this request waits
                     // in the FIFO. Refresh the bounded context at dequeue so
                     // the next prompt sees the latest delivered turn.
                     if (pending.event === 'player_chat' && requestContext.playerSession) {
+                        try {
+                            const BotAI = invoke('GameServer/Bot/BotAI');
+                            pendingStatus = BotAI.getStatus(session) || pendingStatus;
+                        } catch (_) {
+                            // Keep the ingress status if the live snapshot is unavailable.
+                        }
                         try {
                             const fresh = await BotConversationService.contextFor(
                                 requestContext.playerSession,
@@ -737,19 +750,17 @@ const BotBrain = {
                             // temporarily unavailable.
                         }
                         requestContext.conversation = orderedConversation(requestContext.conversation);
-                        if (requestContext.assembledContext) {
-                            requestContext.assembledContext = await BotContextAssembler.assemble({
-                                session,
-                                status: pending.status,
-                                text: pending.text,
-                                requestContext
-                            });
-                        }
+                        requestContext.assembledContext = await BotContextAssembler.assemble({
+                            session,
+                            status: pendingStatus,
+                            text: pending.text,
+                            requestContext
+                        });
                     }
                     const started = BotBrain.maybeThink(
                         session,
                         pending.event,
-                        pending.status,
+                        pendingStatus,
                         pending.text,
                         requestContext
                     );
