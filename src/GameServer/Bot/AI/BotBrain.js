@@ -309,7 +309,8 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         responseSchema: {
             name: 'bot_brain_decision',
             schema: schema(BotAgentTools.availableActions(session))
-        }
+        },
+        repairSchema: true
     });
 
     if (!result.ok) return result;
