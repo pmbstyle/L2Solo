@@ -196,7 +196,16 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
             llmTelemetry: result.telemetry
         };
     }
-    if (!result.data) return null;
+    return {
+        data: result.data || null,
+        usage: result.usage,
+        llmTelemetry: result.telemetry
+    };
+}
+
+function validateLlmReply(result) {
+    if (result?.providerFailure) return result;
+    if (!result?.data) return null;
 
     const parsed = result.data;
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
@@ -211,7 +220,7 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
         confidence: Number(parsed.confidence || 0),
         llm: true,
         usage: result.usage,
-        llmTelemetry: result.telemetry
+        llmTelemetry: result.llmTelemetry
     };
 }
 
@@ -359,8 +368,6 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             },
             async () => {
                 const llmReady = cfg.enabled && !!cfg.apiKey;
-                if (!llmReady) return recordReply(playerSession, state, turn, fallback).then(() => fallback);
-
                 const stageMetadata = {
                     event: 'cold_chat',
                     source: 'cold_chat',
@@ -370,45 +377,73 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     requestId: turn.turnId,
                     sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
                 };
-                return LangfuseTracing.withObservation(
-                    'bot.schema.validate',
-                    { event: 'cold_chat', responseSchema: 'bot_remote_chat' },
+                await LangfuseTracing.withObservation(
+                    'bot.context.assemble',
+                    {
+                        event: 'cold_chat',
+                        conversationTurns: payload.conversation?.recentTurns?.length || 0,
+                        recentEvents: payload.recentEvents?.length || 0
+                    },
                     stageMetadata,
-                    () => requestLlmReply(payload, cfg, turn, state, playerSession),
+                    async () => payload,
                     'chain'
-                ).then((result) => {
-                    if (result?.providerFailure) {
-                        state.lastRemoteChatTelemetry = result.llmTelemetry || null;
-                        const failed = {
+                );
+
+                const deliver = (reply, extra = {}) => LangfuseTracing.withObservation(
+                    'bot.reply.deliver',
+                    {
+                        action: reply?.action || 'say',
+                        reply: reply?.reply || null,
+                        providerOutcome: reply?.providerOutcome || null
+                    },
+                    stageMetadata,
+                    () => recordReply(playerSession, state, turn, reply, extra).then(() => reply),
+                    'chain'
+                );
+
+                if (!llmReady) return deliver(fallback);
+
+                const providerResult = await requestLlmReply(payload, cfg, turn, state, playerSession);
+                const result = await LangfuseTracing.withObservation(
+                    'bot.schema.validate',
+                    {
+                        event: 'cold_chat',
+                        providerOutcome: providerResult?.llmTelemetry?.outcome || providerResult?.providerOutcome || null
+                    },
+                    stageMetadata,
+                    async () => validateLlmReply(providerResult),
+                    'chain'
+                );
+                if (result?.providerFailure) {
+                    state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                    const failed = {
+                        ...fallback,
+                        providerOutcome: result.providerOutcome,
+                        usage: result.usage || null,
+                        llmTelemetry: result.llmTelemetry || null
+                    };
+                    return deliver(failed);
+                }
+                const reply = result || fallback;
+                if (reply.action === 'come_to_player') {
+                    const actionResult = await activateNearPlayer(playerSession, state);
+                    const confirmed = actionResult.ok;
+                    const actionReply = confirmed
+                        ? reply
+                        : {
                             ...fallback,
-                            providerOutcome: result.providerOutcome,
-                            usage: result.usage || null,
-                            llmTelemetry: result.llmTelemetry || null
+                            reason: `come_to_player:${actionResult.reason || 'rejected'}`,
+                            providerOutcome: 'action_rejected'
                         };
-                        return recordReply(playerSession, state, turn, failed).then(() => failed);
-                    }
-                    const reply = result || fallback;
-                    if (reply.action === 'come_to_player') {
-                        return activateNearPlayer(playerSession, state).then((actionResult) => {
-                            const confirmed = actionResult.ok;
-                            const actionReply = confirmed
-                                ? reply
-                                : {
-                                    ...fallback,
-                                    reason: `come_to_player:${actionResult.reason || 'rejected'}`,
-                                    providerOutcome: 'action_rejected'
-                                };
-                            return recordReply(playerSession, state, turn, actionReply, {
-                                actionResult: { ok: confirmed, reason: actionResult.reason || null }
-                            }).then(() => ({
-                                ...actionReply,
-                                action: confirmed ? 'come_to_player' : 'say',
-                                actionResult: { ok: confirmed, reason: actionResult.reason || null }
-                            }));
-                        });
-                    }
-                    return recordReply(playerSession, state, turn, reply).then(() => reply);
-                });
+                    return deliver({
+                        ...actionReply,
+                        action: confirmed ? 'come_to_player' : 'say',
+                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                    }, {
+                        actionResult: { ok: confirmed, reason: actionResult.reason || null }
+                    });
+                }
+                return deliver(reply);
             },
             'agent'
         );

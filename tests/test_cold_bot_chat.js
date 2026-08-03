@@ -5,6 +5,7 @@ require('../src/Global');
 const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
 const BotRemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
@@ -31,7 +32,10 @@ function response(body) {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalWithObservation = LangfuseTracing.withObservation;
+    const originalWithRootObservation = LangfuseTracing.withRootObservation;
     const requests = [];
+    const observations = [];
     try {
         options.default.OpenRouter = {
             ...originalConfig,
@@ -41,6 +45,14 @@ async function main() {
             remoteChatCooldownMs: 0
         };
         BotConversationStore.resetMemory();
+        LangfuseTracing.withObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
+        };
+        LangfuseTracing.withRootObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
+        };
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.setTransport(async (_url, init) => {
             requests.push(JSON.parse(init.body));
@@ -108,9 +120,15 @@ async function main() {
             BotManager.findSessionByName = originalFindSessionByName;
             PopulationService.requestActivation = originalRequestActivation;
         }
+        for (const stage of ['cold-bot.dialogue', 'bot.context.assemble', 'openrouter.generation', 'bot.schema.validate', 'bot.reply.deliver']) {
+            assert.strictEqual(observations.filter((name) => name === stage).length, 3, `${stage} should be emitted for every cold reply`);
+        }
+        assert.strictEqual(observations.filter((name) => name === 'bot.tool.come_to_player').length, 1, 'come_to_player should have one tool observation');
         console.log('Cold bot chat checks passed');
     } finally {
         options.default.OpenRouter = originalConfig;
+        LangfuseTracing.withObservation = originalWithObservation;
+        LangfuseTracing.withRootObservation = originalWithRootObservation;
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.resetTransport();
         BotConversationStore.resetMemory();
