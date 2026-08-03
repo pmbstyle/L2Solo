@@ -272,7 +272,6 @@ CREATE TABLE IF NOT EXISTS bot_conversation_messages (
 );
 CREATE INDEX IF NOT EXISTS bot_conversation_messages_recent ON bot_conversation_messages(conversationId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_conversation_messages_turn ON bot_conversation_messages(conversationId, turnId, role);
-CREATE INDEX IF NOT EXISTS bot_conversation_messages_order ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
 
 CREATE TABLE IF NOT EXISTS bot_activity_journal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
