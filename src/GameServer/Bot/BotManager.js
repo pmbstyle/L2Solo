@@ -735,8 +735,46 @@ const BotManager = {
 
         const SpeckMath = invoke('GameServer/SpeckMath');
         const playerPt = new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ());
-        let brainGroupResponderPicked = false;
+        const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+        const llmEnabled = BotBrain.isEnabled();
+        const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+        const partyChannel = Number(data.kind) === 3;
+        const candidates = this.sessions
+            .filter((session) => session.actor)
+            .map((session) => {
+                const bot = session.actor;
+                const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()).distance(playerPt);
+                const botName = bot.fetchName().toLowerCase();
+                const shortBotName = botName.replace(/^bot_/, '');
+                return {
+                    session,
+                    distance,
+                    addressed: text.includes(botName) || text.includes(shortBotName),
+                    selected: typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId(),
+                    companion: session.followPlayerSession === playerSession && session.partyCompanion === true
+                };
+            })
+            .filter((candidate) => candidate.distance <= 1500);
 
+        let llmResponder = null;
+        if (llmEnabled) {
+            const explicit = candidates.find((candidate) => candidate.selected) ||
+                candidates.find((candidate) => candidate.addressed);
+            const activeId = Number(playerSession.botDialogueResponderId || 0);
+            const activeAt = Number(playerSession.botDialogueResponderAt || 0);
+            const active = activeId && Date.now() - activeAt <= 60000
+                ? candidates.find((candidate) => candidate.session.actor.fetchId() === activeId)
+                : null;
+            llmResponder = explicit || active ||
+                (partyChannel ? candidates.find((candidate) => candidate.companion) : null) ||
+                (groupAddress ? candidates[0] : null);
+            if (llmResponder) {
+                playerSession.botDialogueResponderId = llmResponder.session.actor.fetchId();
+                playerSession.botDialogueResponderAt = Date.now();
+            }
+        }
+
+        let brainGroupResponderPicked = false;
         this.sessions.forEach((session) => {
             const bot = session.actor;
             if (!bot) return;
@@ -751,23 +789,21 @@ const BotManager = {
             const selectedBot = typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId();
             const companionBot = session.followPlayerSession === playerSession && session.partyCompanion === true;
             const directCommandTarget = addressedToBot || selectedBot || companionBot;
-            const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
 
             // When the developer LLM path is enabled, every addressed hot-bot
             // message must enter the same conversation pipeline. The legacy
             // regex replies intentionally remain only as the disabled-mode
             // fallback; otherwise they silently bypass OpenRouter and lose
             // the persona, memory, and Langfuse trace for the turn.
-            const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
-            const llmAddressed = BotBrain.isEnabled() && (directCommandTarget || (groupAddress && !brainGroupResponderPicked));
-            if (llmAddressed) {
-                if (groupAddress && !directCommandTarget) brainGroupResponderPicked = true;
+            const llmAddressed = llmEnabled && llmResponder?.session === session;
+            if (llmEnabled) {
+                if (!llmAddressed) return;
                 BotDialogueArbiter.route({
                     playerSession,
                     botSession: session,
                     text: rawText,
-                    channel: 'local_chat',
-                    source: 'local_chat',
+                    channel: partyChannel ? 'party_chat' : 'local_chat',
+                    source: partyChannel ? 'party_chat' : 'local_chat',
                     allowFallback: true
                 }).catch((error) => {
                     utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);

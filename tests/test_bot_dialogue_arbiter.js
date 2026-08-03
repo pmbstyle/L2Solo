@@ -35,6 +35,7 @@ async function main() {
     BotConversationStore.resetMemory();
 
     const originalBrain = BotBrain.maybeThink;
+    const originalEnabled = BotBrain.isEnabled;
     const originalStatus = BotAI.getStatus;
     const originalBotTell = BotManager.botTell;
     const originalRecordEvent = BotSocialMemory.recordEvent;
@@ -48,6 +49,7 @@ async function main() {
         const bot = session('bot_dialogue_arbiter', actor(201, 'Aria'));
         const captured = [];
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
+        BotBrain.isEnabled = () => true;
         BotAI.getStatus = () => ({ available: true, mode: 'hunting', level: 10, name: 'Aria' });
         BotBrain.maybeThink = (_bot, _event, _status, text, requestContext) => {
             captured.push({ text, requestContext });
@@ -118,6 +120,10 @@ async function main() {
         const world = invoke('GameServer/World/World');
         world.user = { sessions: [player, bot] };
         const botTwo = session('bot_dialogue_two', actor(202, 'Belen', 100));
+        bot.followPlayerSession = player;
+        bot.partyCompanion = true;
+        botTwo.followPlayerSession = player;
+        botTwo.partyCompanion = true;
         BotManager.sessions = [bot, botTwo];
         const routes = [];
         BotDialogueArbiter.route = (input) => {
@@ -126,8 +132,25 @@ async function main() {
         };
         BotManager.handlePlayerSpeak(player, { text: 'bots, can anyone help?' });
         assert.deepStrictEqual(routes, ['Aria'], 'a group message must select one hot responder');
+
+        delete player.botDialogueResponderId;
+        delete player.botDialogueResponderAt;
+        routes.length = 0;
+        BotManager.handlePlayerSpeak(player, { text: 'nice weather today' });
+        assert.deepStrictEqual(routes, [], 'unaddressed local chat must not fan out to hot bots');
+
+        routes.length = 0;
+        BotManager.handlePlayerSpeak(player, { text: 'Belen, are you there?' });
+        assert.deepStrictEqual(routes, ['Belen'], 'a named bot message must select only the named responder');
+
+        delete player.botDialogueResponderId;
+        delete player.botDialogueResponderAt;
+        routes.length = 0;
+        BotManager.handlePlayerSpeak(player, { kind: 3, text: 'party, regroup' });
+        assert.deepStrictEqual(routes, ['Aria'], 'party chat must select one companion responder');
     } finally {
         BotBrain.maybeThink = originalBrain;
+        BotBrain.isEnabled = originalEnabled;
         BotAI.getStatus = originalStatus;
         BotManager.botTell = originalBotTell;
         BotSocialMemory.recordEvent = originalRecordEvent;
