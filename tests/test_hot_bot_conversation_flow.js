@@ -5,6 +5,7 @@ require('../src/Global');
 const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const World = invoke('GameServer/World/World');
 
 function actor(id, name, x = 0) {
@@ -32,8 +33,11 @@ async function main() {
     const originalConfig = options.default.OpenRouter;
     const originalWorldUser = World.user;
     const originalCompactStatus = BotBrainContext.compactStatus;
+    const originalWithObservation = LangfuseTracing.withObservation;
+    const originalWithRootObservation = LangfuseTracing.withRootObservation;
     let firstRequestRelease;
     const requests = [];
+    const observations = [];
 
     try {
         options.default.OpenRouter = {
@@ -54,6 +58,14 @@ async function main() {
         };
         World.user = { sessions: [playerSession, botSession] };
         BotBrainContext.compactStatus = (_session, status) => status;
+        LangfuseTracing.withObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
+        };
+        LangfuseTracing.withRootObservation = (name, input, metadata, work) => {
+            observations.push(name);
+            return Promise.resolve(work(null));
+        };
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.setTransport(async (_url, init) => {
             requests.push(JSON.parse(init.body));
@@ -121,6 +133,10 @@ async function main() {
         assert.strictEqual(thirdStarted, true);
         assert.strictEqual(botSession.pendingBrainTurns.length, 2, 'queued turns should be retained in FIFO order');
 
+        for (let attempt = 0; attempt < 20 && typeof firstRequestRelease !== 'function'; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        assert.strictEqual(typeof firstRequestRelease, 'function', 'the first provider request should start');
         firstRequestRelease();
         await new Promise((resolve) => setTimeout(resolve, 80));
         assert.strictEqual(requests.length, 3, 'all queued turns should be submitted after the first turn completes');
@@ -129,10 +145,15 @@ async function main() {
             secondPayload.conversation.recentTurns.map((turn) => turn.text),
             ['first', 'second']
         );
+        for (const stage of ['hot-bot.dialogue', 'bot.context.assemble', 'openrouter.generation', 'bot.schema.validate', 'bot.tool.execute', 'bot.reply.deliver']) {
+            assert.strictEqual(observations.filter((name) => name === stage).length, 3, `${stage} should be emitted once per queued turn`);
+        }
     } finally {
         options.default.OpenRouter = originalConfig;
         World.user = originalWorldUser;
         BotBrainContext.compactStatus = originalCompactStatus;
+        LangfuseTracing.withObservation = originalWithObservation;
+        LangfuseTracing.withRootObservation = originalWithRootObservation;
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.resetTransport();
     }

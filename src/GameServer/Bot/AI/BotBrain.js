@@ -774,33 +774,33 @@ const BotBrain = {
         const runTurn = async () => {
             try {
                 const stageMetadata = {
+                    event,
+                    source: requestContext?.source || event,
+                    channel: requestContext?.channel || null,
                     botId: bot.fetchId?.(),
                     playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
                     turnId,
                     requestId: requestContext?.requestId || turnId,
                     sessionId: conversationSessionId(session, requestContext)
                 };
-                LangfuseTracing.withObservation(
+                await LangfuseTracing.withObservation(
                     'bot.context.assemble',
                     {
+                        event,
+                        playerMessage: text || '',
                         fragments: requestContext?.assembledContext?.telemetry?.included || [],
                         estimatedTokens: requestContext?.assembledContext?.estimatedTokens || null
                     },
                     stageMetadata,
-                    async () => ({
-                        included: requestContext?.assembledContext?.telemetry?.included || [],
-                        estimatedTokens: requestContext?.assembledContext?.estimatedTokens || null
-                    }),
+                    async () => requestContext?.assembledContext || null,
                     'chain'
-                ).catch(() => {});
+                );
+                const providerDecision = await requestDecision(payload, cfg, session, requestContext, visiblePlayers);
                 providerResult = await LangfuseTracing.withObservation(
                     'bot.schema.validate',
-                    { event, requestedAction: null },
+                    { event, providerOutcome: providerDecision?.telemetry?.outcome || providerDecision?.llmTelemetry?.outcome || null },
                     stageMetadata,
-                    async () => validateDecisionResult(
-                        await requestDecision(payload, cfg, session, requestContext, visiblePlayers),
-                        session
-                    ),
+                    async () => validateDecisionResult(providerDecision, session),
                     'chain'
                 );
                 rememberTelemetry(session, providerResult);
@@ -823,15 +823,30 @@ const BotBrain = {
                 providerResult = applyPartyPolicy(session, providerResult, requestContext, text);
                 recordInferenceEvent(session, event, providerResult, requestContext);
                 const actionResult = await LangfuseTracing.withObservation(
-                    'bot.reply.deliver',
-                    { action: providerResult.action || null, reply: providerResult.reply || null },
+                    'bot.tool.execute',
+                    {
+                        action: providerResult.action || null,
+                        confidence: providerResult.confidence || null,
+                        worldRevision: requestContext?.preparedWorldRevision || null
+                    },
                     stageMetadata,
                     async () => applyDecision(session, providerResult, visiblePlayers, requestContext),
-                    'chain'
+                    'tool'
                 );
                 const playerVisibleReply = actionResult.applied
                     ? providerResult.reply || null
                     : BotAgentTools.rejectionReply(actionResult);
+                await LangfuseTracing.withObservation(
+                    'bot.reply.deliver',
+                    {
+                        action: providerResult.action || null,
+                        reply: playerVisibleReply,
+                        applied: actionResult.applied === true
+                    },
+                    stageMetadata,
+                    async () => playerVisibleReply,
+                    'chain'
+                );
                 providerResult = {
                     ...providerResult,
                     applied: actionResult.applied === true,
