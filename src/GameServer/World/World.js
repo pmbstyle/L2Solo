@@ -297,7 +297,7 @@ const World = {
                 return false;
             }
 
-            return BotRemoteChat.replyForState(session, state, message).then((result) => {
+            return BotRemoteChat.replyForState(session, state, message, source).then((result) => {
                 if (!result?.ok || !result.reply || result.delivered !== true) {
                     session.dataSendToMe(ServerResponse.actionFailed());
                     return false;

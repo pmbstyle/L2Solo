@@ -97,6 +97,15 @@ function say(session, text, targetSession = null) {
     return true;
 }
 
+function replyOutcome(session, text, targetSession = null) {
+    const line = clean(text);
+    const replyDelivered = line ? say(session, line, targetSession) : false;
+    return {
+        replyDelivered,
+        playerVisibleReply: replyDelivered ? line : null
+    };
+}
+
 function sit(session, bot) {
     if (bot.state.fetchSeated()) return;
     bot.state.setSeated(true);
@@ -237,7 +246,8 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'none' };
     }
     if (action === 'say') {
-        return { applied: say(session, decision.reply, targetSession), reason: 'say', replyDelivered: !!decision.reply };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: reply.replyDelivered, reason: 'say', ...reply };
     }
     if (action === 'follow_player') {
         if (!targetSession) return { applied: false, reason: 'missing_target_player' };
@@ -246,8 +256,8 @@ function executeLegacy(session, decision, visiblePlayers) {
             clearChatArrival(session, 'party_follow');
             session.plan = 'following';
             session.botStay = false;
-            const replyDelivered = say(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
-            return { applied: true, reason: 'follow_player', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
+            return { applied: true, reason: 'follow_player', ...reply };
         } else {
             const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
             ChatArrivalState.start(session, targetSession, {
@@ -256,8 +266,8 @@ function executeLegacy(session, decision, visiblePlayers) {
                 stopOnArrival: true
             });
             approachPlayer(session, bot, targetSession);
-            const replyDelivered = say(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
-            return { applied: true, reason: 'follow_player', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
+            return { applied: true, reason: 'follow_player', ...reply };
         }
     }
     if (action === 'stay_here') {
@@ -271,8 +281,8 @@ function executeLegacy(session, decision, visiblePlayers) {
         if (session.followPlayerSession && session.partyCompanion === true) {
             session.plan = 'following';
         }
-        const replyDelivered = say(session, decision.reply || 'Holding this position.', targetSession);
-        return { applied: true, reason: 'stay_here', replyDelivered };
+        const reply = replyOutcome(session, decision.reply || 'Holding this position.', targetSession);
+        return { applied: true, reason: 'stay_here', ...reply };
     }
     if (action === 'hunt') {
         clearChatArrival(session, 'hunt');
@@ -280,16 +290,16 @@ function executeLegacy(session, decision, visiblePlayers) {
         if (session.partyCompanion === true && session.followPlayerSession) {
             session.plan = 'hunting';
             session.botStay = false;
-            const replyDelivered = say(session, decision.reply || 'Hunting with the party.', targetSession);
-            return { applied: true, reason: 'party_hunt', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || 'Hunting with the party.', targetSession);
+            return { applied: true, reason: 'party_hunt', ...reply };
         }
 
         session.plan = 'hunting';
         session.followPlayerSession = null;
         session.partyCompanion = false;
         session.botStay = false;
-        const replyDelivered = say(session, decision.reply, targetSession);
-        return { applied: true, reason: 'hunt', replyDelivered };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'hunt', ...reply };
     }
     if (action === 'rest') {
         clearChatArrival(session, 'rest');
@@ -303,37 +313,37 @@ function executeLegacy(session, decision, visiblePlayers) {
             } else {
                 session.plan = 'hunting';
             }
-            const replyDelivered = say(session, decision.reply || "I'm already recovered.", targetSession);
-            return { applied: true, reason: 'already_recovered', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || "I'm already recovered.", targetSession);
+            return { applied: true, reason: 'already_recovered', ...reply };
         }
 
         session.plan = 'resting';
         session.currentTargetId = undefined;
         bot.unselect();
         sit(session, bot);
-        const replyDelivered = say(session, decision.reply, targetSession);
-        return { applied: true, reason: 'rest', replyDelivered };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'rest', ...reply };
     }
     if (action === 'shop') {
         clearChatArrival(session, 'shop');
         if (startShopping(session, bot)) {
-            const replyDelivered = say(session, decision.reply, targetSession);
-            return { applied: true, reason: 'shop', replyDelivered };
+            const reply = replyOutcome(session, decision.reply, targetSession);
+            return { applied: true, reason: 'shop', ...reply };
         } else {
-            const replyDelivered = say(session, decision.reply || 'I will stay with the party and sell later.', targetSession);
-            return { applied: true, reason: 'shop', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || 'I will stay with the party and sell later.', targetSession);
+            return { applied: true, reason: 'shop', ...reply };
         }
     }
     if (action === 'move_to_spot') {
         clearChatArrival(session, 'move_to_spot');
         if (session.partyCompanion === true && session.followPlayerSession) {
-            const replyDelivered = say(session, decision.reply || 'I will stay with the party.', targetSession);
-            return { applied: true, reason: 'party_companion_stays_with_party', replyDelivered };
+            const reply = replyOutcome(session, decision.reply || 'I will stay with the party.', targetSession);
+            return { applied: true, reason: 'party_companion_stays_with_party', ...reply };
         }
 
         const applied = applyMoveToSpot(session, bot, decision.spotId);
-        const replyDelivered = applied ? say(session, decision.reply, targetSession) : false;
-        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot', replyDelivered };
+        const reply = applied ? replyOutcome(session, decision.reply, targetSession) : { replyDelivered: false, playerVisibleReply: null };
+        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot', ...reply };
     }
     if (action === 'buff_target') {
         return applyBuffTarget(session, bot, decision, targetSession);

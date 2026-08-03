@@ -415,9 +415,10 @@ function applyPartyPolicy(session, decision, requestContext, text) {
 function recordConversationReply(session, decision, result, requestContext) {
     const turn = requestContext?.conversationTurn;
     const action = decision?.action;
-    if (!turn || !result?.applied || result.replyDelivered !== true || !decision?.reply || ['buff_target', 'heal_target'].includes(action)) return;
+    const visibleReply = result?.playerVisibleReply || decision?.reply;
+    if (!turn || !result?.applied || result.replyDelivered !== true || !visibleReply || ['buff_target', 'heal_target'].includes(action)) return;
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
-    const reply = BotChatText.normalize(decision.reply)
+    const reply = BotChatText.normalize(visibleReply)
         .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
     if (!reply) return;
 
@@ -458,10 +459,10 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
         // Skill requests are confirmed by the native cast/effect path. Do not
         // persist or claim the model's speculative reply before that happens.
         if (!['buff_target', 'heal_target'].includes(decision.action)) {
-            playerVisibleReply = decision.reply || null;
+            playerVisibleReply = result.playerVisibleReply || decision.reply || null;
             if (result.replyDelivered !== true && playerVisibleReply && playerSession?.actor) {
                 invoke('GameServer/Bot/BotManager').botTell(session, playerSession, playerVisibleReply);
-                result = { ...result, replyDelivered: true };
+                result = { ...result, replyDelivered: true, playerVisibleReply };
             }
             recordConversationReply(session, decision, result, requestContext);
         }
@@ -757,14 +758,14 @@ const BotBrain = {
             const pending = queue.shift() || null;
             session.pendingBrainTurn = queue[0] || null;
             if (pending) {
-                const startPending = () => Promise.resolve().then(async () => {
-                    let requestContext = { ...pending.requestContext, queued: true };
-                    let pendingStatus = pending.status;
+                const startPending = (nextPending) => Promise.resolve().then(async () => {
+                    let requestContext = { ...nextPending.requestContext, queued: true };
+                    let pendingStatus = nextPending.status;
                     // The player turn is persisted before admission, but the
                     // previous bot reply may finish while this request waits
                     // in the FIFO. Refresh the bounded context at dequeue so
                     // the next prompt sees the latest delivered turn.
-                    if (pending.event === 'player_chat' && requestContext.playerSession) {
+                    if (nextPending.event === 'player_chat' && requestContext.playerSession) {
                         try {
                             const BotAI = invoke('GameServer/Bot/BotAI');
                             pendingStatus = BotAI.getStatus(session) || pendingStatus;
@@ -788,22 +789,37 @@ const BotBrain = {
                         requestContext.assembledContext = await BotContextAssembler.assemble({
                             session,
                             status: pendingStatus,
-                            text: pending.text,
+                            text: nextPending.text,
                             requestContext
                         });
                     }
                     const started = BotBrain.maybeThink(
                         session,
-                        pending.event,
+                        nextPending.event,
                         pendingStatus,
-                        pending.text,
+                        nextPending.text,
                         requestContext
                     );
                     if (!started) fallbackReply(session, requestContext, 'queued_not_started');
                 });
-                Promise.resolve(session.lastConversationWrite)
+                const continuePending = (nextPending) => Promise.resolve(session.lastConversationWrite)
                     .catch(() => {})
-                    .then(startPending);
+                    .then(() => startPending(nextPending))
+                    .catch((error) => {
+                        utils.infoWarn('BotBrain', 'queued dialogue failed for %s: %s', bot.fetchName(), error.message);
+                        try {
+                            fallbackReply(session, nextPending.requestContext, 'queued_context_error');
+                        } catch (fallbackError) {
+                            utils.infoWarn('BotBrain', 'queued dialogue fallback failed for %s: %s', bot.fetchName(), fallbackError.message);
+                        }
+
+                        const following = queue.shift() || null;
+                        session.pendingBrainTurn = queue[0] || null;
+                        return following ? continuePending(following) : false;
+                    });
+                continuePending(pending).catch((error) => {
+                    utils.infoWarn('BotBrain', 'queued dialogue drain failed for %s: %s', bot.fetchName(), error.message);
+                });
             }
         };
         const runTurn = async () => {

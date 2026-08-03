@@ -6,6 +6,7 @@ const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
 const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
@@ -39,6 +40,7 @@ async function main() {
     const originalStatus = BotAI.getStatus;
     const originalBotTell = BotManager.botTell;
     const originalRecordEvent = BotSocialMemory.recordEvent;
+    const originalAssemble = BotContextAssembler.assemble;
     const originalSessions = BotManager.sessions;
     const originalRoute = BotDialogueArbiter.route;
     const originalWorldUser = invoke('GameServer/World/World').user;
@@ -120,6 +122,22 @@ async function main() {
             'deterministic fallback replies must not become model-visible history'
         );
 
+        BotContextAssembler.assemble = async () => { throw new Error('context assembly failed'); };
+        const contextFailure = await BotDialogueArbiter.route({
+            playerSession: player,
+            botSession: bot,
+            channel: 'client_tell',
+            source: 'client_tell',
+            turnId: 'arbiter-context-failure',
+            text: 'Please answer after a context failure.'
+        });
+        assert.strictEqual(contextFailure.reason, 'conversation_error');
+        assert.strictEqual(fallbackReplies.length, 2, 'context errors must still deliver a fallback');
+        const storedConversation = await BotConversationStore.ensureConversation(101, 201);
+        assert(storedConversation.turns.some((turn) =>
+            turn.turnId === 'arbiter-context-failure' && turn.role === 'bot' && turn.meta?.fallback === true
+        ), 'context-error fallback must be persisted for audit while remaining hidden from the model');
+
         const world = invoke('GameServer/World/World');
         world.user = { sessions: [player, bot] };
         const botTwo = session('bot_dialogue_two', actor(202, 'Belen', 100));
@@ -157,6 +175,7 @@ async function main() {
         BotAI.getStatus = originalStatus;
         BotManager.botTell = originalBotTell;
         BotSocialMemory.recordEvent = originalRecordEvent;
+        BotContextAssembler.assemble = originalAssemble;
         BotManager.sessions = originalSessions;
         BotDialogueArbiter.route = originalRoute;
         invoke('GameServer/World/World').user = originalWorldUser;

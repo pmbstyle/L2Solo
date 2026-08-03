@@ -33,7 +33,9 @@ function route(input = {}) {
         return Promise.resolve({ ok: false, reason: 'invalid_hot_pair' });
     }
 
+    let turnForFallback = null;
     return BotConversationService.beginTurn(input).then((turn) => {
+        turnForFallback = turn;
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         Promise.resolve(BotSocialMemory.recordEvent(
             input.playerSession,
@@ -81,6 +83,12 @@ function route(input = {}) {
             return { ok: false, reason: 'conversation_error' };
         }
         const BotManager = invoke('GameServer/Bot/BotManager');
+        if (turnForFallback) {
+            return deliverFallback(input, turnForFallback, 'conversation_error').then((result) => ({
+                ...result,
+                error: error.message
+            }));
+        }
         const reply = fallbackText(input.botSession, 'conversation_error');
         BotManager.botTell(input.botSession, input.playerSession, reply);
         return {
