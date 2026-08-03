@@ -6,6 +6,7 @@ const BotConversationStore = invoke('GameServer/Bot/AI/BotConversationStore');
 const BotRemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
@@ -120,8 +121,45 @@ async function main() {
             BotManager.findSessionByName = originalFindSessionByName;
             PopulationService.requestActivation = originalRequestActivation;
         }
-        for (const stage of ['cold-bot.dialogue', 'bot.context.assemble', 'openrouter.generation', 'bot.schema.validate', 'bot.reply.deliver']) {
-            assert.strictEqual(observations.filter((name) => name === stage).length, 3, `${stage} should be emitted for every cold reply`);
+
+        BotInferenceBudget.reset();
+        options.default.OpenRouter.hotBotGlobalMaxInFlight = 1;
+        options.default.OpenRouter.hotBotGlobalMaxRequestsPerMinute = 50;
+        options.default.OpenRouter.hotBotGlobalPromptTokenBudgetPerMinute = 50000;
+        options.default.OpenRouter.hotBotGlobalCompletionTokenBudgetPerMinute = 5000;
+        const beforeAdmissionRequests = requests.length;
+        let releaseAdmissionRequest;
+        OpenRouterGateway.setTransport(async (_url, init) => {
+            requests.push(JSON.parse(init.body));
+            if (requests.length === beforeAdmissionRequests + 1) {
+                await new Promise((resolve) => { releaseAdmissionRequest = resolve; });
+            }
+            return response({
+                choices: [{ message: { content: JSON.stringify({
+                    action: 'say', reply: 'admission-reply', reason: 'test_reply', confidence: 0.95
+                }) } }]
+            });
+        });
+        const blockedState = { ...state, characterId: 9111, accountName: 'blocked_cold_chat', name: 'BlockedColdChat' };
+        const firstAdmission = BotRemoteChat.replyForState(playerSession, blockedState, 'first admission');
+        for (let attempt = 0; attempt < 20 && typeof releaseAdmissionRequest !== 'function'; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        assert.strictEqual(typeof releaseAdmissionRequest, 'function', 'the first cold request should occupy the global slot');
+        const secondAdmission = await BotRemoteChat.replyForState(
+            playerSession,
+            { ...state, characterId: 9112, accountName: 'rejected_cold_chat', name: 'RejectedColdChat' },
+            'second admission'
+        );
+        assert.strictEqual(secondAdmission.reason, 'inference_budget_global_concurrency');
+        assert.strictEqual(requests.length, beforeAdmissionRequests + 1, 'global admission must reject the second cold request before OpenRouter');
+        releaseAdmissionRequest();
+        await firstAdmission;
+        for (const stage of ['cold-bot.dialogue', 'bot.context.assemble', 'bot.reply.deliver']) {
+            assert.strictEqual(observations.filter((name) => name === stage).length, 5, `${stage} should be emitted for every cold reply`);
+        }
+        for (const stage of ['openrouter.generation', 'bot.schema.validate']) {
+            assert.strictEqual(observations.filter((name) => name === stage).length, 4, `${stage} should be emitted for every admitted cold request`);
         }
         assert.strictEqual(observations.filter((name) => name === 'bot.tool.come_to_player').length, 1, 'come_to_player should have one tool observation');
         console.log('Cold bot chat checks passed');
