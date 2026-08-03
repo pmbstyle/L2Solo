@@ -234,8 +234,18 @@ function setTerminal(negotiation, state, reason) {
 }
 
 function stockValid(negotiation) {
-    const item = negotiation.botSession?.actor?.backpack?.fetchItemRaw?.(negotiation.itemObjectId);
+    const item = resolveInventoryItem(negotiation.botSession?.actor?.backpack, negotiation.itemObjectId);
     return safeItem(item) && Number(item.fetchSelfId()) === Number(negotiation.itemSelfId) && Number(item.fetchAmount()) >= negotiation.quantity;
+}
+
+function resolveInventoryItem(backpack, identifier) {
+    const id = Number(identifier);
+    if (!backpack || !Number.isInteger(id) || id <= 0) return null;
+    const direct = backpack.fetchItemRaw?.(id);
+    if (direct) return direct;
+    const candidates = (backpack.fetchItems?.() || [])
+        .filter((item) => Number(item.fetchSelfId?.()) === id);
+    return candidates.length === 1 ? candidates[0] : null;
 }
 
 function activeFor(session) {
@@ -267,11 +277,12 @@ function quoteItem(bot, player, itemObjectId, amount = 1) {
     const access = canAccess(bot, player);
     if (access) return { ok: false, reason: access };
     if (activeFor(bot)) return { ok: false, reason: 'negotiation_active' };
-    const item = bot.actor.backpack.fetchItemRaw(Number(itemObjectId));
+    const item = resolveInventoryItem(bot.actor.backpack, itemObjectId);
     if (!safeItem(item)) return { ok: false, reason: 'item_not_negotiable' };
+    const canonicalObjectId = Number(item.fetchId());
     const quantity = Math.max(1, Math.min(MAX_QUANTITY, Math.floor(Number(amount) || 1)));
     const reservations = bot.botNegotiationReservations || (bot.botNegotiationReservations = new Map());
-    const reservation = reservations.get(Number(itemObjectId));
+    const reservation = reservations.get(canonicalObjectId);
     if (reservation) return { ok: false, reason: 'stock_reserved' };
     if (Number(item.fetchAmount()) < quantity) return { ok: false, reason: 'insufficient_stock' };
 
@@ -280,7 +291,7 @@ function quoteItem(bot, player, itemObjectId, amount = 1) {
         id: negotiationId(bot, player),
         botSession: bot,
         playerSession: player,
-        itemObjectId: Number(itemObjectId),
+        itemObjectId: canonicalObjectId,
         itemSelfId: Number(item.fetchSelfId()),
         itemName: item.fetchName(),
         quantity,

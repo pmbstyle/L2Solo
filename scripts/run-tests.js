@@ -10,6 +10,7 @@ const tests = [
     'tests/test_langfuse_tracing.js',
     'tests/test_bot_inference_budget.js',
     'tests/test_bot_inference_interactive_queue.js',
+    'tests/test_chat_arrival_state.js',
     'tests/test_bot_brain_state_change.js',
     'tests/test_bot_llm_party_policy.js',
     'tests/test_bot_conversation_store.js',

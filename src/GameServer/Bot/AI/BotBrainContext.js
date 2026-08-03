@@ -32,6 +32,12 @@ function safeNumber(read, fallback = 0) {
     }
 }
 
+function textRequestsInventory(text = '') {
+    const lower = String(text || '').toLowerCase();
+    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|give|bring|spare|need|have|sell|buy)\b/.test(lower) ||
+        /(инвент|вещ|шмот|оруж|брон|аден|сос|шоты|шот|трейд|лут|дай|принес|принести|запас|нужн|есть|прод)/.test(lower);
+}
+
 function compactTarget(target) {
     if (!target) return null;
     return {
@@ -177,8 +183,7 @@ function inventorySnapshot(actor, text = '') {
 
     const items = backpack.fetchItems();
     const lower = String(text || '').toLowerCase();
-    const wantsItems = /\b(item|items|inventory|gear|weapon|armor|adena|shot|trade|loot|give|sell|buy)\b/.test(lower) ||
-        /(инвент|вещ|шмот|оруж|брон|аден|сос|трейд|лут|дай|прод)/.test(lower);
+    const wantsItems = textRequestsInventory(lower);
     const shotPlan = ShotStock.planForActor(actor);
     const shotItem = backpack.fetchItemFromSelfId(shotPlan.selfId);
 
@@ -284,5 +289,6 @@ function compactStatus(session, status, text = '', options = {}) {
 }
 
 module.exports = {
-    compactStatus
+    compactStatus,
+    textRequestsInventory
 };

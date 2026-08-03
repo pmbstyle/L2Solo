@@ -51,6 +51,16 @@ function lineFor(item, count) {
     };
 }
 
+function resolveInventoryItem(backpack, identifier) {
+    const id = Number(identifier);
+    if (!backpack || !Number.isInteger(id) || id <= 0) return null;
+    const direct = backpack.fetchItemRaw?.(id);
+    if (direct) return direct;
+    const candidates = (backpack.fetchItems?.() || [])
+        .filter((item) => Number(item.fetchSelfId?.()) === id);
+    return candidates.length === 1 ? candidates[0] : null;
+}
+
 function isSafeOfferItem(item) {
     if (!item || item.fetchEquipped?.()) return false;
     const kind = String(item.fetchKind?.() || '');
@@ -247,14 +257,15 @@ function addPlayerItem(playerSession, objectId, amount) {
 function offerBotItem(botSession, objectId, amount) {
     const trade = activeTradeFor(botSession);
     if (!trade || trade.botSession !== botSession) return { ok: false, reason: 'no_active_trade' };
-    const item = botSession.actor.backpack.fetchItemRaw(objectId);
+    const item = resolveInventoryItem(botSession.actor.backpack, objectId);
     if (!isSafeOfferItem(item)) return { ok: false, reason: 'item_not_tradable' };
-    const current = trade.botItems.get(Number(objectId));
+    const canonicalObjectId = Number(item.fetchId());
+    const current = trade.botItems.get(canonicalObjectId);
     if (!current && trade.botItems.size >= MAX_TRADE_LINES) return { ok: false, reason: 'trade_line_limit' };
 
     const requested = Math.max(1, Math.min(MAX_ITEM_AMOUNT, Math.floor(Number(amount) || 1)));
     const reservations = botReservations(botSession);
-    const previousReservation = reservations.get(Number(objectId));
+    const previousReservation = reservations.get(canonicalObjectId);
     if (previousReservation && previousReservation.tradeId !== trade.id) {
         return { ok: false, reason: 'insufficient_item' };
     }
@@ -272,8 +283,8 @@ function offerBotItem(botSession, objectId, amount) {
     if (ledger.units + delta > MAX_BOT_GIFT_UNITS) return { ok: false, reason: 'gift_budget_exceeded' };
     ledger.units += delta;
     const line = lineFor(item, nextCount);
-    trade.botItems.set(Number(objectId), line);
-    reservations.set(Number(objectId), { tradeId: trade.id, count: nextCount });
+    trade.botItems.set(canonicalObjectId, line);
+    reservations.set(canonicalObjectId, { tradeId: trade.id, count: nextCount });
     trade.botConfirmed = false;
     sendToPlayer(trade, ServerResponse.tradeOtherAdd(line));
     console.info("BotTrade :: %s offered %d %s to %s", actorName(botSession), line.count, item.fetchName(), actorName(trade.playerSession));
@@ -468,6 +479,7 @@ module.exports = {
     TRADE_RANGE,
     TRADE_TTL_MS,
     activeTradeSummary,
+    resolveInventoryItem,
     addItem: addPlayerItem,
     cancel,
     cleanup,

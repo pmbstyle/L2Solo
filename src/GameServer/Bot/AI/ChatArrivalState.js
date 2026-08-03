@@ -19,6 +19,8 @@ function clear(session, reason = 'cleared') {
     session.chatArrivalUntil = 0;
     session.chatArrivalLastMoveAt = 0;
     session.chatArrivalReason = reason;
+    session.chatArrivalPersistent = false;
+    session.chatArrivalStopOnArrival = false;
     return true;
 }
 
@@ -26,7 +28,11 @@ function start(session, targetSession, options = {}) {
     if (!session?.actor || !online(targetSession)) return false;
     session.chatArrivalActive = true;
     session.chatArrivalTargetSession = targetSession;
-    session.chatArrivalUntil = Date.now() + Math.max(10000, Number(options.holdMs || DEFAULT_HOLD_MS));
+    session.chatArrivalPersistent = options.persistent === true;
+    session.chatArrivalStopOnArrival = options.stopOnArrival === true;
+    session.chatArrivalUntil = session.chatArrivalPersistent
+        ? 0
+        : Date.now() + Math.max(10000, Number(options.holdMs || DEFAULT_HOLD_MS));
     session.chatArrivalLastMoveAt = 0;
     session.chatArrivalReason = options.reason || 'remote_chat_come';
     session.currentTargetId = undefined;
@@ -44,7 +50,7 @@ function tick(session, bot) {
     if (!session?.chatArrivalActive) return false;
     const targetSession = session.chatArrivalTargetSession;
     const player = targetSession?.actor;
-    if (!online(targetSession) || Date.now() >= Number(session.chatArrivalUntil || 0)) {
+    if (!online(targetSession) || (!session.chatArrivalPersistent && Date.now() >= Number(session.chatArrivalUntil || 0))) {
         clear(session, 'expired');
         return false;
     }
@@ -73,6 +79,10 @@ function tick(session, bot) {
 
     if (bot.state?.inMotion?.()) bot.automation?.abortAll?.(bot);
     bot.unselect?.();
+    if (session.chatArrivalStopOnArrival) {
+        clear(session, 'arrived');
+        return false;
+    }
     return true;
 }
 

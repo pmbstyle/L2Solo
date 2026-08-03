@@ -193,6 +193,10 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     return { applied: true, reason: `buff_requested:${buffType}` };
 }
 
+function clearChatArrival(session, reason) {
+    try { invoke('GameServer/Bot/AI/ChatArrivalState').clear(session, reason); } catch (_) { /* optional movement overlay */ }
+}
+
 function applyHealTarget(session, bot, decision, targetSession) {
     const target = targetSession?.actor;
     if (!target) return { applied: false, reason: 'invalid_heal_target' };
@@ -239,16 +243,24 @@ function executeLegacy(session, decision, visiblePlayers) {
         if (!targetSession) return { applied: false, reason: 'missing_target_player' };
         stand(session, bot);
         if (isPartyCompanionOf(session, targetSession)) {
+            clearChatArrival(session, 'party_follow');
             session.plan = 'following';
             session.botStay = false;
             say(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
         } else {
+            const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
+            ChatArrivalState.start(session, targetSession, {
+                reason: 'player_chat_follow',
+                persistent: true,
+                stopOnArrival: true
+            });
             approachPlayer(session, bot, targetSession);
             say(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
         }
         return { applied: true, reason: 'follow_player' };
     }
     if (action === 'stay_here') {
+        clearChatArrival(session, 'stay_here');
         session.botStay = true;
         session.stayLocation = {
             locX: bot.fetchLocX(),
@@ -262,6 +274,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'stay_here' };
     }
     if (action === 'hunt') {
+        clearChatArrival(session, 'hunt');
         stand(session, bot);
         if (session.partyCompanion === true && session.followPlayerSession) {
             session.plan = 'hunting';
@@ -278,6 +291,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'hunt' };
     }
     if (action === 'rest') {
+        clearChatArrival(session, 'rest');
         const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
         const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
         if (hpRatio >= 0.95 && mpRatio >= 0.95) {
@@ -300,6 +314,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'rest' };
     }
     if (action === 'shop') {
+        clearChatArrival(session, 'shop');
         if (startShopping(session, bot)) {
             say(session, decision.reply, targetSession);
         } else {
@@ -308,6 +323,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'shop' };
     }
     if (action === 'move_to_spot') {
+        clearChatArrival(session, 'move_to_spot');
         if (session.partyCompanion === true && session.followPlayerSession) {
             say(session, decision.reply || 'I will stay with the party.', targetSession);
             return { applied: true, reason: 'party_companion_stays_with_party' };
@@ -637,7 +653,7 @@ function registerTools() {
     const descriptions = {
         none: 'Do nothing when no useful response is needed.',
         say: 'Send a short in-character reply to the target visible player.',
-        follow_player: 'Approach a visible player. Real party follow still requires an invite.',
+        follow_player: 'Persistently approach a visible player until arrival. Real party follow still requires an invite.',
         stay_here: 'Hold the current position.',
         hunt: 'Return to independent hunting.',
         rest: 'Sit and recover.',

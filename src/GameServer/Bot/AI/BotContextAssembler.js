@@ -80,7 +80,7 @@ async function assemble(input = {}) {
     const requestContext = input.requestContext || {};
     const budget = Math.max(240, Number(input.budget || DEFAULT_BUDGET));
     const hardMaxTokens = Math.max(budget, Number(input.hardMaxTokens || HARD_MAX_TOKENS));
-    const itemIntent = textWants(text, /\b(item|items|inventory|gear|weapon|armor|adena|shot|trade|loot|give|sell|buy)\b|инвент|вещ|шмот|оруж|брон|аден|сос|трейд|лут|дай|прод/);
+    const itemIntent = BotBrainContext.textRequestsInventory(text);
     const skillIntent = textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|скилл|хил|баф|хаст|щит|майт|винд|спойл|свип/);
     let bot;
     try {

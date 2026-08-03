@@ -7,8 +7,11 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 async function main() {
     const originalCompact = BotBrainContext.compactStatus;
+    let compactOptions = null;
     BotEventJournal.resetMemory();
-    BotBrainContext.compactStatus = () => ({
+    BotBrainContext.compactStatus = (_session, _status, _text, options) => {
+        compactOptions = options;
+        return {
         available: true,
         name: 'BoundedBot',
         level: 20,
@@ -16,7 +19,8 @@ async function main() {
         party: { members: [] },
         inventory: null,
         skills: null
-    });
+        };
+    };
     try {
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'level_up', summary: 'Reached level 20.', weight: 4 });
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'trade_completed', summary: 'Received healing potions from the player.', weight: 4 });
@@ -41,6 +45,13 @@ async function main() {
         assert(assembled.telemetry.skillIntent, 'skill intent should include the skill fragment path');
         assert(assembled.estimatedTokens <= assembled.hardMaxTokens);
         assert(BotContextAssembler.estimateTokens(assembled.fragments) <= 1800);
+        await BotContextAssembler.assemble({
+            session: { actor: { fetchId: () => 20 } },
+            status: { available: true },
+            text: 'Do you have soulshots, and can you bring me 100?',
+            requestContext: { playerId: 10 }
+        });
+        assert.strictEqual(compactOptions.includeInventory, true, 'soulshots/bring must include inventory context');
         console.log('Bot context assembler checks passed');
     } finally {
         BotBrainContext.compactStatus = originalCompact;

@@ -69,9 +69,10 @@ try {
     assert.strictEqual(proposed.reason, 'trade_proposed');
     assert.strictEqual(packets[0][0], 0x1e, 'propose_trade must open the native trade window');
 
-    const offered = BotAgentTools.execute(bot, decision('offer_resources', 'trade-tool-2', { tradeItemId: 612, tradeAmount: 2 }), [], context('trade-tool-2'));
+    const offered = BotAgentTools.execute(bot, decision('offer_resources', 'trade-tool-2', { tradeItemId: 6012, tradeAmount: 2 }), [], context('trade-tool-2'));
     assert.strictEqual(offered.applied, true);
     assert.strictEqual(offered.line.count, 2);
+    assert.strictEqual(offered.line.objectId, 612, 'template self id input must resolve to the canonical inventory object id');
     assert.strictEqual(packets[1][0], 0x21, 'offer_resources must use native TradeOtherAdd');
 
     const stranger = { accountId: 'player_stranger', actor: actor(699, 'Stranger', backpack([])) };

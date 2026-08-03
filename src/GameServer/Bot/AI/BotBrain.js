@@ -226,6 +226,7 @@ function systemPrompt() {
         'Never invent a background request, ambient prompt, player intent, or private internal event.',
         'A player-facing reply must be grounded in the authoritative bot state and conversation context.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
+        'For a non-party follow request, say that you are on your way unless the authoritative distance is already near the player; never claim to be beside them before arrival.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
         'Party pull, skill preference, stance, and equipment tools are temporary hot-session controls. They require the current human party leader; never invent authority.',
