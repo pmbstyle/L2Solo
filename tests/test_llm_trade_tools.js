@@ -91,6 +91,8 @@ try {
     assert.strictEqual(atomic.applied, true);
     assert.strictEqual(atomic.outcome, 'pending', 'resource delivery must remain pending until native player confirmation');
     assert.strictEqual(atomic.line.count, 1);
+    assert.match(atomic.playerVisibleReply, /trade window/i, 'pending resource delivery must provide a server-owned truthful reply');
+    assert.match(atomic.playerVisibleReply, /confirm/i);
     assert.strictEqual(packets[3][0], 0x1e, 'give_resources must open native trade');
     assert.strictEqual(packets[4][0], 0x21, 'give_resources must display the native resource line atomically');
     console.log('LLM trade tool checks passed');

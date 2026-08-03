@@ -74,8 +74,7 @@ function handlePrivateTell(session, data) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     return LifeState.findByName(target).then((state) => {
         if (!state) {
-            session.dataSendToMe(ServerResponse.actionFailed());
-            return false;
+            return World.messageBotByName(session, session.actor, target, text, 'client_tell');
         }
 
         session.dataSendToMe(ServerResponse.speak(session.actor, data));

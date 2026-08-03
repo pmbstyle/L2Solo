@@ -237,6 +237,7 @@ function systemPrompt() {
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
         'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
+        'For party candidate discovery, use the server-owned party.candidates list in the current payload and answer from it; do not assume a later tool result will be sent back to you in this turn.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }
@@ -245,11 +246,12 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
     const assembled = requestContext?.assembledContext;
     const preparedWorldRevision = requestContext?.preparedWorldRevision ||
         requestContext?.worldRevision || BotAgentTools.worldRevision(session);
+    const candidateRequest = isPartyCandidateRequest(text);
     const partyRequest = isPartyRequest(text);
     const availability = partyRequest && requestContext?.playerSession
         ? BotAvailability.evaluate(requestContext.playerSession, session)
         : null;
-    const candidates = partyRequest && /\b(other|anyone|who|somebody|друг|кто)\b/i.test(String(text || ''))
+    const candidates = candidateRequest
         ? BotAgentTools.partyCandidates(requestContext.playerSession, session)
         : [];
     return {
@@ -257,7 +259,8 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
         playerMessage: text || '',
         bot: assembled?.bot || BotBrainContext.compactStatus(session, status, text),
         visiblePlayers,
-        party: partyRequest ? {
+        party: partyRequest || candidateRequest ? {
+            intent: candidateRequest ? 'candidate_discovery' : 'membership',
             availability: availability ? {
                 available: availability.available === true,
                 reason: availability.reason || null,
@@ -348,8 +351,9 @@ function conversationSessionId(session, requestContext) {
 
 function compactActionResult(result) {
     if (!result) return null;
+    const confirmed = result.applied === true && result.outcome !== 'pending';
     const compact = {
-        ok: result.applied === true,
+        ok: confirmed,
         reason: result.reason || null,
         idempotent: result.idempotent === true,
         replyDelivered: result.replyDelivered === true
@@ -399,8 +403,17 @@ function validateDecisionResult(result, session) {
     return result;
 }
 
+function isPartyCandidateRequest(text) {
+    const value = String(text || '');
+    const candidateMarker = /\b(?:other|another|anyone|anybody|somebody|someone|who|other\s+bots?)\b|кто|друг(?:ие|их)?\s+(?:бот|игрок)|друг(?:ие|их)?\s+боты/i;
+    const partyMarker = /\b(?:party|group|team|join|invite|member|bot|player)s?\b|пати|групп|команд|присоедин|игрок/i;
+    return candidateMarker.test(value) && partyMarker.test(value);
+}
+
 function isPartyRequest(text) {
-    return /\b(party|group|team|join|invite)\b|пати|групп|команд|присоедин/i.test(String(text || ''));
+    const value = String(text || '');
+    if (isPartyCandidateRequest(value)) return false;
+    return /\b(party|group|team|join|invite)\b|пати|групп|команд|присоедин/i.test(value);
 }
 
 function applyPartyPolicy(session, decision, requestContext, text) {
@@ -449,7 +462,7 @@ function recordConversationReply(session, decision, result, requestContext) {
         meta: {
             action,
             reason: result.reason || null,
-            serverApplied: result.applied === true,
+            serverApplied: result.applied === true && result.outcome !== 'pending',
             actionResult: compactActionResult(result)
         }
     }));
@@ -482,7 +495,9 @@ function applyDecision(session, decision, visiblePlayers, requestContext) {
         // Skill requests are confirmed by the native cast/effect path. Do not
         // persist or claim the model's speculative reply before that happens.
         if (!['buff_target', 'heal_target'].includes(decision.action)) {
-            playerVisibleReply = result.playerVisibleReply || decision.reply || null;
+            playerVisibleReply = result.outcome === 'pending'
+                ? (result.playerVisibleReply || BotAgentTools.pendingReply(result))
+                : (result.playerVisibleReply || decision.reply || null);
             if (result.replyDelivered !== true && playerVisibleReply && playerSession?.actor) {
                 invoke('GameServer/Bot/BotManager').botTell(session, playerSession, playerVisibleReply);
                 result = { ...result, replyDelivered: true, playerVisibleReply };
@@ -663,6 +678,8 @@ const BotBrain = {
     },
 
     applyPartyPolicy,
+    isPartyRequest,
+    isPartyCandidateRequest,
 
     visibleRealPlayers,
 
@@ -967,13 +984,15 @@ const BotBrain = {
                 );
                 providerResult = {
                     ...providerResult,
-                    applied: actionResult.applied === true,
+                    applied: actionResult.applied === true && actionResult.outcome !== 'pending',
+                    toolApplied: actionResult.applied === true,
                     actionResult: compactActionResult(actionResult),
                     traceOutput: {
                         providerOutcome: providerResult.llmTelemetry?.outcome || providerResult.telemetry?.outcome || 'success',
                         requestedAction: providerResult.action || null,
                         toolOutcome: compactActionResult(actionResult),
-                        applied: actionResult.applied === true,
+                        applied: actionResult.applied === true && actionResult.outcome !== 'pending',
+                        toolApplied: actionResult.applied === true,
                         playerVisibleReply,
                         replyDelivered: actionResult.replyDelivered === true
                     }

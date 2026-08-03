@@ -30,6 +30,49 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
+function nameDistance(left, right) {
+    const a = String(left || '').toLowerCase();
+    const b = String(right || '').toLowerCase();
+    const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+    for (let row = 1; row <= a.length; row += 1) {
+        const current = [row];
+        for (let column = 1; column <= b.length; column += 1) {
+            current[column] = Math.min(
+                current[column - 1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1)
+            );
+        }
+        for (let column = 0; column <= b.length; column += 1) previous[column] = current[column];
+    }
+    return previous[b.length];
+}
+
+function nearestBotName(lookup, BotManager, LifeState) {
+    const hotNames = (BotManager.sessions || [])
+        .map((session) => session?.actor?.fetchName?.())
+        .filter(Boolean);
+    const coldNames = typeof LifeState.allStates === 'function'
+        ? LifeState.allStates(2000).map((state) => state?.name).filter(Boolean)
+        : [];
+    const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
+    const ranked = names
+        .map((name) => ({ name, distance: nameDistance(lookup, name) }))
+        .sort((left, right) => left.distance - right.distance || left.name.localeCompare(right.name));
+    const best = ranked[0];
+    if (!best) return null;
+    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.name.length) * 0.3));
+    return best.distance <= maxDistance ? best.name : null;
+}
+
+function unknownBotReply(session, lookup, BotManager, LifeState) {
+    const suggestion = nearestBotName(lookup, BotManager, LifeState);
+    const text = suggestion
+        ? `I couldn't find a bot named "${lookup}". Did you mean "${suggestion}"?`
+        : `I couldn't find a bot named "${lookup}".`;
+    session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text }));
+}
+
 function waitForBotSession(BotManager, name, attempts = 40) {
     const target = String(name || '').toLowerCase();
     return new Promise((resolve) => {
@@ -293,7 +336,7 @@ const World = {
 
         return LifeState.findByName(lookup).then((state) => {
             if (!state) {
-                session.dataSendToMe(ServerResponse.actionFailed());
+                unknownBotReply(session, lookup, BotManager, LifeState);
                 return false;
             }
 

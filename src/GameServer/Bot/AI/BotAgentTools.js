@@ -593,13 +593,15 @@ function giveResources(context) {
     const amount = context.decision.tradeAmount || context.decision.amount;
     const result = BotTradeService.startBotTradeWithOffer(context.session, player, itemId, amount);
     if (!result.ok) return { applied: false, reason: result.reason };
+    const line = { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count };
     return {
         applied: true,
         outcome: 'pending',
         reason: 'resources_offered_pending_confirmation',
         effect: 'native_trade_open_and_offer_displayed',
         trade: BotTradeService.activeTradeSummary(context.session),
-        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
+        line,
+        playerVisibleReply: `I put ${line.count} ${line.name} in the trade window. Please confirm the trade when you are ready.`
     };
 }
 
@@ -710,10 +712,18 @@ function partyCandidates(playerSession, currentSession = null) {
 }
 
 function listPartyCandidates(context) {
+    const candidates = partyCandidates(context?.requestContext?.playerSession, context.session);
+    const reply = candidates.length
+        ? `I can see ${candidates.map((candidate) => {
+            const distance = candidate.distance === null ? 'unknown distance' : `${candidate.distance} away`;
+            return `${candidate.name} (level ${candidate.level}, ${candidate.available ? 'available' : candidate.reasonText || 'busy'}, ${distance})`;
+        }).join('; ')}.`
+        : 'I do not see another bot available for your party right now.';
     return {
         applied: true,
         reason: 'party_candidates_listed',
-        candidates: partyCandidates(context?.requestContext?.playerSession, context.session)
+        candidates,
+        playerVisibleReply: reply
     };
 }
 
@@ -862,6 +872,8 @@ function remember(session, decision, result, model) {
         action: decision.action,
         reason: decision.reason || result.reason,
         appliedReason: result.reason,
+        outcome: result.outcome || 'applied',
+        serverApplied: result.applied === true && result.outcome !== 'pending',
         at: Date.now(),
         model,
         usage: decision.usage ? {
@@ -936,11 +948,22 @@ function rejectionReply(result = {}) {
     }
 }
 
+function pendingReply(result = {}) {
+    if (result.reason === 'resources_offered_pending_confirmation') {
+        const line = result.line || {};
+        const count = Number(line.count || 0);
+        const name = String(line.name || 'the requested resources');
+        return `I put ${count > 0 ? `${count} ` : ''}${name} in the trade window. Please confirm the trade when you are ready.`;
+    }
+    return 'I have started that request, but it still needs your confirmation.';
+}
+
 module.exports = {
     ACTIONS,
     availableActions,
     execute,
     remember,
+    pendingReply,
     rejectionReply,
     toolDescriptions,
     worldRevision,

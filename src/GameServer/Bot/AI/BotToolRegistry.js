@@ -154,6 +154,12 @@ function result(applied, reason, extra = {}) {
     return { applied: !!applied, reason: text(reason, 160) || 'unknown', ...extra };
 }
 
+function auditOutcome(value) {
+    const explicit = String(value?.outcome || '').toLowerCase();
+    if (['applied', 'pending', 'rejected', 'noop'].includes(explicit)) return explicit;
+    return value?.applied === true ? 'applied' : 'rejected';
+}
+
 function execute(context = {}) {
     const session = context.session;
     const decision = context.decision || {};
@@ -203,7 +209,7 @@ function execute(context = {}) {
 
     if (mutationStore && mutationKey && mutationStore.has(mutationKey)) {
         const previous = mutationStore.get(mutationKey);
-        audit({ ...context, decision: { ...decision, action } }, previous.applied ? 'applied' : 'rejected', 'idempotent_replay');
+        audit({ ...context, decision: { ...decision, action } }, auditOutcome(previous), 'idempotent_replay');
         return { ...previous, idempotent: true };
     }
     if (mutationStore && currentTurn && definition.mutating) {
@@ -238,7 +244,7 @@ function execute(context = {}) {
     }
     const normalized = result(outcome?.applied, outcome?.reason, outcome);
     if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
-    audit({ ...context, decision: { ...decision, action } }, normalized.applied ? 'applied' : 'rejected', normalized.reason, {
+    audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
         idempotent: false,
         currentRevision: worldRevision(session)
     });

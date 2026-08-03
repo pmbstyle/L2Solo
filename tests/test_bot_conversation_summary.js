@@ -62,6 +62,60 @@ async function main() {
         assert.strictEqual(stale.ok, false);
         assert.strictEqual(stale.reason, 'version_conflict');
 
+        // A reasoning-heavy summary may hit the compact first budget. The
+        // gateway must use its schema recovery attempt instead of entering
+        // backoff immediately.
+        BotConversationStore.resetMemory();
+        BotConversationSummarizer.reset();
+        OpenRouterGateway.resetCircuit();
+        for (let i = 1; i <= 30; i += 1) {
+            await BotConversationStore.appendTurn({
+                playerId: 50,
+                botId: 60,
+                turnId: `truncated-${i}`,
+                role: i % 2 ? 'player' : 'bot',
+                channel: 'tell',
+                text: `Summary recovery message ${i}`
+            });
+        }
+        const recoveryBodies = [];
+        let recoveryCalls = 0;
+        OpenRouterGateway.setTransport(async (_url, init) => {
+            recoveryCalls += 1;
+            recoveryBodies.push(JSON.parse(init.body));
+            if (recoveryCalls === 1) {
+                return {
+                    ok: true,
+                    status: 200,
+                    async json() {
+                        return {
+                            choices: [{ finish_reason: 'length', message: { content: '{"summary":' } }],
+                            usage: { prompt_tokens: 80, completion_tokens: 220, total_tokens: 300 }
+                        };
+                    }
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                async json() {
+                    return {
+                        choices: [{ message: { content: JSON.stringify({
+                            summary: 'Recovered compact summary.',
+                            openTopics: [],
+                            promises: []
+                        }) } }],
+                        usage: { prompt_tokens: 90, completion_tokens: 40, total_tokens: 130 }
+                    };
+                }
+            };
+        });
+        const recovered = await BotConversationSummarizer.summarize({ playerId: 50, botId: 60, threshold: 24 });
+        assert.strictEqual(recovered.ok, true, 'summary truncation should be recovered once');
+        assert.strictEqual(recoveryCalls, 2);
+        assert.strictEqual(recoveryBodies[0].max_completion_tokens, 220);
+        assert.strictEqual(recoveryBodies[1].max_completion_tokens, 2048);
+
         // A provider failure must leave the uncompacted messages usable.
         BotConversationStore.resetMemory();
         OpenRouterGateway.resetCircuit();

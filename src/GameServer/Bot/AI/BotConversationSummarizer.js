@@ -170,7 +170,8 @@ async function summarize(input = {}) {
                 botId,
                 playerId,
                 messages,
-                responseSchema: schema()
+                responseSchema: schema(),
+                repairSchema: true
             });
         } catch (_) {
             recordFailure(key, 'summary_provider_error');
