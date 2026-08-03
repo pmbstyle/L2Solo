@@ -118,7 +118,7 @@ function pumpGlobalWaiters() {
         const waiter = globalWaiters.shift();
         const result = reserve(waiter.session, {
             ...waiter.input,
-            now: waiter.now,
+            now: Date.now(),
             _grantingQueued: true
         });
         waiter.resolve(result);

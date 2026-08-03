@@ -67,7 +67,12 @@ async function main() {
             });
         });
 
-        const playerSession = { accountId: 'player_cold', actor: actor(9101, 'ColdPlayer', 100) };
+        const deliveredPackets = [];
+        const playerSession = {
+            accountId: 'player_cold',
+            actor: actor(9101, 'ColdPlayer', 100),
+            dataSendToMe(packet) { deliveredPackets.push(packet); }
+        };
         const state = {
             characterId: 9102,
             accountName: 'bot_cold_chat',
@@ -87,6 +92,8 @@ async function main() {
         const results = await Promise.all([first, second]);
 
         assert.deepStrictEqual(results.map((result) => result.reply), ['reply-1', 'reply-2']);
+        assert.deepStrictEqual(results.map((result) => result.delivered), [true, true]);
+        assert.strictEqual(deliveredPackets.length, 2, 'cold replies should be delivered inside the traced stage');
         assert.strictEqual(requests.length, 2, 'every cold tell must reach the provider without a cooldown drop');
         const secondPayload = JSON.parse(requests[1].messages[1].content);
         assert.deepStrictEqual(
@@ -146,20 +153,23 @@ async function main() {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
         assert.strictEqual(typeof releaseAdmissionRequest, 'function', 'the first cold request should occupy the global slot');
-        const secondAdmission = await BotRemoteChat.replyForState(
+        const secondAdmissionPromise = BotRemoteChat.replyForState(
             playerSession,
             { ...state, characterId: 9112, accountName: 'rejected_cold_chat', name: 'RejectedColdChat' },
             'second admission'
         );
-        assert.strictEqual(secondAdmission.reason, 'inference_budget_global_concurrency');
-        assert.strictEqual(requests.length, beforeAdmissionRequests + 1, 'global admission must reject the second cold request before OpenRouter');
+        assert.strictEqual(requests.length, beforeAdmissionRequests + 1, 'global admission must queue the second cold request before OpenRouter');
         releaseAdmissionRequest();
-        await firstAdmission;
+        const [firstAdmissionResult, secondAdmission] = await Promise.all([firstAdmission, secondAdmissionPromise]);
+        assert.strictEqual(firstAdmissionResult.delivered, true);
+        assert.strictEqual(secondAdmission.reason, 'test_reply');
+        assert.strictEqual(secondAdmission.delivered, true);
+        assert.strictEqual(requests.length, beforeAdmissionRequests + 2, 'queued cold chat must reach OpenRouter after the slot is released');
         for (const stage of ['cold-bot.dialogue', 'bot.context.assemble', 'bot.reply.deliver']) {
             assert.strictEqual(observations.filter((name) => name === stage).length, 5, `${stage} should be emitted for every cold reply`);
         }
         for (const stage of ['openrouter.generation', 'bot.schema.validate']) {
-            assert.strictEqual(observations.filter((name) => name === stage).length, 4, `${stage} should be emitted for every admitted cold request`);
+            assert.strictEqual(observations.filter((name) => name === stage).length, 5, `${stage} should be emitted for every admitted cold request`);
         }
         assert.strictEqual(observations.filter((name) => name === 'bot.tool.come_to_player').length, 1, 'come_to_player should have one tool observation');
         console.log('Cold bot chat checks passed');

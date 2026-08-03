@@ -85,7 +85,7 @@ function orderedTurns(turns) {
 }
 
 function modelVisibleTurn(turn) {
-    return turn?.role !== 'bot' || turn?.meta?.fallback !== true;
+    return turn?.role !== 'bot' || (turn?.delivered !== false && turn?.meta?.fallback !== true);
 }
 
 function memoryEntry(playerId, botId) {

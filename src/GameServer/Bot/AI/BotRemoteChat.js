@@ -6,6 +6,7 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 // A player can send several tells while the provider is answering.  Keep the
 // pair ordered so each request sees the previous answer in conversation
@@ -282,6 +283,10 @@ function activateNearPlayer(playerSession, state) {
 
 function recordReply(playerSession, state, turn, result, extra = {}) {
     if (!result?.reply) return Promise.resolve(false);
+    const fallback = result.providerFailure === true ||
+        result.isFallback === true ||
+        result.reason === 'fallback' ||
+        extra.fallback === true;
     return LangfuseTracing.withObservation(
         'bot.conversation.persist',
         { botId: state.characterId, playerId: playerSession.actor.fetchId(), turnId: turn.turnId },
@@ -299,17 +304,37 @@ function recordReply(playerSession, state, turn, result, extra = {}) {
             channel: turn.channel,
             text: result.reply,
             requestId: turn.turnId,
-            delivered: true,
-                meta: {
-                    action: result.action || 'say',
-                    reason: result.reason || null,
-                    providerOutcome: result.providerOutcome || null,
-                    fallback: result.providerFailure === true || result.reason === 'fallback',
-                    ...extra
+            delivered: result.delivered === true,
+            meta: {
+                action: result.action || 'say',
+                reason: result.reason || null,
+                providerOutcome: result.providerOutcome || null,
+                fallback,
+                ...extra
             }
         }),
         'chain'
     );
+}
+
+function deliverReply(playerSession, state, text) {
+    if (!state || !playerSession?.dataSendToMe) return false;
+    const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
+    const lines = BotChatText.splitForTell(text);
+    if (!lines.length) return false;
+    try {
+        lines.forEach((line) => {
+            playerSession.dataSendToMe(
+                ServerResponse.speak({
+                    fetchId: () => Number(state.characterId || 0),
+                    fetchName: () => state.name || 'Bot'
+                }, { kind: 2, text: line })
+            );
+        });
+        return true;
+    } catch (_) {
+        return false;
+    }
 }
 
 function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
@@ -319,7 +344,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
         ok: true,
         reply: fallbackReply(state, availability, text),
         action: 'say',
-        reason: 'fallback'
+        reason: 'fallback',
+        isFallback: true
     };
     const begin = BotConversationService.beginTurn({
         playerSession,
@@ -421,7 +447,17 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                         providerOutcome: reply?.providerOutcome || null
                     },
                     stageMetadata,
-                    () => recordReply(playerSession, state, turn, reply, extra).then(() => reply),
+                    () => {
+                        const delivered = deliverReply(playerSession, state, reply?.reply);
+                        const deliveredReply = { ...reply, delivered };
+                        return recordReply(
+                            playerSession,
+                            state,
+                            turn,
+                            deliveredReply,
+                            { ...extra, fallback: deliveredReply.isFallback === true }
+                        ).then(() => deliveredReply);
+                    },
                     'chain'
                 );
 
@@ -444,7 +480,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                         : {
                             ...fallback,
                             providerOutcome: grantedAdmission.reason,
-                            reason: grantedAdmission.reason
+                            reason: grantedAdmission.reason,
+                            isFallback: true
                         };
                     return deliver(failed);
                 }
@@ -466,7 +503,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                         ...fallback,
                         providerOutcome: result.providerOutcome,
                         usage: result.usage || null,
-                        llmTelemetry: result.llmTelemetry || null
+                        llmTelemetry: result.llmTelemetry || null,
+                        isFallback: true
                     };
                     return deliver(failed);
                 }
@@ -479,7 +517,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                         : {
                             ...fallback,
                             reason: `come_to_player:${actionResult.reason || 'rejected'}`,
-                            providerOutcome: 'action_rejected'
+                            providerOutcome: 'action_rejected',
+                            isFallback: true
                         };
                     return deliver({
                         ...actionReply,

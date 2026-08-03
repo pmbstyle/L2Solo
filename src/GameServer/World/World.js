@@ -298,12 +298,11 @@ const World = {
             }
 
             return BotRemoteChat.replyForState(session, state, message).then((result) => {
-                if (!result?.ok || !result.reply) {
+                if (!result?.ok || !result.reply || result.delivered !== true) {
                     session.dataSendToMe(ServerResponse.actionFailed());
                     return false;
                 }
 
-                coldBotTell(session, state, result.reply);
                 console.info(
                     'BotRemoteChat :: %s replied to %s reason=%s',
                     state.name || lookup,

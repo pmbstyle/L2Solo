@@ -289,9 +289,14 @@ function completionLimit(cfg, request = {}) {
 function repairConfig(spec) {
     const source = config(spec.config || {});
     const current = completionLimit(source, spec);
-    const rescue = current === null
-        ? 32768
-        : Math.max(2048, current * 2);
+    if (current === null) {
+        return {
+            ...(spec.config || {}),
+            maxCompletionTokens: null,
+            interactiveMaxCompletionTokens: 0
+        };
+    }
+    const rescue = Math.max(2048, current * 2);
     return {
         ...(spec.config || {}),
         maxTokens: rescue,

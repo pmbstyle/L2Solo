@@ -251,7 +251,7 @@ async function main() {
     assert.strictEqual(truncated.telemetry.repairType, 'truncation');
     assert.strictEqual(truncated.telemetry.initialOutcome, 'output_truncated');
     assert.strictEqual(truncationBodies[0].max_completion_tokens, undefined);
-    assert.strictEqual(truncationBodies[1].max_completion_tokens, 32768);
+    assert.strictEqual(truncationBodies[1].max_completion_tokens, undefined);
     assert.strictEqual(truncated.usage.reasoningTokens, 600);
     assert.strictEqual(truncated.usage.visibleCompletionTokens, 48);
 
