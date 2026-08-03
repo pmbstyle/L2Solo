@@ -47,6 +47,7 @@ const metrics = {
     timeout: 0,
     providerError: 0,
     schemaError: 0,
+    outputTruncated: 0,
     disabled: 0,
     missingApiKey: 0,
     circuitOpen: 0,
@@ -210,6 +211,7 @@ function recordMetric(outcome, latencyMs, meta = {}) {
     if (outcome === 'timeout') metrics.timeout += 1;
     if (outcome === 'provider_error') metrics.providerError += 1;
     if (outcome === 'schema_error') metrics.schemaError += 1;
+    if (outcome === 'output_truncated') metrics.outputTruncated += 1;
     if (outcome === 'disabled') metrics.disabled += 1;
     if (outcome === 'missing_api_key') metrics.missingApiKey += 1;
     if (outcome === 'circuit_open') metrics.circuitOpen += 1;
@@ -239,8 +241,10 @@ function telemetry(request, cfg, outcome, startedAt, extra = {}) {
         responsePreview: extra.responsePreview || null,
         attempts: Number(extra.attempts || 1),
         repairTriggered: extra.repairTriggered === true,
+        repairType: extra.repairType || null,
         initialOutcome: extra.initialOutcome || null,
-        initialRawContent: extra.initialRawContent || null
+        initialRawContent: extra.initialRawContent || null,
+        initialFinishReason: extra.initialFinishReason || null
     };
 }
 
@@ -249,6 +253,27 @@ function shouldRepairSchema(spec, result) {
         spec.responseSchema?.schema &&
         result?.reason === 'schema_error' &&
         spec.schemaRepairAttempt !== true;
+}
+
+function shouldRecoverTruncation(spec, result) {
+    return spec.repairSchema === true &&
+        spec.responseSchema?.schema &&
+        result?.reason === 'output_truncated' &&
+        spec.schemaRepairAttempt !== true;
+}
+
+function recoveryMessages(spec, result) {
+    const messages = Array.isArray(spec.messages) ? [...spec.messages] : [];
+    messages.push({
+        role: 'system',
+        content: [
+            'The previous structured response could not be used.',
+            `Failure: ${String(result?.telemetry?.responsePreview || result?.reason || 'invalid_response').slice(0, 240)}.`,
+            'Re-evaluate the original request and return one complete JSON object matching the required schema.',
+            'Do not continue or quote the partial response.'
+        ].join(' ')
+    });
+    return messages;
 }
 
 function completionLimit(cfg, request = {}) {
@@ -295,7 +320,7 @@ function combinedUsage(first, second) {
     };
 }
 
-function repairedResult(initial, repaired) {
+function repairedResult(initial, repaired, repairType = 'schema') {
     const telemetry = repaired?.telemetry || {};
     const usage = combinedUsage(initial?.usage, repaired?.usage);
     return {
@@ -306,8 +331,10 @@ function repairedResult(initial, repaired) {
             usage,
             attempts: 2,
             repairTriggered: true,
+            repairType,
             initialOutcome: initial?.reason || null,
             initialRawContent: initial?.telemetry?.rawContent || null,
+            initialFinishReason: initial?.telemetry?.finishReason || null,
             initialUsage: initial?.usage || null
         }
     };
@@ -478,6 +505,15 @@ async function requestUntraced(spec = {}) {
         const finishReason = choice.finish_reason || null;
         const rawContent = typeof content === 'string' ? content.slice(0, 12000) : null;
         let data;
+        if (finishReason === 'length') {
+            return complete(requestData, cfg, 'output_truncated', startedAt, {
+                usage: normalizeUsage(json.usage),
+                finishReason,
+                providerRequestId: json.id || null,
+                rawContent,
+                responsePreview: 'provider_output_truncated'
+            });
+        }
         try {
             data = parseContent(content);
         } catch (_) {
@@ -553,9 +589,19 @@ async function request(spec = {}) {
         metadata,
         async (observation) => {
             let result = await requestUntraced(spec);
-            if (shouldRepairSchema(spec, result)) {
+            if (shouldRecoverTruncation(spec, result)) {
                 const repaired = await requestUntraced({
                     ...spec,
+                    messages: recoveryMessages(spec, result),
+                    config: repairConfig(spec),
+                    schemaRepairAttempt: true,
+                    circuitBreaker: false
+                });
+                result = repairedResult(result, repaired, 'truncation');
+            } else if (shouldRepairSchema(spec, result)) {
+                const repaired = await requestUntraced({
+                    ...spec,
+                    messages: recoveryMessages(spec, result),
                     config: repairConfig(spec),
                     schemaRepairAttempt: true,
                     circuitBreaker: false
@@ -596,6 +642,7 @@ async function request(spec = {}) {
                         status: result.telemetry.status,
                         finishReason: result.telemetry.finishReason,
                         interactive: spec.interactive === true,
+                        repairType: result.telemetry.repairType || null,
                         reasoningTokens: Number(usage.reasoningTokens || 0),
                         visibleCompletionTokens: Number(usage.visibleCompletionTokens || 0),
                         maxCompletionTokens: effectiveMaxTokens

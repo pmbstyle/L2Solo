@@ -121,7 +121,7 @@ function observationStatus(value) {
         };
     }
     if (value?.ok === false || [
-        'schema_error', 'provider_error', 'timeout', 'circuit_open', 'missing_api_key',
+        'schema_error', 'output_truncated', 'provider_error', 'timeout', 'circuit_open', 'missing_api_key',
         'disabled', 'transport_error'
     ].includes(outcome)) {
         return {

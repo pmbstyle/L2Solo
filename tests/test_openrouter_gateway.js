@@ -209,6 +209,63 @@ async function main() {
     const invalid = await OpenRouterGateway.request({ config: baseConfig, requestId: 'schema-error' });
     assert.strictEqual(invalid.reason, 'schema_error');
 
+    OpenRouterGateway.resetCircuit();
+    let truncationAttempts = 0;
+    const truncationBodies = [];
+    OpenRouterGateway.setTransport(async (_url, init) => {
+        truncationBodies.push(JSON.parse(init.body));
+        truncationAttempts += 1;
+        if (truncationAttempts === 1) {
+            return response({
+                choices: [{
+                    finish_reason: 'length',
+                    message: { content: '{"action":' }
+                }],
+                usage: {
+                    prompt_tokens: 20,
+                    completion_tokens: 640,
+                    total_tokens: 660,
+                    completion_tokens_details: { reasoning_tokens: 600 }
+                }
+            });
+        }
+        return response({
+            choices: [{
+                finish_reason: 'stop',
+                message: { content: JSON.stringify({ reply: 'recovered' }) }
+            }],
+            usage: { prompt_tokens: 22, completion_tokens: 8, total_tokens: 30 }
+        });
+    });
+    const truncated = await OpenRouterGateway.request({
+        config: { ...baseConfig, circuitBreakerFailureThreshold: 1 },
+        circuitKey: 'truncated',
+        circuitBreaker: false,
+        interactive: true,
+        requestId: 'output-truncated',
+        messages: [{ role: 'user', content: 'recover a truncated decision' }],
+        responseSchema: schema,
+        repairSchema: true
+    });
+    assert.strictEqual(truncated.ok, true);
+    assert.strictEqual(truncated.telemetry.repairType, 'truncation');
+    assert.strictEqual(truncated.telemetry.initialOutcome, 'output_truncated');
+    assert.strictEqual(truncationBodies[0].max_completion_tokens, undefined);
+    assert.strictEqual(truncationBodies[1].max_completion_tokens, 32768);
+    assert.strictEqual(truncated.usage.reasoningTokens, 600);
+    assert.strictEqual(truncated.usage.visibleCompletionTokens, 48);
+
+    OpenRouterGateway.setTransport(async () => response({
+        choices: [{ message: { content: JSON.stringify({ reply: 'circuit remains healthy' }) } }]
+    }));
+    const afterTruncation = await OpenRouterGateway.request({
+        config: { ...baseConfig, circuitBreakerFailureThreshold: 1 },
+        circuitKey: 'truncated',
+        requestId: 'after-output-truncated',
+        messages: []
+    });
+    assert.strictEqual(afterTruncation.ok, true, 'truncation must not open the provider circuit');
+
     OpenRouterGateway.setTransport(async () => {
         throw new Error('transport should not be called');
     });
@@ -228,6 +285,7 @@ async function main() {
     assert.ok(metrics.timeout >= 1);
     assert.ok(metrics.providerError >= 3);
     assert.ok(metrics.schemaError >= 1);
+    assert.ok(metrics.outputTruncated >= 1);
     assert.ok(metrics.circuitOpen >= 1);
 
     console.log('OpenRouter gateway checks passed');
