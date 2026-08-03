@@ -5,10 +5,35 @@ const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const SUMMARY_THRESHOLD_MESSAGES = 24;
 const SUMMARY_RECENT_TURNS = BotConversationStore.DEFAULT_RECENT_TURNS;
 const SUMMARY_MAX_TOKENS = 220;
+const SUMMARY_BACKOFF_BASE_MS = 30 * 1000;
+const SUMMARY_BACKOFF_MAX_MS = 10 * 60 * 1000;
 const inFlight = new Map();
+const failures = new Map();
 
 function pairKey(playerId, botId) {
     return `${Number(playerId)}:${Number(botId)}`;
+}
+
+function backoffState(key) {
+    const state = failures.get(key);
+    if (!state || Number(state.nextRetryAt || 0) <= Date.now()) return null;
+    return {
+        ok: false,
+        reason: 'summary_backoff',
+        retryAfterMs: Math.max(1, Number(state.nextRetryAt) - Date.now()),
+        failureCount: Number(state.failureCount || 0),
+        lastFailure: state.reason || null
+    };
+}
+
+function recordFailure(key, reason) {
+    const previous = failures.get(key) || { failureCount: 0 };
+    const failureCount = Number(previous.failureCount || 0) + 1;
+    const delay = Math.min(
+        SUMMARY_BACKOFF_MAX_MS,
+        SUMMARY_BACKOFF_BASE_MS * (2 ** Math.min(8, failureCount - 1))
+    );
+    failures.set(key, { failureCount, nextRetryAt: Date.now() + delay, reason });
 }
 
 function compactMeta(meta) {
@@ -21,7 +46,9 @@ function compactMeta(meta) {
     if (meta.actionResult && typeof meta.actionResult === 'object') {
         result.actionResult = {
             ok: meta.actionResult.ok === true,
-            reason: meta.actionResult.reason || null
+            reason: meta.actionResult.reason || null,
+            outcome: meta.actionResult.outcome || null,
+            effect: meta.actionResult.effect || null
         };
     }
     return Object.keys(result).length ? result : null;
@@ -82,6 +109,8 @@ async function summarize(input = {}) {
     const botId = Number(input.botId || 0);
     if (!playerId || !botId) return { ok: false, reason: 'invalid_pair' };
     const key = pairKey(playerId, botId);
+    const blocked = backoffState(key);
+    if (blocked) return blocked;
     if (inFlight.has(key)) return inFlight.get(key);
 
     const work = (async () => {
@@ -117,7 +146,7 @@ async function summarize(input = {}) {
         const messages = [
             {
                 role: 'system',
-                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, refusal, fallback, or failed action did not happen. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
+                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, refusal, fallback, or failed action did not happen. A pending action means a server-side request or native window is active, not that the final transfer or effect completed. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
             },
             { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
         ];
@@ -144,14 +173,22 @@ async function summarize(input = {}) {
                 responseSchema: schema()
             });
         } catch (_) {
+            recordFailure(key, 'summary_provider_error');
             return { ok: false, reason: 'summary_provider_error' };
         } finally {
             BotInferenceBudget.settle(admission.reservation, result?.usage);
         }
-        if (!result.ok) return { ok: false, reason: result.reason || 'summary_provider_error' };
+        if (!result.ok) {
+            const reason = result.reason || 'summary_provider_error';
+            recordFailure(key, reason);
+            return { ok: false, reason };
+        }
 
         const summary = normalizeSummary(result.data);
-        if (!summary) return { ok: false, reason: 'empty_summary' };
+        if (!summary) {
+            recordFailure(key, 'empty_summary');
+            return { ok: false, reason: 'empty_summary' };
+        }
         const saved = await BotConversationStore.setSummary({
             playerId,
             botId,
@@ -160,7 +197,11 @@ async function summarize(input = {}) {
             summaryThroughOrdinal: throughOrdinal,
             expectedVersion: Number(current.version || 0)
         });
-        if (!saved.ok) return saved;
+        if (!saved.ok) {
+            recordFailure(key, saved.reason || 'summary_store_error');
+            return saved;
+        }
+        failures.delete(key);
         return {
             ok: true,
             summary,
@@ -178,7 +219,7 @@ const BotConversationSummarizer = {
     SUMMARY_THRESHOLD_MESSAGES,
     SUMMARY_RECENT_TURNS,
     summarize,
-    reset() { inFlight.clear(); }
+    reset() { inFlight.clear(); failures.clear(); }
 };
 
 module.exports = BotConversationSummarizer;

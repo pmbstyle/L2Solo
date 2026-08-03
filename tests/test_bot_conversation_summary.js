@@ -75,9 +75,16 @@ async function main() {
                 text: `Uncompacted message ${i}`
             });
         }
-        OpenRouterGateway.setTransport(async () => ({ ok: false, status: 503, async json() { return {}; } }));
+        let failedRequests = 0;
+        OpenRouterGateway.setTransport(async () => {
+            failedRequests += 1;
+            return { ok: false, status: 503, async json() { return {}; } };
+        });
         const failed = await BotConversationSummarizer.summarize({ playerId: 30, botId: 40, threshold: 24 });
         assert.strictEqual(failed.ok, false);
+        const backedOff = await BotConversationSummarizer.summarize({ playerId: 30, botId: 40, threshold: 24 });
+        assert.strictEqual(backedOff.reason, 'summary_backoff', 'a provider failure must not retry on every chat turn');
+        assert.strictEqual(failedRequests, 1, 'summary backoff must suppress duplicate provider calls');
         const raw = await BotConversationStore.context(30, 40, { limit: 40 });
         assert.strictEqual(raw.summary, null);
         assert.strictEqual(raw.recentTurns.length, 30);

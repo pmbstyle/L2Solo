@@ -17,12 +17,7 @@ async function main() {
     try {
         options.default.OpenRouter = {
             ...originalConfig,
-            hotBotBudgetEnabled: true,
-            hotBotGlobalBudgetEnabled: true,
-            hotBotGlobalMaxInFlight: 1,
-            hotBotGlobalMaxRequestsPerMinute: 1,
-            hotBotGlobalPromptTokenBudgetPerMinute: 240,
-            hotBotGlobalCompletionTokenBudgetPerMinute: 64
+            maxConcurrentRequests: 1
         };
         BotInferenceBudget.reset();
 

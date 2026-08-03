@@ -1,39 +1,36 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const REASONING_EFFORTS = new Set(['off', 'low', 'medium', 'high']);
+const LUNA_MODEL = 'openai/gpt-5.6-luna';
+const MODEL_PROFILES = Object.freeze({
+    [LUNA_MODEL]: Object.freeze({
+        supportsTemperature: false,
+        completionLimitParam: 'max_tokens',
+        openAiStrictSchema: true,
+        provider: Object.freeze({
+            order: Object.freeze(['OpenAI']),
+            sort: 'price',
+            allow_fallbacks: false
+        })
+    })
+});
 
 const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
-    model: 'google/gemini-2.5-flash-lite',
+    model: LUNA_MODEL,
     temperature: 0.35,
+    reasoningEffort: 'low',
+    maxConcurrentRequests: 32,
+    debug: false,
+
+    // Runtime safety policy. These are deliberately not user-facing config
+    // knobs; callers may override them explicitly for focused tests/workflows.
     maxTokens: 320,
-    maxCompletionTokens: null,
-    interactiveMaxCompletionTokens: 0,
-    reasoningEnabled: true,
-    reasoningEffort: 'high',
-    reasoningExclude: true,
     timeoutMs: 3500,
-    cooldownMs: 45000,
-    chatCooldownMs: 0,
-    backgroundInferenceEnabled: false,
-    remoteChatCooldownMs: 10000,
     visibilityRadius: 6000,
-    maxPromptPrice: 0,
-    maxCompletionPrice: 0,
-    usageInclude: true,
-    requireProviderParameters: true,
     circuitBreakerFailureThreshold: 3,
-    circuitBreakerOpenMs: 30000,
-    hotBotBudgetEnabled: true,
-    hotBotMaxRequestsPerMinute: 6,
-    hotBotPromptTokenBudgetPerMinute: 12000,
-    hotBotCompletionTokenBudgetPerMinute: 2400,
-    hotBotGlobalBudgetEnabled: true,
-    hotBotGlobalMaxInFlight: 32,
-    hotBotGlobalMaxRequestsPerMinute: 240,
-    hotBotGlobalPromptTokenBudgetPerMinute: 300000,
-    hotBotGlobalCompletionTokenBudgetPerMinute: 64000,
-    debug: false
+    circuitBreakerOpenMs: 30000
 });
 
 let transport = null;
@@ -66,10 +63,9 @@ function num(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function nullableNum(value, fallback = null) {
-    if (value === undefined || value === null || value === '') return fallback;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+function reasoningEffort(value, fallback = DEFAULTS.reasoningEffort) {
+    const normalized = String(value || fallback).trim().toLowerCase();
+    return REASONING_EFFORTS.has(normalized) ? normalized : fallback;
 }
 
 function config(overrides = {}) {
@@ -80,39 +76,11 @@ function config(overrides = {}) {
         apiKey: process.env.OPENROUTER_API_KEY || optn.apiKey || DEFAULTS.apiKey,
         model: process.env.OPENROUTER_MODEL || optn.model || DEFAULTS.model,
         temperature: num(optn.temperature, DEFAULTS.temperature),
-        maxTokens: num(optn.maxTokens, DEFAULTS.maxTokens),
-        maxCompletionTokens: nullableNum(optn.maxCompletionTokens, DEFAULTS.maxCompletionTokens),
-        interactiveMaxCompletionTokens: nullableNum(
-            optn.interactiveMaxCompletionTokens,
-            DEFAULTS.interactiveMaxCompletionTokens
-        ),
-        reasoningEnabled: bool(optn.reasoningEnabled, DEFAULTS.reasoningEnabled),
-        reasoningEffort: String(optn.reasoningEffort || DEFAULTS.reasoningEffort),
-        reasoningExclude: bool(optn.reasoningExclude, DEFAULTS.reasoningExclude),
-        timeoutMs: num(optn.timeoutMs, DEFAULTS.timeoutMs),
-        cooldownMs: num(optn.cooldownMs, DEFAULTS.cooldownMs),
-        chatCooldownMs: num(optn.chatCooldownMs, DEFAULTS.chatCooldownMs),
-        backgroundInferenceEnabled: bool(optn.backgroundInferenceEnabled, DEFAULTS.backgroundInferenceEnabled),
-        remoteChatCooldownMs: num(optn.remoteChatCooldownMs, DEFAULTS.remoteChatCooldownMs),
-        visibilityRadius: num(optn.visibilityRadius, DEFAULTS.visibilityRadius),
-        maxPromptPrice: num(optn.maxPromptPrice, DEFAULTS.maxPromptPrice),
-        maxCompletionPrice: num(optn.maxCompletionPrice, DEFAULTS.maxCompletionPrice),
-        usageInclude: bool(optn.usageInclude, DEFAULTS.usageInclude),
-        requireProviderParameters: bool(optn.requireProviderParameters, DEFAULTS.requireProviderParameters),
-        circuitBreakerFailureThreshold: num(
-            optn.circuitBreakerFailureThreshold,
-            DEFAULTS.circuitBreakerFailureThreshold
-        ),
-        circuitBreakerOpenMs: num(optn.circuitBreakerOpenMs, DEFAULTS.circuitBreakerOpenMs),
-        hotBotBudgetEnabled: bool(optn.hotBotBudgetEnabled, DEFAULTS.hotBotBudgetEnabled),
-        hotBotMaxRequestsPerMinute: num(optn.hotBotMaxRequestsPerMinute, DEFAULTS.hotBotMaxRequestsPerMinute),
-        hotBotPromptTokenBudgetPerMinute: num(optn.hotBotPromptTokenBudgetPerMinute, DEFAULTS.hotBotPromptTokenBudgetPerMinute),
-        hotBotCompletionTokenBudgetPerMinute: num(optn.hotBotCompletionTokenBudgetPerMinute, DEFAULTS.hotBotCompletionTokenBudgetPerMinute),
-        hotBotGlobalBudgetEnabled: bool(optn.hotBotGlobalBudgetEnabled, DEFAULTS.hotBotGlobalBudgetEnabled),
-        hotBotGlobalMaxInFlight: num(optn.hotBotGlobalMaxInFlight, DEFAULTS.hotBotGlobalMaxInFlight),
-        hotBotGlobalMaxRequestsPerMinute: num(optn.hotBotGlobalMaxRequestsPerMinute, DEFAULTS.hotBotGlobalMaxRequestsPerMinute),
-        hotBotGlobalPromptTokenBudgetPerMinute: num(optn.hotBotGlobalPromptTokenBudgetPerMinute, DEFAULTS.hotBotGlobalPromptTokenBudgetPerMinute),
-        hotBotGlobalCompletionTokenBudgetPerMinute: num(optn.hotBotGlobalCompletionTokenBudgetPerMinute, DEFAULTS.hotBotGlobalCompletionTokenBudgetPerMinute),
+        reasoningEffort: reasoningEffort(optn.reasoningEffort),
+        maxConcurrentRequests: Math.max(1, Math.floor(num(
+            optn.maxConcurrentRequests,
+            DEFAULTS.maxConcurrentRequests
+        ))),
         debug: bool(optn.debug, DEFAULTS.debug)
     };
 
@@ -123,41 +91,19 @@ function config(overrides = {}) {
         apiKey: overrides.apiKey !== undefined ? String(overrides.apiKey || '') : source.apiKey,
         model: overrides.model || source.model,
         temperature: num(overrides.temperature, source.temperature),
+        reasoningEffort: reasoningEffort(overrides.reasoningEffort, source.reasoningEffort),
+        maxConcurrentRequests: Math.max(1, Math.floor(num(
+            overrides.maxConcurrentRequests,
+            source.maxConcurrentRequests
+        ))),
         maxTokens: num(overrides.maxTokens, source.maxTokens),
-        maxCompletionTokens: nullableNum(overrides.maxCompletionTokens, source.maxCompletionTokens),
-        interactiveMaxCompletionTokens: nullableNum(
-            overrides.interactiveMaxCompletionTokens,
-            source.interactiveMaxCompletionTokens
-        ),
-        reasoningEnabled: bool(overrides.reasoningEnabled, source.reasoningEnabled),
-        reasoningEffort: String(overrides.reasoningEffort || source.reasoningEffort),
-        reasoningExclude: bool(overrides.reasoningExclude, source.reasoningExclude),
         timeoutMs: num(overrides.timeoutMs, source.timeoutMs),
-        maxPromptPrice: num(overrides.maxPromptPrice, source.maxPromptPrice),
-        maxCompletionPrice: num(overrides.maxCompletionPrice, source.maxCompletionPrice),
-        backgroundInferenceEnabled: bool(
-            overrides.backgroundInferenceEnabled,
-            source.backgroundInferenceEnabled
-        ),
-        usageInclude: bool(overrides.usageInclude, source.usageInclude),
-        requireProviderParameters: bool(
-            overrides.requireProviderParameters,
-            source.requireProviderParameters
-        ),
+        visibilityRadius: Math.max(1, num(overrides.visibilityRadius, source.visibilityRadius)),
         circuitBreakerFailureThreshold: Math.max(
             1,
             num(overrides.circuitBreakerFailureThreshold, source.circuitBreakerFailureThreshold)
         ),
         circuitBreakerOpenMs: Math.max(0, num(overrides.circuitBreakerOpenMs, source.circuitBreakerOpenMs)),
-        hotBotBudgetEnabled: bool(overrides.hotBotBudgetEnabled, source.hotBotBudgetEnabled),
-        hotBotMaxRequestsPerMinute: Math.max(1, num(overrides.hotBotMaxRequestsPerMinute, source.hotBotMaxRequestsPerMinute)),
-        hotBotPromptTokenBudgetPerMinute: Math.max(240, num(overrides.hotBotPromptTokenBudgetPerMinute, source.hotBotPromptTokenBudgetPerMinute)),
-        hotBotCompletionTokenBudgetPerMinute: Math.max(64, num(overrides.hotBotCompletionTokenBudgetPerMinute, source.hotBotCompletionTokenBudgetPerMinute)),
-        hotBotGlobalBudgetEnabled: bool(overrides.hotBotGlobalBudgetEnabled, source.hotBotGlobalBudgetEnabled),
-        hotBotGlobalMaxInFlight: Math.max(1, num(overrides.hotBotGlobalMaxInFlight, source.hotBotGlobalMaxInFlight)),
-        hotBotGlobalMaxRequestsPerMinute: Math.max(1, num(overrides.hotBotGlobalMaxRequestsPerMinute, source.hotBotGlobalMaxRequestsPerMinute)),
-        hotBotGlobalPromptTokenBudgetPerMinute: Math.max(240, num(overrides.hotBotGlobalPromptTokenBudgetPerMinute, source.hotBotGlobalPromptTokenBudgetPerMinute)),
-        hotBotGlobalCompletionTokenBudgetPerMinute: Math.max(64, num(overrides.hotBotGlobalCompletionTokenBudgetPerMinute, source.hotBotGlobalCompletionTokenBudgetPerMinute)),
         debug: bool(overrides.debug, source.debug)
     };
 }
@@ -173,19 +119,74 @@ function sessionId(value) {
     return String(value).slice(0, 256);
 }
 
-function providerOptions(cfg, extra = {}) {
-    const provider = { ...extra };
-    if (cfg.requireProviderParameters) provider.require_parameters = true;
+function modelProfile(model) {
+    return MODEL_PROFILES[String(model || '').trim()] || null;
+}
 
-    if (cfg.maxPromptPrice > 0 || cfg.maxCompletionPrice > 0) {
-        provider.max_price = {
-            ...(provider.max_price || {})
-        };
-        if (cfg.maxPromptPrice > 0) provider.max_price.prompt = cfg.maxPromptPrice;
-        if (cfg.maxCompletionPrice > 0) provider.max_price.completion = cfg.maxCompletionPrice;
+function supportsTemperature(model) {
+    return modelProfile(model)?.supportsTemperature !== false;
+}
+
+function completionLimitParam(model) {
+    return modelProfile(model)?.completionLimitParam || 'max_completion_tokens';
+}
+
+function nullableSchema(schema) {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+    const result = { ...schema };
+    if (Array.isArray(result.type)) {
+        if (!result.type.includes('null')) result.type = [...result.type, 'null'];
+    } else if (result.type) {
+        result.type = [result.type, 'null'];
+    } else if (Array.isArray(result.anyOf)) {
+        result.anyOf = [...result.anyOf, { type: 'null' }];
+    } else {
+        return { anyOf: [result, { type: 'null' }] };
+    }
+    if (Array.isArray(result.enum) && !result.enum.includes(null)) {
+        result.enum = [...result.enum, null];
+    }
+    return result;
+}
+
+function openAiStrictSchema(schema) {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
+    const result = { ...schema };
+
+    ['anyOf', 'oneOf', 'allOf'].forEach((keyword) => {
+        if (Array.isArray(result[keyword])) {
+            result[keyword] = result[keyword].map((entry) => openAiStrictSchema(entry));
+        }
+    });
+    if (result.items) result.items = openAiStrictSchema(result.items);
+
+    if (result.properties && typeof result.properties === 'object') {
+        const originalRequired = new Set(Array.isArray(result.required) ? result.required : []);
+        result.properties = Object.fromEntries(Object.entries(result.properties).map(([key, property]) => {
+            const transformed = openAiStrictSchema(property);
+            return [key, originalRequired.has(key) ? transformed : nullableSchema(transformed)];
+        }));
+        result.required = Object.keys(result.properties);
+        result.additionalProperties = false;
     }
 
-    return Object.keys(provider).length > 0 ? provider : null;
+    return result;
+}
+
+function responseSchemaForModel(responseSchema, model) {
+    if (!responseSchema?.schema || modelProfile(model)?.openAiStrictSchema !== true) return responseSchema;
+    return {
+        ...responseSchema,
+        schema: openAiStrictSchema(responseSchema.schema)
+    };
+}
+
+function providerOptions(model, extra = {}) {
+    return {
+        ...(modelProfile(model)?.provider || {}),
+        ...extra,
+        require_parameters: true
+    };
 }
 
 function circuitState(key = 'default') {
@@ -280,8 +281,8 @@ function completionLimit(cfg, request = {}) {
     const configured = request.maxCompletionTokens !== undefined
         ? request.maxCompletionTokens
         : request.interactive === true
-            ? cfg.interactiveMaxCompletionTokens
-            : (cfg.maxCompletionTokens ?? cfg.maxTokens);
+            ? null
+            : cfg.maxTokens;
     const value = Number(configured);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
 }
@@ -290,18 +291,12 @@ function repairConfig(spec) {
     const source = config(spec.config || {});
     const current = completionLimit(source, spec);
     if (current === null) {
-        return {
-            ...(spec.config || {}),
-            maxCompletionTokens: null,
-            interactiveMaxCompletionTokens: 0
-        };
+        return { ...(spec.config || {}) };
     }
     const rescue = Math.max(2048, current * 2);
     return {
         ...(spec.config || {}),
-        maxTokens: rescue,
-        maxCompletionTokens: rescue,
-        interactiveMaxCompletionTokens: rescue
+        maxTokens: rescue
     };
 }
 
@@ -452,35 +447,36 @@ async function requestUntraced(spec = {}) {
         : null;
     const body = {
         model: cfg.model,
-        messages: Array.isArray(requestData.messages) ? requestData.messages : [],
-        temperature: cfg.temperature
+        messages: Array.isArray(requestData.messages) ? requestData.messages : []
     };
+    if (supportsTemperature(cfg.model)) body.temperature = cfg.temperature;
 
     const maxCompletionTokens = completionLimit(cfg, requestData);
-    if (maxCompletionTokens !== null) body.max_completion_tokens = maxCompletionTokens;
+    if (maxCompletionTokens !== null) body[completionLimitParam(cfg.model)] = maxCompletionTokens;
 
-    if (cfg.reasoningEnabled) {
+    if (cfg.reasoningEffort !== 'off') {
         body.reasoning = {
             effort: cfg.reasoningEffort,
-            exclude: cfg.reasoningExclude
+            exclude: true
         };
     }
 
-    if (requestData.responseSchema) {
+    const effectiveResponseSchema = responseSchemaForModel(requestData.responseSchema, cfg.model);
+    if (effectiveResponseSchema) {
         body.response_format = {
             type: 'json_schema',
             json_schema: {
-                name: requestData.responseSchema.name,
+                name: effectiveResponseSchema.name,
                 strict: true,
-                schema: requestData.responseSchema.schema
+                schema: effectiveResponseSchema.schema
             }
         };
     }
 
     if (requestData.sessionId) body.session_id = requestData.sessionId;
-    if (cfg.usageInclude) body.usage = { include: true };
+    body.usage = { include: true };
 
-    const provider = providerOptions(cfg, requestData.provider);
+    const provider = providerOptions(cfg.model, requestData.provider);
     if (provider) body.provider = provider;
 
     try {
@@ -542,7 +538,7 @@ async function requestUntraced(spec = {}) {
             });
         }
 
-        const validationError = validateContent(data, requestData.responseSchema);
+        const validationError = validateContent(data, effectiveResponseSchema);
         if (validationError) {
             markFailure(cfg, requestData.circuitKey);
             return complete(requestData, cfg, 'schema_error', startedAt, {
@@ -623,22 +619,28 @@ async function request(spec = {}) {
                     interactive: spec.interactive === true
                 });
                 const modelParameters = {
-                    temperature: Number((spec.config || {}).temperature ?? config().temperature),
                     reasoning: {
-                        enabled: effectiveConfig.reasoningEnabled,
+                        enabled: effectiveConfig.reasoningEffort !== 'off',
                         effort: effectiveConfig.reasoningEffort,
-                        exclude: effectiveConfig.reasoningExclude
+                        exclude: true
                     }
                 };
-                if (effectiveMaxTokens !== null) modelParameters.max_completion_tokens = effectiveMaxTokens;
+                if (supportsTemperature(effectiveConfig.model)) {
+                    modelParameters.temperature = effectiveConfig.temperature;
+                }
+                if (effectiveMaxTokens !== null) {
+                    modelParameters[completionLimitParam(effectiveConfig.model)] = effectiveMaxTokens;
+                }
                 observation.update({
                     model: result.telemetry.model || null,
                     modelParameters,
                     usageDetails: {
                         input: Number(usage.promptTokens || 0),
-                        output: Number(usage.completionTokens || 0),
+                        // Langfuse usage buckets are additive. Reasoning tokens
+                        // are a separate bucket, so visible output must exclude
+                        // them; raw provider totals remain in metadata below.
+                        output: Number(usage.visibleCompletionTokens || 0),
                         reasoning: Number(usage.reasoningTokens || 0),
-                        visible_output: Number(usage.visibleCompletionTokens || 0),
                         total: Number(usage.totalTokens || 0)
                     },
                     costDetails: Number.isFinite(Number(usage.cost)) ? { total: Number(usage.cost) } : undefined,
@@ -648,8 +650,11 @@ async function request(spec = {}) {
                         finishReason: result.telemetry.finishReason,
                         interactive: spec.interactive === true,
                         repairType: result.telemetry.repairType || null,
+                        completionTokens: Number(usage.completionTokens || 0),
                         reasoningTokens: Number(usage.reasoningTokens || 0),
                         visibleCompletionTokens: Number(usage.visibleCompletionTokens || 0),
+                        cachedPromptTokens: Number(usage.cachedPromptTokens || 0),
+                        cacheWriteTokens: Number(usage.cacheWriteTokens || 0),
                         maxCompletionTokens: effectiveMaxTokens
                     }
                 });

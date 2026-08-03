@@ -40,7 +40,9 @@ function compactTurnMeta(meta = {}) {
     if (meta.actionResult && typeof meta.actionResult === 'object') {
         result.actionResult = {
             ok: meta.actionResult.ok === true,
-            reason: meta.actionResult.reason || null
+            reason: meta.actionResult.reason || null,
+            outcome: meta.actionResult.outcome || null,
+            effect: meta.actionResult.effect || null
         };
     }
     return Object.keys(result).length ? result : null;

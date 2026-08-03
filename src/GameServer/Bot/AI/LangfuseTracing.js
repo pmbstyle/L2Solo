@@ -16,11 +16,6 @@ function bool(value, fallback = false) {
     return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
-function number(value, fallback) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function text(value, max = 240) {
     return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
@@ -59,19 +54,19 @@ function parseEnvFile(filename) {
 function config(overrides = {}) {
     const option = options.default.Langfuse || {};
     const fileEnv = parseEnvFile(option.envFile);
-    const value = (key, fallback = '') => process.env[key] || fileEnv[key] || option[key] || fallback;
+    const value = (key, fallback = '') => process.env[key] || fileEnv[key] || fallback;
     const source = {
         enabled: bool(process.env.LANGFUSE_ENABLED || option.enabled, false),
-        baseUrl: value('LANGFUSE_BASE_URL', 'http://localhost:3000'),
+        envFile: String(option.envFile || ''),
+        baseUrl: value('LANGFUSE_BASE_URL', option.baseUrl || 'http://localhost:3000'),
         publicKey: value('LANGFUSE_PUBLIC_KEY') || value('LANGFUSE_INIT_PROJECT_PUBLIC_KEY'),
         secretKey: value('LANGFUSE_SECRET_KEY') || value('LANGFUSE_INIT_PROJECT_SECRET_KEY'),
         environment: value('LANGFUSE_TRACING_ENVIRONMENT', 'development'),
         release: value('LANGFUSE_RELEASE', utils.buildNumber?.() || 'nodel2'),
-        serviceName: text(option.serviceName || process.env.OTEL_SERVICE_NAME || 'nodel2', 80),
-        flushAt: Math.max(1, number(option.flushAt, 10)),
-        flushInterval: Math.max(1, number(option.flushInterval, 1)),
-        captureInput: bool(option.captureInput, true),
-        captureOutput: bool(option.captureOutput, true),
+        serviceName: text(process.env.OTEL_SERVICE_NAME || fileEnv.OTEL_SERVICE_NAME || 'nodel2', 80),
+        flushAt: 1,
+        flushInterval: 1,
+        capturePayloads: bool(process.env.LANGFUSE_CAPTURE_PAYLOADS || option.capturePayloads, true),
         debug: bool(option.debug, false)
     };
     return {
@@ -81,10 +76,7 @@ function config(overrides = {}) {
         baseUrl: overrides.baseUrl || source.baseUrl,
         publicKey: overrides.publicKey || source.publicKey,
         secretKey: overrides.secretKey || source.secretKey,
-        captureInput: bool(overrides.captureInput, source.captureInput),
-        captureOutput: bool(overrides.captureOutput, source.captureOutput),
-        flushAt: Math.max(1, number(overrides.flushAt, source.flushAt)),
-        flushInterval: Math.max(1, number(overrides.flushInterval, source.flushInterval))
+        capturePayloads: bool(overrides.capturePayloads, source.capturePayloads)
     };
 }
 
@@ -98,12 +90,12 @@ function serializable(value, limit = 24000) {
 }
 
 function observationInput(value, cfg) {
-    if (cfg.captureInput) return serializable(value);
+    if (cfg.capturePayloads) return serializable(value);
     return { captured: false, type: typeof value };
 }
 
 function observationOutput(value, cfg) {
-    if (cfg.captureOutput) return serializable(value);
+    if (cfg.capturePayloads) return serializable(value);
     return { captured: false, type: typeof value };
 }
 
