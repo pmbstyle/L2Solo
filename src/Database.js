@@ -288,8 +288,50 @@ function applySchemaMigrations() {
             );
             CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
             CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
-            CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
-        `)]
+             CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+        `)],
+        [8, () => {
+            const addColumn = (table, name, definition) => {
+                const columns = connection.prepare(`PRAGMA table_info(${table})`).all();
+                if (!columns.some((column) => column.name === name)) {
+                    connection.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+                }
+            };
+            addColumn('bot_conversations', 'summaryThroughOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversations', 'nextTurnOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'turnOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'messageOrder', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'compacted', 'INTEGER NOT NULL DEFAULT 0');
+            connection.exec(`
+                UPDATE bot_conversation_messages
+                SET turnOrdinal = COALESCE((
+                    SELECT MIN(first.id)
+                    FROM bot_conversation_messages first
+                    WHERE first.conversationId = bot_conversation_messages.conversationId
+                      AND first.turnId = bot_conversation_messages.turnId
+                ), id)
+                WHERE turnOrdinal = 0;
+                UPDATE bot_conversation_messages
+                SET messageOrder = CASE role WHEN 'player' THEN 0 WHEN 'bot' THEN 1 ELSE 2 END;
+                UPDATE bot_conversations
+                SET nextTurnOrdinal = COALESCE((
+                    SELECT MAX(turnOrdinal)
+                    FROM bot_conversation_messages
+                    WHERE conversationId = bot_conversations.id
+                ), 0)
+                WHERE nextTurnOrdinal = 0;
+                UPDATE bot_conversations
+                SET summaryThroughOrdinal = COALESCE((
+                    SELECT MAX(turnOrdinal)
+                    FROM bot_conversation_messages
+                    WHERE conversationId = bot_conversations.id
+                      AND id <= bot_conversations.summaryThroughId
+                ), 0)
+                WHERE summaryThroughOrdinal = 0 AND summaryThroughId > 0;
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_order
+                    ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
+            `);
+        }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {

@@ -94,6 +94,13 @@ async function main() {
             secondPayload.conversation.recentTurns.map((turn) => turn.text),
             ['first message', 'first reply', 'second message']
         );
+        await botSession.lastConversationWrite;
+        const finalContext = await BotConversationStore.context(9201, 9202, { limit: 10 });
+        assert.deepStrictEqual(
+            finalContext.recentTurns.map((turn) => turn.text),
+            ['first message', 'first reply', 'second message', 'second reply'],
+            'persistent context must keep complete player/bot turn groups ordered'
+        );
         console.log('Hot conversation queue history checks passed');
     } finally {
         releaseFirst?.();

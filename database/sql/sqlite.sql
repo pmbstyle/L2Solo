@@ -245,6 +245,8 @@ CREATE TABLE IF NOT EXISTS bot_conversations (
     botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     summary TEXT NOT NULL DEFAULT '',
     summaryThroughId INTEGER NOT NULL DEFAULT 0,
+    summaryThroughOrdinal INTEGER NOT NULL DEFAULT 0,
+    nextTurnOrdinal INTEGER NOT NULL DEFAULT 0,
     version INTEGER NOT NULL DEFAULT 0,
     createdAt INTEGER NOT NULL DEFAULT 0,
     updatedAt INTEGER NOT NULL DEFAULT 0,
@@ -263,10 +265,14 @@ CREATE TABLE IF NOT EXISTS bot_conversation_messages (
     delivered INTEGER NOT NULL DEFAULT 1,
     createdAt INTEGER NOT NULL DEFAULT 0,
     metaJson TEXT,
+    turnOrdinal INTEGER NOT NULL DEFAULT 0,
+    messageOrder INTEGER NOT NULL DEFAULT 0,
+    compacted INTEGER NOT NULL DEFAULT 0,
     UNIQUE(conversationId, turnId, role)
 );
 CREATE INDEX IF NOT EXISTS bot_conversation_messages_recent ON bot_conversation_messages(conversationId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_conversation_messages_turn ON bot_conversation_messages(conversationId, turnId, role);
+CREATE INDEX IF NOT EXISTS bot_conversation_messages_order ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
 
 CREATE TABLE IF NOT EXISTS bot_activity_journal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

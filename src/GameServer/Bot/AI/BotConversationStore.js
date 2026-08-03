@@ -43,6 +43,8 @@ function normalizeConversation(row) {
         botId: numericId(row.botId),
         summary: text(row.summary, 1600),
         summaryThroughId: Number(row.summaryThroughId || 0),
+        summaryThroughOrdinal: Number(row.summaryThroughOrdinal || 0),
+        nextTurnOrdinal: Number(row.nextTurnOrdinal || 0),
         version: Number(row.version || 0),
         createdAt: Number(row.createdAt || 0),
         updatedAt: Number(row.updatedAt || 0)
@@ -61,8 +63,25 @@ function normalizeTurn(row) {
         requestId: row.requestId || null,
         delivered: Number(row.delivered || 0) === 1,
         createdAt: Number(row.createdAt || 0),
+        turnOrdinal: Number(row.turnOrdinal || row.id || 0),
+        messageOrder: Number(row.messageOrder ?? roleOrder(row.role)),
+        compacted: Number(row.compacted || 0) === 1,
         meta: normalizeMeta(row.metaJson || row.meta)
     };
+}
+
+function roleOrder(role) {
+    if (role === 'player') return 0;
+    if (role === 'bot') return 1;
+    return 2;
+}
+
+function orderedTurns(turns) {
+    return [...(turns || [])].sort((left, right) => (
+        Number(left.turnOrdinal || left.id || 0) - Number(right.turnOrdinal || right.id || 0) ||
+        Number(left.messageOrder ?? roleOrder(left.role)) - Number(right.messageOrder ?? roleOrder(right.role)) ||
+        Number(left.id || 0) - Number(right.id || 0)
+    ));
 }
 
 function memoryEntry(playerId, botId) {
@@ -77,6 +96,8 @@ function memoryEntry(playerId, botId) {
                 botId: numericId(botId),
                 summary: '',
                 summaryThroughId: 0,
+                summaryThroughOrdinal: 0,
+                nextTurnOrdinal: 0,
                 version: 0,
                 createdAt,
                 updatedAt: createdAt
@@ -114,7 +135,7 @@ function ensureSchema() {
 async function loadFromDatabase(playerId, botId) {
     if (!(await ensureSchema())) return null;
     const rows = await Database.execute([
-        `SELECT id, playerId, botId, summary, summaryThroughId, version, createdAt, updatedAt
+        `SELECT id, playerId, botId, summary, summaryThroughId, summaryThroughOrdinal, nextTurnOrdinal, version, createdAt, updatedAt
          FROM bot_conversations WHERE playerId = ? AND botId = ? LIMIT 1`,
         [numericId(playerId), numericId(botId)]
     ], 'bot-conversation:load');
@@ -141,8 +162,8 @@ async function ensureConversation(playerId, botId) {
         const createdAt = now();
         try {
             await Database.execute([
-                `INSERT INTO bot_conversations (playerId, botId, summary, summaryThroughId, version, createdAt, updatedAt)
-                 VALUES (?, ?, '', 0, 0, ?, ?)
+                `INSERT INTO bot_conversations (playerId, botId, summary, summaryThroughId, summaryThroughOrdinal, nextTurnOrdinal, version, createdAt, updatedAt)
+                 VALUES (?, ?, '', 0, 0, 0, 0, ?, ?)
                  ON CONFLICT(playerId, botId) DO NOTHING`,
                 [player, bot, createdAt, createdAt]
             ], 'bot-conversation:create');
@@ -162,30 +183,87 @@ async function ensureConversation(playerId, botId) {
 async function loadTurns(entry, limit = DEFAULT_RECENT_TURNS, includeCompacted = false) {
     if (!entry?.conversation) return [];
     const conversationId = entry.conversation.id;
+    const count = Math.max(1, Number(limit) || DEFAULT_RECENT_TURNS);
+    const summaryThroughOrdinal = Number(entry.conversation.summaryThroughOrdinal || 0);
     if (String(conversationId).startsWith('memory:')) {
-        return entry.turns
-            .filter((turn) => includeCompacted || turn.id > Number(entry.conversation.summaryThroughId || 0))
-            .slice(-Math.max(1, Number(limit) || DEFAULT_RECENT_TURNS))
+        return orderedTurns(entry.turns)
+            .filter((turn) => includeCompacted || (!turn.compacted && Number(turn.turnOrdinal || turn.id) > summaryThroughOrdinal))
+            .slice(-count)
             .map(copyTurn);
     }
 
     try {
         const rows = await Database.execute([
-            `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson
-             FROM bot_conversation_messages
-             WHERE conversationId = ? ${includeCompacted ? '' : 'AND id > ?'}
-             ORDER BY id DESC LIMIT ?`,
+            `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson,
+                    turnOrdinal, messageOrder, compacted
+             FROM (
+                 SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson,
+                        turnOrdinal, messageOrder, compacted
+                 FROM bot_conversation_messages
+                 WHERE conversationId = ? ${includeCompacted ? '' : 'AND compacted = 0 AND turnOrdinal > ?'}
+                 ORDER BY turnOrdinal DESC, messageOrder DESC, id DESC
+                 LIMIT ?
+             )
+             ORDER BY turnOrdinal ASC, messageOrder ASC, id ASC`,
             includeCompacted
-                ? [conversationId, Math.max(1, Number(limit) || DEFAULT_RECENT_TURNS)]
-                : [conversationId, Number(entry.conversation.summaryThroughId || 0), Math.max(1, Number(limit) || DEFAULT_RECENT_TURNS)]
+                ? [conversationId, count]
+                : [conversationId, summaryThroughOrdinal, count]
         ], 'bot-conversation:recent');
-        return rows.reverse().map(normalizeTurn);
+        return rows.map(normalizeTurn);
     } catch (_) {
-        return entry.turns
-            .filter((turn) => includeCompacted || turn.id > Number(entry.conversation.summaryThroughId || 0))
-            .slice(-Math.max(1, Number(limit) || DEFAULT_RECENT_TURNS))
+        return orderedTurns(entry.turns)
+            .filter((turn) => includeCompacted || (!turn.compacted && Number(turn.turnOrdinal || turn.id) > summaryThroughOrdinal))
+            .slice(-count)
             .map(copyTurn);
     }
+}
+
+async function turnOrdinalFor(entry, turnId) {
+    const existing = orderedTurns(entry.turns).find((turn) => turn.turnId === turnId);
+    if (existing?.turnOrdinal) return Number(existing.turnOrdinal);
+
+    if (!String(entry.conversation.id).startsWith('memory:')) {
+        try {
+            const rows = await Database.execute([
+                `SELECT turnOrdinal
+                 FROM bot_conversation_messages
+                 WHERE conversationId = ? AND turnId = ?
+                 ORDER BY id ASC LIMIT 1`,
+                [entry.conversation.id, turnId]
+            ], 'bot-conversation:turn-ordinal');
+            const persisted = Number(rows[0]?.turnOrdinal || 0);
+            if (persisted > 0) return persisted;
+        } catch (_) {
+            // Fall through to the local allocator while the database is unavailable.
+        }
+    }
+
+    if (!String(entry.conversation.id).startsWith('memory:')) {
+        try {
+            await Database.execute([
+                'UPDATE bot_conversations SET nextTurnOrdinal = nextTurnOrdinal + 1 WHERE id = ?',
+                [entry.conversation.id]
+            ], 'bot-conversation:allocate-turn');
+            const rows = await Database.execute([
+                'SELECT nextTurnOrdinal FROM bot_conversations WHERE id = ? LIMIT 1',
+                [entry.conversation.id]
+            ], 'bot-conversation:read-turn-ordinal');
+            const persisted = Number(rows[0]?.nextTurnOrdinal || 0);
+            if (persisted > 0) {
+                entry.conversation.nextTurnOrdinal = persisted;
+                return persisted;
+            }
+        } catch (_) {
+            // Fall through to the in-memory allocator.
+        }
+    }
+
+    const next = Math.max(
+        Number(entry.conversation.nextTurnOrdinal || 0),
+        ...entry.turns.map((turn) => Number(turn.turnOrdinal || 0))
+    ) + 1;
+    entry.conversation.nextTurnOrdinal = next;
+    return next;
 }
 
 async function appendTurn(input = {}) {
@@ -200,6 +278,7 @@ async function appendTurn(input = {}) {
         return { conversation: copyConversation(conversation), turn: copyTurn(existing), inserted: false };
     }
 
+    const turnOrdinal = Number(input.turnOrdinal || 0) || await turnOrdinalFor(entry, turnId);
     const createdAt = Number(input.createdAt || now());
     const turn = {
         id: ++memoryMessageSequence,
@@ -211,6 +290,9 @@ async function appendTurn(input = {}) {
         requestId: input.requestId ? text(input.requestId, 128) : null,
         delivered: input.delivered !== false,
         createdAt,
+        turnOrdinal,
+        messageOrder: Number(input.messageOrder ?? roleOrder(role)),
+        compacted: false,
         meta: input.meta && typeof input.meta === 'object' ? { ...input.meta } : null
     };
     entry.turns.push(turn);
@@ -220,8 +302,8 @@ async function appendTurn(input = {}) {
         try {
             const result = await Database.execute([
                 `INSERT OR IGNORE INTO bot_conversation_messages
-                 (conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson, turnOrdinal, messageOrder, compacted)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     conversation.id,
                     turn.turnId,
@@ -231,13 +313,17 @@ async function appendTurn(input = {}) {
                     turn.requestId,
                     turn.delivered ? 1 : 0,
                     turn.createdAt,
-                    turn.meta ? JSON.stringify(turn.meta) : null
+                    turn.meta ? JSON.stringify(turn.meta) : null,
+                    turn.turnOrdinal,
+                    turn.messageOrder,
+                    turn.compacted ? 1 : 0
                 ]
             ], 'bot-conversation:append');
             if (Number(result.affectedRows || 0) === 0) {
                 entry.turns.pop();
                 const rows = await Database.execute([
-                    `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson
+                    `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson,
+                            turnOrdinal, messageOrder, compacted
                      FROM bot_conversation_messages WHERE conversationId = ? AND turnId = ? AND role = ? LIMIT 1`,
                     [conversation.id, turn.turnId, turn.role]
                 ], 'bot-conversation:dedupe');
@@ -246,7 +332,8 @@ async function appendTurn(input = {}) {
                 return { conversation: copyConversation(conversation), turn: copyTurn(existingRow), inserted: false };
             }
             const rows = await Database.execute([
-                `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson
+                `SELECT id, conversationId, turnId, role, channel, text, requestId, delivered, createdAt, metaJson,
+                        turnOrdinal, messageOrder, compacted
                  FROM bot_conversation_messages WHERE conversationId = ? AND turnId = ? AND role = ? LIMIT 1`,
                 [conversation.id, turn.turnId, turn.role]
             ], 'bot-conversation:append-row');
@@ -281,6 +368,7 @@ async function context(playerId, botId, options = {}) {
         recentTurns,
         summary: entry.conversation.summary || null,
         summaryThroughId: Number(entry.conversation.summaryThroughId || 0),
+        summaryThroughOrdinal: Number(entry.conversation.summaryThroughOrdinal || 0),
         version: Number(entry.conversation.version || 0)
     };
 }
@@ -295,18 +383,43 @@ async function setSummary(input = {}) {
 
     const summary = text(input.summary, 1600);
     const throughId = Math.max(0, Number(input.summaryThroughId || 0));
+    let throughOrdinal = Math.max(0, Number(input.summaryThroughOrdinal || 0));
+    if (!throughOrdinal && throughId) {
+        throughOrdinal = Number(
+            orderedTurns(entry.turns).find((turn) => Number(turn.id) === throughId)?.turnOrdinal || 0
+        );
+    }
+    if (!throughOrdinal && throughId && !String(conversation.id).startsWith('memory:')) {
+        try {
+            const rows = await Database.execute([
+                `SELECT turnOrdinal
+                 FROM bot_conversation_messages
+                 WHERE conversationId = ? AND id = ? LIMIT 1`,
+                [conversation.id, throughId]
+            ], 'bot-conversation:summary-ordinal');
+            throughOrdinal = Number(rows[0]?.turnOrdinal || 0);
+        } catch (_) {
+            // Keep the legacy id boundary if the ordinal cannot be read.
+        }
+    }
     const nextVersion = expectedVersion + 1;
     if (!String(conversation.id).startsWith('memory:')) {
         try {
             const result = await Database.execute([
                 `UPDATE bot_conversations
-                 SET summary = ?, summaryThroughId = ?, version = ?, updatedAt = ?
+                 SET summary = ?, summaryThroughId = ?, summaryThroughOrdinal = ?, version = ?, updatedAt = ?
                  WHERE id = ? AND version = ?`,
-                [summary, throughId, nextVersion, now(), conversation.id, expectedVersion]
+                [summary, throughId, throughOrdinal, nextVersion, now(), conversation.id, expectedVersion]
             ], 'bot-conversation:summary');
             if (Number(result.affectedRows || 0) === 0) {
                 return { ok: false, reason: 'version_conflict', conversation: copyConversation(conversation) };
             }
+            Database.execute([
+                `UPDATE bot_conversation_messages
+                 SET compacted = 1
+                 WHERE conversationId = ? AND turnOrdinal <= ?`,
+                [conversation.id, throughOrdinal]
+            ], 'bot-conversation:mark-compacted').catch(() => {});
         } catch (_) {
             return { ok: false, reason: 'persistence_error', conversation: copyConversation(conversation) };
         }
@@ -314,6 +427,7 @@ async function setSummary(input = {}) {
 
     conversation.summary = summary;
     conversation.summaryThroughId = throughId;
+    conversation.summaryThroughOrdinal = throughOrdinal;
     conversation.version = nextVersion;
     conversation.updatedAt = now();
     return { ok: true, conversation: copyConversation(conversation) };

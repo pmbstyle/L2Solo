@@ -91,15 +91,25 @@ async function summarize(input = {}) {
         });
         const turns = current.recentTurns || [];
         const summaryThroughId = Number(current.summaryThroughId || 0);
-        const uncompacted = turns.filter((turn) => Number(turn.id || 0) > summaryThroughId);
+        const summaryThroughOrdinal = Number(current.summaryThroughOrdinal || 0);
+        const uncompacted = turns.filter((turn) => (
+            Number(turn.turnOrdinal || turn.id || 0) > summaryThroughOrdinal && turn.compacted !== true
+        ));
         if (uncompacted.length < Math.max(4, Number(input.threshold || SUMMARY_THRESHOLD_MESSAGES))) {
             return { ok: false, reason: 'below_threshold', conversation: current.conversation };
         }
 
-        const compactUntilIndex = Math.max(0, uncompacted.length - SUMMARY_RECENT_TURNS);
+        let compactUntilIndex = Math.max(0, uncompacted.length - SUMMARY_RECENT_TURNS);
+        while (compactUntilIndex > 0 && compactUntilIndex < uncompacted.length &&
+            Number(uncompacted[compactUntilIndex - 1].turnOrdinal || 0) ===
+            Number(uncompacted[compactUntilIndex].turnOrdinal || 0)) {
+            compactUntilIndex -= 1;
+        }
         const compacted = uncompacted.slice(0, compactUntilIndex);
         const throughId = Number(compacted[compacted.length - 1]?.id || 0);
-        if (!throughId || throughId <= summaryThroughId) {
+        const throughOrdinal = Number(compacted[compacted.length - 1]?.turnOrdinal || 0);
+        if ((!throughId && !throughOrdinal) ||
+            (throughOrdinal > 0 ? throughOrdinal <= summaryThroughOrdinal : throughId <= summaryThroughId)) {
             return { ok: false, reason: 'nothing_to_compact', conversation: current.conversation };
         }
 
@@ -147,10 +157,17 @@ async function summarize(input = {}) {
             botId,
             summary,
             summaryThroughId: throughId,
+            summaryThroughOrdinal: throughOrdinal,
             expectedVersion: Number(current.version || 0)
         });
         if (!saved.ok) return saved;
-        return { ok: true, summary, summaryThroughId: throughId, conversation: saved.conversation };
+        return {
+            ok: true,
+            summary,
+            summaryThroughId: throughId,
+            summaryThroughOrdinal: throughOrdinal,
+            conversation: saved.conversation
+        };
     })().finally(() => inFlight.delete(key));
 
     inFlight.set(key, work);
