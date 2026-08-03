@@ -43,7 +43,7 @@ async function main() {
             enabled: true,
             apiKey: 'cold-chat-test-key',
             model: 'test/cold-chat',
-            remoteChatCooldownMs: 0
+            maxConcurrentRequests: 1
         };
         BotConversationStore.resetMemory();
         LangfuseTracing.withObservation = (name, input, metadata, work) => {
@@ -130,10 +130,7 @@ async function main() {
         }
 
         BotInferenceBudget.reset();
-        options.default.OpenRouter.hotBotGlobalMaxInFlight = 1;
-        options.default.OpenRouter.hotBotGlobalMaxRequestsPerMinute = 50;
-        options.default.OpenRouter.hotBotGlobalPromptTokenBudgetPerMinute = 50000;
-        options.default.OpenRouter.hotBotGlobalCompletionTokenBudgetPerMinute = 5000;
+        options.default.OpenRouter.maxConcurrentRequests = 1;
         const beforeAdmissionRequests = requests.length;
         let releaseAdmissionRequest;
         OpenRouterGateway.setTransport(async (_url, init) => {

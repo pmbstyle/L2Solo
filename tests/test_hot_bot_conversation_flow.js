@@ -46,9 +46,7 @@ async function main() {
             apiKey: 'conversation-test-key',
             model: 'test/conversation',
             negotiationEnabled: true,
-            chatCooldownMs: 0,
-            timeoutMs: 1000,
-            circuitBreakerFailureThreshold: 5
+            maxConcurrentRequests: 32
         };
         const playerSession = { accountId: 'player_flow', actor: actor(301, 'FlowPlayer') };
         const botSession = {

@@ -67,9 +67,7 @@ async function main() {
             enabled: true,
             apiKey: 'queue-failure-test-key',
             model: 'test/queue-failure',
-            timeoutMs: 1000,
-            cooldownMs: 0,
-            hotBotGlobalBudgetEnabled: false
+            maxConcurrentRequests: 32
         };
         const playerSession = {
             accountId: 'player_queue_failure',

@@ -68,8 +68,8 @@ function isPkLocked(session, action) {
         'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
         'set_pull_policy', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
-        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-        'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
+        'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
         'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]).has(action);
 }

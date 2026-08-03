@@ -10,8 +10,7 @@ const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 
-const ALLOWED_PLANS = ['hunting', 'following', 'resting', 'shopping', 'pk_hunting', 'merchant', 'getting_buffed'];
-const ALLOWED_EVENTS = new Set(['player_chat', 'state_change']);
+const ALLOWED_EVENTS = new Set(['player_chat']);
 function config() {
     return OpenRouterGateway.config();
 }
@@ -134,6 +133,17 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 enum: ['', 'auto', 'leader', 'bot', 'off'],
                 description: 'Temporary party pull mode for set_pull_policy.'
             },
+            tradeItemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Inventory object id for give_resources, offer_resources, or update_trade_offer.'
+            },
+            tradeAmount: {
+                type: 'number',
+                minimum: 0,
+                maximum: 10000,
+                description: 'Bounded quantity for an outbound resource trade line.'
+            },
             pullPermission: {
                 type: 'string',
                 enum: ['', 'allow', 'deny'],
@@ -164,17 +174,6 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 type: 'number',
                 minimum: 0,
                 description: 'Inventory object id for equip_candidate.'
-            },
-            tradeItemId: {
-                type: 'number',
-                minimum: 0,
-                description: 'Inventory object id for offer_resources or update_trade_offer.'
-            },
-            tradeAmount: {
-                type: 'number',
-                minimum: 0,
-                maximum: 10000,
-                description: 'Bounded quantity for an outbound trade line.'
             },
             negotiationItemId: {
                 type: 'number',
@@ -231,12 +230,13 @@ function systemPrompt() {
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
         'Party pull, skill preference, stance, and equipment tools are temporary hot-session controls. They require the current human party leader; never invent authority.',
         'Pull permission, pull mode, and assigned puller are separate. Unassigning one puller returns to the existing automatic policy and does not globally disable pulling.',
+        'When the player asks to stop pulling and return, prefer stop_pulling_and_return so both server mutations are applied as one bounded workflow.',
         'Skill priorities are bounded hints to the deterministic offensive scorer. Emergency healing, defense, resurrection, cooldowns, MP, range, and C4 compatibility always win.',
         'Equipment tools may only use safe candidates from actual inventory and native persistence. Never equip quest, incompatible, over-grade, or non-upgrade items.',
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
-        'Resource-gift trade tools can open a native window only with the current party leader; negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
+        'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
 }
@@ -245,11 +245,27 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
     const assembled = requestContext?.assembledContext;
     const preparedWorldRevision = requestContext?.preparedWorldRevision ||
         requestContext?.worldRevision || BotAgentTools.worldRevision(session);
+    const partyRequest = isPartyRequest(text);
+    const availability = partyRequest && requestContext?.playerSession
+        ? BotAvailability.evaluate(requestContext.playerSession, session)
+        : null;
+    const candidates = partyRequest && /\b(other|anyone|who|somebody|друг|кто)\b/i.test(String(text || ''))
+        ? BotAgentTools.partyCandidates(requestContext.playerSession, session)
+        : [];
     return {
         event,
         playerMessage: text || '',
         bot: assembled?.bot || BotBrainContext.compactStatus(session, status, text),
         visiblePlayers,
+        party: partyRequest ? {
+            availability: availability ? {
+                available: availability.available === true,
+                reason: availability.reason || null,
+                reasonText: availability.reasonText || null,
+                distance: availability.distance === null ? null : Math.round(availability.distance)
+            } : null,
+            candidates
+        } : null,
         candidateSpots: candidateSpots(status),
         allowedActions: BotAgentTools.availableActions(session),
         tools: BotAgentTools.toolDescriptions(session),
@@ -294,12 +310,10 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         null;
     const result = await OpenRouterGateway.request({
         config: cfg,
-        circuitKey: requestContext?.conversationTurn
-            ? `hot-chat:${botId}:${playerId}`
-            : 'hot-background',
-        circuitBreaker: requestContext?.conversationTurn ? false : true,
-        interactive: !!requestContext?.conversationTurn,
-        timeoutMs: requestContext?.conversationTurn ? 0 : cfg.timeoutMs,
+        circuitKey: `hot-chat:${botId}:${playerId}`,
+        circuitBreaker: false,
+        interactive: true,
+        timeoutMs: 0,
         requestId: requestContext?.requestId || `hot-${botId}-${Date.now()}`,
         sessionId: `hot-bot:${botId}:player:${playerId || 'none'}`,
         source: requestContext?.source || requestContext?.channel || 'hot_brain',
@@ -334,12 +348,15 @@ function conversationSessionId(session, requestContext) {
 
 function compactActionResult(result) {
     if (!result) return null;
-    return {
+    const compact = {
         ok: result.applied === true,
         reason: result.reason || null,
         idempotent: result.idempotent === true,
         replyDelivered: result.replyDelivered === true
     };
+    if (result.outcome) compact.outcome = result.outcome;
+    if (result.effect) compact.effect = result.effect;
+    return compact;
 }
 
 function orderedConversation(conversation) {
@@ -429,7 +446,12 @@ function recordConversationReply(session, decision, result, requestContext) {
         channel: turn.channel,
         text: reply,
         requestId: requestContext.requestId,
-        meta: { action, reason: result.reason || null, serverApplied: result.applied === true }
+        meta: {
+            action,
+            reason: result.reason || null,
+            serverApplied: result.applied === true,
+            actionResult: compactActionResult(result)
+        }
     }));
 }
 
@@ -652,10 +674,6 @@ const BotBrain = {
             debugSkip(session, cfg, `event_not_chat:${event}`);
             return false;
         }
-        if (event !== 'player_chat' && cfg.backgroundInferenceEnabled !== true) {
-            debugSkip(session, cfg, 'background_inference_disabled');
-            return false;
-        }
         if (!cfg.enabled) {
             debugSkip(session, cfg, 'disabled');
             return false;
@@ -665,37 +683,17 @@ const BotBrain = {
             return false;
         }
         if (session.brainInFlight) {
-            if (requestContext?.conversationTurn) {
-                const pending = {
-                    event,
-                    status,
-                    text,
-                    requestContext
-                };
-                const queue = session.pendingBrainTurns || (session.pendingBrainTurns = []);
-                queue.push(pending);
-                session.pendingBrainTurn = queue[0];
-                debugSkip(session, cfg, 'request_queued');
-                return true;
-            }
-            debugSkip(session, cfg, 'request_in_flight');
-            return false;
-        }
-        if (event !== 'player_chat' && bot.isDead && bot.isDead()) {
-            debugSkip(session, cfg, 'dead');
-            return false;
-        }
-        if (session.plan === 'merchant' && event !== 'player_chat') {
-            debugSkip(session, cfg, 'merchant_plan');
-            return false;
-        }
-        if (event !== 'player_chat' && session.plan === 'getting_buffed') {
-            debugSkip(session, cfg, 'refreshing_buffs');
-            return false;
-        }
-        if (event !== 'player_chat' && !ALLOWED_PLANS.includes(session.plan || 'hunting')) {
-            debugSkip(session, cfg, `plan_not_allowed:${session.plan}`);
-            return false;
+            const pending = {
+                event,
+                status,
+                text,
+                requestContext
+            };
+            const queue = session.pendingBrainTurns || (session.pendingBrainTurns = []);
+            queue.push(pending);
+            session.pendingBrainTurn = queue[0];
+            debugSkip(session, cfg, 'request_queued');
+            return true;
         }
 
         const visiblePlayers = visibleRealPlayers(session, bot, cfg, requestContext);
@@ -706,22 +704,6 @@ const BotBrain = {
 
         if (requestContext && !requestContext.enqueuedAt) requestContext.enqueuedAt = Date.now();
 
-        const cooldown = cfg.cooldownMs;
-        const lastAt = session.lastBrainThinkAt;
-        if (event !== 'player_chat' && lastAt && requestContext?.queued !== true && Date.now() - lastAt < cooldown) {
-            debugSkip(session, cfg, `cooldown:${event}`);
-            return false;
-        }
-
-        if (event === 'state_change' && Math.random() > 0.12) {
-            debugSkip(session, cfg, 'ambient_sample_skip');
-            return false;
-        }
-
-        if (event !== 'player_chat') {
-            session.lastBrainThinkAt = Date.now();
-        }
-
         if (requestContext) {
             requestContext.preparedWorldRevision = BotAgentTools.worldRevision(session);
             requestContext.worldRevision = requestContext.preparedWorldRevision;
@@ -730,10 +712,10 @@ const BotBrain = {
         const estimatedPromptTokens = estimateRequestPromptTokens(payload, session);
         const admission = BotInferenceBudget.reserve(session, {
             event,
-            bypass: event === 'player_chat',
-            priority: event === 'player_chat' ? 'interactive' : 'normal',
+            bypass: true,
+            priority: 'interactive',
             estimatedPromptTokens,
-            maxCompletionTokens: event === 'player_chat' ? 0 : cfg.maxTokens
+            maxCompletionTokens: 0
         });
         if (!admission.ok) {
             LangfuseTracing.withObservation(

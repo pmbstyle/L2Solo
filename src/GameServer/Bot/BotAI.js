@@ -10,7 +10,6 @@ const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
-const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 
 const CHAT_PHRASES = {
@@ -114,44 +113,6 @@ function clearTacticalState(session) {
     session.lastTargetEvaluation = undefined;
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
-}
-
-function highLevelStateFingerprint(status) {
-    if (!status?.available) return 'unavailable';
-    const party = status.party;
-    const trade = status.trade;
-    return [
-        status.mode,
-        party?.leader?.id || 0,
-        party?.stance || '',
-        status.ambient?.mood || '',
-        (status.blockers || []).filter((blocker) => ['dead', 'low_hp', 'low_mp', 'too_far_from_leader', 'no_targets_nearby'].includes(blocker)).join(','),
-        trade?.active?.id || '',
-        trade?.negotiation?.id || '',
-        trade?.negotiation?.state || ''
-    ].join('|');
-}
-
-function maybeTriggerStateChange(session, status) {
-    const fingerprint = highLevelStateFingerprint(status);
-    const previous = session.lastBrainStateFingerprint;
-    session.lastBrainStateFingerprint = fingerprint;
-    if (!previous || previous === fingerprint) return false;
-
-    const mode = status?.mode || session.plan || 'hunting';
-    const mood = status?.ambient?.mood || 'unknown';
-    try {
-        return BotBrain.maybeThink(
-            session,
-            'state_change',
-            status,
-            `High-level state changed: mode=${mode}, mood=${mood}. Choose at most one safe high-level response.`,
-            null
-        );
-    } catch (error) {
-        utils.infoWarn('BotBrain', 'state-change trigger failed for %s: %s', session.actor?.fetchName?.() || 'bot', error.message);
-        return false;
-    }
 }
 
 const BotAI = {

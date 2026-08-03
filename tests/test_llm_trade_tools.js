@@ -83,6 +83,16 @@ try {
     const cancelled = BotAgentTools.execute(bot, decision('cancel_trade', 'trade-tool-4'), [], context('trade-tool-4'));
     assert.deepStrictEqual(cancelled, { applied: true, reason: 'trade_cancelled' });
     assert.strictEqual(bot.activeTrade, null);
+
+    const atomic = BotAgentTools.execute(bot, decision('give_resources', 'trade-tool-5', {
+        tradeItemId: 6012,
+        tradeAmount: 1
+    }), [], context('trade-tool-5'));
+    assert.strictEqual(atomic.applied, true);
+    assert.strictEqual(atomic.outcome, 'pending', 'resource delivery must remain pending until native player confirmation');
+    assert.strictEqual(atomic.line.count, 1);
+    assert.strictEqual(packets[3][0], 0x1e, 'give_resources must open native trade');
+    assert.strictEqual(packets[4][0], 0x21, 'give_resources must display the native resource line atomically');
     console.log('LLM trade tool checks passed');
 } catch (error) {
     console.error(error);

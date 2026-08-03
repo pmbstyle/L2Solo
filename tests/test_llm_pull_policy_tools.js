@@ -16,7 +16,8 @@ function actor(id, name) {
         fetchDestId: () => 0,
         isDead: () => false,
         state: { fetchSeated: () => false, setSeated() {} },
-        unselect() {}
+        unselect() {},
+        moveTo() {}
     };
 }
 
@@ -81,6 +82,12 @@ try {
     Date.now = () => 106000;
     assert.strictEqual(HotBotPolicyOverlay.status(bot), null, 'expired policy overlay should be removed');
     assert.strictEqual(PartyCompanionService.getSettings(leader).pullMode, 'off', 'expired pull policy must restore the previous party setting');
+
+    const stopped = BotAgentTools.execute(bot, decision('stop_pulling_and_return', 'pull-6'), [], context('pull-6'));
+    assert.strictEqual(stopped.applied, true);
+    assert.strictEqual(stopped.reason, 'pulling_stopped_returning');
+    assert.strictEqual(PartyCompanionService.getSettings(leader).pullMode, 'off');
+    assert.strictEqual(bot.plan, 'following', 'composite stop workflow must also start returning to the leader');
     console.log('LLM pull policy tool checks passed');
 } finally {
     Date.now = originalNow;

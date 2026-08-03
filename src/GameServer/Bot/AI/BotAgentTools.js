@@ -11,6 +11,7 @@ const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const Attack = invoke('GameServer/Actor/Attack');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
+const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 
 const ACTIONS = [
     'none',
@@ -24,6 +25,7 @@ const ACTIONS = [
     'buff_target',
     'heal_target',
     'set_pull_policy',
+    'stop_pulling_and_return',
     'assign_puller',
     'unassign_puller',
     'set_skill_priority',
@@ -32,7 +34,9 @@ const ACTIONS = [
     'list_safe_loadouts',
     'equip_candidate',
     'optimize_equipment',
+    'list_party_candidates',
     'propose_trade',
+    'give_resources',
     'offer_resources',
     'update_trade_offer',
     'cancel_trade',
@@ -46,9 +50,10 @@ const ACTIONS = [
 const PK_LOCKED_ACTIONS = new Set([
     'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
     'set_pull_policy', 'assign_puller', 'unassign_puller',
+    'stop_pulling_and_return',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
-    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-    'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
+    'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
     'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
 ]);
 
@@ -325,21 +330,18 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'rest', ...reply };
     }
     if (action === 'shop') {
-        clearChatArrival(session, 'shop');
-        if (startShopping(session, bot)) {
-            const reply = replyOutcome(session, decision.reply, targetSession);
-            return { applied: true, reason: 'shop', ...reply };
-        } else {
-            const reply = replyOutcome(session, decision.reply || 'I will stay with the party and sell later.', targetSession);
-            return { applied: true, reason: 'shop', ...reply };
+        if (!startShopping(session, bot)) {
+            return { applied: false, reason: 'party_companion_cannot_shop_now' };
         }
+        clearChatArrival(session, 'shop');
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'shop', ...reply };
     }
     if (action === 'move_to_spot') {
-        clearChatArrival(session, 'move_to_spot');
         if (session.partyCompanion === true && session.followPlayerSession) {
-            const reply = replyOutcome(session, decision.reply || 'I will stay with the party.', targetSession);
-            return { applied: true, reason: 'party_companion_stays_with_party', ...reply };
+            return { applied: false, reason: 'party_companion_stays_with_party' };
         }
+        clearChatArrival(session, 'move_to_spot');
 
         const applied = applyMoveToSpot(session, bot, decision.spotId);
         const reply = applied ? replyOutcome(session, decision.reply, targetSession) : { replyDelivered: false, playerVisibleReply: null };
@@ -476,6 +478,32 @@ function unassignPuller(context) {
     });
 }
 
+function stopPullingAndReturn(context) {
+    const session = context.session;
+    const leader = partyLeaderFor(session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+
+    const policy = applyPullPolicy({
+        ...context,
+        decision: {
+            ...context.decision,
+            pullPermission: 'deny',
+            pullMode: 'off'
+        }
+    });
+    if (!policy.applied) return policy;
+
+    clearChatArrival(session, 'leader_requested_stop_pulling_and_return');
+    session.botStay = false;
+    session.plan = 'following';
+    const approached = approachPlayer(session, session.actor, leader);
+    return {
+        ...policy,
+        reason: 'pulling_stopped_returning',
+        effect: approached ? 'pull_disabled_and_return_started' : 'pull_disabled_return_pending'
+    };
+}
+
 function learnedSkill(session, skillId) {
     const actor = session?.actor;
     const skill = actor?.skillset?.fetchSkill?.(Number(skillId)) ||
@@ -556,6 +584,22 @@ function proposeTrade(context) {
         applied: true,
         reason: 'trade_proposed',
         trade: BotTradeService.activeTradeSummary(context.session)
+    };
+}
+
+function giveResources(context) {
+    const player = context?.requestContext?.playerSession;
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.startBotTradeWithOffer(context.session, player, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        outcome: 'pending',
+        reason: 'resources_offered_pending_confirmation',
+        effect: 'native_trade_open_and_offer_displayed',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
     };
 }
 
@@ -646,6 +690,33 @@ function openNegotiatedTrade(context) {
     return { applied: true, reason: 'native_trade_open', trade: result.trade, negotiation: result.negotiation };
 }
 
+function partyCandidates(playerSession, currentSession = null) {
+    if (!playerSession?.actor) return [];
+    const World = invoke('GameServer/World/World');
+    const sessions = (World.user?.sessions || [])
+        .filter((candidate) => candidate && candidate !== currentSession &&
+            candidate.accountId && String(candidate.accountId).startsWith('bot_') && candidate.actor);
+    return BotAvailability.listForPlayer(playerSession, sessions)
+        .slice(0, 5)
+        .map(({ bot, availability }) => ({
+            id: Number(bot.fetchId?.() || 0),
+            name: bot.fetchName?.() || 'unknown',
+            level: Number(bot.fetchLevel?.() || 0),
+            distance: availability.distance === null ? null : Math.round(availability.distance),
+            available: availability.available === true,
+            reason: availability.reason || null,
+            reasonText: availability.reasonText || null
+        }));
+}
+
+function listPartyCandidates(context) {
+    return {
+        applied: true,
+        reason: 'party_candidates_listed',
+        candidates: partyCandidates(context?.requestContext?.playerSession, context.session)
+    };
+}
+
 function isAuthorizedNegotiationParticipant(context) {
     const session = context?.session;
     const player = negotiationPlayer(context);
@@ -674,6 +745,7 @@ function registerTools() {
         buff_target: 'Apply a supported buff to a visible player if class, MP, and range allow it.',
         heal_target: 'Heal a visible player if class, MP, and range allow it.',
         set_pull_policy: 'Set the party pull permission and mode for this companion, with a bounded hot-session expiry.',
+        stop_pulling_and_return: 'Disable this companion pull and start returning to the current party leader as one bounded workflow.',
         assign_puller: 'Assign this party companion as the dedicated puller without issuing combat commands.',
         unassign_puller: 'Release this companion from dedicated pulling and return to the existing automatic policy.',
         set_skill_priority: 'Adjust one learned offensive skill preference within a bounded combat score range.',
@@ -682,7 +754,9 @@ function registerTools() {
         list_safe_loadouts: 'List inventory equipment candidates that are compatible and strictly improve a slot.',
         equip_candidate: 'Equip one validated inventory upgrade through the native backpack persistence path.',
         optimize_equipment: 'Equip all currently safe inventory upgrades through the native backpack path.',
+        list_party_candidates: 'List up to five real bot candidates with server-owned availability, level, and distance.',
         propose_trade: 'Open a native trade window with the authorized party leader before offering any resources.',
+        give_resources: 'Open native trade and display one validated resource line in the same action; player confirmation is still required.',
         offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
         update_trade_offer: 'Change one reserved bot trade line after revalidating inventory truth.',
         cancel_trade: 'Cancel the open native trade and release every reservation.',
@@ -694,16 +768,17 @@ function registerTools() {
     };
 
     const controlActions = new Set([
-        'set_pull_policy', 'assign_puller', 'unassign_puller',
+        'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-        'propose_trade', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+        'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade'
     ]);
     const economyActions = new Set([
         'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]);
     const executors = {
         set_pull_policy: applyPullPolicy,
+        stop_pulling_and_return: stopPullingAndReturn,
         assign_puller: assignPuller,
         unassign_puller: unassignPuller,
         set_skill_priority: setSkillPriority,
@@ -712,7 +787,9 @@ function registerTools() {
         list_safe_loadouts: listSafeLoadouts,
         equip_candidate: equipCandidate,
         optimize_equipment: optimizeEquipment,
+        list_party_candidates: listPartyCandidates,
         propose_trade: proposeTrade,
+        give_resources: giveResources,
         offer_resources: offerResources,
         update_trade_offer: updateTradeOffer,
         cancel_trade: cancelBotTrade,
@@ -727,9 +804,11 @@ function registerTools() {
         BotToolRegistry.register({
             name,
             description: descriptions[name],
-            kind: controlActions.has(name) && name === 'list_safe_loadouts' ? 'read' : controlActions.has(name) ? 'mutation' : 'intent',
+            kind: ['list_safe_loadouts', 'list_party_candidates'].includes(name)
+                ? 'read'
+                : controlActions.has(name) ? 'mutation' : 'intent',
             risk: controlActions.has(name) ? 'medium' : 'low',
-            mutating: !['none', 'say', 'list_safe_loadouts'].includes(name),
+            mutating: !['none', 'say', 'list_safe_loadouts', 'list_party_candidates'].includes(name),
             available(session) {
                 if (!session) return true;
                 if (session.plan === 'merchant') {
@@ -742,6 +821,7 @@ function registerTools() {
                 if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
                 if (economyActions.has(name) && !economyActionAvailable(session, name)) return false;
                 if (name === 'propose_trade' && session.activeTrade) return false;
+                if (name === 'give_resources' && session.activeTrade) return false;
                 if (['offer_resources', 'update_trade_offer', 'cancel_trade'].includes(name) && !session.activeTrade) return false;
                 if (name === 'buff_target') {
                     try { if (!BotRoles.canBuff(session.actor)) return false; } catch (_) { return true; }
@@ -815,6 +895,8 @@ function rejectionReply(result = {}) {
         case 'pk_hunting_autonomous': return 'I am staying focused on my current fight.';
         case 'tool_unavailable': return 'That action is not available to me right now.';
         case 'not_a_party_companion': return 'I can only change hot party policy while I am your companion.';
+        case 'party_companion_cannot_shop_now': return 'I need to stay with the party; I cannot leave for town right now.';
+        case 'party_companion_stays_with_party': return 'I need to stay with the party instead of leaving for another spot.';
         case 'incompatible_item':
         case 'not_an_upgrade':
         case 'no_safe_upgrade': return 'I could not find a safe equipment upgrade for this situation.';
@@ -861,5 +943,6 @@ module.exports = {
     remember,
     rejectionReply,
     toolDescriptions,
-    worldRevision
+    worldRevision,
+    partyCandidates
 };

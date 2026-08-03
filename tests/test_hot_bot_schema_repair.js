@@ -49,8 +49,7 @@ async function main() {
             enabled: true,
             apiKey: 'hot-schema-repair-test-key',
             model: 'test/hot-schema-repair',
-            hotBotBudgetEnabled: false,
-            chatCooldownMs: 0
+            maxConcurrentRequests: 32
         };
 
         const playerSession = {
@@ -102,7 +101,7 @@ async function main() {
         assert.strictEqual(requests.length, 2, 'hot dialogue must repair one malformed structured response');
         assert.strictEqual(requests[0].max_completion_tokens, undefined);
         assert.strictEqual(requests[1].max_completion_tokens, undefined);
-        assert.deepStrictEqual(requests[0].reasoning, { effort: 'high', exclude: true });
+        assert.deepStrictEqual(requests[0].reasoning, { effort: 'low', exclude: true });
         assert.strictEqual(botSession.brainInFlight, false, 'repaired turn must settle');
         console.log('Hot bot schema repair checks passed');
     } finally {

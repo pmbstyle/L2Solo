@@ -229,6 +229,17 @@ function startBotTrade(botSession, playerSession) {
     return openBotTrade(botSession, playerSession);
 }
 
+function startBotTradeWithOffer(botSession, playerSession, objectId, amount) {
+    const opened = openBotTrade(botSession, playerSession);
+    if (!opened.ok) return opened;
+    const offered = offerBotItem(botSession, objectId, amount);
+    if (!offered.ok) {
+        cancelTrade(opened.trade, offered.reason, true);
+        return offered;
+    }
+    return { ok: true, trade: opened.trade, line: offered.line };
+}
+
 function startNegotiatedTrade(botSession, playerSession, negotiation) {
     return openBotTrade(botSession, playerSession, negotiation);
 }
@@ -488,6 +499,7 @@ module.exports = {
     offerBotItem,
     startNegotiatedTrade,
     startBotTrade,
+    startBotTradeWithOffer,
     startPlayerTrade,
     updateOffer
 };

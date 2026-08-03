@@ -35,7 +35,6 @@ async function main() {
     const originalConfig = options.default.OpenRouter;
     const originalWorldUser = World.user;
     const originalFetchVisibleUsers = World.fetchVisibleUsers;
-    const originalRandom = Math.random;
     const requests = [];
     const botSession = { accountId: 'bot_state_change', actor: actor(2000301, 'StateBot'), plan: 'resting' };
     const playerSession = { accountId: 'player_state_change', actor: actor(2000302, 'NearbyPlayer', 100) };
@@ -46,12 +45,7 @@ async function main() {
             enabled: true,
             apiKey: 'state-change-test-key',
             model: 'test/state-change',
-            cooldownMs: 0,
-            chatCooldownMs: 0,
-            backgroundInferenceEnabled: true,
-            hotBotMaxRequestsPerMinute: 5,
-            hotBotPromptTokenBudgetPerMinute: 12000,
-            hotBotCompletionTokenBudgetPerMinute: 2400
+            maxConcurrentRequests: 5
         };
         World.user = { sessions: [playerSession, botSession] };
         World.fetchVisibleUsers = () => [playerSession];
@@ -73,7 +67,6 @@ async function main() {
             });
         });
 
-        Math.random = () => 0.01;
         const started = BotBrain.maybeThink(botSession, 'state_change', {
             available: true,
             name: 'StateBot',
@@ -91,37 +84,19 @@ async function main() {
             persona: null,
             social: null
         }, 'High-level state changed: test');
-        assert.strictEqual(started, true, 'a meaningful state-change event should enter the bounded brain path');
-
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        assert.strictEqual(requests.length, 1, 'state-change routing should produce one provider request');
-        const payload = JSON.parse(requests[0].messages[1].content);
-        assert.strictEqual(payload.event, 'state_change');
-        assert.strictEqual(BotInferenceBudget.status(botSession).requests, 1);
-        const recent = await BotEventJournal.recent({ botId: botSession.actor.fetchId(), limit: 10 });
-        const decisionEvent = recent.find((event) => event.eventType === 'llm_decision');
-        assert(decisionEvent, 'provider decisions should be available in the bounded activity journal');
-        assert.strictEqual(decisionEvent.meta.event, 'state_change');
-        assert.strictEqual(decisionEvent.meta.action, 'none');
-        assert(!JSON.stringify(decisionEvent).includes('High-level state changed: test'), 'raw prompt text must not enter the journal');
+        assert.strictEqual(started, false, 'background state changes must stay on the deterministic bot brain');
+        assert.strictEqual(requests.length, 0, 'background state changes must not consume provider tokens');
 
         options.default.OpenRouter.enabled = false;
         assert.strictEqual(
-            BotBrain.maybeThink(botSession, 'state_change', { available: true }, 'disabled probe'),
+            BotBrain.maybeThink(botSession, 'player_chat', { available: true }, 'disabled probe', { playerSession }),
             false,
-            'disabled OpenRouter must keep state-change routing inert'
+            'disabled OpenRouter must keep chat routing inert'
         );
         options.default.OpenRouter.enabled = true;
-        options.default.OpenRouter.backgroundInferenceEnabled = false;
-        assert.strictEqual(
-            BotBrain.maybeThink(botSession, 'state_change', { available: true }, 'background-disabled probe'),
-            false,
-            'background inference must be opt-in even when OpenRouter is enabled'
-        );
 
         // An explicit tell is still an interactive LLM turn while the hot bot
         // is dead or in a transient deterministic plan.
-        options.default.OpenRouter.backgroundInferenceEnabled = false;
         botSession.plan = 'fleeing';
         botSession.actor.isDead = () => true;
         const beforeChat = requests.length;
@@ -138,11 +113,27 @@ async function main() {
             true,
             'player chat must enter the LLM path even for a dead/transient hot bot'
         );
-        await new Promise((resolve) => setTimeout(resolve, 30));
+        for (let attempt = 0; attempt < 50 && botSession.brainInFlight; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
         assert.strictEqual(requests.length, beforeChat + 1);
-        console.log('Bot brain state-change checks passed');
+        const payload = JSON.parse(requests[0].messages[1].content);
+        assert.strictEqual(payload.event, 'player_chat');
+        let decisionEvent = null;
+        for (let attempt = 0; attempt < 50 && !decisionEvent; attempt += 1) {
+            const recent = await BotEventJournal.recent({
+                botId: botSession.actor.fetchId(),
+                playerId: playerSession.actor.fetchId(),
+                limit: 10
+            });
+            decisionEvent = recent.find((entry) => entry.eventType === 'llm_decision') || null;
+            if (!decisionEvent) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert(decisionEvent, 'interactive decisions should remain visible in the bounded activity journal');
+        assert.strictEqual(decisionEvent.meta.event, 'player_chat');
+        assert(!JSON.stringify(decisionEvent).includes('Are you alive?'), 'raw prompt text must not enter the journal');
+        console.log('Bot brain communication-only routing checks passed');
     } finally {
-        Math.random = originalRandom;
         options.default.OpenRouter = originalConfig;
         World.user = originalWorldUser;
         World.fetchVisibleUsers = originalFetchVisibleUsers;

@@ -48,8 +48,7 @@ async function main() {
             enabled: true,
             apiKey: 'hot-history-test-key',
             model: 'test/hot-history',
-            cooldownMs: 0,
-            chatCooldownMs: 0
+            maxConcurrentRequests: 32
         };
         BotConversationStore.resetMemory();
         const playerSession = {
