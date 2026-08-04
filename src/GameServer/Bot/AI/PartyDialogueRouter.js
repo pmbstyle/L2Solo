@@ -4,6 +4,16 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const PARTY_CHANNEL_KIND = 3;
 const ACTIVE_RESPONDER_TTL_MS = 5 * 60 * 1000;
 const HEARING_RADIUS = 1500;
+const routeMetrics = {
+    messages: 0,
+    deterministicRoutes: 0,
+    routerInvocations: 0,
+    routerBotRoutes: 0,
+    clarified: 0,
+    unresolved: 0,
+    dispatches: 0,
+    multiDispatchViolations: 0
+};
 
 const ROLE_ALIASES = {
     tank: ['tank', 'frontline', 'guard'],
@@ -87,6 +97,31 @@ function roleAddressMatches(text, candidates) {
     ));
     if (matches.length === 1) return { status: 'matched', matches, role: requested };
     return { status: matches.length > 1 ? 'ambiguous' : 'none', matches, role: requested };
+}
+
+function recordMetric(result, options = {}) {
+    const source = options.source || 'deterministic';
+    const dispatchCount = Math.max(0, Number(options.dispatchCount || 0));
+    if (source === 'deterministic') routeMetrics.messages += 1;
+    if (source === 'deterministic' && result?.candidate) routeMetrics.deterministicRoutes += 1;
+    if (source === 'llm_router') {
+        routeMetrics.routerInvocations += 1;
+        if (result?.route === 'bot' && result?.candidate) routeMetrics.routerBotRoutes += 1;
+    }
+    if (result?.route === 'clarify' || result?.reason === 'explicit_ambiguous' || result?.reason === 'role_ambiguous') {
+        routeMetrics.clarified += 1;
+    }
+    if (result?.status === 'none' || result?.reason === 'unresolved' || result?.route === 'none') routeMetrics.unresolved += 1;
+    routeMetrics.dispatches += dispatchCount;
+    if (dispatchCount > 1) routeMetrics.multiDispatchViolations += 1;
+}
+
+function metrics() {
+    return { ...routeMetrics };
+}
+
+function resetMetrics() {
+    Object.keys(routeMetrics).forEach((key) => { routeMetrics[key] = 0; });
 }
 
 function buildCandidates({ sessions = [], playerSession, partyChannel = false, hearingRadius = HEARING_RADIUS } = {}) {
@@ -245,6 +280,9 @@ module.exports = {
     buildCandidates,
     isGroupAddress,
     isContinuationMessage,
+    metrics,
+    recordMetric,
+    resetMetrics,
     roleAddressMatches,
     select
 };

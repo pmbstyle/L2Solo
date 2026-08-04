@@ -22,6 +22,7 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
@@ -747,6 +748,12 @@ const BotManager = {
         let deterministicRoute = null;
         const dialogueState = PartyDialogueState.snapshot(playerSession);
         const cheapRouterAvailable = llmEnabled && partyChannel && PartyLLMRouter.enabled() && !dialogueState?.routerInFlightAt;
+        const routeMetadata = {
+            event: 'party_chat_route',
+            channel: partyChannel ? 'party_chat' : 'local_chat',
+            playerId: player.fetchId?.() || null,
+            sessionId: `party-chat:${player.fetchId?.() || 'unknown'}`
+        };
         if (llmEnabled) {
             deterministicRoute = PartyDialogueRouter.select({
                 text: rawText,
@@ -767,6 +774,37 @@ const BotManager = {
                     spokespersonId: deterministicRoute.reason === 'party_spokesperson' ? llmResponder.id : undefined
                 });
             }
+            if (partyChannel) {
+                const addressObservation = LangfuseTracing.startObservation(
+                    'party.address.resolve',
+                    { message: rawText },
+                    { ...routeMetadata, status: deterministicRoute.status, reason: deterministicRoute.reason },
+                    'span'
+                );
+                addressObservation?.end({
+                    status: deterministicRoute.status,
+                    reason: deterministicRoute.reason,
+                    candidateId: deterministicRoute.candidate?.id || null,
+                    candidateCount: deterministicRoute.candidates?.length || 0
+                }, LangfuseTracing.observationStatus(deterministicRoute));
+                PartyDialogueRouter.recordMetric(deterministicRoute, {
+                    source: 'deterministic',
+                    dispatchCount: llmResponder ? 1 : 0
+                });
+                if (llmResponder) {
+                    const routeObservation = LangfuseTracing.startObservation(
+                        'party.dialogue.route',
+                        { message: rawText },
+                        { ...routeMetadata, source: 'deterministic', reason: deterministicRoute.reason },
+                        'span'
+                    );
+                    routeObservation?.end({
+                        route: 'bot',
+                        candidateId: llmResponder.id,
+                        reason: deterministicRoute.reason
+                    }, LangfuseTracing.observationStatus(deterministicRoute));
+                }
+            }
         }
 
         const dispatchLLM = (session, reason = deterministicRoute?.reason || 'deterministic_route') => {
@@ -780,6 +818,14 @@ const BotManager = {
                     spokespersonId: reason === 'party_spokesperson' ? session.actor.fetchId() : undefined
                 });
             }
+            const dispatchObservation = partyChannel
+                ? LangfuseTracing.startObservation(
+                    'party.dispatch',
+                    { botId: session.actor.fetchId?.(), message: rawText },
+                    { ...routeMetadata, botId: session.actor.fetchId?.() || null, reason },
+                    'span'
+                )
+                : null;
             return BotDialogueArbiter.route({
                 playerSession,
                 botSession: session,
@@ -788,10 +834,15 @@ const BotManager = {
                 source: partyChannel ? 'party_chat' : 'local_chat',
                 allowFallback: true
             }).then((result) => {
+                dispatchObservation?.end(result, LangfuseTracing.observationStatus(result));
                 if (result?.started === true || result?.queued === true || result?.delivered === true) return result;
                 PartyDialogueState.clearInFlight(playerSession, session);
                 return result;
             }).catch((error) => {
+                dispatchObservation?.end({ ok: false, reason: 'route_error', error: error.message }, {
+                    level: 'ERROR',
+                    statusMessage: error.message
+                });
                 PartyDialogueState.clearInFlight(playerSession, session);
                 utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
                 return { ok: false, reason: 'route_error', error: error.message };
@@ -824,9 +875,28 @@ const BotManager = {
                     let reason = routerResult?.route === 'bot' ? 'router_bot' : `router_${routerResult?.route || 'fallback'}`;
                     if (!chosen && ['party', 'clarify'].includes(routerResult?.route)) chosen = fallbackRoute.candidate;
                     if (!chosen && routerResult?.ok !== true) chosen = fallbackRoute.candidate;
+                    PartyDialogueRouter.recordMetric(routerResult, {
+                        source: 'llm_router',
+                        dispatchCount: chosen ? 1 : 0
+                    });
+                    const routeObservation = LangfuseTracing.startObservation(
+                        'party.dialogue.route',
+                        { message: rawText },
+                        { ...routeMetadata, source: 'llm_router', reason },
+                        'span'
+                    );
+                    routeObservation?.end({
+                        route: routerResult?.route || 'fallback',
+                        candidateId: chosen?.id || null,
+                        reason: routerResult?.reason || reason
+                    }, LangfuseTracing.observationStatus(routerResult));
                     return chosen ? dispatchLLM(chosen, reason) : routerResult;
                 }).catch((error) => {
                     PartyDialogueState.clearRouter(playerSession);
+                    PartyDialogueRouter.recordMetric({ route: 'none', reason: 'router_error' }, {
+                        source: 'llm_router',
+                        dispatchCount: fallbackRoute.candidate ? 1 : 0
+                    });
                     return fallbackRoute.candidate
                         ? dispatchLLM(fallbackRoute.candidate, 'router_error_fallback')
                         : { ok: false, reason: 'router_error', error: error.message };
