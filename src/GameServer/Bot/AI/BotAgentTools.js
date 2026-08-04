@@ -17,10 +17,12 @@ const ACTIONS = [
     'none',
     'say',
     'follow_player',
+    'regroup_party',
     'stay_here',
     'hunt',
     'rest',
     'shop',
+    'fetch_resources',
     'move_to_spot',
     'buff_target',
     'heal_target',
@@ -48,7 +50,7 @@ const ACTIONS = [
 ];
 
 const PK_LOCKED_ACTIONS = new Set([
-    'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+    'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest', 'shop', 'fetch_resources', 'move_to_spot',
     'set_pull_policy', 'assign_puller', 'unassign_puller',
     'stop_pulling_and_return',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
@@ -504,6 +506,24 @@ function stopPullingAndReturn(context) {
     };
 }
 
+function regroupParty(context) {
+    const leader = partyLeaderFor(context.session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+    const result = PartyCompanionService.beginRegroup(leader, {
+        radius: context.decision.regroupRadius,
+        requestedBy: context.requestContext?.playerSession?.actor?.fetchId?.()
+    });
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'party_regroup_started',
+        effect: 'pull_paused_and_party_approaching_compact_formation',
+        radius: result.radius,
+        affected: result.affected,
+        playerVisibleReply: `Regrouping all ${result.affected} companions around you.`
+    };
+}
+
 function learnedSkill(session, skillId) {
     const actor = session?.actor;
     const skill = actor?.skillset?.fetchSkill?.(Number(skillId)) ||
@@ -602,6 +622,28 @@ function giveResources(context) {
         trade: BotTradeService.activeTradeSummary(context.session),
         line,
         playerVisibleReply: `I put ${line.count} ${line.name} in the trade window. Please confirm the trade when you are ready.`
+    };
+}
+
+function fetchResources(context) {
+    const player = context?.requestContext?.playerSession;
+    const result = invoke('GameServer/Bot/AI/BotSupplyErrand').request(
+        context.session,
+        player,
+        context.decision.supplyItemId,
+        context.decision.supplyAmount
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, ...result };
+    return {
+        applied: true,
+        outcome: 'pending',
+        reason: result.reason,
+        effect: 'travel_purchase_return_and_native_trade_pending',
+        itemSelfId: result.itemSelfId,
+        amount: result.amount,
+        cost: result.cost,
+        town: result.town,
+        playerVisibleReply: `I will buy ${result.amount} new ${result.itemName} in ${result.town}, return, and open trade with exactly that amount.`
     };
 }
 
@@ -747,10 +789,12 @@ function registerTools() {
         none: 'Do nothing when no useful response is needed.',
         say: 'Send a short in-character reply to the target visible player.',
         follow_player: 'Persistently approach a visible player until arrival. Real party follow still requires an invite.',
+        regroup_party: 'Make every current companion approach compact distinct slots around the human leader and pause new pulls until regrouped.',
         stay_here: 'Hold the current position.',
         hunt: 'Return to independent hunting.',
         rest: 'Sit and recover.',
         shop: 'Go to town for normal restock behavior.',
+        fetch_resources: 'For a party leader request, buy an exact new quantity of supported shots in town, return, and offer that purchased quantity in native trade.',
         move_to_spot: 'Move to one of the provided candidate spot ids.',
         buff_target: 'Apply a supported buff to a visible player if class, MP, and range allow it.',
         heal_target: 'Heal a visible player if class, MP, and range allow it.',
@@ -778,15 +822,17 @@ function registerTools() {
     };
 
     const controlActions = new Set([
+        'regroup_party',
         'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
-        'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+        'propose_trade', 'give_resources', 'fetch_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade'
     ]);
     const economyActions = new Set([
         'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]);
     const executors = {
+        regroup_party: regroupParty,
         set_pull_policy: applyPullPolicy,
         stop_pulling_and_return: stopPullingAndReturn,
         assign_puller: assignPuller,
@@ -800,6 +846,7 @@ function registerTools() {
         list_party_candidates: listPartyCandidates,
         propose_trade: proposeTrade,
         give_resources: giveResources,
+        fetch_resources: fetchResources,
         offer_resources: offerResources,
         update_trade_offer: updateTradeOffer,
         cancel_trade: cancelBotTrade,
@@ -828,6 +875,7 @@ function registerTools() {
                     return ['none', 'say'].includes(name);
                 }
                 if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
+                if (name === 'shop' && session.partyCompanion === true && session.followPlayerSession) return false;
                 if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
                 if (economyActions.has(name) && !economyActionAvailable(session, name)) return false;
                 if (name === 'propose_trade' && session.activeTrade) return false;
@@ -908,6 +956,11 @@ function rejectionReply(result = {}) {
         case 'tool_unavailable': return 'That action is not available to me right now.';
         case 'not_a_party_companion': return 'I can only change hot party policy while I am your companion.';
         case 'party_companion_cannot_shop_now': return 'I need to stay with the party; I cannot leave for town right now.';
+        case 'unsupported_supply_item': return 'I can currently fetch shop-bought soulshots and spiritshots, but not that item.';
+        case 'invalid_supply_amount': return 'Tell me a supply amount between 1 and 5,000.';
+        case 'supply_errand_active': return 'I already have a shopping or delivery errand in progress.';
+        case 'supply_not_sold_in_town': return 'The nearest town does not sell that supply.';
+        case 'not_enough_adena': return 'I do not have enough Adena for that purchase.';
         case 'party_companion_stays_with_party': return 'I need to stay with the party instead of leaving for another spot.';
         case 'incompatible_item':
         case 'not_an_upgrade':

@@ -25,7 +25,7 @@ async function main() {
             enabled: true,
             apiKey: 'party-router-test',
             model: 'test/main',
-            partyRouterModel: 'test/router'
+            partyRouterModel: 'openai/gpt-oss-120b'
         };
         OpenRouterGateway.setTransport(async (_url, init) => {
             captured = JSON.parse(init.body);
@@ -55,18 +55,24 @@ async function main() {
             dialogueState: {
                 inFlightBotId: null,
                 lastDeliveredBotId: 1,
-                recentTurns: [{ role: 'bot', botId: 1, text: 'I am pulling.', channel: 'party_chat' }]
+                recentTurns: [
+                    { role: 'bot', botId: 2, text: 'local-only detail', channel: 'local_chat' },
+                    { role: 'bot', botId: 1, text: 'I am pulling.', channel: 'party_chat' }
+                ]
             }
         });
         assert.strictEqual(result.ok, true);
         assert.strictEqual(result.candidate, candidates[1]);
         assert.strictEqual(result.route, 'bot');
         assert.strictEqual(observations[0].name, 'party.router.generation');
-        assert.strictEqual(captured.model, 'test/router');
-        assert.strictEqual(captured.max_completion_tokens, PartyLLMRouter.ROUTER_MAX_TOKENS);
+        assert.strictEqual(captured.model, 'openai/gpt-oss-120b');
+        assert.strictEqual(captured.max_tokens, PartyLLMRouter.ROUTER_MAX_TOKENS);
+        assert.strictEqual(captured.max_completion_tokens, undefined);
         assert.strictEqual(captured.temperature, PartyLLMRouter.ROUTER_TEMPERATURE);
-        assert.strictEqual(captured.reasoning, undefined);
+        assert.deepStrictEqual(captured.reasoning, { effort: 'low', exclude: true });
+        assert.strictEqual(captured.response_format.type, 'json_schema');
         assert.ok(!JSON.stringify(captured.messages).includes('persona'));
+        assert.ok(!JSON.stringify(captured.messages).includes('local-only detail'), 'local chat must not leak into party routing context');
 
         captured = null;
         OpenRouterGateway.setTransport(async () => response({
@@ -77,6 +83,19 @@ async function main() {
         const invalid = await PartyLLMRouter.route({ text: 'who?', playerSession, candidates });
         assert.strictEqual(invalid.ok, false);
         assert.strictEqual(invalid.reason, 'invalid_bot_id');
+
+        OpenRouterGateway.setTransport(async () => response({
+            choices: [{ message: { content: JSON.stringify({
+                route: 'none',
+                botId: null,
+                intent: 'clarify_addressee',
+                confidence: 0.8,
+                reason: 'The addressee is ambiguous; the player should specify which bot.'
+            }) } }]
+        }));
+        const selfCorrected = await PartyLLMRouter.route({ text: 'who should answer?', playerSession, candidates });
+        assert.strictEqual(selfCorrected.ok, true);
+        assert.strictEqual(selfCorrected.route, 'clarify', 'self-described ambiguity must not become a silent none route');
     } finally {
         options.default.OpenRouter = originalConfig;
         OpenRouterGateway.resetTransport();

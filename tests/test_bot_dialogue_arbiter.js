@@ -12,6 +12,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
 
 function actor(id, name, x = 0) {
     return {
@@ -47,6 +48,7 @@ async function main() {
     const originalWithRootObservation = LangfuseTracing.withRootObservation;
     const originalSessions = BotManager.sessions;
     const originalRoute = BotDialogueArbiter.route;
+    const originalPartyRouterEnabled = PartyLLMRouter.enabled;
     const originalWorldUser = invoke('GameServer/World/World').user;
 
     const observations = [];
@@ -57,6 +59,7 @@ async function main() {
         const captured = [];
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
         BotBrain.isEnabled = () => true;
+        PartyLLMRouter.enabled = () => false;
         BotAI.getStatus = () => ({ available: true, mode: 'hunting', level: 10, name: 'Aria' });
         BotBrain.maybeThink = (_bot, _event, _status, text, requestContext) => {
             captured.push({ text, requestContext });
@@ -202,7 +205,7 @@ async function main() {
         delete player.botDialogueResponderAt;
         PartyDialogueState.reset(player);
         routes.length = 0;
-        BotManager.handlePlayerSpeak(player, { kind: 3, text: 'party, regroup' });
+        await BotManager.handlePlayerSpeak(player, { kind: 3, text: 'party, regroup' });
         assert.deepStrictEqual(routes, ['Aria'], 'party chat must select one companion responder');
     } finally {
         BotBrain.maybeThink = originalBrain;
@@ -215,6 +218,7 @@ async function main() {
         LangfuseTracing.withRootObservation = originalWithRootObservation;
         BotManager.sessions = originalSessions;
         BotDialogueArbiter.route = originalRoute;
+        PartyLLMRouter.enabled = originalPartyRouterEnabled;
         invoke('GameServer/World/World').user = originalWorldUser;
     }
 

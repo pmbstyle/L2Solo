@@ -33,6 +33,8 @@ const tests = [
     'tests/test_bot_tool_authorization.js',
     'tests/test_hot_bot_policy_overlay.js',
     'tests/test_llm_pull_policy_tools.js',
+    'tests/test_llm_party_regroup.js',
+    'tests/test_llm_supply_errand.js',
     'tests/test_llm_skill_priority_tools.js',
     'tests/test_llm_equipment_tools.js',
     'tests/test_llm_trade_tools.js',

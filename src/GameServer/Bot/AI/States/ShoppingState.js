@@ -121,6 +121,58 @@ module.exports = {
         const NpcTalkResponse = invoke(path.world + 'NpcTalkResponse');
         const companionErrand = session.companionShopping;
 
+        if (companionErrand?.kind === 'player_resource_purchase') {
+            const current = bot.backpack?.fetchItemFromSelfId?.(companionErrand.itemId);
+            const currentAmount = Number(current?.fetchAmount?.() || 0);
+            const plan = {
+                kind: ShotStock.kindForSelfId(companionErrand.itemId),
+                selfId: Number(companionErrand.itemId),
+                name: companionErrand.itemName,
+                price: Number(companionErrand.unitPrice)
+            };
+            try {
+                const purchased = await ShotStock.purchaseActorRestock(bot, {
+                    plan,
+                    targetAmount: currentAmount + Number(companionErrand.amount)
+                });
+                if (!purchased.ok || Number(purchased.delta) !== Number(companionErrand.amount)) {
+                    throw new Error(purchased.reason || 'purchase_delta_mismatch');
+                }
+                const purchasedItem = bot.backpack.fetchItemFromSelfId(companionErrand.itemId);
+                session.pendingResourceDelivery = {
+                    playerSession: companionErrand.playerSession,
+                    playerId: companionErrand.playerId,
+                    objectId: purchasedItem.fetchId(),
+                    itemSelfId: Number(companionErrand.itemId),
+                    itemName: companionErrand.itemName,
+                    amount: Number(companionErrand.amount),
+                    purchasedAt: Date.now()
+                };
+                session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
+                BotAI.say(session, `Bought ${purchased.delta}x ${companionErrand.itemName}. Returning with them now.`);
+                Promise.resolve(BotEventJournal.record({
+                    playerId: companionErrand.playerId,
+                    botId: bot.fetchId(),
+                    eventType: 'resource_purchase',
+                    summary: `${bot.fetchName()} bought ${purchased.delta} ${companionErrand.itemName} to deliver to the party leader.`,
+                    weight: 4,
+                    dedupeKey: `resource_purchase:${bot.fetchId()}:${companionErrand.playerId}:${companionErrand.itemId}:${companionErrand.amount}:${Date.now()}`,
+                    meta: {
+                        itemSelfId: companionErrand.itemId,
+                        amount: purchased.delta,
+                        cost: purchased.cost,
+                        requestedBy: companionErrand.playerId
+                    }
+                })).catch(() => {});
+            } catch (error) {
+                session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
+                BotAI.say(session, 'I could not complete that supply purchase. I am returning now.');
+                utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
+            }
+            this.scheduleResourceReturn(session, bot, BotAI);
+            return;
+        }
+
         if (companionErrand?.kind === 'market_purchase') {
             const sellerSession = findStoreSession(companionErrand.target.actorId);
             const seller = sellerSession?.actor;
@@ -290,5 +342,29 @@ module.exports = {
                 });
             }
         }, 9000);
+    },
+
+    scheduleResourceReturn(session, bot, BotAI) {
+        setTimeout(() => {
+            const resume = session.resumeAfterShopping;
+            const leaderSession = resume?.followPlayerSession;
+            session.plan = session.partyCompanion === true && leaderSession?.actor?.fetchIsOnline?.()
+                ? 'following'
+                : 'hunting';
+            session.shoppingDoneAnnounced = false;
+            session.shoppingTarget = undefined;
+            session.companionShopping = undefined;
+            session.resumeAfterShopping = undefined;
+            session.preShopLocation = undefined;
+            if (session.plan === 'following') {
+                const leader = leaderSession.actor;
+                bot.moveTo({
+                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+                    to: { locX: leader.fetchLocX(), locY: leader.fetchLocY(), locZ: leader.fetchLocZ() }
+                });
+            } else {
+                session.pendingResourceDelivery = undefined;
+            }
+        }, 1000);
     }
 };

@@ -60,7 +60,7 @@ function isGroupAddress(text) {
 
 function isContinuationMessage(text) {
     const value = String(text || '').trim().toLowerCase();
-    return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about)\b/.test(value);
+    return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about|is (?:it|that)|are (?:they|those)|(?:what|which) (?:weapon|armor|item|skill|buff|price)|but\b|and\b)/.test(value);
 }
 
 function roleFor(session, actor) {
@@ -82,10 +82,17 @@ function isPuller(session, role) {
         role === 'puller';
 }
 
+function roleAliasIsAddressed(text, alias) {
+    const value = String(text || '').trim();
+    const escaped = String(alias).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const atStart = new RegExp(`^(?:(?:hey|hi|yo|ok|okay|please)\\s+)?${escaped}\\b`, 'i');
+    const delimited = new RegExp(`(?:^|[,!:]\\s*)${escaped}\\s*[,!:]`, 'i');
+    return atStart.test(value) || delimited.test(value);
+}
+
 function roleAddressMatches(text, candidates) {
-    const value = String(text || '').toLowerCase();
     const requestedRoles = Object.entries(ROLE_ALIASES)
-        .filter(([, aliases]) => aliases.some((alias) => new RegExp(`\\b${alias}\\b`, 'i').test(value)))
+        .filter(([, aliases]) => aliases.some((alias) => roleAliasIsAddressed(text, alias)))
         .map(([role]) => role);
     if (requestedRoles.length !== 1) return { status: requestedRoles.length > 1 ? 'ambiguous' : 'none', matches: [] };
 
@@ -208,34 +215,6 @@ function select({
         };
     }
 
-    const selected = candidates.find((candidate) => candidate.selected);
-    if (selected) {
-        return { candidate: selected, candidates, status: 'matched', reason: 'selected', matchType: null };
-    }
-
-    const pending = candidates.find((candidate) => candidate.pendingInteraction);
-    if (pending) {
-        return { candidate: pending, candidates, status: 'matched', reason: 'pending_interaction', matchType: null };
-    }
-
-    const state = dialogueState || {};
-    const inFlight = findById(candidates, state.inFlightBotId);
-    if (inFlight) {
-        return { candidate: inFlight, candidates, status: 'matched', reason: 'in_flight', matchType: null };
-    }
-
-    const previousId = state.lastDeliveredBotId ?? state.activeBotId ?? activeResponderId;
-    const previousAt = state.lastDeliveredAt || state.activeSince || activeResponderAt;
-    const activeAge = Number.isFinite(Number(previousAt))
-        ? now - Number(previousAt)
-        : Infinity;
-    const active = (partyChannel || isContinuationMessage(text)) && activeAge >= 0 && activeAge <= ACTIVE_RESPONDER_TTL_MS
-        ? findById(candidates, previousId)
-        : null;
-    if (active) {
-        return { candidate: active, candidates, status: 'matched', reason: 'active_responder', matchType: null };
-    }
-
     const roleOwner = roleAddressMatches(text, candidates);
     if (roleOwner.status === 'matched') {
         return {
@@ -255,6 +234,34 @@ function select({
             matchType: 'role',
             matches: roleOwner.matches
         };
+    }
+
+    const pending = candidates.find((candidate) => candidate.pendingInteraction);
+    if (pending) {
+        return { candidate: pending, candidates, status: 'matched', reason: 'pending_interaction', matchType: null };
+    }
+
+    const state = dialogueState || {};
+    const inFlight = findById(candidates, state.inFlightBotId);
+    if (inFlight) {
+        return { candidate: inFlight, candidates, status: 'matched', reason: 'in_flight', matchType: null };
+    }
+
+    const previousId = state.lastDeliveredBotId ?? state.activeBotId ?? activeResponderId;
+    const previousAt = state.lastDeliveredAt || state.activeSince || activeResponderAt;
+    const activeAge = Number.isFinite(Number(previousAt))
+        ? now - Number(previousAt)
+        : Infinity;
+    const active = isContinuationMessage(text) && activeAge >= 0 && activeAge <= ACTIVE_RESPONDER_TTL_MS
+        ? findById(candidates, previousId)
+        : null;
+    if (active) {
+        return { candidate: active, candidates, status: 'matched', reason: 'active_responder', matchType: null };
+    }
+
+    const selected = candidates.find((candidate) => candidate.selected);
+    if (selected) {
+        return { candidate: selected, candidates, status: 'matched', reason: 'selected', matchType: null };
     }
 
     const spokesperson = findById(candidates, state.spokespersonId) || candidates.find((candidate) => candidate.companion);

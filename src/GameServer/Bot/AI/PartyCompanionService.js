@@ -23,6 +23,10 @@ const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
 const PARTY_POSITION_UPDATE_DISTANCE = 150;
 const PARTY_MEMBER_UPDATE_INTERVAL_MS = 1000;
+const DEFAULT_REGROUP_RADIUS = 50;
+const MIN_REGROUP_RADIUS = 40;
+const MAX_REGROUP_RADIUS = 150;
+const REGROUP_TTL_MS = 20000;
 const FORMATION_OFFSETS = [
     { locX: -90, locY: -70 },
     { locX: -90, locY: 70 },
@@ -488,6 +492,21 @@ function formationTargetFor(companionSession) {
     if (!leader) return null;
 
     const slot = formationSlotFor(companionSession);
+    const regroup = regroupDirective(companionSession.followPlayerSession);
+    if (regroup && regroup.memberIds.includes(Number(companionSession.actor?.fetchId?.()))) {
+        const members = membersForLeader(companionSession.followPlayerSession)
+            .filter((member) => regroup.memberIds.includes(Number(member.actor?.fetchId?.())));
+        const count = Math.max(1, members.length);
+        const angle = ((Math.PI * 2) * slot.index / count) +
+            ((Number(leader.fetchHead?.() || 0) / 65536) * Math.PI * 2);
+        return {
+            locX: Math.round(leader.fetchLocX() + Math.cos(angle) * regroup.radius),
+            locY: Math.round(leader.fetchLocY() + Math.sin(angle) * regroup.radius),
+            locZ: leader.fetchLocZ(),
+            slot: slot.index,
+            regroup: true
+        };
+    }
     // C4 heading is a 16-bit turn where zero faces +X. Formation offsets are
     // authored in leader-local space, so the group stays behind/beside the
     // leader as they change direction instead of forming against world north.
@@ -501,6 +520,85 @@ function formationTargetFor(companionSession) {
         locY: Math.round(leader.fetchLocY() + locY),
         locZ: leader.fetchLocZ(),
         slot: slot.index
+    };
+}
+
+function regroupDirective(leaderSession, now = Date.now()) {
+    const directive = leaderSession?.partyRegroupDirective;
+    if (!directive) return null;
+    if (Number(directive.expiresAt || 0) <= now) {
+        delete leaderSession.partyRegroupDirective;
+        return null;
+    }
+    return directive;
+}
+
+function regroupActive(leaderSession, now = Date.now()) {
+    const directive = regroupDirective(leaderSession, now);
+    if (!directive?.active) return false;
+    const members = membersForLeader(leaderSession)
+        .filter((member) => directive.memberIds.includes(Number(member.actor?.fetchId?.())));
+    const complete = members.length === 0 || members.every((member) => {
+        const target = formationTargetFor(member);
+        return target && distance2d(member.actor, {
+            fetchLocX: () => target.locX,
+            fetchLocY: () => target.locY
+        }) <= 55;
+    });
+    if (complete) {
+        delete leaderSession.partyRegroupDirective;
+        return false;
+    }
+    return true;
+}
+
+function beginRegroup(leaderSession, options = {}) {
+    const leader = leaderSession?.actor;
+    if (!leader) return { ok: false, reason: 'missing_party_leader' };
+    const allMembers = membersForLeader(leaderSession);
+    const members = allMembers.filter((member) => !['shopping', 'getting_buffed', 'merchant'].includes(member.plan));
+    if (members.length === 0) return { ok: false, reason: 'no_party_companions' };
+    const requestedRadius = Number(options.radius);
+    const radius = Math.max(MIN_REGROUP_RADIUS, Math.min(
+        MAX_REGROUP_RADIUS,
+        Number.isFinite(requestedRadius) ? Math.round(requestedRadius) : DEFAULT_REGROUP_RADIUS
+    ));
+
+    leaderSession.partyRegroupDirective = {
+        active: true,
+        radius,
+        memberIds: members.map((member) => Number(member.actor.fetchId())),
+        startedAt: Date.now(),
+        expiresAt: Date.now() + REGROUP_TTL_MS,
+        requestedBy: options.requestedBy || leader.fetchId?.() || null
+    };
+    // Cancel the current delivery, not the configured pull policy. Once the
+    // compact formation is reached (or expires), normal pulling may resume.
+    leaderSession.partyPullState = {};
+    members.forEach((member) => {
+        cancelCompanionAction(member);
+        member.botStay = false;
+        member.stayLocation = null;
+        member.plan = 'following';
+        member.currentTargetId = undefined;
+        member.lastFollowMoveTarget = null;
+        member.actor?.unselect?.();
+        Promise.resolve(BotEventJournal.record({
+            playerId: leader.fetchId?.(),
+            botId: member.actor?.fetchId?.(),
+            eventType: 'party_regroup',
+            summary: `${leader.fetchName?.() || 'Leader'} called the party into a compact formation.`,
+            weight: 3,
+            dedupeKey: `regroup:${leader.fetchId?.()}:${leaderSession.partyRegroupDirective.startedAt}`,
+            meta: { radius, affected: members.length }
+        })).catch(() => {});
+    });
+    return {
+        ok: true,
+        radius,
+        affected: members.length,
+        deferred: allMembers.length - members.length,
+        expiresAt: leaderSession.partyRegroupDirective.expiresAt
     };
 }
 
@@ -642,6 +740,10 @@ const PartyCompanionService = {
     formationSlotFor,
 
     formationTargetFor,
+
+    beginRegroup,
+
+    regroupActive,
 
     sendPartyPositions,
 

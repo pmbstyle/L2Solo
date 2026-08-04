@@ -34,8 +34,8 @@ function safeNumber(read, fallback = 0) {
 
 function textRequestsInventory(text = '') {
     const lower = String(text || '').toLowerCase();
-    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|give|bring|spare|need|have|sell|buy)\b/.test(lower) ||
-        /(инвент|вещ|шмот|оруж|брон|аден|сос|шоты|шот|трейд|лут|дай|принес|принести|запас|нужн|есть|прод)/.test(lower);
+    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|give|bring|spare|need|have|sell|buy|equip|equipped|upgrade)\b/.test(lower) ||
+        /(инвент|вещ|шмот|оруж|брон|аден|сос|шоты|шот|трейд|лут|дай|принес|принести|запас|нужн|есть|прод|экип|надет|улучш)/.test(lower);
 }
 
 function compactTarget(target) {

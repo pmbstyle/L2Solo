@@ -148,6 +148,7 @@ function supportProviders(leaderSession) {
 
 function pauseReason(leaderSession, puller) {
     const state = pullState(leaderSession);
+    if (invoke('GameServer/Bot/AI/PartyCompanionService').regroupActive(leaderSession)) return 'party_regrouping';
     if (leaderSession?.actor?.isDead?.()) return 'party_revival';
     const recovery = leaderSession?.partyRecoveryCast;
     if (Number(recovery?.expiresAt || 0) > Date.now()) return 'party_recharging';

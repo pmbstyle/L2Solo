@@ -18,7 +18,7 @@ const ROUTER_SCHEMA = {
 };
 
 const ROUTER_TEMPERATURE = 0.1;
-const ROUTER_MAX_TOKENS = 96;
+const ROUTER_MAX_TOKENS = 512;
 
 function config() {
     const gateway = OpenRouterGateway.config();
@@ -37,9 +37,13 @@ function playerId(session) {
     return session?.actor?.fetchId?.() || null;
 }
 
+function partyTurns(state) {
+    return (state?.recentTurns || []).filter((turn) => turn.channel === 'party_chat');
+}
+
 function candidateCard(candidate, state) {
     const id = candidate?.id ?? null;
-    const lastTurn = [...(state?.recentTurns || [])]
+    const lastTurn = [...partyTurns(state)]
         .reverse()
         .find((turn) => turn.role === 'bot' && String(turn.botId) === String(id));
     return {
@@ -52,13 +56,20 @@ function candidateCard(candidate, state) {
 }
 
 function normalizeData(data, candidates) {
-    const route = ['bot', 'party', 'clarify', 'none'].includes(data?.route) ? data.route : 'none';
+    let route = ['bot', 'party', 'clarify', 'none'].includes(data?.route) ? data.route : 'none';
+    const reason = String(data?.reason || 'router_decision').slice(0, 240);
+    const ambiguitySignal = !/\bnot ambiguous\b/i.test(reason) &&
+        /\b(?:ambiguous|ambiguity|clarif(?:y|ication)|specify|which (?:bot|party member)|addressee)\b/i.test(reason);
+    // Small routers occasionally emit route=none while explicitly explaining
+    // that the addressee is ambiguous. Preserve the semantic decision rather
+    // than silently dropping a turn that the model itself says needs clarity.
+    if (route === 'none' && ambiguitySignal) route = 'clarify';
     const requestedId = data?.botId === null || data?.botId === undefined ? null : Number(data.botId);
     const candidate = route === 'bot'
         ? candidates.find((entry) => Number(entry.id) === requestedId) || null
         : null;
     if (route === 'bot' && !candidate) {
-        return {
+        const invalid = {
             ok: false,
             route: 'clarify',
             candidate: null,
@@ -67,16 +78,28 @@ function normalizeData(data, candidates) {
             reason: 'invalid_bot_id',
             data
         };
+        invalid.traceOutput = { ...invalid, candidate: null };
+        return invalid;
     }
-    return {
+    const normalized = {
         ok: true,
         route,
         candidate,
         intent: String(data?.intent || 'conversation').slice(0, 80),
         confidence: Math.max(0, Math.min(1, Number(data?.confidence || 0))),
-        reason: String(data?.reason || 'router_decision').slice(0, 240),
+        reason,
         data
     };
+    normalized.traceOutput = {
+        ok: normalized.ok,
+        route: normalized.route,
+        candidateId: candidate?.id ?? null,
+        intent: normalized.intent,
+        confidence: normalized.confidence,
+        reason: normalized.reason,
+        data: normalized.data
+    };
+    return normalized;
 }
 
 function prompt(input, cards) {
@@ -86,7 +109,7 @@ function prompt(input, cards) {
         selectedBotId: input.selectedBotId ?? null,
         inFlightBotId: input.dialogueState?.inFlightBotId ?? null,
         lastDeliveredBotId: input.dialogueState?.lastDeliveredBotId ?? null,
-        recentPartyTurns: (input.dialogueState?.recentTurns || []).slice(-6).map((turn) => ({
+        recentPartyTurns: partyTurns(input.dialogueState).slice(-6).map((turn) => ({
             role: turn.role,
             botId: turn.botId,
             text: String(turn.text || '').slice(0, 160)
@@ -114,7 +137,8 @@ async function route(input = {}) {
         channel: 'party_chat',
         playerId: botId,
         candidateCount: candidates.length,
-        model: cfg.model
+        model: cfg.model,
+        sessionId: `party-chat:${botId || 'unknown'}`
     };
 
     return LangfuseTracing.withObservation(
@@ -126,7 +150,7 @@ async function route(input = {}) {
                 config: {
                     ...cfg,
                     model: cfg.model,
-                    reasoningEffort: 'off',
+                    reasoningEffort: 'low',
                     temperature: ROUTER_TEMPERATURE,
                     maxTokens: ROUTER_MAX_TOKENS,
                     timeoutMs: 0
@@ -145,13 +169,16 @@ async function route(input = {}) {
                             'Choose at most one current candidate bot; never invent IDs.',
                             'Use route=party only when the message is genuinely for the whole party.',
                             'Use clarify when a human should clarify an ambiguous addressee.',
-                            'Use none only when no bot should answer.',
+                            'Never use none merely because the addressee is ambiguous; use clarify.',
+                            'Use none only for messages that genuinely need no bot response.',
+                            'For example, "who should answer this?" is clarify, not none.',
                             'Return only the required JSON object. Do not call tools and do not roleplay.'
                         ].join(' ')
                     },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                responseSchema: ROUTER_SCHEMA
+                responseSchema: ROUTER_SCHEMA,
+                repairSchema: true
             });
 
             if (!result?.ok) {

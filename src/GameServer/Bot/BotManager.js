@@ -729,6 +729,39 @@ const BotManager = {
     },
 
     handlePlayerSpeak(playerSession, data) {
+        const partyChannel = Number(data?.kind) === 3;
+        const llmEnabled = invoke('GameServer/Bot/AI/BotBrain').isEnabled();
+        if (!partyChannel || !llmEnabled) return this.handlePlayerSpeakNow(playerSession, data);
+
+        // Route one party-chat turn at a time per player. The main bot request
+        // may continue asynchronously, but its owner is established before the
+        // next ingress turn is resolved, so rapid continuations cannot overtake
+        // an outstanding party-router decision or escape to the spokesperson.
+        const previous = playerSession.partyDialogueIngressPromise || Promise.resolve();
+        const run = Promise.resolve(previous)
+            .catch(() => {})
+            .then(() => this.handlePlayerSpeakNow(playerSession, data));
+        let tracked;
+        const clear = () => {
+            if (playerSession.partyDialogueIngressPromise === tracked) {
+                delete playerSession.partyDialogueIngressPromise;
+            }
+        };
+        tracked = run.then(
+            (result) => {
+                clear();
+                return result;
+            },
+            (error) => {
+                clear();
+                throw error;
+            }
+        );
+        playerSession.partyDialogueIngressPromise = tracked;
+        return tracked;
+    },
+
+    handlePlayerSpeakNow(playerSession, data) {
         const rawText = data.text.trim();
         const text = rawText.toLowerCase();
         const player = playerSession.actor;
@@ -849,6 +882,91 @@ const BotManager = {
             });
         };
 
+        const deliverPartyClarification = async (candidate, matches = []) => {
+            if (!candidate?.session?.actor) return { ok: false, reason: 'missing_clarifier' };
+            const names = [...new Set((matches || [])
+                .map((match) => match?.name || match?.actor?.fetchName?.() || match?.session?.actor?.fetchName?.())
+                .filter(Boolean))];
+            const reply = names.length > 1
+                ? `Which one do you mean: ${names.join(' or ')}?`
+                : 'Which party member do you mean?';
+            const botSession = candidate.session;
+            const botId = botSession.actor.fetchId?.() || candidate.id || null;
+            const observation = LangfuseTracing.startObservation(
+                'party.dispatch',
+                { botId, message: rawText, action: 'clarify' },
+                { ...routeMetadata, botId, reason: 'router_clarify', deterministic: true },
+                'span'
+            );
+
+            PartyDialogueState.beginRequest(playerSession, botSession, {
+                reason: 'router_clarify',
+                text: rawText,
+                channel: 'party_chat',
+                spokespersonId: botId
+            });
+
+            let turn = null;
+            let persistenceError = null;
+            let persisted = false;
+            try {
+                const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+                turn = await BotConversationService.beginTurn({
+                    playerSession,
+                    botSession,
+                    text: rawText,
+                    channel: 'party_chat',
+                    source: 'party_router_clarification'
+                });
+            } catch (error) {
+                persistenceError = error;
+            }
+
+            try {
+                this.botTell(botSession, playerSession, reply);
+                PartyDialogueState.recordDeliveredReply(playerSession, botSession, reply, {
+                    turnId: turn?.turnId || `party-clarify:${botId}:${Date.now()}`,
+                    channel: 'party_chat'
+                });
+            } catch (error) {
+                PartyDialogueState.clearInFlight(playerSession, botSession);
+                observation?.end({ ok: false, delivered: false, clarification: true, error: error.message }, {
+                    level: 'ERROR',
+                    statusMessage: error.message
+                });
+                return { ok: false, started: false, delivered: false, clarification: true, reply, error: error.message };
+            }
+
+            if (turn) {
+                const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+                try {
+                    persisted = await BotConversationService.recordFallback({
+                        playerSession,
+                        botSession,
+                        turnId: turn.turnId,
+                        channel: 'party_chat',
+                        text: reply,
+                        reason: 'party_route_clarification'
+                    });
+                } catch (error) {
+                    persistenceError = persistenceError || error;
+                }
+            }
+
+            const result = {
+                ok: true,
+                started: false,
+                delivered: true,
+                clarification: true,
+                reply,
+                persisted: persisted === true
+            };
+            observation?.end(result, persistenceError
+                ? { level: 'WARNING', statusMessage: persistenceError.message }
+                : LangfuseTracing.observationStatus(result));
+            return result;
+        };
+
         if (llmEnabled && partyChannel && cheapRouterAvailable && !llmResponder && deterministicRoute && (
             deterministicRoute.status === 'needs_router' || deterministicRoute.status === 'ambiguous'
         )) {
@@ -890,7 +1008,12 @@ const BotManager = {
                         candidateId: chosen?.id || null,
                         reason: routerResult?.reason || reason
                     }, LangfuseTracing.observationStatus(routerResult));
-                    return chosen ? dispatchLLM(chosen, reason) : routerResult;
+                    if (routerResult?.route === 'clarify') {
+                        return chosen
+                            ? deliverPartyClarification(chosen, deterministicRoute.matches)
+                            : routerResult;
+                    }
+                    return chosen ? dispatchLLM(chosen.session, reason) : routerResult;
                 }).catch((error) => {
                     PartyDialogueState.clearRouter(playerSession);
                     PartyDialogueRouter.recordMetric({ route: 'none', reason: 'router_error' }, {
@@ -898,7 +1021,7 @@ const BotManager = {
                         dispatchCount: fallbackRoute.candidate ? 1 : 0
                     });
                     return fallbackRoute.candidate
-                        ? dispatchLLM(fallbackRoute.candidate, 'router_error_fallback')
+                        ? dispatchLLM(fallbackRoute.candidate.session, 'router_error_fallback')
                         : { ok: false, reason: 'router_error', error: error.message };
                 });
             }

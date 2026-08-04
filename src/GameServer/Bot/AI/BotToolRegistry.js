@@ -4,7 +4,9 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const definitions = new Map();
 const SOFT_FRESHNESS_ACTIONS = new Set([
-    'none', 'say', 'follow_player', 'hunt', 'rest'
+    'none', 'say', 'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest',
+    'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
+    'set_combat_stance'
 ]);
 
 function text(value, max = 160) {
@@ -65,11 +67,11 @@ function worldRevision(session) {
 
 function isPkLocked(session, action) {
     return session?.plan === 'pk_hunting' && new Set([
-        'follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+        'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
         'set_pull_policy', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
-        'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+        'propose_trade', 'give_resources', 'fetch_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
         'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]).has(action);
 }

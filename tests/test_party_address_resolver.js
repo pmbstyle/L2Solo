@@ -43,6 +43,16 @@ async function main() {
     result = PartyAddressResolver.resolve('the weather is nice today', [nice]);
     assert.strictEqual(result.status, 'none', 'common words must not become a bot address');
 
+    const caelan = candidate(6, 'Caelan');
+    result = PartyAddressResolver.resolve('Caelar, open trade.', [caelan, nice]);
+    assert.strictEqual(result.status, 'matched', 'a unique one-character name typo should still route');
+    assert.strictEqual(result.candidate, caelan);
+    assert.strictEqual(result.matchType, 'fuzzy_name');
+
+    const emrys = candidate(7, 'Emrys');
+    result = PartyAddressResolver.resolve('Emris stop pull and come here', [emrys, nice]);
+    assert.strictEqual(result.candidate, emrys);
+
     console.log('Party address resolver checks passed');
 }
 

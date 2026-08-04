@@ -2,6 +2,7 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const REASONING_EFFORTS = new Set(['off', 'low', 'medium', 'high']);
 const LUNA_MODEL = 'openai/gpt-5.6-luna';
+const GPT_OSS_120B_MODEL = 'openai/gpt-oss-120b';
 const MODEL_PROFILES = Object.freeze({
     [LUNA_MODEL]: Object.freeze({
         supportsTemperature: false,
@@ -12,6 +13,10 @@ const MODEL_PROFILES = Object.freeze({
             sort: 'price',
             allow_fallbacks: false
         })
+    }),
+    [GPT_OSS_120B_MODEL]: Object.freeze({
+        supportsTemperature: true,
+        completionLimitParam: 'max_tokens'
     })
 });
 

@@ -57,6 +57,32 @@ function isVocativeToken(tokens, index, source) {
     return /^[\s]*[,!:]/.test(after);
 }
 
+function editDistanceAtMostOne(left, right) {
+    if (left === right) return true;
+    if (Math.abs(left.length - right.length) > 1) return false;
+
+    let leftIndex = 0;
+    let rightIndex = 0;
+    let edits = 0;
+    while (leftIndex < left.length && rightIndex < right.length) {
+        if (left[leftIndex] === right[rightIndex]) {
+            leftIndex += 1;
+            rightIndex += 1;
+            continue;
+        }
+        edits += 1;
+        if (edits > 1) return false;
+        if (left.length > right.length) leftIndex += 1;
+        else if (right.length > left.length) rightIndex += 1;
+        else {
+            leftIndex += 1;
+            rightIndex += 1;
+        }
+    }
+    if (leftIndex < left.length || rightIndex < right.length) edits += 1;
+    return edits <= 1;
+}
+
 function resolve(text, candidates = [], options = {}) {
     const source = String(text || '');
     const tokens = textTokens(source);
@@ -127,11 +153,43 @@ function resolve(text, candidates = [], options = {}) {
         };
     }
 
+    // Party chat commonly contains a one-character typo in a name. Only accept
+    // it in a vocative position and only when it identifies one roster member;
+    // ordinary words elsewhere in the sentence must never become addresses.
+    const fuzzyMatches = [];
+    tokens.forEach((token, index) => {
+        if (token.value.length < minPrefixLength || !isVocativeToken(tokens, index, source)) return;
+        normalizedCandidates.forEach((entry) => {
+            if (entry.variants.some((variant) => editDistanceAtMostOne(token.value, variant.split(/\s+/g)[0]))) {
+                if (!fuzzyMatches.some((match) => match.id === entry.id)) fuzzyMatches.push(entry);
+            }
+        });
+    });
+    if (fuzzyMatches.length === 1) {
+        return {
+            status: 'matched',
+            candidate: fuzzyMatches[0].candidate,
+            matches: [fuzzyMatches[0].candidate],
+            alias: fuzzyMatches[0].name,
+            matchType: 'fuzzy_name'
+        };
+    }
+    if (fuzzyMatches.length > 1) {
+        return {
+            status: 'ambiguous',
+            candidate: null,
+            matches: fuzzyMatches.map((entry) => entry.candidate),
+            alias: null,
+            matchType: 'ambiguous_fuzzy_name'
+        };
+    }
+
     return { status: 'none', candidate: null, matches: [], alias: null, matchType: null };
 }
 
 module.exports = {
     MIN_PREFIX_LENGTH,
+    editDistanceAtMostOne,
     nameVariants,
     resolve
 };

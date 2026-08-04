@@ -81,9 +81,52 @@ async function main() {
         text: 'healer, keep us alive.',
         playerSession: player,
         sessions: [nice, healer],
-        kind: 3
+        kind: 3,
+        dialogueState: {
+            lastDeliveredBotId: nice.actor.fetchId(),
+            lastDeliveredAt: Date.now()
+        }
     });
-    assert.strictEqual(result.reason, 'role_healer');
+    assert.strictEqual(result.reason, 'role_healer', 'a textual role address must beat the active responder');
+    assert.strictEqual(result.candidate.session, healer);
+
+    result = PartyDialogueRouter.select({
+        text: 'we may need a healer, later in the dungeon',
+        playerSession: player,
+        sessions: [nice, healer],
+        kind: 3,
+        dialogueState: {
+            lastDeliveredBotId: nice.actor.fetchId(),
+            lastDeliveredAt: Date.now()
+        },
+        allowSpokespersonFallback: false
+    });
+    assert.strictEqual(result.status, 'needs_router', 'mentioning a role must not be treated as addressing that role');
+
+    result = PartyDialogueRouter.select({
+        text: 'what should we do at the next room?',
+        playerSession: player,
+        sessions: [nice, healer],
+        kind: 3,
+        dialogueState: {
+            lastDeliveredBotId: healer.actor.fetchId(),
+            lastDeliveredAt: Date.now()
+        },
+        allowSpokespersonFallback: false
+    });
+    assert.strictEqual(result.status, 'needs_router', 'fresh party topics must not stay pinned to the active responder');
+
+    result = PartyDialogueRouter.select({
+        text: 'is it better?',
+        playerSession: player,
+        sessions: [nice, healer],
+        kind: 3,
+        dialogueState: {
+            lastDeliveredBotId: healer.actor.fetchId(),
+            lastDeliveredAt: Date.now()
+        }
+    });
+    assert.strictEqual(result.reason, 'active_responder', 'a pronoun follow-up must beat a stale client selection');
     assert.strictEqual(result.candidate.session, healer);
 
     const arina = session(4, 'Arina');

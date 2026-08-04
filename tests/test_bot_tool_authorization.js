@@ -42,7 +42,7 @@ function main() {
         { applied: false, reason: 'pk_hunting_autonomous' }
     );
 
-    const session = { accountId: 'bot_stale_registry', plan: 'hunting', actor: actor() };
+    const session = { accountId: 'bot_stale_registry', plan: 'hunting', actor: actor(), dataSendToOthers() {} };
     const revision = BotAgentTools.worldRevision(session);
     session.plan = 'resting';
     const stale = BotAgentTools.execute(
@@ -51,8 +51,9 @@ function main() {
         [],
         { worldRevision: revision, conversationTurn: { turnId: 'stale-1' } }
     );
-    assert.deepStrictEqual(stale, { applied: false, reason: 'stale_world_state' });
-    assert.strictEqual(session.botStay, undefined, 'stale tool must not mutate session state');
+    assert.strictEqual(stale.applied, true, 'leader control commands should tolerate unrelated volatile world changes');
+    assert.strictEqual(stale.reason, 'stay_here');
+    assert.strictEqual(session.botStay, true);
 
     const unknown = BotAgentTools.execute(session, decision('invented_tool', 'unknown-1'), [], null);
     assert.deepStrictEqual(unknown, { applied: false, reason: 'unknown_tool' });

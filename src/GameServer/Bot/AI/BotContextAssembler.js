@@ -82,7 +82,11 @@ async function assemble(input = {}) {
     const requestContext = input.requestContext || {};
     const budget = Math.max(240, Number(input.budget || DEFAULT_BUDGET));
     const hardMaxTokens = Math.max(budget, Number(input.hardMaxTokens || HARD_MAX_TOKENS));
-    const itemIntent = BotBrainContext.textRequestsInventory(text);
+    const conversation = requestContext.conversation || null;
+    const recentTurns = conversation?.recentTurns || [];
+    const itemFollowup = /^(?:is (?:it|that)|are (?:they|those)|what about (?:it|that|them)|and (?:it|that|them)|which one)\b/i.test(String(text || '').trim()) &&
+        recentTurns.slice(-4).some((turn) => BotBrainContext.textRequestsInventory(turn?.text));
+    const itemIntent = BotBrainContext.textRequestsInventory(text) || itemFollowup;
     const skillIntent = textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|скилл|хил|баф|хаст|щит|майт|винд|спойл|свип/);
     let bot;
     try {
@@ -104,7 +108,6 @@ async function assemble(input = {}) {
         });
     }
 
-    const conversation = requestContext.conversation || null;
     const fragments = [
         {
             id: 'conversation_summary',
@@ -171,6 +174,7 @@ async function assemble(input = {}) {
             fragmentCount: selected.length,
             included: selected.map((fragment) => fragment.id),
             itemIntent,
+            itemFollowup,
             skillIntent,
             journalCount: journal.length,
             estimatedTokens: Math.min(hardMaxTokens, serializedCost)

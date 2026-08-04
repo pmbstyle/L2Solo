@@ -72,8 +72,8 @@ function beginEscape(session, bot, town) {
     }, SOE_CAST_MS);
 }
 
-function request(session, bot, BotAI, reason) {
-    if (session.partyCompanion === true && session.followPlayerSession) return 'companion';
+function request(session, bot, BotAI, reason, options = {}) {
+    if (session.partyCompanion === true && session.followPlayerSession && options.allowCompanion !== true) return 'companion';
 
     const pending = session.pendingTownTrip || {};
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
@@ -83,8 +83,10 @@ function request(session, bot, BotAI, reason) {
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
-    session.shoppingTarget = undefined;
-    BotAI.say(session, session.pendingTownTrip.reason || `Heading to ${town.name} to sell and restock.`);
+    if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
+    if (options.announce !== false) {
+        BotAI.say(session, session.pendingTownTrip.reason || `Heading to ${town.name} to sell and restock.`);
+    }
     session.pendingTownTrip = undefined;
 
     if (distance2d(bot, town) > SOE_DISTANCE) {

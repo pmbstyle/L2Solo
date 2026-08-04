@@ -52,6 +52,23 @@ async function main() {
             requestContext: { playerId: 10 }
         });
         assert.strictEqual(compactOptions.includeInventory, true, 'soulshots/bring must include inventory context');
+        const followup = await BotContextAssembler.assemble({
+            session: { actor: { fetchId: () => 20 } },
+            status: { available: true },
+            text: 'Is it better?',
+            requestContext: {
+                playerId: 10,
+                conversation: {
+                    recentTurns: [
+                        { role: 'player', channel: 'party_chat', text: 'Equip the Tarbar instead of the Bone Staff.' },
+                        { role: 'bot', channel: 'party_chat', text: 'I equipped it.' }
+                    ]
+                }
+            }
+        });
+        assert.strictEqual(followup.telemetry.itemFollowup, true, 'pronoun follow-up should inherit recent equipment context');
+        assert.strictEqual(compactOptions.includeEquipment, true);
+        assert.strictEqual(compactOptions.includeInventory, true);
         console.log('Bot context assembler checks passed');
     } finally {
         BotBrainContext.compactStatus = originalCompact;

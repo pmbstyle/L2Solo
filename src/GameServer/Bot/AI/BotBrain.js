@@ -129,6 +129,12 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 enum: ['', 'might', 'shield', 'haste', 'windwalk'],
                 description: 'Buff type for buff_target, or empty string.'
             },
+            regroupRadius: {
+                type: 'number',
+                minimum: 40,
+                maximum: 150,
+                description: 'Compact radius around the party leader for regroup_party; use 50 unless the player specifies another value.'
+            },
             pullMode: {
                 type: 'string',
                 enum: ['', 'auto', 'leader', 'bot', 'off'],
@@ -144,6 +150,17 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
                 minimum: 0,
                 maximum: 10000,
                 description: 'Bounded quantity for an outbound resource trade line.'
+            },
+            supplyItemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Item template self id from bot.inventory.shots for fetch_resources.'
+            },
+            supplyAmount: {
+                type: 'number',
+                minimum: 1,
+                maximum: 5000,
+                description: 'Exact new quantity to buy and deliver for fetch_resources.'
             },
             pullPermission: {
                 type: 'string',
@@ -226,6 +243,7 @@ function systemPrompt() {
         'Never invent a background request, ambient prompt, player intent, or private internal event.',
         'A player-facing reply must be grounded in the authoritative bot state and conversation context.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
+        'For a whole-party request such as everybody come closer or regroup, use regroup_party once. It controls all current companions server-side; never answer as if only this bot moved.',
         'For a non-party follow request, say that you are on your way unless the authoritative distance is already near the player; never claim to be beside them before arrival.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
@@ -238,6 +256,7 @@ function systemPrompt() {
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
         'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
+        'When the party leader explicitly asks the bot to go to town, buy new shots, bring them back, or specifies a quantity to purchase, use fetch_resources with bot.inventory.shots.selfId. This buys the requested new quantity even if the bot already owns some; do not substitute give_resources from existing stock. The server will return and open native trade later, so describe it as pending.',
         'For party candidate discovery, use the server-owned party.candidates list in the current payload and answer from it; do not assume a later tool result will be sent back to you in this turn.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
@@ -822,10 +841,20 @@ const BotBrain = {
         const finishTurn = () => {
             BotInferenceBudget.settle(reservation, providerResult?.usage);
             const finalTelemetry = providerResult?.llmTelemetry || providerResult?.telemetry || {};
+            const actionResult = providerResult?.actionResult || null;
+            const turnOutcome = providerResult?.ok === false
+                ? providerResult.reason
+                : actionResult
+                    ? providerResult.toolApplied === false
+                        ? `tool_rejected:${actionResult.reason || 'unknown'}`
+                        : actionResult.outcome === 'pending'
+                            ? `tool_pending:${actionResult.reason || providerResult.action || 'action'}`
+                            : `tool_applied:${actionResult.reason || providerResult.action || 'action'}`
+                    : finalTelemetry.outcome || 'success';
             turnPersistence.then(() => BotLLMTurnStore.finish({
                 turnId,
-                ok: providerResult?.ok !== false,
-                outcome: providerResult?.ok === false ? providerResult.reason : finalTelemetry.outcome,
+                ok: providerResult?.ok !== false && providerResult?.toolApplied !== false,
+                outcome: turnOutcome,
                 model: finalTelemetry.model || cfg.model,
                 traceId: finalTelemetry.traceId || null,
                 usage: providerResult?.usage || finalTelemetry.usage,
@@ -836,7 +865,9 @@ const BotBrain = {
                     traceId: finalTelemetry.traceId || null,
                     observationId: finalTelemetry.observationId || null,
                     finishReason: finalTelemetry.finishReason || null,
-                    status: finalTelemetry.status || null
+                    status: finalTelemetry.status || null,
+                    toolOutcome: actionResult?.outcome || null,
+                    toolReason: actionResult?.reason || null
                 }
             })).catch(() => {});
             session.lastBrainBudget = BotInferenceBudget.status(session);
