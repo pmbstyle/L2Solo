@@ -711,6 +711,26 @@ function deliverPurchasedResources(session, bot, playerSession) {
         recordRoleDecision(session, bot, 'deliver_resources', 'return_to_leader', { targetId: delivery.playerId });
         return true;
     }
+    let partyThreat = null;
+    try { partyThreat = PartyAwareness.findThreatTargetingParty(playerSession); } catch (_) { /* lightweight test/session */ }
+    const leaderBusy = !!(
+        playerSession.actor.state?.fetchHits?.() ||
+        playerSession.actor.state?.fetchCasts?.() ||
+        playerSession.actor.fetchDestId?.()
+    );
+    if (partyThreat || leaderBusy) {
+        const now = Date.now();
+        if (now - Number(session.resourceTradeWaitAnnouncedAt || 0) > 15000) {
+            session.resourceTradeWaitAnnouncedAt = now;
+            BotPartyChat.announce(session, {
+                priority: 'informational',
+                key: `resource-delivery-wait:${bot.fetchId()}:${delivery.purchasedAt}`,
+                templates: ['I have the supplies. I will open trade as soon as the party is safe.']
+            });
+        }
+        recordRoleDecision(session, bot, 'deliver_resources', 'wait_for_safe_trade', { targetId: delivery.playerId });
+        return true;
+    }
     const trade = invoke('GameServer/Bot/BotTradeService').startBotTradeWithOffer(
         session,
         playerSession,

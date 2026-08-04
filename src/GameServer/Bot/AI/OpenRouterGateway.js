@@ -24,7 +24,7 @@ const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
     model: LUNA_MODEL,
-    partyRouterModel: '',
+    partyRouterModel: LUNA_MODEL,
     temperature: 0.35,
     reasoningEffort: 'low',
     maxConcurrentRequests: 32,

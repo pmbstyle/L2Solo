@@ -84,9 +84,19 @@ function visibleRealPlayers(session, bot, cfg = config(), requestContext = null)
 }
 
 function candidateSpots(status) {
-    if (!status || !status.available || status.mode !== 'hunting') return [];
+    if (!status || !status.available) return [];
 
-    return SpotService.ensureIndexed()
+    let indexed;
+    try {
+        indexed = SpotService.ensureIndexed();
+    } catch (_) {
+        // Lightweight chat fixtures and startup windows may not have the
+        // world spawn catalog loaded yet.  An empty candidate list is safer
+        // than making the whole dialogue turn fail.
+        return [];
+    }
+
+    return indexed
         .map((spot) => ({
             id: spot.id,
             name: spot.name,
@@ -126,8 +136,16 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
             },
             buffType: {
                 type: 'string',
-                enum: ['', 'might', 'shield', 'haste', 'windwalk'],
-                description: 'Buff type for buff_target, or empty string.'
+                description: 'Exact learned friendly buff effect or name from bot.skills.support.availableBuffs for buff_target.'
+            },
+            buffPolicyType: {
+                type: 'string',
+                description: 'Exact learned friendly buff effect or name for set_buff_policy.'
+            },
+            buffPolicyMode: {
+                type: 'string',
+                enum: ['', 'allow', 'deny', 'clear'],
+                description: 'Temporary support rotation policy for set_buff_policy.'
             },
             regroupRadius: {
                 type: 'number',
@@ -154,7 +172,11 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
             supplyItemId: {
                 type: 'number',
                 minimum: 0,
-                description: 'Item template self id from bot.inventory.shots for fetch_resources.'
+                description: 'Exact item template self id from the server-owned supply catalog for fetch_resources.'
+            },
+            supplyItemName: {
+                type: 'string',
+                description: 'Exact item name from the player request when the compact catalog does not contain the item; the server resolves it against all NPC-listed items.'
             },
             supplyAmount: {
                 type: 'number',
@@ -243,10 +265,11 @@ function systemPrompt() {
         'Never invent a background request, ambient prompt, player intent, or private internal event.',
         'A player-facing reply must be grounded in the authoritative bot state and conversation context.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
-        'For a whole-party request such as everybody come closer or regroup, use regroup_party once. It controls all current companions server-side; never answer as if only this bot moved.',
+        'For a whole-party request such as everybody come closer or regroup, use regroup_party once. For everyone stay here, use stay_party once. Both control all current companions server-side; never answer as if only this bot moved.',
         'For a non-party follow request, say that you are on your way unless the authoritative distance is already near the player; never claim to be beside them before arrival.',
         'For buff_target and heal_target, choose a visible player and let the server validate class, learned skill, MP, range, and safety.',
         'Do not claim that buffs or heals are ready in a plain chat reply. Use buff_target or heal_target; only the validated server action may confirm a cast.',
+        'When the player asks to stop, allow, or exclude one learned buff from the support rotation, use set_buff_policy with the exact effect/name from bot.skills.support.availableBuffs and mode deny, allow, or clear. Do not claim a rotation changed after a plain say.',
         'Party pull, skill preference, stance, and equipment tools are temporary hot-session controls. They require the current human party leader; never invent authority.',
         'Pull permission, pull mode, and assigned puller are separate. Unassigning one puller returns to the existing automatic policy and does not globally disable pulling.',
         'When the player asks to stop pulling and return, prefer stop_pulling_and_return so both server mutations are applied as one bounded workflow.',
@@ -256,7 +279,7 @@ function systemPrompt() {
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
         'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
-        'When the party leader explicitly asks the bot to go to town, buy new shots, bring them back, or specifies a quantity to purchase, use fetch_resources with bot.inventory.shots.selfId. This buys the requested new quantity even if the bot already owns some; do not substitute give_resources from existing stock. The server will return and open native trade later, so describe it as pending.',
+        'When the party leader explicitly asks the bot to go to town and buy a new item, use fetch_resources with the exact selfId from the compact server-owned supply catalog (entries are [selfId, name, price, town]) and the requested quantity. If the compact catalog does not show the item, pass its exact requested name in supplyItemName; the server resolves it against the full NPC catalog. This buys a new quantity even if the bot already owns some; do not substitute give_resources from existing stock. If the server reports insufficient Adena, say how much is needed and wait for the player to transfer Adena before retrying. The server returns beside the leader and opens native trade only when the party is safe, so describe it as pending.',
         'For party candidate discovery, use the server-owned party.candidates list in the current payload and answer from it; do not assume a later tool result will be sent back to you in this turn.',
         'Never invent unavailable actions, players, items, or spells.'
     ].join(' ');
@@ -433,11 +456,36 @@ function isPartyCandidateRequest(text) {
 function isPartyRequest(text) {
     const value = String(text || '');
     if (isPartyCandidateRequest(value)) return false;
-    return /\b(party|group|team|join|invite)\b|пати|групп|команд|присоедин/i.test(value);
+    // Membership requests are distinct from ordinary party context such as
+    // “find a better hunting spot for this party” or “the party is in town”.
+    // Applying membership policy to those messages silently replaced the LLM
+    // answer with “I am already with you”.
+    return /\b(?:join|invite|join\s+(?:our|the)\s+(?:party|group|team)|party\s+up|group\s+up|add\s+me|take\s+me|let\s+me\s+join|(?:wanna|want(?:\s+to)?|can\s+i|could\s+i|need)\s+(?:join|party|group|team))\b|пати\s*(?:вступ|присоедин|инвайт)|присоедин/i.test(value);
 }
 
 function applyPartyPolicy(session, decision, requestContext, text) {
-    if (!isPartyRequest(text) || !requestContext?.playerSession) return decision;
+    if (!requestContext?.playerSession) return decision;
+    const value = String(text || '').toLowerCase();
+    const group = /\b(?:everyone|everybody|all|guys|bots|companions|party|team)\b/.test(value);
+    if (group && /\b(?:stay|wait|hold|stop)\b/.test(value)) {
+        return {
+            ...decision,
+            action: 'stay_party',
+            reply: String(decision.reply || '').trim() || 'Everyone hold here.',
+            reason: 'party_policy:whole_party_hold',
+            confidence: Math.max(0.95, Number(decision.confidence || 0))
+        };
+    }
+    if (group && /\b(?:come|closer|regroup|follow)\b/.test(value)) {
+        return {
+            ...decision,
+            action: 'regroup_party',
+            reply: String(decision.reply || '').trim() || 'Regrouping around you.',
+            reason: 'party_policy:whole_party_regroup',
+            confidence: Math.max(0.95, Number(decision.confidence || 0))
+        };
+    }
+    if (!isPartyRequest(text)) return decision;
     if (session.partyCompanion === true && session.followPlayerSession === requestContext.playerSession) {
         return {
             ...decision,

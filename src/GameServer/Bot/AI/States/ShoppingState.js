@@ -122,23 +122,14 @@ module.exports = {
         const companionErrand = session.companionShopping;
 
         if (companionErrand?.kind === 'player_resource_purchase') {
-            const current = bot.backpack?.fetchItemFromSelfId?.(companionErrand.itemId);
-            const currentAmount = Number(current?.fetchAmount?.() || 0);
-            const plan = {
-                kind: ShotStock.kindForSelfId(companionErrand.itemId),
-                selfId: Number(companionErrand.itemId),
-                name: companionErrand.itemName,
-                price: Number(companionErrand.unitPrice)
-            };
+            let deliveryReady = false;
             try {
-                const purchased = await ShotStock.purchaseActorRestock(bot, {
-                    plan,
-                    targetAmount: currentAmount + Number(companionErrand.amount)
-                });
+                const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
+                const purchased = await BotSupplyErrand.purchaseAtDestination(bot, companionErrand);
                 if (!purchased.ok || Number(purchased.delta) !== Number(companionErrand.amount)) {
                     throw new Error(purchased.reason || 'purchase_delta_mismatch');
                 }
-                const purchasedItem = bot.backpack.fetchItemFromSelfId(companionErrand.itemId);
+                const purchasedItem = purchased.item || bot.backpack.fetchItemFromSelfId(companionErrand.itemId);
                 session.pendingResourceDelivery = {
                     playerSession: companionErrand.playerSession,
                     playerId: companionErrand.playerId,
@@ -148,6 +139,7 @@ module.exports = {
                     amount: Number(companionErrand.amount),
                     purchasedAt: Date.now()
                 };
+                deliveryReady = true;
                 session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
                 BotAI.say(session, `Bought ${purchased.delta}x ${companionErrand.itemName}. Returning with them now.`);
                 Promise.resolve(BotEventJournal.record({
@@ -165,11 +157,14 @@ module.exports = {
                     }
                 })).catch(() => {});
             } catch (error) {
+                session.pendingResourceDelivery = undefined;
                 session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
-                BotAI.say(session, 'I could not complete that supply purchase. I am returning now.');
+                BotAI.say(session, error?.message === 'not_enough_adena'
+                    ? 'I am short on Adena for that purchase. Give me some and I will try again.'
+                    : 'I could not complete that supply purchase. I am returning now.');
                 utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
             }
-            this.scheduleResourceReturn(session, bot, BotAI);
+            this.scheduleResourceReturn(session, bot, BotAI, { deliveryReady });
             return;
         }
 
@@ -344,7 +339,7 @@ module.exports = {
         }, 9000);
     },
 
-    scheduleResourceReturn(session, bot, BotAI) {
+    scheduleResourceReturn(session, bot, BotAI, options = {}) {
         setTimeout(() => {
             const resume = session.resumeAfterShopping;
             const leaderSession = resume?.followPlayerSession;
@@ -358,12 +353,25 @@ module.exports = {
             session.preShopLocation = undefined;
             if (session.plan === 'following') {
                 const leader = leaderSession.actor;
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: { locX: leader.fetchLocX(), locY: leader.fetchLocY(), locZ: leader.fetchLocZ() }
-                });
+                const destination = {
+                    locX: leader.fetchLocX() + 80,
+                    locY: leader.fetchLocY(),
+                    locZ: leader.fetchLocZ()
+                };
+                // A requested supply run is intentionally invisible while it
+                // is away. Reappear in a valid companion slot instead of
+                // making the player watch a long return route.
+                bot.setLocXYZ?.(destination);
+                session.supplyErrandHidden = false;
+                const Response = invoke('GameServer/Network/Response');
+                session.dataSendToOthers?.(Response.charInfo(bot), bot);
+                session.dataSendToOthers?.(Response.relationChanged(bot), bot);
+                BotAI.say(session, options.deliveryReady === true
+                    ? 'I am back with the new supplies. I will open trade when the party is safe.'
+                    : 'I am back, but I could not complete that purchase.');
             } else {
                 session.pendingResourceDelivery = undefined;
+                session.supplyErrandHidden = false;
             }
         }, 1000);
     }

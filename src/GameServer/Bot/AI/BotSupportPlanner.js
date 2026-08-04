@@ -1,5 +1,6 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 const CAST_RESERVATION_MS = 5000;
@@ -41,6 +42,9 @@ const INDIVIDUAL_BUFF_TARGET_ROLES = {
 
 function supportSkills(actor) {
     const skills = actor?.skillset?.fetchSkills?.() || actor?.skillset?.skills || [];
+    const overlay = HotBotPolicyOverlay.get(actor?.session);
+    const excluded = new Set(overlay?.buffPolicy?.excluded || []);
+    const allowed = new Set(overlay?.buffPolicy?.allowed || []);
     return skills
         .filter((skill) => skill && !skill.fetchPassive?.())
         .filter((skill) => {
@@ -51,9 +55,12 @@ function supportSkills(actor) {
             // the support planner request it continuously and pauses pulling.
             const skillType = skill.fetchSkillType?.();
             const periodicHeal = skillType === 'hot' || skillType === 'healHot' || skillType === 'manaHot';
+            const effect = String(semantic?.effect || '').toLowerCase();
             return !periodicHeal &&
                 semantic?.effectType === 'buff' &&
                 !EXCLUDED_PARTY_BUFF_EFFECTS.has(semantic.effect) &&
+                !excluded.has(effect) &&
+                (allowed.size === 0 || allowed.has(effect)) &&
                 ['friendly', 'ally', 'party'].includes(semantic.target);
         });
 }

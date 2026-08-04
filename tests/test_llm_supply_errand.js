@@ -7,10 +7,13 @@ const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
-const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const BotSupplyErrandModule = invoke('GameServer/Bot/AI/BotSupplyErrand');
+const TradeService = invoke('GameServer/Bot/TradeService');
+const DataCache = invoke('GameServer/DataCache');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 
 function item(id, selfId, amount, name = 'Soulshot: D-grade') {
     let count = amount;
@@ -25,9 +28,10 @@ function item(id, selfId, amount, name = 'Soulshot: D-grade') {
 
 async function main() {
     const originals = {
-        npcOffers: MarketOpportunity.npcOffers,
+        bestSupplyOffer: MarketOpportunity.bestSupplyOffer,
         request: BotTownTravel.request,
-        purchase: ShotStock.purchaseActorRestock,
+        purchase: BotSupplyErrandModule.purchaseAtDestination,
+        tradePurchase: TradeService.buyFromStore,
         scheduleReturn: ShoppingState.scheduleResourceReturn,
         trade: BotTradeService.startBotTradeWithOffer,
         inferRole: BotRoles.inferRole,
@@ -55,16 +59,27 @@ async function main() {
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
         unselect() {},
+        setLocXYZ() {},
+        dataSendToOthers() {},
         moveTo() {},
         backpack: { fetchItemFromSelfId: (selfId) => bySelfId.get(Number(selfId)) },
         automation: { abortAll() {} },
         state: { fetchTowards: () => false }
     };
     const session = { accountId: 'bot_1', actor: bot, partyCompanion: true, followPlayerSession: player };
+    const originalItems = DataCache.items;
     try {
-        MarketOpportunity.npcOffers = () => [{ price: 17, itemName: 'Soulshot: D-grade' }];
+        DataCache.items = [{ selfId: 1463, template: { name: 'Soulshot: D-grade' }, etc: { stackable: true } }];
+        assert.strictEqual(MarketOpportunity.resolveSupplyItem('Soulshots D grade').selfId, 1463);
+        assert.strictEqual(MarketOpportunity.normalizeItemLookup('D-grade soulshots'), 'soulshot_d_grade');
+        assert.strictEqual(MarketOpportunity.normalizeItemLookup('No-grade soulshots'), 'soulshot_no_grade');
+        MarketOpportunity.bestSupplyOffer = () => ({
+            sourceType: 'npc', sourceId: 7004, sourceName: 'D-grade grocer', town: 'Talking Island',
+            selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true
+        });
         BotTownTravel.request = (_session, _bot, _ai, _reason, options) => {
             assert.strictEqual(options.allowCompanion, true);
+            assert.strictEqual(options.forceScrollOfEscape, true);
             return 'walk';
         };
         const requested = BotSupplyErrand.request(session, player, 1463, 200);
@@ -72,10 +87,12 @@ async function main() {
         assert.strictEqual(requested.amount, 200);
         assert.strictEqual(session.companionShopping.amount, 200);
 
-        ShotStock.purchaseActorRestock = async (_actor, options) => {
-            assert.strictEqual(options.targetAmount, 1191, 'purchase target must add the requested amount to existing stock');
-            shots.setAmount(options.targetAmount);
-            return { ok: true, delta: 200, cost: 3400 };
+        TradeService.buyFromStore = async (_actor, store, selfId, amount) => {
+            assert.strictEqual(store.items[0].selfId, 1463);
+            assert.strictEqual(selfId, 1463);
+            assert.strictEqual(amount, 200);
+            shots.setAmount(1191);
+            return { qty: 200, totalAdena: 3400, name: 'Soulshot: D-grade' };
         };
         ShoppingState.scheduleResourceReturn = () => {};
         await ShoppingState.sellAndRestock(session, bot, null, { say() {} });
@@ -92,14 +109,40 @@ async function main() {
         assert.strictEqual(FollowingState.deliverPurchasedResources(session, bot, player), true);
         assert.deepStrictEqual(offered, { objectId: 11, amount: 200 });
         assert.strictEqual(session.pendingResourceDelivery, undefined);
+
+        // An errand request must not cancel an active fight just because the
+        // player asked at the wrong moment.
+        session.companionShopping = undefined;
+        session.pendingResourceDelivery = undefined;
+        session.currentTargetId = 777;
+        bot.state.fetchHits = () => true;
+        const duringFight = BotSupplyErrand.request(session, player, 1463, 1);
+        assert.strictEqual(duringFight.reason, 'unsafe_combat_state');
+        assert.strictEqual(session.currentTargetId, 777);
+        bot.state.fetchHits = () => false;
+        session.currentTargetId = undefined;
+
+        // The player-facing rejection includes the amount to transfer, so a
+        // failed affordability check is actionable rather than generic.
+        const affordability = BotAgentTools.rejectionReply({
+            reason: 'not_enough_adena',
+            cost: 3400,
+            adena: 100,
+            itemName: 'Soulshot: D-grade'
+        });
+        assert(affordability.includes('3,400'));
+        assert(affordability.includes('100'));
+        assert(affordability.includes('Transfer Adena'));
     } finally {
-        MarketOpportunity.npcOffers = originals.npcOffers;
+        MarketOpportunity.bestSupplyOffer = originals.bestSupplyOffer;
         BotTownTravel.request = originals.request;
-        ShotStock.purchaseActorRestock = originals.purchase;
+        BotSupplyErrandModule.purchaseAtDestination = originals.purchase;
+        TradeService.buyFromStore = originals.tradePurchase;
         ShoppingState.scheduleResourceReturn = originals.scheduleReturn;
         BotTradeService.startBotTradeWithOffer = originals.trade;
         BotRoles.inferRole = originals.inferRole;
         BotPartyChat.announce = originals.announce;
+        DataCache.items = originalItems;
     }
     console.log('LLM supply errand checks passed');
 }

@@ -602,6 +602,34 @@ function beginRegroup(leaderSession, options = {}) {
     };
 }
 
+function holdParty(leaderSession) {
+    const leader = leaderSession?.actor;
+    if (!leader) return { ok: false, reason: 'missing_party_leader' };
+    const members = membersForLeader(leaderSession)
+        .filter((member) => !['shopping', 'getting_buffed', 'merchant'].includes(member.plan));
+    if (!members.length) return { ok: false, reason: 'no_party_companions' };
+
+    // A hold order is a per-member position anchor. It intentionally does not
+    // change the configured pull policy permanently; regroup/follow can clear
+    // the temporary order later.
+    delete leaderSession.partyRegroupDirective;
+    leaderSession.partyPullState = {};
+    members.forEach((member) => {
+        cancelCompanionAction(member);
+        member.botStay = true;
+        member.stayLocation = {
+            locX: member.actor.fetchLocX(),
+            locY: member.actor.fetchLocY(),
+            locZ: member.actor.fetchLocZ()
+        };
+        member.currentTargetId = undefined;
+        member.lastFollowMoveTarget = null;
+        member.plan = 'following';
+        member.actor.unselect?.();
+    });
+    return { ok: true, affected: members.length };
+}
+
 function partyActorsForLeader(leaderSession) {
     return [leaderSession?.actor, ...membersForLeader(leaderSession).map((memberSession) => memberSession.actor)]
         .filter((actor) => actor?.fetchIsOnline?.() !== false);
@@ -742,6 +770,7 @@ const PartyCompanionService = {
     formationTargetFor,
 
     beginRegroup,
+    holdParty,
 
     regroupActive,
 

@@ -67,7 +67,8 @@ function worldRevision(session) {
 
 function isPkLocked(session, action) {
     return session?.plan === 'pk_hunting' && new Set([
-        'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+        'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+        'set_buff_policy',
         'set_pull_policy', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',

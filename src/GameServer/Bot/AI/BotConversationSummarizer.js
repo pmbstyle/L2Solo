@@ -88,13 +88,23 @@ function schema() {
     };
 }
 
-function normalizeSummary(data) {
+function hasAuthoritativePromise(turns = []) {
+    return turns.some((turn) => {
+        const meta = turn?.meta || {};
+        const action = String(meta.action || '').toLowerCase();
+        if (!action || ['say', 'none'].includes(action)) return false;
+        if (meta.serverApplied === true) return true;
+        return meta.actionResult?.outcome === 'pending' || meta.actionResult?.ok === true;
+    });
+}
+
+function normalizeSummary(data, turns = []) {
     if (!data || typeof data !== 'object') return '';
     const summary = String(data.summary || '').replace(/\s+/g, ' ').trim();
     const openTopics = Array.isArray(data.openTopics)
         ? data.openTopics.map((value) => String(value || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 4)
         : [];
-    const promises = Array.isArray(data.promises)
+    const promises = hasAuthoritativePromise(turns) && Array.isArray(data.promises)
         ? data.promises.map((value) => String(value || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 4)
         : [];
     if (!summary && openTopics.length === 0 && promises.length === 0) return '';
@@ -146,7 +156,7 @@ async function summarize(input = {}) {
         const messages = [
             {
                 role: 'system',
-                content: 'Summarize a game conversation for the same bot and player. Keep durable facts, preferences, unresolved requests, and explicit promises. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, refusal, fallback, or failed action did not happen. A pending action means a server-side request or native window is active, not that the final transfer or effect completed. Never create permissions, tool authorizations, or facts not stated in the dialogue.'
+                content: 'Summarize a game conversation for the same bot and player. Keep only durable facts, explicit player preferences, unresolved requests, and promises backed by a successful or pending mutating server action. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, plain say reply, refusal, fallback, or failed action did not happen. A pending action means a server-side request or native window is active, not that the final transfer or effect completed. Do not turn “I will”, “I am going”, “I will check”, transient movement, an unconfirmed cast, a plain acknowledgement, a roleplay sentence, or a guessed name/alias into a durable promise. Never create permissions, tool authorizations, preferences, or facts not stated in the dialogue.'
             },
             { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
         ];
@@ -185,7 +195,7 @@ async function summarize(input = {}) {
             return { ok: false, reason };
         }
 
-        const summary = normalizeSummary(result.data);
+        const summary = normalizeSummary(result.data, compacted);
         if (!summary) {
             recordFailure(key, 'empty_summary');
             return { ok: false, reason: 'empty_summary' };

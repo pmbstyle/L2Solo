@@ -26,12 +26,29 @@ function clearCombatTrip(session) {
     session.townEscape = undefined;
 }
 
+function revealInterruptedSupplyErrand(session, bot) {
+    if (session?.supplyErrandHidden !== true) return;
+    session.supplyErrandHidden = false;
+    session.dataSendToOthers?.(ServerResponse.charInfo(bot), bot);
+    session.dataSendToOthers?.(ServerResponse.relationChanged(bot), bot);
+    // Do not leave a half-started errand blocking the next player request.
+    // The combat state remains authoritative; the player can ask again once
+    // the party is safe.
+    if (session.companionShopping?.kind === 'player_resource_purchase') {
+        session.companionShopping = undefined;
+        session.shoppingTarget = undefined;
+        session.resumeAfterShopping = undefined;
+        session.preShopLocation = undefined;
+    }
+}
+
 function interruptEscape(session, bot) {
     if (!session.townEscape) return false;
     session.townEscape = undefined;
     session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now() };
     session.plan = 'hunting';
     bot.state.setCasts(false);
+    revealInterruptedSupplyErrand(session, bot);
     return true;
 }
 
@@ -45,7 +62,9 @@ function beginEscape(session, bot, town) {
 
     session.townEscape = { token, town: town.name, startedAt: Date.now(), completesAt: Date.now() + SOE_CAST_MS };
     bot.state.setCasts(true);
-    session.dataSendToMeAndOthers?.(ServerResponse.skillStarted(bot, bot.fetchId(), skill), bot);
+    if (session.supplyErrandHidden !== true) {
+        session.dataSendToMeAndOthers?.(ServerResponse.skillStarted(bot, bot.fetchId(), skill), bot);
+    }
 
     setTimeout(() => {
         if (session.townEscape?.token !== token) return;
@@ -53,13 +72,23 @@ function beginEscape(session, bot, town) {
             bot.state.setCasts(false);
             session.townEscape = undefined;
             session.plan = 'hunting';
+            revealInterruptedSupplyErrand(session, bot);
             return;
         }
 
         bot.state.setCasts(false);
         session.townEscape = undefined;
-        const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-        TeleportTo(session, bot, { locX: town.x, locY: town.y, locZ: town.z });
+        const destination = { locX: town.x, locY: town.y, locZ: town.z };
+        if (session.supplyErrandHidden === true) {
+            // A companion supply run is a cold-style server operation.  The
+            // player sees the request and the eventual return, never a bot
+            // walking across the world or teleporting through intermediate
+            // locations.
+            bot.setLocXYZ?.(destination);
+        } else {
+            const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+            TeleportTo(session, bot, destination);
+        }
         Promise.resolve(BotEventJournal.record({
             botId: bot.fetchId(),
             eventType: 'travel_complete',
@@ -79,7 +108,7 @@ function request(session, bot, BotAI, reason, options = {}) {
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
     if (inCombat(session, bot)) return 'deferred';
 
-    const town = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
+    const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
@@ -89,8 +118,10 @@ function request(session, bot, BotAI, reason, options = {}) {
     }
     session.pendingTownTrip = undefined;
 
-    if (distance2d(bot, town) > SOE_DISTANCE) {
-        BotAI.say(session, `${town.name} is far away. Using a Scroll of Escape.`);
+    if (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE) {
+        BotAI.say(session, options.forceScrollOfEscape === true
+            ? `Using a Scroll of Escape to reach ${town.name}.`
+            : `${town.name} is far away. Using a Scroll of Escape.`);
         beginEscape(session, bot, town);
         return 'escape';
     }

@@ -55,12 +55,12 @@ function isCompanion(session, playerSession) {
 }
 
 function isGroupAddress(text) {
-    return /\b(?:bot|bots|guys|party|team|help|everyone|anyone|somebody|someone)\b/i.test(String(text || ''));
+    return /\b(?:bot|bots|guys|party|team|help|everyone|everybody|anyone|somebody|someone|companions|members|all|each)\b/i.test(String(text || ''));
 }
 
 function isContinuationMessage(text) {
     const value = String(text || '').trim().toLowerCase();
-    return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about|is (?:it|that)|are (?:they|those)|(?:what|which) (?:weapon|armor|item|skill|buff|price)|but\b|and\b)/.test(value);
+    return /^(?:yes|yeah|yep|sure|no|nope|ok|okay|alright|right|exactly|do it|go ahead|continue|sounds good|got it|thanks|thank you|and then|what about|is (?:it|that)|are (?:they|those)|(?:what|which) (?:weapon|armor|item|skill|buff|price)|(?:can|could|would) you\b|but\b|and\b)/.test(value);
 }
 
 function roleFor(session, actor) {

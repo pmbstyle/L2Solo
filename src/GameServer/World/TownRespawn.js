@@ -124,6 +124,7 @@ function getChaoticRespawnCoords(locX, locY, random = Math.random) {
 }
 
 module.exports = {
+    towns: TOWNS,
     getClosestTown,
     getRegionGroup,
     getRespawnCoords,

@@ -33,8 +33,24 @@ function healSkill(actor) {
 }
 
 function buffSkill(actor, buffType) {
-    const buff = BuffCatalog.byTypeOrKey(buffType);
-    return buff ? learnedSkill(actor, buff.id) : null;
+    const requested = String(buffType || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const buff = BuffCatalog.byTypeOrKey(requested);
+    const direct = buff ? learnedSkill(actor, buff.id) : null;
+    if (direct) return direct;
+    return supportBuffs(actor).find((entry) => entry.type === requested || entry.key === requested || entry.name.toLowerCase() === String(buffType || '').trim().toLowerCase())?.skill || null;
+}
+
+function supportBuffs(actor) {
+    return activeSkills(actor)
+        .map((skill) => ({ skill, semantic: skill.fetchSemantic?.() || {} }))
+        .filter(({ skill, semantic }) => semantic.effectType === 'buff' && ['friendly', 'ally', 'party'].includes(semantic.target || skill.fetchTargetKind?.()))
+        .map(({ skill, semantic }) => ({
+            type: String(semantic.effect || '').toLowerCase(),
+            key: String(semantic.effect || '').toLowerCase(),
+            name: skill.model?.name || semantic.effect || `Skill ${skill.fetchSelfId?.()}`,
+            skill
+        }))
+        .filter((entry) => entry.type);
 }
 
 function manaRechargeSkill(actor) {
@@ -49,6 +65,7 @@ function manaRechargeSkill(actor) {
 module.exports = {
     aggressionSkill: (actor) => learnedSkill(actor, 28),
     buffSkill,
+    supportBuffs,
     healSkill,
     manaRechargeSkill,
     learnedSkill

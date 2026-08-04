@@ -774,7 +774,7 @@ const BotManager = {
         const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
         const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
         const llmEnabled = BotBrain.isEnabled();
-        const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+        const groupAddress = /\b(bot|bots|guys|party|team|help|everyone|everybody|companions|all)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
         const partyChannel = Number(data.kind) === 3;
 
         let llmResponder = null;

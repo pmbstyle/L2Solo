@@ -8,6 +8,7 @@ const MIN_TTL_MS = 5 * 1000;
 const MAX_TTL_MS = 30 * 60 * 1000;
 const MAX_SKILL_PRIORITIES = 12;
 const MAX_SKILL_WEIGHT = 50;
+const MAX_BUFF_POLICIES = 24;
 const STANCES = new Set(['balanced', 'aggressive', 'defensive', 'ranged']);
 
 function now() {
@@ -80,6 +81,21 @@ function normalizeStance(value) {
     return STANCES.has(stance) ? stance : null;
 }
 
+function normalizeBuffTypes(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.map((entry) => String(entry || '').trim().toLowerCase().replace(/\s+/g, '_')))]
+        .filter(Boolean)
+        .slice(0, MAX_BUFF_POLICIES);
+}
+
+function normalizeBuffPolicy(value) {
+    if (!value || typeof value !== 'object') return { excluded: [], allowed: [] };
+    return {
+        excluded: normalizeBuffTypes(value.excluded),
+        allowed: normalizeBuffTypes(value.allowed)
+    };
+}
+
 function normalizePull(value) {
     if (!value || typeof value !== 'object') return null;
     const permission = ['allow', 'deny'].includes(value.permission) ? value.permission : null;
@@ -119,6 +135,7 @@ function set(session, patch = {}, context = {}) {
         expiresAt: now() + ttl(patch.ttlMs ?? context.ttlMs ?? (previous.expiresAt ? previous.expiresAt - now() : DEFAULT_TTL_MS)),
         skillPriorities: normalizePriorities(patch.skillPriorities ?? previous.skillPriorities),
         combatStance: normalizeStance(patch.combatStance ?? previous.combatStance),
+        buffPolicy: normalizeBuffPolicy(patch.buffPolicy ?? previous.buffPolicy),
         pull: normalizePull(patch.pull ?? previous.pull)
     };
 
@@ -133,6 +150,7 @@ function set(session, patch = {}, context = {}) {
     // An explicitly cleared field must not be resurrected by the old object.
     if (patch.skillPriorities === null) updated.skillPriorities = {};
     if (patch.combatStance === null) updated.combatStance = null;
+    if (patch.buffPolicy === null) updated.buffPolicy = { excluded: [], allowed: [] };
     if (patch.pull === null) updated.pull = null;
 
     session.hotPolicyOverlay = updated;
@@ -180,6 +198,10 @@ function status(session) {
         expiresInSec: Math.max(0, Math.ceil((overlay.expiresAt - now()) / 1000)),
         pull: overlay.pull ? { ...overlay.pull } : null,
         combatStance: overlay.combatStance || null,
+        buffPolicy: {
+            excluded: [...(overlay.buffPolicy?.excluded || [])],
+            allowed: [...(overlay.buffPolicy?.allowed || [])]
+        },
         skillPriorities: { ...(overlay.skillPriorities || {}) }
     };
 }
@@ -187,6 +209,7 @@ function status(session) {
 module.exports = {
     DEFAULT_TTL_MS,
     MAX_SKILL_WEIGHT,
+    MAX_BUFF_POLICIES,
     STANCES: [...STANCES],
     clear,
     clearForCold,
@@ -196,6 +219,7 @@ module.exports = {
     get,
     normalizePriorities,
     normalizeStance,
+    normalizeBuffPolicy,
     set,
     status
 };

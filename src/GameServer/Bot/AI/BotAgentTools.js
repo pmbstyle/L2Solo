@@ -18,6 +18,7 @@ const ACTIONS = [
     'say',
     'follow_player',
     'regroup_party',
+    'stay_party',
     'stay_here',
     'hunt',
     'rest',
@@ -25,6 +26,7 @@ const ACTIONS = [
     'fetch_resources',
     'move_to_spot',
     'buff_target',
+    'set_buff_policy',
     'heal_target',
     'set_pull_policy',
     'stop_pulling_and_return',
@@ -50,7 +52,7 @@ const ACTIONS = [
 ];
 
 const PK_LOCKED_ACTIONS = new Set([
-    'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest', 'shop', 'fetch_resources', 'move_to_spot',
+    'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'fetch_resources', 'move_to_spot',
     'set_pull_policy', 'assign_puller', 'unassign_puller',
     'stop_pulling_and_return',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
@@ -191,10 +193,14 @@ function distance2d(a, b) {
 function applyBuffTarget(session, bot, decision, targetSession) {
     const target = targetSession?.actor;
     const buffType = String(decision.buffType || '').toLowerCase();
-    if (!target || !BotBuffs.SUPPORT_BUFFS[buffType]) return { applied: false, reason: 'invalid_buff_target' };
+    if (!target) return { applied: false, reason: 'invalid_buff_target' };
     if (!BotRoles.canBuff(bot)) return { applied: false, reason: 'bot_cannot_buff' };
     const skill = BotSkillCapabilities.buffSkill(bot, buffType);
-    if (!skill) return { applied: false, reason: 'buff_not_learned' };
+    const semantic = skill?.fetchSemantic?.() || {};
+    const targetKind = semantic.target || skill?.fetchTargetKind?.();
+    if (!skill || (targetKind && !['friendly', 'ally', 'party'].includes(targetKind))) {
+        return { applied: false, reason: 'buff_not_learned' };
+    }
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
@@ -524,6 +530,20 @@ function regroupParty(context) {
     };
 }
 
+function stayParty(context) {
+    const leader = partyLeaderFor(context.session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+    const result = PartyCompanionService.holdParty(leader);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'party_hold_started',
+        effect: 'pull_paused_and_party_holding_current_positions',
+        affected: result.affected,
+        playerVisibleReply: `Holding all ${result.affected} companions here.`
+    };
+}
+
 function learnedSkill(session, skillId) {
     const actor = session?.actor;
     const skill = actor?.skillset?.fetchSkill?.(Number(skillId)) ||
@@ -568,6 +588,27 @@ function setCombatStance(context) {
     const stance = String(context.decision.combatStance || '').toLowerCase();
     if (!HotBotPolicyOverlay.STANCES.includes(stance)) return { applied: false, reason: 'invalid_combat_stance' };
     return policyActionResult(context.session, { combatStance: stance }, context, `combat_stance:${stance}`);
+}
+
+function setBuffPolicy(context) {
+    const session = context.session;
+    const requested = String(context.decision.buffPolicyType || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const mode = String(context.decision.buffPolicyMode || '').trim().toLowerCase();
+    const capability = BotSkillCapabilities.supportBuffs(session.actor)
+        .find((entry) => entry.type === requested || entry.key === requested || entry.name.toLowerCase() === String(context.decision.buffPolicyType || '').trim().toLowerCase());
+    if (!capability) return { applied: false, reason: 'buff_policy_unknown' };
+    if (!['allow', 'deny', 'clear'].includes(mode)) return { applied: false, reason: 'invalid_buff_policy' };
+
+    const current = HotBotPolicyOverlay.get(session)?.buffPolicy || { excluded: [], allowed: [] };
+    const excluded = new Set(current.excluded || []);
+    const allowed = new Set(current.allowed || []);
+    excluded.delete(capability.type);
+    allowed.delete(capability.type);
+    if (mode === 'deny') excluded.add(capability.type);
+    if (mode === 'allow') allowed.add(capability.type);
+    return policyActionResult(session, {
+        buffPolicy: { excluded: [...excluded], allowed: [...allowed] }
+    }, context, `buff_policy:${mode}:${capability.type}`);
 }
 
 function listSafeLoadouts(context) {
@@ -627,10 +668,14 @@ function giveResources(context) {
 
 function fetchResources(context) {
     const player = context?.requestContext?.playerSession;
+    const requestedName = context.decision.supplyItemName;
+    const resolved = !context.decision.supplyItemId && requestedName
+        ? invoke('GameServer/Bot/Economy/MarketOpportunity').resolveSupplyItem(requestedName)
+        : null;
     const result = invoke('GameServer/Bot/AI/BotSupplyErrand').request(
         context.session,
         player,
-        context.decision.supplyItemId,
+        context.decision.supplyItemId || resolved?.selfId,
         context.decision.supplyAmount
     );
     if (!result.ok) return { applied: false, reason: result.reason, ...result };
@@ -640,6 +685,7 @@ function fetchResources(context) {
         reason: result.reason,
         effect: 'travel_purchase_return_and_native_trade_pending',
         itemSelfId: result.itemSelfId,
+        itemName: result.itemName,
         amount: result.amount,
         cost: result.cost,
         town: result.town,
@@ -790,13 +836,15 @@ function registerTools() {
         say: 'Send a short in-character reply to the target visible player.',
         follow_player: 'Persistently approach a visible player until arrival. Real party follow still requires an invite.',
         regroup_party: 'Make every current companion approach compact distinct slots around the human leader and pause new pulls until regrouped.',
+        stay_party: 'Hold every current companion at its current position and pause new pulls until the leader asks the party to follow again.',
         stay_here: 'Hold the current position.',
         hunt: 'Return to independent hunting.',
         rest: 'Sit and recover.',
         shop: 'Go to town for normal restock behavior.',
-        fetch_resources: 'For a party leader request, buy an exact new quantity of supported shots in town, return, and offer that purchased quantity in native trade.',
+        fetch_resources: 'For a party leader request, buy an exact new quantity of an item from the server-owned city shop catalog, return beside the leader, and offer that purchased quantity in native trade.',
         move_to_spot: 'Move to one of the provided candidate spot ids.',
         buff_target: 'Apply a supported buff to a visible player if class, MP, and range allow it.',
+        set_buff_policy: 'Temporarily allow, deny, or clear one learned friendly buff in the support rotation.',
         heal_target: 'Heal a visible player if class, MP, and range allow it.',
         set_pull_policy: 'Set the party pull permission and mode for this companion, with a bounded hot-session expiry.',
         stop_pulling_and_return: 'Disable this companion pull and start returning to the current party leader as one bounded workflow.',
@@ -823,6 +871,7 @@ function registerTools() {
 
     const controlActions = new Set([
         'regroup_party',
+        'stay_party', 'set_buff_policy',
         'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
         'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
         'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
@@ -833,6 +882,7 @@ function registerTools() {
     ]);
     const executors = {
         regroup_party: regroupParty,
+        stay_party: stayParty,
         set_pull_policy: applyPullPolicy,
         stop_pulling_and_return: stopPullingAndReturn,
         assign_puller: assignPuller,
@@ -840,6 +890,7 @@ function registerTools() {
         set_skill_priority: setSkillPriority,
         clear_skill_priority: clearSkillPriority,
         set_combat_stance: setCombatStance,
+        set_buff_policy: setBuffPolicy,
         list_safe_loadouts: listSafeLoadouts,
         equip_candidate: equipCandidate,
         optimize_equipment: optimizeEquipment,
@@ -956,16 +1007,31 @@ function rejectionReply(result = {}) {
         case 'tool_unavailable': return 'That action is not available to me right now.';
         case 'not_a_party_companion': return 'I can only change hot party policy while I am your companion.';
         case 'party_companion_cannot_shop_now': return 'I need to stay with the party; I cannot leave for town right now.';
-        case 'unsupported_supply_item': return 'I can currently fetch shop-bought soulshots and spiritshots, but not that item.';
+        case 'unsupported_supply_item': return 'I cannot identify that item in the server shop catalog.';
         case 'invalid_supply_amount': return 'Tell me a supply amount between 1 and 5,000.';
+        case 'non_stackable_supply_amount': return 'That item is not stackable; request one at a time.';
         case 'supply_errand_active': return 'I already have a shopping or delivery errand in progress.';
-        case 'supply_not_sold_in_town': return 'The nearest town does not sell that supply.';
-        case 'not_enough_adena': return 'I do not have enough Adena for that purchase.';
+        case 'supply_not_available': return 'I cannot find a city shop that sells that item right now.';
+        case 'supply_destination_missing': return 'I found the item, but not a valid city destination for it.';
+        case 'supply_price_invalid': return 'The shop returned an invalid price for that item.';
+        case 'not_enough_adena': {
+            const cost = Number(result.cost || 0);
+            const adena = Number(result.adena || 0);
+            const format = (value) => Number.isFinite(value) && value > 0 ? value.toLocaleString('en-US') : null;
+            const item = result.itemName ? ` for ${result.itemName}` : '';
+            const amount = format(cost);
+            const have = format(adena);
+            return amount && have
+                ? `I need ${amount} Adena${item}, but I only have ${have}. Transfer Adena to me and I will retry.`
+                : `I need more Adena${item}. Transfer it to me and I will retry.`;
+        }
+        case 'buff_policy_unknown': return 'I have not learned that buff, so I cannot change its rotation.';
+        case 'invalid_buff_policy': return 'Choose allow, deny, or clear for the buff policy.';
         case 'party_companion_stays_with_party': return 'I need to stay with the party instead of leaving for another spot.';
         case 'incompatible_item':
         case 'not_an_upgrade':
         case 'no_safe_upgrade': return 'I could not find a safe equipment upgrade for this situation.';
-        case 'unsafe_combat_state': return 'I will finish the current action before changing equipment.';
+        case 'unsafe_combat_state': return 'I am in combat. I will finish this fight before starting that request.';
         case 'skill_not_learned':
         case 'skill_not_combat_eligible':
         case 'skill_incompatible': return 'That skill cannot be used as a combat preference.';

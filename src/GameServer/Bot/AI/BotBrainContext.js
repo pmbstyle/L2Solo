@@ -1,6 +1,8 @@
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 const SLOT_NAMES = {
     1: 'right_ear',
@@ -209,6 +211,13 @@ function inventorySnapshot(actor, text = '') {
             amount: Number(shotItem?.fetchAmount?.() || 0),
             loaded: shotPlan.kind === 'spiritshot' ? !!actor.spiritshotLoaded : !!actor.soulshotLoaded
         },
+        // The compact catalog keeps common supplies visible without blowing
+        // the bounded hot-dialogue prompt. The server resolver still accepts
+        // every NPC-listed item by exact name, even when it is not in this
+        // compact view.
+        supplyCatalog: wantsItems
+            ? MarketOpportunity.supplyCatalog(48).map((entry) => [entry.selfId, entry.name, entry.price, entry.town])
+            : null,
         notable,
         truncated: notable.length < items.length
     };
@@ -246,7 +255,14 @@ function skillsSnapshot(actor, text = '') {
         support: {
             canHeal: BotRoles.isHealer(actor),
             canBuff: BotRoles.canBuff(actor),
-            availableBuffs: Object.keys(BotBuffs.SUPPORT_BUFFS)
+            // Advertise only buffs backed by a learned, executable friendly
+            // skill. The old global list made the LLM request Might/Shield on
+            // classes that only had native chants or resistance buffs.
+            availableBuffs: BotSkillCapabilities.supportBuffs(actor).map((buff) => ({
+                type: buff.type,
+                name: buff.name,
+                skillId: buff.skill.fetchSelfId()
+            }))
         },
         truncated: active.length < skills.filter((skill) => !skill.fetchPassive()).length
     };
