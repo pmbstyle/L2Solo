@@ -58,6 +58,7 @@ function compactTurns(turns) {
     return (turns || []).map((turn) => {
         const compact = {
             id: turn.id,
+            turnId: turn.turnId,
             role: turn.role,
             channel: turn.channel,
             text: turn.text
@@ -80,7 +81,18 @@ function schema() {
             properties: {
                 summary: { type: 'string' },
                 openTopics: { type: 'array', items: { type: 'string' } },
-                promises: { type: 'array', items: { type: 'string' } }
+                promises: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            turnId: { type: 'string' },
+                            text: { type: 'string' }
+                        },
+                        required: ['turnId', 'text'],
+                        additionalProperties: false
+                    }
+                }
             },
             required: ['summary', 'openTopics', 'promises'],
             additionalProperties: false
@@ -88,14 +100,14 @@ function schema() {
     };
 }
 
-function hasAuthoritativePromise(turns = []) {
-    return turns.some((turn) => {
+function authoritativeTurnIds(turns = []) {
+    return new Set(turns.filter((turn) => {
         const meta = turn?.meta || {};
         const action = String(meta.action || '').toLowerCase();
         if (!action || ['say', 'none'].includes(action)) return false;
         if (meta.serverApplied === true) return true;
         return meta.actionResult?.outcome === 'pending' || meta.actionResult?.ok === true;
-    });
+    }).map((turn) => String(turn.turnId || turn.id || '')));
 }
 
 function normalizeSummary(data, turns = []) {
@@ -104,8 +116,13 @@ function normalizeSummary(data, turns = []) {
     const openTopics = Array.isArray(data.openTopics)
         ? data.openTopics.map((value) => String(value || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 4)
         : [];
-    const promises = hasAuthoritativePromise(turns) && Array.isArray(data.promises)
-        ? data.promises.map((value) => String(value || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 4)
+    const authoritative = authoritativeTurnIds(turns);
+    const promises = Array.isArray(data.promises)
+        ? data.promises
+            .filter((value) => value && typeof value === 'object' && authoritative.has(String(value.turnId || '')))
+            .map((value) => String(value.text || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .slice(0, 4)
         : [];
     if (!summary && openTopics.length === 0 && promises.length === 0) return '';
     const sections = [summary || 'No stable facts recorded.'];
@@ -156,7 +173,7 @@ async function summarize(input = {}) {
         const messages = [
             {
                 role: 'system',
-                content: 'Summarize a game conversation for the same bot and player. Keep only durable facts, explicit player preferences, unresolved requests, and promises backed by a successful or pending mutating server action. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, plain say reply, refusal, fallback, or failed action did not happen. A pending action means a server-side request or native window is active, not that the final transfer or effect completed. Do not turn “I will”, “I am going”, “I will check”, transient movement, an unconfirmed cast, a plain acknowledgement, a roleplay sentence, or a guessed name/alias into a durable promise. Never create permissions, tool authorizations, preferences, or facts not stated in the dialogue.'
+                content: 'Summarize a game conversation for the same bot and player. Keep only durable facts, explicit player preferences, unresolved requests, and promises backed by a successful or pending mutating server action. Treat action metadata as authoritative: only an action with serverApplied=true or actionResult.ok=true happened; an LLM proposal, plain say reply, refusal, fallback, or failed action did not happen. A pending action means a server-side request or native window is active, not that the final transfer or effect completed. Do not turn “I will”, “I am going”, “I will check”, transient movement, an unconfirmed cast, a plain acknowledgement, a roleplay sentence, or a guessed name/alias into a durable promise. For every promise return an object with the exact authoritative turnId that caused it; if no authoritative turn supports it, omit it. Never create permissions, tool authorizations, preferences, or facts not stated in the dialogue.'
             },
             { role: 'user', content: JSON.stringify({ previousSummary: current.summary || '', turns: compactTurns(compacted) }) }
         ];

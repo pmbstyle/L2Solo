@@ -74,6 +74,14 @@ function main() {
     );
     assert.strictEqual(candidate.reply, decision().reply, 'candidate discovery must remain an LLM reply');
     assert.notStrictEqual(candidate.reason, 'party_policy:already_grouped');
+
+    const groupSession = { ...socialSession, partyCompanion: true, followPlayerSession: playerSession };
+    const stopPulling = BotBrain.applyPartyPolicy(groupSession, decision(), { playerSession }, 'everyone stop pulling');
+    assert.strictEqual(stopPulling.action, 'say', 'a pull-policy request must reach the LLM/tool layer');
+    const buffRequest = BotBrain.applyPartyPolicy(groupSession, decision(), { playerSession }, 'party stop using Might');
+    assert.strictEqual(buffRequest.action, 'say', 'a buff-policy request must not become a positional hold');
+    const hold = BotBrain.applyPartyPolicy(groupSession, decision(), { playerSession }, 'everybody hold position here');
+    assert.strictEqual(hold.action, 'stay_party');
     console.log('LLM party policy checks passed');
 }
 

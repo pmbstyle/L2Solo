@@ -7,6 +7,7 @@ const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const BotPartyChat  = invoke('GameServer/Bot/AI/BotPartyChat');
@@ -716,7 +717,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
     const leaderBusy = !!(
         playerSession.actor.state?.fetchHits?.() ||
         playerSession.actor.state?.fetchCasts?.() ||
-        playerSession.actor.fetchDestId?.()
+        playerSession.actor.state?.fetchCombats?.()
     );
     if (partyThreat || leaderBusy) {
         const now = Date.now();
@@ -745,6 +746,11 @@ function deliverPurchasedResources(session, bot, playerSession) {
             templates: [`I brought ${delivery.itemName}, but could not open trade (${trade.reason}).`]
         });
         session.pendingResourceDelivery = undefined;
+        WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
+            botId: bot.fetchId(),
+            playerId: delivery.playerId,
+            amount: delivery.amount
+        }, 'failed', trade.reason || 'trade_open_failed');
         return false;
     }
     BotPartyChat.announce(session, {
@@ -753,6 +759,12 @@ function deliverPurchasedResources(session, bot, playerSession) {
         templates: [`I brought ${delivery.amount} ${delivery.itemName}. Please confirm the trade.`]
     });
     session.pendingResourceDelivery = undefined;
+    WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
+        botId: bot.fetchId(),
+        playerId: delivery.playerId,
+        amount: delivery.amount,
+        objectId: delivery.objectId
+    }, 'completed', 'native_trade_open');
     recordRoleDecision(session, bot, 'deliver_resources', 'native_trade_open', { targetId: delivery.playerId });
     return true;
 }

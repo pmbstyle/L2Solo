@@ -249,7 +249,8 @@ function execute(context = {}) {
     if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
     audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
         idempotent: false,
-        currentRevision: worldRevision(session)
+        currentRevision: worldRevision(session),
+        workflowId: normalized.workflowId || normalized.workflow?.id || null
     });
     return normalized;
 }

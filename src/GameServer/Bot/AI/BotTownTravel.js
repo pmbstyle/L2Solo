@@ -26,7 +26,7 @@ function clearCombatTrip(session) {
     session.townEscape = undefined;
 }
 
-function revealInterruptedSupplyErrand(session, bot) {
+function revealSupplyErrand(session, bot, options = {}) {
     if (session?.supplyErrandHidden !== true) return;
     session.supplyErrandHidden = false;
     session.dataSendToOthers?.(ServerResponse.charInfo(bot), bot);
@@ -34,12 +34,16 @@ function revealInterruptedSupplyErrand(session, bot) {
     // Do not leave a half-started errand blocking the next player request.
     // The combat state remains authoritative; the player can ask again once
     // the party is safe.
-    if (session.companionShopping?.kind === 'player_resource_purchase') {
+    if (options.clearErrand === true && session.companionShopping?.kind === 'player_resource_purchase') {
         session.companionShopping = undefined;
         session.shoppingTarget = undefined;
         session.resumeAfterShopping = undefined;
         session.preShopLocation = undefined;
     }
+}
+
+function revealInterruptedSupplyErrand(session, bot) {
+    revealSupplyErrand(session, bot, { clearErrand: true });
 }
 
 function interruptEscape(session, bot) {
@@ -133,4 +137,13 @@ function request(session, bot, BotAI, reason, options = {}) {
     return 'walk';
 }
 
-module.exports = { SOE_CAST_MS, SOE_DISTANCE, clearCombatTrip, hasCombatThreat, inCombat, interruptEscape, request };
+module.exports = {
+    SOE_CAST_MS,
+    SOE_DISTANCE,
+    clearCombatTrip,
+    hasCombatThreat,
+    inCombat,
+    interruptEscape,
+    request,
+    revealSupplyErrand
+};

@@ -44,7 +44,6 @@ function supportSkills(actor) {
     const skills = actor?.skillset?.fetchSkills?.() || actor?.skillset?.skills || [];
     const overlay = HotBotPolicyOverlay.get(actor?.session);
     const excluded = new Set(overlay?.buffPolicy?.excluded || []);
-    const allowed = new Set(overlay?.buffPolicy?.allowed || []);
     return skills
         .filter((skill) => skill && !skill.fetchPassive?.())
         .filter((skill) => {
@@ -60,7 +59,9 @@ function supportSkills(actor) {
                 semantic?.effectType === 'buff' &&
                 !EXCLUDED_PARTY_BUFF_EFFECTS.has(semantic.effect) &&
                 !excluded.has(effect) &&
-                (allowed.size === 0 || allowed.has(effect)) &&
+                // The current policy is deny-by-exception. Ignore the legacy
+                // `allowed` field so one old `allow` command cannot turn the
+                // whole support package exclusive.
                 ['friendly', 'ally', 'party'].includes(semantic.target);
         });
 }

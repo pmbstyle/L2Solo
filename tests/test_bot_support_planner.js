@@ -4,6 +4,7 @@ require('../src/Global');
 
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 
 function skill(id, name, level, effect, stats, target = 'friendly', type = null) {
     return {
@@ -41,9 +42,20 @@ const shieldOne = skill(1040, 'Shield', 1, 'shield', { pDefMul: 1.08 });
 const chantOfLife = skill(1229, 'Chant of Life', 1, 'chant_of_life', {}, 'friendly', 'hot');
 const kissOfEva = skill(1073, 'Kiss of Eva', 2, 'kiss_of_eva', { breath: 7 });
 const soulShieldTwo = skill(1010, 'Soul Shield', 2, 'soul_shield', { pDefMul: 1.12 });
+const empower = skill(1059, 'Empower', 1, 'empower', { mAtkMul: 1.2 });
 const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
+
+const policyProvider = actor('PolicyProvider', 25, [shieldOne, empower]);
+policyProvider.session = { actor: policyProvider };
+HotBotPolicyOverlay.set(policyProvider.session, {
+    // This is a legacy persisted allow-list. It must not make support
+    // rotation exclusive after the policy semantics changed to deny-only.
+    buffPolicy: { allowed: ['shield'], excluded: [] }
+}, { ownerId: 1 });
+assert.strictEqual(BotSupportPlanner.supportSkills(policyProvider).length, 2, 'allowing one buff must not disable the other useful party buffs');
+HotBotPolicyOverlay.clear(policyProvider.session, 'test_reset');
 
 assert.deepStrictEqual(
     BotSupportPlanner.supportSkills(actor('ChantBuffer', 49, [chantOfLife])),

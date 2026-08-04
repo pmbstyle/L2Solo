@@ -35,6 +35,7 @@ const tests = [
     'tests/test_llm_pull_policy_tools.js',
     'tests/test_llm_party_regroup.js',
     'tests/test_llm_supply_errand.js',
+    'tests/test_llm_configured_supply_store.js',
     'tests/test_llm_skill_priority_tools.js',
     'tests/test_llm_equipment_tools.js',
     'tests/test_llm_trade_tools.js',

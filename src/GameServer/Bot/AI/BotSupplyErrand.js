@@ -4,6 +4,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 
 const MAX_REQUEST_AMOUNT = 5000;
 
@@ -16,6 +17,9 @@ function itemTemplate(selfId) {
 }
 
 function townDestination(offer, bot, BotAI) {
+    if (Number.isFinite(Number(offer?.locX)) && Number.isFinite(Number(offer?.locY)) && Number.isFinite(Number(offer?.locZ))) {
+        return { name: offer.town, x: Number(offer.locX), y: Number(offer.locY), z: Number(offer.locZ) };
+    }
     const town = TownPathfinder.towns?.find((candidate) => candidate.name === offer?.town);
     if (town?.center) {
         return { name: town.name, x: town.center.locX, y: town.center.locY, z: town.center.locZ };
@@ -48,7 +52,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         return { ok: false, reason: 'supply_errand_active' };
     }
 
-    const Market = MarketOpportunity.bestSupplyOffer(selfId);
+    const Market = MarketOpportunity.bestSupplyOffer(selfId, { amount });
     if (!Market) return { ok: false, reason: 'supply_not_available' };
 
     const template = itemTemplate(selfId);
@@ -93,12 +97,14 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         totalCost: cost,
         sourceType: Market.sourceType,
         sourceId: Market.sourceId,
+        sourceName: Market.sourceName,
+        workflowId: `supply-${bot.fetchId()}-${player.fetchId()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         target: {
-            actorId: Market.sourceType === 'private_store' ? Number(Market.sourceId) : null,
+            actorId: ['private_store', 'configured_store'].includes(Market.sourceType) ? Number(Market.sourceId) || null : null,
             name: Market.sourceName || `${town.name} general shop`,
-            locX: town.x,
-            locY: town.y,
-            locZ: town.z,
+            locX: Number(Market.locX ?? town.x),
+            locY: Number(Market.locY ?? town.y),
+            locZ: Number(Market.locZ ?? town.z),
             town: town.name
         }
     };
@@ -135,6 +141,17 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         session.dataSendToOthers?.(ServerResponse.relationChanged(bot), bot);
         return { ok: false, reason: 'unsafe_combat_state' };
     }
+    WorkflowTelemetry.recordSupply(session.companionShopping.workflowId, 'requested', {
+        botId: bot.fetchId(),
+        playerId: player.fetchId(),
+        itemSelfId: selfId,
+        amount,
+        cost,
+        sourceType: Market.sourceType,
+        sourceId: Market.sourceId,
+        town: town.name,
+        travel
+    }, 'pending', 'supply_errand_started');
     return {
         ok: true,
         outcome: 'pending',
@@ -145,6 +162,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         cost,
         town: town.name,
         sourceType: Market.sourceType,
+        workflowId: session.companionShopping.workflowId,
         travel
     };
 }
@@ -155,21 +173,64 @@ async function purchaseAtDestination(bot, errand) {
         return { ok: false, reason: 'supply_source_unavailable' };
     }
 
-    const store = {
-        storeType: 1,
-        items: [{
-            selfId: Number(errand.itemId),
-            price: Number(errand.unitPrice),
-            count: Number(errand.amount)
-        }]
-    };
+    let store = null;
+    if (errand.sourceType === 'configured_store') {
+        const World = invoke('GameServer/World/World');
+        const sessions = World.user?.sessions || [];
+        const source = sessions.find((candidate) => {
+            const actor = candidate?.actor;
+            const candidateStore = actor?.fetchPrivateStore?.();
+            return Number(candidateStore?.storeType) === 1 && (
+                Number(actor.fetchId?.() || 0) === Number(errand.sourceId) ||
+                actor.fetchName?.() === errand.sourceName
+            );
+        });
+        store = source?.actor?.fetchPrivateStore?.() || null;
+        const line = store?.items?.find((entry) => Number(entry.selfId) === Number(errand.itemId));
+        if (!source || !line) {
+            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'configured_store_unavailable');
+            return { ok: false, reason: 'configured_store_unavailable' };
+        }
+        if (Number(line.count) < Number(errand.amount)) {
+            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, available: Number(line.count) }, 'rejected', 'configured_store_stock_changed');
+            return { ok: false, reason: 'configured_store_stock_changed', available: Number(line.count) };
+        }
+        if (Number(line.price) !== Number(errand.unitPrice)) {
+            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, price: Number(line.price) }, 'rejected', 'configured_store_price_changed');
+            return { ok: false, reason: 'configured_store_price_changed', price: Number(line.price) };
+        }
+    } else {
+        store = {
+            storeType: 1,
+            items: [{
+                selfId: Number(errand.itemId),
+                price: Number(errand.unitPrice),
+                count: Number(errand.amount)
+            }]
+        };
+    }
     try {
         const bought = await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount));
         if (Number(bought.qty) !== Number(errand.amount)) {
+            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
+                botId: bot.fetchId(),
+                itemSelfId: errand.itemId,
+                amount: Number(bought.qty || 0),
+                requestedAmount: Number(errand.amount)
+            }, 'failed', 'purchase_quantity_mismatch');
             return { ok: false, reason: 'purchase_quantity_mismatch', bought };
         }
         const item = bot.backpack?.fetchItemFromSelfId?.(Number(errand.itemId));
-        if (!item) return { ok: false, reason: 'purchase_inventory_sync_failed' };
+        if (!item) {
+            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'purchase_inventory_sync_failed');
+            return { ok: false, reason: 'purchase_inventory_sync_failed' };
+        }
+        WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
+            botId: bot.fetchId(),
+            itemSelfId: errand.itemId,
+            amount: Number(bought.qty),
+            cost: Number(bought.totalAdena)
+        });
         return {
             ok: true,
             delta: Number(bought.qty),
@@ -178,6 +239,7 @@ async function purchaseAtDestination(bot, errand) {
         };
     } catch (error) {
         const message = String(error?.message || error || 'purchase_failed');
+        WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', /not enough adena/i.test(message) ? 'not_enough_adena' : message);
         return { ok: false, reason: /not enough adena/i.test(message) ? 'not_enough_adena' : message };
     }
 }

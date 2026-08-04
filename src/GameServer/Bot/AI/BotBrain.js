@@ -467,7 +467,9 @@ function applyPartyPolicy(session, decision, requestContext, text) {
     if (!requestContext?.playerSession) return decision;
     const value = String(text || '').toLowerCase();
     const group = /\b(?:everyone|everybody|all|guys|bots|companions|party|team)\b/.test(value);
-    if (group && /\b(?:stay|wait|hold|stop)\b/.test(value)) {
+    const positionHold = /\b(?:stay|wait|hold)\b/.test(value) &&
+        (/(?:\b(?:here|there|position|spot|together|close)\b)/.test(value) || /\bhold\s+position\b/.test(value));
+    if (group && positionHold) {
         return {
             ...decision,
             action: 'stay_party',

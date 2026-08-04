@@ -48,7 +48,8 @@ async function main() {
             fetchIsOnline: () => true,
             fetchLocX: () => 0,
             fetchLocY: () => 0,
-            fetchLocZ: () => 0
+            fetchLocZ: () => 0,
+            state: { fetchHits: () => false, fetchCasts: () => false, fetchCombats: () => false, fetchDestId: () => 1000 }
         }
     };
     const bot = {
@@ -108,6 +109,21 @@ async function main() {
         BotPartyChat.announce = () => true;
         assert.strictEqual(FollowingState.deliverPurchasedResources(session, bot, player), true);
         assert.deepStrictEqual(offered, { objectId: 11, amount: 200 });
+        assert.strictEqual(session.pendingResourceDelivery, undefined);
+
+        // Selecting the bot is normal before a native trade request. A
+        // selected target is not combat and must not keep delivery pending.
+        session.pendingResourceDelivery = {
+            playerSession: player,
+            playerId: 100,
+            objectId: 11,
+            itemName: 'Soulshot: D-grade',
+            amount: 1,
+            purchasedAt: Date.now()
+        };
+        offered = null;
+        assert.strictEqual(FollowingState.deliverPurchasedResources(session, bot, player), true);
+        assert.deepStrictEqual(offered, { objectId: 11, amount: 1 });
         assert.strictEqual(session.pendingResourceDelivery, undefined);
 
         // An errand request must not cancel an active fight just because the

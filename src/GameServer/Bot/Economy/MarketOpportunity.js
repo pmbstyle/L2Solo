@@ -87,25 +87,52 @@ function npcOffersAll(selfId) {
     return Object.keys(TOWN_NPC_SELLERS).flatMap((town) => npcOffers(selfId, town));
 }
 
+function configuredStoreSession(storeName) {
+    const sessions = World.user?.sessions;
+    if (!Array.isArray(sessions)) return null;
+    return sessions.find((session) => {
+        const actor = session?.actor;
+        const store = actor?.fetchPrivateStore?.();
+        return actor?.fetchName?.() === storeName && Number(store?.storeType) === 1;
+    }) || null;
+}
+
 function configuredStoreOffers(selfId) {
     return Object.entries(MerchantStoreConfigs)
         .flatMap(([storeName, store]) => {
             if (store?.storeType !== 1 || !store.town) return [];
-            const line = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
+            const liveSession = configuredStoreSession(storeName);
+            const liveStore = liveSession?.actor?.fetchPrivateStore?.();
+            // In a running world, a configured offer is valid only when the
+            // actual merchant bot is spawned and still has the item.  The
+            // config-only fallback keeps lightweight catalog/unit fixtures
+            // usable before World.init(), but purchase execution never trusts
+            // that fallback as a live source.
+            const line = liveStore
+                ? (liveStore.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0)
+                : (Array.isArray(World.user?.sessions) ? null : (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0));
             if (!line) return [];
-            const price = TradeService.ratedPrice(selfId, line.priceRate ?? 1);
+            const price = liveStore ? Number(line.price) : TradeService.ratedPrice(selfId, line.priceRate ?? 1);
             if (price <= 0) return [];
+            const actor = liveSession?.actor;
             return [{
                 sourceType: 'configured_store',
-                sourceId: storeName,
-                sourceName: storeName,
+                sourceId: actor ? Number(actor.fetchId?.() || 0) : storeName,
+                sourceName: actor?.fetchName?.() || storeName,
                 town: store.town,
                 selfId: Number(selfId),
                 itemName: itemName(selfId),
                 price,
                 count: Number(line.count),
                 available: true,
-                storeConfig: store
+                live: !!liveStore,
+                locX: Number(actor?.fetchLocX?.() ?? store.locX ?? 0),
+                locY: Number(actor?.fetchLocY?.() ?? store.locY ?? 0),
+                locZ: Number(actor?.fetchLocZ?.() ?? store.locZ ?? 0),
+                storeConfig: store,
+                session: liveSession || undefined,
+                store: liveStore || undefined,
+                storeItem: liveStore ? line : undefined
             }];
         });
 }
@@ -198,13 +225,15 @@ function bestOffer(selfId, options = {}) {
 // valid item look impossible whenever its NPC list lived elsewhere.
 function bestSupplyOffer(selfId, options = {}) {
     const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
+    const amount = Math.max(1, Number(options.amount) || 1);
     // A companion supply errand uses a server-owned NPC or configured city
     // merchant. Dynamic private/cold offers remain available to the market
     // planner and are never guessed as a guaranteed supply source.
     const offers = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)];
     return offers
-        .filter((offer) => offer.available && Number(offer.price) <= budget)
-        .sort((a, b) => Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc') || a.price - b.price)[0] || null;
+        .filter((offer) => offer.available && Number(offer.price) <= budget &&
+            (offer.sourceType === 'npc' || Number(offer.count) >= amount))
+        .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0] || null;
 }
 
 function resolveSupplyItem(value) {
@@ -238,7 +267,8 @@ function supplyCatalog(limit = 96) {
     ].filter(Boolean))];
     return ids
         .map((selfId) => {
-            const offer = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)].sort((a, b) => a.price - b.price)[0];
+            const offer = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)]
+                .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0];
             return offer ? {
                 selfId,
                 name: offer.itemName,

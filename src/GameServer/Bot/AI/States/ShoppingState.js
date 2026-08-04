@@ -9,6 +9,7 @@ const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 
 function findStoreSession(actorId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
@@ -133,12 +134,20 @@ module.exports = {
                 session.pendingResourceDelivery = {
                     playerSession: companionErrand.playerSession,
                     playerId: companionErrand.playerId,
+                    workflowId: companionErrand.workflowId,
                     objectId: purchasedItem.fetchId(),
                     itemSelfId: Number(companionErrand.itemId),
                     itemName: companionErrand.itemName,
                     amount: Number(companionErrand.amount),
                     purchasedAt: Date.now()
                 };
+                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    playerId: companionErrand.playerId,
+                    itemSelfId: companionErrand.itemId,
+                    amount: purchased.delta,
+                    cost: purchased.cost
+                }, 'pending', 'purchase_complete_returning');
                 deliveryReady = true;
                 session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
                 BotAI.say(session, `Bought ${purchased.delta}x ${companionErrand.itemName}. Returning with them now.`);
@@ -163,6 +172,12 @@ module.exports = {
                     ? 'I am short on Adena for that purchase. Give me some and I will try again.'
                     : 'I could not complete that supply purchase. I am returning now.');
                 utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
+                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    playerId: companionErrand.playerId,
+                    itemSelfId: companionErrand.itemId,
+                    amount: companionErrand.amount
+                }, 'failed', error?.message || 'purchase_failed');
             }
             this.scheduleResourceReturn(session, bot, BotAI, { deliveryReady });
             return;
@@ -342,6 +357,7 @@ module.exports = {
     scheduleResourceReturn(session, bot, BotAI, options = {}) {
         setTimeout(() => {
             const resume = session.resumeAfterShopping;
+            const workflowId = session.companionShopping?.workflowId || session.pendingResourceDelivery?.workflowId || resume?.workflowId || options.workflowId;
             const leaderSession = resume?.followPlayerSession;
             session.plan = session.partyCompanion === true && leaderSession?.actor?.fetchIsOnline?.()
                 ? 'following'
@@ -362,16 +378,26 @@ module.exports = {
                 // is away. Reappear in a valid companion slot instead of
                 // making the player watch a long return route.
                 bot.setLocXYZ?.(destination);
-                session.supplyErrandHidden = false;
-                const Response = invoke('GameServer/Network/Response');
-                session.dataSendToOthers?.(Response.charInfo(bot), bot);
-                session.dataSendToOthers?.(Response.relationChanged(bot), bot);
+                BotTownTravel.revealSupplyErrand(session, bot);
                 BotAI.say(session, options.deliveryReady === true
                     ? 'I am back with the new supplies. I will open trade when the party is safe.'
                     : 'I am back, but I could not complete that purchase.');
+                WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    playerId: leaderSession?.actor?.fetchId?.() || null,
+                    deliveryReady: options.deliveryReady === true
+                }, options.deliveryReady === true ? 'completed' : 'failed', options.deliveryReady === true ? 'returned_to_leader' : 'purchase_failed');
             } else {
                 session.pendingResourceDelivery = undefined;
-                session.supplyErrandHidden = false;
+                // The leader may have disconnected during the errand. Reveal
+                // through the same packet path even when there is no return
+                // target; otherwise every nearby client keeps a ghost bot.
+                BotTownTravel.revealSupplyErrand(session, bot);
+                WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    deliveryReady: false,
+                    leaderOnline: false
+                }, 'failed', 'leader_offline');
             }
         }, 1000);
     }

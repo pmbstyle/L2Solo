@@ -26,7 +26,10 @@ async function main() {
                 choices: [{ message: { content: JSON.stringify({
                     summary: 'The player asked for support and prefers concise answers.',
                     openTopics: ['confirm the next support action'],
-                    promises: ['reply truthfully after a validated cast']
+                    promises: [
+                        { turnId: 'turn-4', text: 'reply truthfully after a validated cast' },
+                        { turnId: 'turn-5', text: 'do not preserve this plain conversational promise' }
+                    ]
                 }) } }],
                 usage: { prompt_tokens: 80, completion_tokens: 30, total_tokens: 110 }
             };
@@ -41,13 +44,18 @@ async function main() {
                 turnId: `turn-${i}`,
                 role: i % 2 ? 'player' : 'bot',
                 channel: 'tell',
-                text: i % 2 ? `Please help with support request ${i}.` : `I will check request ${i}.`
+                text: i % 2 ? `Please help with support request ${i}.` : `I will check request ${i}.`,
+                meta: i === 4
+                    ? { action: 'give_resources', serverApplied: true, actionResult: { ok: true, outcome: 'pending' } }
+                    : null
             });
         }
         const first = await BotConversationSummarizer.summarize({ playerId: 10, botId: 20, threshold: 24 });
         assert.strictEqual(first.ok, true);
         assert.strictEqual(BotInferenceBudget.status({ actor: { fetchId: () => 20 } }).requests, 1, 'summary inference must consume the bot budget');
         assert.match(first.summary, /Open topics/);
+        assert.match(first.summary, /reply truthfully after a validated cast/);
+        assert(!first.summary.includes('do not preserve this plain conversational promise'), 'plain model promises must not survive compaction');
         const compacted = await BotConversationStore.context(10, 20, { limit: 20 });
         assert.match(compacted.summary, /concise answers/);
         assert.strictEqual(compacted.recentTurns.length, 8);

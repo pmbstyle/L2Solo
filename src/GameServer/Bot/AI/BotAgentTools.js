@@ -601,13 +601,13 @@ function setBuffPolicy(context) {
 
     const current = HotBotPolicyOverlay.get(session)?.buffPolicy || { excluded: [], allowed: [] };
     const excluded = new Set(current.excluded || []);
-    const allowed = new Set(current.allowed || []);
     excluded.delete(capability.type);
-    allowed.delete(capability.type);
     if (mode === 'deny') excluded.add(capability.type);
-    if (mode === 'allow') allowed.add(capability.type);
+    // "allow" is an explicit removal from the deny list, not an exclusive
+    // allow-list. A player asking to re-enable Might must not silently disable
+    // every other useful party buff.
     return policyActionResult(session, {
-        buffPolicy: { excluded: [...excluded], allowed: [...allowed] }
+        buffPolicy: { excluded: [...excluded], allowed: [] }
     }, context, `buff_policy:${mode}:${capability.type}`);
 }
 
@@ -1013,6 +1013,10 @@ function rejectionReply(result = {}) {
         case 'supply_errand_active': return 'I already have a shopping or delivery errand in progress.';
         case 'supply_not_available': return 'I cannot find a city shop that sells that item right now.';
         case 'supply_destination_missing': return 'I found the item, but not a valid city destination for it.';
+        case 'configured_store_unavailable':
+        case 'configured_store_stock_changed': return 'That configured shop no longer has enough of the requested item.';
+        case 'configured_store_price_changed': return 'That shop changed its price before I could buy the item.';
+        case 'purchase_quantity_mismatch': return 'The shop could not provide the exact requested amount.';
         case 'supply_price_invalid': return 'The shop returned an invalid price for that item.';
         case 'not_enough_adena': {
             const cost = Number(result.cost || 0);
