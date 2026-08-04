@@ -12,6 +12,7 @@ try {
     assert.strictEqual(OpenRouterGateway.DEFAULTS.model, 'openai/gpt-5.6-luna');
     assert.strictEqual(OpenRouterGateway.DEFAULTS.reasoningEffort, 'low');
     assert.strictEqual(OpenRouterGateway.DEFAULTS.temperature, 0.35);
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.partyRouterModel, '');
 
     options.default.OpenRouter = {
         enabled: true,
@@ -34,6 +35,7 @@ try {
     assert.strictEqual(openRouter.temperature, 0.7);
     assert.strictEqual(openRouter.reasoningEffort, 'off');
     assert.strictEqual(openRouter.maxConcurrentRequests, 7);
+    assert.strictEqual(openRouter.partyRouterModel, '', 'party routing remains deterministic unless explicitly configured');
     assert.strictEqual(openRouter.maxTokens, 320, 'completion safety belongs to internal policy');
     assert.strictEqual(openRouter.timeoutMs, 3500, 'provider timeout belongs to internal policy');
     assert.strictEqual(openRouter.backgroundInferenceEnabled, undefined);

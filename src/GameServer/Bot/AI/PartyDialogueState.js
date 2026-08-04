@@ -19,6 +19,7 @@ function ensure(playerSession) {
             lastDeliveredAt: 0,
             lastDeliveredTurnId: null,
             spokespersonId: null,
+            routerInFlightAt: 0,
             recentTurns: []
         };
     }
@@ -81,6 +82,21 @@ function clearInFlight(playerSession, botSession = null) {
     return state;
 }
 
+function beginRouter(playerSession, at = Date.now()) {
+    const state = ensure(playerSession);
+    if (!state) return false;
+    if (state.routerInFlightAt) return false;
+    state.routerInFlightAt = Number(at || Date.now());
+    return true;
+}
+
+function clearRouter(playerSession) {
+    const state = ensure(playerSession);
+    if (!state) return null;
+    state.routerInFlightAt = 0;
+    return state;
+}
+
 function recordDeliveredReply(playerSession, botSession, text, details = {}) {
     const state = ensure(playerSession);
     if (!state) return null;
@@ -126,6 +142,7 @@ function snapshot(playerSession) {
         lastDeliveredBotId: state.lastDeliveredBotId,
         lastDeliveredAt: state.lastDeliveredAt,
         spokespersonId: state.spokespersonId,
+        routerInFlightAt: state.routerInFlightAt,
         recentTurns: [...(state.recentTurns || [])]
     };
 }
@@ -140,7 +157,9 @@ function reset(playerSession) {
 module.exports = {
     MAX_RECENT_TURNS,
     beginRequest,
+    beginRouter,
     clearInFlight,
+    clearRouter,
     ensure,
     recordDeliveredReply,
     reset,

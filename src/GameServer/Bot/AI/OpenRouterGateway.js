@@ -19,6 +19,7 @@ const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
     model: LUNA_MODEL,
+    partyRouterModel: '',
     temperature: 0.35,
     reasoningEffort: 'low',
     maxConcurrentRequests: 32,
@@ -75,6 +76,7 @@ function config(overrides = {}) {
         enabled: bool(optn.enabled, DEFAULTS.enabled),
         apiKey: process.env.OPENROUTER_API_KEY || optn.apiKey || DEFAULTS.apiKey,
         model: process.env.OPENROUTER_MODEL || optn.model || DEFAULTS.model,
+        partyRouterModel: process.env.OPENROUTER_PARTY_ROUTER_MODEL || optn.partyRouterModel || DEFAULTS.partyRouterModel,
         temperature: num(optn.temperature, DEFAULTS.temperature),
         reasoningEffort: reasoningEffort(optn.reasoningEffort),
         maxConcurrentRequests: Math.max(1, Math.floor(num(
@@ -90,6 +92,9 @@ function config(overrides = {}) {
         enabled: bool(overrides.enabled, source.enabled),
         apiKey: overrides.apiKey !== undefined ? String(overrides.apiKey || '') : source.apiKey,
         model: overrides.model || source.model,
+        partyRouterModel: overrides.partyRouterModel !== undefined
+            ? String(overrides.partyRouterModel || '')
+            : String(source.partyRouterModel || ''),
         temperature: num(overrides.temperature, source.temperature),
         reasoningEffort: reasoningEffort(overrides.reasoningEffort, source.reasoningEffort),
         maxConcurrentRequests: Math.max(1, Math.floor(num(

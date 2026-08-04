@@ -133,6 +133,7 @@ function select({
     dialogueState = null,
     activeResponderId,
     activeResponderAt,
+    allowSpokespersonFallback = true,
     hearingRadius = HEARING_RADIUS
 } = {}) {
     const partyChannel = Number(kind) === PARTY_CHANNEL_KIND;
@@ -149,6 +150,19 @@ function select({
         };
     }
     if (explicit.status === 'ambiguous') {
+        if (partyChannel && allowSpokespersonFallback !== false) {
+            const fallback = findById(candidates, dialogueState?.spokespersonId) || candidates.find((candidate) => candidate.companion);
+            if (fallback) {
+                return {
+                    candidate: fallback,
+                    candidates,
+                    status: 'matched',
+                    reason: 'party_spokesperson_ambiguous',
+                    matchType: explicit.matchType,
+                    matches: explicit.matches
+                };
+            }
+        }
         return {
             candidate: null,
             candidates,
@@ -209,8 +223,12 @@ function select({
     }
 
     const spokesperson = findById(candidates, state.spokespersonId) || candidates.find((candidate) => candidate.companion);
-    if (partyChannel && spokesperson) {
+    if (partyChannel && spokesperson && allowSpokespersonFallback !== false) {
         return { candidate: spokesperson, candidates, status: 'matched', reason: 'party_spokesperson', matchType: null };
+    }
+
+    if (partyChannel && allowSpokespersonFallback === false) {
+        return { candidate: null, candidates, status: 'needs_router', reason: 'party_ambiguous', matchType: null };
     }
 
     if (isGroupAddress(text) && candidates[0]) {

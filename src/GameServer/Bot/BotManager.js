@@ -738,28 +738,108 @@ const BotManager = {
         const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
         const PartyDialogueRouter = invoke('GameServer/Bot/AI/PartyDialogueRouter');
         const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+        const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
         const llmEnabled = BotBrain.isEnabled();
         const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
         const partyChannel = Number(data.kind) === 3;
 
         let llmResponder = null;
+        let deterministicRoute = null;
+        const dialogueState = PartyDialogueState.snapshot(playerSession);
+        const cheapRouterAvailable = llmEnabled && partyChannel && PartyLLMRouter.enabled() && !dialogueState?.routerInFlightAt;
         if (llmEnabled) {
-            const route = PartyDialogueRouter.select({
+            deterministicRoute = PartyDialogueRouter.select({
                 text: rawText,
                 playerSession,
                 sessions: this.sessions,
                 kind: data.kind,
-                dialogueState: PartyDialogueState.snapshot(playerSession),
+                dialogueState,
                 activeResponderId: playerSession.botDialogueResponderId,
-                activeResponderAt: playerSession.botDialogueResponderAt
+                activeResponderAt: playerSession.botDialogueResponderAt,
+                allowSpokespersonFallback: !cheapRouterAvailable
             });
-            llmResponder = route.candidate;
+            llmResponder = deterministicRoute.candidate;
             if (llmResponder) {
                 PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
-                    reason: route.reason,
+                    reason: deterministicRoute.reason,
                     text: rawText,
                     channel: partyChannel ? 'party_chat' : 'local_chat',
-                    spokespersonId: route.reason === 'party_spokesperson' ? llmResponder.id : undefined
+                    spokespersonId: deterministicRoute.reason === 'party_spokesperson' ? llmResponder.id : undefined
+                });
+            }
+        }
+
+        const dispatchLLM = (session, reason = deterministicRoute?.reason || 'deterministic_route') => {
+            if (!session?.actor) return Promise.resolve({ ok: false, reason: 'missing_bot' });
+            const currentState = PartyDialogueState.snapshot(playerSession);
+            if (String(currentState?.inFlightBotId || '') !== String(session.actor.fetchId())) {
+                PartyDialogueState.beginRequest(playerSession, session, {
+                    reason,
+                    text: rawText,
+                    channel: partyChannel ? 'party_chat' : 'local_chat',
+                    spokespersonId: reason === 'party_spokesperson' ? session.actor.fetchId() : undefined
+                });
+            }
+            return BotDialogueArbiter.route({
+                playerSession,
+                botSession: session,
+                text: rawText,
+                channel: partyChannel ? 'party_chat' : 'local_chat',
+                source: partyChannel ? 'party_chat' : 'local_chat',
+                allowFallback: true
+            }).then((result) => {
+                if (result?.started === true || result?.queued === true || result?.delivered === true) return result;
+                PartyDialogueState.clearInFlight(playerSession, session);
+                return result;
+            }).catch((error) => {
+                PartyDialogueState.clearInFlight(playerSession, session);
+                utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
+                return { ok: false, reason: 'route_error', error: error.message };
+            });
+        };
+
+        if (llmEnabled && partyChannel && cheapRouterAvailable && !llmResponder && deterministicRoute && (
+            deterministicRoute.status === 'needs_router' || deterministicRoute.status === 'ambiguous'
+        )) {
+            const fallbackRoute = PartyDialogueRouter.select({
+                text: rawText,
+                playerSession,
+                sessions: this.sessions,
+                kind: data.kind,
+                dialogueState,
+                activeResponderId: playerSession.botDialogueResponderId,
+                activeResponderAt: playerSession.botDialogueResponderAt,
+                allowSpokespersonFallback: true
+            });
+            if (PartyDialogueState.beginRouter(playerSession)) {
+                return PartyLLMRouter.route({
+                    text: rawText,
+                    playerSession,
+                    candidates: deterministicRoute.candidates,
+                    selectedBotId: deterministicRoute.candidates.find((candidate) => candidate.selected)?.id || null,
+                    dialogueState: PartyDialogueState.snapshot(playerSession)
+                }).then((routerResult) => {
+                    PartyDialogueState.clearRouter(playerSession);
+                    let chosen = routerResult?.candidate || null;
+                    let reason = routerResult?.route === 'bot' ? 'router_bot' : `router_${routerResult?.route || 'fallback'}`;
+                    if (!chosen && ['party', 'clarify'].includes(routerResult?.route)) chosen = fallbackRoute.candidate;
+                    if (!chosen && routerResult?.ok !== true) chosen = fallbackRoute.candidate;
+                    return chosen ? dispatchLLM(chosen, reason) : routerResult;
+                }).catch((error) => {
+                    PartyDialogueState.clearRouter(playerSession);
+                    return fallbackRoute.candidate
+                        ? dispatchLLM(fallbackRoute.candidate, 'router_error_fallback')
+                        : { ok: false, reason: 'router_error', error: error.message };
+                });
+            }
+            llmResponder = fallbackRoute.candidate;
+            deterministicRoute = fallbackRoute;
+            if (llmResponder) {
+                PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
+                    reason: fallbackRoute.reason,
+                    text: rawText,
+                    channel: 'party_chat',
+                    spokespersonId: fallbackRoute.reason === 'party_spokesperson' ? llmResponder.id : undefined
                 });
             }
         }
@@ -789,21 +869,7 @@ const BotManager = {
             const llmAddressed = llmEnabled && llmResponder?.session === session;
             if (llmEnabled) {
                 if (!llmAddressed) return;
-                BotDialogueArbiter.route({
-                    playerSession,
-                    botSession: session,
-                    text: rawText,
-                    channel: partyChannel ? 'party_chat' : 'local_chat',
-                    source: partyChannel ? 'party_chat' : 'local_chat',
-                    allowFallback: true
-                }).then((result) => {
-                    if (result?.started === true || result?.queued === true || result?.delivered === true) return result;
-                    PartyDialogueState.clearInFlight(playerSession, session);
-                    return result;
-                }).catch((error) => {
-                    PartyDialogueState.clearInFlight(playerSession, session);
-                    utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
-                });
+                dispatchLLM(session, deterministicRoute?.reason);
                 return;
             }
 

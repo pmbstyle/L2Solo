@@ -86,6 +86,20 @@ async function main() {
     assert.strictEqual(result.reason, 'role_healer');
     assert.strictEqual(result.candidate.session, healer);
 
+    const arina = session(4, 'Arina');
+    const arinor = session(5, 'Arinor');
+    arina.followPlayerSession = player;
+    arinor.followPlayerSession = player;
+    result = PartyDialogueRouter.select({
+        text: 'Arin, regroup.',
+        playerSession: player,
+        sessions: [arina, arinor],
+        kind: 3,
+        allowSpokespersonFallback: true
+    });
+    assert.strictEqual(result.reason, 'party_spokesperson_ambiguous');
+    assert.strictEqual(result.candidate.actor.fetchName(), 'Arina');
+
     result = PartyDialogueRouter.select({
         text: 'party, regroup.',
         playerSession: player,
