@@ -121,7 +121,7 @@ Example:
 ```ini
 [OpenRouter]
 enabled = true
-apiKey = <your-Openrouter-key-here>
+apiKey = <your-OpenRouter-key-here>
 model = openai/gpt-5.6-luna
 partyRouterModel = openai/gpt-5.6-luna
 debug = true
