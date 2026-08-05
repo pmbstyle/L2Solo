@@ -79,12 +79,15 @@ try {
         fetchSelfId: () => 1068,
         fetchName: () => 'Might'
     };
+    const messagesBeforeSupportRequest = messages.length;
     assert.strictEqual(BotPartyChat.expectSkillResult(companionSession, {
         target,
         targetSession,
         skill,
         kind: 'support'
     }), true, 'a requested support cast should wait for a native result');
+    assert.strictEqual(messages.length, messagesBeforeSupportRequest,
+        'registering a support cast must not announce success before the native effect exists');
     assert.strictEqual(BotPartyChat.confirmSkillResult(companionSession, companionSession.actor, target, skill, {
         effect: { key: 'might' }
     }), true, 'only a landed effect may confirm the requested buff');

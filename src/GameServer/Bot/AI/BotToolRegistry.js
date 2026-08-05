@@ -1,0 +1,287 @@
+const BotToolAudit = invoke('GameServer/Bot/AI/BotToolAudit');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+
+const definitions = new Map();
+const SOFT_FRESHNESS_ACTIONS = new Set([
+    'none', 'say', 'follow_player', 'regroup_party', 'stay_here', 'hunt', 'rest',
+    'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
+    'set_combat_stance'
+]);
+
+function text(value, max = 160) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function actorId(session) {
+    return Number(session?.actor?.fetchId?.() || 0);
+}
+
+function playerId(context) {
+    return Number(context?.requestContext?.playerSession?.actor?.fetchId?.() ||
+        context?.requestContext?.playerId || 0) || null;
+}
+
+function turnId(context) {
+    return text(
+        context?.requestContext?.conversationTurn?.turnId ||
+        context?.requestContext?.requestId ||
+        context?.decision?.turnId,
+        128
+    ) || null;
+}
+
+function worldRevision(session) {
+    const actor = session?.actor;
+    if (!actor) return 'missing';
+    const loc = (read) => {
+        try { return Math.round(Number(read?.() || 0) / 25); } catch (_) { return 0; }
+    };
+    const inventory = actor.backpack?.fetchItems?.() || [];
+    const leader = session.partyCompanion === true ? session.followPlayerSession : null;
+    const partySettings = leader?.partyCompanionSettings || {};
+    const overlay = HotBotPolicyOverlay.get(session);
+    const privateStore = actor.fetchPrivateStore?.();
+    const storeLines = Array.isArray(privateStore?.items)
+        ? privateStore.items.map((line) => `${Number(line.selfId)}.${Number(line.count)}.${Number(line.price)}`).join(',')
+        : '';
+    return [
+        actorId(session),
+        text(session.plan, 32),
+        loc(actor.fetchLocX),
+        loc(actor.fetchLocY),
+        loc(actor.fetchLocZ),
+        Number(actor.fetchDestId?.() || session.currentTargetId || 0),
+        Number(actor.isDead?.() ? 1 : 0),
+        Number(session.partyCompanion === true ? 1 : 0),
+        Number(session.botStay === true ? 1 : 0),
+        inventory.length,
+        Number(overlay?.updatedAt || 0),
+        String(partySettings.pullMode || ''),
+        Number(partySettings.pullerId || 0),
+        String(session.activeTrade?.id || ''),
+        Number(session.activeTrade?.botItems?.size || 0),
+        Number(session.activeTrade?.playerItems?.size || 0),
+        String(session.activeNegotiation?.id || ''),
+        String(session.activeNegotiation?.state || ''),
+        Number(session.activeNegotiation?.round || 0),
+        Number(session.activeNegotiation?.currentUnitPrice || 0),
+        Number(privateStore?.revision || 0),
+        Number(privateStore?.repricing === true ? 1 : 0),
+        storeLines
+    ].join(':');
+}
+
+function isPkLocked(session, action) {
+    return session?.plan === 'pk_hunting' && new Set([
+        'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot',
+        'set_buff_policy',
+        'set_pull_policy', 'assign_puller', 'unassign_puller',
+        'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
+        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
+        'propose_trade', 'give_resources', 'fetch_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+        'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
+    ]).has(action);
+}
+
+function requiresFreshWorld(action) {
+    return !SOFT_FRESHNESS_ACTIONS.has(String(action || ''));
+}
+
+function isAvailable(definition, session) {
+    if (typeof definition.available !== 'function') return true;
+    return definition.available(session) !== false;
+}
+
+function register(definition) {
+    if (!definition?.name) throw new Error('tool name is required');
+    definitions.set(String(definition.name), {
+        mutating: true,
+        description: '',
+        kind: definition.mutating === false ? 'read' : 'mutation',
+        risk: 'low',
+        parameters: null,
+        ...definition,
+        name: String(definition.name)
+    });
+    return definitions.get(String(definition.name));
+}
+
+function descriptors(session = null) {
+    return [...definitions.values()]
+        .filter((definition) => isAvailable(definition, session))
+        .map((definition) => ({
+            action: definition.name,
+            description: definition.description,
+            kind: definition.kind,
+            risk: definition.risk,
+            parameters: definition.parameters || null
+        }));
+}
+
+function availableNames(session = null) {
+    return descriptors(session).map((definition) => definition.action);
+}
+
+function audit(context, outcome, reason, meta = {}) {
+    const argumentsForTrace = { ...(context.decision || {}) };
+    delete argumentsForTrace.usage;
+    delete argumentsForTrace.llmTelemetry;
+    const observation = LangfuseTracing.startObservation(
+        `bot.tool.${text(context.decision?.action || 'unknown', 64)}`,
+        {
+            action: context.decision?.action || null,
+            arguments: argumentsForTrace,
+            expectedWorldRevision: context.expectedWorldRevision || null
+        },
+        {
+            botId: actorId(context.session),
+            playerId: playerId(context),
+            turnId: turnId(context),
+            workflowId: meta.workflowId || null,
+            outcome,
+            reason,
+            phase: outcome === 'requested' ? 'request' : 'result'
+        },
+        'tool'
+    );
+    const status = outcome === 'rejected'
+        ? LangfuseTracing.observationStatus({ applied: false, reason })
+        : {};
+    observation?.end({ outcome, reason, phase: outcome === 'requested' ? 'request' : 'result', ...meta }, status);
+    BotToolAudit.record({
+        playerId: playerId(context),
+        botId: actorId(context.session),
+        turnId: turnId(context),
+        toolName: context.decision?.action,
+        outcome,
+        reason,
+        worldRevision: context.expectedWorldRevision || worldRevision(context.session),
+        meta
+    }).catch(() => {});
+}
+
+function result(applied, reason, extra = {}) {
+    return { applied: !!applied, reason: text(reason, 160) || 'unknown', ...extra };
+}
+
+function auditOutcome(value) {
+    const explicit = String(value?.outcome || '').toLowerCase();
+    if (['applied', 'pending', 'rejected', 'noop'].includes(explicit)) return explicit;
+    return value?.applied === true ? 'applied' : 'rejected';
+}
+
+function execute(context = {}) {
+    const session = context.session;
+    const decision = context.decision || {};
+    const action = text(decision.action, 64);
+    const definition = definitions.get(action);
+    const currentRevision = worldRevision(session);
+    const expectedRevision = context.expectedWorldRevision || decision.worldRevision || null;
+    const currentTurn = turnId(context);
+    const mutationKey = currentTurn && action ? `${currentTurn}:${playerId(context) || 'none'}:${action}` : null;
+    const mutationStore = session && (session.botToolExecutions ||= new Map());
+
+    audit({ ...context, decision: { ...decision, action } }, 'requested', 'requested', {
+        expectedRevision,
+        currentRevision,
+        freshness: requiresFreshWorld(action) ? 'strict' : 'soft'
+    });
+
+    if (!definition) {
+        const rejected = result(false, 'unknown_tool');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+        return rejected;
+    }
+    if (mutationStore && mutationKey && mutationStore.has(mutationKey)) {
+        const previous = mutationStore.get(mutationKey);
+        const replay = (resolved) => {
+            audit({ ...context, decision: { ...decision, action } }, auditOutcome(resolved), 'idempotent_replay');
+            return { ...resolved, idempotent: true };
+        };
+        return previous && typeof previous.then === 'function' ? previous.then(replay) : replay(previous);
+    }
+    if (isPkLocked(session, action)) {
+        const rejected = result(false, 'pk_hunting_autonomous');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+        return rejected;
+    }
+    if (!isAvailable(definition, session)) {
+        const rejected = result(false, 'tool_unavailable');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+        return rejected;
+    }
+    if (expectedRevision && expectedRevision !== currentRevision && requiresFreshWorld(action)) {
+        const rejected = result(false, 'stale_world_state');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason, {
+            expectedRevision,
+            currentRevision,
+            freshness: 'strict'
+        });
+        return rejected;
+    }
+    if (definition.mutating && Number(decision.confidence || 0) < 0.45) {
+        const rejected = result(false, 'low_confidence');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+        return rejected;
+    }
+
+    if (mutationStore && currentTurn && definition.mutating) {
+        const priorMutation = [...mutationStore.entries()]
+            .find(([key]) => key.startsWith(`${currentTurn}:`));
+        if (priorMutation) {
+            const rejected = result(false, 'one_mutation_per_turn');
+            audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+            return rejected;
+        }
+    }
+
+    if (typeof definition.authorize === 'function' && definition.authorize(context) === false) {
+        const rejected = result(false, 'not_authorized');
+        audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+        return rejected;
+    }
+    if (typeof definition.validate === 'function') {
+        const validation = definition.validate(context);
+        if (validation !== true && validation !== undefined) {
+            const rejected = result(false, validation || 'invalid_arguments');
+            audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
+            return rejected;
+        }
+    }
+
+    const finalize = (outcome) => {
+        const normalized = result(outcome?.applied, outcome?.reason, outcome);
+        if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
+        audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
+            idempotent: false,
+            currentRevision: worldRevision(session),
+            workflowId: normalized.workflowId || normalized.workflow?.id || null
+        });
+        return normalized;
+    };
+
+    let outcome;
+    try {
+        outcome = definition.execute(context);
+    } catch (error) {
+        outcome = result(false, `tool_error:${text(error.message, 120)}`);
+    }
+    if (outcome && typeof outcome.then === 'function') {
+        const pending = outcome
+            .then(finalize)
+            .catch((error) => finalize(result(false, `tool_error:${text(error.message, 120)}`)));
+        if (mutationStore && mutationKey) mutationStore.set(mutationKey, pending);
+        return pending;
+    }
+    return finalize(outcome);
+}
+
+module.exports = {
+    register,
+    execute,
+    descriptors,
+    availableNames,
+    worldRevision,
+    reset() { definitions.clear(); }
+};

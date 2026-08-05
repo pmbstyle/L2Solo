@@ -253,6 +253,16 @@ function recordFromSession(session, phase, reason = '') {
         // expire, rather than retaining a stale buffed total indefinitely.
         coldCombat: ColdCombatProfile.capture(actor, timestamp),
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
+        supplyErrand: session.companionShopping?.kind === 'player_resource_purchase'
+            ? {
+                workflowId: session.companionShopping.workflowId || null,
+                itemSelfId: Number(session.companionShopping.itemId || 0) || null,
+                amount: Number(session.companionShopping.amount || 0) || null,
+                phase: session.supplyErrandPhase || 'cold',
+                startedAt: Number(session.companionShopping.startedAt || 0) || null,
+                expiresAt: Number(session.companionShopping.expiresAt || 0) || null
+            }
+            : null,
         newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
     };

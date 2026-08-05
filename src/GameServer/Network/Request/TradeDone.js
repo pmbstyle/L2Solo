@@ -30,18 +30,43 @@ async function tradeDone(session, buffer) {
             return;
         }
 
+        if (result.idempotent) {
+            session.dataSendToMe(ServerResponse.tradeDone(true));
+            return;
+        }
+
         const detail = describeMovedItems(result.moved);
-        const lootRequest = BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
+        const receivedByBot = describeMovedItems((result.moved || []).filter((item) => item.direction === 'player_to_bot'));
+        const receivedByPlayer = describeMovedItems((result.moved || []).filter((item) => item.direction === 'bot_to_player'));
+        const lootRequest = result.direction === 'bot_outbound'
+            ? null
+            : BotLootEtiquette.resolveTrade(session, result.partnerSession, result.moved);
         BotSocialMemory.recordEvent(
             session,
             result.partnerSession,
             lootRequest ? 'gave_useful_loot' : 'trade_completed',
             detail
         );
+        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            playerId: session.actor?.fetchId?.(),
+            botId: result.partnerSession?.actor?.fetchId?.(),
+            eventType: 'trade_completed',
+            summary: `${session.actor?.fetchName?.() || 'Player'} traded ${detail}.`,
+            weight: 4,
+            dedupeKey: `trade:${session.actor?.fetchId?.()}:${result.partnerSession?.actor?.fetchId?.()}:${detail}`,
+            coalesceWindowMs: 30 * 1000,
+            meta: { itemCount: result.moved?.length || 0 }
+        })).catch(() => {});
         BotManager.botTell(
             result.partnerSession,
             session,
-            lootRequest ? `Thanks, that's exactly what I needed: ${detail}.` : `Thanks for the trade. I got ${detail}.`
+            result.negotiationId
+                ? `The agreed price is settled. I received ${receivedByBot || 'your payment'} for ${receivedByPlayer || 'the item'}.`
+                : lootRequest
+                    ? `Thanks, that's exactly what I needed: ${detail}.`
+                    : result.direction === 'bot_outbound'
+                        ? `Trade complete. I sent ${receivedByPlayer || 'the agreed resources'}.`
+                        : `Thanks for the trade. I got ${detail}.`
         );
         BotEquipmentUpgrade.applyBestUpgrades(result.partnerSession, { force: true });
 

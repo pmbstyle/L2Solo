@@ -30,6 +30,49 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
+function nameDistance(left, right) {
+    const a = String(left || '').toLowerCase();
+    const b = String(right || '').toLowerCase();
+    const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+    for (let row = 1; row <= a.length; row += 1) {
+        const current = [row];
+        for (let column = 1; column <= b.length; column += 1) {
+            current[column] = Math.min(
+                current[column - 1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1)
+            );
+        }
+        for (let column = 0; column <= b.length; column += 1) previous[column] = current[column];
+    }
+    return previous[b.length];
+}
+
+function nearestBotName(lookup, BotManager, LifeState) {
+    const hotNames = (BotManager.sessions || [])
+        .map((session) => session?.actor?.fetchName?.())
+        .filter(Boolean);
+    const coldNames = typeof LifeState.allStates === 'function'
+        ? LifeState.allStates(2000).map((state) => state?.name).filter(Boolean)
+        : [];
+    const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
+    const ranked = names
+        .map((name) => ({ name, distance: nameDistance(lookup, name) }))
+        .sort((left, right) => left.distance - right.distance || left.name.localeCompare(right.name));
+    const best = ranked[0];
+    if (!best) return null;
+    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.name.length) * 0.3));
+    return best.distance <= maxDistance ? best.name : null;
+}
+
+function unknownBotReply(session, lookup, BotManager, LifeState) {
+    const suggestion = nearestBotName(lookup, BotManager, LifeState);
+    const text = suggestion
+        ? `I couldn't find a bot named "${lookup}". Did you mean "${suggestion}"?`
+        : `I couldn't find a bot named "${lookup}".`;
+    session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text }));
+}
+
 function waitForBotSession(BotManager, name, attempts = 40) {
     const target = String(name || '').toLowerCase();
     return new Promise((resolve) => {
@@ -53,6 +96,8 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 }
 
 const World = {
+    waitForBotSession,
+
     init() {
         this.user  = { sessions : [], revision: 0 };
         this.npc   = { spawns   : [], grid: {}, nextId: 1000000 };
@@ -273,36 +318,34 @@ const World = {
         }
 
         const BotManager = invoke('GameServer/Bot/BotManager');
-        const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const BotRemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
+        const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
 
         const hotSession = BotManager.findSessionByName(lookup);
         if (hotSession) {
-            BotSocialMemory.recordEvent(session, hotSession, 'chat', source);
-            const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
-            const BotAI = invoke('GameServer/Bot/BotAI');
-            const started = BotBrain.maybeThink(hotSession, 'player_chat', BotAI.getStatus(hotSession), message);
-            if (!started) {
-                const plan = hotSession.plan || 'hunting';
-                BotManager.botTell(hotSession, session, `I hear you. I'm ${plan} right now.`);
-            }
-            return Promise.resolve(true);
+            return BotDialogueArbiter.route({
+                playerSession: session,
+                botSession: hotSession,
+                text: message,
+                channel: source,
+                source,
+                allowFallback: true
+            }).then((result) => result?.ok !== false);
         }
 
         return LifeState.findByName(lookup).then((state) => {
             if (!state) {
-                session.dataSendToMe(ServerResponse.actionFailed());
+                unknownBotReply(session, lookup, BotManager, LifeState);
                 return false;
             }
 
-            return BotRemoteChat.replyForState(session, state, message).then((result) => {
-                if (!result?.ok || !result.reply) {
+            return BotRemoteChat.replyForState(session, state, message, source).then((result) => {
+                if (!result?.ok || !result.reply || result.delivered !== true) {
                     session.dataSendToMe(ServerResponse.actionFailed());
                     return false;
                 }
 
-                coldBotTell(session, state, result.reply);
                 console.info(
                     'BotRemoteChat :: %s replied to %s reason=%s',
                     state.name || lookup,

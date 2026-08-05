@@ -1,4 +1,5 @@
 const World = invoke('GameServer/World/World');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const PARTY_REWARD_RADIUS = 2500;
 // C4/L2J party reward curve. The total reward grows with the eligible party,
@@ -137,6 +138,17 @@ function npcDied(session, actor, npc) {
 
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
+    if (session?.accountId?.startsWith?.('bot_')) {
+        Promise.resolve(BotEventJournal.record({
+            botId: session.actor?.fetchId?.(),
+            eventType: 'kill',
+            summary: `${session.actor?.fetchName?.() || 'Bot'} defeated ${npc.fetchName?.() || 'a monster'}.`,
+            weight: 1,
+            dedupeKey: `kill:${session.actor?.fetchId?.()}:${npc.fetchTemplateId?.() || npc.fetchId?.()}`,
+            coalesceWindowMs: 30000,
+            meta: { npcId: npc.fetchId?.(), npcName: npc.fetchName?.() || null }
+        })).catch(() => {});
+    }
     const rewards = partyRewardShares(participants, npc.fetchAcquiredExp(), npc.fetchRewardSp());
 
     // C4's ordinary quest callback is attributed to the actual killer, not to

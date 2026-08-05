@@ -1,0 +1,203 @@
+const World = invoke('GameServer/World/World');
+const ServerResponse = invoke('GameServer/Network/Response');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const DataCache = invoke('GameServer/DataCache');
+const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
+
+function itemName(selfId) {
+    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId))?.template?.name
+        || `Item ${selfId}`;
+}
+
+function storeFor(session) {
+    const store = session?.actor?.fetchPrivateStore?.();
+    return session?.plan === 'merchant' && store?.storeType === 1 && Array.isArray(store.items)
+        ? store
+        : null;
+}
+
+function revision(store) {
+    return Math.max(1, Math.floor(Number(store?.revision) || 1));
+}
+
+function lineFor(store, identifier) {
+    const id = Number(identifier);
+    if (!store || !Number.isInteger(id) || id <= 0) return null;
+    return store.items.find((line) => Number(line.selfId) === id || Number(line.objectId) === id) || null;
+}
+
+function compactLine(line) {
+    if (!line) return null;
+    return {
+        selfId: Number(line.selfId),
+        name: line.name || itemName(line.selfId),
+        count: Math.max(0, Number(line.count || 0)),
+        unitPrice: Math.max(1, Number(line.price || 0))
+    };
+}
+
+function invalidateCustomerWindows(merchantActor) {
+    let invalidated = 0;
+    (World.user?.sessions || []).forEach((viewer) => {
+        if (viewer?.activeMerchantTrade?.merchant !== merchantActor) return;
+        viewer.activeMerchantTrade = null;
+        viewer.viewedPrivateStoreSeller = null;
+        viewer.dataSendToMe?.(ServerResponse.actionFailed());
+        invalidated += 1;
+    });
+    return invalidated;
+}
+
+function applyClosed(actor) {
+    actor.setPrivateStoreType(0);
+    actor.state?.setSeated?.(false);
+}
+
+function notifyClosed(session, actor) {
+    session.dataSendToOthers?.(ServerResponse.sitAndStand(actor), actor);
+    session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+}
+
+function applyOpened(actor, store) {
+    actor.setPrivateStore(store);
+    actor.setPrivateStoreType(1);
+    actor.state?.setSeated?.(true);
+}
+
+function notifyOpened(session, actor, store) {
+    session.dataSendToOthers?.(ServerResponse.sitAndStand(actor), actor);
+    session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+    session.dataSendToOthers?.(ServerResponse.privateStoreMsg(actor, store.title), actor);
+}
+
+function safelyNotify(label, work) {
+    try {
+        work();
+        return null;
+    } catch (error) {
+        const message = error?.message || String(error);
+        utils.infoWarn('BotMerchant', '%s broadcast failed: %s', label, message);
+        return message;
+    }
+}
+
+function persistedState(session, store) {
+    const current = session.coldMarketState;
+    const marketStore = current?.stats?.marketStore;
+    if (!current || !marketStore) return null;
+    return {
+        ...current,
+        stats: {
+            ...(current.stats || {}),
+            marketStore: {
+                ...marketStore,
+                title: store.title,
+                revision: store.revision,
+                items: store.items.map((line) => ({
+                    selfId: Number(line.selfId),
+                    name: line.name || itemName(line.selfId),
+                    count: Number(line.count),
+                    price: Number(line.price),
+                    rank: line.rank || 'none'
+                }))
+            },
+            lastNegotiatedStoreUpdate: {
+                revision: store.revision,
+                at: Date.now()
+            }
+        }
+    };
+}
+
+function restore(session, actor, store) {
+    store.repricing = false;
+    applyOpened(actor, store);
+    safelyNotify('restore', () => notifyOpened(session, actor, store));
+}
+
+async function republish(session, agreement) {
+    const actor = session?.actor;
+    const current = storeFor(session);
+    if (!actor || !current) return { ok: false, reason: 'merchant_store_unavailable' };
+    if (current.repricing === true) return { ok: false, reason: 'store_repricing' };
+    const persistedStoreId = String(session.coldMarketState?.stats?.marketStore?.id || '');
+    if (!persistedStoreId || String(agreement.storeId || '') !== persistedStoreId) {
+        return { ok: false, reason: 'store_changed' };
+    }
+    if (agreement.storeRevision && revision(current) !== Number(agreement.storeRevision)) {
+        return { ok: false, reason: 'store_changed' };
+    }
+
+    const line = lineFor(current, agreement.itemSelfId);
+    const quantity = Math.floor(Number(agreement.quantity));
+    const unitPrice = Math.floor(Number(agreement.unitPrice));
+    if (!line || quantity < 1 || quantity > Number(line.count || 0)) {
+        return { ok: false, reason: 'listed_stock_changed' };
+    }
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 1) {
+        return { ok: false, reason: 'invalid_store_price' };
+    }
+
+    const inventoryItem = actor.backpack?.fetchItemFromSelfId?.(line.selfId);
+    if (!inventoryItem || inventoryItem.fetchEquipped?.() || Number(inventoryItem.fetchAmount?.() || 0) < quantity) {
+        return { ok: false, reason: 'listed_stock_changed' };
+    }
+
+    const previous = current;
+    previous.repricing = true;
+    if (Number(previous.activePurchases || 0) > 0) {
+        previous.repricing = false;
+        return { ok: false, reason: 'store_busy' };
+    }
+    const nextItems = previous.items.map((entry) => (
+        entry === line
+            ? { ...entry, name: entry.name || itemName(entry.selfId), count: quantity, price: unitPrice }
+            : { ...entry, name: entry.name || itemName(entry.selfId) }
+    ));
+    const nextStore = {
+        ...previous,
+        repricing: false,
+        activePurchases: 0,
+        revision: revision(previous) + 1,
+        items: nextItems,
+        title: marketStoreTitle(nextItems)
+    };
+
+    const invalidatedWindows = invalidateCustomerWindows(actor);
+    applyClosed(actor);
+    const closeBroadcastWarning = safelyNotify('close', () => notifyClosed(session, actor));
+
+    let saved;
+    try {
+        const nextState = persistedState(session, nextStore);
+        if (!nextState) throw new Error('market_state_missing');
+        saved = await LifeState.upsertState(nextState, 'merchant_negotiated_reprice');
+        if (!saved) throw new Error('state_save_failed');
+    } catch (error) {
+        restore(session, actor, previous);
+        return { ok: false, reason: 'store_persist_failed', error: error.message || String(error) };
+    }
+
+    session.coldMarketState = saved;
+    applyOpened(actor, nextStore);
+    const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    return {
+        ok: true,
+        reason: 'store_reopened',
+        store: {
+            revision: nextStore.revision,
+            title: nextStore.title,
+            item: compactLine(lineFor(nextStore, agreement.itemSelfId))
+        },
+        invalidatedWindows,
+        broadcastWarning: openBroadcastWarning || closeBroadcastWarning
+    };
+}
+
+module.exports = {
+    compactLine,
+    lineFor,
+    republish,
+    revision,
+    storeFor
+};

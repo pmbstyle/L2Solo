@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+const Response = invoke('GameServer/Network/Response');
 
 function botAt(loc) {
     let casts = false;
@@ -36,6 +37,8 @@ function session(actor) {
 }
 
 const originalSetTimeout = global.setTimeout;
+const originalCharInfo = Response.charInfo;
+const originalRelationChanged = Response.relationChanged;
 
 try {
     const timers = [];
@@ -43,6 +46,8 @@ try {
         timers.push({ fn, delay });
         return 0;
     };
+    Response.charInfo = () => Buffer.from('char-info');
+    Response.relationChanged = () => Buffer.from('relation');
 
     const farBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const farSession = session(farBot);
@@ -79,7 +84,18 @@ try {
     assert.strictEqual(resumedResult, 'escape', 'pending town trip should start after combat ends');
     assert.strictEqual(fightingSession.pendingTownTrip, undefined, 'started town trip should clear its pending marker');
 
+    const visiblePackets = [];
+    const interruptedBot = botAt({ locX: 10, locY: 20, locZ: 30 });
+    const interruptedSession = session(interruptedBot);
+    interruptedSession.supplyErrandHidden = true;
+    interruptedSession.dataSendToOthers = (packet) => visiblePackets.push(packet);
+    BotTownTravel.revealSupplyErrand(interruptedSession, interruptedBot);
+    assert.strictEqual(interruptedSession.supplyErrandHidden, false, 'terminal supply workflow must reveal the bot');
+    assert.strictEqual(visiblePackets.length, 2, 'reveal must broadcast both character and relation packets');
+
     console.log('Bot town travel checks passed');
 } finally {
     global.setTimeout = originalSetTimeout;
+    Response.charInfo = originalCharInfo;
+    Response.relationChanged = originalRelationChanged;
 }

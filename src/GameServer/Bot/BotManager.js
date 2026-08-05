@@ -4,7 +4,6 @@ const DataCache   = invoke('GameServer/DataCache');
 const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
-const BotBrain    = invoke('GameServer/Bot/AI/BotBrain');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
@@ -21,6 +20,9 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SimulationKernel = invoke('GameServer/Bot/Simulation/SimulationKernel');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const BotConversation = invoke('GameServer/Bot/AI/BotConversation');
+const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
+const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
@@ -634,6 +636,7 @@ const BotManager = {
 
                         session.actor.setPrivateStore({
                             storeType: privateStore.storeType,
+                            revision: Math.max(1, Number(privateStore.revision || 1)),
                             title: privateStore.title,
                             town: privateStore.town,
                             items: storeItems
@@ -727,6 +730,39 @@ const BotManager = {
     },
 
     handlePlayerSpeak(playerSession, data) {
+        const partyChannel = Number(data?.kind) === 3;
+        const llmEnabled = invoke('GameServer/Bot/AI/BotBrain').isEnabled();
+        if (!partyChannel || !llmEnabled) return this.handlePlayerSpeakNow(playerSession, data);
+
+        // Route one party-chat turn at a time per player. The main bot request
+        // may continue asynchronously, but its owner is established before the
+        // next ingress turn is resolved, so rapid continuations cannot overtake
+        // an outstanding party-router decision or escape to the spokesperson.
+        const previous = playerSession.partyDialogueIngressPromise || Promise.resolve();
+        const run = Promise.resolve(previous)
+            .catch(() => {})
+            .then(() => this.handlePlayerSpeakNow(playerSession, data));
+        let tracked;
+        const clear = () => {
+            if (playerSession.partyDialogueIngressPromise === tracked) {
+                delete playerSession.partyDialogueIngressPromise;
+            }
+        };
+        tracked = run.then(
+            (result) => {
+                clear();
+                return result;
+            },
+            (error) => {
+                clear();
+                throw error;
+            }
+        );
+        playerSession.partyDialogueIngressPromise = tracked;
+        return tracked;
+    },
+
+    handlePlayerSpeakNow(playerSession, data) {
         const rawText = data.text.trim();
         const text = rawText.toLowerCase();
         const player = playerSession.actor;
@@ -734,14 +770,282 @@ const BotManager = {
 
         const SpeckMath = invoke('GameServer/SpeckMath');
         const playerPt = new SpeckMath.Point3D(player.fetchLocX(), player.fetchLocY(), player.fetchLocZ());
-        let brainGroupResponderPicked = false;
+        const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+        const PartyDialogueRouter = invoke('GameServer/Bot/AI/PartyDialogueRouter');
+        const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+        const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
+        const llmEnabled = BotBrain.isEnabled();
+        const groupAddress = /\b(bot|bots|guys|party|team|help|everyone|everybody|companions|all)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+        const partyChannel = Number(data.kind) === 3;
 
+        let llmResponder = null;
+        let deterministicRoute = null;
+        const dialogueState = PartyDialogueState.snapshot(playerSession);
+        const cheapRouterAvailable = llmEnabled && partyChannel && PartyLLMRouter.enabled() && !dialogueState?.routerInFlightAt;
+        const routeMetadata = {
+            event: 'party_chat_route',
+            channel: partyChannel ? 'party_chat' : 'local_chat',
+            playerId: player.fetchId?.() || null,
+            sessionId: `party-chat:${player.fetchId?.() || 'unknown'}`
+        };
+        if (llmEnabled) {
+            deterministicRoute = PartyDialogueRouter.select({
+                text: rawText,
+                playerSession,
+                sessions: this.sessions,
+                kind: data.kind,
+                dialogueState,
+                activeResponderId: playerSession.botDialogueResponderId,
+                activeResponderAt: playerSession.botDialogueResponderAt,
+                allowSpokespersonFallback: !cheapRouterAvailable
+            });
+            llmResponder = deterministicRoute.candidate;
+            if (llmResponder) {
+                PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
+                    reason: deterministicRoute.reason,
+                    text: rawText,
+                    channel: partyChannel ? 'party_chat' : 'local_chat',
+                    spokespersonId: deterministicRoute.reason === 'party_spokesperson' ? llmResponder.id : undefined
+                });
+            }
+            if (partyChannel) {
+                const addressObservation = LangfuseTracing.startObservation(
+                    'party.address.resolve',
+                    { message: rawText },
+                    { ...routeMetadata, status: deterministicRoute.status, reason: deterministicRoute.reason },
+                    'span'
+                );
+                addressObservation?.end({
+                    status: deterministicRoute.status,
+                    reason: deterministicRoute.reason,
+                    candidateId: deterministicRoute.candidate?.id || null,
+                    candidateCount: deterministicRoute.candidates?.length || 0
+                }, LangfuseTracing.observationStatus(deterministicRoute));
+                PartyDialogueRouter.recordMetric(deterministicRoute, {
+                    source: 'deterministic',
+                    dispatchCount: llmResponder ? 1 : 0
+                });
+                if (llmResponder) {
+                    const routeObservation = LangfuseTracing.startObservation(
+                        'party.dialogue.route',
+                        { message: rawText },
+                        { ...routeMetadata, source: 'deterministic', reason: deterministicRoute.reason },
+                        'span'
+                    );
+                    routeObservation?.end({
+                        route: 'bot',
+                        candidateId: llmResponder.id,
+                        reason: deterministicRoute.reason
+                    }, LangfuseTracing.observationStatus(deterministicRoute));
+                }
+            }
+        }
+
+        const dispatchLLM = (session, reason = deterministicRoute?.reason || 'deterministic_route') => {
+            if (!session?.actor) return Promise.resolve({ ok: false, reason: 'missing_bot' });
+            const currentState = PartyDialogueState.snapshot(playerSession);
+            if (String(currentState?.inFlightBotId || '') !== String(session.actor.fetchId())) {
+                PartyDialogueState.beginRequest(playerSession, session, {
+                    reason,
+                    text: rawText,
+                    channel: partyChannel ? 'party_chat' : 'local_chat',
+                    spokespersonId: reason === 'party_spokesperson' ? session.actor.fetchId() : undefined
+                });
+            }
+            const dispatchObservation = partyChannel
+                ? LangfuseTracing.startObservation(
+                    'party.dispatch',
+                    { botId: session.actor.fetchId?.(), message: rawText },
+                    { ...routeMetadata, botId: session.actor.fetchId?.() || null, reason },
+                    'span'
+                )
+                : null;
+            return BotDialogueArbiter.route({
+                playerSession,
+                botSession: session,
+                text: rawText,
+                channel: partyChannel ? 'party_chat' : 'local_chat',
+                source: partyChannel ? 'party_chat' : 'local_chat',
+                allowFallback: true
+            }).then((result) => {
+                dispatchObservation?.end(result, LangfuseTracing.observationStatus(result));
+                if (result?.started === true || result?.queued === true || result?.delivered === true) return result;
+                PartyDialogueState.clearInFlight(playerSession, session);
+                return result;
+            }).catch((error) => {
+                dispatchObservation?.end({ ok: false, reason: 'route_error', error: error.message }, {
+                    level: 'ERROR',
+                    statusMessage: error.message
+                });
+                PartyDialogueState.clearInFlight(playerSession, session);
+                utils.infoWarn('BotDialogue', 'local LLM chat route failed: %s', error.message);
+                return { ok: false, reason: 'route_error', error: error.message };
+            });
+        };
+
+        const deliverPartyClarification = async (candidate, matches = []) => {
+            if (!candidate?.session?.actor) return { ok: false, reason: 'missing_clarifier' };
+            const names = [...new Set((matches || [])
+                .map((match) => match?.name || match?.actor?.fetchName?.() || match?.session?.actor?.fetchName?.())
+                .filter(Boolean))];
+            const reply = names.length > 1
+                ? `Which one do you mean: ${names.join(' or ')}?`
+                : 'Which party member do you mean?';
+            const botSession = candidate.session;
+            const botId = botSession.actor.fetchId?.() || candidate.id || null;
+            const observation = LangfuseTracing.startObservation(
+                'party.dispatch',
+                { botId, message: rawText, action: 'clarify' },
+                { ...routeMetadata, botId, reason: 'router_clarify', deterministic: true },
+                'span'
+            );
+
+            PartyDialogueState.beginRequest(playerSession, botSession, {
+                reason: 'router_clarify',
+                text: rawText,
+                channel: 'party_chat',
+                spokespersonId: botId
+            });
+
+            let turn = null;
+            let persistenceError = null;
+            let persisted = false;
+            try {
+                const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+                turn = await BotConversationService.beginTurn({
+                    playerSession,
+                    botSession,
+                    text: rawText,
+                    channel: 'party_chat',
+                    source: 'party_router_clarification'
+                });
+            } catch (error) {
+                persistenceError = error;
+            }
+
+            try {
+                this.botTell(botSession, playerSession, reply);
+                PartyDialogueState.recordDeliveredReply(playerSession, botSession, reply, {
+                    turnId: turn?.turnId || `party-clarify:${botId}:${Date.now()}`,
+                    channel: 'party_chat'
+                });
+            } catch (error) {
+                PartyDialogueState.clearInFlight(playerSession, botSession);
+                observation?.end({ ok: false, delivered: false, clarification: true, error: error.message }, {
+                    level: 'ERROR',
+                    statusMessage: error.message
+                });
+                return { ok: false, started: false, delivered: false, clarification: true, reply, error: error.message };
+            }
+
+            if (turn) {
+                const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
+                try {
+                    persisted = await BotConversationService.recordFallback({
+                        playerSession,
+                        botSession,
+                        turnId: turn.turnId,
+                        channel: 'party_chat',
+                        text: reply,
+                        reason: 'party_route_clarification'
+                    });
+                } catch (error) {
+                    persistenceError = persistenceError || error;
+                }
+            }
+
+            const result = {
+                ok: true,
+                started: false,
+                delivered: true,
+                clarification: true,
+                reply,
+                persisted: persisted === true
+            };
+            observation?.end(result, persistenceError
+                ? { level: 'WARNING', statusMessage: persistenceError.message }
+                : LangfuseTracing.observationStatus(result));
+            return result;
+        };
+
+        if (llmEnabled && partyChannel && cheapRouterAvailable && !llmResponder && deterministicRoute && (
+            deterministicRoute.status === 'needs_router' || deterministicRoute.status === 'ambiguous'
+        )) {
+            const fallbackRoute = PartyDialogueRouter.select({
+                text: rawText,
+                playerSession,
+                sessions: this.sessions,
+                kind: data.kind,
+                dialogueState,
+                activeResponderId: playerSession.botDialogueResponderId,
+                activeResponderAt: playerSession.botDialogueResponderAt,
+                allowSpokespersonFallback: true
+            });
+            if (PartyDialogueState.beginRouter(playerSession)) {
+                return PartyLLMRouter.route({
+                    text: rawText,
+                    playerSession,
+                    candidates: deterministicRoute.candidates,
+                    selectedBotId: deterministicRoute.candidates.find((candidate) => candidate.selected)?.id || null,
+                    dialogueState: PartyDialogueState.snapshot(playerSession)
+                }).then((routerResult) => {
+                    PartyDialogueState.clearRouter(playerSession);
+                    let chosen = routerResult?.candidate || null;
+                    let reason = routerResult?.route === 'bot' ? 'router_bot' : `router_${routerResult?.route || 'fallback'}`;
+                    if (!chosen && ['party', 'clarify'].includes(routerResult?.route)) chosen = fallbackRoute.candidate;
+                    if (!chosen && routerResult?.ok !== true) chosen = fallbackRoute.candidate;
+                    PartyDialogueRouter.recordMetric(routerResult, {
+                        source: 'llm_router',
+                        dispatchCount: chosen ? 1 : 0
+                    });
+                    const routeObservation = LangfuseTracing.startObservation(
+                        'party.dialogue.route',
+                        { message: rawText },
+                        { ...routeMetadata, source: 'llm_router', reason },
+                        'span'
+                    );
+                    routeObservation?.end({
+                        route: routerResult?.route || 'fallback',
+                        candidateId: chosen?.id || null,
+                        reason: routerResult?.reason || reason
+                    }, LangfuseTracing.observationStatus(routerResult));
+                    if (routerResult?.route === 'clarify') {
+                        return chosen
+                            ? deliverPartyClarification(chosen, deterministicRoute.matches)
+                            : routerResult;
+                    }
+                    return chosen ? dispatchLLM(chosen.session, reason) : routerResult;
+                }).catch((error) => {
+                    PartyDialogueState.clearRouter(playerSession);
+                    PartyDialogueRouter.recordMetric({ route: 'none', reason: 'router_error' }, {
+                        source: 'llm_router',
+                        dispatchCount: fallbackRoute.candidate ? 1 : 0
+                    });
+                    return fallbackRoute.candidate
+                        ? dispatchLLM(fallbackRoute.candidate.session, 'router_error_fallback')
+                        : { ok: false, reason: 'router_error', error: error.message };
+                });
+            }
+            llmResponder = fallbackRoute.candidate;
+            deterministicRoute = fallbackRoute;
+            if (llmResponder) {
+                PartyDialogueState.beginRequest(playerSession, llmResponder.session, {
+                    reason: fallbackRoute.reason,
+                    text: rawText,
+                    channel: 'party_chat',
+                    spokespersonId: fallbackRoute.reason === 'party_spokesperson' ? llmResponder.id : undefined
+                });
+            }
+        }
+
+        let brainGroupResponderPicked = false;
         this.sessions.forEach((session) => {
             const bot = session.actor;
             if (!bot) return;
 
             const distance = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()).distance(playerPt);
-            if (distance > 1500) return; // Too far to hear
+            const partyCompanion = session.followPlayerSession === playerSession && session.partyCompanion === true;
+            if (distance > 1500 && !(partyChannel && partyCompanion)) return; // Party chat is roster-scoped, not proximity-scoped
 
             let handledByRule = false;
             const botName = bot.fetchName().toLowerCase();
@@ -750,7 +1054,18 @@ const BotManager = {
             const selectedBot = typeof player.fetchDestId === 'function' && player.fetchDestId() === bot.fetchId();
             const companionBot = session.followPlayerSession === playerSession && session.partyCompanion === true;
             const directCommandTarget = addressedToBot || selectedBot || companionBot;
-            const groupAddress = /\b(bot|bots|guys|party|team|help)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+
+            // When the developer LLM path is enabled, every addressed hot-bot
+            // message must enter the same conversation pipeline. The legacy
+            // regex replies intentionally remain only as the disabled-mode
+            // fallback; otherwise they silently bypass OpenRouter and lose
+            // the persona, memory, and Langfuse trace for the turn.
+            const llmAddressed = llmEnabled && llmResponder?.session === session;
+            if (llmEnabled) {
+                if (!llmAddressed) return;
+                dispatchLLM(session, deterministicRoute?.reason);
+                return;
+            }
 
             if (directCommandTarget && INSULT_PATTERN.test(rawText)) {
                 handledByRule = true;
@@ -850,7 +1165,16 @@ const BotManager = {
                     if (groupAddress && !addressedToBot && !selectedBot && !companionBot) {
                         brainGroupResponderPicked = true;
                     }
-                    BotBrain.maybeThink(session, 'player_chat', BotAI.getStatus(session), rawText);
+                    BotDialogueArbiter.route({
+                        playerSession,
+                        botSession: session,
+                        text: rawText,
+                        channel: 'local_chat',
+                        source: 'local_chat',
+                        allowFallback: true
+                    }).catch((error) => {
+                        utils.infoWarn('BotDialogue', 'local chat route failed: %s', error.message);
+                    });
                 }
             }
         });
@@ -1053,16 +1377,24 @@ const BotManager = {
             return dist < BotConversation.CONVERSATION_RANGE;
         });
 
-        if (targetSession && BotConversation.canStart(botSession, targetSession)) {
-            this.triggerConversation(botSession, targetSession);
+        if (!targetSession) return false;
+        if (BotAmbientDirector.enabled()) {
+            const started = BotAmbientDirector.start(botSession, targetSession);
+            if (!started.ok) return false;
+            return this.triggerConversation(botSession, targetSession, started.conversation, started.scene);
         }
+        if (BotConversation.canStart(botSession, targetSession)) {
+            return this.triggerConversation(botSession, targetSession);
+        }
+        return false;
     },
 
-    triggerConversation(botSession, targetSession) {
-        const conversation = BotConversation.start(botSession, targetSession);
+    triggerConversation(botSession, targetSession, existingConversation = null, ambientScene = null) {
+        const conversation = existingConversation || BotConversation.start(botSession, targetSession);
         if (!conversation) return false;
 
         const deliver = (index) => {
+            if (ambientScene?.cancelled || ambientScene?.finished) return;
             const line = conversation.lines[index];
             if (!line?.speaker?.actor) return;
             this.botSay(line.speaker, line.text);
@@ -1071,7 +1403,9 @@ const BotManager = {
         deliver(0);
         setTimeout(() => deliver(1), 2200);
         setTimeout(() => deliver(2), 4300);
-        setTimeout(() => BotConversation.finish(conversation), 6500);
+        setTimeout(() => ambientScene
+            ? BotAmbientDirector.finish(ambientScene, 'completed')
+            : BotConversation.finish(conversation), 6500);
         return true;
     },
 

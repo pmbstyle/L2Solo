@@ -166,6 +166,7 @@ function resolveTravel(state, timestamp = Date.now()) {
 function staleShopping(state) {
     return state?.activity === 'shopping'
         && !state.stats?.marketReturn
+        && !state.stats?.supplyErrand
         && state.currentRegion !== 'Giran';
 }
 
@@ -453,6 +454,37 @@ const BackgroundResolver = {
         if (state.activity === 'traveling') {
             const travelResult = resolveTravel(state, timestamp);
             if (travelResult) return travelResult;
+        }
+
+        if (state.stats?.supplyErrand) {
+            const expiresAt = Number(state.stats.supplyErrand.expiresAt || 0);
+            if (expiresAt > 0 && timestamp >= expiresAt) {
+                return {
+                    patch: {
+                        activity: 'hunting',
+                        stats: {
+                            ...(state.stats || {}),
+                            supplyErrand: null,
+                            lastReason: 'supply_errand_expired'
+                        }
+                    },
+                    events: [{
+                        type: 'supply_errand_expired',
+                        summary: `${state.name || 'Bot'} abandoned an expired companion supply errand and resumed hunting`,
+                        weight: 2
+                    }],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                    nextResolveAt: timestamp + 30000,
+                    debug: { activity: 'supply_errand_expired' }
+                };
+            }
+            return {
+                patch: { activity: 'shopping', stats: { ...(state.stats || {}) } },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 30000,
+                debug: { activity: 'supply_errand' }
+            };
         }
 
         if (staleShopping(state) && spot) {

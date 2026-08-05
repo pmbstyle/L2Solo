@@ -282,6 +282,7 @@ class Session {
             utils.infoWarn('GameServer', 'connection closed');
         }
         if (this.actor) {
+            invoke('GameServer/Bot/BotTradeService').cleanup(this, 'disconnect');
             // Companion social events are persisted asynchronously. Preserve
             // the identity before the actor is destroyed so a normal network
             // disconnect cannot overwrite the remembered player name.

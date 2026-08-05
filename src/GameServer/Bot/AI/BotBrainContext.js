@@ -1,6 +1,9 @@
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
 
 const SLOT_NAMES = {
     1: 'right_ear',
@@ -30,6 +33,12 @@ function safeNumber(read, fallback = 0) {
     } catch (_) {
         return fallback;
     }
+}
+
+function textRequestsInventory(text = '') {
+    const lower = String(text || '').toLowerCase();
+    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|give|bring|spare|need|have|sell|buy|equip|equipped|upgrade)\b/.test(lower) ||
+        /(инвент|вещ|шмот|оруж|брон|аден|сос|шоты|шот|трейд|лут|дай|принес|принести|запас|нужн|есть|прод|экип|надет|улучш)/.test(lower);
 }
 
 function compactTarget(target) {
@@ -177,8 +186,7 @@ function inventorySnapshot(actor, text = '') {
 
     const items = backpack.fetchItems();
     const lower = String(text || '').toLowerCase();
-    const wantsItems = /\b(item|items|inventory|gear|weapon|armor|adena|shot|trade|loot|give|sell|buy)\b/.test(lower) ||
-        /(инвент|вещ|шмот|оруж|брон|аден|сос|трейд|лут|дай|прод)/.test(lower);
+    const wantsItems = textRequestsInventory(lower);
     const shotPlan = ShotStock.planForActor(actor);
     const shotItem = backpack.fetchItemFromSelfId(shotPlan.selfId);
 
@@ -204,6 +212,13 @@ function inventorySnapshot(actor, text = '') {
             amount: Number(shotItem?.fetchAmount?.() || 0),
             loaded: shotPlan.kind === 'spiritshot' ? !!actor.spiritshotLoaded : !!actor.soulshotLoaded
         },
+        // The compact catalog keeps common supplies visible without blowing
+        // the bounded hot-dialogue prompt. The server resolver still accepts
+        // every NPC-listed item by exact name, even when it is not in this
+        // compact view.
+        supplyCatalog: wantsItems
+            ? MarketOpportunity.supplyCatalog(48).map((entry) => [entry.selfId, entry.name, entry.price, entry.town])
+            : null,
         notable,
         truncated: notable.length < items.length
     };
@@ -241,16 +256,25 @@ function skillsSnapshot(actor, text = '') {
         support: {
             canHeal: BotRoles.isHealer(actor),
             canBuff: BotRoles.canBuff(actor),
-            availableBuffs: Object.keys(BotBuffs.SUPPORT_BUFFS)
+            // Advertise only buffs backed by a learned, executable friendly
+            // skill. The old global list made the LLM request Might/Shield on
+            // classes that only had native chants or resistance buffs.
+            availableBuffs: BotSkillCapabilities.supportBuffs(actor).map((buff) => ({
+                type: buff.type,
+                name: buff.name,
+                skillId: buff.skill.fetchSelfId()
+            }))
         },
         truncated: active.length < skills.filter((skill) => !skill.fetchPassive()).length
     };
 }
 
-function compactStatus(session, status, text = '') {
+function compactStatus(session, status, text = '', options = {}) {
     if (!status || !status.available) return status;
 
     const actor = session?.actor;
+    const includeInventory = options.includeInventory !== false;
+    const includeSkills = options.includeSkills !== false;
     return {
         name: status.name,
         level: status.level,
@@ -268,15 +292,40 @@ function compactStatus(session, status, text = '') {
         blockers: status.blockers,
         spot: compactSpot(status.spot),
         buffs: buffSnapshot(actor, status),
-        equipment: equipmentSnapshot(actor),
-        inventory: inventorySnapshot(actor, text),
-        skills: skillsSnapshot(actor, text),
+        equipment: options.includeEquipment === false ? null : equipmentSnapshot(actor),
+        inventory: includeInventory ? inventorySnapshot(actor, text) : null,
+        skills: includeSkills ? skillsSnapshot(actor, text) : null,
         roleDecision: status.roleDecision || null,
+        trade: status.trade || null,
+        ambient: status.ambient || null,
+        inference: status.inference || null,
+        policy: status.policy || null,
+        persona: status.persona || null,
+        social: status.social || null
+    };
+}
+
+function compactMerchantStatus(session, status, playerSession = null) {
+    if (!status || !status.available) return status;
+    const market = BotNegotiationService.storeContext(session, playerSession);
+    if (market) delete market.title;
+    return {
+        name: status.name,
+        level: status.level,
+        classId: status.classId,
+        mode: status.mode,
+        intent: status.intent,
+        role: status.role,
+        nearby: status.nearby || null,
+        blockers: status.blockers || null,
+        market,
         persona: status.persona || null,
         social: status.social || null
     };
 }
 
 module.exports = {
-    compactStatus
+    compactStatus,
+    compactMerchantStatus,
+    textRequestsInventory
 };

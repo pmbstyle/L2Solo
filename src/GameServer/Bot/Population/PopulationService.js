@@ -762,6 +762,7 @@ const PopulationService = {
                         // as a solo hot bot and silently dissolve the group.
                         const available = states.filter((state) => (
                             !['pk_hunting', 'traveling'].includes(state.activity) &&
+                            !state.stats?.supplyErrand &&
                             !state.party?.partyId
                         ));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
@@ -805,6 +806,7 @@ const PopulationService = {
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
+                if (session.chatArrivalActive) return false;
                 if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return false;
                 // Red-name bots are part of the visible PK population, not
                 // disposable ambient population. Keep them hot until their

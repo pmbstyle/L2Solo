@@ -7,6 +7,10 @@ const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
+const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -186,8 +190,14 @@ function nearbySnapshot(bot) {
 function tradeSnapshot(session, bot) {
     const store = bot.fetchPrivateStore && bot.fetchPrivateStore();
     const loot = session.lastLootRequest || null;
+    const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+    const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
+    const active = BotTradeService.activeTradeSummary(session);
+    const negotiation = BotNegotiationService.activeSummary(session);
 
     return {
+        active,
+        negotiation,
         store: store ? {
             type: store.storeType === 3 ? 'buy' : 'sell',
             title: store.title || '',
@@ -240,6 +250,7 @@ const BotStatus = {
 
         const role = BotRoles.inferRole(bot);
         const dead = bot.state.fetchDead();
+        const ambient = BotAmbientDirector.snapshot(session);
         const target = findTarget(session, bot);
         const leaderSession = session.followPlayerSession && session.partyCompanion === true ? session.followPlayerSession : null;
         const partySettings = leaderSession ? PartyCompanionService.getSettings(leaderSession) : null;
@@ -337,7 +348,15 @@ const BotStatus = {
             },
             nearby: nearbySnapshot(bot),
             trade: tradeSnapshot(session, bot),
+            ambient,
+            inference: BotInferenceBudget.snapshot(session),
+            llm: {
+                last: session.lastBrainTelemetry || null,
+                context: session.lastBrainContextTelemetry || null,
+                langfuse: LangfuseTracing.status()
+            },
             persona: personaSnapshot(session),
+            policy: HotBotPolicyOverlay.status(session),
             social: session.socialSummary || null,
             lastSocialEvent: session.lastSocialEvent || null,
             blockers: []
@@ -357,6 +376,8 @@ const BotStatus = {
         const spot = status.spot && status.spot.name ? ` spot=${status.spot.name}` : '';
         const home = status.home && status.home.region ? ` home=${status.home.region}${status.home.visitor ? ':visitor' : ''}` : '';
         const social = status.social ? ` social=${status.social.playerName}:${status.social.relationship}/${status.social.trust}` : '';
+        const ambient = status.ambient ? ` mood=${status.ambient.mood}/${status.ambient.intent}` : '';
+        const inference = status.inference ? ` llm=${status.inference.requests}/${status.inference.maxRequests}` : '';
         const roleDecision = status.roleDecision ? ` decision=${status.roleDecision.action}/${status.roleDecision.reason}` : '';
         const targetDecision = status.decisions?.target ? ` targetScore=${status.decisions.target.score}` : '';
         const combatDecision = status.decisions?.combat
@@ -370,7 +391,7 @@ const BotStatus = {
         const buffs = status.buffs?.needsRefresh ? ' buffs=refresh' : '';
         const blockers = status.blockers.length > 0 ? ` blockers=${status.blockers.join(',')}` : '';
 
-        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${social}${roleDecision}${targetDecision}${combatDecision}${pvpDecision}${build}${path}${buffs}${blockers}`;
+        return `${status.name}: mode=${status.mode} intent=${status.intent} role=${status.role}${home} hp=${hp}% mp=${mp}%${target}${spot}${ambient}${inference}${social}${roleDecision}${targetDecision}${combatDecision}${pvpDecision}${build}${path}${buffs}${blockers}`;
     }
 };
 

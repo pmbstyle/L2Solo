@@ -1,0 +1,171 @@
+const assert = require('assert');
+
+require('../src/Global');
+
+const BotManager = invoke('GameServer/Bot/BotManager');
+const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+const BotDialogueArbiter = invoke('GameServer/Bot/AI/BotDialogueArbiter');
+const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
+const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+const PartyDialogueRouter = invoke('GameServer/Bot/AI/PartyDialogueRouter');
+const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const World = invoke('GameServer/World/World');
+
+function actor(id, name, x) {
+    return {
+        fetchId: () => id,
+        fetchName: () => name,
+        fetchLocX: () => x,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchDestId: () => 0,
+        fetchIsOnline: () => true,
+        isDead: () => false
+    };
+}
+
+function session(id, name, x) {
+    return {
+        accountId: `bot_${id}`,
+        actor: actor(id, name, x),
+        partyCompanion: true,
+        dataSendToMe() {}
+    };
+}
+
+async function main() {
+    const originalSessions = BotManager.sessions;
+    const originalWorldUser = World.user;
+    const originalEnabled = BotBrain.isEnabled;
+    const originalRouterEnabled = PartyLLMRouter.enabled;
+    const originalRouterRoute = PartyLLMRouter.route;
+    const originalArbiterRoute = BotDialogueArbiter.route;
+    const originalStartObservation = LangfuseTracing.startObservation;
+    const player = { accountId: 'player_party_route', actor: actor(100, 'Slava', 0), dataSendToMe() {} };
+    const nice = session(1, 'NiceBot', 5000);
+    const mira = session(2, 'Mira', 7000);
+    nice.followPlayerSession = player;
+    mira.followPlayerSession = player;
+    const routed = [];
+    let routerCalls = 0;
+    const spans = [];
+    try {
+        PartyDialogueRouter.resetMetrics();
+        LangfuseTracing.startObservation = (name) => ({
+            end(value, status) { spans.push({ name, value, status }); },
+            update() {}
+        });
+        BotManager.sessions = [nice, mira];
+        World.user = { sessions: [player, nice, mira] };
+        BotBrain.isEnabled = () => true;
+        PartyLLMRouter.enabled = () => true;
+        PartyLLMRouter.route = async (input) => {
+            routerCalls += 1;
+            assert.strictEqual(input.candidates.length, 2, 'router must receive only the party roster');
+            return {
+                ok: true,
+                route: 'bot',
+                candidate: input.candidates[1],
+                reason: 'router chose the healer',
+                intent: 'support',
+                confidence: 0.95
+            };
+        };
+        BotDialogueArbiter.route = async (input) => {
+            routed.push({ bot: input.botSession.actor.fetchName(), text: input.text });
+            return { ok: true, started: true };
+        };
+
+        const result = await BotManager.handlePlayerSpeak(player, {
+            kind: 3,
+            text: 'who should handle this?'
+        });
+        assert.strictEqual(routerCalls, 1, 'one party message must cause at most one router call');
+        assert.deepStrictEqual(routed.map((entry) => entry.bot), ['Mira']);
+        assert.strictEqual(result.started, true);
+        const metrics = PartyDialogueRouter.metrics();
+        assert.strictEqual(metrics.messages, 1);
+        assert.strictEqual(metrics.routerInvocations, 1);
+        assert.strictEqual(metrics.dispatches, 1);
+        assert.strictEqual(metrics.multiDispatchViolations, 0);
+        assert.deepStrictEqual(
+            spans.map((span) => span.name),
+            ['party.address.resolve', 'party.dialogue.route', 'party.dispatch']
+        );
+
+        PartyDialogueState.reset(player);
+        routed.length = 0;
+        routerCalls = 0;
+        let resolveRouter;
+        PartyLLMRouter.route = (input) => {
+            routerCalls += 1;
+            return new Promise((resolve) => {
+                resolveRouter = () => resolve({
+                    ok: true,
+                    route: 'bot',
+                    candidate: input.candidates[1],
+                    reason: 'router chose Mira',
+                    intent: 'conversation',
+                    confidence: 0.9
+                });
+            });
+        };
+
+        const first = BotManager.handlePlayerSpeak(player, { kind: 3, text: 'who should do it?' });
+        for (let attempt = 0; attempt < 20 && !resolveRouter; attempt += 1) {
+            await new Promise((resolve) => setImmediate(resolve));
+        }
+        assert.ok(resolveRouter, 'the first party turn must reach the LLM router');
+        const second = BotManager.handlePlayerSpeak(player, { kind: 3, text: 'yes, do it' });
+        assert.deepStrictEqual(routed, [], 'a later turn must not overtake the pending router decision');
+        resolveRouter();
+        await Promise.all([first, second]);
+        assert.strictEqual(routerCalls, 1, 'the continuation must reuse the established in-flight owner');
+        assert.deepStrictEqual(routed, [
+            { bot: 'Mira', text: 'who should do it?' },
+            { bot: 'Mira', text: 'yes, do it' }
+        ]);
+
+        PartyDialogueState.reset(player);
+        routed.length = 0;
+        const arina = session(3, 'Arina', 5000);
+        const arinor = session(4, 'Arinor', 5000);
+        arina.followPlayerSession = player;
+        arinor.followPlayerSession = player;
+        BotManager.sessions = [arina, arinor];
+        World.user = { sessions: [player, arina, arinor] };
+        PartyLLMRouter.route = async () => ({
+            ok: true,
+            route: 'clarify',
+            candidate: null,
+            reason: 'ambiguous name',
+            intent: 'clarify_addressee',
+            confidence: 0.95
+        });
+        const clarification = await BotManager.handlePlayerSpeak(player, {
+            kind: 3,
+            text: 'Arin, take pull.'
+        });
+        assert.strictEqual(clarification.clarification, true);
+        assert.strictEqual(clarification.reply, 'Which one do you mean: Arina or Arinor?');
+        assert.deepStrictEqual(routed, [], 'clarification must not enter the tool-capable main BotBrain');
+        assert.strictEqual(PartyDialogueState.snapshot(player).recentTurns.at(-1).text, clarification.reply);
+    } finally {
+        PartyDialogueRouter.resetMetrics();
+        PartyDialogueState.reset(player);
+        BotManager.sessions = originalSessions;
+        World.user = originalWorldUser;
+        BotBrain.isEnabled = originalEnabled;
+        PartyLLMRouter.enabled = originalRouterEnabled;
+        PartyLLMRouter.route = originalRouterRoute;
+        BotDialogueArbiter.route = originalArbiterRoute;
+        LangfuseTracing.startObservation = originalStartObservation;
+    }
+
+    console.log('Party chat routing integration checks passed');
+}
+
+main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

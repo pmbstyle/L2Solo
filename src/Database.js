@@ -199,7 +199,139 @@ function applySchemaMigrations() {
         [2, () => connection.exec(`
             CREATE UNIQUE INDEX IF NOT EXISTS accounts_username_nocase ON accounts(username COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS characters_username_nocase ON characters(username COLLATE NOCASE);
-        `)]
+        `)],
+        [3, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_conversations_bot_updated ON bot_conversations(botId, updatedAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_conversation_messages_recent ON bot_conversation_messages(conversationId, id DESC);
+            CREATE INDEX IF NOT EXISTS bot_conversation_messages_turn ON bot_conversation_messages(conversationId, turnId, role);
+        `)],
+        [4, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_activity_journal (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playerId INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                eventType TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                weight INTEGER NOT NULL DEFAULT 1,
+                dedupeKey TEXT,
+                count INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+        `)],
+        [5, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                turnId TEXT,
+                toolName TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                worldRevision TEXT,
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
+        `)],
+        [6, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_negotiations (
+                id TEXT PRIMARY KEY,
+                playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                itemObjectId INTEGER NOT NULL,
+                itemSelfId INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                referenceUnitPrice INTEGER NOT NULL,
+                desiredUnitPrice INTEGER NOT NULL,
+                minimumUnitPrice INTEGER NOT NULL,
+                maximumUnitPrice INTEGER NOT NULL,
+                currentUnitPrice INTEGER NOT NULL,
+                agreedTotalPrice INTEGER,
+                round INTEGER NOT NULL DEFAULT 0,
+                state TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                expiresAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_negotiations_pair_recent ON bot_negotiations(playerId, botId, updatedAt DESC);
+            CREATE INDEX IF NOT EXISTS bot_negotiations_bot_recent ON bot_negotiations(botId, updatedAt DESC);
+        `)],
+        [7, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_llm_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                turnId TEXT NOT NULL UNIQUE,
+                playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                eventType TEXT NOT NULL,
+                channel TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL DEFAULT 'queued',
+                requestId TEXT,
+                traceId TEXT,
+                startedAt INTEGER,
+                finishedAt INTEGER,
+                outcome TEXT,
+                model TEXT,
+                promptTokens INTEGER NOT NULL DEFAULT 0,
+                completionTokens INTEGER NOT NULL DEFAULT 0,
+                totalTokens INTEGER NOT NULL DEFAULT 0,
+                cost REAL,
+                error TEXT NOT NULL DEFAULT '',
+                metaJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
+            CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
+             CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+        `)],
+        [8, () => {
+            const addColumn = (table, name, definition) => {
+                const columns = connection.prepare(`PRAGMA table_info(${table})`).all();
+                if (!columns.some((column) => column.name === name)) {
+                    connection.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+                }
+            };
+            addColumn('bot_conversations', 'summaryThroughOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversations', 'nextTurnOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'turnOrdinal', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'messageOrder', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_conversation_messages', 'compacted', 'INTEGER NOT NULL DEFAULT 0');
+            connection.exec(`
+                UPDATE bot_conversation_messages
+                SET turnOrdinal = COALESCE((
+                    SELECT MIN(first.id)
+                    FROM bot_conversation_messages first
+                    WHERE first.conversationId = bot_conversation_messages.conversationId
+                      AND first.turnId = bot_conversation_messages.turnId
+                ), id)
+                WHERE turnOrdinal = 0;
+                UPDATE bot_conversation_messages
+                SET messageOrder = CASE role WHEN 'player' THEN 0 WHEN 'bot' THEN 1 ELSE 2 END;
+                UPDATE bot_conversations
+                SET nextTurnOrdinal = COALESCE((
+                    SELECT MAX(turnOrdinal)
+                    FROM bot_conversation_messages
+                    WHERE conversationId = bot_conversations.id
+                ), 0)
+                WHERE nextTurnOrdinal = 0;
+                UPDATE bot_conversations
+                SET summaryThroughOrdinal = COALESCE((
+                    SELECT MAX(turnOrdinal)
+                    FROM bot_conversation_messages
+                    WHERE conversationId = bot_conversations.id
+                      AND id <= bot_conversations.summaryThroughId
+                ), 0)
+                WHERE summaryThroughOrdinal = 0 AND summaryThroughId > 0;
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_order
+                    ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
+            `);
+        }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -352,6 +484,65 @@ const Database = {
             });
             return { characterId, entries: Object.keys(inventory).length };
         }, 'inventory:sync-summary'));
+    },
+
+    transferInventoryBetweenCharacters(transfers = []) {
+        const entries = (transfers || []).map((transfer) => ({
+            fromCharacterId: Number(transfer.fromCharacterId),
+            toCharacterId: Number(transfer.toCharacterId),
+            sourceItemId: Number(transfer.sourceItemId),
+            selfId: Number(transfer.selfId),
+            amount: Math.floor(Number(transfer.amount)),
+            stackable: transfer.stackable ? 1 : 0,
+            name: transfer.name || '',
+            slot: Number(transfer.slot || 0),
+            petData: transfer.petData
+                ? (typeof transfer.petData === 'string' ? transfer.petData : JSON.stringify(transfer.petData))
+                : null
+        }));
+        const characterIds = entries.flatMap((entry) => [entry.fromCharacterId, entry.toCharacterId]);
+        return withCharacterFlushes(characterIds, () => inTransaction(() => {
+            if (!entries.length) throw new Error('empty inventory transfer');
+
+            const sources = entries.map((entry) => {
+                if (!entry.fromCharacterId || !entry.toCharacterId || !entry.sourceItemId || !entry.selfId || entry.amount <= 0) {
+                    throw new Error('invalid inventory transfer');
+                }
+                const source = one('SELECT id, selfId, name, amount, equipped, slot, petData FROM items WHERE id = ? AND characterId = ?', [entry.sourceItemId, entry.fromCharacterId]);
+                if (!source || Number(source.selfId) !== entry.selfId || Number(source.amount) < entry.amount || Number(source.equipped) !== 0) {
+                    throw new Error('inventory item changed');
+                }
+                return { entry, source };
+            });
+
+            const moved = [];
+            sources.forEach(({ entry, source }) => {
+                const remaining = Number(source.amount) - entry.amount;
+                if (remaining <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [entry.sourceItemId, entry.fromCharacterId]);
+                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remaining, entry.sourceItemId, entry.fromCharacterId]);
+
+                let target = null;
+                if (entry.stackable) {
+                    target = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [entry.toCharacterId, entry.selfId]);
+                }
+                let targetItemId;
+                if (target) {
+                    targetItemId = Number(target.id);
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(target.amount) + entry.amount, targetItemId, entry.toCharacterId]);
+                } else {
+                    targetItemId = write(
+                        'INSERT INTO items (selfId, name, amount, equipped, slot, petData, characterId) VALUES (?, ?, ?, 0, ?, ?, ?)',
+                        [entry.selfId, entry.name || source.name || `Item ${entry.selfId}`, entry.amount, entry.slot, entry.petData || source.petData || null, entry.toCharacterId]
+                    ).insertId;
+                }
+                moved.push({
+                    ...entry,
+                    targetItemId: Number(targetItemId),
+                    remaining
+                });
+            });
+            return moved;
+        }, 'trade:inventory-transfer'));
     },
 
     createAccount(username, password) {

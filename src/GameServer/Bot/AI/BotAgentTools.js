@@ -3,21 +3,63 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const BotToolRegistry = invoke('GameServer/Bot/AI/BotToolRegistry');
+const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
+const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const Attack = invoke('GameServer/Actor/Attack');
+const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
+const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 
 const ACTIONS = [
     'none',
     'say',
     'follow_player',
+    'regroup_party',
+    'stay_party',
     'stay_here',
     'hunt',
     'rest',
     'shop',
+    'fetch_resources',
     'move_to_spot',
     'buff_target',
-    'heal_target'
+    'set_buff_policy',
+    'heal_target',
+    'set_pull_policy',
+    'stop_pulling_and_return',
+    'assign_puller',
+    'unassign_puller',
+    'set_skill_priority',
+    'clear_skill_priority',
+    'set_combat_stance',
+    'list_safe_loadouts',
+    'equip_candidate',
+    'optimize_equipment',
+    'list_party_candidates',
+    'propose_trade',
+    'give_resources',
+    'offer_resources',
+    'update_trade_offer',
+    'cancel_trade',
+    'quote_item',
+    'counter_offer',
+    'accept_price',
+    'decline_price',
+    'open_negotiated_trade'
 ];
 
-const PK_LOCKED_ACTIONS = new Set(['follow_player', 'stay_here', 'hunt', 'rest', 'shop', 'move_to_spot']);
+const PK_LOCKED_ACTIONS = new Set([
+    'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'fetch_resources', 'move_to_spot',
+    'set_pull_policy', 'assign_puller', 'unassign_puller',
+    'stop_pulling_and_return',
+    'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
+    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
+    'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
+    'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
+]);
 
 function clean(text) {
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
@@ -62,6 +104,15 @@ function say(session, text, targetSession = null) {
         BotAI.say(session, line);
     }
     return true;
+}
+
+function replyOutcome(session, text, targetSession = null) {
+    const line = clean(text);
+    const replyDelivered = line ? say(session, line, targetSession) : false;
+    return {
+        replyDelivered,
+        playerVisibleReply: replyDelivered ? line : null
+    };
 }
 
 function sit(session, bot) {
@@ -142,16 +193,30 @@ function distance2d(a, b) {
 function applyBuffTarget(session, bot, decision, targetSession) {
     const target = targetSession?.actor;
     const buffType = String(decision.buffType || '').toLowerCase();
-    if (!target || !BotBuffs.SUPPORT_BUFFS[buffType]) return { applied: false, reason: 'invalid_buff_target' };
+    if (!target) return { applied: false, reason: 'invalid_buff_target' };
     if (!BotRoles.canBuff(bot)) return { applied: false, reason: 'bot_cannot_buff' };
     const skill = BotSkillCapabilities.buffSkill(bot, buffType);
-    if (!skill) return { applied: false, reason: 'buff_not_learned' };
+    const semantic = skill?.fetchSemantic?.() || {};
+    const targetKind = semantic.target || skill?.fetchTargetKind?.();
+    if (!skill || (targetKind && !['friendly', 'ally', 'party'].includes(targetKind))) {
+        return { applied: false, reason: 'buff_not_learned' };
+    }
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
+    const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+    BotPartyChat.expectSkillResult(session, {
+        target,
+        targetSession,
+        skill,
+        kind: 'support'
+    });
     invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
-    say(session, decision.reply || `${BotBuffs.SUPPORT_BUFFS[buffType].name} on ${target.fetchName()}.`, targetSession);
-    return { applied: true, reason: `buff:${buffType}` };
+    return { applied: true, reason: `buff_requested:${buffType}` };
+}
+
+function clearChatArrival(session, reason) {
+    try { invoke('GameServer/Bot/AI/ChatArrivalState').clear(session, reason); } catch (_) { /* optional movement overlay */ }
 }
 
 function applyHealTarget(session, bot, decision, targetSession) {
@@ -163,13 +228,19 @@ function applyHealTarget(session, bot, decision, targetSession) {
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_heal' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
 
+    const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+    BotPartyChat.expectSkillResult(session, {
+        target,
+        targetSession,
+        skill,
+        kind: 'heal'
+    });
     invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
-    say(session, decision.reply || `Healing you, ${target.fetchName()}.`, targetSession);
 
-    return { applied: true, reason: 'heal_target' };
+    return { applied: true, reason: 'heal_requested' };
 }
 
-function execute(session, decision, visiblePlayers) {
+function executeLegacy(session, decision, visiblePlayers) {
     const bot = session.actor;
     if (!bot || !decision || Number(decision.confidence || 0) < 0.45) {
         return { applied: false, reason: 'low_confidence_or_missing_context' };
@@ -188,22 +259,32 @@ function execute(session, decision, visiblePlayers) {
         return { applied: true, reason: 'none' };
     }
     if (action === 'say') {
-        return { applied: say(session, decision.reply, targetSession), reason: 'say' };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: reply.replyDelivered, reason: 'say', ...reply };
     }
     if (action === 'follow_player') {
         if (!targetSession) return { applied: false, reason: 'missing_target_player' };
         stand(session, bot);
         if (isPartyCompanionOf(session, targetSession)) {
+            clearChatArrival(session, 'party_follow');
             session.plan = 'following';
             session.botStay = false;
-            say(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
+            const reply = replyOutcome(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
+            return { applied: true, reason: 'follow_player', ...reply };
         } else {
+            const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
+            ChatArrivalState.start(session, targetSession, {
+                reason: 'player_chat_follow',
+                persistent: true,
+                stopOnArrival: true
+            });
             approachPlayer(session, bot, targetSession);
-            say(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
+            const reply = replyOutcome(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
+            return { applied: true, reason: 'follow_player', ...reply };
         }
-        return { applied: true, reason: 'follow_player' };
     }
     if (action === 'stay_here') {
+        clearChatArrival(session, 'stay_here');
         session.botStay = true;
         session.stayLocation = {
             locX: bot.fetchLocX(),
@@ -213,26 +294,28 @@ function execute(session, decision, visiblePlayers) {
         if (session.followPlayerSession && session.partyCompanion === true) {
             session.plan = 'following';
         }
-        say(session, decision.reply || 'Holding this position.', targetSession);
-        return { applied: true, reason: 'stay_here' };
+        const reply = replyOutcome(session, decision.reply || 'Holding this position.', targetSession);
+        return { applied: true, reason: 'stay_here', ...reply };
     }
     if (action === 'hunt') {
+        clearChatArrival(session, 'hunt');
         stand(session, bot);
         if (session.partyCompanion === true && session.followPlayerSession) {
             session.plan = 'hunting';
             session.botStay = false;
-            say(session, decision.reply || 'Hunting with the party.', targetSession);
-            return { applied: true, reason: 'party_hunt' };
+            const reply = replyOutcome(session, decision.reply || 'Hunting with the party.', targetSession);
+            return { applied: true, reason: 'party_hunt', ...reply };
         }
 
         session.plan = 'hunting';
         session.followPlayerSession = null;
         session.partyCompanion = false;
         session.botStay = false;
-        say(session, decision.reply, targetSession);
-        return { applied: true, reason: 'hunt' };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'hunt', ...reply };
     }
     if (action === 'rest') {
+        clearChatArrival(session, 'rest');
         const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
         const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
         if (hpRatio >= 0.95 && mpRatio >= 0.95) {
@@ -243,34 +326,34 @@ function execute(session, decision, visiblePlayers) {
             } else {
                 session.plan = 'hunting';
             }
-            say(session, decision.reply || "I'm already recovered.", targetSession);
-            return { applied: true, reason: 'already_recovered' };
+            const reply = replyOutcome(session, decision.reply || "I'm already recovered.", targetSession);
+            return { applied: true, reason: 'already_recovered', ...reply };
         }
 
         session.plan = 'resting';
         session.currentTargetId = undefined;
         bot.unselect();
         sit(session, bot);
-        say(session, decision.reply, targetSession);
-        return { applied: true, reason: 'rest' };
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'rest', ...reply };
     }
     if (action === 'shop') {
-        if (startShopping(session, bot)) {
-            say(session, decision.reply, targetSession);
-        } else {
-            say(session, decision.reply || 'I will stay with the party and sell later.', targetSession);
+        if (!startShopping(session, bot)) {
+            return { applied: false, reason: 'party_companion_cannot_shop_now' };
         }
-        return { applied: true, reason: 'shop' };
+        clearChatArrival(session, 'shop');
+        const reply = replyOutcome(session, decision.reply, targetSession);
+        return { applied: true, reason: 'shop', ...reply };
     }
     if (action === 'move_to_spot') {
         if (session.partyCompanion === true && session.followPlayerSession) {
-            say(session, decision.reply || 'I will stay with the party.', targetSession);
-            return { applied: true, reason: 'party_companion_stays_with_party' };
+            return { applied: false, reason: 'party_companion_stays_with_party' };
         }
+        clearChatArrival(session, 'move_to_spot');
 
         const applied = applyMoveToSpot(session, bot, decision.spotId);
-        if (applied) say(session, decision.reply, targetSession);
-        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot' };
+        const reply = applied ? replyOutcome(session, decision.reply, targetSession) : { replyDelivered: false, playerVisibleReply: null };
+        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot', ...reply };
     }
     if (action === 'buff_target') {
         return applyBuffTarget(session, bot, decision, targetSession);
@@ -282,40 +365,763 @@ function execute(session, decision, visiblePlayers) {
     return { applied: false, reason: `unknown_action:${action}` };
 }
 
+function partyLeaderFor(session) {
+    return session?.partyCompanion === true && session.followPlayerSession
+        ? session.followPlayerSession
+        : null;
+}
+
+function isAuthorizedPartyLeader(context) {
+    const session = context?.session;
+    const player = context?.requestContext?.playerSession;
+    const leader = partyLeaderFor(session);
+    if (!leader?.actor || !player?.actor || !player.actor.fetchIsOnline?.()) return false;
+    if (String(player.accountId || '').startsWith('bot_')) return false;
+    return Number(player.actor.fetchId?.()) === Number(leader.actor.fetchId?.());
+}
+
+function controllerContext(context, policyContext = {}) {
+    const player = context?.requestContext?.playerSession;
+    return {
+        ownerId: player?.actor?.fetchId?.() || null,
+        ownerName: player?.actor?.fetchName?.() || null,
+        ownerSession: player || null,
+        reason: context?.decision?.reason || 'player_policy_request',
+        ttlMs: context?.decision?.policyTtlMs,
+        ...policyContext
+    };
+}
+
+function policyActionResult(session, patch, context, reason, policyContext = {}) {
+    const policy = HotBotPolicyOverlay.set(session, patch, controllerContext(context, policyContext));
+    return { applied: true, reason, policy: HotBotPolicyOverlay.status(session) || policy };
+}
+
+function inheritedPullRestore(session, current) {
+    const existing = HotBotPolicyOverlay.get(session);
+    const applied = existing?.pullApplied;
+    if (!existing || !applied) return null;
+    if (String(current?.pullMode || 'auto') !== String(applied.mode || 'auto') ||
+        Number(current?.pullerId || 0) !== Number(applied.pullerId || 0)) {
+        return null;
+    }
+    return existing.pullRestore || null;
+}
+
+function applyPullPolicy(context) {
+    const session = context.session;
+    const leader = partyLeaderFor(session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+
+    const current = PartyCompanionService.getSettings(leader);
+    const inheritedRestore = inheritedPullRestore(session, current);
+    const requestedPermission = String(context.decision.pullPermission || '').toLowerCase();
+    const requestedMode = String(context.decision.pullMode || '').toLowerCase();
+    const permission = ['allow', 'deny'].includes(requestedPermission)
+        ? requestedPermission
+        : requestedMode === 'off' ? 'deny' : 'allow';
+    const mode = permission === 'deny'
+        ? 'off'
+        : ['auto', 'leader', 'bot'].includes(requestedMode) ? requestedMode : (current.pullMode || 'auto');
+    if (mode === 'bot' && !session.actor) return { applied: false, reason: 'puller_not_available' };
+
+    const pullerId = mode === 'bot' ? Number(session.actor.fetchId()) : null;
+    PartyCompanionService.updateSettings(leader, { pullMode: mode, pullerId });
+    PartyCompanionService.refreshPanel(leader);
+    return policyActionResult(session, {
+        pull: { permission, mode, pullerId }
+    }, context, `pull_policy:${permission}:${mode}`, {
+        pullRestore: inheritedRestore || {
+            pullMode: current.pullMode || 'auto',
+            pullerId: current.pullerId
+        }
+    });
+}
+
+function assignPuller(context) {
+    const session = context.session;
+    const leader = partyLeaderFor(session);
+    if (!leader || !session.actor) return { applied: false, reason: 'not_a_party_companion' };
+    const requestedId = Number(context.decision.pullerId || 0);
+    if (requestedId && requestedId !== Number(session.actor.fetchId())) return { applied: false, reason: 'puller_must_be_target' };
+
+    const current = PartyCompanionService.getSettings(leader);
+    const inheritedRestore = inheritedPullRestore(session, current);
+    PartyCompanionService.updateSettings(leader, {
+        pullMode: 'bot',
+        pullerId: session.actor.fetchId()
+    });
+    PartyCompanionService.refreshPanel(leader);
+    return policyActionResult(session, {
+        pull: { permission: 'allow', mode: 'bot', pullerId: session.actor.fetchId() }
+    }, context, 'puller_assigned', {
+        pullRestore: inheritedRestore || {
+            pullMode: current.pullMode || 'auto',
+            pullerId: current.pullerId
+        }
+    });
+}
+
+function unassignPuller(context) {
+    const session = context.session;
+    const leader = partyLeaderFor(session);
+    if (!leader || !session.actor) return { applied: false, reason: 'not_a_party_companion' };
+    const settings = PartyCompanionService.getSettings(leader);
+    if (settings.pullMode !== 'bot' || Number(settings.pullerId || 0) !== Number(session.actor.fetchId())) {
+        return { applied: true, reason: 'puller_not_assigned' };
+    }
+
+    // Unassigning one member returns to the existing automatic policy. It
+    // never turns pull off globally and never silently assigns another bot.
+    const inheritedRestore = inheritedPullRestore(session, settings);
+    PartyCompanionService.updateSettings(leader, { pullMode: 'auto', pullerId: null });
+    PartyCompanionService.refreshPanel(leader);
+    return policyActionResult(session, {
+        pull: { permission: 'allow', mode: 'auto', pullerId: null }
+    }, context, 'puller_unassigned', {
+        pullRestore: inheritedRestore || {
+            pullMode: settings.pullMode || 'auto',
+            pullerId: settings.pullerId
+        }
+    });
+}
+
+function stopPullingAndReturn(context) {
+    const session = context.session;
+    const leader = partyLeaderFor(session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+
+    const policy = applyPullPolicy({
+        ...context,
+        decision: {
+            ...context.decision,
+            pullPermission: 'deny',
+            pullMode: 'off'
+        }
+    });
+    if (!policy.applied) return policy;
+
+    clearChatArrival(session, 'leader_requested_stop_pulling_and_return');
+    session.botStay = false;
+    session.plan = 'following';
+    const approached = approachPlayer(session, session.actor, leader);
+    return {
+        ...policy,
+        reason: 'pulling_stopped_returning',
+        effect: approached ? 'pull_disabled_and_return_started' : 'pull_disabled_return_pending'
+    };
+}
+
+function regroupParty(context) {
+    const leader = partyLeaderFor(context.session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+    const result = PartyCompanionService.beginRegroup(leader, {
+        radius: context.decision.regroupRadius,
+        requestedBy: context.requestContext?.playerSession?.actor?.fetchId?.()
+    });
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'party_regroup_started',
+        effect: 'pull_paused_and_party_approaching_compact_formation',
+        radius: result.radius,
+        affected: result.affected,
+        playerVisibleReply: `Regrouping all ${result.affected} companions around you.`
+    };
+}
+
+function stayParty(context) {
+    const leader = partyLeaderFor(context.session);
+    if (!leader) return { applied: false, reason: 'not_a_party_companion' };
+    const result = PartyCompanionService.holdParty(leader);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'party_hold_started',
+        effect: 'pull_paused_and_party_holding_current_positions',
+        affected: result.affected,
+        playerVisibleReply: `Holding all ${result.affected} companions here.`
+    };
+}
+
+function learnedSkill(session, skillId) {
+    const actor = session?.actor;
+    const skill = actor?.skillset?.fetchSkill?.(Number(skillId)) ||
+        (actor?.skillset?.skills || []).find((candidate) => Number(candidate.fetchSelfId?.()) === Number(skillId));
+    if (!skill || skill.fetchPassive?.()) return { skill: null, reason: 'skill_not_learned' };
+    const semantic = skill.fetchSemantic?.() || {};
+    if (semantic.notUsedInC4 || skill.fetchTargetKind?.() !== 'enemy' || !BotCombatUtility.OFFENSIVE_TYPES.has(skill.fetchSkillType?.())) {
+        return { skill: null, reason: 'skill_not_combat_eligible' };
+    }
+    const allowedWeapons = Number(semantic.requires?.weaponsAllowed || 0);
+    if (allowedWeapons && (allowedWeapons & Attack.weaponMaskFor(session.actor)) === 0) {
+        return { skill: null, reason: 'skill_incompatible' };
+    }
+    return { skill, reason: null };
+}
+
+function setSkillPriority(context) {
+    const session = context.session;
+    const skillId = Number(context.decision.skillId || 0);
+    const resolved = learnedSkill(session, skillId);
+    if (resolved.reason) return { applied: false, reason: resolved.reason };
+
+    const current = HotBotPolicyOverlay.get(session)?.skillPriorities || {};
+    const weight = Number(context.decision.skillPriority ?? context.decision.weight);
+    if (!Number.isFinite(weight) || weight < -50 || weight > 50) return { applied: false, reason: 'invalid_skill_priority' };
+    const priorities = { ...current };
+    if (weight === 0) delete priorities[String(skillId)];
+    else priorities[String(skillId)] = weight;
+    return policyActionResult(session, { skillPriorities: priorities }, context, `skill_priority:${skillId}:${Math.round(weight)}`);
+}
+
+function clearSkillPriority(context) {
+    const session = context.session;
+    const skillId = Number(context.decision.skillId || 0);
+    if (!skillId) return { applied: false, reason: 'invalid_skill_id' };
+    const current = { ...(HotBotPolicyOverlay.get(session)?.skillPriorities || {}) };
+    delete current[String(skillId)];
+    return policyActionResult(session, { skillPriorities: current }, context, `skill_priority_cleared:${skillId}`);
+}
+
+function setCombatStance(context) {
+    const stance = String(context.decision.combatStance || '').toLowerCase();
+    if (!HotBotPolicyOverlay.STANCES.includes(stance)) return { applied: false, reason: 'invalid_combat_stance' };
+    return policyActionResult(context.session, { combatStance: stance }, context, `combat_stance:${stance}`);
+}
+
+function setBuffPolicy(context) {
+    const session = context.session;
+    const requested = String(context.decision.buffPolicyType || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const mode = String(context.decision.buffPolicyMode || '').trim().toLowerCase();
+    const capability = BotSkillCapabilities.supportBuffs(session.actor)
+        .find((entry) => entry.type === requested || entry.key === requested || entry.name.toLowerCase() === String(context.decision.buffPolicyType || '').trim().toLowerCase());
+    if (!capability) return { applied: false, reason: 'buff_policy_unknown' };
+    if (!['allow', 'deny', 'clear'].includes(mode)) return { applied: false, reason: 'invalid_buff_policy' };
+
+    const current = HotBotPolicyOverlay.get(session)?.buffPolicy || { excluded: [], allowed: [] };
+    const excluded = new Set(current.excluded || []);
+    excluded.delete(capability.type);
+    if (mode === 'deny') excluded.add(capability.type);
+    // "allow" is an explicit removal from the deny list, not an exclusive
+    // allow-list. A player asking to re-enable Might must not silently disable
+    // every other useful party buff.
+    return policyActionResult(session, {
+        buffPolicy: { excluded: [...excluded], allowed: [] }
+    }, context, `buff_policy:${mode}:${capability.type}`);
+}
+
+function listSafeLoadouts(context) {
+    const loadouts = BotEquipmentUpgrade.listSafeLoadouts(context.session);
+    return { applied: true, reason: 'safe_loadouts', loadouts };
+}
+
+function equipCandidate(context) {
+    const result = BotEquipmentUpgrade.applyCandidate(context.session, context.decision.itemId);
+    if (!result.applied) return result;
+    return { ...result, policy: HotBotPolicyOverlay.status(context.session) };
+}
+
+function optimizeEquipment(context) {
+    const upgrades = BotEquipmentUpgrade.applyBestUpgrades(context.session);
+    if (!upgrades.length) return { applied: false, reason: 'no_safe_upgrade' };
+    return {
+        applied: true,
+        reason: 'equipment_optimized',
+        upgrades: upgrades.map(({ item, slot, score }) => ({
+            itemId: item.fetchId(),
+            name: item.fetchName(),
+            slot,
+            score
+        }))
+    };
+}
+
+function proposeTrade(context) {
+    const player = context?.requestContext?.playerSession;
+    const result = BotTradeService.startBotTrade(context.session, player);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'trade_proposed',
+        trade: BotTradeService.activeTradeSummary(context.session)
+    };
+}
+
+function giveResources(context) {
+    const player = context?.requestContext?.playerSession;
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.startBotTradeWithOffer(context.session, player, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    const line = { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count };
+    return {
+        applied: true,
+        outcome: 'pending',
+        reason: 'resources_offered_pending_confirmation',
+        effect: 'native_trade_open_and_offer_displayed',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line,
+        playerVisibleReply: `I put ${line.count} ${line.name} in the trade window. Please confirm the trade when you are ready.`
+    };
+}
+
+function fetchResources(context) {
+    const player = context?.requestContext?.playerSession;
+    const requestedName = context.decision.supplyItemName;
+    const resolved = !context.decision.supplyItemId && requestedName
+        ? invoke('GameServer/Bot/Economy/MarketOpportunity').resolveSupplyItem(requestedName)
+        : null;
+    const result = invoke('GameServer/Bot/AI/BotSupplyErrand').request(
+        context.session,
+        player,
+        context.decision.supplyItemId || resolved?.selfId,
+        context.decision.supplyAmount
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, ...result };
+    return {
+        applied: true,
+        outcome: 'pending',
+        reason: result.reason,
+        effect: 'travel_purchase_return_and_native_trade_pending',
+        itemSelfId: result.itemSelfId,
+        itemName: result.itemName,
+        amount: result.amount,
+        cost: result.cost,
+        town: result.town,
+        playerVisibleReply: `I will buy ${result.amount} new ${result.itemName} in ${result.town}, return, and open trade with exactly that amount.`
+    };
+}
+
+function offerResources(context) {
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.offerBotItem(context.session, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'resources_offered',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
+    };
+}
+
+function updateTradeOffer(context) {
+    const itemId = context.decision.tradeItemId || context.decision.itemId;
+    const amount = context.decision.tradeAmount || context.decision.amount;
+    const result = BotTradeService.updateOffer(context.session, itemId, amount);
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return {
+        applied: true,
+        reason: 'trade_offer_updated',
+        trade: BotTradeService.activeTradeSummary(context.session),
+        line: { objectId: result.line.objectId, selfId: result.line.selfId, name: result.line.name, count: result.line.count }
+    };
+}
+
+function cancelBotTrade(context) {
+    if (!context.session?.activeTrade) return { applied: true, reason: 'trade_not_active' };
+    BotTradeService.cancel(context.session, 'bot_requested', true);
+    return { applied: true, reason: 'trade_cancelled' };
+}
+
+function negotiationPlayer(context) {
+    return context?.requestContext?.playerSession || null;
+}
+
+function negotiationItemId(decision) {
+    return decision.negotiationItemId || decision.tradeItemId || decision.itemId;
+}
+
+function negotiationPrice(decision) {
+    return decision.negotiationPrice ?? decision.price;
+}
+
+function quoteItem(context) {
+    const result = BotNegotiationService.quoteItem(
+        context.session,
+        negotiationPlayer(context),
+        negotiationItemId(context.decision),
+        context.decision.negotiationAmount || context.decision.tradeAmount || context.decision.amount,
+        negotiationPrice(context.decision)
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'price_quoted', negotiation: result.negotiation };
+}
+
+function counterOffer(context) {
+    const result = BotNegotiationService.counterOffer(
+        context.session,
+        negotiationPlayer(context),
+        negotiationPrice(context.decision)
+    );
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'price_countered', negotiation: result.negotiation };
+}
+
+function acceptPrice(context) {
+    const decision = context.decision;
+    const totalPrice = Object.prototype.hasOwnProperty.call(decision, 'negotiationPrice') || Object.prototype.hasOwnProperty.call(decision, 'price')
+        ? negotiationPrice(decision)
+        : null;
+    const result = BotNegotiationService.acceptPrice(
+        context.session,
+        negotiationPlayer(context),
+        totalPrice,
+        negotiationItemId(decision),
+        decision.negotiationAmount || decision.tradeAmount || decision.amount
+    );
+    const format = (resolved) => {
+        if (!resolved.ok) return { applied: false, reason: resolved.reason, negotiation: resolved.negotiation };
+        return {
+            applied: true,
+            reason: resolved.reason || 'price_accepted',
+            negotiation: resolved.negotiation,
+            store: resolved.store || null
+        };
+    };
+    return result && typeof result.then === 'function' ? result.then(format) : format(result);
+}
+
+function declinePrice(context) {
+    const result = BotNegotiationService.declinePrice(context.session, negotiationPlayer(context), 'bot_declined');
+    if (!result.ok) return { applied: false, reason: result.reason };
+    return { applied: true, reason: 'price_declined', negotiation: result.negotiation };
+}
+
+function openNegotiatedTrade(context) {
+    const result = BotNegotiationService.openNegotiatedTrade(context.session, negotiationPlayer(context));
+    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
+    return { applied: true, reason: 'native_trade_open', trade: result.trade, negotiation: result.negotiation };
+}
+
+function partyCandidates(playerSession, currentSession = null) {
+    if (!playerSession?.actor) return [];
+    const World = invoke('GameServer/World/World');
+    const sessions = (World.user?.sessions || [])
+        .filter((candidate) => candidate && candidate !== currentSession &&
+            candidate.accountId && String(candidate.accountId).startsWith('bot_') && candidate.actor);
+    return BotAvailability.listForPlayer(playerSession, sessions)
+        .slice(0, 5)
+        .map(({ bot, availability }) => ({
+            id: Number(bot.fetchId?.() || 0),
+            name: bot.fetchName?.() || 'unknown',
+            level: Number(bot.fetchLevel?.() || 0),
+            distance: availability.distance === null ? null : Math.round(availability.distance),
+            available: availability.available === true,
+            reason: availability.reason || null,
+            reasonText: availability.reasonText || null
+        }));
+}
+
+function listPartyCandidates(context) {
+    const candidates = partyCandidates(context?.requestContext?.playerSession, context.session);
+    const reply = candidates.length
+        ? `I can see ${candidates.map((candidate) => {
+            const distance = candidate.distance === null ? 'unknown distance' : `${candidate.distance} away`;
+            return `${candidate.name} (level ${candidate.level}, ${candidate.available ? 'available' : candidate.reasonText || 'busy'}, ${distance})`;
+        }).join('; ')}.`
+        : 'I do not see another bot available for your party right now.';
+    return {
+        applied: true,
+        reason: 'party_candidates_listed',
+        candidates,
+        playerVisibleReply: reply
+    };
+}
+
+function isAuthorizedNegotiationParticipant(context) {
+    const session = context?.session;
+    const player = negotiationPlayer(context);
+    if (!player?.actor || String(player.accountId || '').startsWith('bot_') || player.actor.fetchIsOnline?.() === false) return false;
+    if (session?.activeNegotiation && session.activeNegotiation.playerSession !== player) return false;
+    if (session?.partyCompanion === true) return session.followPlayerSession === player;
+    return session?.plan === 'merchant' || session?.plan === 'following';
+}
+
+function economyActionAvailable(session, name) {
+    const active = !!BotNegotiationService.activeSummary(session);
+    if (session.plan === 'merchant') {
+        if (!BotNegotiationService.canNegotiateStore(session)) return false;
+        if (name === 'open_negotiated_trade') return false;
+        if (name === 'quote_item') return !active;
+        if (name === 'accept_price') return true;
+        return active;
+    }
+    if (name === 'quote_item') return !active;
+    return active;
+}
+
+function registerTools() {
+    const descriptions = {
+        none: 'Do nothing when no useful response is needed.',
+        say: 'Send a short in-character reply to the target visible player.',
+        follow_player: 'Persistently approach a visible player until arrival. Real party follow still requires an invite.',
+        regroup_party: 'Make every current companion approach compact distinct slots around the human leader and pause new pulls until regrouped.',
+        stay_party: 'Hold every current companion at its current position and pause new pulls until the leader asks the party to follow again.',
+        stay_here: 'Hold the current position.',
+        hunt: 'Return to independent hunting.',
+        rest: 'Sit and recover.',
+        shop: 'Go to town for normal restock behavior.',
+        fetch_resources: 'For a party leader request, buy an exact new quantity of an item from the server-owned city shop catalog, return beside the leader, and offer that purchased quantity in native trade.',
+        move_to_spot: 'Move to one of the provided candidate spot ids.',
+        buff_target: 'Apply a supported buff to a visible player if class, MP, and range allow it.',
+        set_buff_policy: 'Temporarily allow, deny, or clear one learned friendly buff in the support rotation.',
+        heal_target: 'Heal a visible player if class, MP, and range allow it.',
+        set_pull_policy: 'Set the party pull permission and mode for this companion, with a bounded hot-session expiry.',
+        stop_pulling_and_return: 'Disable this companion pull and start returning to the current party leader as one bounded workflow.',
+        assign_puller: 'Assign this party companion as the dedicated puller without issuing combat commands.',
+        unassign_puller: 'Release this companion from dedicated pulling and return to the existing automatic policy.',
+        set_skill_priority: 'Adjust one learned offensive skill preference within a bounded combat score range.',
+        clear_skill_priority: 'Clear one temporary offensive skill preference.',
+        set_combat_stance: 'Set a bounded offensive combat stance; safety and support priorities remain authoritative.',
+        list_safe_loadouts: 'List inventory equipment candidates that are compatible and strictly improve a slot.',
+        equip_candidate: 'Equip one validated inventory upgrade through the native backpack persistence path.',
+        optimize_equipment: 'Equip all currently safe inventory upgrades through the native backpack path.',
+        list_party_candidates: 'List up to five real bot candidates with server-owned availability, level, and distance.',
+        propose_trade: 'Open a native trade window with the authorized party leader before offering any resources.',
+        give_resources: 'Open native trade and display one validated resource line in the same action; player confirmation is still required.',
+        offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
+        update_trade_offer: 'Change one reserved bot trade line after revalidating inventory truth.',
+        cancel_trade: 'Cancel the open native trade and release every reservation.',
+        quote_item: 'Quote or answer an offer for one exact listed merchant item using server-owned price bounds.',
+        counter_offer: 'Set a bounded counter price within the active negotiation range.',
+        accept_price: 'Accept a server-bounded price. A merchant republishes the agreed quantity in its public store; a companion keeps the accepted native-trade price.',
+        decline_price: 'Decline the active negotiation and release its stock reservation.',
+        open_negotiated_trade: 'For companions only, open native trade after the bounded price has been accepted.'
+    };
+
+    const controlActions = new Set([
+        'regroup_party',
+        'stay_party', 'set_buff_policy',
+        'set_pull_policy', 'stop_pulling_and_return', 'assign_puller', 'unassign_puller',
+        'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
+        'list_safe_loadouts', 'equip_candidate', 'optimize_equipment',
+        'propose_trade', 'give_resources', 'fetch_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade'
+    ]);
+    const economyActions = new Set([
+        'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
+    ]);
+    const executors = {
+        regroup_party: regroupParty,
+        stay_party: stayParty,
+        set_pull_policy: applyPullPolicy,
+        stop_pulling_and_return: stopPullingAndReturn,
+        assign_puller: assignPuller,
+        unassign_puller: unassignPuller,
+        set_skill_priority: setSkillPriority,
+        clear_skill_priority: clearSkillPriority,
+        set_combat_stance: setCombatStance,
+        set_buff_policy: setBuffPolicy,
+        list_safe_loadouts: listSafeLoadouts,
+        equip_candidate: equipCandidate,
+        optimize_equipment: optimizeEquipment,
+        list_party_candidates: listPartyCandidates,
+        propose_trade: proposeTrade,
+        give_resources: giveResources,
+        fetch_resources: fetchResources,
+        offer_resources: offerResources,
+        update_trade_offer: updateTradeOffer,
+        cancel_trade: cancelBotTrade,
+        quote_item: quoteItem,
+        counter_offer: counterOffer,
+        accept_price: acceptPrice,
+        decline_price: declinePrice,
+        open_negotiated_trade: openNegotiatedTrade
+    };
+
+    ACTIONS.forEach((name) => {
+        BotToolRegistry.register({
+            name,
+            description: descriptions[name],
+            kind: ['list_safe_loadouts', 'list_party_candidates'].includes(name)
+                ? 'read'
+                : controlActions.has(name) ? 'mutation' : 'intent',
+            risk: controlActions.has(name) ? 'medium' : 'low',
+            mutating: !['none', 'say', 'list_safe_loadouts', 'list_party_candidates'].includes(name),
+            available(session) {
+                if (!session) return true;
+                if (session.plan === 'merchant') {
+                    return ['none', 'say'].includes(name) || economyActions.has(name) && economyActionAvailable(session, name);
+                }
+                if (session.plan === 'getting_buffed') {
+                    return ['none', 'say'].includes(name);
+                }
+                if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
+                if (name === 'shop' && session.partyCompanion === true && session.followPlayerSession) return false;
+                if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
+                if (economyActions.has(name) && !economyActionAvailable(session, name)) return false;
+                if (name === 'propose_trade' && session.activeTrade) return false;
+                if (name === 'give_resources' && session.activeTrade) return false;
+                if (['offer_resources', 'update_trade_offer', 'cancel_trade'].includes(name) && !session.activeTrade) return false;
+                if (name === 'buff_target') {
+                    try { if (!BotRoles.canBuff(session.actor)) return false; } catch (_) { return true; }
+                }
+                if (name === 'heal_target') {
+                    try { if (!BotRoles.isHealer(session.actor)) return false; } catch (_) { return true; }
+                }
+                return true;
+            },
+            authorize: controlActions.has(name)
+                ? isAuthorizedPartyLeader
+                : economyActions.has(name) ? isAuthorizedNegotiationParticipant : undefined,
+            execute(context) {
+                if (executors[name]) return executors[name](context);
+                return executeLegacy(context.session, context.decision, context.visiblePlayers || []);
+            }
+        });
+    });
+}
+
+registerTools();
+
+function execute(session, decision, visiblePlayers, requestContext = null) {
+    const outcome = BotToolRegistry.execute({
+        session,
+        decision,
+        visiblePlayers,
+        requestContext,
+        expectedWorldRevision: requestContext?.preparedWorldRevision || requestContext?.worldRevision
+    });
+    const format = (resolved) => {
+        const { idempotent, ...publicOutcome } = resolved;
+        return { ...publicOutcome, applied: resolved.applied, reason: resolved.reason };
+    };
+    return outcome && typeof outcome.then === 'function' ? outcome.then(format) : format(outcome);
+}
+
 function remember(session, decision, result, model) {
     if (!result?.applied) return;
     session.lastBrainDecision = {
         action: decision.action,
         reason: decision.reason || result.reason,
         appliedReason: result.reason,
+        outcome: result.outcome || 'applied',
+        serverApplied: result.applied === true && result.outcome !== 'pending',
         at: Date.now(),
         model,
         usage: decision.usage ? {
-            promptTokens: decision.usage.prompt_tokens,
-            completionTokens: decision.usage.completion_tokens,
+            promptTokens: decision.usage.promptTokens ?? decision.usage.prompt_tokens,
+            completionTokens: decision.usage.completionTokens ?? decision.usage.completion_tokens,
+            cachedPromptTokens: decision.usage.cachedPromptTokens ?? decision.usage.prompt_tokens_details?.cached_tokens,
+            totalTokens: decision.usage.totalTokens ?? decision.usage.total_tokens,
             cost: decision.usage.cost
         } : null
     };
 }
 
-function toolDescriptions() {
-    return [
-        { action: 'none', description: 'Do nothing when no useful response is needed.' },
-        { action: 'say', description: 'Send a short in-character reply to the target visible player.' },
-        { action: 'follow_player', description: 'Approach a visible player. Real party follow still requires an invite.' },
-        { action: 'stay_here', description: 'Hold the current position.' },
-        { action: 'hunt', description: 'Return to independent hunting.' },
-        { action: 'rest', description: 'Sit and recover.' },
-        { action: 'shop', description: 'Go to town for normal restock behavior.' },
-        { action: 'move_to_spot', description: 'Move to one of the provided candidate spot ids.' },
-        { action: 'buff_target', description: 'Apply a supported buff to a visible player if class, MP, and range allow it.' },
-        { action: 'heal_target', description: 'Heal a visible player if class, MP, and range allow it.' }
-    ];
+function toolDescriptions(session = null) {
+    return BotToolRegistry.descriptors(session);
+}
+
+function availableActions(session = null) {
+    return BotToolRegistry.availableNames(session);
+}
+
+function worldRevision(session) {
+    return BotToolRegistry.worldRevision(session);
+}
+
+function rejectionReply(result = {}) {
+    switch (result.reason) {
+        case 'stale_world_state': return 'The situation changed, so I did not make that move.';
+        case 'one_mutation_per_turn': return 'I can only change one thing at a time.';
+        case 'low_confidence': return 'I am not certain enough to change that safely.';
+        case 'not_authorized': return 'I cannot change that under the current party authority.';
+        case 'pk_hunting_autonomous': return 'I am staying focused on my current fight.';
+        case 'tool_unavailable': return 'That action is not available to me right now.';
+        case 'not_a_party_companion': return 'I can only change hot party policy while I am your companion.';
+        case 'party_companion_cannot_shop_now': return 'I need to stay with the party; I cannot leave for town right now.';
+        case 'unsupported_supply_item': return 'I cannot identify that item in the server shop catalog.';
+        case 'invalid_supply_amount': return 'Tell me a supply amount between 1 and 5,000.';
+        case 'non_stackable_supply_amount': return 'That item is not stackable; request one at a time.';
+        case 'supply_errand_active': return 'I already have a shopping or delivery errand in progress.';
+        case 'supply_not_available': return 'I cannot find a city shop that sells that item right now.';
+        case 'supply_destination_missing': return 'I found the item, but not a valid city destination for it.';
+        case 'configured_store_unavailable':
+        case 'configured_store_stock_changed': return 'That configured shop no longer has enough of the requested item.';
+        case 'configured_store_price_changed': return 'That shop changed its price before I could buy the item.';
+        case 'purchase_quantity_mismatch': return 'The shop could not provide the exact requested amount.';
+        case 'supply_price_invalid': return 'The shop returned an invalid price for that item.';
+        case 'not_enough_adena': {
+            const cost = Number(result.cost || 0);
+            const adena = Number(result.adena || 0);
+            const format = (value) => Number.isFinite(value) && value > 0 ? value.toLocaleString('en-US') : null;
+            const item = result.itemName ? ` for ${result.itemName}` : '';
+            const amount = format(cost);
+            const have = format(adena);
+            return amount && have
+                ? `I need ${amount} Adena${item}, but I only have ${have}. Transfer Adena to me and I will retry.`
+                : `I need more Adena${item}. Transfer it to me and I will retry.`;
+        }
+        case 'buff_policy_unknown': return 'I have not learned that buff, so I cannot change its rotation.';
+        case 'invalid_buff_policy': return 'Choose allow, deny, or clear for the buff policy.';
+        case 'party_companion_stays_with_party': return 'I need to stay with the party instead of leaving for another spot.';
+        case 'incompatible_item':
+        case 'not_an_upgrade':
+        case 'no_safe_upgrade': return 'I could not find a safe equipment upgrade for this situation.';
+        case 'unsafe_combat_state': return 'I am in combat. I will finish this fight before starting that request.';
+        case 'skill_not_learned':
+        case 'skill_not_combat_eligible':
+        case 'skill_incompatible': return 'That skill cannot be used as a combat preference.';
+        case 'invalid_skill_priority':
+        case 'invalid_combat_stance': return 'That preference is outside my safe combat settings.';
+        case 'not_authorized_relationship': return 'I only open a resource trade with my current party leader.';
+        case 'item_not_tradable':
+        case 'retain_minimum':
+        case 'reservation_lost': return 'I cannot safely offer that inventory item.';
+        case 'gift_budget_exceeded': return 'I need to keep my resource gifts within a safe budget.';
+        case 'trade_line_limit': return 'The trade already has the maximum number of item lines.';
+        case 'no_active_trade': return 'There is no open trade to change.';
+        case 'database_failed': return 'The trade was not committed because persistence failed.';
+        case 'bot_not_trading': return 'I am not offering a negotiated market trade in this state.';
+        case 'merchant_store_unavailable': return 'My public store is not available to reprice right now.';
+        case 'item_not_listed': return 'That item is not listed in my public store.';
+        case 'insufficient_listed_stock': return 'I do not have that much listed in my public store.';
+        case 'item_not_negotiable':
+        case 'stock_reserved':
+        case 'insufficient_stock': return 'I cannot safely quote that stock item.';
+        case 'negotiation_active': return 'There is already an active price discussion.';
+        case 'no_active_negotiation': return 'There is no active price discussion to change.';
+        case 'price_out_of_bounds':
+        case 'price_must_be_whole_unit':
+        case 'price_mismatch': return 'That price is outside my server-approved negotiation range.';
+        case 'round_limit': return 'We have reached the maximum number of counter-offers.';
+        case 'price_not_accepted':
+        case 'negotiation_not_ready': return 'The price must be accepted before I open native trade.';
+        case 'trade_active': return 'I will finish the current native trade before opening another one.';
+        case 'negotiated_item_mismatch':
+        case 'negotiated_price_mismatch': return 'The native trade does not match our accepted price.';
+        case 'stock_changed':
+        case 'listed_stock_changed':
+        case 'store_changed':
+        case 'store_repricing': return 'My public listing changed before we could finish the agreement.';
+        case 'store_busy': return 'Someone is buying from my store right now. Ask me again in a moment.';
+        case 'store_persist_failed': return 'I could not safely reopen my public store at that price.';
+        case 'merchant_uses_store': return 'I sell this through my public store, not a private trade window.';
+        case 'insufficient_funds': return 'You need enough Adena for the agreed price while keeping a safe reserve.';
+        default: return 'I cannot do that safely right now.';
+    }
+}
+
+function pendingReply(result = {}) {
+    if (result.reason === 'resources_offered_pending_confirmation') {
+        const line = result.line || {};
+        const count = Number(line.count || 0);
+        const name = String(line.name || 'the requested resources');
+        return `I put ${count > 0 ? `${count} ` : ''}${name} in the trade window. Please confirm the trade when you are ready.`;
+    }
+    return 'I have started that request, but it still needs your confirmation.';
 }
 
 module.exports = {
     ACTIONS,
+    availableActions,
     execute,
     remember,
-    toolDescriptions
+    pendingReply,
+    rejectionReply,
+    toolDescriptions,
+    worldRevision,
+    partyCandidates
 };

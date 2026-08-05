@@ -196,6 +196,7 @@ const HotActivation = {
                         coldCraftState: craftShop ? state : null,
                         privateStore: marketStore ? {
                             storeType: Number(marketStore.storeType || 1),
+                            revision: Math.max(1, Number(marketStore.revision || 1)),
                             title: marketStore.autoTitle === false
                                 ? marketStore.title
                                 : marketStoreTitle(marketStore.items),

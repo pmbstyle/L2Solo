@@ -1137,5 +1137,9 @@ module.exports = {
 
     fetchFallback(key) {
         return flatten(FALLBACKS[key]);
+    },
+
+    allEntries() {
+        return flatten(Object.values(NPC_LISTS).flat());
     }
 };

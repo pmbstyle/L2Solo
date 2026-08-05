@@ -56,10 +56,16 @@ async function consume(session, data) {
 
     if (store && store.storeType === 1) {
         try {
+            if (store.repricing === true || Number(trade.revision || 1) !== Number(store.revision || 1)) {
+                throw new Error("Store listing changed.");
+            }
             const bought = [];
             let sellerSession = null;
             for (const item of data.list) {
-                const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount);
+                const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount, {
+                    expectedRevision: trade.revision,
+                    expectedUnitPrice: trade.prices?.[Number(item.selfId)]
+                });
                 bought.push(result);
                 sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
                 if (sellerSession?.coldMarketState) {
@@ -102,6 +108,10 @@ async function consume(session, data) {
             ));
         } catch (err) {
             utils.infoWarn('Purchase', 'merchant purchase error: %s', err.message || err);
+            if (store.repricing === true || Number(trade.revision || 1) !== Number(store.revision || 1) || /changed/i.test(String(err.message || err))) {
+                session.activeMerchantTrade = null;
+                session.viewedPrivateStoreSeller = null;
+            }
             session.dataSendToMe(ServerResponse.actionFailed());
         }
         return;

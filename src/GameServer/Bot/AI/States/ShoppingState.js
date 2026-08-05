@@ -8,6 +8,8 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 
 function findStoreSession(actorId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
@@ -103,6 +105,15 @@ module.exports = {
         // In town! Wait and pretend to shop
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
+            Promise.resolve(BotEventJournal.record({
+                botId: bot.fetchId(),
+                eventType: 'shopping_started',
+                summary: `${bot.fetchName?.() || 'Bot'} reached ${target.town || 'town'} to shop and restock.`,
+                weight: 2,
+                dedupeKey: `shopping:${bot.fetchId()}:${target.town || 'town'}`,
+                coalesceWindowMs: 30000,
+                meta: { town: target.town || null }
+            })).catch(() => {});
             this.sellAndRestock(session, bot, Generics, BotAI);
         }
     },
@@ -110,6 +121,67 @@ module.exports = {
     async sellAndRestock(session, bot, Generics, BotAI) {
         const NpcTalkResponse = invoke(path.world + 'NpcTalkResponse');
         const companionErrand = session.companionShopping;
+
+        if (companionErrand?.kind === 'player_resource_purchase') {
+            let deliveryReady = false;
+            try {
+                const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
+                const purchased = await BotSupplyErrand.purchaseAtDestination(bot, companionErrand);
+                if (!purchased.ok || Number(purchased.delta) !== Number(companionErrand.amount)) {
+                    throw new Error(purchased.reason || 'purchase_delta_mismatch');
+                }
+                const purchasedItem = purchased.item || bot.backpack.fetchItemFromSelfId(companionErrand.itemId);
+                session.pendingResourceDelivery = {
+                    playerSession: companionErrand.playerSession,
+                    playerId: companionErrand.playerId,
+                    workflowId: companionErrand.workflowId,
+                    objectId: purchasedItem.fetchId(),
+                    itemSelfId: Number(companionErrand.itemId),
+                    itemName: companionErrand.itemName,
+                    amount: Number(companionErrand.amount),
+                    purchasedAt: Date.now()
+                };
+                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    playerId: companionErrand.playerId,
+                    itemSelfId: companionErrand.itemId,
+                    amount: purchased.delta,
+                    cost: purchased.cost
+                }, 'pending', 'purchase_complete_returning');
+                deliveryReady = true;
+                session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
+                BotAI.say(session, `Bought ${purchased.delta}x ${companionErrand.itemName}. Returning with them now.`);
+                Promise.resolve(BotEventJournal.record({
+                    playerId: companionErrand.playerId,
+                    botId: bot.fetchId(),
+                    eventType: 'resource_purchase',
+                    summary: `${bot.fetchName()} bought ${purchased.delta} ${companionErrand.itemName} to deliver to the party leader.`,
+                    weight: 4,
+                    dedupeKey: `resource_purchase:${bot.fetchId()}:${companionErrand.playerId}:${companionErrand.itemId}:${companionErrand.amount}:${Date.now()}`,
+                    meta: {
+                        itemSelfId: companionErrand.itemId,
+                        amount: purchased.delta,
+                        cost: purchased.cost,
+                        requestedBy: companionErrand.playerId
+                    }
+                })).catch(() => {});
+            } catch (error) {
+                session.pendingResourceDelivery = undefined;
+                session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
+                BotAI.say(session, error?.message === 'not_enough_adena'
+                    ? 'I am short on Adena for that purchase. Give me some and I will try again.'
+                    : 'I could not complete that supply purchase. I am returning now.');
+                utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
+                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                    botId: bot.fetchId(),
+                    playerId: companionErrand.playerId,
+                    itemSelfId: companionErrand.itemId,
+                    amount: companionErrand.amount
+                }, 'failed', error?.message || 'purchase_failed', { terminal: false });
+            }
+            this.scheduleResourceReturn(session, bot, BotAI, { deliveryReady });
+            return;
+        }
 
         if (companionErrand?.kind === 'market_purchase') {
             const sellerSession = findStoreSession(companionErrand.target.actorId);
@@ -241,6 +313,15 @@ module.exports = {
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
             BotAI.say(session, returningToCompanion ? "All set. Returning to you." : "All stocked up! Returning to the hunting spot.");
             session.plan = session.partyCompanion === true && session.followPlayerSession ? 'following' : 'hunting';
+            Promise.resolve(BotEventJournal.record({
+                botId: bot.fetchId(),
+                eventType: 'shopping_completed',
+                summary: `${bot.fetchName?.() || 'Bot'} finished shopping and returned to ${session.plan}.`,
+                weight: 2,
+                dedupeKey: `shopping_done:${bot.fetchId()}`,
+                coalesceWindowMs: 30000,
+                meta: { plan: session.plan }
+            })).catch(() => {});
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
@@ -271,5 +352,72 @@ module.exports = {
                 });
             }
         }, 9000);
+    },
+
+    scheduleResourceReturn(session, bot, BotAI, options = {}) {
+        setTimeout(() => {
+            const resume = session.resumeAfterShopping;
+            const workflowId = session.companionShopping?.workflowId || session.pendingResourceDelivery?.workflowId || resume?.workflowId || options.workflowId;
+            const wasSupplyErrand = session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'shopping';
+            if (wasSupplyErrand) {
+                session.supplyErrandPhase = 'returning';
+                BotAI.stop?.(session);
+            }
+            const leaderSession = resume?.followPlayerSession;
+            session.plan = session.partyCompanion === true && leaderSession?.actor?.fetchIsOnline?.()
+                ? 'following'
+                : 'hunting';
+            session.shoppingDoneAnnounced = false;
+            session.shoppingTarget = undefined;
+            session.companionShopping = undefined;
+            session.resumeAfterShopping = undefined;
+            session.preShopLocation = undefined;
+            if (session.coldLifeState) {
+                session.coldLifeState = { ...session.coldLifeState, activity: session.plan };
+            }
+            const restoreHot = () => {
+                session.supplyErrandPhase = undefined;
+                BotTownTravel.revealSupplyErrand(session, bot);
+                if (!session.aiActive) BotAI.init?.(session);
+            };
+            if (session.plan === 'following') {
+                const leader = leaderSession.actor;
+                const destination = {
+                    locX: leader.fetchLocX() + 80,
+                    locY: leader.fetchLocY(),
+                    locZ: leader.fetchLocZ()
+                };
+                // A requested supply run is intentionally invisible while it
+                // is away. Reappear in a valid companion slot instead of
+                // making the player watch a long return route.
+                bot.setLocXYZ?.(destination);
+                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_return')).catch(() => null).then(() => {
+                    restoreHot();
+                    BotAI.say(session, options.deliveryReady === true
+                        ? 'I am back with the new supplies. I will open trade when the party is safe.'
+                        : 'I am back, but I could not complete that purchase.');
+                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                        botId: bot.fetchId(),
+                        playerId: leaderSession?.actor?.fetchId?.() || null,
+                        deliveryReady: options.deliveryReady === true
+                    }, options.deliveryReady === true ? 'completed' : 'failed', options.deliveryReady === true ? 'returned_to_leader' : 'purchase_failed', { terminal: options.deliveryReady !== true });
+                });
+            } else {
+                session.pendingResourceDelivery = undefined;
+                // The leader may have disconnected during the errand. Reveal
+                // through the same packet path even when there is no return
+                // target; otherwise every nearby client keeps a ghost bot.
+                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_leader_offline')).catch(() => null).then(() => {
+                    restoreHot();
+                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                        botId: bot.fetchId(),
+                        deliveryReady: false,
+                        leaderOnline: false
+                    }, 'failed', 'leader_offline', { terminal: true });
+                });
+            }
+        }, 1000);
     }
 };

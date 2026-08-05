@@ -1,6 +1,8 @@
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const storePurchaseQueues = new WeakMap();
+const actorPurchaseQueues = new WeakMap();
 
 function itemTemplate(selfId) {
     return DataCache.items.find((ob) => ob.selfId === selfId);
@@ -188,29 +190,97 @@ function previewSaleToStore(actor, store) {
     return { totalAdena, itemCount, lines };
 }
 
-async function buyFromStore(actor, store, selfId, qty) {
+async function buyFromStore(actor, store, selfId, qty, options = {}) {
     if (!store || store.storeType !== 1) {
         throw new Error("This store is not selling items.");
     }
 
-    const storeItem = store.items.find((item) => item.selfId === selfId);
-    if (!storeItem) {
-        throw new Error("Item is not available.");
+    if (!storePurchaseQueues.has(store)) storePurchaseQueues.set(store, new Map());
+    const queues = storePurchaseQueues.get(store);
+    const queueKey = String(Number(selfId));
+    const previousStorePurchase = queues.get(queueKey) || Promise.resolve();
+    let releaseStorePurchase;
+    const currentStorePurchase = new Promise((resolve) => { releaseStorePurchase = resolve; });
+    const queuedStorePurchase = previousStorePurchase.then(() => currentStorePurchase);
+    queues.set(queueKey, queuedStorePurchase);
+    await previousStorePurchase;
+
+    const previousActorPurchase = actorPurchaseQueues.get(actor) || Promise.resolve();
+    let releaseActorPurchase;
+    const currentActorPurchase = new Promise((resolve) => { releaseActorPurchase = resolve; });
+    const queuedActorPurchase = previousActorPurchase.then(() => currentActorPurchase);
+    actorPurchaseQueues.set(actor, queuedActorPurchase);
+    await previousActorPurchase;
+    store.activePurchases = Math.max(0, Number(store.activePurchases || 0)) + 1;
+
+    try {
+        if (store.repricing === true) {
+            throw new Error("Store listing changed.");
+        }
+        if (options.expectedRevision !== undefined && Number(store.revision || 1) !== Number(options.expectedRevision)) {
+            throw new Error("Store listing changed.");
+        }
+        const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId));
+        if (!storeItem) {
+            throw new Error("Item is not available.");
+        }
+        if (options.expectedUnitPrice !== undefined && Number(storeItem.price) !== Number(options.expectedUnitPrice)) {
+            throw new Error("Store price changed.");
+        }
+
+        const requestedQty = Number(qty);
+        if (!Number.isSafeInteger(requestedQty) || requestedQty <= 0) {
+            throw new Error("Invalid quantity.");
+        }
+        const buyQty = Math.min(requestedQty, Number(storeItem.count));
+        if (!Number.isSafeInteger(buyQty) || buyQty <= 0) {
+            throw new Error("Item is out of stock.");
+        }
+
+        const totalCost = Number(storeItem.price) * buyQty;
+        const originalCount = Number(storeItem.count);
+        const originalIndex = store.items.indexOf(storeItem);
+        // Reserve the finite lot synchronously, before any database await. A
+        // second buyer therefore observes the reduced count even if this
+        // purchase is still waiting on SQLite/network I/O.
+        storeItem.count = originalCount - buyQty;
+        if (storeItem.count <= 0) store.items = store.items.filter((item) => item !== storeItem);
+
+        let adenaDeducted = false;
+        try {
+            await deductAdena(actor, totalCost);
+            adenaDeducted = true;
+            await giveItem(actor, selfId, buyQty);
+        } catch (error) {
+            // Restore the reserved lot before releasing the queue. This keeps
+            // a failed purchase retryable and prevents a DB error from
+            // silently destroying finite stock.
+            storeItem.count = originalCount;
+            if (!store.items.includes(storeItem)) {
+                store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
+            }
+
+            if (adenaDeducted) {
+                try {
+                    await giveAdena(actor, totalCost);
+                } catch (rollbackError) {
+                    if (error && typeof error === 'object') {
+                        error.rollbackError = rollbackError;
+                    }
+                }
+            }
+            throw error;
+        }
+
+        return { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
+    } finally {
+        store.activePurchases = Math.max(0, Number(store.activePurchases || 0) - 1);
+        releaseActorPurchase();
+        if (actorPurchaseQueues.get(actor) === queuedActorPurchase) actorPurchaseQueues.delete(actor);
+        releaseStorePurchase();
+        if (queues.get(queueKey) === queuedStorePurchase) queues.delete(queueKey);
+        if (queues.size === 0) storePurchaseQueues.delete(store);
     }
-
-    const buyQty = Math.min(qty, storeItem.count);
-    if (buyQty <= 0) {
-        throw new Error("Item is out of stock.");
-    }
-
-    const totalCost = storeItem.price * buyQty;
-    await deductAdena(actor, totalCost);
-    await giveItem(actor, selfId, buyQty);
-
-    storeItem.count -= buyQty;
-    store.items = store.items.filter((item) => item.count > 0);
-
-    return { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
 }
 
 async function sellToStore(actor, store, selfId, qty) {

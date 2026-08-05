@@ -63,7 +63,13 @@ function openMerchantTradeWindow(session, merchant) {
         return;
     }
 
-    session.activeMerchantTrade = { merchant, store };
+    store.revision = Math.max(1, Number(store.revision || 1));
+    session.activeMerchantTrade = {
+        merchant,
+        store,
+        revision: store.revision,
+        prices: Object.fromEntries(store.items.map((line) => [Number(line.selfId), Number(line.price)]))
+    };
     session.viewedPrivateStoreSeller = merchant;
 
     if (store.storeType === 1) {

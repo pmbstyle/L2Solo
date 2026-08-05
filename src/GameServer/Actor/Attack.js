@@ -268,6 +268,18 @@ class Attack {
                 // skill result exists. A queued, interrupted, resisted, or
                 // stack-rejected cast must never claim success to the party.
                 invoke('GameServer/Bot/AI/BotPartyChat').confirmSkillResult(session, actor, target, skill, outcome);
+                if (outcome?.applied && session?.accountId?.startsWith?.('bot_') && target?.session?.accountId && !target.session.accountId.startsWith('bot_')) {
+                    Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+                        playerId: target.session.actor?.fetchId?.(),
+                        botId: actor.fetchId?.(),
+                        eventType: 'support_result',
+                        summary: `${actor.fetchName?.() || 'Bot'} successfully used ${skill.model?.name || 'a support skill'} on ${target.fetchName?.() || 'the player'}.`,
+                        weight: 3,
+                        dedupeKey: `support:${actor.fetchId?.()}:${target.fetchId?.()}:${skill.fetchSelfId?.()}`,
+                        coalesceWindowMs: 5000,
+                        meta: { skillId: skill.fetchSelfId?.(), outcome: outcome.type || null }
+                    })).catch(() => {});
+                }
 
                 if (outcome.damage > 0) {
                     this.hit(session, actor, target, outcome.damage);

@@ -2,6 +2,12 @@ const assert = require('assert');
 
 require('../src/Global');
 
+// This file exercises the legacy deterministic command fallback. Keep the
+// developer's ignored config/local.ini from changing that contract underneath
+// the test suite; LLM routing is covered by the hot conversation flow tests.
+const originalOpenRouterEnabled = options.default.OpenRouter?.enabled;
+if (options.default.OpenRouter) options.default.OpenRouter.enabled = false;
+
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
@@ -264,4 +270,5 @@ try {
     BotSocialMemory.recordEvent = originalRecordEvent;
     Generics.skillExec = originalSkillExec;
     BotManager.botTell = originalBotTell;
+    if (options.default.OpenRouter) options.default.OpenRouter.enabled = originalOpenRouterEnabled;
 }

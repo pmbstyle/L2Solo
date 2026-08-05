@@ -22,6 +22,7 @@ const C4BeastItems   = invoke('GameServer/Items/C4BeastItems');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 const FISHING_ROD_GRADES = {
     6529: 'none',
@@ -32,6 +33,19 @@ const FISHING_ROD_GRADES = {
     6534: 'S',
     7560: 'none'
 };
+
+function recordEquipmentEvent(session, item, action) {
+    if (!session?.accountId?.startsWith?.('bot_') || !item) return;
+    Promise.resolve(BotEventJournal.record({
+        botId: session.actor?.fetchId?.(),
+        eventType: action === 'equip' ? 'equipment_change' : 'equipment_removed',
+        summary: `${session.actor?.fetchName?.() || 'Bot'} ${action === 'equip' ? 'equipped' : 'unequipped'} ${item.fetchName?.() || 'an item'}.`,
+        weight: 2,
+        dedupeKey: `${action}:${session.actor?.fetchId?.()}:${item.fetchSelfId?.()}:${item.fetchSlot?.()}`,
+        coalesceWindowMs: 15000,
+        meta: { selfId: item.fetchSelfId?.(), slot: item.fetchSlot?.(), action }
+    })).catch(() => {});
+}
 
 const COMMON_CRAFT_LEVELS = [5, 20, 28, 36, 43, 49, 55, 62, 70];
 const MANUFACTURE_STORE_TYPES = [5, 6];
@@ -1490,6 +1504,7 @@ class Backpack extends BackpackModel {
 
         // Recalculate
         invoke(path.actor).calculateStats(session, session.actor);
+        recordEquipmentEvent(session, item, 'equip');
     }
 
     unequipGear(session, slot) {
@@ -1527,6 +1542,7 @@ class Backpack extends BackpackModel {
 
         // Recalculate once for the complete slot change.
         invoke(path.actor).calculateStats(session, session.actor);
+        equippedItems.forEach((item) => recordEquipmentEvent(session, item, 'unequip'));
     }
 
     updateDatabaseTimer(characterId, changedItems = this.items.filter((ob) => ob.isWearable())) {

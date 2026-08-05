@@ -239,6 +239,121 @@ CREATE TABLE IF NOT EXISTS bot_social_memory (
     PRIMARY KEY(playerId, botId)
 );
 
+CREATE TABLE IF NOT EXISTS bot_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    summary TEXT NOT NULL DEFAULT '',
+    summaryThroughId INTEGER NOT NULL DEFAULT 0,
+    summaryThroughOrdinal INTEGER NOT NULL DEFAULT 0,
+    nextTurnOrdinal INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(playerId, botId)
+);
+CREATE INDEX IF NOT EXISTS bot_conversations_bot_updated ON bot_conversations(botId, updatedAt DESC);
+
+CREATE TABLE IF NOT EXISTS bot_conversation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversationId INTEGER NOT NULL REFERENCES bot_conversations(id) ON DELETE CASCADE,
+    turnId TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('player', 'bot', 'system')),
+    channel TEXT NOT NULL DEFAULT 'local',
+    text TEXT NOT NULL DEFAULT '',
+    requestId TEXT,
+    delivered INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    metaJson TEXT,
+    turnOrdinal INTEGER NOT NULL DEFAULT 0,
+    messageOrder INTEGER NOT NULL DEFAULT 0,
+    compacted INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(conversationId, turnId, role)
+);
+CREATE INDEX IF NOT EXISTS bot_conversation_messages_recent ON bot_conversation_messages(conversationId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_conversation_messages_turn ON bot_conversation_messages(conversationId, turnId, role);
+
+CREATE TABLE IF NOT EXISTS bot_activity_journal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    eventType TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    weight INTEGER NOT NULL DEFAULT 1,
+    dedupeKey TEXT,
+    count INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+
+CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    turnId TEXT,
+    toolName TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    worldRevision TEXT,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
+CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
+
+CREATE TABLE IF NOT EXISTS bot_llm_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turnId TEXT NOT NULL UNIQUE,
+    playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    eventType TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'queued',
+    requestId TEXT,
+    traceId TEXT,
+    startedAt INTEGER,
+    finishedAt INTEGER,
+    outcome TEXT,
+    model TEXT,
+    promptTokens INTEGER NOT NULL DEFAULT 0,
+    completionTokens INTEGER NOT NULL DEFAULT 0,
+    totalTokens INTEGER NOT NULL DEFAULT 0,
+    cost REAL,
+    error TEXT NOT NULL DEFAULT '',
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+
+CREATE TABLE IF NOT EXISTS bot_negotiations (
+    id TEXT PRIMARY KEY,
+    playerId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    itemObjectId INTEGER NOT NULL,
+    itemSelfId INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    referenceUnitPrice INTEGER NOT NULL,
+    desiredUnitPrice INTEGER NOT NULL,
+    minimumUnitPrice INTEGER NOT NULL,
+    maximumUnitPrice INTEGER NOT NULL,
+    currentUnitPrice INTEGER NOT NULL,
+    agreedTotalPrice INTEGER,
+    round INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    metaJson TEXT
+);
+CREATE INDEX IF NOT EXISTS bot_negotiations_pair_recent ON bot_negotiations(playerId, botId, updatedAt DESC);
+CREATE INDEX IF NOT EXISTS bot_negotiations_bot_recent ON bot_negotiations(botId, updatedAt DESC);
+
 CREATE TABLE IF NOT EXISTS bot_friendships (
     playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,

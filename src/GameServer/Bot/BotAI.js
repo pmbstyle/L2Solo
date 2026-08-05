@@ -8,6 +8,9 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const BotTradeService = invoke('GameServer/Bot/BotTradeService');
+const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -135,6 +138,12 @@ const BotAI = {
 
     stop(session) {
         session.aiActive = false;
+        session.pendingBrainTurns = [];
+        session.pendingBrainTurn = null;
+        HotBotPolicyOverlay.clearForCold(session);
+        ChatArrivalState.clear(session, 'ai_stop');
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
+        try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }
         if (session.aiTimeout) {
             clearTimeout(session.aiTimeout);
             session.aiTimeout = null;
@@ -323,10 +332,34 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        // Supply errands are parked as a cold workflow while away from the
+        // leader. No autonomous state, ambient event, or LLM pass may run
+        // until the destination callback resumes the shopping phase.
+        if (session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'returning') return;
+
         PopulationService.recordHotTick(session);
         const botDead = bot.isDead();
-        if (botDead) clearTacticalState(session);
+        if (botDead) {
+            clearTacticalState(session);
+            HotBotPolicyOverlay.clearForDeath(session);
+            BotTradeService.cleanup(session, 'death');
+            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
+        } else {
+            // TTL expiry is intentionally lazy and bounded to hot ticks; no
+            // background timer is needed for a session-local preference.
+            HotBotPolicyOverlay.get(session);
+        }
         session.botStatus = BotStatus.getStatus(session);
+        // Autonomous state changes remain owned by the deterministic brain.
+        // LLM inference is reserved for explicit player communication.
+
+        // A cold bot explicitly asked to come is temporarily held near the
+        // player. Keep this deterministic and independent from the LLM so the
+        // normal hunting state cannot immediately overwrite the arrival.
+        if (!botDead && ChatArrivalState.tick(session, bot)) {
+            session.botStatus = BotStatus.getStatus(session);
+            return;
+        }
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const World = invoke('GameServer/World/World');
@@ -523,7 +556,9 @@ const BotAI = {
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
-        const decision = options.basicAttackOnly ? null : BotCombatUtility.select(bot, npc, role);
+        const decision = options.basicAttackOnly
+            ? null
+            : BotCombatUtility.select(bot, npc, role, HotBotPolicyOverlay.combatPolicy(session));
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',
