@@ -46,17 +46,38 @@ function revealInterruptedSupplyErrand(session, bot) {
     revealSupplyErrand(session, bot, { clearErrand: true });
 }
 
+function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
+    if (session?.supplyErrandPhase !== 'cold') {
+        revealInterruptedSupplyErrand(session, bot);
+        return Promise.resolve({ ok: true, reason: 'not_parked_cold' });
+    }
+
+    session.supplyErrandPhase = 'returning';
+    revealInterruptedSupplyErrand(session, bot);
+    if (session.coldLifeState) {
+        session.coldLifeState = { ...session.coldLifeState, activity: session.plan || 'hunting' };
+    }
+    const BotAI = invoke('GameServer/Bot/BotAI');
+    BotAI.stop?.(session);
+    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+    return Promise.resolve().then(() => PopulationService.markHot(session, reason)).catch(() => null).then(() => {
+        session.supplyErrandPhase = undefined;
+        BotAI.init?.(session);
+        return { ok: true, reason };
+    });
+}
+
 function interruptEscape(session, bot) {
     if (!session.townEscape) return false;
     session.townEscape = undefined;
     session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now() };
     session.plan = 'hunting';
     bot.state.setCasts(false);
-    revealInterruptedSupplyErrand(session, bot);
+    restoreSupplyHot(session, bot, 'supply_errand_interrupted');
     return true;
 }
 
-function beginEscape(session, bot, town) {
+function beginEscape(session, bot, town, options = {}) {
     const token = Symbol('bot_town_escape');
     const skill = {
         fetchSelfId: () => SOE_SKILL_ID,
@@ -76,7 +97,7 @@ function beginEscape(session, bot, town) {
             bot.state.setCasts(false);
             session.townEscape = undefined;
             session.plan = 'hunting';
-            revealInterruptedSupplyErrand(session, bot);
+            restoreSupplyHot(session, bot, 'supply_errand_interrupted');
             return;
         }
 
@@ -84,14 +105,18 @@ function beginEscape(session, bot, town) {
         session.townEscape = undefined;
         const destination = { locX: town.x, locY: town.y, locZ: town.z };
         if (session.supplyErrandHidden === true) {
-            // A companion supply run is a cold-style server operation.  The
-            // player sees the request and the eventual return, never a bot
-            // walking across the world or teleporting through intermediate
-            // locations.
+            // A companion supply run is a parked cold operation. The player
+            // sees the request and the eventual return, never a bot walking
+            // across the world or teleporting through intermediate locations.
             bot.setLocXYZ?.(destination);
         } else {
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
             TeleportTo(session, bot, destination);
+        }
+        if (typeof options.onArrival === 'function') {
+            Promise.resolve(options.onArrival(destination)).catch((error) => {
+                utils.infoWarn('BotTownTravel', 'arrival callback failed for %s: %s', bot.fetchName?.() || bot.fetchId?.(), error.message || error);
+            });
         }
         Promise.resolve(BotEventJournal.record({
             botId: bot.fetchId(),
@@ -126,7 +151,7 @@ function request(session, bot, BotAI, reason, options = {}) {
         BotAI.say(session, options.forceScrollOfEscape === true
             ? `Using a Scroll of Escape to reach ${town.name}.`
             : `${town.name} is far away. Using a Scroll of Escape.`);
-        beginEscape(session, bot, town);
+        beginEscape(session, bot, town, options);
         return 'escape';
     }
 
@@ -145,5 +170,6 @@ module.exports = {
     inCombat,
     interruptEscape,
     request,
-    revealSupplyErrand
+    revealSupplyErrand,
+    restoreSupplyHot
 };

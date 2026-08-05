@@ -5,6 +5,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 const MAX_REQUEST_AMOUNT = 5000;
 
@@ -86,6 +87,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         botStay: false,
         stayLocation: null
     };
+    const workflowStartedAt = Date.now();
     session.companionShopping = {
         kind: 'player_resource_purchase',
         playerSession,
@@ -98,7 +100,9 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         sourceType: Market.sourceType,
         sourceId: Market.sourceId,
         sourceName: Market.sourceName,
-        workflowId: `supply-${bot.fetchId()}-${player.fetchId()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        workflowId: `supply-${bot.fetchId()}-${player.fetchId()}-${workflowStartedAt}-${Math.random().toString(36).slice(2, 8)}`,
+        startedAt: workflowStartedAt,
+        expiresAt: workflowStartedAt + 10 * 60 * 1000,
         target: {
             actorId: ['private_store', 'configured_store'].includes(Market.sourceType) ? Number(Market.sourceId) || null : null,
             name: Market.sourceName || `${town.name} general shop`,
@@ -115,8 +119,10 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
     bot.unselect?.();
     bot.automation?.abortAll?.(bot);
 
-    // Hide the actor before the escape cast. The actual movement and purchase
-    // remain server-side; only the final return and native trade are visible.
+    // Hide and park the actor before the escape cast. The supply workflow is
+    // persisted as cold and the normal AI loop is stopped while it is away;
+    // the actor is intentionally retained only as a server-side inventory
+    // handle until the destination purchase has completed.
     hideForSupply(session, bot);
     const travel = TownTravel.request(
         session,
@@ -128,7 +134,12 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
             preserveShoppingTarget: true,
             destinationTown: town,
             forceScrollOfEscape: true,
-            announce: false
+            announce: false,
+            onArrival: () => {
+                session.supplyErrandPhase = 'shopping';
+                BotAI.init?.(session);
+                BotAI.wakeup?.(session, { urgent: true });
+            }
         }
     );
     if (travel === 'deferred') {
@@ -140,6 +151,16 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         session.dataSendToOthers?.(ServerResponse.charInfo(bot), bot);
         session.dataSendToOthers?.(ServerResponse.relationChanged(bot), bot);
         return { ok: false, reason: 'unsafe_combat_state' };
+    }
+    if (travel === 'escape') {
+        session.supplyErrandPhase = 'cold';
+        BotAI.stop?.(session);
+        const workflowId = session.companionShopping.workflowId;
+        Promise.resolve().then(() => LifeState.markCold(session, 'supply_errand')).then((state) => {
+            if (state && session.companionShopping?.workflowId === workflowId) {
+                session.coldLifeState = state;
+            }
+        }).catch(() => {});
     }
     WorkflowTelemetry.recordSupply(session.companionShopping.workflowId, 'requested', {
         botId: bot.fetchId(),
@@ -210,7 +231,9 @@ async function purchaseAtDestination(bot, errand) {
         };
     }
     try {
-        const bought = await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount));
+        const bought = await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
+            expectedUnitPrice: Number(errand.unitPrice)
+        });
         if (Number(bought.qty) !== Number(errand.amount)) {
             WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
                 botId: bot.fetchId(),

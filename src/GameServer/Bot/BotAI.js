@@ -332,6 +332,11 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
 
+        // Supply errands are parked as a cold workflow while away from the
+        // leader. No autonomous state, ambient event, or LLM pass may run
+        // until the destination callback resumes the shopping phase.
+        if (session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'returning') return;
+
         PopulationService.recordHotTick(session);
         const botDead = bot.isDead();
         if (botDead) {

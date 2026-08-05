@@ -762,6 +762,7 @@ const PopulationService = {
                         // as a solo hot bot and silently dissolve the group.
                         const available = states.filter((state) => (
                             !['pk_hunting', 'traveling'].includes(state.activity) &&
+                            !state.stats?.supplyErrand &&
                             !state.party?.partyId
                         ));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);

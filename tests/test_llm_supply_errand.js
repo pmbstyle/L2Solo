@@ -14,6 +14,8 @@ const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const BotAI = invoke('GameServer/Bot/BotAI');
 
 function item(id, selfId, amount, name = 'Soulshot: D-grade') {
     let count = amount;
@@ -35,7 +37,11 @@ async function main() {
         scheduleReturn: ShoppingState.scheduleResourceReturn,
         trade: BotTradeService.startBotTradeWithOffer,
         inferRole: BotRoles.inferRole,
-        announce: BotPartyChat.announce
+        announce: BotPartyChat.announce,
+        markCold: LifeState.markCold,
+        botAiStop: BotAI.stop,
+        botAiInit: BotAI.init,
+        botAiWakeup: BotAI.wakeup
     };
     const adena = item(10, 57, 100000, 'Adena');
     const shots = item(11, 1463, 991);
@@ -78,15 +84,41 @@ async function main() {
             sourceType: 'npc', sourceId: 7004, sourceName: 'D-grade grocer', town: 'Talking Island',
             selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true
         });
+        let arrivalCallback = null;
+        let travelMode = 'walk';
         BotTownTravel.request = (_session, _bot, _ai, _reason, options) => {
             assert.strictEqual(options.allowCompanion, true);
             assert.strictEqual(options.forceScrollOfEscape, true);
-            return 'walk';
+            arrivalCallback = options.onArrival;
+            return travelMode;
         };
         const requested = BotSupplyErrand.request(session, player, 1463, 200);
         assert.strictEqual(requested.ok, true);
         assert.strictEqual(requested.amount, 200);
         assert.strictEqual(session.companionShopping.amount, 200);
+
+        // A real companion supply escape is parked as a cold workflow: the
+        // AI loop is stopped, then resumed only by the destination callback.
+        session.companionShopping = undefined;
+        session.pendingResourceDelivery = undefined;
+        travelMode = 'escape';
+        let stopped = 0;
+        let initialized = 0;
+        let woken = 0;
+        BotAI.stop = () => { stopped += 1; };
+        BotAI.init = () => { initialized += 1; };
+        BotAI.wakeup = () => { woken += 1; };
+        LifeState.markCold = async () => ({ phase: 'cold', activity: 'shopping' });
+        const parked = BotSupplyErrand.request(session, player, 1463, 1);
+        assert.strictEqual(parked.ok, true);
+        await Promise.resolve();
+        assert.strictEqual(session.supplyErrandPhase, 'cold');
+        assert.strictEqual(stopped, 1);
+        arrivalCallback();
+        assert.strictEqual(session.supplyErrandPhase, 'shopping');
+        assert.strictEqual(initialized, 1);
+        assert.strictEqual(woken, 1);
+        session.companionShopping.amount = 200;
 
         TradeService.buyFromStore = async (_actor, store, selfId, amount) => {
             assert.strictEqual(store.items[0].selfId, 1463);
@@ -103,16 +135,17 @@ async function main() {
         let offered = null;
         BotTradeService.startBotTradeWithOffer = (_session, _player, objectId, amount) => {
             offered = { objectId, amount };
-            return { ok: true, line: { objectId, count: amount } };
+            return { ok: true, trade: { id: 'supply-trade-test' }, line: { objectId, count: amount } };
         };
         BotRoles.inferRole = () => 'dps';
         BotPartyChat.announce = () => true;
         assert.strictEqual(FollowingState.deliverPurchasedResources(session, bot, player), true);
         assert.deepStrictEqual(offered, { objectId: 11, amount: 200 });
-        assert.strictEqual(session.pendingResourceDelivery, undefined);
+        assert.strictEqual(session.pendingResourceDelivery.tradeId, 'supply-trade-test');
 
         // Selecting the bot is normal before a native trade request. A
-        // selected target is not combat and must not keep delivery pending.
+        // selected target is not combat; delivery stays pending until the
+        // native trade is actually committed with the player.
         session.pendingResourceDelivery = {
             playerSession: player,
             playerId: 100,
@@ -124,7 +157,7 @@ async function main() {
         offered = null;
         assert.strictEqual(FollowingState.deliverPurchasedResources(session, bot, player), true);
         assert.deepStrictEqual(offered, { objectId: 11, amount: 1 });
-        assert.strictEqual(session.pendingResourceDelivery, undefined);
+        assert.strictEqual(session.pendingResourceDelivery.tradeId, 'supply-trade-test');
 
         // An errand request must not cancel an active fight just because the
         // player asked at the wrong moment.
@@ -158,6 +191,10 @@ async function main() {
         BotTradeService.startBotTradeWithOffer = originals.trade;
         BotRoles.inferRole = originals.inferRole;
         BotPartyChat.announce = originals.announce;
+        LifeState.markCold = originals.markCold;
+        BotAI.stop = originals.botAiStop;
+        BotAI.init = originals.botAiInit;
+        BotAI.wakeup = originals.botAiWakeup;
         DataCache.items = originalItems;
     }
     console.log('LLM supply errand checks passed');

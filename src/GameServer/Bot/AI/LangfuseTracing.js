@@ -138,6 +138,45 @@ function updateObservation(observation, attributes) {
     if (typeof observation?.update === 'function') observation.update(attributes);
 }
 
+function wrapObservation(observation, cfg) {
+    if (!observation) return null;
+    let ended = false;
+    const wrapped = {
+        update(value = {}) {
+            if (ended) return;
+            updateObservation(observation, {
+                ...value,
+                output: value.output === undefined ? undefined : observationOutput(value.output, cfg)
+            });
+        },
+        end(value, status = {}) {
+            if (ended) return;
+            ended = true;
+            const attributes = {};
+            if (value !== undefined) attributes.output = observationOutput(value, cfg);
+            if (status.level) attributes.level = status.level;
+            if (status.statusMessage) attributes.statusMessage = text(status.statusMessage, 240);
+            if (Object.keys(attributes).length > 0) observation.update(attributes);
+            observation.end();
+        },
+        child(name, input, metadata, asType = 'span') {
+            if (typeof observation.startObservation !== 'function') return null;
+            try {
+                const childObservation = observation.startObservation(String(name), {
+                    input: observationInput(input, cfg),
+                    metadata: serializable(metadata || {})
+                }, { asType });
+                return wrapObservation(childObservation, cfg);
+            } catch (_) {
+                return null;
+            }
+        },
+        traceId: observation.traceId,
+        id: observation.id
+    };
+    return wrapped;
+}
+
 function init(overrides = {}) {
     if (initialized) return status();
     const cfg = config(overrides);
@@ -239,24 +278,7 @@ function startObservation(name, input, metadata, asType = 'span') {
             input: observationInput(input, cfg),
             metadata: serializable(metadata || {})
         }, { asType });
-        return {
-            update(value = {}) {
-                updateObservation(observation, {
-                    ...value,
-                    output: value.output === undefined ? undefined : observationOutput(value.output, cfg)
-                });
-            },
-            end(value, status = {}) {
-                const attributes = {};
-                if (value !== undefined) attributes.output = observationOutput(value, cfg);
-                if (status.level) attributes.level = status.level;
-                if (status.statusMessage) attributes.statusMessage = text(status.statusMessage, 240);
-                if (Object.keys(attributes).length > 0) observation.update(attributes);
-                observation.end();
-            },
-            traceId: observation.traceId,
-            id: observation.id
-        };
+        return wrapObservation(observation, cfg);
     } catch (_) {
         return null;
     }

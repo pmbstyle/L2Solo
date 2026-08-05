@@ -705,6 +705,11 @@ function deliverPurchasedResources(session, bot, playerSession) {
         session.pendingResourceDelivery = undefined;
         return false;
     }
+    if (delivery.tradeId && session.activeTrade?.id === delivery.tradeId) {
+        recordRoleDecision(session, bot, 'deliver_resources', 'trade_pending_confirmation', { targetId: delivery.playerId });
+        return true;
+    }
+    if (Number(delivery.retryAt || 0) > Date.now()) return true;
     if (point(bot).distance(point(playerSession.actor)) > 350) {
         if (!bot.state?.fetchTowards?.()) {
             bot.moveTo({ from: loc(bot), to: loc(playerSession.actor) });
@@ -736,35 +741,37 @@ function deliverPurchasedResources(session, bot, playerSession) {
         session,
         playerSession,
         delivery.objectId,
-        delivery.amount
+        delivery.amount,
+        { workflowId: delivery.workflowId, supplyDelivery: true }
     );
     if (!trade.ok) {
         if (trade.reason === 'too_far') return true;
+        delivery.retryAt = Date.now() + 10000;
         BotPartyChat.announce(session, {
             priority: 'informational',
             key: `resource-delivery-failed:${bot.fetchId()}:${delivery.purchasedAt}`,
             templates: [`I brought ${delivery.itemName}, but could not open trade (${trade.reason}).`]
         });
-        session.pendingResourceDelivery = undefined;
         WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
             botId: bot.fetchId(),
             playerId: delivery.playerId,
             amount: delivery.amount
-        }, 'failed', trade.reason || 'trade_open_failed');
-        return false;
+        }, 'failed', trade.reason || 'trade_open_failed', { terminal: false });
+        return true;
     }
+    delivery.tradeId = trade.trade?.id || trade.id || null;
+    delivery.retryAt = undefined;
     BotPartyChat.announce(session, {
         priority: 'informational',
         key: `resource-delivery:${bot.fetchId()}:${delivery.purchasedAt}`,
         templates: [`I brought ${delivery.amount} ${delivery.itemName}. Please confirm the trade.`]
     });
-    session.pendingResourceDelivery = undefined;
     WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
         botId: bot.fetchId(),
         playerId: delivery.playerId,
         amount: delivery.amount,
         objectId: delivery.objectId
-    }, 'completed', 'native_trade_open');
+    }, 'pending', 'native_trade_open');
     recordRoleDecision(session, bot, 'deliver_resources', 'native_trade_open', { targetId: delivery.playerId });
     return true;
 }

@@ -131,6 +131,7 @@ function audit(context, outcome, reason, meta = {}) {
             botId: actorId(context.session),
             playerId: playerId(context),
             turnId: turnId(context),
+            workflowId: meta.workflowId || null,
             outcome,
             reason,
             phase: outcome === 'requested' ? 'request' : 'result'

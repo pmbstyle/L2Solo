@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath = invoke('GameServer/SpeckMath');
+const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 
 const TRADE_RANGE = 1500;
 const TRADE_TTL_MS = 2 * 60 * 1000;
@@ -31,6 +32,16 @@ function isRealPlayerSession(session) {
 
 function actorName(session) {
     return session?.actor?.fetchName?.() || session?.accountId || 'unknown';
+}
+
+function recordSupplyTrade(trade, outcome, reason = null, terminal = false, payload = {}) {
+    if (!trade?.workflowId) return;
+    WorkflowTelemetry.recordSupply(trade.workflowId, 'trade', {
+        botId: trade.botSession?.actor?.fetchId?.() || null,
+        playerId: trade.playerSession?.actor?.fetchId?.() || null,
+        tradeId: trade.id,
+        ...payload
+    }, outcome, reason, { terminal });
 }
 
 function actorDistance(a, b) {
@@ -110,6 +121,11 @@ function cancelTrade(trade, reason = 'cancelled', notify = true) {
     if (!trade || ['cancelled', 'committed'].includes(trade.state)) return false;
     trade.state = 'cancelled';
     trade.cancelReason = reason;
+    if (trade.botSession?.pendingResourceDelivery?.tradeId === trade.id) {
+        trade.botSession.pendingResourceDelivery.tradeId = undefined;
+        trade.botSession.pendingResourceDelivery.retryAt = now() + 10000;
+    }
+    recordSupplyTrade(trade, 'cancelled', reason, true);
     if (trade.negotiationId) {
         try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (_) { /* optional negotiation module */ }
     }
@@ -151,7 +167,7 @@ function attachTrade(trade) {
     trade.botSession.activeTrade = trade;
 }
 
-function createTrade(playerSession, botSession, direction) {
+function createTrade(playerSession, botSession, direction, metadata = {}) {
     return {
         id: `bot-trade-${++tradeSequence}`,
         direction,
@@ -163,7 +179,9 @@ function createTrade(playerSession, botSession, direction) {
         botConfirmed: false,
         state: 'open',
         createdAt: now(),
-        expiresAt: now() + TRADE_TTL_MS
+        expiresAt: now() + TRADE_TTL_MS,
+        workflowId: metadata.workflowId || null,
+        supplyDelivery: metadata.supplyDelivery === true
     };
 }
 
@@ -186,7 +204,7 @@ function startPlayerTrade(playerSession, targetSession) {
     return { ok: true, trade };
 }
 
-function openBotTrade(botSession, playerSession, negotiation = null) {
+function openBotTrade(botSession, playerSession, negotiation = null, metadata = {}) {
     const reason = canStart(playerSession, botSession, { allowMerchant: !!negotiation });
     if (reason) return { ok: false, reason };
     if (!negotiation && (botSession.partyCompanion !== true || botSession.followPlayerSession !== playerSession)) {
@@ -195,13 +213,11 @@ function openBotTrade(botSession, playerSession, negotiation = null) {
     if (negotiation && (negotiation.botSession !== botSession || negotiation.playerSession !== playerSession || negotiation.state !== 'accepted')) {
         return { ok: false, reason: 'negotiation_not_ready' };
     }
-    if (negotiation && (activeTradeFor(playerSession) || activeTradeFor(botSession))) {
+    if (activeTradeFor(playerSession) || activeTradeFor(botSession)) {
         return { ok: false, reason: 'trade_active' };
     }
 
-    cancel(playerSession, 'replaced', false);
-    cancel(botSession, 'replaced', false);
-    const trade = createTrade(playerSession, botSession, 'bot_outbound');
+    const trade = createTrade(playerSession, botSession, 'bot_outbound', metadata);
     if (negotiation) {
         trade.negotiationId = negotiation.id;
         trade.expectedNegotiatedItem = { objectId: negotiation.itemObjectId, count: negotiation.quantity };
@@ -229,8 +245,8 @@ function startBotTrade(botSession, playerSession) {
     return openBotTrade(botSession, playerSession);
 }
 
-function startBotTradeWithOffer(botSession, playerSession, objectId, amount) {
-    const opened = openBotTrade(botSession, playerSession);
+function startBotTradeWithOffer(botSession, playerSession, objectId, amount, metadata = {}) {
+    const opened = openBotTrade(botSession, playerSession, null, metadata);
     if (!opened.ok) return opened;
     const offered = offerBotItem(botSession, objectId, amount);
     if (!offered.ok) {
@@ -289,10 +305,12 @@ function offerBotItem(botSession, objectId, amount) {
         return { ok: false, reason: 'insufficient_item' };
     }
 
-    const ledger = botGiftLedger(botSession);
     const delta = Math.max(0, nextCount - (current?.count || 0));
-    if (ledger.units + delta > MAX_BOT_GIFT_UNITS) return { ok: false, reason: 'gift_budget_exceeded' };
-    ledger.units += delta;
+    if (!trade.supplyDelivery) {
+        const ledger = botGiftLedger(botSession);
+        if (ledger.units + delta > MAX_BOT_GIFT_UNITS) return { ok: false, reason: 'gift_budget_exceeded' };
+        ledger.units += delta;
+    }
     const line = lineFor(item, nextCount);
     trade.botItems.set(canonicalObjectId, line);
     reservations.set(canonicalObjectId, { tradeId: trade.id, count: nextCount });
@@ -393,20 +411,32 @@ async function commit(playerSession) {
 
     const trade = activeTradeFor(playerSession);
     if (!trade || trade.playerSession !== playerSession) return { ok: false, reason: 'no_active_trade' };
-    if (trade.playerItems.size === 0 && trade.botItems.size === 0) return { ok: false, reason: 'empty_or_invalid_trade' };
+    if (trade.playerItems.size === 0 && trade.botItems.size === 0) {
+        const result = { ok: false, reason: 'empty_or_invalid_trade' };
+        recordSupplyTrade(trade, 'failed', result.reason, false);
+        return result;
+    }
 
     if (trade.negotiationId) {
         const validation = invoke('GameServer/Bot/Economy/BotNegotiationService').validateTrade(trade);
-        if (!validation.ok) return validation;
+        if (!validation.ok) {
+            recordSupplyTrade(trade, 'failed', validation.reason, false);
+            return validation;
+        }
     }
 
     const entries = transferEntries(trade);
     for (const entry of entries) {
         const validation = validateLine(trade, entry.fromSession, entry.line, { botSide: entry.fromSession === trade.botSession });
-        if (!validation.ok) return validation;
+        if (!validation.ok) {
+            recordSupplyTrade(trade, 'failed', validation.reason, false);
+            return validation;
+        }
     }
     if (!incomingSlots(trade.playerSession, [...trade.botItems.values()]) || !incomingSlots(trade.botSession, [...trade.playerItems.values()])) {
-        return { ok: false, reason: 'inventory_capacity' };
+        const result = { ok: false, reason: 'inventory_capacity' };
+        recordSupplyTrade(trade, 'failed', result.reason, false);
+        return result;
     }
 
     const databaseTransfers = entries.map((entry) => ({
@@ -425,7 +455,9 @@ async function commit(playerSession) {
     try {
         moved = await Database.transferInventoryBetweenCharacters(databaseTransfers);
     } catch (error) {
-        return { ok: false, reason: 'database_failed', error };
+        const result = { ok: false, reason: 'database_failed', error };
+        recordSupplyTrade(trade, 'failed', result.reason, false);
+        return result;
     }
 
     applyLocalTransfers(moved, entries);
@@ -441,6 +473,12 @@ async function commit(playerSession) {
         partnerSession: trade.botSession,
         moved: publicMoved(entries)
     };
+    recordSupplyTrade(trade, 'completed', 'native_trade_commit', true, {
+        moved: result.moved
+    });
+    if (trade.botSession.pendingResourceDelivery?.tradeId === trade.id) {
+        trade.botSession.pendingResourceDelivery = undefined;
+    }
     if (trade.negotiationId) {
         try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (_) { /* optional negotiation module */ }
     }

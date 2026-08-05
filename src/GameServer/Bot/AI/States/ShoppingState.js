@@ -177,7 +177,7 @@ module.exports = {
                     playerId: companionErrand.playerId,
                     itemSelfId: companionErrand.itemId,
                     amount: companionErrand.amount
-                }, 'failed', error?.message || 'purchase_failed');
+                }, 'failed', error?.message || 'purchase_failed', { terminal: false });
             }
             this.scheduleResourceReturn(session, bot, BotAI, { deliveryReady });
             return;
@@ -358,6 +358,11 @@ module.exports = {
         setTimeout(() => {
             const resume = session.resumeAfterShopping;
             const workflowId = session.companionShopping?.workflowId || session.pendingResourceDelivery?.workflowId || resume?.workflowId || options.workflowId;
+            const wasSupplyErrand = session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'shopping';
+            if (wasSupplyErrand) {
+                session.supplyErrandPhase = 'returning';
+                BotAI.stop?.(session);
+            }
             const leaderSession = resume?.followPlayerSession;
             session.plan = session.partyCompanion === true && leaderSession?.actor?.fetchIsOnline?.()
                 ? 'following'
@@ -367,6 +372,14 @@ module.exports = {
             session.companionShopping = undefined;
             session.resumeAfterShopping = undefined;
             session.preShopLocation = undefined;
+            if (session.coldLifeState) {
+                session.coldLifeState = { ...session.coldLifeState, activity: session.plan };
+            }
+            const restoreHot = () => {
+                session.supplyErrandPhase = undefined;
+                BotTownTravel.revealSupplyErrand(session, bot);
+                if (!session.aiActive) BotAI.init?.(session);
+            };
             if (session.plan === 'following') {
                 const leader = leaderSession.actor;
                 const destination = {
@@ -378,26 +391,32 @@ module.exports = {
                 // is away. Reappear in a valid companion slot instead of
                 // making the player watch a long return route.
                 bot.setLocXYZ?.(destination);
-                BotTownTravel.revealSupplyErrand(session, bot);
-                BotAI.say(session, options.deliveryReady === true
-                    ? 'I am back with the new supplies. I will open trade when the party is safe.'
-                    : 'I am back, but I could not complete that purchase.');
-                WorkflowTelemetry.recordSupply(workflowId, 'return', {
-                    botId: bot.fetchId(),
-                    playerId: leaderSession?.actor?.fetchId?.() || null,
-                    deliveryReady: options.deliveryReady === true
-                }, options.deliveryReady === true ? 'completed' : 'failed', options.deliveryReady === true ? 'returned_to_leader' : 'purchase_failed');
+                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_return')).catch(() => null).then(() => {
+                    restoreHot();
+                    BotAI.say(session, options.deliveryReady === true
+                        ? 'I am back with the new supplies. I will open trade when the party is safe.'
+                        : 'I am back, but I could not complete that purchase.');
+                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                        botId: bot.fetchId(),
+                        playerId: leaderSession?.actor?.fetchId?.() || null,
+                        deliveryReady: options.deliveryReady === true
+                    }, options.deliveryReady === true ? 'completed' : 'failed', options.deliveryReady === true ? 'returned_to_leader' : 'purchase_failed', { terminal: options.deliveryReady !== true });
+                });
             } else {
                 session.pendingResourceDelivery = undefined;
                 // The leader may have disconnected during the errand. Reveal
                 // through the same packet path even when there is no return
                 // target; otherwise every nearby client keeps a ghost bot.
-                BotTownTravel.revealSupplyErrand(session, bot);
-                WorkflowTelemetry.recordSupply(workflowId, 'return', {
-                    botId: bot.fetchId(),
-                    deliveryReady: false,
-                    leaderOnline: false
-                }, 'failed', 'leader_offline');
+                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_leader_offline')).catch(() => null).then(() => {
+                    restoreHot();
+                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                        botId: bot.fetchId(),
+                        deliveryReady: false,
+                        leaderOnline: false
+                    }, 'failed', 'leader_offline', { terminal: true });
+                });
             }
         }, 1000);
     }
