@@ -88,11 +88,13 @@ async function main() {
         Database.setItem = async () => ({ insertId: ++nextObjectId });
 
         const repricedStore = { storeType: 1, items: [{ selfId: 1864, price: 11, count: 2 }] };
+        const repricedBuyer = actor(4);
         await assert.rejects(
-            TradeService.buyFromStore(actor(4), repricedStore, 1864, 1, { expectedUnitPrice: 10 }),
+            TradeService.buyFromStore(repricedBuyer, repricedStore, 1864, 1, { expectedUnitPrice: 10 }),
             /Store price changed/
         );
         assert.strictEqual(repricedStore.items[0].count, 2, 'a repriced lot must remain untouched');
+        assert.strictEqual(repricedBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 100, 'a repriced lot must not deduct Adena');
 
         const invalidStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 2 }] };
         const invalidBuyer = actor(5);
