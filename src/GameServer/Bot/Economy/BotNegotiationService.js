@@ -5,21 +5,18 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotToolAudit = invoke('GameServer/Bot/AI/BotToolAudit');
+const BotMerchantStoreService = invoke('GameServer/Bot/Economy/BotMerchantStoreService');
 
 const NEGOTIATION_TTL_MS = 90 * 1000;
 const MAX_ROUNDS = 3;
 const MAX_QUANTITY = 100;
-const MAX_UNIT_PRICE = 10_000_000;
+const MAX_UNIT_PRICE = 1_000_000_000;
 const NEGOTIABLE_BOT_PLANS = new Set(['merchant', 'following']);
 
 const negotiations = new Map();
 let sequence = 0;
 
 function now() { return Date.now(); }
-
-function enabled() {
-    return options.default.OpenRouter?.negotiationEnabled === true;
-}
 
 function actorId(session) { return Number(session?.actor?.fetchId?.() || 0); }
 function actorName(session) { return session?.actor?.fetchName?.() || session?.accountId || 'unknown'; }
@@ -78,12 +75,45 @@ function personaFor(bot) {
     };
 }
 
-function pricePolicy(bot, player, item, quantity) {
+function pricePolicy(bot, player, item, quantity, listing = null) {
     const template = templateFor(item.fetchSelfId());
     const basePrice = Math.max(1, Number(template?.template?.price || item.fetchPrice?.() || item.model?.price || 1));
-    const referenceUnitPrice = BotEconomyPricing.scalePrice(basePrice, 1);
+    const listingUnitPrice = Math.max(0, Number(listing?.price || 0));
+    const referenceUnitPrice = listingUnitPrice || BotEconomyPricing.scalePrice(basePrice, 1);
     const persona = personaFor(bot);
     const relation = relationshipFor(player, bot);
+    if (listingUnitPrice) {
+        const driveFloorModifier = persona.primaryDrive === 'wealth'
+            ? 0.08
+            : persona.primaryDrive === 'social' ? -0.03 : 0.02;
+        const minimumFactor = Math.max(0.65, Math.min(0.98,
+            0.72 + persona.traits.caution * 0.12 + driveFloorModifier + relation.modifier
+        ));
+        const desiredFactor = Math.max(0.90, Math.min(1,
+            1 + relation.modifier + (persona.primaryDrive === 'social' ? -0.02 : 0)
+        ));
+        const minimumUnitPrice = Math.max(1, Math.floor(referenceUnitPrice * minimumFactor));
+        const desiredUnitPrice = Math.max(minimumUnitPrice, Math.round(referenceUnitPrice * desiredFactor));
+        const rationale = relation.name === 'trusted'
+            ? 'I can move meaningfully below my listed price for someone I trust.'
+            : relation.name === 'friendly'
+                ? 'I can make a modest discount from my listed price.'
+                : persona.primaryDrive === 'wealth'
+                    ? 'I need to protect most of my listed value.'
+                    : 'I can negotiate within a bounded discount from my current listing.';
+        return {
+            baseUnitPrice: basePrice,
+            listingUnitPrice,
+            referenceUnitPrice,
+            desiredUnitPrice,
+            minimumUnitPrice,
+            maximumUnitPrice: MAX_UNIT_PRICE,
+            quantity,
+            relation: relation.name,
+            rationale,
+            policyVersion: 2
+        };
+    }
     const driveModifier = persona.primaryDrive === 'wealth'
         ? 0.06
         : persona.primaryDrive === 'social' ? -0.04 : 0.02;
@@ -126,6 +156,9 @@ function summary(negotiation) {
         itemSelfId: negotiation.itemSelfId,
         itemName: negotiation.itemName,
         quantity: negotiation.quantity,
+        storeId: negotiation.storeId || null,
+        storeRevision: negotiation.storeRevision || null,
+        listingUnitPrice: negotiation.listingUnitPrice || null,
         referenceUnitPrice: negotiation.referenceUnitPrice,
         desiredUnitPrice: negotiation.desiredUnitPrice,
         minimumUnitPrice: negotiation.minimumUnitPrice,
@@ -146,7 +179,7 @@ function summary(negotiation) {
 
 function persist(negotiation) {
     if (!Database.isReady?.() || !actorId(negotiation.botSession)) return Promise.resolve(false);
-    return Database.execute([
+    const write = () => Database.execute([
         `INSERT INTO bot_negotiations (
             id, playerId, botId, itemObjectId, itemSelfId, amount,
             referenceUnitPrice, desiredUnitPrice, minimumUnitPrice, maximumUnitPrice,
@@ -180,9 +213,18 @@ function persist(negotiation) {
             negotiation.expiresAt,
             now(),
             negotiation.reason || '',
-            JSON.stringify({ relation: negotiation.relation, policyVersion: negotiation.policyVersion }).slice(0, 1200)
+            JSON.stringify({
+                relation: negotiation.relation,
+                policyVersion: negotiation.policyVersion,
+                storeId: negotiation.storeId || null,
+                storeRevision: negotiation.storeRevision || null,
+                listingUnitPrice: negotiation.listingUnitPrice || null
+            }).slice(0, 1200)
         ]
     ], 'bot-negotiation:upsert').then(() => true).catch(() => false);
+    const pending = Promise.resolve(negotiation.persistPromise).catch(() => false).then(write);
+    negotiation.persistPromise = pending;
+    return pending;
 }
 
 function audit(negotiation, outcome, reason, meta = {}) {
@@ -235,7 +277,14 @@ function setTerminal(negotiation, state, reason) {
 
 function stockValid(negotiation) {
     const item = resolveInventoryItem(negotiation.botSession?.actor?.backpack, negotiation.itemObjectId);
-    return safeItem(item) && Number(item.fetchSelfId()) === Number(negotiation.itemSelfId) && Number(item.fetchAmount()) >= negotiation.quantity;
+    if (!safeItem(item) || Number(item.fetchSelfId()) !== Number(negotiation.itemSelfId) || Number(item.fetchAmount()) < negotiation.quantity) {
+        return false;
+    }
+    if (!negotiation.storeRevision) return true;
+    const store = BotMerchantStoreService.storeFor(negotiation.botSession);
+    const line = BotMerchantStoreService.lineFor(store, negotiation.itemSelfId);
+    return !!line && Number(line.count || 0) >= negotiation.quantity &&
+        BotMerchantStoreService.revision(store) === Number(negotiation.storeRevision);
 }
 
 function resolveInventoryItem(backpack, identifier) {
@@ -246,6 +295,14 @@ function resolveInventoryItem(backpack, identifier) {
     const candidates = (backpack.fetchItems?.() || [])
         .filter((item) => Number(item.fetchSelfId?.()) === id);
     return candidates.length === 1 ? candidates[0] : null;
+}
+
+function resolveListedInventoryItem(backpack, selfId) {
+    const id = Number(selfId);
+    if (!backpack || !Number.isInteger(id) || id <= 0) return null;
+    const direct = backpack.fetchItemFromSelfId?.(id);
+    if (direct && Number(direct.fetchSelfId?.()) === id) return direct;
+    return (backpack.fetchItems?.() || []).find((item) => Number(item.fetchSelfId?.()) === id) || null;
 }
 
 function activeFor(session) {
@@ -272,44 +329,73 @@ function canAccess(bot, player) {
     return null;
 }
 
-function quoteItem(bot, player, itemObjectId, amount = 1) {
-    if (!enabled()) return { ok: false, reason: 'negotiation_disabled' };
+function canNegotiateStore(bot) {
+    return !!(bot?.coldMarketState?.stats?.marketStore && BotMerchantStoreService.storeFor(bot));
+}
+
+function quoteItem(bot, player, itemObjectId, amount = 1, offeredTotalPrice = null) {
     const access = canAccess(bot, player);
     if (access) return { ok: false, reason: access };
     if (activeFor(bot)) return { ok: false, reason: 'negotiation_active' };
-    const item = resolveInventoryItem(bot.actor.backpack, itemObjectId);
+    const merchantStore = bot.plan === 'merchant' ? BotMerchantStoreService.storeFor(bot) : null;
+    if (bot.plan === 'merchant' && !canNegotiateStore(bot)) return { ok: false, reason: 'merchant_store_unavailable' };
+    const listedLine = merchantStore ? BotMerchantStoreService.lineFor(merchantStore, itemObjectId) : null;
+    if (merchantStore && !listedLine) return { ok: false, reason: 'item_not_listed' };
+    const item = listedLine
+        ? resolveListedInventoryItem(bot.actor.backpack, listedLine.selfId)
+        : resolveInventoryItem(bot.actor.backpack, itemObjectId);
     if (!safeItem(item)) return { ok: false, reason: 'item_not_negotiable' };
     const canonicalObjectId = Number(item.fetchId());
     const quantity = Math.max(1, Math.min(MAX_QUANTITY, Math.floor(Number(amount) || 1)));
+    if (listedLine && Number(listedLine.count || 0) < quantity) return { ok: false, reason: 'insufficient_listed_stock' };
     const reservations = bot.botNegotiationReservations || (bot.botNegotiationReservations = new Map());
-    const reservation = reservations.get(canonicalObjectId);
+    const reservation = merchantStore ? null : reservations.get(canonicalObjectId);
     if (reservation) return { ok: false, reason: 'stock_reserved' };
     if (Number(item.fetchAmount()) < quantity) return { ok: false, reason: 'insufficient_stock' };
 
-    const policy = pricePolicy(bot, player, item, quantity);
+    const policy = pricePolicy(bot, player, item, quantity, listedLine);
+    let currentUnitPrice = policy.desiredUnitPrice;
+    let state = 'open';
+    let reason = 'quoted';
+    if (offeredTotalPrice !== null && offeredTotalPrice !== undefined) {
+        const offeredTotal = Math.floor(Number(offeredTotalPrice));
+        if (!Number.isSafeInteger(offeredTotal) || offeredTotal < 1 || offeredTotal % quantity !== 0) {
+            return { ok: false, reason: 'price_must_be_whole_unit' };
+        }
+        const offeredUnitPrice = offeredTotal / quantity;
+        if (offeredUnitPrice >= policy.minimumUnitPrice) {
+            currentUnitPrice = Math.min(MAX_UNIT_PRICE, offeredUnitPrice);
+            reason = 'player_offer_in_range';
+        } else {
+            state = 'countered';
+            reason = 'player_offer_too_low';
+        }
+    }
     const negotiation = {
         id: negotiationId(bot, player),
         botSession: bot,
         playerSession: player,
         itemObjectId: canonicalObjectId,
         itemSelfId: Number(item.fetchSelfId()),
-        itemName: item.fetchName(),
+        itemName: listedLine?.name || item.fetchName(),
         quantity,
         ...policy,
-        currentUnitPrice: policy.desiredUnitPrice,
+        storeId: merchantStore ? String(bot.coldMarketState.stats.marketStore.id || '') : null,
+        storeRevision: merchantStore ? BotMerchantStoreService.revision(merchantStore) : null,
+        currentUnitPrice,
         agreedTotalPrice: null,
         round: 0,
-        state: 'open',
-        reason: 'quoted',
+        state,
+        reason,
         createdAt: now(),
         expiresAt: now() + NEGOTIATION_TTL_MS
     };
-    reservations.set(negotiation.itemObjectId, { negotiationId: negotiation.id, count: quantity });
+    if (!merchantStore) reservations.set(negotiation.itemObjectId, { negotiationId: negotiation.id, count: quantity });
     negotiations.set(negotiation.id, negotiation);
     bot.activeNegotiation = negotiation;
     player.activeNegotiation = negotiation;
     persist(negotiation);
-    audit(negotiation, 'proposed', 'quote_created', { currentTotalPrice: negotiation.currentUnitPrice * quantity });
+    audit(negotiation, state === 'countered' ? 'countered' : 'proposed', reason, { currentTotalPrice: negotiation.currentUnitPrice * quantity });
     journal(negotiation, 'proposed', `${actorName(bot)} quoted ${negotiation.itemName} x${quantity}.`);
     return { ok: true, negotiation: summary(negotiation) };
 }
@@ -336,11 +422,51 @@ function counterOffer(bot, player, totalPrice) {
     return { ok: true, negotiation: summary(negotiation) };
 }
 
-function acceptPrice(bot, player, totalPrice = null) {
-    const negotiation = activeFor(bot);
+async function republishAcceptedStore(bot, negotiation) {
+    const reopened = await BotMerchantStoreService.republish(bot, {
+        storeId: negotiation.storeId,
+        storeRevision: negotiation.storeRevision,
+        itemSelfId: negotiation.itemSelfId,
+        quantity: negotiation.quantity,
+        unitPrice: negotiation.currentUnitPrice
+    });
+    if (!reopened.ok) {
+        negotiation.state = 'countered';
+        negotiation.reason = reopened.reason;
+        negotiation.agreedTotalPrice = null;
+        persist(negotiation);
+        audit(negotiation, 'rejected', reopened.reason);
+        return { ok: false, reason: reopened.reason, negotiation: summary(negotiation) };
+    }
+    negotiation.state = 'completed';
+    negotiation.reason = 'store_reopened';
+    const result = summary(negotiation);
+    persist(negotiation);
+    audit(negotiation, 'completed', 'store_reopened', { storeRevision: reopened.store?.revision });
+    journal(negotiation, 'completed', `${actorName(bot)} reopened the store with ${negotiation.itemName} x${negotiation.quantity} at ${negotiation.currentUnitPrice} Adena each.`);
+    clear(negotiation);
+    return { ok: true, reason: 'store_reopened', negotiation: result, store: reopened.store };
+}
+
+function acceptPrice(bot, player, totalPrice = null, itemIdentifier = null, amount = 1) {
+    let negotiation = activeFor(bot);
+    if (!negotiation && itemIdentifier && totalPrice !== null) {
+        const quoted = quoteItem(bot, player, itemIdentifier, amount, totalPrice);
+        if (!quoted.ok) return quoted;
+        negotiation = activeFor(bot);
+    }
     if (!negotiation || negotiation.playerSession !== player) return { ok: false, reason: 'no_active_negotiation' };
-    if (totalPrice !== null && Math.floor(Number(totalPrice)) !== negotiation.currentUnitPrice * negotiation.quantity) {
-        return { ok: false, reason: 'price_mismatch', negotiation: summary(negotiation) };
+    if (totalPrice !== null) {
+        const total = Math.floor(Number(totalPrice));
+        const minTotal = negotiation.minimumUnitPrice * negotiation.quantity;
+        const maxTotal = negotiation.maximumUnitPrice * negotiation.quantity;
+        if (!Number.isSafeInteger(total) || total < minTotal || total > maxTotal) {
+            return { ok: false, reason: 'price_out_of_bounds', negotiation: summary(negotiation) };
+        }
+        if (total % negotiation.quantity !== 0) {
+            return { ok: false, reason: 'price_must_be_whole_unit', negotiation: summary(negotiation) };
+        }
+        negotiation.currentUnitPrice = total / negotiation.quantity;
     }
     negotiation.agreedTotalPrice = negotiation.currentUnitPrice * negotiation.quantity;
     negotiation.state = 'accepted';
@@ -348,6 +474,9 @@ function acceptPrice(bot, player, totalPrice = null) {
     persist(negotiation);
     audit(negotiation, 'accepted', 'price_accepted', { agreedTotalPrice: negotiation.agreedTotalPrice });
     journal(negotiation, 'accepted', `${actorName(bot)} and ${actorName(player)} accepted ${negotiation.agreedTotalPrice} Adena.`);
+    if (negotiation.storeRevision) {
+        return republishAcceptedStore(bot, negotiation);
+    }
     return { ok: true, negotiation: summary(negotiation) };
 }
 
@@ -362,6 +491,7 @@ function declinePrice(bot, player, reason = 'declined') {
 function openNegotiatedTrade(bot, player) {
     const negotiation = activeFor(bot);
     if (!negotiation || negotiation.playerSession !== player) return { ok: false, reason: 'no_active_negotiation' };
+    if (negotiation.storeRevision || bot.plan === 'merchant') return { ok: false, reason: 'merchant_uses_store' };
     if (negotiation.state !== 'accepted' || !negotiation.agreedTotalPrice) return { ok: false, reason: 'price_not_accepted' };
     const adena = player.actor.backpack.fetchItemFromSelfId?.(57);
     if (!adena || Number(adena.fetchAmount?.() || 0) < negotiation.agreedTotalPrice + 1000) {
@@ -428,6 +558,35 @@ function activeSummary(session) {
     return summary(activeFor(session));
 }
 
+function storeContext(bot, player) {
+    const store = BotMerchantStoreService.storeFor(bot);
+    if (!store || !canNegotiateStore(bot)) return null;
+    const lines = store.items.flatMap((line) => {
+        const item = resolveListedInventoryItem(bot.actor?.backpack, line.selfId);
+        if (!safeItem(item) || Number(item.fetchAmount()) < 1 || Number(line.count || 0) < 1) return [];
+        const policy = pricePolicy(bot, player, item, 1, line);
+        return [{
+            selfId: Number(line.selfId),
+            name: line.name || item.fetchName(),
+            count: Math.min(Number(line.count), Number(item.fetchAmount())),
+            unitPrice: Number(line.price),
+            preferredUnitPrice: policy.desiredUnitPrice,
+            minimumUnitPrice: policy.minimumUnitPrice,
+            relation: policy.relation,
+            rationale: policy.rationale
+        }];
+    });
+    return {
+        id: String(bot.coldMarketState.stats.marketStore.id || ''),
+        revision: BotMerchantStoreService.revision(store),
+        type: 'sell',
+        title: store.title || '',
+        town: store.town || bot.coldMarketState.stats.marketStore.town || null,
+        lines,
+        activeNegotiation: activeSummary(bot)
+    };
+}
+
 module.exports = {
     MAX_QUANTITY,
     MAX_ROUNDS,
@@ -439,10 +598,11 @@ module.exports = {
     cleanup,
     counterOffer,
     declinePrice,
-    enabled,
     completeTrade,
+    canNegotiateStore,
     openNegotiatedTrade,
     quoteItem,
+    storeContext,
     reset() {
         negotiations.clear();
         sequence = 0;

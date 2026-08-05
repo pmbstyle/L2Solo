@@ -27,6 +27,7 @@ try {
         maxTokens: 1,
         timeoutMs: 1,
         backgroundInferenceEnabled: true,
+        negotiationEnabled: true,
         hotBotGlobalMaxInFlight: 1
     };
     const openRouter = OpenRouterGateway.config();
@@ -39,6 +40,7 @@ try {
     assert.strictEqual(openRouter.maxTokens, 320, 'completion safety belongs to internal policy');
     assert.strictEqual(openRouter.timeoutMs, 3500, 'provider timeout belongs to internal policy');
     assert.strictEqual(openRouter.backgroundInferenceEnabled, undefined);
+    assert.strictEqual(openRouter.negotiationEnabled, undefined);
     assert.strictEqual(openRouter.hotBotGlobalMaxInFlight, undefined);
 
     options.default.Langfuse = {

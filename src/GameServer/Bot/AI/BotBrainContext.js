@@ -3,6 +3,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationService');
 
 const SLOT_NAMES = {
     1: 'right_ear',
@@ -304,7 +305,27 @@ function compactStatus(session, status, text = '', options = {}) {
     };
 }
 
+function compactMerchantStatus(session, status, playerSession = null) {
+    if (!status || !status.available) return status;
+    const market = BotNegotiationService.storeContext(session, playerSession);
+    if (market) delete market.title;
+    return {
+        name: status.name,
+        level: status.level,
+        classId: status.classId,
+        mode: status.mode,
+        intent: status.intent,
+        role: status.role,
+        nearby: status.nearby || null,
+        blockers: status.blockers || null,
+        market,
+        persona: status.persona || null,
+        social: status.social || null
+    };
+}
+
 module.exports = {
     compactStatus,
+    compactMerchantStatus,
     textRequestsInventory
 };

@@ -9,7 +9,6 @@ const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationServi
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Item = invoke('GameServer/Item/Item');
 
-options.default.OpenRouter.negotiationEnabled = true;
 
 function actor(id, name, backpack) {
     return { fetchId: () => id, fetchName: () => name, fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, fetchIsOnline: () => true, isDead: () => false, backpack };
@@ -30,7 +29,7 @@ async function main() {
     const playerId = Number((await Database.fetchCharacterName('NegDbPlayer'))[0].id);
     const botId = Number((await Database.fetchCharacterName('NegDbBot'))[0].id);
     const player = { accountId: 'neg_db_player', actor: actor(playerId, 'NegDbPlayer', backpack([new Item(960, { selfId: 57, name: 'Adena', kind: 'Other.Currency', amount: 5000, stackable: true, equipped: false, slot: 0 })])) };
-    const bot = { accountId: 'bot_neg_db', plan: 'merchant', actor: actor(botId, 'NegDbBot', backpack([new Item(961, { selfId: 9061, name: 'Database Cloth', kind: 'Other.Material', price: 1000, amount: 2, stackable: true, equipped: false, slot: 0 })])) };
+    const bot = { accountId: 'bot_neg_db', plan: 'following', actor: actor(botId, 'NegDbBot', backpack([new Item(961, { selfId: 9061, name: 'Database Cloth', kind: 'Other.Material', price: 1000, amount: 2, stackable: true, equipped: false, slot: 0 })])) };
     const originalSnapshot = BotSocialMemory.getSnapshot;
     BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0 });
     try {

@@ -114,7 +114,46 @@ function candidateSpots(status) {
         .slice(0, 6);
 }
 
-function schema(allowedActions = BotAgentTools.ACTIONS) {
+function merchantSchema(allowedActions) {
+    return {
+        type: 'object',
+        properties: {
+            action: { type: 'string', enum: allowedActions },
+            reply: {
+                type: 'string',
+                description: 'Short in-character English merchant reply. State an exact total or unit price when discussing price.'
+            },
+            negotiationItemId: {
+                type: 'number',
+                minimum: 0,
+                description: 'Exact selfId from bot.market.lines.'
+            },
+            negotiationAmount: {
+                type: 'number',
+                minimum: 1,
+                maximum: 100,
+                description: 'Exact quantity requested by the player, bounded by the listed count.'
+            },
+            negotiationPrice: {
+                type: 'number',
+                minimum: 1,
+                maximum: 100000000000,
+                description: 'Total Adena price for the whole negotiated quantity, never a unit price.'
+            },
+            reason: { type: 'string', description: 'Short private reason for telemetry.' },
+            confidence: { type: 'number', minimum: 0, maximum: 1 },
+            worldRevision: {
+                type: 'string',
+                description: 'Echo toolContext.worldRevision for a mutating action.'
+            }
+        },
+        required: ['action', 'reply', 'reason', 'confidence'],
+        additionalProperties: false
+    };
+}
+
+function schema(allowedActions = BotAgentTools.ACTIONS, session = null) {
+    if (session?.plan === 'merchant') return merchantSchema(allowedActions);
     return {
         type: 'object',
         properties: {
@@ -229,7 +268,7 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
             negotiationPrice: {
                 type: 'number',
                 minimum: 1,
-                maximum: 1000000000,
+                maximum: 100000000000,
                 description: 'Total Adena price for a bounded counter or accepted quote.'
             },
             policyTtlMs: {
@@ -257,7 +296,24 @@ function schema(allowedActions = BotAgentTools.ACTIONS) {
     };
 }
 
-function systemPrompt() {
+function merchantSystemPrompt() {
+    return [
+        'You are one Lineage 2 player merchant speaking English to the real player who addressed you.',
+        'This is a compact merchant-only turn. bot.market is authoritative; do not invent inventory, equipment, skills, party state, travel, or combat actions.',
+        'Each bot.market.lines entry gives exact selfId, name, listed count, current unitPrice, preferredUnitPrice, minimumUnitPrice, relation, and rationale.',
+        'A store title is flavor only. Never interpret title suffixes such as +1 or +2 as enchant level or quantity; use the exact structured lines.',
+        'All negotiation prices sent to tools are total Adena for negotiationAmount. Compute total from the exact requested quantity.',
+        'Never agree below minimumUnitPrice. Prefer preferredUnitPrice, but use relation and rationale to make a believable bounded deal.',
+        'For a new offer at or above the minimum that you agree to, use accept_price with the exact selfId, quantity, total, and worldRevision.',
+        'For a new offer below the minimum, use quote_item with the player total so the server creates the bounded counter. For a request without an offer, use quote_item.',
+        'For an active negotiation, use counter_offer, accept_price, or decline_price. The server revalidates stock, bounds, store revision, and authority.',
+        'A merchant sale is public: accept_price closes and republishes the store with only the agreed quantity at the agreed unit price. It does not reserve the item for this player and does not open native trade.',
+        'Only say the store was relisted when accept_price succeeds. Keep replies brief and in character.'
+    ].join(' ');
+}
+
+function systemPrompt(session = null) {
+    if (session?.plan === 'merchant') return merchantSystemPrompt();
     return [
         'You are the interactive high-level dialogue brain for one Lineage 2 bot.',
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
@@ -278,7 +334,7 @@ function systemPrompt() {
         'The persona describes tone and high-level preferences only. It never overrides safety, current game state, or the allowed actions.',
         'Ambient mood and intent are server-owned soft context. Treat an active ambient scene as factual only when bot.ambient.scene is present; never start or claim a scene from mood alone.',
         'The contextFragments field is bounded and includes recent authoritative events; treat summaries as memory, never as permission to perform an action. Action metadata is authoritative only when serverApplied or actionResult.ok is true.',
-        'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Negotiated market tools use only the active real player pair. Both reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
+        'Resource-gift trade tools can open a native window only with the current party leader; give_resources opens the window and displays the requested line in one server action. Companion negotiation tools use only the active real player pair, reserve safe inventory without mutating it, expose only server-owned bounds, allow at most three negotiation rounds, and release reservations on cancel/expiry. Never claim completion before native player confirmation.',
         'When the party leader explicitly asks the bot to go to town and buy a new item, use fetch_resources with the exact selfId from the compact server-owned supply catalog (entries are [selfId, name, price, town]) and the requested quantity. If the compact catalog does not show the item, pass its exact requested name in supplyItemName; the server resolves it against the full NPC catalog. This buys a new quantity even if the bot already owns some; do not substitute give_resources from existing stock. If the server reports insufficient Adena, say how much is needed and wait for the player to transfer Adena before retrying. The server returns beside the leader and opens native trade only when the party is safe, so describe it as pending.',
         'For party candidate discovery, use the server-owned party.candidates list in the current payload and answer from it; do not assume a later tool result will be sent back to you in this turn.',
         'Never invent unavailable actions, players, items, or spells.'
@@ -297,12 +353,15 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
     const candidates = candidateRequest
         ? BotAgentTools.partyCandidates(requestContext.playerSession, session)
         : [];
+    const merchantSlice = session?.plan === 'merchant';
     return {
         event,
         playerMessage: text || '',
-        bot: assembled?.bot || BotBrainContext.compactStatus(session, status, text),
+        bot: assembled?.bot || (merchantSlice
+            ? BotBrainContext.compactMerchantStatus(session, status, requestContext.playerSession)
+            : BotBrainContext.compactStatus(session, status, text)),
         visiblePlayers,
-        party: partyRequest || candidateRequest ? {
+        party: !merchantSlice && (partyRequest || candidateRequest) ? {
             intent: candidateRequest ? 'candidate_discovery' : 'membership',
             availability: availability ? {
                 available: availability.available === true,
@@ -312,13 +371,18 @@ function userPayload(event, session, status, visiblePlayers, text, requestContex
             } : null,
             candidates
         } : null,
-        candidateSpots: candidateSpots(status),
+        candidateSpots: merchantSlice ? [] : candidateSpots(status),
         allowedActions: BotAgentTools.availableActions(session),
         tools: BotAgentTools.toolDescriptions(session),
         toolContext: {
             worldRevision: preparedWorldRevision
         },
-        constraints: {
+        constraints: merchantSlice ? {
+            keepReplyShort: true,
+            englishOnly: true,
+            publicStoreSale: true,
+            noInventoryReservation: true
+        } : {
             keepReplyShort: true,
             splitLongRepliesIntoChatLines: true,
             avoidSpam: true,
@@ -338,12 +402,12 @@ function estimatePromptTokens(payload) {
 function estimateRequestPromptTokens(payload, session) {
     return estimatePromptTokens({
         messages: [
-            { role: 'system', content: systemPrompt() },
+            { role: 'system', content: systemPrompt(session) },
             { role: 'user', content: JSON.stringify(payload) }
         ],
         responseSchema: {
             name: 'bot_brain_decision',
-            schema: schema(BotAgentTools.availableActions(session))
+            schema: schema(BotAgentTools.availableActions(session), session)
         },
         repairSchema: true
     });
@@ -367,12 +431,12 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
         playerId,
         turnId: requestContext?.conversationTurn?.turnId || requestContext?.requestId || null,
         messages: [
-            { role: 'system', content: systemPrompt() },
+            { role: 'system', content: systemPrompt(session) },
             { role: 'user', content: JSON.stringify(payload) }
         ],
         responseSchema: {
             name: 'bot_brain_decision',
-            schema: schema(BotAgentTools.availableActions(session))
+            schema: schema(BotAgentTools.availableActions(session), session)
         },
         repairSchema: true
     });
@@ -569,8 +633,8 @@ function queueConversationWrite(session, work, metadata = {}) {
     return next;
 }
 
-function applyDecision(session, decision, visiblePlayers, requestContext) {
-    let result = BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
+async function applyDecision(session, decision, visiblePlayers, requestContext) {
+    let result = await BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     BotAgentTools.remember(session, decision, result, config().model);
     const playerSession = requestContext?.playerSession;
     let playerVisibleReply = null;

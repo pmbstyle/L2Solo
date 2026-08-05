@@ -6,7 +6,6 @@ const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationServi
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const Item = invoke('GameServer/Item/Item');
 
-options.default.OpenRouter.negotiationEnabled = true;
 
 function backpack(items) {
     return {
@@ -39,7 +38,7 @@ const player = {
     ]))
 };
 const botItem = new Item(941, { selfId: 9041, name: 'Quoted Cloth', kind: 'Other.Material', price: 1000, amount: 2, stackable: true, equipped: false, slot: 0 });
-const bot = { accountId: 'bot_llm_neg', plan: 'merchant', actor: actor(942, 'NegotiationMerchant', backpack([botItem])) };
+const bot = { accountId: 'bot_llm_neg', plan: 'following', actor: actor(942, 'NegotiationMerchant', backpack([botItem])) };
 
 function decision(action, turnId, extra = {}) {
     return { action, confidence: 0.99, reason: 'negotiation tool test', turnId, ...extra };

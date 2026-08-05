@@ -84,19 +84,32 @@ async function assemble(input = {}) {
     const hardMaxTokens = Math.max(budget, Number(input.hardMaxTokens || HARD_MAX_TOKENS));
     const conversation = requestContext.conversation || null;
     const recentTurns = conversation?.recentTurns || [];
+    const merchantSlice = session?.plan === 'merchant';
     const itemFollowup = /^(?:is (?:it|that)|are (?:they|those)|what about (?:it|that|them)|and (?:it|that|them)|which one)\b/i.test(String(text || '').trim()) &&
         recentTurns.slice(-4).some((turn) => BotBrainContext.textRequestsInventory(turn?.text));
-    const itemIntent = BotBrainContext.textRequestsInventory(text) || itemFollowup;
-    const skillIntent = textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|скилл|хил|баф|хаст|щит|майт|винд|спойл|свип/);
+    const itemIntent = merchantSlice || BotBrainContext.textRequestsInventory(text) || itemFollowup;
+    const skillIntent = !merchantSlice && textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|скилл|хил|баф|хаст|щит|майт|винд|спойл|свип/);
     let bot;
     try {
-        bot = BotBrainContext.compactStatus(session, status, text, {
-            includeInventory: itemIntent,
-            includeSkills: skillIntent,
-            includeEquipment: itemIntent || skillIntent
-        });
+        bot = merchantSlice
+            ? BotBrainContext.compactMerchantStatus(session, status, requestContext.playerSession)
+            : BotBrainContext.compactStatus(session, status, text, {
+                includeInventory: itemIntent,
+                includeSkills: skillIntent,
+                includeEquipment: itemIntent || skillIntent
+            });
     } catch (_) {
-        bot = status || { available: false };
+        bot = merchantSlice && status?.available
+            ? {
+                available: true,
+                name: status.name || session?.actor?.fetchName?.() || 'merchant',
+                level: status.level || null,
+                mode: status.mode || 'merchant',
+                market: null,
+                persona: status.persona || null,
+                social: status.social || null
+            }
+            : status || { available: false };
     }
 
     let journal = [];
@@ -106,6 +119,9 @@ async function assemble(input = {}) {
             botId: session.actor.fetchId(),
             limit: input.journalLimit || 10
         });
+        if (merchantSlice) {
+            journal = journal.filter((event) => /(?:merchant|market|negotiation|trade|store)/i.test(String(event.eventType || '')));
+        }
     }
 
     const fragments = [
@@ -176,6 +192,7 @@ async function assemble(input = {}) {
             itemIntent,
             itemFollowup,
             skillIntent,
+            contextSlice: merchantSlice ? 'merchant' : 'general',
             journalCount: journal.length,
             estimatedTokens: Math.min(hardMaxTokens, serializedCost)
         }

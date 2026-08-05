@@ -7,7 +7,6 @@ const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Item = invoke('GameServer/Item/Item');
 
-options.default.OpenRouter.negotiationEnabled = true;
 
 function actor(id, name, backpack) {
     return {
@@ -40,7 +39,7 @@ const playerBackpack = backpack([playerItem]);
 const botBackpack = backpack([botItem]);
 const packets = [];
 const player = { accountId: 'player_neg_flow', dataSendToMe: (packet) => packets.push(packet), actor: actor(920, 'FlowPlayer', playerBackpack) };
-const bot = { accountId: 'bot_neg_flow', plan: 'merchant', actor: actor(921, 'FlowMerchant', botBackpack) };
+const bot = { accountId: 'bot_neg_flow', plan: 'following', actor: actor(921, 'FlowMerchant', botBackpack) };
 const originalSnapshot = BotSocialMemory.getSnapshot;
 const originalTransfer = Database.transferInventoryBetweenCharacters;
 

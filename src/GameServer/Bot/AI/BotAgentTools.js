@@ -742,7 +742,8 @@ function quoteItem(context) {
         context.session,
         negotiationPlayer(context),
         negotiationItemId(context.decision),
-        context.decision.negotiationAmount || context.decision.tradeAmount || context.decision.amount
+        context.decision.negotiationAmount || context.decision.tradeAmount || context.decision.amount,
+        negotiationPrice(context.decision)
     );
     if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
     return { applied: true, reason: 'price_quoted', negotiation: result.negotiation };
@@ -763,9 +764,23 @@ function acceptPrice(context) {
     const totalPrice = Object.prototype.hasOwnProperty.call(decision, 'negotiationPrice') || Object.prototype.hasOwnProperty.call(decision, 'price')
         ? negotiationPrice(decision)
         : null;
-    const result = BotNegotiationService.acceptPrice(context.session, negotiationPlayer(context), totalPrice);
-    if (!result.ok) return { applied: false, reason: result.reason, negotiation: result.negotiation };
-    return { applied: true, reason: 'price_accepted', negotiation: result.negotiation };
+    const result = BotNegotiationService.acceptPrice(
+        context.session,
+        negotiationPlayer(context),
+        totalPrice,
+        negotiationItemId(decision),
+        decision.negotiationAmount || decision.tradeAmount || decision.amount
+    );
+    const format = (resolved) => {
+        if (!resolved.ok) return { applied: false, reason: resolved.reason, negotiation: resolved.negotiation };
+        return {
+            applied: true,
+            reason: resolved.reason || 'price_accepted',
+            negotiation: resolved.negotiation,
+            store: resolved.store || null
+        };
+    };
+    return result && typeof result.then === 'function' ? result.then(format) : format(result);
 }
 
 function declinePrice(context) {
@@ -825,9 +840,16 @@ function isAuthorizedNegotiationParticipant(context) {
 }
 
 function economyActionAvailable(session, name) {
-    if (!BotNegotiationService.enabled()) return false;
-    if (name === 'quote_item') return !session.activeNegotiation;
-    return !!session.activeNegotiation;
+    const active = !!BotNegotiationService.activeSummary(session);
+    if (session.plan === 'merchant') {
+        if (!BotNegotiationService.canNegotiateStore(session)) return false;
+        if (name === 'open_negotiated_trade') return false;
+        if (name === 'quote_item') return !active;
+        if (name === 'accept_price') return true;
+        return active;
+    }
+    if (name === 'quote_item') return !active;
+    return active;
 }
 
 function registerTools() {
@@ -862,11 +884,11 @@ function registerTools() {
         offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
         update_trade_offer: 'Change one reserved bot trade line after revalidating inventory truth.',
         cancel_trade: 'Cancel the open native trade and release every reservation.',
-        quote_item: 'Quote one safe bot inventory item using server-owned market and persona bounds.',
+        quote_item: 'Quote or answer an offer for one exact listed merchant item using server-owned price bounds.',
         counter_offer: 'Set a bounded counter price within the active negotiation range.',
-        accept_price: 'Accept the current server-bounded price before opening native trade.',
+        accept_price: 'Accept a server-bounded price. A merchant republishes the agreed quantity in its public store; a companion keeps the accepted native-trade price.',
         decline_price: 'Decline the active negotiation and release its stock reservation.',
-        open_negotiated_trade: 'Open native trade only after the bounded price has been accepted.'
+        open_negotiated_trade: 'For companions only, open native trade after the bounded price has been accepted.'
     };
 
     const controlActions = new Set([
@@ -961,8 +983,11 @@ function execute(session, decision, visiblePlayers, requestContext = null) {
         requestContext,
         expectedWorldRevision: requestContext?.preparedWorldRevision || requestContext?.worldRevision
     });
-    const { idempotent, ...publicOutcome } = outcome;
-    return { ...publicOutcome, applied: outcome.applied, reason: outcome.reason };
+    const format = (resolved) => {
+        const { idempotent, ...publicOutcome } = resolved;
+        return { ...publicOutcome, applied: resolved.applied, reason: resolved.reason };
+    };
+    return outcome && typeof outcome.then === 'function' ? outcome.then(format) : format(outcome);
 }
 
 function remember(session, decision, result, model) {
@@ -1049,8 +1074,10 @@ function rejectionReply(result = {}) {
         case 'trade_line_limit': return 'The trade already has the maximum number of item lines.';
         case 'no_active_trade': return 'There is no open trade to change.';
         case 'database_failed': return 'The trade was not committed because persistence failed.';
-        case 'negotiation_disabled': return 'Price negotiation is not available right now.';
         case 'bot_not_trading': return 'I am not offering a negotiated market trade in this state.';
+        case 'merchant_store_unavailable': return 'My public store is not available to reprice right now.';
+        case 'item_not_listed': return 'That item is not listed in my public store.';
+        case 'insufficient_listed_stock': return 'I do not have that much listed in my public store.';
         case 'item_not_negotiable':
         case 'stock_reserved':
         case 'insufficient_stock': return 'I cannot safely quote that stock item.';
@@ -1065,7 +1092,13 @@ function rejectionReply(result = {}) {
         case 'trade_active': return 'I will finish the current native trade before opening another one.';
         case 'negotiated_item_mismatch':
         case 'negotiated_price_mismatch': return 'The native trade does not match our accepted price.';
-        case 'stock_changed': return 'That stock changed before we could finish the agreement.';
+        case 'stock_changed':
+        case 'listed_stock_changed':
+        case 'store_changed':
+        case 'store_repricing': return 'My public listing changed before we could finish the agreement.';
+        case 'store_busy': return 'Someone is buying from my store right now. Ask me again in a moment.';
+        case 'store_persist_failed': return 'I could not safely reopen my public store at that price.';
+        case 'merchant_uses_store': return 'I sell this through my public store, not a private trade window.';
         case 'insufficient_funds': return 'You need enough Adena for the agreed price while keeping a safe reserve.';
         default: return 'I cannot do that safely right now.';
     }

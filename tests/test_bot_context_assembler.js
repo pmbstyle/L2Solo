@@ -7,7 +7,9 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
 async function main() {
     const originalCompact = BotBrainContext.compactStatus;
+    const originalMerchantCompact = BotBrainContext.compactMerchantStatus;
     let compactOptions = null;
+    let merchantCompactCalls = 0;
     BotEventJournal.resetMemory();
     BotBrainContext.compactStatus = (_session, _status, _text, options) => {
         compactOptions = options;
@@ -19,6 +21,18 @@ async function main() {
         party: { members: [] },
         inventory: null,
         skills: null
+        };
+    };
+    BotBrainContext.compactMerchantStatus = () => {
+        merchantCompactCalls += 1;
+        return {
+            available: true,
+            name: 'BoundedMerchant',
+            market: {
+                id: 'store-20',
+                revision: 1,
+                lines: [{ selfId: 625, name: 'Bone Shield', count: 3, unitPrice: 522450, minimumUnitPrice: 450000 }]
+            }
         };
     };
     try {
@@ -69,9 +83,25 @@ async function main() {
         assert.strictEqual(followup.telemetry.itemFollowup, true, 'pronoun follow-up should inherit recent equipment context');
         assert.strictEqual(compactOptions.includeEquipment, true);
         assert.strictEqual(compactOptions.includeInventory, true);
+
+        compactOptions = null;
+        const merchant = await BotContextAssembler.assemble({
+            session: { plan: 'merchant', actor: { fetchId: () => 20 } },
+            status: { available: true },
+            text: 'How much for the Bone Shield?',
+            requestContext: { playerId: 10, playerSession: { actor: { fetchId: () => 10 } } }
+        });
+        assert.strictEqual(merchantCompactCalls, 1);
+        assert.strictEqual(compactOptions, null, 'merchant context must not invoke the general inventory/skill snapshot');
+        assert.strictEqual(merchant.telemetry.contextSlice, 'merchant');
+        assert.strictEqual(merchant.telemetry.skillIntent, false, 'an item named Shield must not pull the skill slice');
+        assert.strictEqual(merchant.bot.market.lines[0].unitPrice, 522450);
+        assert.strictEqual(merchant.bot.inventory, undefined);
+        assert.strictEqual(merchant.bot.skills, undefined);
         console.log('Bot context assembler checks passed');
     } finally {
         BotBrainContext.compactStatus = originalCompact;
+        BotBrainContext.compactMerchantStatus = originalMerchantCompact;
     }
 }
 

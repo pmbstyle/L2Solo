@@ -41,6 +41,10 @@ function worldRevision(session) {
     const leader = session.partyCompanion === true ? session.followPlayerSession : null;
     const partySettings = leader?.partyCompanionSettings || {};
     const overlay = HotBotPolicyOverlay.get(session);
+    const privateStore = actor.fetchPrivateStore?.();
+    const storeLines = Array.isArray(privateStore?.items)
+        ? privateStore.items.map((line) => `${Number(line.selfId)}.${Number(line.count)}.${Number(line.price)}`).join(',')
+        : '';
     return [
         actorId(session),
         text(session.plan, 32),
@@ -61,7 +65,10 @@ function worldRevision(session) {
         String(session.activeNegotiation?.id || ''),
         String(session.activeNegotiation?.state || ''),
         Number(session.activeNegotiation?.round || 0),
-        Number(session.activeNegotiation?.currentUnitPrice || 0)
+        Number(session.activeNegotiation?.currentUnitPrice || 0),
+        Number(privateStore?.revision || 0),
+        Number(privateStore?.repricing === true ? 1 : 0),
+        storeLines
     ].join(':');
 }
 
@@ -172,7 +179,7 @@ function execute(context = {}) {
     const currentRevision = worldRevision(session);
     const expectedRevision = context.expectedWorldRevision || decision.worldRevision || null;
     const currentTurn = turnId(context);
-    const mutationKey = currentTurn && action ? `${currentTurn}:${action}` : null;
+    const mutationKey = currentTurn && action ? `${currentTurn}:${playerId(context) || 'none'}:${action}` : null;
     const mutationStore = session && (session.botToolExecutions ||= new Map());
 
     audit({ ...context, decision: { ...decision, action } }, 'requested', 'requested', {
@@ -185,6 +192,14 @@ function execute(context = {}) {
         const rejected = result(false, 'unknown_tool');
         audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
         return rejected;
+    }
+    if (mutationStore && mutationKey && mutationStore.has(mutationKey)) {
+        const previous = mutationStore.get(mutationKey);
+        const replay = (resolved) => {
+            audit({ ...context, decision: { ...decision, action } }, auditOutcome(resolved), 'idempotent_replay');
+            return { ...resolved, idempotent: true };
+        };
+        return previous && typeof previous.then === 'function' ? previous.then(replay) : replay(previous);
     }
     if (isPkLocked(session, action)) {
         const rejected = result(false, 'pk_hunting_autonomous');
@@ -211,11 +226,6 @@ function execute(context = {}) {
         return rejected;
     }
 
-    if (mutationStore && mutationKey && mutationStore.has(mutationKey)) {
-        const previous = mutationStore.get(mutationKey);
-        audit({ ...context, decision: { ...decision, action } }, auditOutcome(previous), 'idempotent_replay');
-        return { ...previous, idempotent: true };
-    }
     if (mutationStore && currentTurn && definition.mutating) {
         const priorMutation = [...mutationStore.entries()]
             .find(([key]) => key.startsWith(`${currentTurn}:`));
@@ -240,20 +250,31 @@ function execute(context = {}) {
         }
     }
 
+    const finalize = (outcome) => {
+        const normalized = result(outcome?.applied, outcome?.reason, outcome);
+        if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
+        audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
+            idempotent: false,
+            currentRevision: worldRevision(session),
+            workflowId: normalized.workflowId || normalized.workflow?.id || null
+        });
+        return normalized;
+    };
+
     let outcome;
     try {
         outcome = definition.execute(context);
     } catch (error) {
         outcome = result(false, `tool_error:${text(error.message, 120)}`);
     }
-    const normalized = result(outcome?.applied, outcome?.reason, outcome);
-    if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
-    audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
-        idempotent: false,
-        currentRevision: worldRevision(session),
-        workflowId: normalized.workflowId || normalized.workflow?.id || null
-    });
-    return normalized;
+    if (outcome && typeof outcome.then === 'function') {
+        const pending = outcome
+            .then(finalize)
+            .catch((error) => finalize(result(false, `tool_error:${text(error.message, 120)}`)));
+        if (mutationStore && mutationKey) mutationStore.set(mutationKey, pending);
+        return pending;
+    }
+    return finalize(outcome);
 }
 
 module.exports = {

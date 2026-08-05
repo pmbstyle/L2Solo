@@ -45,14 +45,13 @@ async function main() {
             enabled: true,
             apiKey: 'conversation-test-key',
             model: 'test/conversation',
-            negotiationEnabled: true,
             maxConcurrentRequests: 32
         };
         const playerSession = { accountId: 'player_flow', actor: actor(301, 'FlowPlayer') };
         const botSession = {
             accountId: 'bot_flow',
             actor: actor(302, 'FlowBot', 100),
-            plan: 'merchant'
+            plan: 'hunting'
         };
         World.user = { sessions: [playerSession, botSession] };
         BotBrainContext.compactStatus = (_session, status) => status;

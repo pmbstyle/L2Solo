@@ -203,8 +203,15 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
     const queued = previous.then(() => current);
     queues.set(queueKey, queued);
     await previous;
+    store.activePurchases = Math.max(0, Number(store.activePurchases || 0)) + 1;
 
     try {
+        if (store.repricing === true) {
+            throw new Error("Store listing changed.");
+        }
+        if (options.expectedRevision !== undefined && Number(store.revision || 1) !== Number(options.expectedRevision)) {
+            throw new Error("Store listing changed.");
+        }
         const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId));
         if (!storeItem) {
             throw new Error("Item is not available.");
@@ -255,6 +262,7 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
 
         return { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
     } finally {
+        store.activePurchases = Math.max(0, Number(store.activePurchases || 0) - 1);
         release();
         if (queues.get(queueKey) === queued) queues.delete(queueKey);
         if (queues.size === 0) storePurchaseQueues.delete(store);

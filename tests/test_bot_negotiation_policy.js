@@ -5,7 +5,6 @@ const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationServi
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Item = invoke('GameServer/Item/Item');
 
-options.default.OpenRouter.negotiationEnabled = true;
 
 function actor(id, name, backpack) {
     return {
@@ -41,7 +40,7 @@ const item = new Item(911, {
 });
 const bot = {
     accountId: 'bot_neg_policy',
-    plan: 'merchant',
+    plan: 'following',
     persona: {
         primaryDrive: 'wealth',
         traits: { caution: 0.8, ambition: 0.7, assertiveness: 0.7 }

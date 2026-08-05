@@ -636,6 +636,7 @@ const BotManager = {
 
                         session.actor.setPrivateStore({
                             storeType: privateStore.storeType,
+                            revision: Math.max(1, Number(privateStore.revision || 1)),
                             title: privateStore.title,
                             town: privateStore.town,
                             items: storeItems

@@ -42,6 +42,7 @@ const tests = [
     'tests/test_llm_equipment_tools.js',
     'tests/test_llm_trade_tools.js',
     'tests/test_llm_negotiation_tools.js',
+    'tests/test_bot_merchant_store_negotiation.js',
     'tests/test_bot_negotiation_policy.js',
     'tests/test_bot_negotiation_flow.js',
     'tests/test_bot_negotiation_database.js',
