@@ -72,10 +72,14 @@ function activationPlacement(state, options = {}) {
         const loc = options.storeLoc || state.loc;
         return { loc: { ...loc }, spot: SpotService.findCurrentSpot(loc) || null };
     }
-    const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
+    const savedSpot = state?.spotId ? SpotService.findById(state.spotId) : null;
+    // Coordinates are authoritative for activation. A stale destination spot
+    // must not resurrect a bot on a remote field it never reached.
+    const physicalSpot = state?.loc ? SpotService.findCurrentSpot(state.loc) : null;
+    const spot = physicalSpot || savedSpot;
     const baseLoc = options.playerLoc
         ? (options.forceNearPlayer ? options.playerLoc : (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
-        : (spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 });
+        : (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 });
     let candidate = null;
 
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {

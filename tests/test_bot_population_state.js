@@ -136,6 +136,7 @@ try {
             assert(due.sql.includes("OR (activity = 'hunting' AND (json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL"), 'a stale active combat plan must bypass its old next-resolve deadline for an immediate safety replan');
             assert(due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL") < due.sql.indexOf("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary market, travel, and crafting transitions');
             assert(due.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'due cold states must promptly finish market, travel, and crafting transitions after an urgent combat-safety replan');
+            assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
             return BotLifeState.assignParty({

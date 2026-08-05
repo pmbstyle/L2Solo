@@ -55,6 +55,14 @@ const PopulationMetrics = {
         samples: 0,
         slowSamples: 0
     },
+    schedulerState: {
+        budgetMs: 0,
+        mode: 'unknown',
+        lagMs: 0,
+        coldBatch: 0,
+        coldBatchLimit: 0,
+        coldQueueSaturated: false
+    },
     interval: {
         resolveDurationsMs: [],
         schedulerDurationsMs: [],
@@ -185,6 +193,26 @@ const PopulationMetrics = {
         this.counters.schedulerBudgetStops += 1;
     },
 
+    recordSchedulerProfile(profile = {}) {
+        this.schedulerState = {
+            ...this.schedulerState,
+            budgetMs: Math.max(0, Number(profile.budgetMs) || 0),
+            mode: profile.idle ? 'idle' : 'player',
+            lagMs: Math.max(0, Number(profile.lagMs) || 0)
+        };
+    },
+
+    recordColdBatch(count = 0, limit = 0) {
+        const batch = Math.max(0, Number(count) || 0);
+        const cap = Math.max(0, Number(limit) || 0);
+        this.schedulerState = {
+            ...this.schedulerState,
+            coldBatch: batch,
+            coldBatchLimit: cap,
+            coldQueueSaturated: cap > 0 && batch >= cap
+        };
+    },
+
     recordPartyFormationBudgetStop() {
         this.counters.partyFormationBudgetStops += 1;
     },
@@ -236,7 +264,7 @@ const PopulationMetrics = {
             delta,
             eventLoop: { ...this.eventLoop },
             resolve: resolveStats,
-            scheduler: schedulerStats,
+            scheduler: { ...schedulerStats, ...this.schedulerState },
             schedulerSlice: schedulerSliceStats,
             partyFormation: partyFormationStats,
             partyFormationStages,

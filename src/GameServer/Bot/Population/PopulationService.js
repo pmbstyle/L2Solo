@@ -5,6 +5,7 @@ const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -25,6 +26,46 @@ const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService')
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+
+const HUNTING_TRAVEL_MS = 25000;
+
+function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
+    if (!state || !spot || state.activity === 'traveling') return null;
+    const from = { ...(state.loc || {}) };
+    const hasLocation = Number.isFinite(Number(from.locX)) && Number.isFinite(Number(from.locY))
+        && (Object.prototype.hasOwnProperty.call(from, 'locX') || Object.prototype.hasOwnProperty.call(from, 'locY'));
+    if (!hasLocation) return null;
+    const physical = SpotService.findCurrentSpot(from);
+    const currentId = physical?.id || options.currentSpotId || state.spotId || null;
+    if (currentId === spot.id) return null;
+
+    return {
+        ...state,
+        activity: 'traveling',
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + HUNTING_TRAVEL_MS
+        },
+        stats: {
+            ...(state.stats || {}),
+            travel: {
+                from,
+                to: { ...spot.center },
+                startedAt: timestamp,
+                arrivalAt: timestamp + HUNTING_TRAVEL_MS,
+                regionName: spot.name || state.currentRegion || 'Hunting Ground',
+                method: 'gatekeeper_spot',
+                spotId: spot.id,
+                arrivalActivity: 'hunting',
+                arrivalEvent: 'arrived_hunting_ground',
+                reason: state.stats?.equipmentPlan?.status === 'active'
+                    ? 'equipment_source_replan'
+                    : 'level_replan'
+            }
+        }
+    };
+}
 
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
@@ -1033,11 +1074,11 @@ const PopulationService = {
         }
         const configured = players > 0
             ? Config.partyFormationPlayerBudgetMs
-            : Config.partyFormationBudgetMs;
+            : Config.partyFormationIdleBudgetMs;
         return Math.max(50, Number(configured) || 500);
     },
 
-    schedulerBudgetMs() {
+    schedulerProfile() {
         let players = 0;
         try {
             players = this.realPlayerSessions().length;
@@ -1046,12 +1087,36 @@ const PopulationService = {
             // where the world session registry is not available yet.
             players = 0;
         }
-        const configured = players > 0 ? Config.schedulerPlayerBudgetMs : Config.schedulerBudgetMs;
-        const budget = Math.max(25, Number(configured) || 250);
+        const idle = players === 0;
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const configured = idle ? Config.schedulerIdleBudgetMs : Config.schedulerPlayerBudgetMs;
+        const baseBudget = Math.max(25, Number(configured) || 250);
+        const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
-        return lagAbort > 0 && Metrics.currentEventLoopLag() >= lagAbort
-            ? 0
-            : Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25));
+        let budget = baseBudget;
+
+        if (lagAbort > 0 && lagMs >= lagAbort) {
+            budget = 0;
+        } else if (lagAbort > lagThrottle && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / (lagAbort - lagThrottle));
+            budget = Math.round(baseBudget * (1 - pressure));
+        }
+
+        return {
+            idle,
+            players,
+            lagMs,
+            budgetMs: budget > 0
+                ? Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25))
+                : 0,
+            maxResolvesPerTick: Math.max(1, Number(idle
+                ? Config.schedulerIdleMaxResolvesPerTick
+                : Config.schedulerPlayerMaxResolvesPerTick) || 25)
+        };
+    },
+
+    schedulerBudgetMs() {
+        return this.schedulerProfile().budgetMs;
     },
 
     groupPartyCandidatesByObjective(states = [], options = {}) {
@@ -1281,7 +1346,9 @@ const PopulationService = {
         }
 
         const startedAt = Date.now();
-        const budgetMs = this.schedulerBudgetMs();
+        const profile = this.schedulerProfile();
+        Metrics.recordSchedulerProfile(profile);
+        const budgetMs = profile.budgetMs;
         if (budgetMs <= 0) {
             Metrics.recordSchedulerBudgetStop();
             return Promise.resolve([]);
@@ -1290,8 +1357,10 @@ const PopulationService = {
         this.resolving = true;
         return Database.cooperatively(() => this.resolveDueParties(deadlineAt)
             .then(() => this.reconcileMarketGoals(deadlineAt))
-            .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
-            .then((states) => this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
+            .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
+            .then((states) => {
+                Metrics.recordColdBatch(states.length, profile.maxResolvesPerTick);
+                return this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
                 .catch((error) => {
                     // A single bot may lose a race with a market or
                     // craft transaction. It must not abort every
@@ -1299,7 +1368,8 @@ const PopulationService = {
                     utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
                     Metrics.recordSkippedResolve();
                     return { ok: false, reason: 'resolve_rejected', state };
-                }), deadlineAt))
+                }), deadlineAt);
+            })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'background scheduler failed: %s', err.message);
                 return [];
@@ -1658,14 +1728,20 @@ const PopulationService = {
         const routedState = fallbackSpot
             ? { ...plannedState, activity: 'hunting', spotId: fallbackSpot.id }
             : plannedState;
+        const currentSpotId = plannedState.spotId || null;
         const travellingState = ColdCraftingService.beginTravel(routedState) || routedState;
         const travel = travellingState.stats?.travel;
         const travelEvents = travellingState !== plannedState && travel?.stationId
             ? [CraftTelemetry.stationTravelEvent(plannedState, travel)]
             : [];
-        const spot = passiveActivity
+        const selectedSpot = passiveActivity
             ? null
             : fallbackSpot || SpotProfiles.findForState(travellingState);
+        const huntingTravelState = selectedSpot && !passiveActivity
+            ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
+            : null;
+        const effectiveState = huntingTravelState || travellingState;
+        const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
         if (!spot && !passiveActivity) {
             Metrics.recordSkippedResolve();
             Metrics.recordResolveDuration(Date.now() - startedAt);
@@ -1673,7 +1749,7 @@ const PopulationService = {
         }
 
         const result = BackgroundResolver.resolveSolo({
-            state: travellingState,
+            state: effectiveState,
             spot,
             pressure: Director.pressureForState(state),
             targetNpcId: requiredPartyRequest
@@ -1687,7 +1763,7 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
-        return LifeState.applyResolve(travellingState, result)
+        return LifeState.applyResolve(effectiveState, result)
             .then((updatedState) => {
             if (!updatedState) {
                 Metrics.recordSkippedResolve();

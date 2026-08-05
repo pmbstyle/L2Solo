@@ -1,5 +1,7 @@
 const GRID_SIZE = 6000;
 const DEFAULT_LEVEL_RANGE = 3;
+const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
+const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 
 function distance2d(a, b) {
@@ -23,6 +25,59 @@ function spotName(spot) {
     return `${primary} fields`;
 }
 
+function levelCount(spot, level) {
+    return Number(spot?.levelCounts?.[String(level)] || spot?.levelCounts?.[level] || 0);
+}
+
+function huntBand(targetLevel, options = {}) {
+    const level = Math.max(1, Number(targetLevel || 1));
+    return {
+        min: Math.max(1, level + Number(options.minLevelGap ?? DEFAULT_MIN_HUNT_LEVEL_GAP)),
+        max: Math.max(1, level + Number(options.maxLevelGap ?? DEFAULT_MAX_HUNT_LEVEL_GAP))
+    };
+}
+
+function eligibleDensity(spot, targetLevel, options = {}) {
+    if (!spot) return 0;
+    const band = huntBand(targetLevel, options);
+    if (spot.levelCounts && Object.keys(spot.levelCounts).length > 0) {
+        let count = 0;
+        for (let level = band.min; level <= band.max; level++) count += levelCount(spot, level);
+        return count;
+    }
+    // Fixtures and older persisted profiles may only carry min/max metadata.
+    // Keep them usable, but do not pretend a mixed sector is fully eligible.
+    const min = Number(spot.minLevel || 1);
+    const max = Number(spot.maxLevel || min);
+    if (max < band.min || min > band.max) return 0;
+    return Math.min(Number(spot.density || 0), Math.max(1, Number(spot.density || 0) * 0.5));
+}
+
+function levelFit(spot, targetLevel, options = {}) {
+    const band = huntBand(targetLevel, options);
+    const eligible = eligibleDensity(spot, targetLevel, options);
+    const density = Math.max(1, Number(spot?.density || 1));
+    const ratio = eligible / density;
+    const avgLevel = Number(spot?.avgLevel || spot?.minLevel || 1);
+    const target = Math.max(1, Number(targetLevel || 1));
+    const dangerous = Math.max(0, Number(spot?.maxLevel || avgLevel) - (target + Number(options.maxLevelGap ?? DEFAULT_MAX_HUNT_LEVEL_GAP)));
+    return {
+        band,
+        eligibleDensity: eligible,
+        eligibleRatio: ratio,
+        averageGap: Math.abs(avgLevel - target),
+        dangerousLevelSpan: dangerous
+    };
+}
+
+function isSuitable(spot, targetLevel, options = {}) {
+    if (!spot) return false;
+    const fit = levelFit(spot, targetLevel, options);
+    const minDensity = Math.max(1, Number(options.minEligibleDensity ?? 3));
+    const minRatio = Math.max(0, Math.min(1, Number(options.minEligibleRatio ?? 0.25)));
+    return fit.eligibleDensity >= minDensity && fit.eligibleRatio >= minRatio;
+}
+
 const SpotService = {
     spots: null,
 
@@ -34,6 +89,7 @@ const SpotService = {
         if (this.spots) return this.spots;
 
         const World = invoke('GameServer/World/World');
+        if (!World?.npc?.spawns || !Array.isArray(World.npc.spawns)) return [];
         const sectors = {};
 
         World.npc.spawns.forEach((npc) => {
@@ -106,8 +162,8 @@ const SpotService = {
                 npcSelfIds: selfIdEntries.slice(0, 8).map((item) => item.selfId),
                 npcEntries: Object.values(sector.npcs)
                     .sort((a, b) => b.count - a.count)
-                    .slice(0, 24)
                     .map((entry) => ({ ...entry })),
+                levelCounts: { ...sector.levels },
                 dominantLevels: levelEntries.slice(0, 3)
             };
 
@@ -123,6 +179,7 @@ const SpotService = {
     },
 
     findCurrentSpot(loc) {
+        if (!loc || !Number.isFinite(Number(loc.locX)) || !Number.isFinite(Number(loc.locY))) return null;
         const gx = Math.floor(loc.locX / GRID_SIZE);
         const gy = Math.floor(loc.locY / GRID_SIZE);
         return this.findById(`${gx}_${gy}`);
@@ -139,21 +196,30 @@ const SpotService = {
         const candidates = this.ensureIndexed()
             .filter((spot) => spot.density >= (options.minDensity || 4))
             .filter((spot) => spot.minLevel <= targetLevel + levelRange && spot.maxLevel >= targetLevel - levelRange)
+            .filter((spot) => isSuitable(spot, targetLevel, options))
             .filter((spot) => {
                 const dist = distance2d(loc, spot.center);
                 return dist >= minDistance && dist <= maxDistance;
             })
             .map((spot) => {
-                const levelGap = Math.abs(spot.avgLevel - targetLevel);
+                const fit = levelFit(spot, targetLevel, options);
+                const levelGap = fit.averageGap;
                 const dist = distance2d(loc, spot.center);
                 const sameSpotPenalty = currentSpotId && currentSpotId === spot.id ? 100 : 0;
                 const peacePenalty = utils.isInPeaceZone(spot.center.locX, spot.center.locY) ? 40 : 0;
 
                 return {
                     spot,
-                    score: (spot.density * 3) - (levelGap * 18) - (dist / 2500) - sameSpotPenalty - peacePenalty,
+                    score: (fit.eligibleDensity * 5) + (fit.eligibleRatio * 30)
+                        - (levelGap * 18)
+                        - (fit.dangerousLevelSpan * 3)
+                        - (dist / 2500)
+                        - sameSpotPenalty
+                        - peacePenalty,
                     distance: dist,
-                    levelGap
+                    levelGap,
+                    eligibleDensity: fit.eligibleDensity,
+                    eligibleRatio: fit.eligibleRatio
                 };
             })
             .map((candidate) => {
@@ -217,6 +283,10 @@ const SpotService = {
     },
 
     distance2d,
+    eligibleDensity,
+    huntBand,
+    isSuitable,
+    levelFit,
     locFromActor
 };
 

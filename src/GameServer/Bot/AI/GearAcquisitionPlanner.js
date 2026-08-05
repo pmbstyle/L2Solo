@@ -508,24 +508,34 @@ function sourceIndexFor(spots = []) {
     ]));
     const spotByNpc = new Map();
     const spotByName = new Map();
+    const appendSpot = (index, key, spot) => {
+        if (!key || !spot) return;
+        const existing = index.get(key) || [];
+        if (!existing.some((candidate) => candidate.id === spot.id)) existing.push(spot);
+        index.set(key, existing);
+    };
     (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
-        if (entry.selfId) spotByNpc.set(Number(entry.selfId), spot);
-        if (entry.name) spotByName.set(String(entry.name).trim().toLowerCase(), spot);
+        if (entry.selfId) appendSpot(spotByNpc, Number(entry.selfId), spot);
+        if (entry.name) appendSpot(spotByName, String(entry.name).trim().toLowerCase(), spot);
     }));
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
-        const spot = spotByNpc.get(Number(reward.selfId))
-            || spotByName.get(String(reward.template?.name || '').trim().toLowerCase());
-        if (!spot) return;
+        const spotsForNpc = [...new Map([
+            ...(spotByNpc.get(Number(reward.selfId)) || []),
+            ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
+        ].map((spot) => [spot.id, spot])).values()];
+        if (!spotsForNpc.length) return;
         const itemIds = new Set((reward.rewards || []).flatMap((group) => (
             (group.items || []).map((item) => Number(item.selfId || 0)).filter(Boolean)
         )));
-        itemIds.forEach((id) => {
+        spotsForNpc.forEach((spot) => itemIds.forEach((id) => {
             const entries = byItemId.get(id) || [];
-            entries.push({ reward, spot, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
+            if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id)) {
+                entries.push({ reward, spot, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
+            }
             byItemId.set(id, entries);
-        });
+        }));
     });
 
     sourceIndexCache = { spots, rewards, byItemId };

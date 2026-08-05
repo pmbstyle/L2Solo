@@ -35,6 +35,8 @@ function profileFromSpot(spot) {
         npcNames: [...(spot.npcNames || [])],
         npcSelfIds: [...(spot.npcSelfIds || [])],
         npcEntries: (spot.npcEntries || []).map((entry) => ({ ...entry })),
+        levelCounts: { ...(spot.levelCounts || {}) },
+        dominantLevels: (spot.dominantLevels || []).map((entry) => ({ ...entry })),
         route: spot.route || null,
         rewards: rewardForLevel(avgLevel),
         mob: combatForLevel(avgLevel),
@@ -46,6 +48,15 @@ function isProtectedStarterCohort(state) {
     return Number(state?.level || 1) < 5
         && Number(state?.stats?.populationWave || 0) > 0
         && !!state?.stats?.starterRegion;
+}
+
+function physicalSpotForState(state, profiles) {
+    const loc = state?.loc;
+    if (loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY))) {
+        const physical = SpotService.findCurrentSpot(loc);
+        if (physical) return profiles.find((profile) => profile.id === physical.id) || physical;
+    }
+    return state?.spotId ? profiles.find((profile) => profile.id === state.spotId) || null : null;
 }
 
 const SpotProfiles = {
@@ -70,17 +81,20 @@ const SpotProfiles = {
     findForState(state, options = {}) {
         const acquisitionPlan = state?.stats?.equipmentPlan;
         const protectedStarterCohort = isProtectedStarterCohort(state);
-        const keepCurrentSpot = state?.spotId && (!acquisitionPlan || protectedStarterCohort);
+        const profiles = this.ensure();
+        const physicalSpot = physicalSpotForState(state, profiles);
+        const savedSpot = state?.spotId ? this.findById(state.spotId) : null;
+        const currentSpot = physicalSpot || savedSpot;
+        const targetLevel = LevelingRoutes.targetLevelForState(state);
+        const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
+            && (protectedStarterCohort || SpotService.isSuitable(currentSpot, targetLevel, options));
 
         // Fresh racial cohorts stay at their physical level-one spot until
         // they advance. A gear plan otherwise remains the normal route choice
         // for established bots.
         if (keepCurrentSpot) {
-            const existing = this.findById(state.spotId);
-            if (existing) {
-                const match = LevelingRoutes.scoreSpot(existing, state, options);
-                return LevelingRoutes.decorateSpot(existing, match);
-            }
+            const match = LevelingRoutes.scoreSpot(currentSpot, state, options);
+            return LevelingRoutes.decorateSpot(currentSpot, match);
         }
 
         if (acquisitionPlan?.status === 'active') {
@@ -91,27 +105,24 @@ const SpotProfiles = {
             if (planned) return planned.spot;
         }
 
-        if (state?.spotId) {
-            const existing = this.findById(state.spotId);
-            if (existing) {
-                const match = LevelingRoutes.scoreSpot(existing, state, options);
-                return LevelingRoutes.decorateSpot(existing, match);
-            }
+        if (currentSpot && SpotService.isSuitable(currentSpot, targetLevel, options)) {
+            const match = LevelingRoutes.scoreSpot(currentSpot, state, options);
+            return LevelingRoutes.decorateSpot(currentSpot, match);
         }
 
-        const targetLevel = LevelingRoutes.targetLevelForState(state);
-        const profiles = this.ensure()
+        const candidates = profiles
             .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
-        const guided = LevelingRoutes.bestSpot(profiles, state, options);
+        const suitable = candidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
+        const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : candidates, state, options);
 
         if (guided?.spot) return guided.spot;
 
-        return profiles.sort((a, b) => {
+        return (suitable.length ? suitable : candidates).sort((a, b) => {
             const aGap = Math.abs(a.avgLevel - targetLevel);
             const bGap = Math.abs(b.avgLevel - targetLevel);
             if (aGap !== bGap) return aGap - bGap;
             return b.density - a.density;
-        })[0] || this.ensure()[0] || null;
+        })[0] || profiles[0] || null;
     }
 };
 

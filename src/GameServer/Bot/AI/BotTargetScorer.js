@@ -1,4 +1,5 @@
 const MAX_LEVEL_ADVANTAGE = 8;
+const MIN_LEVEL_GAP = -7;
 const MAX_VERTICAL_GAP = 1200;
 
 function number(value, fallback = 0) {
@@ -22,6 +23,9 @@ function score(context = {}) {
     }
     if (!context.incomingThreat && levelGap > MAX_LEVEL_ADVANTAGE) {
         return { eligible: false, score: -Infinity, reason: 'level_too_high', reasons: ['level_too_high'] };
+    }
+    if (!context.incomingThreat && levelGap < MIN_LEVEL_GAP) {
+        return { eligible: false, score: -Infinity, reason: 'level_too_low', reasons: ['level_too_low'] };
     }
     if (verticalGap > MAX_VERTICAL_GAP) {
         return { eligible: false, score: -Infinity, reason: 'vertical_gap', reasons: ['vertical_gap'] };
@@ -98,6 +102,7 @@ function rank(candidates) {
 
 module.exports = {
     MAX_LEVEL_ADVANTAGE,
+    MIN_LEVEL_GAP,
     MAX_VERTICAL_GAP,
     rank,
     score

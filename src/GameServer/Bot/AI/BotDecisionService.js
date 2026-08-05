@@ -71,7 +71,10 @@ const BotDecisionService = {
             };
         }
 
-        if (status.mode === 'hunting' && status.nearby.attackableNpcs === 0) {
+        if (status.mode === 'hunting' && (
+            status.nearby.attackableNpcs === 0
+            || Number(status.nearby.eligibleAttackableNpcs ?? status.nearby.attackableNpcs) === 0
+        )) {
             if (!canMoveToSpot(session)) {
                 return {
                     action: 'search_locally',
