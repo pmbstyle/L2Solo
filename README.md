@@ -121,8 +121,9 @@ Example:
 ```ini
 [OpenRouter]
 enabled = true
-apiKey = sk-or-v1-your-key-here
-model = google/gemini-2.5-flash-lite
+apiKey = <your-Openrouter-key-here>
+model = openai/gpt-5.6-luna
+partyRouterModel = openai/gpt-5.6-luna
 debug = true
 ```
 
