@@ -53,7 +53,10 @@ async function main() {
     };
     let nextObjectId = 9000;
     try {
-        DataCache.items = [{ selfId: 1864, template: { name: 'Varnish' }, etc: { stackable: true } }];
+        DataCache.items = [
+            { selfId: 1864, template: { name: 'Varnish' }, etc: { stackable: true } },
+            { selfId: 1865, template: { name: 'Suede' }, etc: { stackable: true } }
+        ];
         Database.updateItemAmount = async () => {};
         Database.deleteItem = async () => {};
         Database.setItem = async () => ({ insertId: ++nextObjectId });
@@ -82,6 +85,7 @@ async function main() {
         );
         assert.strictEqual(rollbackStore.items[0].count, 2, 'failed item write must restore reserved stock');
         assert.strictEqual(rollbackBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 100, 'failed item write must restore deducted Adena');
+        Database.setItem = async () => ({ insertId: ++nextObjectId });
 
         const repricedStore = { storeType: 1, items: [{ selfId: 1864, price: 11, count: 2 }] };
         await assert.rejects(
@@ -89,6 +93,32 @@ async function main() {
             /Store price changed/
         );
         assert.strictEqual(repricedStore.items[0].count, 2, 'a repriced lot must remain untouched');
+
+        const invalidStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 2 }] };
+        const invalidBuyer = actor(5);
+        await assert.rejects(
+            TradeService.buyFromStore(invalidBuyer, invalidStore, 1864, 'not-a-number'),
+            /Invalid quantity/
+        );
+        await assert.rejects(
+            TradeService.buyFromStore(invalidBuyer, invalidStore, 1864, 1.5),
+            /Invalid quantity/
+        );
+        assert.strictEqual(invalidBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 100, 'invalid quantities must not deduct Adena');
+        assert.strictEqual(invalidStore.items[0].count, 2, 'invalid quantities must not reserve stock');
+
+        const sharedBuyer = actor(6);
+        const firstActorStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 6 }] };
+        const secondActorStore = { storeType: 1, items: [{ selfId: 1865, price: 10, count: 3 }] };
+        await Promise.all([
+            TradeService.buyFromStore(sharedBuyer, firstActorStore, 1864, 6),
+            TradeService.buyFromStore(sharedBuyer, secondActorStore, 1865, 3)
+        ]);
+        assert.strictEqual(
+            sharedBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(),
+            10,
+            'purchases of different items and stores must serialize Adena deductions per actor'
+        );
         console.log('Trade store atomicity checks passed');
     } finally {
         DataCache.items = originalItems;

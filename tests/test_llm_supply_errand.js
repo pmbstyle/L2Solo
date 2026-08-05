@@ -159,6 +159,45 @@ async function main() {
         assert.deepStrictEqual(offered, { objectId: 11, amount: 1 });
         assert.strictEqual(session.pendingResourceDelivery.tradeId, 'supply-trade-test');
 
+        session.pendingResourceDelivery = {
+            playerSession: player,
+            playerId: 100,
+            objectId: 11,
+            itemName: 'Soulshot: D-grade',
+            amount: 1,
+            purchasedAt: Date.now(),
+            retryAt: Date.now() + 10000
+        };
+        offered = null;
+        assert.strictEqual(
+            FollowingState.deliverPurchasedResources(session, bot, player),
+            false,
+            'a delivery retry delay must leave the normal companion tick available'
+        );
+        assert.strictEqual(offered, null);
+
+        session.pendingResourceDelivery.retryAt = undefined;
+        player.actor.state.fetchCombats = () => true;
+        assert.strictEqual(
+            FollowingState.deliverPurchasedResources(session, bot, player),
+            false,
+            'waiting for a safe trade must not suppress combat or support behavior'
+        );
+        player.actor.state.fetchCombats = () => false;
+
+        BotTradeService.startBotTradeWithOffer = () => ({ ok: false, reason: 'too_far' });
+        assert.strictEqual(
+            FollowingState.deliverPurchasedResources(session, bot, player),
+            false,
+            'a transient trade distance failure must leave the normal companion tick available'
+        );
+        BotTradeService.startBotTradeWithOffer = () => ({ ok: false, reason: 'trade_busy' });
+        assert.strictEqual(
+            FollowingState.deliverPurchasedResources(session, bot, player),
+            false,
+            'a failed trade open must leave the normal companion tick available'
+        );
+
         // An errand request must not cancel an active fight just because the
         // player asked at the wrong moment.
         session.companionShopping = undefined;

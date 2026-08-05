@@ -9,6 +9,9 @@ const LIMITS = Object.freeze({
     globalPromptTokens: 300000,
     globalCompletionTokens: 64000
 });
+const RESERVATION_TTL_MS = WINDOW_MS;
+const GLOBAL_WAITER_TTL_MS = 5 * 60 * 1000;
+const MAX_GLOBAL_WAITERS = 256;
 const buckets = new Map();
 const globalBucket = { entries: [], inFlight: 0, lastDeniedAt: 0, lastDeniedReason: null };
 const globalWaiters = [];
@@ -47,8 +50,52 @@ function globalConfig() {
     };
 }
 
+function completeWaiter(waiter, result) {
+    if (!waiter || waiter.completed) return false;
+    waiter.completed = true;
+    if (waiter.expiryTimer) clearTimeout(waiter.expiryTimer);
+    waiter.resolve(result);
+    return true;
+}
+
+function removeWaiter(waiter, result) {
+    const index = globalWaiters.indexOf(waiter);
+    if (index >= 0) globalWaiters.splice(index, 1);
+    return completeWaiter(waiter, result);
+}
+
+function waiterTimeout(waiter) {
+    return removeWaiter(waiter, {
+        ok: false,
+        reason: 'inference_budget_queue_timeout',
+        retryAfterMs: 0,
+        status: null
+    });
+}
+
+function releaseGlobalSlot(reservation, options = {}) {
+    if (!reservation || reservation.globalSlotReleased) return false;
+    reservation.globalSlotReleased = true;
+    if (reservation.expiryTimer) clearTimeout(reservation.expiryTimer);
+    reservation.expiryTimer = null;
+    if (options.expired === true) {
+        reservation.expired = true;
+        reservation.settled = true;
+    }
+    globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
+    if (options.pump !== false) pumpGlobalWaiters();
+    return true;
+}
+
 function prune(bucket, now) {
-    bucket.entries = bucket.entries.filter((entry) => now - entry.startedAt < WINDOW_MS);
+    const expired = [];
+    bucket.entries = bucket.entries.filter((entry) => {
+        const keep = now - entry.startedAt < WINDOW_MS;
+        if (!keep && bucket === globalBucket && !entry.settled) expired.push(entry);
+        return keep;
+    });
+    expired.forEach((entry) => releaseGlobalSlot(entry, { expired: true, pump: false }));
+    if (expired.length > 0) pumpGlobalWaiters();
 }
 
 function usageValue(usage, key) {
@@ -104,11 +151,24 @@ function globalRejection(reason, now, retryAfterMs = 0) {
 }
 
 function queueInteractiveReservation(session, input, now) {
+    if (globalWaiters.length >= MAX_GLOBAL_WAITERS) {
+        return globalRejection('inference_budget_queue_full', now, 1000);
+    }
     let resolveReady;
     const ready = new Promise((resolve) => {
         resolveReady = resolve;
     });
-    globalWaiters.push({ session, input: { ...input }, now, resolve: resolveReady });
+    const waiter = {
+        session,
+        input: { ...input },
+        now,
+        resolve: resolveReady,
+        completed: false,
+        expiryTimer: null
+    };
+    waiter.expiryTimer = setTimeout(() => waiterTimeout(waiter), GLOBAL_WAITER_TTL_MS);
+    waiter.expiryTimer.unref?.();
+    globalWaiters.push(waiter);
     return {
         ok: true,
         bypassed: true,
@@ -123,12 +183,13 @@ function pumpGlobalWaiters() {
     const global = globalConfig();
     while (globalWaiters.length > 0 && globalBucket.inFlight < global.maxInFlight) {
         const waiter = globalWaiters.shift();
+        if (waiter.completed) continue;
         const result = reserve(waiter.session, {
             ...waiter.input,
             now: Date.now(),
             _grantingQueued: true
         });
-        waiter.resolve(result);
+        completeWaiter(waiter, result);
     }
 }
 
@@ -205,12 +266,18 @@ function reserve(session, input = {}) {
         bypass: input.bypass === true,
         event: String(input.event || 'hot_decision').slice(0, 48),
         priority: String(input.priority || 'normal').slice(0, 24),
-        globalEntry: null
+        globalEntry: null,
+        globalSlotReleased: false,
+        expiryTimer: null
     };
     bucket.entries.push(reservation);
     reservation.globalEntry = reservation;
     globalBucket.entries.push(reservation);
     globalBucket.inFlight += 1;
+    reservation.expiryTimer = setTimeout(() => {
+        releaseGlobalSlot(reservation, { expired: true });
+    }, RESERVATION_TTL_MS);
+    reservation.expiryTimer.unref?.();
     return { ok: true, bypassed: input.bypass === true, reservation, status: status(session, now) };
 }
 
@@ -227,8 +294,7 @@ function settle(reservation, usage = null) {
     reservation.totalTokens = reservation.promptTokens + reservation.completionTokens;
     reservation.cost = Number.isFinite(Number(usage?.cost)) ? Number(usage.cost) : null;
     reservation.settled = true;
-    if (reservation.globalEntry) globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
-    pumpGlobalWaiters();
+    if (reservation.globalEntry) releaseGlobalSlot(reservation);
     return true;
 }
 
@@ -319,6 +385,9 @@ function status(session, now = Date.now()) {
 
 const BotInferenceBudget = {
     WINDOW_MS,
+    RESERVATION_TTL_MS,
+    GLOBAL_WAITER_TTL_MS,
+    MAX_GLOBAL_WAITERS,
     reserve,
     reserveForBotId,
     settle,
@@ -333,7 +402,7 @@ const BotInferenceBudget = {
                 if (bucket) {
                     bucket.entries.forEach((entry) => {
                         if (entry.globalEntry && !entry.settled) {
-                            globalBucket.inFlight = Math.max(0, globalBucket.inFlight - 1);
+                            releaseGlobalSlot(entry, { expired: true, pump: false });
                         }
                         entry.globalEntry = null;
                     });
@@ -343,7 +412,7 @@ const BotInferenceBudget = {
             }
             for (let index = globalWaiters.length - 1; index >= 0; index -= 1) {
                 if (actorId(globalWaiters[index].session) === id) {
-                    globalWaiters[index].resolve({ ok: false, reason: 'inference_budget_reset' });
+                    completeWaiter(globalWaiters[index], { ok: false, reason: 'inference_budget_reset' });
                     globalWaiters.splice(index, 1);
                 }
             }
@@ -351,12 +420,17 @@ const BotInferenceBudget = {
             return;
         }
         buckets.clear();
+        globalBucket.entries.forEach((entry) => {
+            if (entry.expiryTimer) clearTimeout(entry.expiryTimer);
+            entry.expiryTimer = null;
+            entry.globalSlotReleased = true;
+        });
         globalBucket.entries = [];
         globalBucket.inFlight = 0;
         globalBucket.lastDeniedAt = 0;
         globalBucket.lastDeniedReason = null;
         while (globalWaiters.length > 0) {
-            globalWaiters.shift().resolve({ ok: false, reason: 'inference_budget_reset' });
+            completeWaiter(globalWaiters.shift(), { ok: false, reason: 'inference_budget_reset' });
         }
         reservationSequence = 0;
     },

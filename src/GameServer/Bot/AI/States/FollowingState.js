@@ -709,7 +709,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         recordRoleDecision(session, bot, 'deliver_resources', 'trade_pending_confirmation', { targetId: delivery.playerId });
         return true;
     }
-    if (Number(delivery.retryAt || 0) > Date.now()) return true;
+    if (Number(delivery.retryAt || 0) > Date.now()) return false;
     if (point(bot).distance(point(playerSession.actor)) > 350) {
         if (!bot.state?.fetchTowards?.()) {
             bot.moveTo({ from: loc(bot), to: loc(playerSession.actor) });
@@ -735,7 +735,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
             });
         }
         recordRoleDecision(session, bot, 'deliver_resources', 'wait_for_safe_trade', { targetId: delivery.playerId });
-        return true;
+        return false;
     }
     const trade = invoke('GameServer/Bot/BotTradeService').startBotTradeWithOffer(
         session,
@@ -745,7 +745,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         { workflowId: delivery.workflowId, supplyDelivery: true }
     );
     if (!trade.ok) {
-        if (trade.reason === 'too_far') return true;
+        if (trade.reason === 'too_far') return false;
         delivery.retryAt = Date.now() + 10000;
         BotPartyChat.announce(session, {
             priority: 'informational',
@@ -757,7 +757,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
             playerId: delivery.playerId,
             amount: delivery.amount
         }, 'failed', trade.reason || 'trade_open_failed', { terminal: false });
-        return true;
+        return false;
     }
     delivery.tradeId = trade.trade?.id || trade.id || null;
     delivery.retryAt = undefined;

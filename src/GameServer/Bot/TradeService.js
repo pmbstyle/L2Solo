@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const storePurchaseQueues = new WeakMap();
+const actorPurchaseQueues = new WeakMap();
 
 function itemTemplate(selfId) {
     return DataCache.items.find((ob) => ob.selfId === selfId);
@@ -197,12 +198,19 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
     if (!storePurchaseQueues.has(store)) storePurchaseQueues.set(store, new Map());
     const queues = storePurchaseQueues.get(store);
     const queueKey = String(Number(selfId));
-    const previous = queues.get(queueKey) || Promise.resolve();
-    let release;
-    const current = new Promise((resolve) => { release = resolve; });
-    const queued = previous.then(() => current);
-    queues.set(queueKey, queued);
-    await previous;
+    const previousStorePurchase = queues.get(queueKey) || Promise.resolve();
+    let releaseStorePurchase;
+    const currentStorePurchase = new Promise((resolve) => { releaseStorePurchase = resolve; });
+    const queuedStorePurchase = previousStorePurchase.then(() => currentStorePurchase);
+    queues.set(queueKey, queuedStorePurchase);
+    await previousStorePurchase;
+
+    const previousActorPurchase = actorPurchaseQueues.get(actor) || Promise.resolve();
+    let releaseActorPurchase;
+    const currentActorPurchase = new Promise((resolve) => { releaseActorPurchase = resolve; });
+    const queuedActorPurchase = previousActorPurchase.then(() => currentActorPurchase);
+    actorPurchaseQueues.set(actor, queuedActorPurchase);
+    await previousActorPurchase;
     store.activePurchases = Math.max(0, Number(store.activePurchases || 0)) + 1;
 
     try {
@@ -220,8 +228,12 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
             throw new Error("Store price changed.");
         }
 
-        const buyQty = Math.min(Number(qty), Number(storeItem.count));
-        if (buyQty <= 0) {
+        const requestedQty = Number(qty);
+        if (!Number.isSafeInteger(requestedQty) || requestedQty <= 0) {
+            throw new Error("Invalid quantity.");
+        }
+        const buyQty = Math.min(requestedQty, Number(storeItem.count));
+        if (!Number.isSafeInteger(buyQty) || buyQty <= 0) {
             throw new Error("Item is out of stock.");
         }
 
@@ -263,8 +275,10 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
         return { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
     } finally {
         store.activePurchases = Math.max(0, Number(store.activePurchases || 0) - 1);
-        release();
-        if (queues.get(queueKey) === queued) queues.delete(queueKey);
+        releaseActorPurchase();
+        if (actorPurchaseQueues.get(actor) === queuedActorPurchase) actorPurchaseQueues.delete(actor);
+        releaseStorePurchase();
+        if (queues.get(queueKey) === queuedStorePurchase) queues.delete(queueKey);
         if (queues.size === 0) storePurchaseQueues.delete(store);
     }
 }
