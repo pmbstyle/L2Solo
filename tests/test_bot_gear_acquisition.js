@@ -53,15 +53,19 @@ assert.strictEqual(
 );
 
 const previousProgressionRate = process.env.L2NODE_PROGRESSION_RATE;
-process.env.L2NODE_PROGRESSION_RATE = 'x50';
 const caveMaidenSpot = {
     id: 'cave-maiden-field',
     avgLevel: 59,
     npcEntries: [{ selfId: 134, name: 'Cave Maiden', count: 4 }]
 };
-const steelSourceAtX50 = GearAcquisitionPlanner.sourceForItem(1880, [caveMaidenSpot], { level: 52 })[0];
+const caveMaidenSpots = [caveMaidenSpot];
+process.env.L2NODE_PROGRESSION_RATE = 'x1';
+const steelSourceAtX1 = GearAcquisitionPlanner.sourceForItem(1880, caveMaidenSpots, { level: 52 })[0];
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
+const steelSourceAtX50 = GearAcquisitionPlanner.sourceForItem(1880, caveMaidenSpots, { level: 52 })[0];
 assert(steelSourceAtX50.expectedYield > 1, 'high-rate material plans must include the scaled drop quantity, not only the selection chance');
 assert(Math.ceil(220 / steelSourceAtX50.expectedYield) < 300, '220 Steel from Cave Maiden at x50 must not be estimated as thousands of kills');
+assert(steelSourceAtX50.expectedYield > steelSourceAtX1.expectedYield, 'source cache keys must preserve progression-rate changes for the same atlas');
 if (previousProgressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
 else process.env.L2NODE_PROGRESSION_RATE = previousProgressionRate;
 
@@ -97,6 +101,15 @@ const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
 assert(['Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+let targetOfferChecks = 0;
+const scoredOnceTarget = GearAcquisitionPlanner.preferredTarget(mage, {
+    findMarketOffer: (item) => {
+        targetOfferChecks += 1;
+        return { selfId: item.selfId, price: Number(item.template?.price || 1), town: 'Giran', sourceType: 'npc' };
+    }
+});
+assert(scoredOnceTarget, 'memoized target scoring must retain a valid preferred item');
+assert(targetOfferChecks <= 3, 'each shortlisted target must be evaluated at most once instead of once per sort comparison');
 
 const dMarketPlan = GearAcquisitionPlanner.planFor({ ...mage, level: 20 }, {
     spots: [],
