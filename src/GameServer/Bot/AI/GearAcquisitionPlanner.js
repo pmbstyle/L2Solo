@@ -4,7 +4,8 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
-let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map() };
+const MAX_RESOLVED_SOURCE_CACHE = 512;
+let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -189,18 +190,18 @@ function candidateEffort(candidate, state, options = {}) {
     // diagnostics and a pre-route preview). Do not scan every NPC reward and
     // every component tree when no spot atlas is available.
     if (!spots.length) return marketEffortValue;
-    const direct = bestSourceForState(sourceForItem(item.selfId, spots, state), state);
+    const direct = bestSourceForState(sourceForItem(item.selfId, spots, state, options), state);
     const directEffort = direct
         ? (1 / Math.max(Number(direct.expectedYield || 0), 0.000001))
             * (soloSafeForSource(state, direct) ? 1 : 1.35)
         : Infinity;
     if (!candidate.recipe) return Math.min(directEffort, marketEffortValue);
 
-    const allowedRecipeIds = stationRecipeIds();
+    const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
     const materialEffort = missingMaterials(candidate.recipe, state.inventory)
         .filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId))
         .reduce((sum, material) => {
-            const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing);
+            const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), options);
             return sum + (source ? material.missing / Math.max(Number(source.expectedYield || 0), 0.000001) : 1000000);
         }, 8);
     return Math.min(directEffort, marketEffortValue, materialEffort);
@@ -363,15 +364,19 @@ function preferredTarget(state = {}, options = {}) {
     // still prevents a leap to a top-tier option.
     const entryWeaponFallback = !hasCurrentGradeWeapon && weaponFirst.length > 0;
     if (!options.recipeId && Number.isFinite(cap) && affordable.length === 0 && !entryWeaponFallback) return null;
+    const effortOptions = options.allowedRecipeIds
+        ? options
+        : { ...options, allowedRecipeIds: stationRecipeIds() };
     const candidates = shortlistCandidates(affordable.length ? affordable : progressionCandidates, options)
+        .map((candidate) => ({ candidate, score: opportunityScore(candidate, state, effortOptions) }))
         .sort((a, b) => {
-            const scoreDelta = opportunityScore(b, state, options) - opportunityScore(a, state, options);
+            const scoreDelta = b.score - a.score;
             if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
-            return slotPriority(b.item) - slotPriority(a.item)
-                || Number(a.item.template?.price || 0) - Number(b.item.template?.price || 0)
-                || Number(a.item.selfId) - Number(b.item.selfId);
+            return slotPriority(b.candidate.item) - slotPriority(a.candidate.item)
+                || Number(a.candidate.item.template?.price || 0) - Number(b.candidate.item.template?.price || 0)
+                || Number(a.candidate.item.selfId) - Number(b.candidate.item.selfId);
         });
-    return candidates[0] || null;
+    return candidates[0]?.candidate || null;
 }
 
 function preferredDropTarget(state = {}) {
@@ -508,32 +513,53 @@ function sourceIndexFor(spots = []) {
     ]));
     const spotByNpc = new Map();
     const spotByName = new Map();
+    const appendSpot = (index, key, spot) => {
+        if (!key || !spot) return;
+        const existing = index.get(key) || [];
+        if (!existing.some((candidate) => candidate.id === spot.id)) existing.push(spot);
+        index.set(key, existing);
+    };
     (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
-        if (entry.selfId) spotByNpc.set(Number(entry.selfId), spot);
-        if (entry.name) spotByName.set(String(entry.name).trim().toLowerCase(), spot);
+        if (entry.selfId) appendSpot(spotByNpc, Number(entry.selfId), spot);
+        if (entry.name) appendSpot(spotByName, String(entry.name).trim().toLowerCase(), spot);
     }));
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
-        const spot = spotByNpc.get(Number(reward.selfId))
-            || spotByName.get(String(reward.template?.name || '').trim().toLowerCase());
-        if (!spot) return;
+        const spotsForNpc = [...new Map([
+            ...(spotByNpc.get(Number(reward.selfId)) || []),
+            ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
+        ].map((spot) => [spot.id, spot])).values()];
+        if (!spotsForNpc.length) return;
         const itemIds = new Set((reward.rewards || []).flatMap((group) => (
             (group.items || []).map((item) => Number(item.selfId || 0)).filter(Boolean)
         )));
-        itemIds.forEach((id) => {
+        spotsForNpc.forEach((spot) => itemIds.forEach((id) => {
             const entries = byItemId.get(id) || [];
-            entries.push({ reward, spot, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
+            if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id)) {
+                entries.push({ reward, spot, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
+            }
             byItemId.set(id, entries);
-        });
+        }));
     });
 
-    sourceIndexCache = { spots, rewards, byItemId };
+    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map() };
     return byItemId;
 }
 
-function sourceForItem(itemId, spots = [], state = {}) {
-    return (sourceIndexFor(spots).get(Number(itemId)) || []).map(({ reward, spot, npcLevel }) => {
+function sourceForItem(itemId, spots = [], state = {}, options = {}) {
+    const sourceCache = options.sourceCache;
+    const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}`;
+    if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
+    const sourceIndex = sourceIndexFor(spots);
+    const rates = ProgressionRates.profile();
+    const resolvedKey = `${cacheKey}:${rates.drop}:${rates.adena}`;
+    if (sourceIndexCache.resolved.has(resolvedKey)) {
+        const cached = sourceIndexCache.resolved.get(resolvedKey);
+        sourceCache?.set(cacheKey, cached);
+        return cached;
+    }
+    const sources = (sourceIndex.get(Number(itemId)) || []).map(({ reward, spot, npcLevel }) => {
         const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
         const { chance, expectedYield } = itemDropYield(reward, itemId, 'drop', {
             npcLevel: sourceLevel,
@@ -542,6 +568,12 @@ function sourceForItem(itemId, spots = [], state = {}) {
         if (!chance) return null;
         return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind: 'drop', chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1), npcLevel: sourceLevel };
     }).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
+    if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
+        sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
+    }
+    sourceIndexCache.resolved.set(resolvedKey, sources);
+    sourceCache?.set(cacheKey, sources);
+    return sources;
 }
 
 function stationRecipeIds() {
@@ -552,8 +584,8 @@ function stationRecipeIds() {
     )));
 }
 
-function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set()) {
-    const direct = bestSourceForState(sourceForItem(itemId, spots, state), state);
+function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set(), options = {}) {
+    const direct = bestSourceForState(sourceForItem(itemId, spots, state, options), state);
     if (direct) return { ...direct, itemId: Number(itemId) };
     if (visited.has(Number(itemId))) return null;
 
@@ -565,7 +597,7 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
         const owned = Number(inventoryMap(state.inventory).get(Number(ingredient.selfId)) || 0);
         const required = Number(ingredient.amount || 0) * componentCrafts;
         if (owned >= required || CraftSupplementMaterials.isSupplementalMaterial(ingredient.selfId)) continue;
-        const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited);
+        const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited, options);
         if (source) return source;
     }
     return null;
@@ -635,18 +667,23 @@ function planFor(state = {}, options = {}) {
             recipeId: null, materials: [], next: { ...source, itemId: Number(target.selfId) }
         } : { status: 'no_grade_drop_only', grade: 'none', role: roleFor(state), strategy: 'direct_drop', rateModelVersion: RATE_MODEL_VERSION, recipeId: null, materials: [], next: null };
     }
-    const target = preferredTarget(state, options);
+    const planningOptions = {
+        ...options,
+        allowedRecipeIds: options.allowedRecipeIds || stationRecipeIds(),
+        sourceCache: options.sourceCache || new Map()
+    };
+    const target = preferredTarget(state, planningOptions);
     if (!target) return { status: 'complete', reason: 'no_missing_craftable_upgrade' };
 
     const spots = options.spots || [];
-    const directSources = sourceForItem(target.item.selfId, spots, state);
+    const directSources = sourceForItem(target.item.selfId, spots, state, planningOptions);
     const direct = bestSourceForState(directSources, state);
     const materials = target.recipe ? missingMaterials(target.recipe, state.inventory) : [];
-    const allowedRecipeIds = stationRecipeIds();
+    const allowedRecipeIds = planningOptions.allowedRecipeIds;
     const materialPlans = materials.map((material) => ({
         ...material,
         source: material.missing > 0
-            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing)
+            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), planningOptions)
             : null
     }));
     const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
@@ -657,7 +694,7 @@ function planFor(state = {}, options = {}) {
     const craftKills = target.recipe
         ? missingMaterialPlans.reduce((sum, material) => sum + material.missing / Math.max(material.source?.expectedYield || 0.000001, 0.000001), 0)
         : Infinity;
-    const offer = marketOfferForTarget(target.item, state, options);
+    const offer = marketOfferForTarget(target.item, state, planningOptions);
     const buy = offer && marketEffort(offer, state) <= Math.min(directKills, craftKills);
     const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
     const soloSafe = direct && directAssessment.need === 'solo_ok';

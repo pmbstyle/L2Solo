@@ -133,9 +133,11 @@ try {
             const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
             assert(due.sql.includes('rateModelVersion'), 'due cold states must prioritize persisted plans from an older drop-rate model');
             assert(due.sql.includes(`< ${GearPlanner.RATE_MODEL_VERSION}`), 'due cold states must prioritize plans from the current model rollout rather than a stale hard-coded version');
-            assert(due.sql.includes("OR (activity = 'hunting' AND (json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL"), 'a stale active combat plan must bypass its old next-resolve deadline for an immediate safety replan');
-            assert(due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL") < due.sql.indexOf("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary market, travel, and crafting transitions');
+            assert(due.sql.includes("OR (activity = 'hunting' AND (json_extract(statsJson, '$.equipmentPlan.status') = 'active'"), 'only active stale combat plans must bypass their old next-resolve deadline for an immediate safety replan');
+            const stalePlanOrder = due.sql.indexOf("WHEN json_extract(statsJson, '$.equipmentPlan.status') = 'active'");
+            assert(stalePlanOrder >= 0 && stalePlanOrder < due.sql.indexOf("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'a stale active plan must outrank ordinary market, travel, and crafting transitions');
             assert(due.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"), 'due cold states must promptly finish market, travel, and crafting transitions after an urgent combat-safety replan');
+            assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
             return BotLifeState.assignParty({
@@ -166,13 +168,20 @@ try {
                 }, 'bgp_probe', 'dps', 42).then((restingAssigned) => {
                     assert.strictEqual(restingAssigned.activity, 'resting', 'assigning a resting requester must not wake it into combat');
                     assert(restingAssigned.stats.restUntil > Date.now(), 'assigning a resting requester must preserve its recovery deadline');
-                    return BotLifeState.coldPartyCandidates(5);
+                    const candidateQueryStart = statements.length;
+                    return BotLifeState.coldPartyCandidates(5).then(() => {
+                        const candidates = statements.slice(candidateQueryStart)
+                            .find((entry) => entry.sql.includes('party_spots.candidateCount'));
+                        assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
+                        const requiredRank = candidates.sql.indexOf("$.partyRequest.priority') = 'required' THEN 0");
+                        const preferredRank = candidates.sql.indexOf("$.partyRequest.status') = 'open' THEN 1");
+                        const generalRank = candidates.sql.indexOf('ELSE 2');
+                        const populationRank = candidates.sql.indexOf('party_spots.candidateCount DESC');
+                        assert(requiredRank >= 0 && requiredRank < preferredRank, 'required requests must rank ahead of preferred requests');
+                        assert(preferredRank < generalRank && generalRank < populationRank, 'all open requests must rank ahead of crowded general candidate grounds');
+                    });
                 });
-            }).then(() => {
-                const candidates = statements.find((entry) => entry.sql.includes("activity IN ('hunting', 'resting', 'party_wait')"));
-                assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
-                return BotLifeState.coldPartyCandidates(5, true);
-            }).then(() => {
+            }).then(() => BotLifeState.coldPartyCandidates(5, true)).then(() => {
                 const requiredCandidates = statements.find((entry) => entry.sql.includes("$.partyRequest.priority") && entry.sql.includes("'required'"));
                 assert(requiredCandidates, 'required party requests must reserve formation capacity ahead of elective hunting parties');
                 return BotLifeState.coldPartyCandidateCount(true).then(() => {
@@ -240,7 +249,26 @@ try {
                         assert.strictEqual(deadState.stats.partyRequest, null, 'dead bots must not retain open party requests');
                     });
                 });
-        }).then(() => {
+        }).then(() => BotLifeState.upsertState({
+            characterId: 99,
+            name: 'StaleSummaryProbe',
+            level: 20,
+            phase: 'cold',
+            activity: 'hunting',
+            timing: { nextResolveAt: 999999 },
+            stats: {
+                equipmentPlan: {
+                    status: 'active',
+                    expectedKills: 5,
+                    rateModelVersion: GearPlanner.RATE_MODEL_VERSION - 1
+                }
+            },
+            vitals: {},
+            inventory: {}
+        }, 'summary_probe').then(() => {
+            const summary = BotLifeState.coldDueSummary(1000);
+            assert(summary.due >= 1, 'cold due telemetry must include stale hunting plans before their persisted deadline');
+        })).then(() => {
             console.log('Bot population state checks passed');
         });
     }).catch((err) => {

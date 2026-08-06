@@ -11,6 +11,7 @@ const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -161,6 +162,7 @@ function nearbySnapshot(bot) {
     let friendlyBots = 0;
     let hostilePlayers = 0;
     let attackableNpcs = 0;
+    let eligibleAttackableNpcs = 0;
 
     World.user.sessions.forEach((session) => {
         const actor = session.actor;
@@ -181,10 +183,14 @@ function nearbySnapshot(bot) {
     World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 1500).forEach((npc) => {
         if (npc.fetchAttackable() && !npc.isDead()) {
             attackableNpcs++;
+            const levelGap = Number(npc.fetchLevel?.() || bot.fetchLevel()) - Number(bot.fetchLevel() || 1);
+            if (levelGap >= BotTargetScorer.MIN_LEVEL_GAP && levelGap <= BotTargetScorer.MAX_LEVEL_ADVANTAGE) {
+                eligibleAttackableNpcs++;
+            }
         }
     });
 
-    return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs };
+    return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs, eligibleAttackableNpcs };
 }
 
 function tradeSnapshot(session, bot) {

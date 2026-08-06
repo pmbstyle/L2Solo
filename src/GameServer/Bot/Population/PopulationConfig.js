@@ -6,15 +6,19 @@ const DEFAULTS = {
     directorEnabled: true,
     summaryIntervalMs: 30000,
     schedulerIntervalMs: 5000,
-    // Cold simulation is invisible to players. Keep its total throughput,
-    // but let sockets and hot AI run between bounded pieces of work.
+    // Cold simulation is invisible to players. Keep its total throughput
+    // bounded, while allowing a larger catch-up slice when no real player is
+    // online. The player-aware budget remains intentionally conservative.
     schedulerSliceMs: 12,
-    // The scheduler is a background tenant. A count-only limit is unsafe
-    // because one party resolve can cost much more than one solo resolve.
-    schedulerBudgetMs: 750,
+    schedulerIdleBudgetMs: 2500,
     schedulerPlayerBudgetMs: 250,
+    schedulerIdleMaxResolvesPerTick: 100,
+    schedulerPlayerMaxResolvesPerTick: 25,
+    // Above this lag, taper background work before the hard stop below. A
+    // gradual throttle avoids turning one noisy sample into a long backlog.
+    schedulerLagThrottleMs: 40,
     schedulerLagAbortMs: 120,
-    partyFormationBudgetMs: 1500,
+    partyFormationIdleBudgetMs: 3000,
     partyFormationPlayerBudgetMs: 600,
     partyFormationSliceMs: 12,
     // Existing cold population predates full class progression. Reconcile it
@@ -135,6 +139,14 @@ const ENV_KEYS = {
     nearPlayerHotTarget: 'BOT_NEAR_PLAYER_HOT_TARGET',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
     schedulerSliceMs: 'BOT_POPULATION_SCHEDULER_SLICE_MS',
+    schedulerIdleBudgetMs: 'BOT_POPULATION_SCHEDULER_IDLE_BUDGET_MS',
+    schedulerPlayerBudgetMs: 'BOT_POPULATION_SCHEDULER_PLAYER_BUDGET_MS',
+    schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
+    schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
+    schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
+    schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',
+    partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
+    partyFormationPlayerBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_PLAYER_BUDGET_MS',
     partyInviteRange: 'BOT_PARTY_INVITE_RANGE',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',

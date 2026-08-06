@@ -5,6 +5,7 @@ const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -25,6 +26,52 @@ const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService')
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+
+const HUNTING_TRAVEL_MS = 25000;
+
+function hasFiniteCoordinate(value) {
+    return value !== null
+        && value !== undefined
+        && String(value).trim() !== ''
+        && Number.isFinite(Number(value));
+}
+
+function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
+    if (!state || !spot || state.activity === 'traveling') return null;
+    const from = { ...(state.loc || {}) };
+    const hasLocation = hasFiniteCoordinate(from.locX) && hasFiniteCoordinate(from.locY);
+    if (!hasLocation) return null;
+    const physical = SpotService.findCurrentSpot(from);
+    const currentId = physical?.id || options.currentSpotId || state.spotId || null;
+    if (currentId === spot.id) return null;
+
+    return {
+        ...state,
+        activity: 'traveling',
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + HUNTING_TRAVEL_MS
+        },
+        stats: {
+            ...(state.stats || {}),
+            travel: {
+                from,
+                to: { ...spot.center },
+                startedAt: timestamp,
+                arrivalAt: timestamp + HUNTING_TRAVEL_MS,
+                regionName: spot.name || state.currentRegion || 'Hunting Ground',
+                method: 'gatekeeper_spot',
+                spotId: spot.id,
+                arrivalActivity: 'hunting',
+                arrivalEvent: 'arrived_hunting_ground',
+                reason: state.stats?.equipmentPlan?.status === 'active'
+                    ? 'equipment_source_replan'
+                    : 'level_replan'
+            }
+        }
+    };
+}
 
 function groupBySpot(states, options = {}) {
     const grouped = new Map();
@@ -883,10 +930,14 @@ const PopulationService = {
                 })
                 : Promise.resolve(0);
             return timedStage('cleanup', () => cleanup)
-            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(false)))
-            .then((partyWaitCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-                .then((states) => ({ states, partyWaitBacklog: partyWaitCount > 0 }))
-                .then(({ states, partyWaitBacklog }) => {
+            // Extra capacity and eviction are reserved for actionable required
+            // requests. The candidate query still includes preferred and
+            // elective bots, but orders open requests ahead of the bounded
+            // general pool so crowded solo grounds cannot starve them.
+            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(true)))
+            .then((requiredPartyRequestCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+                .then((states) => ({ states, requiredPartyRequestCount }))
+                .then(({ states, requiredPartyRequestCount }) => {
                     const activeParties = BackgroundPartyState.active();
                     const recruitSpots = activeParties
                         .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
@@ -899,16 +950,21 @@ const PopulationService = {
                     return fairCandidates.then((spotCandidates) => {
                         const byId = new Map((states || []).map((state) => [Number(state.characterId), state]));
                         spotCandidates.forEach((state) => byId.set(Number(state.characterId), state));
+                        const mergedStates = Array.from(byId.values());
                         return {
-                            states: Array.from(byId.values()),
-                            partyWaitBacklog,
-                            partyWaitCount
+                            states: mergedStates,
+                            partyRequestBacklog: mergedStates.some((state) => state.stats?.partyRequest?.status === 'open'),
+                            requiredPartyRequestCount
                         };
                     });
                 })))
-            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
+            .then(({ states, partyRequestBacklog, requiredPartyRequestCount }) => {
                 const willingStates = states.filter((state) => PersonaPartyPolicy.backgroundIntent(state).accept);
-                return this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? willingStates : [], partyWaitCount, {
+                const requiredStates = willingStates.filter((state) => (
+                    state.stats?.partyRequest?.status === 'open'
+                    && state.stats?.partyRequest?.priority === 'required'
+                ));
+                return this.reclaimBackgroundPartyCapacity(requiredStates, requiredPartyRequestCount, {
                     deadlineAt,
                     markBudgetStop: () => budgetReached()
                 })
@@ -917,13 +973,13 @@ const PopulationService = {
                         markBudgetStop: () => budgetReached()
                     })).then((recruitedIds) => ({
                     states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
-                    partyWaitBacklog,
-                    partyWaitCount
+                    partyRequestBacklog,
+                    requiredPartyRequestCount
                 }));
             })
-            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
+            .then(({ states, partyRequestBacklog, requiredPartyRequestCount }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
-                const slots = Math.max(0, maxBackgroundPartiesForBacklog(partyWaitCount) - activeParties);
+                const slots = Math.max(0, maxBackgroundPartiesForBacklog(requiredPartyRequestCount) - activeParties);
                 if (slots <= 0) return [];
                 const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
                 const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
@@ -931,7 +987,7 @@ const PopulationService = {
                     if (spotId) counts.set(spotId, Number(counts.get(spotId) || 0) + 1);
                     return counts;
                 }, new Map());
-                const groups = this.groupPartyCandidatesByObjective(states, { prioritizePartyWait: partyWaitBacklog, activePartiesBySpot });
+                const groups = this.groupPartyCandidatesByObjective(states, { prioritizePartyWait: partyRequestBacklog, activePartiesBySpot });
                 const created = [];
 
                 return groups.reduce((chain, group) => chain.then(() => {
@@ -1033,11 +1089,11 @@ const PopulationService = {
         }
         const configured = players > 0
             ? Config.partyFormationPlayerBudgetMs
-            : Config.partyFormationBudgetMs;
+            : Config.partyFormationIdleBudgetMs;
         return Math.max(50, Number(configured) || 500);
     },
 
-    schedulerBudgetMs() {
+    schedulerProfile() {
         let players = 0;
         try {
             players = this.realPlayerSessions().length;
@@ -1046,12 +1102,39 @@ const PopulationService = {
             // where the world session registry is not available yet.
             players = 0;
         }
-        const configured = players > 0 ? Config.schedulerPlayerBudgetMs : Config.schedulerBudgetMs;
-        const budget = Math.max(25, Number(configured) || 250);
+        const idle = players === 0;
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const configured = idle ? Config.schedulerIdleBudgetMs : Config.schedulerPlayerBudgetMs;
+        const baseBudget = Math.max(25, Number(configured) || 250);
+        const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
-        return lagAbort > 0 && Metrics.currentEventLoopLag() >= lagAbort
-            ? 0
-            : Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25));
+        let budget = baseBudget;
+
+        if (lagAbort > 0 && lagMs >= lagAbort) {
+            budget = 0;
+        } else if (lagAbort > lagThrottle && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / (lagAbort - lagThrottle));
+            budget = Math.round(baseBudget * (1 - pressure));
+        } else if (lagAbort === 0 && lagThrottle > 0 && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / lagThrottle);
+            budget = Math.round(baseBudget * (1 - pressure));
+        }
+
+        return {
+            idle,
+            players,
+            lagMs,
+            budgetMs: budget > 0
+                ? Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25))
+                : 0,
+            maxResolvesPerTick: Math.min(100, Math.max(1, Number(idle
+                ? Config.schedulerIdleMaxResolvesPerTick
+                : Config.schedulerPlayerMaxResolvesPerTick) || 25))
+        };
+    },
+
+    schedulerBudgetMs() {
+        return this.schedulerProfile().budgetMs;
     },
 
     groupPartyCandidatesByObjective(states = [], options = {}) {
@@ -1281,7 +1364,9 @@ const PopulationService = {
         }
 
         const startedAt = Date.now();
-        const budgetMs = this.schedulerBudgetMs();
+        const profile = this.schedulerProfile();
+        Metrics.recordSchedulerProfile(profile);
+        const budgetMs = profile.budgetMs;
         if (budgetMs <= 0) {
             Metrics.recordSchedulerBudgetStop();
             return Promise.resolve([]);
@@ -1290,16 +1375,19 @@ const PopulationService = {
         this.resolving = true;
         return Database.cooperatively(() => this.resolveDueParties(deadlineAt)
             .then(() => this.reconcileMarketGoals(deadlineAt))
-            .then(() => LifeState.dueCold(Config.maxResolvesPerTick))
-            .then((states) => this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
+            .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
+            .then((states) => {
+                Metrics.recordColdBatch(states.length, profile.maxResolvesPerTick);
+                return this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
                 .catch((error) => {
                     // A single bot may lose a race with a market or
                     // craft transaction. It must not abort every
                     // remaining cold resolve in this scheduler tick.
                     utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
-                    Metrics.recordSkippedResolve();
+                    Metrics.recordSkippedResolve('cold_resolve_rejected');
                     return { ok: false, reason: 'resolve_rejected', state };
-                }), deadlineAt))
+                }), deadlineAt);
+            })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'background scheduler failed: %s', err.message);
                 return [];
@@ -1418,7 +1506,7 @@ const PopulationService = {
                 }
             }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
             if (!spot) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
             }
 
@@ -1501,7 +1589,7 @@ const PopulationService = {
             });
         }).catch((err) => {
             utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('party_resolve_failed');
             return { ok: false, reason: 'resolve_failed', party };
         }).finally(() => {
             Metrics.recordResolveDuration(Date.now() - startedAt);
@@ -1511,7 +1599,7 @@ const PopulationService = {
     resolveColdState(state) {
         const startedAt = Date.now();
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
@@ -1527,12 +1615,12 @@ const PopulationService = {
                 timestamp: startedAt
             });
             if (joinedBackgroundParty(state)) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('joined_party_during_transition');
                 return Promise.resolve({ ok: false, reason: 'joined_party', state });
             }
             return LifeState.applyResolve(requestLifecycleState, result).then((updatedState) => {
                 if (!updatedState) {
-                    Metrics.recordSkippedResolve();
+                    Metrics.recordSkippedResolve('transition_apply_failed');
                     return { ok: false, reason: 'apply_failed', state };
                 }
                 Metrics.recordBackgroundResolve();
@@ -1658,22 +1746,28 @@ const PopulationService = {
         const routedState = fallbackSpot
             ? { ...plannedState, activity: 'hunting', spotId: fallbackSpot.id }
             : plannedState;
+        const currentSpotId = plannedState.spotId || null;
         const travellingState = ColdCraftingService.beginTravel(routedState) || routedState;
         const travel = travellingState.stats?.travel;
         const travelEvents = travellingState !== plannedState && travel?.stationId
             ? [CraftTelemetry.stationTravelEvent(plannedState, travel)]
             : [];
-        const spot = passiveActivity
+        const selectedSpot = passiveActivity
             ? null
             : fallbackSpot || SpotProfiles.findForState(travellingState);
-        if (!spot && !passiveActivity) {
-            Metrics.recordSkippedResolve();
+        const huntingTravelState = selectedSpot && !passiveActivity
+            ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
+            : null;
+        const effectiveState = huntingTravelState || travellingState;
+        const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
+        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
+            Metrics.recordSkippedResolve('missing_spot');
             Metrics.recordResolveDuration(Date.now() - startedAt);
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
 
         const result = BackgroundResolver.resolveSolo({
-            state: travellingState,
+            state: effectiveState,
             spot,
             pressure: Director.pressureForState(state),
             targetNpcId: requiredPartyRequest
@@ -1683,14 +1777,14 @@ const PopulationService = {
         });
 
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('joined_party_after_planning');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
-        return LifeState.applyResolve(travellingState, result)
+        return LifeState.applyResolve(effectiveState, result)
             .then((updatedState) => {
             if (!updatedState) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('cold_apply_failed');
                 return { ok: false, reason: 'apply_failed', state };
             }
 

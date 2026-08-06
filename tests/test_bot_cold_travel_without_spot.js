@@ -5,6 +5,8 @@ require('../src/Global');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
@@ -18,6 +20,8 @@ const originals = {
     ensure: SpotProfiles.ensure,
     findForState: SpotProfiles.findForState,
     resolveSolo: BackgroundResolver.resolveSolo,
+    planFor: GearPlanner.planFor,
+    beginCraftTravel: ColdCraftingService.beginTravel,
     cachedState: LifeState.cachedState,
     applyResolve: LifeState.applyResolve,
     refreshInventory: LifeState.refreshInventory,
@@ -78,6 +82,40 @@ async function run() {
     assert.strictEqual(receivedSpot, null, 'travel must resolve without a hunting spot');
     assert.strictEqual(planningAtlasRequests, 0, 'in-flight travel must not build an equipment plan or load the spot atlas');
 
+    const readyToTravel = {
+        ...state,
+        characterId: 73,
+        name: 'FreshCraftTraveler',
+        activity: 'hunting',
+        loc: { locX: 10, locY: 20, locZ: 30 },
+        stats: { equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: 189 } }
+    };
+    GearPlanner.planFor = () => readyToTravel.stats.equipmentPlan;
+    ColdCraftingService.beginTravel = (value) => ({
+        ...value,
+        activity: 'traveling',
+        stats: {
+            ...(value.stats || {}),
+            travel: {
+                from: value.loc,
+                to: { locX: 100, locY: 200, locZ: 300 },
+                startedAt: Date.now(),
+                arrivalAt: Date.now() + 25000,
+                arrivalActivity: 'crafting',
+                reason: 'equipment_craft'
+            }
+        }
+    });
+    BackgroundResolver.resolveSolo = ({ state: value, spot }) => {
+        receivedSpot = spot;
+        assert.strictEqual(value.activity, 'traveling', 'a ready craft route must enter travel before resolving');
+        return { patch: { activity: 'traveling', stats: value.stats }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 25000, debug: { activity: 'traveling' } };
+    };
+    LifeState.applyResolve = () => Promise.resolve(readyToTravel);
+    const freshTravelResult = await PopulationService.resolveColdState(readyToTravel);
+    assert.strictEqual(freshTravelResult.ok, true, 'travel started during a cold resolve must not fail as a missing hunting spot');
+    assert.strictEqual(receivedSpot, null, 'newly-started travel must resolve without a combat spot');
+
     let joinedDuringResolve = false;
     let applyCalled = false;
     BackgroundResolver.resolveSolo = () => {
@@ -99,6 +137,8 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     SpotProfiles.ensure = originals.ensure;
     SpotProfiles.findForState = originals.findForState;
     BackgroundResolver.resolveSolo = originals.resolveSolo;
+    GearPlanner.planFor = originals.planFor;
+    ColdCraftingService.beginTravel = originals.beginCraftTravel;
     LifeState.cachedState = originals.cachedState;
     LifeState.applyResolve = originals.applyResolve;
     LifeState.refreshInventory = originals.refreshInventory;

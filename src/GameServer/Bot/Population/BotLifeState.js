@@ -21,6 +21,15 @@ function now() {
     return Date.now();
 }
 
+function hasStaleRateModelPlan(state) {
+    const plan = state?.stats?.equipmentPlan;
+    return state?.activity === 'hunting'
+        && plan?.status === 'active'
+        && plan?.expectedKills !== null
+        && plan?.expectedKills !== undefined
+        && Number(plan.rateModelVersion || 0) < GearAcquisitionPlanner.RATE_MODEL_VERSION;
+}
+
 function safeJson(value) {
     return JSON.stringify(value || {});
 }
@@ -1071,8 +1080,13 @@ const BotLifeState = {
         // Pull only fighting bots forward: resting and travelling states are
         // intentionally event-scheduled and cannot hurt themselves while
         // they wait for their persisted deadline.
-        const staleRateModelPlan = `json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
+        const staleRateModelPlan = `json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                AND json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
                 AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < ${GearAcquisitionPlanner.RATE_MODEL_VERSION}`;
+        const pendingEquipmentSpotReplan = `activity IN ('hunting', 'resting')
+                AND json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                AND json_extract(statsJson, '$.equipmentPlan.next.spotId') IS NOT NULL
+                AND json_extract(statsJson, '$.equipmentPlan.next.spotId') <> COALESCE(spotId, '')`;
 
         return Database.execute([
             `SELECT * FROM ${TABLE}
@@ -1097,12 +1111,16 @@ const BotLifeState = {
                 -- target level or drop-rate estimate.
                 WHEN ${staleRateModelPlan} THEN 0
                 WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1
+                -- An active equipment plan whose next source is elsewhere
+                -- must get a chance to start gatekeeper travel before the
+                -- ordinary hunting backlog keeps resolving the old spot.
+                WHEN ${pendingEquipmentSpotReplan} THEN 2
                 -- Startup craft recovery is a one-shot replan.  Serve it
                 -- before the normal hunting backlog so a repaired station
                 -- wait immediately selects its missing raw material.
-                WHEN json_extract(statsJson, '$.lastReason') = 'startup_craft_wait_recovery' THEN 2
-                WHEN activity = 'dead' THEN 3
-                ELSE 4
+                WHEN json_extract(statsJson, '$.lastReason') = 'startup_craft_wait_recovery' THEN 3
+                WHEN activity = 'dead' THEN 4
+                ELSE 5
             END ASC,
             COALESCE(nextResolveAt, 0) ASC
             LIMIT ${safeLimit}`,
@@ -1288,7 +1306,15 @@ const BotLifeState = {
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
             AND ${stateActivityClause}
-            ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
+            ORDER BY
+                CASE
+                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open'
+                        AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required' THEN 0
+                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open' THEN 1
+                    ELSE 2
+                END ASC,
+                party_spots.candidateCount DESC, party_spots.oldestAt ASC,
+                states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
         ]).then((rows) => rows.map((row) => {
@@ -1960,6 +1986,43 @@ const BotLifeState = {
             counts.total += 1;
         });
         return counts;
+    },
+
+    coldDueSummary(timestamp = now()) {
+        const summary = {
+            due: 0,
+            highLevel: 0,
+            replans: 0,
+            oldestAgeMs: 0
+        };
+
+        cache.forEach((state) => {
+            if (state.phase !== 'cold'
+                || state.activity === 'pk_hunting'
+                || state.partyId
+                || state.party?.partyId
+                || (state.activity === 'merchant' && state.stats?.marketStore)
+                || (state.activity === 'crafting' && state.stats?.craftShop)) {
+                return;
+            }
+
+            const nextResolveAt = Number(state.timing?.nextResolveAt || 0);
+            if (nextResolveAt > timestamp && !hasStaleRateModelPlan(state)) return;
+
+            summary.due += 1;
+            if (Number(state.level || 1) >= 16) summary.highLevel += 1;
+            const plan = state.stats?.equipmentPlan;
+            if (plan?.status === 'active'
+                && plan.next?.spotId
+                && plan.next.spotId !== state.spotId) {
+                summary.replans += 1;
+            }
+
+            const dueAt = nextResolveAt > 0 ? nextResolveAt : Number(state.updatedAt || timestamp);
+            summary.oldestAgeMs = Math.max(summary.oldestAgeMs, Math.max(0, timestamp - dueAt));
+        });
+
+        return summary;
     },
 
     targetCombatSummary() {

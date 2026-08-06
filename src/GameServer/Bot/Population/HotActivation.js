@@ -67,15 +67,29 @@ function validPlayerPlacement(loc, playerLoc) {
     return dist >= Config.activationMinPlayerDistance && dist <= Config.activationRadius;
 }
 
+function hasLocation(loc) {
+    return !!loc
+        && ['locX', 'locY'].every((key) => loc[key] !== null
+            && loc[key] !== undefined
+            && String(loc[key]).trim() !== ''
+            && Number.isFinite(Number(loc[key])));
+}
+
 function activationPlacement(state, options = {}) {
     if (options.keepStoreLocation && (options.storeLoc || state?.loc)) {
         const loc = options.storeLoc || state.loc;
         return { loc: { ...loc }, spot: SpotService.findCurrentSpot(loc) || null };
     }
-    const spot = state?.spotId ? SpotService.findById(state.spotId) : null;
+    const savedSpot = state?.spotId ? SpotService.findById(state.spotId) : null;
+    // Coordinates are authoritative for activation. A stale destination spot
+    // must not resurrect a bot on a remote field it never reached.
+    const hasStateLocation = hasLocation(state?.loc);
+    const physicalSpot = hasStateLocation ? SpotService.findCurrentSpot(state.loc) : null;
+    const spot = hasStateLocation ? physicalSpot : savedSpot;
+    const stateLocation = hasStateLocation ? state.loc : null;
     const baseLoc = options.playerLoc
-        ? (options.forceNearPlayer ? options.playerLoc : (state?.loc || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
-        : (spot?.center || state?.loc || { locX: 0, locY: 0, locZ: 0 });
+        ? (options.forceNearPlayer ? options.playerLoc : (stateLocation || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
+        : (stateLocation || spot?.center || { locX: 0, locY: 0, locZ: 0 });
     let candidate = null;
 
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {

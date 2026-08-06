@@ -15,6 +15,7 @@ const ROUTES = [
         maxLevel: 20,
         modes: ['solo', 'duo', 'party'],
         roles: ['dps', 'tank', 'dagger', 'archer', 'mage', 'healer', 'buffer', 'spoiler', 'crafter'],
+        requiredTags: ['starter'],
         preferredTags: ['starter', 'local'],
         reason: 'starter_leveling'
     },
@@ -212,7 +213,7 @@ function tagsForSpot(spot = {}) {
         .filter(([, pattern]) => pattern.test(text))
         .map(([tag]) => tag);
 
-    if (Number(spot.minLevel || 0) <= 18) tags.push('starter');
+    if (Number(spot.minLevel || 0) <= 18 && Number(spot.maxLevel || 0) <= 20) tags.push('starter');
     if (Number(spot.maxLevel || 0) - Number(spot.minLevel || 0) <= 5) tags.push('normal_hp');
 
     return uniq(tags);

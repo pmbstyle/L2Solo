@@ -55,12 +55,21 @@ const PopulationMetrics = {
         samples: 0,
         slowSamples: 0
     },
+    schedulerState: {
+        budgetMs: 0,
+        mode: 'unknown',
+        lagMs: 0,
+        coldBatch: 0,
+        coldBatchLimit: 0,
+        coldQueueSaturated: false
+    },
     interval: {
         resolveDurationsMs: [],
         schedulerDurationsMs: [],
         schedulerSliceDurationsMs: [],
         partyFormationDurationsMs: [],
-        partyFormationStageDurationsMs: new Map()
+        partyFormationStageDurationsMs: new Map(),
+        skippedResolveReasons: new Map()
     },
     timer: null,
 
@@ -117,8 +126,10 @@ const PopulationMetrics = {
         this.counters.heals += Math.max(0, Number(debug.heals) || 0);
     },
 
-    recordSkippedResolve() {
+    recordSkippedResolve(reason = 'unknown') {
         this.counters.skippedResolves += 1;
+        const key = String(reason || 'unknown');
+        this.interval.skippedResolveReasons.set(key, Number(this.interval.skippedResolveReasons.get(key) || 0) + 1);
     },
 
     recordActivation() {
@@ -185,6 +196,26 @@ const PopulationMetrics = {
         this.counters.schedulerBudgetStops += 1;
     },
 
+    recordSchedulerProfile(profile = {}) {
+        this.schedulerState = {
+            ...this.schedulerState,
+            budgetMs: Math.max(0, Number(profile.budgetMs) || 0),
+            mode: profile.idle ? 'idle' : 'player',
+            lagMs: Math.max(0, Number(profile.lagMs) || 0)
+        };
+    },
+
+    recordColdBatch(count = 0, limit = 0) {
+        const batch = Math.max(0, Number(count) || 0);
+        const cap = Math.max(0, Number(limit) || 0);
+        this.schedulerState = {
+            ...this.schedulerState,
+            coldBatch: batch,
+            coldBatchLimit: cap,
+            coldQueueSaturated: cap > 0 && batch >= cap
+        };
+    },
+
     recordPartyFormationBudgetStop() {
         this.counters.partyFormationBudgetStops += 1;
     },
@@ -224,11 +255,13 @@ const PopulationMetrics = {
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
+        const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
         this.interval.partyFormationStageDurationsMs = new Map();
+        this.interval.skippedResolveReasons = new Map();
 
         return {
             uptimeMs: elapsedMs,
@@ -236,10 +269,11 @@ const PopulationMetrics = {
             delta,
             eventLoop: { ...this.eventLoop },
             resolve: resolveStats,
-            scheduler: schedulerStats,
+            scheduler: { ...schedulerStats, ...this.schedulerState },
             schedulerSlice: schedulerSliceStats,
             partyFormation: partyFormationStats,
             partyFormationStages,
+            skippedResolveReasons,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }
