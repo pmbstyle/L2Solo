@@ -24,6 +24,7 @@ function now() {
 function hasStaleRateModelPlan(state) {
     const plan = state?.stats?.equipmentPlan;
     return state?.activity === 'hunting'
+        && plan?.status === 'active'
         && plan?.expectedKills !== null
         && plan?.expectedKills !== undefined
         && Number(plan.rateModelVersion || 0) < GearAcquisitionPlanner.RATE_MODEL_VERSION;
@@ -1079,7 +1080,8 @@ const BotLifeState = {
         // Pull only fighting bots forward: resting and travelling states are
         // intentionally event-scheduled and cannot hurt themselves while
         // they wait for their persisted deadline.
-        const staleRateModelPlan = `json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
+        const staleRateModelPlan = `json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                AND json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
                 AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < ${GearAcquisitionPlanner.RATE_MODEL_VERSION}`;
         const pendingEquipmentSpotReplan = `activity IN ('hunting', 'resting')
                 AND json_extract(statsJson, '$.equipmentPlan.status') = 'active'
