@@ -67,6 +67,7 @@ function wait(ms) {
         1,
         'the viewer must receive exactly one DeleteObject'
     );
+    assert.strictEqual(directNpc.corpseDecaySession, null, 'removed corpses must not retain their source session');
     assert.strictEqual(NpcDecay.decay(directWorld, directNpc), false, 'decay must be idempotent');
 
     const botSource = { accountId: 'bot_hot_test', dataSendToMe() {} };
@@ -133,6 +134,25 @@ function wait(ms) {
     const malformedWorld = world([malformedNpc, laterNpc]);
     assert.doesNotThrow(() => NpcDecay.sweepExpired(malformedWorld), 'one malformed NPC must not abort the whole sweep');
     assert.strictEqual(malformedWorld.npc.spawns.includes(laterNpc), false, 'later overdue NPCs must still decay');
+    assert.strictEqual(NpcDecay.sweepExpired(malformedWorld, Date.now()), 0, 'a malformed corpse should retry before being discarded');
+    assert.strictEqual(NpcDecay.sweepExpired(malformedWorld, Date.now()), 1, 'the final failed attempt should discard the malformed corpse');
+    assert.strictEqual(malformedWorld.npc.spawns.includes(malformedNpc), false, 'an unremovable corpse must not retry forever');
+    assert.strictEqual(malformedNpc.corpseDecayState, 'removed', 'discarded malformed corpses must be marked removed');
+    assert.strictEqual(malformedNpc.corpseDecayAt, 0, 'discarded malformed corpses must clear their expiry');
+
+    const reaperTimerNpc = npc(9100008);
+    reaperTimerNpc.corpseDecayState = 'scheduled';
+    reaperTimerNpc.corpseDecayAt = Date.now() - 1;
+    const reaperTimerWorld = world([reaperTimerNpc]);
+    NpcDecay.start(reaperTimerWorld, 50);
+    try {
+        await wait(150);
+        assert.strictEqual(reaperTimerWorld.npc.spawns.length, 0, 'start must run the reaper for overdue corpses');
+    }
+    finally {
+        NpcDecay.stop(reaperTimerWorld);
+    }
+    assert.strictEqual(reaperTimerWorld.npc.corpseDecayReaper, undefined, 'stop must clear the reaper interval');
 
     const rewardFailureNpc = npc(9100005);
     const rewardFailureWorld = world([rewardFailureNpc]);

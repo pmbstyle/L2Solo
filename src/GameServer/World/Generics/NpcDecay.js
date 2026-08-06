@@ -1,6 +1,7 @@
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 
 const DEFAULT_REAPER_INTERVAL_MS = 1000;
+const MAX_SWEEP_FAILURES = 3;
 
 function logWarning(message, error) {
     const detail = error?.message || error || 'unknown error';
@@ -29,6 +30,7 @@ function schedule(world, sourceSession, npc, delayMs) {
     npc.corpseDecayState = 'scheduled';
     npc.corpseDecaySession = sourceSession || null;
     npc.corpseDecayAt = Date.now() + delay;
+    npc.corpseDecaySweepFailures = 0;
     npc.corpseDecayTimer = setTimeout(() => {
         try {
             decay(world, npc);
@@ -60,6 +62,8 @@ function decay(world, npc) {
     const sourceSession = npc.corpseDecaySession;
     npc.corpseDecayState = 'removed';
     npc.corpseDecayAt = 0;
+    npc.corpseDecaySession = null;
+    npc.corpseDecaySweepFailures = 0;
     clearTimer(npc);
 
     // Remove the server object first. Packet delivery is best effort and may
@@ -94,11 +98,34 @@ function decay(world, npc) {
     return true;
 }
 
+function discardUnremovableNpc(world, npc, attempts) {
+    if (!world?.npc?.spawns || !npc) return false;
+
+    const previousLength = world.npc.spawns.length;
+    world.npc.spawns = world.npc.spawns.filter((entry) => entry !== npc);
+    npc.corpseDecayState = 'removed';
+    npc.corpseDecayAt = 0;
+    npc.corpseDecaySession = null;
+    npc.corpseDecaySweepFailures = 0;
+    clearTimer(npc);
+
+    try {
+        world.indexSpawnsInGrid?.();
+    }
+    catch (error) {
+        logWarning('grid rebuild failed while discarding an unremovable NPC', error);
+    }
+
+    logWarning(`discarded unremovable corpse after ${attempts} failed attempts`, 'NPC id unavailable');
+    return world.npc.spawns.length < previousLength;
+}
+
 function sweepExpired(world, now = Date.now()) {
     if (!world?.npc?.spawns) return 0;
 
     let removed = 0;
     [...world.npc.spawns].forEach((npc) => {
+        let failed = false;
         try {
             if (
                 npc?.corpseDecayState !== 'removed' &&
@@ -106,12 +133,22 @@ function sweepExpired(world, now = Date.now()) {
                 Number(npc.corpseDecayAt) <= Number(now)
             ) {
                 if (decay(world, npc)) removed += 1;
+                else failed = true;
             }
         }
         catch (error) {
             // One malformed corpse must not block every later corpse in the
             // same sweep. Keep it scheduled for a future retry.
             logWarning('individual sweep failed', error);
+            failed = true;
+        }
+
+        if (failed) {
+            const attempts = Number(npc?.corpseDecaySweepFailures || 0) + 1;
+            npc.corpseDecaySweepFailures = attempts;
+            if (attempts >= MAX_SWEEP_FAILURES && discardUnremovableNpc(world, npc, attempts)) {
+                removed += 1;
+            }
         }
     });
     return removed;
