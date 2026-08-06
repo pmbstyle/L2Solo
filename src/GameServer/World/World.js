@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const SpeckMath      = invoke('GameServer/SpeckMath');
+const NpcDecay       = invoke('GameServer/World/Generics/NpcDecay');
 
 function actorLoc(actor) {
     return {
@@ -99,12 +100,14 @@ const World = {
     waitForBotSession,
 
     init() {
+        NpcDecay.stop(this);
         this.user  = { sessions : [], revision: 0 };
         this.npc   = { spawns   : [], grid: {}, nextId: 1000000 };
         this.items = { spawns   : [], nextId: 5000000 };
 
         World.spawnNpcs();
         this.indexSpawnsInGrid();
+        NpcDecay.start(this);
         invoke('GameServer/Npc/NpcAggro').startAggroTicker(this);
     },
 
