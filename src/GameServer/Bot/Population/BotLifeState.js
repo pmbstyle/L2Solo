@@ -21,6 +21,14 @@ function now() {
     return Date.now();
 }
 
+function hasStaleRateModelPlan(state) {
+    const plan = state?.stats?.equipmentPlan;
+    return state?.activity === 'hunting'
+        && plan?.expectedKills !== null
+        && plan?.expectedKills !== undefined
+        && Number(plan.rateModelVersion || 0) < GearAcquisitionPlanner.RATE_MODEL_VERSION;
+}
+
 function safeJson(value) {
     return JSON.stringify(value || {});
 }
@@ -1997,7 +2005,7 @@ const BotLifeState = {
             }
 
             const nextResolveAt = Number(state.timing?.nextResolveAt || 0);
-            if (nextResolveAt > timestamp) return;
+            if (nextResolveAt > timestamp && !hasStaleRateModelPlan(state)) return;
 
             summary.due += 1;
             if (Number(state.level || 1) >= 16) summary.highLevel += 1;

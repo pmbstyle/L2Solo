@@ -10,6 +10,8 @@ const originalSliceMs = Config.schedulerSliceMs;
 const originalYield = PopulationService.yieldSchedulerSlice;
 const originalRealPlayerSessions = PopulationService.realPlayerSessions;
 const originalEventLoopLag = Metrics.currentEventLoopLag;
+const originalIdleMaxResolves = Config.schedulerIdleMaxResolvesPerTick;
+const originalLagAbort = Config.schedulerLagAbortMs;
 
 async function run() {
     const values = [];
@@ -31,10 +33,11 @@ async function run() {
 
     PopulationService.realPlayerSessions = () => [];
     Metrics.currentEventLoopLag = () => 0;
+    Config.schedulerIdleMaxResolvesPerTick = 1000;
     const idleProfile = PopulationService.schedulerProfile();
     assert.strictEqual(idleProfile.idle, true, 'no real players must select the idle scheduler profile');
     assert.strictEqual(idleProfile.budgetMs, Config.schedulerIdleBudgetMs, 'idle scheduler must use the larger background budget');
-    assert.strictEqual(idleProfile.maxResolvesPerTick, Config.schedulerIdleMaxResolvesPerTick, 'idle scheduler must use the larger cold batch cap');
+    assert.strictEqual(idleProfile.maxResolvesPerTick, 100, 'idle scheduler must not exceed the cold query cap');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationIdleBudgetMs, 'idle party formation must use its larger budget');
 
     PopulationService.realPlayerSessions = () => [{ actor: { fetchIsOnline: () => true }, accountId: 'player_1' }];
@@ -48,6 +51,11 @@ async function run() {
     Metrics.currentEventLoopLag = () => Config.schedulerLagThrottleMs + 40;
     const throttledProfile = PopulationService.schedulerProfile();
     assert(throttledProfile.budgetMs > 0 && throttledProfile.budgetMs < idleProfile.budgetMs, 'event-loop lag must taper idle work before the hard stop');
+    Config.schedulerLagAbortMs = 0;
+    const throttleOnlyProfile = PopulationService.schedulerProfile();
+    assert(throttleOnlyProfile.budgetMs >= 0 && throttleOnlyProfile.budgetMs < idleProfile.budgetMs,
+        'a throttle threshold must still reduce idle work when no abort threshold is configured');
+    Config.schedulerLagAbortMs = originalLagAbort;
     Metrics.currentEventLoopLag = () => Config.schedulerLagAbortMs;
     assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
 
@@ -66,6 +74,8 @@ run()
     })
     .finally(() => {
         Config.schedulerSliceMs = originalSliceMs;
+        Config.schedulerIdleMaxResolvesPerTick = originalIdleMaxResolves;
+        Config.schedulerLagAbortMs = originalLagAbort;
         PopulationService.yieldSchedulerSlice = originalYield;
         PopulationService.realPlayerSessions = originalRealPlayerSessions;
         Metrics.currentEventLoopLag = originalEventLoopLag;

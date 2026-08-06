@@ -248,7 +248,25 @@ try {
                         assert.strictEqual(deadState.stats.partyRequest, null, 'dead bots must not retain open party requests');
                     });
                 });
-        }).then(() => {
+        }).then(() => BotLifeState.upsertState({
+            characterId: 99,
+            name: 'StaleSummaryProbe',
+            level: 20,
+            phase: 'cold',
+            activity: 'hunting',
+            timing: { nextResolveAt: 999999 },
+            stats: {
+                equipmentPlan: {
+                    expectedKills: 5,
+                    rateModelVersion: GearPlanner.RATE_MODEL_VERSION - 1
+                }
+            },
+            vitals: {},
+            inventory: {}
+        }, 'summary_probe').then(() => {
+            const summary = BotLifeState.coldDueSummary(1000);
+            assert(summary.due >= 1, 'cold due telemetry must include stale hunting plans before their persisted deadline');
+        })).then(() => {
             console.log('Bot population state checks passed');
         });
     }).catch((err) => {

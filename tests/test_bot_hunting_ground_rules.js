@@ -45,6 +45,10 @@ try {
     });
     assert.strictEqual(selected.id, 'mid_level_field',
         'a level-16 bot must replan away from a physical level-1-3 starter field');
+    assert.strictEqual(SpotProfiles.findForState({ level: 80, stats: {} }), null,
+        'a bot without a level-aware candidate must report no spot instead of falling back to a starter field');
+    assert.doesNotThrow(() => SpotService.isSuitable(mid, Infinity),
+        'non-finite target levels must not create an unbounded eligibility scan');
     assert.strictEqual(SpotService.isSuitable(starter, 16), false,
         'starter mobs must not count as a suitable level-16 hunting ground');
     assert.strictEqual(SpotService.isSuitable(mid, 16), true,

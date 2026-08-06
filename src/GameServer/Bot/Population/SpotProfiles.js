@@ -122,7 +122,7 @@ const SpotProfiles = {
             const bGap = Math.abs(b.avgLevel - targetLevel);
             if (aGap !== bGap) return aGap - bGap;
             return b.density - a.density;
-        })[0] || profiles[0] || null;
+        })[0] || null;
     }
 };
 

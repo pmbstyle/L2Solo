@@ -29,11 +29,17 @@ const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy'
 
 const HUNTING_TRAVEL_MS = 25000;
 
+function hasFiniteCoordinate(value) {
+    return value !== null
+        && value !== undefined
+        && String(value).trim() !== ''
+        && Number.isFinite(Number(value));
+}
+
 function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     if (!state || !spot || state.activity === 'traveling') return null;
     const from = { ...(state.loc || {}) };
-    const hasLocation = Number.isFinite(Number(from.locX)) && Number.isFinite(Number(from.locY))
-        && (Object.prototype.hasOwnProperty.call(from, 'locX') || Object.prototype.hasOwnProperty.call(from, 'locY'));
+    const hasLocation = hasFiniteCoordinate(from.locX) && hasFiniteCoordinate(from.locY);
     if (!hasLocation) return null;
     const physical = SpotService.findCurrentSpot(from);
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
@@ -1109,6 +1115,9 @@ const PopulationService = {
         } else if (lagAbort > lagThrottle && lagMs > lagThrottle) {
             const pressure = Math.min(1, (lagMs - lagThrottle) / (lagAbort - lagThrottle));
             budget = Math.round(baseBudget * (1 - pressure));
+        } else if (lagAbort === 0 && lagThrottle > 0 && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / lagThrottle);
+            budget = Math.round(baseBudget * (1 - pressure));
         }
 
         return {
@@ -1118,9 +1127,9 @@ const PopulationService = {
             budgetMs: budget > 0
                 ? Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25))
                 : 0,
-            maxResolvesPerTick: Math.max(1, Number(idle
+            maxResolvesPerTick: Math.min(100, Math.max(1, Number(idle
                 ? Config.schedulerIdleMaxResolvesPerTick
-                : Config.schedulerPlayerMaxResolvesPerTick) || 25)
+                : Config.schedulerPlayerMaxResolvesPerTick) || 25))
         };
     },
 

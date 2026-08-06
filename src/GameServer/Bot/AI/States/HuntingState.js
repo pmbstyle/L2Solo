@@ -23,6 +23,7 @@ const EMERGENCY_RETREAT_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
 const MAX_WALK_SPOT_DISTANCE = 12000;
 const SPOT_ARRIVAL_RADIUS = 1000;
+const MAX_SPOT_RELOCATION_MS = 120000;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -141,6 +142,25 @@ function finishWalkRelocation(session, bot, spot) {
     session.lastSpotRelocation = { spotId: arrivedSpot.id, method: 'walk', at: Date.now() };
 }
 
+function expireSpotRelocation(session, bot, relocation) {
+    session.spotRelocation = undefined;
+    bot?.state?.setCasts?.(false);
+    session.lastSpotRelocation = {
+        spotId: relocation.spotId,
+        method: `${relocation.method || 'walk'}_timeout`,
+        at: Date.now()
+    };
+}
+
+function expireTimedOutSpotRelocation(session, bot) {
+    const relocation = session.spotRelocation;
+    if (!relocation) return false;
+    const startedAt = Number(relocation.startedAt);
+    if (!Number.isFinite(startedAt) || Date.now() - startedAt < MAX_SPOT_RELOCATION_MS) return false;
+    expireSpotRelocation(session, bot, relocation);
+    return true;
+}
+
 function issueWalkRelocation(session, bot, relocation) {
     const from = botLocation(bot);
     relocation.lastCommandAt = Date.now();
@@ -150,6 +170,7 @@ function issueWalkRelocation(session, bot, relocation) {
 function tickSpotRelocation(session, bot) {
     const relocation = session.spotRelocation;
     if (!relocation) return false;
+    if (expireTimedOutSpotRelocation(session, bot)) return false;
     if (relocation.method === 'soe_gatekeeper') return true;
 
     const distance = SpotService.distance2d(botLocation(bot), relocation.destination);
@@ -272,7 +293,6 @@ function targetProgressing(session, bot, target) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
-        if (session.spotRelocation?.arrivalPending) return;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
@@ -338,6 +358,7 @@ module.exports = {
             };
 
             if (pvpDecision.action === 'fight') {
+                if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'pk_combat');
                 // Fight back!
                 if (session.currentTargetId !== spottedPk.fetchId()) {
                     session.currentTargetId = spottedPk.fetchId();
@@ -352,6 +373,7 @@ module.exports = {
                 }
                 return; // Skip rest of AI tick while fighting back PK!
             } else {
+                if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'pk_flee');
                 // Flee in panic!
                 if (session.plan !== 'fleeing') {
                     session.plan = 'fleeing';
@@ -413,9 +435,10 @@ module.exports = {
             return;
         }
 
-        // A hunting-ground relocation owns the movement/combat window. Do not
-        // attack starter mobs while walking or casting SoE to a better field.
-        if (tickSpotRelocation(session, bot)) return;
+        // Expire a stuck walk/SoE transition even when the bot is too weak to
+        // leave its recovery state yet. The movement gate below still yields
+        // to HP/MP recovery for live relocations.
+        expireTimedOutSpotRelocation(session, bot);
 
         // 4. HP/MP resting check
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
@@ -431,6 +454,11 @@ module.exports = {
             BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
             return;
         }
+
+        // A hunting-ground relocation owns the movement/combat window. Do not
+        // attack starter mobs while walking or casting SoE to a better field.
+        // Recovery above intentionally wins so a bot cannot walk while dying.
+        if (tickSpotRelocation(session, bot)) return;
 
         if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());

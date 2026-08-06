@@ -29,11 +29,16 @@ function levelCount(spot, level) {
     return Number(spot?.levelCounts?.[String(level)] || spot?.levelCounts?.[level] || 0);
 }
 
+function finiteNumber(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function huntBand(targetLevel, options = {}) {
-    const level = Math.max(1, Number(targetLevel || 1));
+    const level = Math.max(1, finiteNumber(targetLevel, 1));
     return {
-        min: Math.max(1, level + Number(options.minLevelGap ?? DEFAULT_MIN_HUNT_LEVEL_GAP)),
-        max: Math.max(1, level + Number(options.maxLevelGap ?? DEFAULT_MAX_HUNT_LEVEL_GAP))
+        min: Math.max(1, level + finiteNumber(options.minLevelGap, DEFAULT_MIN_HUNT_LEVEL_GAP)),
+        max: Math.max(1, level + finiteNumber(options.maxLevelGap, DEFAULT_MAX_HUNT_LEVEL_GAP))
     };
 }
 

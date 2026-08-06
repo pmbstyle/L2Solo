@@ -6,6 +6,13 @@ const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
 const TELEPORT_SETTLE_MS = 1200;
 
+function hasFiniteCoordinate(value) {
+    return value !== null
+        && value !== undefined
+        && String(value).trim() !== ''
+        && Number.isFinite(Number(value));
+}
+
 function active(session) {
     return !!session?.spotRelocation;
 }
@@ -25,6 +32,10 @@ function start(session, bot, spot, targetLoc = null) {
 
     const token = Symbol('spot-relocation');
     const destination = { ...(targetLoc || spot.center) };
+    if (!['locX', 'locY', 'locZ'].every((key) => hasFiniteCoordinate(destination[key]))) return false;
+    destination.locX = Number(destination.locX);
+    destination.locY = Number(destination.locY);
+    destination.locZ = Number(destination.locZ);
     session.spotRelocation = {
         token,
         spotId: spot.id,

@@ -90,7 +90,6 @@ async function run() {
         loc: { locX: 10, locY: 20, locZ: 30 },
         stats: { equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: 189 } }
     };
-    planningAtlasRequests = 0;
     GearPlanner.planFor = () => readyToTravel.stats.equipmentPlan;
     ColdCraftingService.beginTravel = (value) => ({
         ...value,
@@ -112,7 +111,7 @@ async function run() {
         assert.strictEqual(value.activity, 'traveling', 'a ready craft route must enter travel before resolving');
         return { patch: { activity: 'traveling', stats: value.stats }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 25000, debug: { activity: 'traveling' } };
     };
-    LifeState.applyResolve = (_value, _result) => Promise.resolve(readyToTravel);
+    LifeState.applyResolve = () => Promise.resolve(readyToTravel);
     const freshTravelResult = await PopulationService.resolveColdState(readyToTravel);
     assert.strictEqual(freshTravelResult.ok, true, 'travel started during a cold resolve must not fail as a missing hunting spot');
     assert.strictEqual(receivedSpot, null, 'newly-started travel must resolve without a combat spot');
