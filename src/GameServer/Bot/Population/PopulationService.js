@@ -1366,7 +1366,7 @@ const PopulationService = {
                     // craft transaction. It must not abort every
                     // remaining cold resolve in this scheduler tick.
                     utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
-                    Metrics.recordSkippedResolve();
+                    Metrics.recordSkippedResolve('cold_resolve_rejected');
                     return { ok: false, reason: 'resolve_rejected', state };
                 }), deadlineAt);
             })
@@ -1488,7 +1488,7 @@ const PopulationService = {
                 }
             }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
             if (!spot) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
             }
 
@@ -1571,7 +1571,7 @@ const PopulationService = {
             });
         }).catch((err) => {
             utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('party_resolve_failed');
             return { ok: false, reason: 'resolve_failed', party };
         }).finally(() => {
             Metrics.recordResolveDuration(Date.now() - startedAt);
@@ -1581,7 +1581,7 @@ const PopulationService = {
     resolveColdState(state) {
         const startedAt = Date.now();
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
@@ -1597,12 +1597,12 @@ const PopulationService = {
                 timestamp: startedAt
             });
             if (joinedBackgroundParty(state)) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('joined_party_during_transition');
                 return Promise.resolve({ ok: false, reason: 'joined_party', state });
             }
             return LifeState.applyResolve(requestLifecycleState, result).then((updatedState) => {
                 if (!updatedState) {
-                    Metrics.recordSkippedResolve();
+                    Metrics.recordSkippedResolve('transition_apply_failed');
                     return { ok: false, reason: 'apply_failed', state };
                 }
                 Metrics.recordBackgroundResolve();
@@ -1742,8 +1742,8 @@ const PopulationService = {
             : null;
         const effectiveState = huntingTravelState || travellingState;
         const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
-        if (!spot && !passiveActivity) {
-            Metrics.recordSkippedResolve();
+        if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
+            Metrics.recordSkippedResolve('missing_spot');
             Metrics.recordResolveDuration(Date.now() - startedAt);
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
@@ -1759,14 +1759,14 @@ const PopulationService = {
         });
 
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve();
+            Metrics.recordSkippedResolve('joined_party_after_planning');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
         return LifeState.applyResolve(effectiveState, result)
             .then((updatedState) => {
             if (!updatedState) {
-                Metrics.recordSkippedResolve();
+                Metrics.recordSkippedResolve('cold_apply_failed');
                 return { ok: false, reason: 'apply_failed', state };
             }
 

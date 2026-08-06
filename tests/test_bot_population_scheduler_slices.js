@@ -50,6 +50,12 @@ async function run() {
     assert(throttledProfile.budgetMs > 0 && throttledProfile.budgetMs < idleProfile.budgetMs, 'event-loop lag must taper idle work before the hard stop');
     Metrics.currentEventLoopLag = () => Config.schedulerLagAbortMs;
     assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
+
+    Metrics.recordSkippedResolve('test_missing_spot');
+    Metrics.recordSkippedResolve('test_missing_spot');
+    Metrics.recordSkippedResolve('test_joined_party');
+    const skipped = Metrics.snapshot().skippedResolveReasons;
+    assert.deepStrictEqual(skipped, { test_missing_spot: 2, test_joined_party: 1 }, 'scheduler telemetry must retain per-reason skipped resolve counts');
     console.log('Bot population scheduler slice checks passed');
 }
 

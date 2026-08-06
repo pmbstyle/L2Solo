@@ -68,7 +68,8 @@ const PopulationMetrics = {
         schedulerDurationsMs: [],
         schedulerSliceDurationsMs: [],
         partyFormationDurationsMs: [],
-        partyFormationStageDurationsMs: new Map()
+        partyFormationStageDurationsMs: new Map(),
+        skippedResolveReasons: new Map()
     },
     timer: null,
 
@@ -125,8 +126,10 @@ const PopulationMetrics = {
         this.counters.heals += Math.max(0, Number(debug.heals) || 0);
     },
 
-    recordSkippedResolve() {
+    recordSkippedResolve(reason = 'unknown') {
         this.counters.skippedResolves += 1;
+        const key = String(reason || 'unknown');
+        this.interval.skippedResolveReasons.set(key, Number(this.interval.skippedResolveReasons.get(key) || 0) + 1);
     },
 
     recordActivation() {
@@ -252,11 +255,13 @@ const PopulationMetrics = {
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
+        const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
         this.interval.partyFormationStageDurationsMs = new Map();
+        this.interval.skippedResolveReasons = new Map();
 
         return {
             uptimeMs: elapsedMs,
@@ -268,6 +273,7 @@ const PopulationMetrics = {
             schedulerSlice: schedulerSliceStats,
             partyFormation: partyFormationStats,
             partyFormationStages,
+            skippedResolveReasons,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }
