@@ -47,7 +47,14 @@ function npcRemovalRecipients(world, sourceSession, npcId) {
 function deleteKnownNpc(world, sourceSession, npcId, response = ServerResponse) {
     const packet = response.deleteOb(npcId);
     const recipients = npcRemovalRecipients(world, sourceSession, npcId);
-    recipients.forEach((session) => session.dataSendToMe(packet));
+    recipients.forEach((session) => {
+        try {
+            session.dataSendToMe(packet);
+        }
+        catch (error) {
+            utils.infoWarn('NpcVisibility', 'failed to send DeleteObject for NPC %d: %s', npcId, error.message);
+        }
+    });
     return recipients.size;
 }
 

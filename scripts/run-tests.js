@@ -160,6 +160,7 @@ const tests = [
     'tests/test_npc_social_aggro.js',
     'tests/test_npc_hot_bot_aggro.js',
     'tests/test_npc_known_object_lifecycle.js',
+    'tests/test_npc_decay.js',
     'tests/test_npc_respawn.js',
     'tests/test_party_companion_rest_follow.js',
     'tests/test_party_buff_targets.js',
