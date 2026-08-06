@@ -11,27 +11,37 @@
     <main class="observer-shell">
         <section class="map-panel" aria-label="World map">
             <header class="topbar">
-                <div>
-                    <h1>World Observer</h1>
-                    <p id="serverLine">Waiting for server snapshot</p>
+                <div class="brand-lockup">
+                    <span class="brand-mark">W</span>
+                    <div>
+                        <h1>World Observer</h1>
+                        <p id="serverLine">Waiting for server snapshot</p>
+                    </div>
                 </div>
                 <div class="topbar-actions">
                     <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
-                        <span>F</span>
+                        <span>⌖</span>
                     </button>
                     <button class="live-toggle is-live" id="liveToggle" title="Pause live refresh" aria-label="Pause live refresh">
                         <span class="pulse"></span>
-                        Live
+                        <span class="live-label">Live</span>
                     </button>
                 </div>
             </header>
 
-            <div class="filter-strip" id="filterStrip" aria-label="Map filters">
-                <button class="filter is-active" data-phase="all">All</button>
-                <button class="filter" data-phase="hot">Hot</button>
-                <button class="filter" data-phase="warm">Warm</button>
-                <button class="filter" data-phase="cold">Cold</button>
-                <button class="filter" data-phase="players">Players</button>
+            <div class="map-toolbar" aria-label="Map controls">
+                <div class="filter-strip" id="filterStrip">
+                    <button class="filter is-active" data-phase="all">All <span class="filter-count" data-count-for="all">0</span></button>
+                    <button class="filter" data-phase="hot">Hot <span class="filter-count" data-count-for="hot">0</span></button>
+                    <button class="filter" data-phase="warm">Warm <span class="filter-count" data-count-for="warm">0</span></button>
+                    <button class="filter" data-phase="cold">Cold <span class="filter-count" data-count-for="cold">0</span></button>
+                    <button class="filter" data-phase="players">Players <span class="filter-count" data-count-for="players">0</span></button>
+                </div>
+                <label class="search-field">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="actorSearch" type="search" placeholder="Find a bot, role, town…" autocomplete="off">
+                    <kbd>/</kbd>
+                </label>
             </div>
 
             <div class="map-stage">
@@ -41,11 +51,6 @@
                             <stop offset="0%" stop-color="#172d31"></stop>
                             <stop offset="100%" stop-color="#081114"></stop>
                         </radialGradient>
-                        <linearGradient id="landGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#796b48"></stop>
-                            <stop offset="45%" stop-color="#3c513e"></stop>
-                            <stop offset="100%" stop-color="#222f31"></stop>
-                        </linearGradient>
                         <filter id="pinGlow" x="-80%" y="-80%" width="260%" height="260%">
                             <feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
                             <feMerge>
@@ -61,64 +66,58 @@
                     <g class="points" id="pointsLayer"></g>
                 </svg>
 
+                <div class="map-hint">Scroll to zoom · drag to pan · click a cluster to drill down</div>
+                <div class="map-legend" aria-label="Map legend">
+                    <span><i class="legend-dot hot"></i>hot</span>
+                    <span><i class="legend-dot warm"></i>warm</span>
+                    <span><i class="legend-dot cold"></i>cold</span>
+                    <span><i class="legend-dot player"></i>player</span>
+                    <span><i class="legend-dot pk"></i>PK</span>
+                </div>
+
                 <div class="selected-card" id="selectedCard">
-                    <span class="eyeline">Selected</span>
+                    <span class="eyeline">Selection</span>
                     <strong>No actor selected</strong>
-                    <p>Click any bot or player point on the map.</p>
+                    <p>Choose a point or cluster to inspect the bot.</p>
                 </div>
             </div>
         </section>
 
-        <aside class="side-panel" aria-label="World statistics">
-            <section class="metric-grid">
-                <div class="metric">
-                    <span>Bots</span>
+        <aside class="side-panel" aria-label="World controls and selected bot">
+            <section class="population-panel">
+                <div class="section-kicker">Server population</div>
+                <div class="population-headline">
                     <strong id="botsTotal">0</strong>
+                    <span>bots in simulation</span>
                 </div>
-                <div class="metric">
-                    <span>Players</span>
-                    <strong id="playersTotal">0</strong>
-                </div>
-                <div class="metric">
-                    <span>Moving</span>
-                    <strong id="movingTotal">0</strong>
-                </div>
-                <div class="metric">
-                    <span>Targets</span>
-                    <strong id="targetsTotal">0</strong>
-                </div>
-            </section>
-
-            <section class="panel-section">
-                <div class="section-title">
-                    <h2>Population</h2>
+                <p class="population-subline" id="populationSubline">Waiting for population data</p>
+                <div class="population-bars" id="phaseBars"></div>
+                <div class="population-foot">
+                    <span><i class="legend-dot player"></i><b id="playersTotal">0</b> players</span>
                     <span id="lastRefresh">--</span>
                 </div>
-                <div class="phase-bars" id="phaseBars"></div>
             </section>
 
-            <section class="panel-section">
+            <section class="panel-section inspector-section">
                 <div class="section-title">
-                    <h2>Mode Mix</h2>
-                    <span id="heapLine">heap -- MB</span>
+                    <h2>Selected bot</h2>
+                    <span id="inspectorFreshness">live</span>
                 </div>
-                <div class="mode-list" id="modeList"></div>
+                <div id="selectedInspector" class="selected-inspector">
+                    <div class="inspector-empty">
+                        <span class="empty-glyph">◎</span>
+                        <strong>Nothing selected</strong>
+                        <p>Click any bot on the map to see its equipment, current action and runtime status.</p>
+                    </div>
+                </div>
             </section>
 
-            <section class="panel-section actor-list-section">
+            <section class="panel-section roster-section">
                 <div class="section-title">
-                    <h2>Active Bots</h2>
-                    <span id="visibleCount">0 visible</span>
+                    <h2>Roster</h2>
+                    <span id="visibleCount">0 shown</span>
                 </div>
                 <div class="actor-list" id="actorList"></div>
-            </section>
-
-            <section class="panel-section events-section">
-                <div class="section-title">
-                    <h2>Events</h2>
-                    <span>recent</span>
-                </div>
-                <div class="event-list" id="eventList"></div>
             </section>
         </aside>
     </main>
