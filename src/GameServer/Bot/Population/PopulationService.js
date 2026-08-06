@@ -924,10 +924,14 @@ const PopulationService = {
                 })
                 : Promise.resolve(0);
             return timedStage('cleanup', () => cleanup)
-            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(false)))
-            .then((partyWaitCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
-                .then((states) => ({ states, partyWaitBacklog: partyWaitCount > 0 }))
-                .then(({ states, partyWaitBacklog }) => {
+            // Extra capacity and eviction are reserved for actionable required
+            // requests. The candidate query still includes preferred and
+            // elective bots, but orders open requests ahead of the bounded
+            // general pool so crowded solo grounds cannot starve them.
+            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(true)))
+            .then((requiredPartyRequestCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+                .then((states) => ({ states, requiredPartyRequestCount }))
+                .then(({ states, requiredPartyRequestCount }) => {
                     const activeParties = BackgroundPartyState.active();
                     const recruitSpots = activeParties
                         .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
@@ -940,16 +944,21 @@ const PopulationService = {
                     return fairCandidates.then((spotCandidates) => {
                         const byId = new Map((states || []).map((state) => [Number(state.characterId), state]));
                         spotCandidates.forEach((state) => byId.set(Number(state.characterId), state));
+                        const mergedStates = Array.from(byId.values());
                         return {
-                            states: Array.from(byId.values()),
-                            partyWaitBacklog,
-                            partyWaitCount
+                            states: mergedStates,
+                            partyRequestBacklog: mergedStates.some((state) => state.stats?.partyRequest?.status === 'open'),
+                            requiredPartyRequestCount
                         };
                     });
                 })))
-            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
+            .then(({ states, partyRequestBacklog, requiredPartyRequestCount }) => {
                 const willingStates = states.filter((state) => PersonaPartyPolicy.backgroundIntent(state).accept);
-                return this.reclaimBackgroundPartyCapacity(partyWaitBacklog ? willingStates : [], partyWaitCount, {
+                const requiredStates = willingStates.filter((state) => (
+                    state.stats?.partyRequest?.status === 'open'
+                    && state.stats?.partyRequest?.priority === 'required'
+                ));
+                return this.reclaimBackgroundPartyCapacity(requiredStates, requiredPartyRequestCount, {
                     deadlineAt,
                     markBudgetStop: () => budgetReached()
                 })
@@ -958,13 +967,13 @@ const PopulationService = {
                         markBudgetStop: () => budgetReached()
                     })).then((recruitedIds) => ({
                     states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
-                    partyWaitBacklog,
-                    partyWaitCount
+                    partyRequestBacklog,
+                    requiredPartyRequestCount
                 }));
             })
-            .then(({ states, partyWaitBacklog, partyWaitCount }) => {
+            .then(({ states, partyRequestBacklog, requiredPartyRequestCount }) => {
                 const activeParties = BackgroundPartyState.counts().active || 0;
-                const slots = Math.max(0, maxBackgroundPartiesForBacklog(partyWaitCount) - activeParties);
+                const slots = Math.max(0, maxBackgroundPartiesForBacklog(requiredPartyRequestCount) - activeParties);
                 if (slots <= 0) return [];
                 const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
                 const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
@@ -972,7 +981,7 @@ const PopulationService = {
                     if (spotId) counts.set(spotId, Number(counts.get(spotId) || 0) + 1);
                     return counts;
                 }, new Map());
-                const groups = this.groupPartyCandidatesByObjective(states, { prioritizePartyWait: partyWaitBacklog, activePartiesBySpot });
+                const groups = this.groupPartyCandidatesByObjective(states, { prioritizePartyWait: partyRequestBacklog, activePartiesBySpot });
                 const created = [];
 
                 return groups.reduce((chain, group) => chain.then(() => {

@@ -167,13 +167,20 @@ try {
                 }, 'bgp_probe', 'dps', 42).then((restingAssigned) => {
                     assert.strictEqual(restingAssigned.activity, 'resting', 'assigning a resting requester must not wake it into combat');
                     assert(restingAssigned.stats.restUntil > Date.now(), 'assigning a resting requester must preserve its recovery deadline');
-                    return BotLifeState.coldPartyCandidates(5);
+                    const candidateQueryStart = statements.length;
+                    return BotLifeState.coldPartyCandidates(5).then(() => {
+                        const candidates = statements.slice(candidateQueryStart)
+                            .find((entry) => entry.sql.includes('party_spots.candidateCount'));
+                        assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
+                        const requiredRank = candidates.sql.indexOf("$.partyRequest.priority') = 'required' THEN 0");
+                        const preferredRank = candidates.sql.indexOf("$.partyRequest.status') = 'open' THEN 1");
+                        const generalRank = candidates.sql.indexOf('ELSE 2');
+                        const populationRank = candidates.sql.indexOf('party_spots.candidateCount DESC');
+                        assert(requiredRank >= 0 && requiredRank < preferredRank, 'required requests must rank ahead of preferred requests');
+                        assert(preferredRank < generalRank && generalRank < populationRank, 'all open requests must rank ahead of crowded general candidate grounds');
+                    });
                 });
-            }).then(() => {
-                const candidates = statements.find((entry) => entry.sql.includes("activity IN ('hunting', 'resting', 'party_wait')"));
-                assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
-                return BotLifeState.coldPartyCandidates(5, true);
-            }).then(() => {
+            }).then(() => BotLifeState.coldPartyCandidates(5, true)).then(() => {
                 const requiredCandidates = statements.find((entry) => entry.sql.includes("$.partyRequest.priority") && entry.sql.includes("'required'"));
                 assert(requiredCandidates, 'required party requests must reserve formation capacity ahead of elective hunting parties');
                 return BotLifeState.coldPartyCandidateCount(true).then(() => {

@@ -13,8 +13,12 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const originals = {
     active: PartyState.active,
+    counts: PartyState.counts,
     statesForParty: LifeState.statesForParty,
     statesForParties: LifeState.statesForParties,
+    coldPartyCandidateCount: LifeState.coldPartyCandidateCount,
+    coldPartyCandidates: LifeState.coldPartyCandidates,
+    coldPartyCandidatesForSpots: LifeState.coldPartyCandidatesForSpots,
     assignParty: LifeState.assignParty,
     partyRequirementCounts: LifeState.partyRequirementCounts,
     clearParty: LifeState.clearParty,
@@ -29,10 +33,39 @@ const originals = {
     maxBackgroundParties: Config.maxBackgroundParties,
     partyFormationBatchSize: Config.partyFormationBatchSize
 };
+const originalFormationState = {
+    resolving: PopulationService.resolving,
+    partyFormationRunning: PopulationService.partyFormationRunning,
+    partyFormationPending: PopulationService.partyFormationPending,
+    nextPartyRequestCleanupAt: PopulationService.nextPartyRequestCleanupAt
+};
 
 async function run() {
     Config.partyMinSize = 2;
     Config.partyMaxSize = 5;
+    let requiredOnly = null;
+    PartyState.active = () => [];
+    PartyState.counts = () => ({ active: 0 });
+    LifeState.coldPartyCandidateCount = (value) => {
+        requiredOnly = value;
+        return Promise.resolve(0);
+    };
+    LifeState.coldPartyCandidates = () => Promise.resolve([]);
+    LifeState.coldPartyCandidatesForSpots = () => Promise.resolve([]);
+    LifeState.statesForParties = () => Promise.resolve(new Map());
+    PopulationService.resolving = false;
+    PopulationService.partyFormationRunning = false;
+    PopulationService.nextPartyRequestCleanupAt = Infinity;
+    await PopulationService.formBackgroundParties();
+    assert.strictEqual(requiredOnly, true, 'extra party capacity must be driven by required requests, not every eligible solo bot');
+
+    PartyState.active = originals.active;
+    PartyState.counts = originals.counts;
+    LifeState.coldPartyCandidateCount = originals.coldPartyCandidateCount;
+    LifeState.coldPartyCandidates = originals.coldPartyCandidates;
+    LifeState.coldPartyCandidatesForSpots = originals.coldPartyCandidatesForSpots;
+    LifeState.statesForParties = originals.statesForParties;
+
     const party = { partyId: 'bgp_1', leaderId: 1, memberIds: [1, 2], spotId: 'cruma', stats: {} };
     const members = [
         { characterId: 1, name: 'Tank', level: 15, party: { role: 'tank' } },
@@ -235,8 +268,12 @@ run().catch((err) => {
     process.exitCode = 1;
 }).finally(() => {
     PartyState.active = originals.active;
+    PartyState.counts = originals.counts;
     LifeState.statesForParty = originals.statesForParty;
     LifeState.statesForParties = originals.statesForParties;
+    LifeState.coldPartyCandidateCount = originals.coldPartyCandidateCount;
+    LifeState.coldPartyCandidates = originals.coldPartyCandidates;
+    LifeState.coldPartyCandidatesForSpots = originals.coldPartyCandidatesForSpots;
     LifeState.assignParty = originals.assignParty;
     LifeState.partyRequirementCounts = originals.partyRequirementCounts;
     LifeState.clearParty = originals.clearParty;
@@ -250,4 +287,5 @@ run().catch((err) => {
     Config.partyMaxSize = originals.partyMaxSize;
     Config.maxBackgroundParties = originals.maxBackgroundParties;
     Config.partyFormationBatchSize = originals.partyFormationBatchSize;
+    Object.assign(PopulationService, originalFormationState);
 });

@@ -1296,7 +1296,15 @@ const BotLifeState = {
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
             AND ${stateActivityClause}
-            ORDER BY party_spots.candidateCount DESC, party_spots.oldestAt ASC, states.level ASC, states.updatedAt ASC
+            ORDER BY
+                CASE
+                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open'
+                        AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required' THEN 0
+                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open' THEN 1
+                    ELSE 2
+                END ASC,
+                party_spots.candidateCount DESC, party_spots.oldestAt ASC,
+                states.level ASC, states.updatedAt ASC
             LIMIT ${safeLimit}`,
             []
         ]).then((rows) => rows.map((row) => {
