@@ -69,6 +69,14 @@ const RESPAWN_ZONES = [
     { group: 'aden_town', points: [[130704, -21362], [130886, -209], [112747, -173], [108637, -3399], [115372, -13695]] }
 ];
 
+// Some C4 map cells contain both an overworld region and a dungeon far below
+// it. mapRegions.xml only has X/Y cells, so those interiors need a Z-aware
+// override before the ordinary regional lookup. Keep these exceptions here so
+// deaths and Scrolls of Escape resolve through the same source.
+const DUNGEON_REGION_OVERRIDES = [
+    { cell: '21_25', belowZ: -3790, group: 'ti_village' } // Elven Ruins
+];
+
 const CELL_TO_GROUP = Object.fromEntries(
     Object.entries(REGION_GROUPS).flatMap(([group, cells]) => cells.map((cell) => [cell, group]))
 );
@@ -86,17 +94,24 @@ function isInsidePolygon(locX, locY, points) {
     return inside;
 }
 
-function getRegionGroup(locX, locY) {
+function getRegionGroup(locX, locY, locZ) {
+    const mapX = (locX >> 15) + 20;
+    const mapY = (locY >> 15) + 18;
+    const cell = `${mapX}_${mapY}`;
+    const numericZ = Number(locZ);
+    const dungeon = DUNGEON_REGION_OVERRIDES.find((candidate) => (
+        candidate.cell === cell && Number.isFinite(numericZ) && numericZ < candidate.belowZ
+    ));
+    if (dungeon) return dungeon.group;
+
     const zone = RESPAWN_ZONES.find((candidate) => isInsidePolygon(locX, locY, candidate.points));
     if (zone) return zone.group;
 
-    const mapX = (locX >> 15) + 20;
-    const mapY = (locY >> 15) + 18;
-    return CELL_TO_GROUP[`${mapX}_${mapY}`];
+    return CELL_TO_GROUP[cell];
 }
 
-function getClosestTown(locX, locY) {
-    const regionalTown = TOWNS[getRegionGroup(locX, locY)];
+function getClosestTown(locX, locY, locZ) {
+    const regionalTown = TOWNS[getRegionGroup(locX, locY, locZ)];
     if (regionalTown) return regionalTown;
 
     return Object.values(TOWNS).reduce((closest, town) => {
@@ -106,8 +121,8 @@ function getClosestTown(locX, locY) {
     });
 }
 
-function getRespawnCoords(locX, locY) {
-    const town = getClosestTown(locX, locY);
+function getRespawnCoords(locX, locY, locZ) {
+    const town = getClosestTown(locX, locY, locZ);
     return {
         locX: town.locX + GATEKEEPER_RESPAWN_OFFSET.locX,
         locY: town.locY + GATEKEEPER_RESPAWN_OFFSET.locY,
@@ -115,10 +130,15 @@ function getRespawnCoords(locX, locY) {
     };
 }
 
-function getChaoticRespawnCoords(locX, locY, random = Math.random) {
-    const group = getRegionGroup(locX, locY);
+function getChaoticRespawnCoords(locX, locY, locZ, random = Math.random) {
+    // Preserve the old public call shape getChaoticRespawnCoords(x, y, rng).
+    if (typeof locZ === 'function') {
+        random = locZ;
+        locZ = undefined;
+    }
+    const group = getRegionGroup(locX, locY, locZ);
     const points = CHAOTIC_RESPAWNS[group];
-    if (!points?.length) return getRespawnCoords(locX, locY);
+    if (!points?.length) return getRespawnCoords(locX, locY, locZ);
     const [respawnX, respawnY, respawnZ] = points[Math.min(points.length - 1, Math.floor(random() * points.length))];
     return { locX: respawnX, locY: respawnY, locZ: respawnZ };
 }

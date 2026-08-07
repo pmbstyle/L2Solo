@@ -606,7 +606,10 @@ class Backpack extends BackpackModel {
             }
 
             if (itemSkill.teleport === 'town' || itemSkill.teleport === 'skillCoords') {
-                const coords = skill.fetchTeleportCoords?.() || { locX: -84318, locY: 244579, locZ: -3730 }; // Talking Island Town
+                const coords = this.resolveItemTeleportCoords(session.actor, itemSkill, skill);
+                if (!coords) {
+                    return;
+                }
                 this.deleteItem(session, id, 1, () => {
                     const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
                     TeleportTo(session, session.actor, coords);
@@ -631,6 +634,20 @@ class Backpack extends BackpackModel {
         }
 
         return true;
+    }
+
+    resolveItemTeleportCoords(actor, itemSkill, skill) {
+        if (itemSkill.teleport === 'town') {
+            return invoke('GameServer/World/TownRespawn').getRespawnCoords(
+                actor.fetchLocX(),
+                actor.fetchLocY(),
+                actor.fetchLocZ()
+            );
+        }
+        if (itemSkill.teleport === 'skillCoords') {
+            return skill.fetchTeleportCoords?.() || null;
+        }
+        return null;
     }
 
     usePetFoodItem(session, id, itemSkill, skill) {

@@ -13,7 +13,7 @@ module.exports = {
 
         session.lastMerchantAdAt = now;
 
-        const town = store.town || BotAI.getClosestTownName(bot.fetchLocX(), bot.fetchLocY());
+        const town = store.town || BotAI.getClosestTownName(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
         const names = TradeService.describeStoreItems(store.items, 3);
         const phrases = store.storeType === 3 ? [
             `WTB ${names}. Buying near ${town}.`,

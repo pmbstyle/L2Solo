@@ -461,7 +461,7 @@ module.exports = {
         if (tickSpotRelocation(session, bot)) return;
 
         if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
-            const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
+            const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
             const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
             if (trip !== 'deferred') return;
         }

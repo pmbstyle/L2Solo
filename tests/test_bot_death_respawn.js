@@ -30,6 +30,13 @@ assert.deepStrictEqual(
     'solo hunting death should restart at the nearest town instead of the active hunting spot'
 );
 
+const elvenRuinsSpot = { locX: 49315, locY: 248452, locZ: -5960 };
+assert.deepStrictEqual(
+    BotAI.getDeathRespawnTarget({ plan: 'hunting', initialSpawnCoord: elvenRuinsSpot }, botAt(elvenRuinsSpot), false),
+    { locX: -84058, locY: 244604, locZ: -3728 },
+    'a bot death inside Elven Ruins should restart on Talking Island instead of Giran'
+);
+
 const pkRestart = BotAI.getDeathRespawnTarget({ plan: 'pk_hunting' }, botAt({ locX: 76000, locY: 144000, locZ: -3400, karma: 720 }), false);
 assert.ok(
     invoke('GameServer/World/TownRespawn').CHAOTIC_RESPAWNS.giran_town.some(([x, y, z]) => x === pkRestart.locX && y === pkRestart.locY && z === pkRestart.locZ),

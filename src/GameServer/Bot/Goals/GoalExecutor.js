@@ -27,7 +27,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         : marketTown(goal.plan?.marketTown || 'Giran');
     if (!town) return null;
     const from = { ...state.loc };
-    const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY);
+    const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
     const to = { ...town.center };
     return {
         ...state,
@@ -67,7 +67,7 @@ function finishMarketVisit(state, timestamp = Date.now()) {
 
     const from = { ...state.loc };
     const to = { ...destination.loc };
-    const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY);
+    const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY, to.locZ);
     return {
         ...state,
         activity: 'traveling',

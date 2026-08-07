@@ -58,7 +58,7 @@ function newbieSpawnCoords(classId) {
 }
 
 function townRespawnCoords(bot) {
-    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
+    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 }
 
 function isRealPlayerSession(session) {
@@ -219,8 +219,8 @@ const BotAI = {
         }
     },
 
-    getClosestTown(locX, locY) {
-        const town = TownRespawn.getClosestTown(locX, locY);
+    getClosestTown(locX, locY, locZ) {
+        const town = TownRespawn.getClosestTown(locX, locY, locZ);
         return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
     },
 
@@ -229,7 +229,7 @@ const BotAI = {
             return { ...session.pkProfile.anchor };
         }
         if (bot.fetchKarma?.() > 0) {
-            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
+            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
         }
 
         if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
@@ -256,8 +256,8 @@ const BotAI = {
         return townRespawnCoords(bot);
     },
 
-    getClosestTownName(locX, locY) {
-        return this.getClosestTown(locX, locY).name;
+    getClosestTownName(locX, locY, locZ) {
+        return this.getClosestTown(locX, locY, locZ).name;
     },
 
     getClosestNewbieGuide(locX, locY) {
@@ -285,10 +285,12 @@ const BotAI = {
     triggerFarAwayChatEvent(session, bot) {
         try {
             const BotManager = invoke('GameServer/Bot/BotManager');
-            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY());
+            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 
             const pkSession = BotManager.sessions.find(s => s.actor && s.actor.fetchKarma() > 0);
-            const pkLoc = pkSession?.actor ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY()) : "Dion";
+            const pkLoc = pkSession?.actor
+                ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY(), pkSession.actor.fetchLocZ())
+                : "Dion";
             const pkName = pkSession?.actor ? pkSession.actor.fetchName() : "a red name";
 
             const pkPhrases = [
