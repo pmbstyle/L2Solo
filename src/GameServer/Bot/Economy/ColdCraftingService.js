@@ -60,7 +60,7 @@ function beginTravel(state, timestamp = Date.now()) {
     const recipe = readyRecipeFor(state, finalRecipe);
     const station = stationForRecipe(recipe?.recipeId);
     if (!recipe || !station) return null;
-    const nearestTown = TownRespawn.getClosestTown(state.loc?.locX, state.loc?.locY);
+    const nearestTown = TownRespawn.getClosestTown(state.loc?.locX, state.loc?.locY, state.loc?.locZ);
     return {
         ...state,
         activity: 'traveling',
@@ -239,7 +239,7 @@ async function craft(state, random = Math.random) {
     const craftReturn = state.stats?.craftReturn;
     const timestamp = Date.now();
     const returnTown = craftReturn?.loc
-        ? TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY)
+        ? TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY, craftReturn.loc.locZ)
         : null;
     const refreshed = await refreshPhysicalInventory({
         ...state,

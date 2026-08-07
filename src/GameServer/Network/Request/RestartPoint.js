@@ -20,8 +20,8 @@ function consume(session, data) {
 
     const TownRespawn = invoke('GameServer/World/TownRespawn');
     const townRespawn = actor.fetchKarma?.() > 0
-        ? TownRespawn.getChaoticRespawnCoords(actor.fetchLocX(), actor.fetchLocY())
-        : TownRespawn.getRespawnCoords(actor.fetchLocX(), actor.fetchLocY());
+        ? TownRespawn.getChaoticRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
+        : TownRespawn.getRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
     const Generics = invoke(path.actor);
 
     // Town restart is a complete respawn, unlike a gradual resurrection skill.

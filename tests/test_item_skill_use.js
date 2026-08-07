@@ -568,6 +568,15 @@ assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');
 assert.strictEqual(blessedEscape.fetchSelfId(), 2036, 'L2Day Blessed Escape should use sourced skill 2036');
 assert.strictEqual(blessedEscape.fetchLevel(), 2, 'L2Day Blessed Escape should preserve sourced item_skill level 2');
 assert.strictEqual(blessedEscape.fetchHitTime(), 200, 'L2Day Blessed Escape should preserve sourced skill hitTime');
+assert.deepStrictEqual(
+    blessedEscapeBackpack.resolveItemTeleportCoords(
+        sessionFor(blessedEscapeBackpack, { locX: 49315, locY: 248452, locZ: -5960 }).actor,
+        C4ItemSkills.resolve(3958),
+        blessedEscape
+    ),
+    { locX: -84058, locY: 244604, locZ: -3728 },
+    'a generic Scroll of Escape used inside Elven Ruins should teleport to Talking Island'
+);
 
 const l2DayResurrection = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3959));
 assert(l2DayResurrection, 'L2Day Blessed Scroll of Resurrection should resolve to an item skill');

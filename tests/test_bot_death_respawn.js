@@ -13,6 +13,7 @@ function botAt(loc) {
         fetchLocY: () => loc.locY,
         fetchLocZ: () => loc.locZ,
         fetchKarma: () => loc.karma || 0,
+        fetchClassId: () => loc.classId || 0,
         fetchPrivateStore: () => false
     };
 }
@@ -28,6 +29,13 @@ assert.deepStrictEqual(
     BotAI.getDeathRespawnTarget(huntingSession, botAt(huntingSpot), false),
     { locX: 46976, locY: 51511, locZ: -2976 },
     'solo hunting death should restart at the nearest town instead of the active hunting spot'
+);
+
+const elvenRuinsSpot = { locX: 49315, locY: 248452, locZ: -5960 };
+assert.deepStrictEqual(
+    BotAI.getDeathRespawnTarget({ plan: 'hunting', initialSpawnCoord: elvenRuinsSpot }, botAt(elvenRuinsSpot), false),
+    { locX: -84058, locY: 244604, locZ: -3728 },
+    'a bot death inside Elven Ruins should restart on Talking Island instead of Giran'
 );
 
 const pkRestart = BotAI.getDeathRespawnTarget({ plan: 'pk_hunting' }, botAt({ locX: 76000, locY: 144000, locZ: -3400, karma: 720 }), false);
@@ -95,6 +103,32 @@ assert.strictEqual(respawningBot.state.dead, false, 'bot must be alive before it
 assert.strictEqual(respawningBot.hp, 100, 'bot town respawn should restore HP before teleport validation');
 assert.strictEqual(respawnPackets.length, 2, 'bot town respawn should send revive and stand-up packets synchronously');
 
+const recoveryLeader = {
+    actor: {
+        fetchId: () => 201,
+        fetchIsOnline: () => true,
+        fetchLocX: () => 10000,
+        fetchLocY: () => 10000,
+        fetchLocZ: () => -3000
+    }
+};
+const recoveringCompanion = {
+    actor: botAt(huntingSpot),
+    partyCompanion: true,
+    followPlayerSession: recoveryLeader,
+    plan: 'following',
+    botStay: true,
+    stayLocation: { locX: 44000, locY: 44000, locZ: -3000 }
+};
+const recoveryTarget = BotAI.beginPartyTownRecovery(recoveringCompanion, recoveringCompanion.actor, 5_000);
+assert.deepStrictEqual(recoveryTarget, { locX: 46976, locY: 51511, locZ: -2976 }, 'timed-out companion should first restart in the nearest town');
+assert.strictEqual(recoveringCompanion.partyCompanion, true, 'town recovery must preserve native party membership');
+assert.strictEqual(recoveringCompanion.followPlayerSession, recoveryLeader, 'town recovery must preserve the party leader');
+assert.strictEqual(recoveringCompanion.plan, 'getting_buffed', 'town recovery should enter the conditional rebuff flow');
+assert.strictEqual(recoveringCompanion.resumeAfterBuff.returnMode, 'teleport', 'town recovery should use const-party teleport semantics when returning');
+assert.strictEqual(recoveringCompanion.resumeAfterBuff.readyAt, 6_500, 'return should wait for the town teleport to settle');
+assert.strictEqual(recoveringCompanion.botStay, false, 'death recovery should return to the live party instead of the old corpse hold point');
+
 const partyPackets = [];
 const partyLeader = {
     actor: {
@@ -111,7 +145,7 @@ const partyLeader = {
     },
     dataSendToMe(packet) { partyPackets.push(packet); }
 };
-const timedOutCompanion = {
+const dismissedCompanion = {
     actor: {
         fetchId: () => 202,
         fetchName: () => 'Timed out companion',
@@ -125,18 +159,18 @@ const timedOutCompanion = {
     plan: 'following'
 };
 const originalSessions = BotManager.sessions;
-BotManager.sessions = [timedOutCompanion];
+BotManager.sessions = [dismissedCompanion];
 try {
     assert.strictEqual(
-        PartyCompanionService.clearCompanion(timedOutCompanion, { plan: 'hunting', refreshPanel: false }),
+        PartyCompanionService.clearCompanion(dismissedCompanion, { plan: 'hunting', refreshPanel: false }),
         true,
-        'a timed-out companion should detach from its leader'
+        'an explicit companion dismissal should detach it from its leader'
     );
 } finally {
     BotManager.sessions = originalSessions;
 }
-assert.strictEqual(timedOutCompanion.partyCompanion, false, 'timed-out companion should clear party membership');
-assert.strictEqual(timedOutCompanion.followPlayerSession, null, 'timed-out companion should clear its leader reference');
-assert.strictEqual(partyPackets.some((packet) => packet[0] === 0x50), true, 'companion timeout must clear the player party window immediately');
+assert.strictEqual(dismissedCompanion.partyCompanion, false, 'dismissed companion should clear party membership');
+assert.strictEqual(dismissedCompanion.followPlayerSession, null, 'dismissed companion should clear its leader reference');
+assert.strictEqual(partyPackets.some((packet) => packet[0] === 0x50), true, 'explicit dismissal must clear the player party window immediately');
 
 console.log('Bot death respawn checks passed');

@@ -16,6 +16,7 @@ const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -582,28 +583,12 @@ function retreatFromThreat(session, bot, threat, player, rooted) {
     bot.automation?.abortAll?.(bot);
     if (rooted) return false;
 
-    let dx = bot.fetchLocX() - threat.fetchLocX();
-    let dy = bot.fetchLocY() - threat.fetchLocY();
-    let magnitude = Math.sqrt((dx * dx) + (dy * dy));
-    if (magnitude < 1) {
-        dx = player.fetchLocX() - threat.fetchLocX();
-        dy = player.fetchLocY() - threat.fetchLocY();
-        magnitude = Math.sqrt((dx * dx) + (dy * dy));
-    }
-    if (magnitude < 1) {
-        dx = 1;
-        dy = 0;
-        magnitude = 1;
-    }
-
-    const retreatTarget = {
-        locX: Math.round(bot.fetchLocX() + ((dx / magnitude) * PARTY_RETREAT_DISTANCE)),
-        locY: Math.round(bot.fetchLocY() + ((dy / magnitude) * PARTY_RETREAT_DISTANCE)),
-        locZ: bot.fetchLocZ()
-    };
+    const retreat = BotRetreatPlanner.retreat(session, bot, threat, {
+        distance: PARTY_RETREAT_DISTANCE,
+        preferredPoint: player
+    });
     session.partyRetreatUntil = Date.now() + PARTY_RETREAT_REPATH_MS;
-    session.lastFollowMoveTarget = retreatTarget;
-    bot.moveTo({ from: loc(bot), to: retreatTarget });
+    session.lastFollowMoveTarget = retreat.to;
     return true;
 }
 

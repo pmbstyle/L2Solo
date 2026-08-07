@@ -58,7 +58,7 @@ function newbieSpawnCoords(classId) {
 }
 
 function townRespawnCoords(bot) {
-    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
+    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 }
 
 function isRealPlayerSession(session) {
@@ -219,8 +219,8 @@ const BotAI = {
         }
     },
 
-    getClosestTown(locX, locY) {
-        const town = TownRespawn.getClosestTown(locX, locY);
+    getClosestTown(locX, locY, locZ) {
+        const town = TownRespawn.getClosestTown(locX, locY, locZ);
         return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
     },
 
@@ -229,7 +229,7 @@ const BotAI = {
             return { ...session.pkProfile.anchor };
         }
         if (bot.fetchKarma?.() > 0) {
-            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY());
+            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
         }
 
         if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
@@ -256,8 +256,45 @@ const BotAI = {
         return townRespawnCoords(bot);
     },
 
-    getClosestTownName(locX, locY) {
-        return this.getClosestTown(locX, locY).name;
+    beginPartyTownRecovery(session, bot, now = Date.now()) {
+        const leaderSession = session.followPlayerSession;
+        const role = BotRoles.inferRole(bot);
+        const spawnTarget = this.getDeathRespawnTarget(session, bot, false);
+
+        // Keep native party membership and the C4 party window intact. The
+        // bot first restarts in town, refreshes Newbie Guide buffs when it is
+        // eligible, then uses the same bounded catch-up teleport as a remotely
+        // summoned const-party companion.
+        session.preBuffLocation = { ...spawnTarget };
+        session.preBuffPlan = 'following';
+        session.resumeAfterBuff = {
+            plan: 'following',
+            followPlayerSession: leaderSession,
+            partyCompanion: true,
+            botStay: false,
+            stayLocation: null,
+            role,
+            readyAt: now + 1500,
+            conditionalNewbieBuff: true,
+            waitForSafePartyReturn: true,
+            returnMode: 'teleport',
+            reason: 'party_town_respawn'
+        };
+        session.plan = 'getting_buffed';
+        session.botStay = false;
+        session.stayLocation = null;
+        session.currentTargetId = undefined;
+        session.roleDecision = {
+            role,
+            action: 'return_to_party',
+            reason: 'town_respawn',
+            at: now
+        };
+        return spawnTarget;
+    },
+
+    getClosestTownName(locX, locY, locZ) {
+        return this.getClosestTown(locX, locY, locZ).name;
     },
 
     getClosestNewbieGuide(locX, locY) {
@@ -285,10 +322,12 @@ const BotAI = {
     triggerFarAwayChatEvent(session, bot) {
         try {
             const BotManager = invoke('GameServer/Bot/BotManager');
-            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY());
+            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 
             const pkSession = BotManager.sessions.find(s => s.actor && s.actor.fetchKarma() > 0);
-            const pkLoc = pkSession?.actor ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY()) : "Dion";
+            const pkLoc = pkSession?.actor
+                ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY(), pkSession.actor.fetchLocZ())
+                : "Dion";
             const pkName = pkSession?.actor ? pkSession.actor.fetchName() : "a red name";
 
             const pkPhrases = [
@@ -405,18 +444,14 @@ const BotAI = {
                     invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
                         priority: 'critical',
                         key: `party-death:${bot.fetchId()}`,
-                        templates: deathReaction.leaving
+                        templates: deathReaction.warning
                             ? [
-                                `Down again. That's enough — I'm returning to town and leaving the party.`
+                                `Down again. I'll wait for a safe resurrection, or restart and return if needed.`
                             ]
-                            : deathReaction.warning
-                                ? [
-                                    `Down again. I'm getting tired of dying — one more death soon and I'm leaving.`
-                                ]
-                                : [
-                                    `${bot.fetchName()} is down — waiting for resurrection.`,
-                                    `Down at the camp. Waiting for a resurrection.`
-                                ]
+                            : [
+                                `${bot.fetchName()} is down — waiting for resurrection.`,
+                                `Down at the camp. Waiting for a resurrection.`
+                            ]
                     });
                 } else {
                     this.say(session, 'Oops... I died! Resurrecting shortly.');
@@ -445,60 +480,36 @@ const BotAI = {
                 session.incomingThreatAt = undefined;
                 
                 let spawnTarget;
-                if (bot.fetchKarma() > 0) {
+                if (wasCompanion) {
+                    invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
+                        priority: 'critical',
+                        key: `party-respawn-timeout:${bot.fetchId()}:${deathStartedAt}`,
+                        templates: [
+                            `No resurrection came. Restarting in town, rebuffing if needed, then teleporting back.`
+                        ]
+                    });
+                    // Keep the party relationship authoritative through the
+                    // town restart. Population policy must also keep this
+                    // visible recovery hot until the bot is back.
+                    session.populationHotAt = Date.now();
+                    session.noTargetTicks = 0;
+                    spawnTarget = this.beginPartyTownRecovery(session, bot);
+                } else if (bot.fetchKarma() > 0) {
                     session.plan = 'pk_hunting';
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
+                } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
+                    session.plan = 'merchant';
+                    bot.state.setSeated(true);
+                    spawnTarget = {
+                        locX: session.initialSpawnCoord.locX,
+                        locY: session.initialSpawnCoord.locY,
+                        locZ: session.initialSpawnCoord.locZ
+                    };
                 } else {
-                    if (wasCompanion) {
-                        if (session.partyLeaveAfterDeath !== true) {
-                            invoke('GameServer/Bot/AI/BotPartyChat').announce(session, {
-                                priority: 'critical',
-                                key: `party-respawn-timeout:${bot.fetchId()}:${deathStartedAt}`,
-                                templates: [
-                                    `No resurrection came. I'm returning to town and leaving the party.`
-                                ]
-                            });
-                        }
-                        PartyCompanionService.clearCompanion(session, {
-                            plan: 'hunting',
-                            refreshPanel: false
-                        });
-                        session.partyLeaveAfterDeath = false;
-                        // A corpse that timed out of party resurrection has
-                        // just been sent to town. Keep the now-solo bot hot
-                        // long enough to complete that visible transition;
-                        // otherwise population policy can remove it in the
-                        // same scheduler pass before the client sees town.
-                        session.populationHotAt = Date.now();
-                        session.plan = 'hunting';
-                        session.currentSpot = null;
-                        session.noTargetTicks = 0;
-                        spawnTarget = this.getDeathRespawnTarget(session, bot, false);
-                    } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
-                        session.plan = 'merchant';
-                        bot.state.setSeated(true);
-                        spawnTarget = {
-                            locX: session.initialSpawnCoord.locX,
-                            locY: session.initialSpawnCoord.locY,
-                            locZ: session.initialSpawnCoord.locZ
-                        };
-                    } else {
-                        if (wasCompanion && session.followPlayerSession?.actor?.fetchIsOnline?.()) {
-                            session.plan = 'following';
-                            spawnTarget = this.getDeathRespawnTarget(session, bot, wasCompanion);
-                        } else {
-                            if (wasCompanion) {
-                                PartyCompanionService.clearCompanion(session, {
-                                    plan: 'hunting',
-                                    refreshPanel: false
-                                });
-                            }
-                            session.plan = 'hunting'; // Reset plan
-                            session.currentSpot = null;
-                            session.noTargetTicks = 0;
-                            spawnTarget = this.getDeathRespawnTarget(session, bot, wasCompanion);
-                        }
-                    }
+                    session.plan = 'hunting'; // Reset plan
+                    session.currentSpot = null;
+                    session.noTargetTicks = 0;
+                    spawnTarget = this.getDeathRespawnTarget(session, bot, false);
                 }
                 
                 Generics.teleportTo(session, bot, spawnTarget);

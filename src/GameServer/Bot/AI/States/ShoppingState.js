@@ -61,7 +61,7 @@ module.exports = {
             return;
         }
 
-        const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
+        const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 
         if (!session.shoppingTarget) {
             const BotManager = invoke('GameServer/Bot/BotManager');

@@ -23,7 +23,9 @@ function bot(loc = {}) {
             inMotion: () => false
         },
         fetchId: () => 2000099,
-        fetchName: () => 'TravelBot'
+        fetchName: () => 'TravelBot',
+        fetchLevel: () => loc.level ?? 21,
+        fetchKarma: () => loc.karma ?? 0
     };
 }
 
@@ -32,6 +34,7 @@ const originalPlanForActor = ShotStock.planForActor;
 const originalShotAmount = ShotStock.shotAmount;
 const originalPurchaseActorRestock = ShotStock.purchaseActorRestock;
 const originalApplyFullNewbieBlessing = BotBuffs.applyFullNewbieBlessing;
+const originalNeedsNewbieRefresh = BotBuffs.needsNewbieRefresh;
 
 try {
     global.setTimeout = (fn) => {
@@ -108,6 +111,75 @@ try {
     assert(Math.abs(companionBot.moves[0].to.locY - companionLeader.fetchLocY()) <= 60, 'companion return should target the player vicinity');
     assert.strictEqual(companionBot.moves[0].to.locZ, companionLeader.fetchLocZ());
 
+    const deathRecoveryBot = bot({ locX: 46976, locY: 51511, locZ: -2976, level: 21 });
+    const deathRecoverySession = {
+        plan: 'getting_buffed',
+        partyCompanion: true,
+        followPlayerSession: { actor: companionLeader },
+        resumeAfterBuff: {
+            plan: 'following',
+            followPlayerSession: { actor: companionLeader },
+            partyCompanion: true,
+            botStay: false,
+            stayLocation: null,
+            role: 'dps',
+            conditionalNewbieBuff: true,
+            returnMode: 'teleport'
+        }
+    };
+    const recoveryTeleports = [];
+    const recoveryGenerics = {
+        teleportTo(_session, _actor, target) { recoveryTeleports.push(target); }
+    };
+    GettingBuffedState.tick(deathRecoverySession, deathRecoveryBot, recoveryGenerics, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}
+    });
+    assert.strictEqual(recoveryTeleports.length, 1, 'an overleveled companion should skip the Newbie Guide and teleport back');
+    assert.strictEqual(deathRecoverySession.plan, 'getting_buffed', 'the recovery state should remain active until the return teleport settles');
+    deathRecoverySession.resumeAfterBuff.returnTeleportStartedAt = Date.now() - 2000;
+    GettingBuffedState.tick(deathRecoverySession, deathRecoveryBot, recoveryGenerics, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}
+    });
+    assert.strictEqual(recoveryTeleports.length, 1, 'settling the return must not schedule duplicate teleports');
+    assert.strictEqual(deathRecoverySession.plan, 'following', 'the companion should resume following after the return teleport settles');
+    assert.strictEqual(deathRecoverySession.partyCompanion, true, 'the full town-return flow must keep party membership');
+
+    let recoveryNeedsBuff = true;
+    let recoveryBuffsApplied = 0;
+    BotBuffs.needsNewbieRefresh = () => recoveryNeedsBuff;
+    BotBuffs.applyFullNewbieBlessing = () => {
+        recoveryNeedsBuff = false;
+        recoveryBuffsApplied += 1;
+        return { buffs: ['windwalk', 'shield', 'haste'], expiresAt: Date.now() + 60000 };
+    };
+    const lowLevelRecoveryBot = bot({ locX: -84081, locY: 243227, locZ: -3723, level: 10 });
+    const lowLevelRecoverySession = {
+        plan: 'getting_buffed',
+        partyCompanion: true,
+        followPlayerSession: { actor: companionLeader },
+        resumeAfterBuff: {
+            plan: 'following',
+            followPlayerSession: { actor: companionLeader },
+            partyCompanion: true,
+            botStay: false,
+            stayLocation: null,
+            role: 'dps',
+            conditionalNewbieBuff: true,
+            returnMode: 'teleport'
+        }
+    };
+    const lowLevelRecoveryTeleports = [];
+    GettingBuffedState.tick(lowLevelRecoverySession, lowLevelRecoveryBot, {
+        teleportTo(_session, _actor, target) { lowLevelRecoveryTeleports.push(target); }
+    }, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}
+    });
+    assert.strictEqual(recoveryBuffsApplied, 1, 'an eligible dead companion should refresh cleared Newbie Guide buffs before returning');
+    assert.strictEqual(lowLevelRecoveryTeleports.length, 1, 'the rebuffed companion should teleport back instead of walking across the world');
+
     const shoppingLeader = {
         fetchIsOnline: () => true,
         fetchLocX: () => -84020,
@@ -139,4 +211,5 @@ try {
     ShotStock.shotAmount = originalShotAmount;
     ShotStock.purchaseActorRestock = originalPurchaseActorRestock;
     BotBuffs.applyFullNewbieBlessing = originalApplyFullNewbieBlessing;
+    BotBuffs.needsNewbieRefresh = originalNeedsNewbieRefresh;
 }

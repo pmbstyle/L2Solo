@@ -47,7 +47,10 @@ function actor(id) {
         unselect() {
             this.selected = undefined;
         },
-        moveTo() {}
+        moves: [],
+        moveTo(coords) {
+            this.moves.push(coords);
+        }
     };
 }
 
@@ -97,8 +100,18 @@ const woundedSession = {
     incomingThreatAt: Date.now(),
     dataSendToOthers() {}
 };
+const retreatHazard = {
+    fetchId: () => 1102,
+    fetchHostile: () => true,
+    fetchLocX: () => -850,
+    fetchLocY: () => 0,
+    fetchLocZ: () => 0,
+    isDead: () => false,
+    state: { fetchDead: () => false }
+};
 let woundedAttackId = null;
 World.user = { sessions: [woundedSession] };
+World.fetchNpcsInRadius = () => [retreatHazard];
 
 HuntingState.tick(woundedSession, woundedBot, {}, {
     say() {},
@@ -109,6 +122,14 @@ HuntingState.tick(woundedSession, woundedBot, {}, {
 
 assert.strictEqual(woundedSession.plan, 'fleeing', 'critically wounded solo hunter should retreat instead of re-entering combat');
 assert.strictEqual(woundedAttackId, null, 'critically wounded solo hunter should not start a futile counterattack');
+assert.notStrictEqual(woundedBot.moves[0].to.locY, 0, 'solo retreat should divert around a hostile mob on the direct escape line');
+assert(
+    Math.hypot(
+        woundedBot.moves[0].to.locX - retreatHazard.fetchLocX(),
+        woundedBot.moves[0].to.locY - retreatHazard.fetchLocY()
+    ) > 500,
+    'solo retreat destination should remain outside the hostile mob aggro radius'
+);
 
 let seated = true;
 woundedBot.state.fetchSeated = () => seated;

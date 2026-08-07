@@ -99,21 +99,20 @@ try {
     const frustrationStart = 1_000_000;
     assert.deepStrictEqual(
         PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart),
-        { count: 1, warning: false, leaving: false },
+        { count: 1, warning: false },
         'the first recent companion death should not threaten to leave'
     );
     assert.deepStrictEqual(
         PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + 60_000),
-        { count: 2, warning: true, leaving: false },
+        { count: 2, warning: true },
         'the second recent death should warn the party before any future departure'
     );
     assert.deepStrictEqual(
         PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + 120_000),
-        { count: 3, warning: false, leaving: true },
-        'the third recent death should make the warned companion leave'
+        { count: 3, warning: false },
+        'repeated deaths may affect dialogue but must not make a companion leave'
     );
-    assert.strictEqual(PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, frustrationStart + 120_000), true, 'a companion leaving after repeated deaths must not wait for resurrection');
-    fallenSession.partyLeaveAfterDeath = false;
+    assert.strictEqual(fallenSession.partyCompanion, true, 'death frustration must preserve party membership');
     fallenSession.partyDeathFrustration = undefined;
     fallenSession.deathTimerStart = frustrationStart;
     Revive(fallenSession, fallen, { delayMs: 0 });
@@ -121,7 +120,7 @@ try {
     fallen.state.setDead(true);
     assert.deepStrictEqual(
         PartyRevivalService.noteCompanionDeath(leaderSession, fallenSession, frustrationStart + PartyRevivalService.PARTY_DEATH_FRUSTRATION_WINDOW_MS + 1),
-        { count: 1, warning: false, leaving: false },
+        { count: 1, warning: false },
         'death frustration should cool off after ten quiet minutes'
     );
     fallenSession.partyDeathFrustration = undefined;
@@ -181,6 +180,45 @@ try {
     healer.state.fetchHits = () => false;
     healer.destId = undefined;
     World.npc.spawns = [];
+
+    const combatWaitStart = 2_000_000;
+    fallenSession.deathTimerStart = combatWaitStart;
+    fallenSession.partyReviveCombatPauseStartedAt = undefined;
+    fallenSession.partyReviveCombatPausedMs = undefined;
+    World.npc.spawns = [{
+        fetchId: () => 3000200,
+        fetchAttackable: () => true,
+        isDead: () => false,
+        fetchLocX: () => 100,
+        fetchLocY: () => 0,
+        fetchDestId: () => fallen.fetchId(),
+        fetchStateAttack: () => true,
+        state: { fetchCombats: () => true }
+    }];
+    assert.strictEqual(
+        PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, combatWaitStart + 30_000),
+        false,
+        'the resurrection timeout must pause when party combat begins'
+    );
+    assert.strictEqual(
+        PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, combatWaitStart + 120_000),
+        false,
+        'wall-clock time spent in combat must not expire the resurrection wait'
+    );
+    World.npc.spawns = [];
+    assert.strictEqual(
+        PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, combatWaitStart + 120_000),
+        false,
+        'ending combat should resume the remaining wait budget instead of forcing an immediate restart'
+    );
+    assert.strictEqual(
+        PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession, combatWaitStart + 151_000),
+        true,
+        'the companion may restart in town after sixty seconds of actual safe waiting'
+    );
+    fallenSession.deathTimerStart = undefined;
+    fallenSession.partyReviveCombatPauseStartedAt = undefined;
+    fallenSession.partyReviveCombatPausedMs = undefined;
 
     let skillCast = null;
     const skillResult = PartyRevivalService.tick(healerSession, leaderSession, {

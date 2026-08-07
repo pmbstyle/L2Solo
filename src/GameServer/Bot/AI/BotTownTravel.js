@@ -137,7 +137,7 @@ function request(session, bot, BotAI, reason, options = {}) {
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
     if (inCombat(session, bot)) return 'deferred';
 
-    const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY());
+    const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
