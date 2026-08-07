@@ -6,6 +6,8 @@ function finishRevive(session, actor) {
     // in-place resurrection must release it so a later death is counted and
     // announced instead of looking like the same corpse forever.
     session.deathTimerStart = undefined;
+    session.partyReviveCombatPauseStartedAt = undefined;
+    session.partyReviveCombatPausedMs = undefined;
     if (session?.accountId?.startsWith?.('bot_')) {
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),

@@ -127,7 +127,11 @@ function inferIntent(session, bot, vitals, target) {
     if (bot.state.fetchDead()) return 'revive';
     if (session.plan === 'resting') return 'recover';
     if (session.plan === 'shopping') return 'restock';
-    if (session.plan === 'getting_buffed') return 'refresh_buffs';
+    if (session.plan === 'getting_buffed') {
+        return session.resumeAfterBuff?.reason === 'party_town_respawn'
+            ? 'return_to_party'
+            : 'refresh_buffs';
+    }
     if (session.plan === 'fleeing' || session.plan === 'pk_fleeing') return 'escape_threat';
     if (session.plan === 'merchant') return 'trade';
     if (session.plan === 'following') {
