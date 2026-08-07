@@ -12,6 +12,7 @@ const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
+const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -247,16 +248,6 @@ function needsEmergencyRetreat(bot) {
 }
 
 function retreatFromThreat(session, bot, threat) {
-    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    const dx = from.locX - threat.fetchLocX();
-    const dy = from.locY - threat.fetchLocY();
-    const length = Math.sqrt(dx * dx + dy * dy) || 1;
-    const to = {
-        locX: Math.round(from.locX + (dx / length) * EMERGENCY_RETREAT_DISTANCE),
-        locY: Math.round(from.locY + (dy / length) * EMERGENCY_RETREAT_DISTANCE),
-        locZ: from.locZ
-    };
-
     if (bot.state.fetchSeated()) {
         bot.state.setSeated(false);
         session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
@@ -266,7 +257,7 @@ function retreatFromThreat(session, bot, threat) {
     session.fleeStart = Date.now();
     session.incomingThreatId = undefined;
     session.incomingThreatAt = undefined;
-    bot.moveTo({ from, to });
+    BotRetreatPlanner.retreat(session, bot, threat, { distance: EMERGENCY_RETREAT_DISTANCE });
 }
 
 function targetProgressing(session, bot, target) {
@@ -394,24 +385,9 @@ module.exports = {
                         session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
                     }
 
-                    // Run in opposite direction
-                    const dx = bot.fetchLocX() - spottedPk.fetchLocX();
-                    const dy = bot.fetchLocY() - spottedPk.fetchLocY();
-                    const length = Math.sqrt(dx*dx + dy*dy) || 1;
-                    const fleeX = Math.round(bot.fetchLocX() + (dx / length) * 850);
-                    const fleeY = Math.round(bot.fetchLocY() + (dy / length) * 850);
-                    const fleeZ = GeodataEngine.getHeight(fleeX, fleeY, bot.fetchLocZ());
-                    
-                    bot.moveTo({
-                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: fleeX, locY: fleeY, locZ: fleeZ }
+                    BotRetreatPlanner.retreat(session, bot, spottedPk, {
+                        distance: EMERGENCY_RETREAT_DISTANCE
                     });
-
-                    setTimeout(() => {
-                        if (session.plan === 'fleeing') {
-                            session.plan = 'hunting';
-                        }
-                    }, 7000); // Flee for 7 seconds
                 }
                 return; // Skip rest of AI tick while fleeing!
             }

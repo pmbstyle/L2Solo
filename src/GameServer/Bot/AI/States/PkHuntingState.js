@@ -1,6 +1,7 @@
 const SpeckMath = invoke('GameServer/SpeckMath');
 const World = invoke('GameServer/World/World');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 
 function distance(a, b) {
     return new SpeckMath.Point3D(a.fetchLocX(), a.fetchLocY(), a.fetchLocZ())
@@ -82,15 +83,7 @@ module.exports = {
             session.currentTargetId = undefined;
             if (bot.state.fetchTowards?.()) return;
             const escapeFrom = strongestThreat;
-            const dx = bot.fetchLocX() - escapeFrom.fetchLocX();
-            const dy = bot.fetchLocY() - escapeFrom.fetchLocY();
-            const length = Math.sqrt(dx * dx + dy * dy) || 1;
-            const locX = Math.round(bot.fetchLocX() + (dx / length) * 900);
-            const locY = Math.round(bot.fetchLocY() + (dy / length) * 900);
-            bot.moveTo({
-                from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                to: { locX, locY, locZ: GeodataEngine.getHeight(locX, locY, bot.fetchLocZ()) }
-            });
+            BotRetreatPlanner.retreat(session, bot, escapeFrom, { distance: 900 });
             return;
         }
 

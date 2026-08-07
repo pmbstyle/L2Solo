@@ -343,7 +343,20 @@ const BotStatus = {
                 followHeldAt: session.lastFollowMoveHeldAt || null,
                 townRoute: session.townRoutePlan || null,
                 pathfinding: session.lastPathfinding || null,
-                pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute)
+                pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute),
+                retreat: session.lastRetreatPlan ? {
+                    threatId: session.lastRetreatPlan.threatId,
+                    to: session.lastRetreatPlan.to,
+                    selectedAngle: session.lastRetreatPlan.selectedAngle,
+                    movesAway: session.lastRetreatPlan.movesAway,
+                    emergencyFallback: session.lastRetreatPlan.emergencyFallback,
+                    safe: session.lastRetreatPlan.safe,
+                    routeUsable: session.lastRetreatPlan.routeUsable,
+                    hazardCount: session.lastRetreatPlan.hazardCount,
+                    newAggroCount: session.lastRetreatPlan.newAggroCount,
+                    endpointAggroCount: session.lastRetreatPlan.endpointAggroCount,
+                    at: session.lastRetreatPlan.at
+                } : null
             },
             buffs: BotBuffs.snapshot(bot),
             debuffs: EffectStore.activeDebuffs(bot).map((effect) => ({

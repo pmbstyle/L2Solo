@@ -4,6 +4,8 @@ require('../src/Global');
 
 const Automation = invoke('GameServer/Automation');
 const moveTo = invoke('GameServer/Actor/Generics/MoveTo');
+const RuntimeWorld = invoke('GameServer/World/World');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 assert.strictEqual(
     moveTo.shouldUseLowLodWarp({
@@ -92,5 +94,51 @@ actor.state.towards = 'move';
 actor.session.accountId = 'player_test';
 automation.abortAll(actor);
 assert.strictEqual(packets.length, 1, 'Player automation keeps its existing explicit StopMove lifecycle');
+
+const previewPlan = {
+    finalTarget: { locX: 500, locY: 0, locZ: 0 },
+    waypoint: { locX: 250, locY: 100, locZ: 0 },
+    createdAt: Date.now(),
+    updatedAt: 123,
+    reason: 'test'
+};
+const previewSession = {
+    accountId: 'bot_preview',
+    townRoutePlan: previewPlan
+};
+const previewActor = {
+    session: previewSession,
+    state: { fetchDead: () => false },
+    fetchName: () => 'PreviewBot',
+    fetchLocX: () => 0,
+    fetchLocY: () => 0,
+    fetchLocZ: () => 0
+};
+const nearbyPlayer = {
+    accountId: 'player_preview',
+    actor: {
+        fetchIsOnline: () => true,
+        fetchLocX: () => 0,
+        fetchLocY: () => 0
+    }
+};
+RuntimeWorld.user = { sessions: [previewSession, nearbyPlayer] };
+const originalFindPath = GeodataEngine.findPath;
+const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+try {
+    GeodataEngine.findPath = () => null;
+    GeodataEngine.hasLineOfSight = () => true;
+    const diagnostics = moveTo(previewSession, previewActor, {
+        from: { locX: 0, locY: 0, locZ: 0 },
+        to: { locX: 500, locY: 0, locZ: 0 },
+        previewOnly: true
+    });
+    assert.strictEqual(diagnostics.routeUsable, true, 'preview should preserve a usable direct fallback');
+    assert.deepStrictEqual(diagnostics.route, [previewPlan.waypoint], 'preview diagnostics should expose the route MoveTo will execute');
+    assert.strictEqual(previewPlan.updatedAt, 123, 'previewing a sticky town route must not mutate the live route plan');
+} finally {
+    GeodataEngine.findPath = originalFindPath;
+    GeodataEngine.hasLineOfSight = originalHasLineOfSight;
+}
 
 console.log('Bot movement visibility checks passed');

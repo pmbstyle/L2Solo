@@ -34,22 +34,35 @@ function shouldPreannounceVisibleMove(startDistance, destinationDistance) {
     return startDistance > CLIENT_VISIBILITY_RADIUS && destinationDistance <= CLIENT_VISIBILITY_RADIUS;
 }
 
+function previewRouteSession(session) {
+    if (!session) return session;
+    const plan = session.townRoutePlan;
+    return {
+        ...session,
+        townRoutePlan: plan ? {
+            ...plan,
+            finalTarget: plan.finalTarget ? { ...plan.finalTarget } : plan.finalTarget,
+            waypoint: plan.waypoint ? { ...plan.waypoint } : plan.waypoint
+        } : plan
+    };
+}
+
 function moveTo(session, actor, coords) {
-    if (actor.isDead()) {
+    const previewOnly = coords.previewOnly === true;
+    if (!previewOnly && actor.isDead()) {
         return;
     }
 
-    if (!EffectRestrictions.canMove(actor)) {
+    if (!previewOnly && !EffectRestrictions.canMove(actor)) {
         EffectRestrictions.reject(session);
         return;
     }
 
-    if (actor.isBlocked()) {
+    if (!previewOnly && actor.isBlocked()) {
         invoke(path.actor).queueRequest(session, actor, 'move', coords);
         return;
     }
 
-    const previewOnly = coords.previewOnly === true;
     // A route preview must not alter the actor or emit a false movement packet.
     if (!previewOnly) {
         // Abort scheduled movement, user redirected the actor
@@ -113,6 +126,7 @@ function moveTo(session, actor, coords) {
             session.lastPathfinding = {
                 requestedTo,
                 routedTo: { ...snappedTo },
+                ...(previewOnly ? { route: [{ ...snappedTo }] } : {}),
                 townRoute: null,
                 pathLength: 0,
                 routeUsable: true,
@@ -136,9 +150,8 @@ function moveTo(session, actor, coords) {
 
         if (!path || path.length <= 1) {
             const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-            const previousTownRoutePlan = session.townRoutePlan;
-            const routeResult = TownPathfinder.routeWithSession(session, actor, coords.from, requestedTo);
-            if (previewOnly) session.townRoutePlan = previousTownRoutePlan;
+            const routeSession = previewOnly ? previewRouteSession(session) : session;
+            const routeResult = TownPathfinder.routeWithSession(routeSession, actor, coords.from, requestedTo);
             pathTarget = { ...routeResult.to };
             townRouteDiagnostics = routeResult.diagnostics;
             if (!previewOnly) {
@@ -162,13 +175,16 @@ function moveTo(session, actor, coords) {
             startX, startY, startZ,
             pathTarget.locX, pathTarget.locY, pathTarget.locZ
         );
-        console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${pathTarget.locX}, ${pathTarget.locY}, ${pathTarget.locZ}) strategy=${pathStrategy} -> Waypoints: ${path ? path.length : 0}`);
+        if (!previewOnly) {
+            console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${pathTarget.locX}, ${pathTarget.locY}, ${pathTarget.locZ}) strategy=${pathStrategy} -> Waypoints: ${path ? path.length : 0}`);
+        }
         if (!path || path.length <= 1) {
             path = [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }];
         }
         session.lastPathfinding = {
             requestedTo,
             routedTo: { ...pathTarget },
+            ...(previewOnly ? { route: path.map((waypoint) => ({ ...waypoint })) } : {}),
             townRoute: townRouteDiagnostics,
             pathLength: path.length,
             routeUsable: routeFound || fallbackLineOfSight,

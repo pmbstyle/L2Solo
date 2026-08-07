@@ -5,6 +5,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
+const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const RECOVERY_HP_RATIO = 0.35;
@@ -94,16 +95,6 @@ function beginNewbieGuideRecovery(session, bot, playerSession) {
 }
 
 function retreatFromThreat(session, bot, threat) {
-    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
-    const dx = from.locX - threat.fetchLocX();
-    const dy = from.locY - threat.fetchLocY();
-    const length = Math.sqrt(dx * dx + dy * dy) || 1;
-    const to = {
-        locX: Math.round(from.locX + (dx / length) * EMERGENCY_RETREAT_DISTANCE),
-        locY: Math.round(from.locY + (dy / length) * EMERGENCY_RETREAT_DISTANCE),
-        locZ: from.locZ
-    };
-
     standUp(session, bot);
     session.plan = 'fleeing';
     session.fleeStart = Date.now();
@@ -111,7 +102,7 @@ function retreatFromThreat(session, bot, threat) {
     session.incomingThreatId = undefined;
     session.incomingThreatAt = undefined;
     bot.unselect?.();
-    bot.moveTo?.({ from, to });
+    BotRetreatPlanner.retreat(session, bot, threat, { distance: EMERGENCY_RETREAT_DISTANCE });
     recordWakeDecision(session, bot, 'retreat', 'critical_resources_under_attack', {
         targetId: threat.fetchId(),
         hpRatio: bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
