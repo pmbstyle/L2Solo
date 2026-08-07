@@ -283,7 +283,7 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
     }
 }
 
-async function sellToStore(actor, store, selfId, qty) {
+async function sellToStore(actor, store, selfId, qty, options = {}) {
     if (!store || store.storeType !== 3) {
         throw new Error("This store is not buying items.");
     }
@@ -301,21 +301,50 @@ async function sellToStore(actor, store, selfId, qty) {
     }
 
     const totalEarn = storeItem.price * sellQty;
-    await takeItem(actor, selfId, sellQty);
-    await giveAdena(actor, totalEarn);
+    const budgetBacked = store.budgetBacked === true;
+    const buyerActor = options.buyerActor || null;
+    if (budgetBacked && (!buyerActor || fetchAdena(buyerActor)?.fetchAmount() < totalEarn)) {
+        throw new Error("Buyer does not have enough Adena.");
+    }
 
-    storeItem.count -= sellQty;
+    const originalCount = Number(storeItem.count);
+    storeItem.count = originalCount - sellQty;
+    let sellerItemTaken = false;
+    let buyerAdenaDeducted = false;
+    let buyerItemGiven = false;
+    try {
+        await takeItem(actor, selfId, sellQty);
+        sellerItemTaken = true;
+        if (budgetBacked) {
+            await deductAdena(buyerActor, totalEarn);
+            buyerAdenaDeducted = true;
+            await giveItem(buyerActor, selfId, sellQty);
+            buyerItemGiven = true;
+        }
+        await giveAdena(actor, totalEarn);
+    } catch (error) {
+        storeItem.count = originalCount;
+        try {
+            if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
+            if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
+            if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
+        } catch (rollbackError) {
+            if (error && typeof error === 'object') error.rollbackError = rollbackError;
+        }
+        throw error;
+    }
+
     store.items = store.items.filter((item) => item.count > 0);
 
-    return { qty: sellQty, totalAdena: totalEarn, name: itemName(selfId) };
+    return { qty: sellQty, totalAdena: totalEarn, name: itemName(selfId), budgetBacked };
 }
 
-async function sellInventoryToStore(actor, store) {
+async function sellInventoryToStore(actor, store, options = {}) {
     const preview = previewSaleToStore(actor, store);
     const sold = [];
 
     for (const line of preview.lines) {
-        const result = await sellToStore(actor, store, line.selfId, line.qty);
+        const result = await sellToStore(actor, store, line.selfId, line.qty, options);
         sold.push(result);
     }
 

@@ -11,7 +11,11 @@ const counters = {
     expiredItems: 0,
     staticBuyerSales: 0,
     staticBuyerItems: 0,
-    staticBuyerAdena: 0
+    staticBuyerAdena: 0,
+    buyStoresOpened: 0,
+    dynamicBuyerSales: 0,
+    dynamicBuyerItems: 0,
+    dynamicBuyerAdena: 0
 };
 let previous = { ...counters };
 
@@ -19,6 +23,7 @@ function add(key, amount = 1) { counters[key] = Number(counters[key] || 0) + Num
 
 module.exports = {
     listingOpened() { add('listingsOpened'); },
+    buyStoreOpened() { add('buyStoresOpened'); },
     purchase(offer, quantity = 1) {
         const count = Math.max(1, Number(quantity) || 1);
         add('purchases');
@@ -36,6 +41,11 @@ module.exports = {
         add('staticBuyerSales');
         add('staticBuyerItems', Math.max(0, Number(items) || 0));
         add('staticBuyerAdena', Math.max(0, Number(adena) || 0));
+    },
+    dynamicBuyerSale(items = 0, adena = 0) {
+        add('dynamicBuyerSales');
+        add('dynamicBuyerItems', Math.max(0, Number(items) || 0));
+        add('dynamicBuyerAdena', Math.max(0, Number(adena) || 0));
     },
     snapshot() {
         const delta = Object.fromEntries(Object.keys(counters).map((key) => [key, counters[key] - previous[key]]));

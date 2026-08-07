@@ -9,6 +9,9 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
+const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 const DEFAULT_LISTING_MS = 20 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
@@ -511,26 +514,51 @@ function open(state, options = {}) {
     // GoalExecutor chooses the best buyer town before travel. At this stage
     // the bot must trade only with the city it has actually reached.
     const town = marketTown(options.town || state.currentRegion || targetMarketTownName(state, initialItems));
-    return StaticBuyerService.sell(state, town?.name).then((buyerSale) => {
-    const saleState = buyerSale.state || state;
-    const items = ItemDisposition.saleCandidates(saleState, options);
-    if (!items.length) return { state: saleState, listed: false, reason: buyerSale.sold ? 'sold_to_static_buyer' : 'nothing_to_sell', buyerSale };
+    return BuyStoreService.sellToBestBuyer(state, town?.name).then((dynamicBuyerSale) => StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
+    const saleState = buyerSale.state || dynamicBuyerSale.state || state;
+    const initialMarket = MarketListingPolicy.evaluate(saleState, options);
+    return LifeState.applyNpcLiquidation(saleState, initialMarket.npc, {
+        source: 'pre_market_junk',
+        town: town?.name || saleState.currentRegion || null
+    }).then((liquidatedState) => {
+    const marketState = liquidatedState || saleState;
+    const market = MarketListingPolicy.evaluate(marketState, options);
+    const items = market.listings;
+    if (!items.length) {
+        return BotWarehouse.depositCold(marketState).then((warehouse) => ({
+            state: warehouse.state || marketState,
+            listed: false,
+            reason: buyerSale.sold
+                ? 'sold_to_static_buyer'
+                : dynamicBuyerSale.sold
+                    ? 'sold_to_dynamic_buyer'
+                : initialMarket.npc.length
+                    ? 'liquidated_junk'
+                    : market.warehouse.length
+                        ? 'no_market_demand'
+                        : 'nothing_to_sell',
+            buyerSale,
+            dynamicBuyerSale,
+            warehouse,
+            market
+        }));
+    }
     const storeLoc = marketLocation(town, { ...options, state });
-    if (!storeLoc) return { state: saleState, listed: false, reason: 'giran_plaza_full', buyerSale };
+    if (!storeLoc) return { state: marketState, listed: false, reason: 'giran_plaza_full', buyerSale, market };
     const nextState = {
-        ...saleState,
+        ...marketState,
         activity: 'merchant',
-        currentRegion: town?.name || state.currentRegion,
+        currentRegion: town?.name || marketState.currentRegion,
         // A private store has a stall, not a roaming route. Persist the plaza
         // coordinate so cold ticks and hot materialization use the same spot.
         loc: storeLoc,
         stats: {
-            ...(saleState.stats || {}),
+            ...(marketState.stats || {}),
             marketStore: {
                 id: `${state.characterId}:${timestamp}`,
                 storeType: 1,
-                sellerCharacterId: Number(saleState.characterId),
-                sellerName: saleState.name,
+                sellerCharacterId: Number(marketState.characterId),
+                sellerName: marketState.name,
                 title: options.title || marketStoreTitle(items),
                 autoTitle: !options.title,
                 marketTownRoutingVersion: MARKET_TOWN_ROUTING_VERSION,
@@ -553,18 +581,46 @@ function open(state, options = {}) {
         if (saved) MarketOpportunity.indexColdStore(saved);
         if (saved) MarketTelemetry.listingOpened();
         return {
-            state: saved || saleState,
+            state: saved || marketState,
             listed: !!saved,
             itemCount: items.length,
-            buyerSale
+            buyerSale,
+            dynamicBuyerSale,
+            market
         };
     });
     });
+    }));
 }
 
 function resolve(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
     if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, closed: false });
+    if (Number(store.storeType || 1) === 3) {
+        const hasDemand = (store.items || []).some((item) => Number(item.count || 0) > 0);
+        if (hasDemand && Number(store.expiresAt || 0) > timestamp) {
+            MarketOpportunity.indexColdStore(state);
+            return Promise.resolve({ state, closed: false });
+        }
+        const cleared = {
+            ...state,
+            activity: 'shopping',
+            stats: {
+                ...(state.stats || {}),
+                marketStore: null,
+                marketRetryAfter: hasDemand ? timestamp + SELL_RETRY_DELAY_MS : null,
+                marketWanted: hasDemand ? state.stats?.marketWanted || null : null
+            },
+            timing: { ...(state.timing || {}), nextResolveAt: timestamp }
+        };
+        const returning = GoalExecutor.finishMarketVisit(cleared, timestamp) || cleared;
+        MarketOpportunity.removeColdStore(state.characterId);
+        return LifeState.upsertState(returning, hasDemand ? 'cold_market_buy_expired' : 'cold_market_buy_filled').then((saved) => ({
+            state: saved || returning,
+            closed: true,
+            reason: hasDemand ? 'buy_expired' : 'buy_filled'
+        }));
+    }
     const hasStock = (store.items || []).some((item) => Number(item.count) > 0);
     const isActive = hasStock && Number(store.expiresAt || 0) > timestamp;
     if (isActive) {
@@ -701,6 +757,10 @@ function expireStaleMarketStores(limit = 10, timestamp = Date.now()) {
 function reconcileInventory(state) {
     const store = state?.stats?.marketStore;
     if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, reconciled: false });
+    if (Number(store.storeType || 1) === 3) {
+        MarketOpportunity.indexColdStore(state);
+        return Promise.resolve({ state, reconciled: false, closed: false });
+    }
 
     const items = ItemDisposition.saleCandidates(state);
     if (items.length) {
@@ -774,6 +834,7 @@ module.exports = {
     DWARVEN_VILLAGE_NO_GRADE_PLAZA,
     DWARVEN_VILLAGE_STALL_MIN_DISTANCE,
     marketStoreTitle,
+    marketLocation,
     staticMerchantStalls,
     targetMarketTownName,
     legacyMarketTownCandidates,

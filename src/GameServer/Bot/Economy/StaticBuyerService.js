@@ -37,19 +37,28 @@ function candidatesFor(state, town) {
 }
 
 function bestTownFor(state) {
-    return [...new Set(Object.values(MerchantStoreConfigs)
+    const towns = [...new Set(Object.values(MerchantStoreConfigs)
         .filter((store) => store?.storeType === 3 && store.town)
-        .map((store) => store.town))]
-        .map((town) => {
+        .map((store) => store.town))];
+    const origin = state?.stats?.marketReturn?.loc || state?.loc || {};
+    const hasOrigin = Number.isFinite(Number(origin.locX)) && Number.isFinite(Number(origin.locY))
+        && (Number(origin.locX) !== 0 || Number(origin.locY) !== 0);
+    return towns.map((town, order) => {
             const candidates = candidatesFor(state, town);
+            const buyers = buyersInTown(town);
             return {
                 town,
+                order,
                 candidates,
-                value: candidates.reduce((sum, item) => sum + Number(item.count || 0) * Number(item.npcPrice || 0), 0)
+                value: candidates.reduce((sum, item) => sum + Number(item.count || 0) * Number(item.npcPrice || 0), 0),
+                distance: hasOrigin ? buyers.reduce((minimum, buyer) => Math.min(minimum, Math.hypot(
+                    Number(origin.locX) - Number(buyer.locX || 0),
+                    Number(origin.locY) - Number(buyer.locY || 0)
+                )), Infinity) : Infinity
             };
         })
         .filter((result) => result.value > 0)
-        .sort((left, right) => right.value - left.value || left.town.localeCompare(right.town))[0] || null;
+        .sort((left, right) => right.value - left.value || left.distance - right.distance || left.order - right.order)[0] || null;
 }
 
 function sell(state, town) {

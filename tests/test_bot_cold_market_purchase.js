@@ -83,7 +83,10 @@ async function run() {
             57: { selfId: 57, name: 'Adena', amount: 1000 },
             1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7, rank: 'none', kind: 'Weapon.Sword' }
         },
-        stats: { equipment: [{ selfId: 1, slot: 7, rank: 'none', kind: 'Weapon.Sword' }] },
+        stats: {
+            equipment: [{ selfId: 1, slot: 7, rank: 'none', kind: 'Weapon.Sword' }],
+            marketWanted: { itemId: 2, itemName: 'Long Sword', lastMissingAt: Date.now() }
+        },
         loc: {},
         vitals: {},
         timing: {}
@@ -97,6 +100,7 @@ async function run() {
     assert.strictEqual(result.state.inventory['1'].equipped, false);
     assert.strictEqual(result.state.inventory['2'].equipped, true);
     assert.strictEqual(result.state.stats.equipment[0].selfId, 2);
+    assert.strictEqual(result.state.stats.marketWanted, null, 'fulfilled demand must leave the market index immediately');
     assert.strictEqual(playerStore.items[0].count, 0, 'private offer should be consumed');
     const weaponSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 77);
     assert.strictEqual(weaponSync.inventory['57'].amount, 0, 'the optimized sync must persist spent adena');
@@ -151,6 +155,21 @@ async function run() {
     const armorSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 78);
     assert.strictEqual(armorSync.inventory['21'].equipped, false, 'the optimized sync must persist the unequipped old chest');
     assert.strictEqual(armorSync.inventory['354'].equipped, true, 'the optimized sync must persist the new chest');
+
+    const materialPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 81,
+        adena: 900,
+        inventory: {
+            ...state.inventory,
+            57: { selfId: 57, name: 'Adena', amount: 900 }
+        }
+    }, { selfId: 1864, price: 100, sourceType: 'cold_store' }, 3);
+    assert(materialPurchase, 'craft materials must be purchasable through the market path');
+    assert.strictEqual(materialPurchase.adena, 600);
+    assert.strictEqual(materialPurchase.inventory['1864'].amount, 3);
+    assert.strictEqual(materialPurchase.inventory['1864'].equipped, false);
+    assert.strictEqual(materialPurchase.inventory['1'].equipped, true, 'material purchase must not disturb equipped gear');
 
     console.log('Bot cold market purchase checks passed');
 }

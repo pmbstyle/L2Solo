@@ -121,6 +121,28 @@ async function main() {
             10,
             'purchases of different items and stores must serialize Adena deductions per actor'
         );
+
+        const seller = actor(7, 0);
+        seller.backpack.items.push(item(701, 1864, 2, 'Varnish'));
+        const budgetBuyer = actor(8, 100);
+        const buyStore = { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 10, count: 3 }] };
+        const sold = await TradeService.sellToStore(seller, buyStore, 1864, 2, { buyerActor: budgetBuyer });
+        assert.strictEqual(sold.totalAdena, 20);
+        assert.strictEqual(seller.backpack.fetchItemFromSelfId(57).fetchAmount(), 20, 'seller receives the buyer bot\'s actual Adena');
+        assert.strictEqual(budgetBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 80, 'budget-backed WTB deducts the buyer wallet');
+        assert.strictEqual(budgetBuyer.backpack.fetchItemFromSelfId(1864).fetchAmount(), 2, 'the purchased item enters the buyer inventory');
+        assert.strictEqual(buyStore.items[0].count, 1);
+
+        const poorBuyer = actor(9, 5);
+        const protectedSeller = actor(10, 0);
+        protectedSeller.backpack.items.push(item(1001, 1864, 1, 'Varnish'));
+        const unaffordableStore = { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 10, count: 1 }] };
+        await assert.rejects(
+            TradeService.sellToStore(protectedSeller, unaffordableStore, 1864, 1, { buyerActor: poorBuyer }),
+            /Buyer does not have enough Adena/
+        );
+        assert.strictEqual(protectedSeller.backpack.fetchItemFromSelfId(1864).fetchAmount(), 1, 'an unfunded WTB must not consume seller stock');
+        assert.strictEqual(unaffordableStore.items[0].count, 1);
         console.log('Trade store atomicity checks passed');
     } finally {
         DataCache.items = originalItems;

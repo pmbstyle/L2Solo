@@ -1766,26 +1766,66 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer) {
+    syncMarketSession(session, reason = 'hot_market_sync') {
+        const state = session?.coldMarketState;
+        const actor = session?.actor;
+        if (!state || !actor?.backpack?.fetchItems) return Promise.resolve(null);
+        const inventory = inventorySummaryFromItems(actor.backpack.fetchItems());
+        const liveStore = actor.fetchPrivateStore?.();
+        const hasLines = liveStore && (liveStore.items || []).some((item) => Number(item.count || 0) > 0);
+        const marketStore = hasLines ? {
+            ...(state.stats?.marketStore || {}),
+            storeType: Number(liveStore.storeType || state.stats?.marketStore?.storeType || 1),
+            budgetBacked: liveStore.budgetBacked === true || state.stats?.marketStore?.budgetBacked === true,
+            items: (liveStore.items || []).map((item) => ({ ...item }))
+        } : null;
+        const nextState = {
+            ...state,
+            phase: 'hot',
+            activity: marketStore ? 'merchant' : 'shopping',
+            adena: inventoryAdena(inventory),
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                marketStore,
+                marketWanted: marketStore ? state.stats?.marketWanted || null : null,
+                equipment: equipmentSummaryFromInventory(inventory)
+            },
+            timing: {
+                ...(state.timing || {}),
+                nextResolveAt: marketStore ? Number(marketStore.expiresAt || 0) || null : now()
+            }
+        };
+        return this.upsertState(nextState, reason).then((saved) => {
+            if (saved) session.coldMarketState = saved;
+            return saved;
+        });
+    },
+
+    applyMarketPurchase(state, offer, qty = 1) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
-        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < price) return Promise.resolve(null);
+        const count = Math.max(1, Math.floor(Number(qty) || 1));
+        const totalPrice = price * count;
+        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < totalPrice) return Promise.resolve(null);
 
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
         const slot = Number(template.etc?.slot || 0);
-        if (!slot) return Promise.resolve(null);
         const inventory = { ...(state.inventory || {}) };
-        Object.keys(inventory).forEach((key) => {
-            if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
-        });
-        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - price };
+        if (slot) {
+            Object.keys(inventory).forEach((key) => {
+                if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
+            });
+        }
+        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - totalPrice };
         inventory[String(selfId)] = {
             ...(inventory[String(selfId)] || {}),
             selfId,
             name: template.template?.name || offer.itemName || itemName(selfId),
-            amount: Number(inventory[String(selfId)]?.amount || 0) + 1,
-            equipped: true,
+            amount: Number(inventory[String(selfId)]?.amount || 0) + count,
+            equipped: slot > 0,
+            stackable: slot === 0 || !!inventory[String(selfId)]?.stackable,
             slot,
             rank: template.etc?.rank || 'none',
             kind: template.template?.kind || ''
@@ -1793,15 +1833,16 @@ const BotLifeState = {
         const equipment = equipmentSummaryFromInventory(inventory);
         const nextState = {
             ...state,
-            adena: Number(state.adena) - price,
+            adena: Number(state.adena) - totalPrice,
             activity: 'shopping',
             inventory,
             stats: {
                 ...(state.stats || {}),
                 equipment,
                 marketRetryAfter: null,
+                marketWanted: null,
                 marketLead: null,
-                lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
+                lastMarketPurchase: { selfId, qty: count, price, totalPrice, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
             },
             updatedAt: now()
         };

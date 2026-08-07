@@ -2,6 +2,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -49,10 +50,18 @@ const ColdMarketService = {
             buyerCharacterId: state.characterId
         });
         if (!offer) {
-            // A wanted ad is not a reason to idle in Giran.  Keep the demand
-            // and retry window, then return to the material route until the
-            // next market attempt is due.
-            return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
+            return BuyStoreService.open(state, goal).then((opened) => {
+                if (!opened.opened) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
+                MarketTelemetry.noOffer();
+                return {
+                    state: opened.state,
+                    purchased: false,
+                    reason: 'buy_store_opened',
+                    buyStore: opened.store,
+                    wanted: true,
+                    remoteOffer: null
+                };
+            });
         }
         if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
         offer.buyerCharacterId = Number(state.characterId);

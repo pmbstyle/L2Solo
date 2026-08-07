@@ -238,7 +238,10 @@ module.exports = {
 
             if (store && store.storeType === 3) {
                 try {
-                    const result = await TradeService.sellInventoryToStore(bot, store);
+                    const result = await TradeService.sellInventoryToStore(bot, store, { buyerActor: buyer });
+                    if (store.budgetBacked === true && buyerSession?.coldMarketState) {
+                        await LifeState.syncMarketSession(buyerSession, 'hot_bot_market_buy_fill');
+                    }
                     if (result.itemsSold > 0) {
                         soldToBuyer = true;
                         const sample = result.sold.slice(0, 3).map((line) => `${line.qty}x ${line.name}`).join(', ');
