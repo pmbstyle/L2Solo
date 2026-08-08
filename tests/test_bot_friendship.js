@@ -3,7 +3,9 @@ const assert = require('assert');
 require('../src/Global');
 
 const Database = invoke('Database');
+const DataCache = invoke('GameServer/DataCache');
 const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
+DataCache.init();
 const originalExecute = Database.execute;
 let rosterCount = 7;
 let requestSocial = {
@@ -14,6 +16,19 @@ let requestSocial = {
 
 Database.execute = ([sql]) => {
     const text = String(sql);
+    if (text.includes('FROM bot_social_memory s INNER JOIN bot_life_state')) {
+        return Promise.resolve([{
+            botId: 103,
+            name: 'ActualHealer',
+            level: 44,
+            classId: 30,
+            statsJson: JSON.stringify({ role: 'dps', classId: 10 }),
+            trust: 50,
+            familiarity: 12,
+            status: 'accepted',
+            selected: 0
+        }]);
+    }
     if (text.includes('FROM bot_social_memory')) return Promise.resolve([requestSocial]);
     if (text.includes('INSERT INTO bot_friendships')) return Promise.resolve([]);
     if (text.includes('FROM bot_friendships')) return Promise.resolve([{}]);
@@ -33,6 +48,9 @@ Promise.all([
     assert.strictEqual(first.selected, true);
     assert.strictEqual(second.reason, 'const_full', 'concurrent selections must not exceed eight const members');
     assert.strictEqual(rosterCount, 8);
+    const friends = await BotFriendship.listFriends({ characterId: 42 });
+    assert.strictEqual(friends[0].className, 'Elven Elder', 'friend rows must expose the current profession name');
+    assert.strictEqual(friends[0].role, 'healer', 'current character class must override a stale saved DPS role');
     const accepted = await BotFriendship.request({ characterId: 42 }, { characterId: 100, name: 'OldFriend' });
     assert.strictEqual(accepted.ok, true, 'an old abandonment cooldown must not block friendship forever');
     const staticService = await BotFriendship.request({ characterId: 42 }, {

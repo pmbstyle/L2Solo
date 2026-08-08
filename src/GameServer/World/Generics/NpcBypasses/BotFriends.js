@@ -27,13 +27,14 @@ function render(session, mode = 'friends', currentPage = 0, notice = null) {
             body += Html.line(Html.TEXTURE.blank, Html.WIDTH, 5);
         }
         bots.forEach((bot) => {
+            const profession = bot.className || 'Unknown profession';
             const action = isAdd
                 ? (bot.trust >= BotFriendship.FRIEND_TRUST ? Html.link('Add friend', `bot-friends request ${bot.name} ${currentPage}`, { color: Html.COLOR.ok }) : Html.font(`trust ${bot.trust}/${BotFriendship.FRIEND_TRUST}`, Html.COLOR.muted))
                 : Html.link(bot.selected ? 'Const: ON' : 'Const: OFF', `bot-friends const ${bot.botId} ${currentPage}`, { color: bot.selected ? Html.COLOR.ok : Html.COLOR.link })
                     + '<br1>'
                     + Html.link('Remove', `bot-friends remove ${bot.botId} ${currentPage}`, { color: Html.COLOR.danger });
             body += Html.table([Html.row([
-                Html.cell(`${Html.font(bot.name, Html.COLOR.title)} Lv ${bot.level} ${bot.role}`, { width: 190 }),
+                Html.cell(`${Html.font(bot.name, Html.COLOR.title)}<br1>${Html.font(`Lv ${bot.level} ${profession}`, Html.COLOR.muted)} ${Html.font(bot.role, Html.COLOR.link)}`, { width: 190 }),
                 Html.cell(action, { width: 95, align: 'right' })
             ])]);
             body += Html.font(`${bot.activity || 'hunting'} / ${bot.currentRegion || 'unknown'} / trust ${bot.trust} / familiarity ${bot.familiarity}`, Html.COLOR.muted);

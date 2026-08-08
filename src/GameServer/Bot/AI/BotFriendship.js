@@ -1,5 +1,6 @@
 const Database = invoke('Database');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const FRIEND_TRUST = 8;
 const MAX_CONST_MEMBERS = 8;
@@ -16,12 +17,24 @@ function isStaticService(state = {}) {
 function normalize(row) {
     let stats = {};
     try { stats = JSON.parse(row.statsJson || '{}'); } catch {}
-    return { ...row, botId: Number(row.botId), trust: Number(row.trust || 0), familiarity: Number(row.familiarity || 0), selected: !!Number(row.selected), role: stats.role || 'dps' };
+    const classId = Number(row.classId ?? stats.classId ?? stats.classProgressionClassId);
+    const profession = BotRoles.presentation(Number.isFinite(classId) ? classId : null);
+    return {
+        ...row,
+        botId: Number(row.botId),
+        trust: Number(row.trust || 0),
+        familiarity: Number(row.familiarity || 0),
+        selected: !!Number(row.selected),
+        classId: profession.classId,
+        className: profession.className,
+        role: profession.classId === null ? (stats.role || profession.role) : profession.role
+    };
 }
 function list(playerId, where, currentPage) {
-    return Database.execute([`SELECT l.characterId AS botId, l.characterName AS name, l.level, l.activity, l.currentRegion, l.statsJson, s.trust, s.familiarity, f.status,
+    return Database.execute([`SELECT l.characterId AS botId, l.characterName AS name, l.level, l.activity, l.currentRegion, l.statsJson, c.classId, s.trust, s.familiarity, f.status,
         CASE WHEN r.botId IS NULL THEN 0 ELSE 1 END AS selected
         FROM bot_social_memory s INNER JOIN bot_life_state l ON l.characterId = s.botId
+        LEFT JOIN characters c ON c.id = l.characterId
         LEFT JOIN bot_friendships f ON f.playerId = s.playerId AND f.botId = s.botId
         LEFT JOIN bot_friend_roster r ON r.playerId = s.playerId AND r.botId = s.botId
         WHERE s.playerId = ? AND ${where}
