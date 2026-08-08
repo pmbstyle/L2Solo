@@ -63,6 +63,15 @@ try {
         assert.strictEqual(classes.get(3), 88, 'the third profession must be persisted');
         assert.strictEqual(BotRoles.inferRole(97), 'healer', 'Cardinal must retain its healer role');
         assert.strictEqual(BotRoles.inferRole(98), 'buffer', 'Hierophant must retain its buffer role');
+        assert.strictEqual(BotRoles.inferRole(21), 'buffer', 'Swordsinger must be treated as party support');
+        assert.strictEqual(BotRoles.inferRole(34), 'buffer', 'Bladedancer must be treated as party support');
+        assert.strictEqual(BotRoles.inferRole(52), 'buffer', 'Warcryer must not be treated as a damage mage');
+        assert.strictEqual(BotRoles.inferRole(100), 'buffer', 'Sword Muse must retain its buffer role');
+        assert.strictEqual(BotRoles.inferRole(107), 'buffer', 'Spectral Dancer must retain its buffer role');
+        assert.strictEqual(BotRoles.inferRole(116), 'buffer', 'Doomcryer must retain its buffer role');
+        assert.strictEqual(BotRoles.className(100), 'Sword Muse', 'list presentation must use a human-readable profession');
+        assert.strictEqual(BotRoles.inferRole({ classId: 30 }), 'healer', 'persisted character rows must resolve roles from classId');
+        assert.strictEqual(BotRoles.presentation(null).classId, null, 'a missing profession must not be mistaken for Human Fighter');
         assert.strictEqual(BotRoles.inferRole(118), 'crafter', 'Maestro must retain its crafter role');
         console.log('Bot class progression checks passed');
     }).catch((error) => {

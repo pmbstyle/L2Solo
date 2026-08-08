@@ -1,4 +1,5 @@
 const Database = invoke('Database');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 
 const TABLE = 'bot_social_memory';
 const cache = new Map();
@@ -206,6 +207,7 @@ const BotSocialMemory = {
     },
 
     getSnapshot(playerSession, botSession) {
+        if (BotServiceIdentity.isStaticService(botSession)) return defaultRecord(playerSession, botSession);
         const playerId = actorId(playerSession);
         const botId = actorId(botSession);
         if (!playerId || !botId) return defaultRecord(playerSession, botSession);
@@ -221,6 +223,7 @@ const BotSocialMemory = {
     },
 
     load(playerSession, botSession) {
+        if (BotServiceIdentity.isStaticService(botSession)) return Promise.resolve(null);
         const playerId = actorId(playerSession);
         const botId = actorId(botSession);
         if (!playerId || !botId) return Promise.resolve(null);
@@ -238,6 +241,7 @@ const BotSocialMemory = {
     },
 
     recordEvent(playerSession, botSession, eventName, detail = '') {
+        if (BotServiceIdentity.isStaticService(botSession)) return Promise.resolve(null);
         const playerId = actorId(playerSession);
         const botId = actorId(botSession);
         if (!playerId || !botId) return Promise.resolve(null);

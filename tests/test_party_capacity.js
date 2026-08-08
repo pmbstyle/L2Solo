@@ -19,6 +19,19 @@ try {
     assert.strictEqual(PartyCompanionService.hasCapacity(leader), false, 'a leader plus eight companions must be a full party');
     assert.strictEqual(PartyCompanionService.hasCapacity(leader, companions[0]), true, 'rebuilding an existing companion must not be rejected as a new ninth companion');
 
+    const reservedLeader = { actor: { fetchId: () => 50 } };
+    const reservation = { characterId: 5001 };
+    BotManager.sessions = companions.slice(0, PartyCompanionService.MAX_COMPANIONS - 1).map((companion) => ({
+        ...companion,
+        followPlayerSession: reservedLeader
+    }));
+    assert.strictEqual(PartyCompanionService.reserveCapacity(reservedLeader, reservation), true, 'the last party slot can be reserved before async market withdrawal');
+    assert.strictEqual(PartyCompanionService.hasCapacity(reservedLeader), false, 'a reserved slot must block a competing async invite');
+    assert.strictEqual(PartyCompanionService.hasCapacity(reservedLeader, null, reservation), true, 'the reservation owner must retain access to its slot');
+    assert.strictEqual(PartyCompanionService.reserveCapacity(reservedLeader, { characterId: 5002 }), false, 'a competing invite must not overbook the party');
+    assert.strictEqual(PartyCompanionService.releaseCapacity(reservedLeader, reservation), true);
+    assert.strictEqual(PartyCompanionService.hasCapacity(reservedLeader), true, 'releasing a failed invite must return its slot');
+
     const directionalLeader = {
         actor: {
             fetchLocX: () => 1000,

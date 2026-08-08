@@ -105,22 +105,26 @@ module.exports = async function(session, parts) {
     }
 
     try {
-        const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty);
-        const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === bot);
+        const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty, {
+            afterPurchase: sellerSession?.coldMarketState
+                ? async (purchaseResult) => {
+                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
+                        selfId,
+                        price: storeItem.price,
+                        buyerCharacterId: session.actor.fetchId(),
+                        storeItem
+                    }, purchaseResult.qty);
+                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
+                }
+                : null
+        });
+        const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         if (sellerSession?.coldMarketState) {
-            const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                selfId,
-                price: storeItem.price,
-                buyerCharacterId: session.actor.fetchId(),
-                storeItem
-            }, bought.qty);
-            if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-
             // A dynamic seller has no reason to remain seated after its last
             // item is bought. Preserve its planned return trip, remove the
             // now-empty store, and hand it back to cold simulation.
-            const returnState = soldOut ? GoalExecutor.finishMarketVisit(updatedSeller) : null;
+            const returnState = soldOut ? GoalExecutor.finishMarketVisit(sellerSession.coldMarketState) : null;
             if (returnState) {
                 const departingState = {
                     ...returnState,

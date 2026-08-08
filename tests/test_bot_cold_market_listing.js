@@ -11,6 +11,21 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 DataCache.init();
 
+const marketItem = DataCache.items.find((item) => (
+    item?.etc?.rank === 'c' && item.template?.kind?.startsWith('Weapon.') && Number(item.template?.price || 0) > 1000
+));
+const equippedItem = DataCache.items.find((item) => (
+    item !== marketItem && item?.etc?.rank === 'c' && Number(item.etc?.slot || 0) === Number(marketItem?.etc?.slot || 0)
+));
+const speculativeItem = DataCache.items.find((item) => (
+    item !== marketItem
+    && item !== equippedItem
+    && (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.'))
+    && Number(item.template?.price || 0) >= 10000
+    && !invoke('GameServer/Bot/Economy/MarketListingPolicy').starterItemIds().has(Number(item.selfId))
+));
+assert(marketItem && equippedItem && speculativeItem, 'the datapack must contain market gear for the listing lifecycle fixture');
+
 const originals = {
     execute: Database.execute,
     fetchItems: Database.fetchItems,
@@ -19,7 +34,9 @@ const originals = {
     updateCharacterLocation: Database.updateCharacterLocation,
     updateCharacterExperience: Database.updateCharacterExperience,
     updateCharacterVitals: Database.updateCharacterVitals,
-    syncInventorySummary: Database.syncInventorySummary
+    syncInventorySummary: Database.syncInventorySummary,
+    transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
+    allStates: LifeState.allStates
 };
 const calls = [];
 
@@ -27,8 +44,8 @@ async function run() {
     Database.execute = () => Promise.resolve([]);
     Database.fetchItems = () => Promise.resolve([
         { id: 20, selfId: 57, amount: 500, equipped: false, slot: 0 },
-        { id: 21, selfId: 1, amount: 1, equipped: false, slot: 7 },
-        { id: 22, selfId: 2, amount: 1, equipped: true, slot: 7 }
+        { id: 21, selfId: marketItem.selfId, amount: 1, equipped: false, slot: marketItem.etc.slot },
+        { id: 22, selfId: equippedItem.selfId, amount: 1, equipped: true, slot: equippedItem.etc.slot }
     ]);
     Database.updateItemAmount = (characterId, id, amount) => {
         calls.push({ type: 'amount', characterId, id, amount });
@@ -38,6 +55,7 @@ async function run() {
     Database.updateCharacterLocation = () => Promise.resolve();
     Database.updateCharacterExperience = () => Promise.resolve();
     Database.updateCharacterVitals = () => Promise.resolve();
+    Database.transferInventoryToWarehouse = () => Promise.resolve({ inventoryAmount: 0 });
     Database.syncInventorySummary = (characterId, inventory) => {
         calls.push({ type: 'inventory-sync', characterId, inventory });
         return Promise.resolve();
@@ -58,20 +76,17 @@ async function run() {
         timing: {},
         inventory: {
             57: { selfId: 57, name: 'Adena', amount: 500 },
-            // Keep this as a C-grade listing: the fixture exercises the Giran
-            // plaza, while no-grade stock is deliberately routed to the
-            // nearest starter village.
-            1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: false, slot: 7, kind: 'Weapon.Sword', rank: 'c' },
-            2: { selfId: 2, name: 'Long Sword', amount: 1, equipped: true, slot: 7, kind: 'Weapon.Sword' }
+            [marketItem.selfId]: { selfId: marketItem.selfId, name: marketItem.template.name, amount: 1, equipped: false, slot: marketItem.etc.slot, kind: marketItem.template.kind, rank: 'c' },
+            [equippedItem.selfId]: { selfId: equippedItem.selfId, name: equippedItem.template.name, amount: 1, equipped: true, slot: equippedItem.etc.slot, kind: equippedItem.template.kind, rank: 'c' }
         },
         stats: {
-            equipment: [{ selfId: 2, slot: 7 }],
+            equipment: [{ selfId: equippedItem.selfId, slot: equippedItem.etc.slot }],
             marketReturn: { loc: { locX: 1, locY: 2, locZ: 3 }, regionName: 'Dion', spotId: 'starter_local' }
         }
     };
 
     const candidates = ItemDisposition.saleCandidates(state);
-    assert.deepStrictEqual(candidates.map((item) => item.selfId), [1], 'equipped gear must never be listed');
+    assert.deepStrictEqual(candidates.map((item) => item.selfId), [marketItem.selfId], 'equipped gear must never be listed');
 
     const preTradeState = {
         ...state,
@@ -97,17 +112,41 @@ async function run() {
         'ordinary level-one-to-five loot must stay out of sales while materials remain sellable'
     );
 
-    const opened = await ListingService.open(state, { now: 1000, durationMs: 60000, random: () => 0.1 });
+    const marketBuyer = {
+        characterId: 99,
+        name: 'MarketBuyer',
+        adena: 100000000,
+        currentRegion: 'Giran',
+        stats: { equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: marketItem.selfId, name: marketItem.template.name } } }
+    };
+    const listingOptions = { now: 1000, durationMs: 60000, random: () => 0.1, states: [marketBuyer] };
+    const opened = await ListingService.open(state, listingOptions);
     assert.strictEqual(opened.listed, true);
     assert.strictEqual(opened.state.activity, 'merchant');
-    assert.strictEqual(opened.state.stats.marketStore.title, 'Short Sword', 'a dynamic store title should name its actual stock');
+    assert.strictEqual(opened.state.stats.marketStore.title, marketItem.template.name.slice(0, 28), 'a dynamic store title should name its actual stock');
     assert(opened.state.stats.marketStore.title.length <= 28, 'a dynamic store title must fit the compact C4 store overlay');
     assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
+    assert(Number(opened.state.stats.marketStore.nextReviewAt) > 1000, 'WTS must schedule demand revalidation before expiry');
     const secondStall = ListingService.chooseGiranPlazaStall(() => 0.1, [opened.state.loc]);
     const dx = secondStall.locX - opened.state.loc.locX;
     const dy = secondStall.locY - opened.state.loc.locY;
     assert(Math.sqrt(dx * dx + dy * dy) >= ListingService.GIRAN_STALL_MIN_DISTANCE, 'stores must not overlap on the Giran plaza');
+
+    const partyOpened = await ListingService.open(
+        { ...state, characterId: 94, name: 'PartySeller' },
+        listingOptions
+    );
+    assert(MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran', now: 1001 })
+        .some((entry) => Number(entry.sourceId) === 94), 'active party candidate store must start in market discovery');
+    const partyWithdrawal = await ListingService.withdrawForParty(partyOpened.state, 2000);
+    assert.strictEqual(partyWithdrawal.withdrawn, true);
+    assert.strictEqual(partyWithdrawal.state.activity, 'hunting', 'party priority must end merchant activity before activation');
+    assert.strictEqual(partyWithdrawal.state.stats.marketStore, null, 'party priority must remove the persisted private store');
+    assert.strictEqual(partyWithdrawal.state.stats.marketReturn, null, 'completed market travel must not pull the companion away later');
+    assert.deepStrictEqual(partyWithdrawal.state.loc, state.stats.marketReturn.loc, 'after party duty the bot should retain its pre-market hunting anchor');
+    assert(!MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran', now: 2000 })
+        .some((entry) => Number(entry.sourceId) === 94), 'withdrawn party store must disappear from market discovery immediately');
 
     const buyerRoutedState = {
         ...state,
@@ -128,20 +167,20 @@ async function run() {
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
     assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation?.source, undefined, 'a bot must not sell to a buyer in another town before travelling there');
 
-    const ownOffer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 88 });
+    const ownOffer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 88, now: 1001 });
     assert(!ownOffer || ownOffer.sourceType !== 'cold_store', 'seller must not buy its own listing');
-    const offer = MarketOpportunity.bestOffer(1, { town: 'Giran', buyerCharacterId: 99 });
+    const offer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 99, now: 1001 });
     assert.strictEqual(offer.sourceType, 'cold_store');
     assert.strictEqual(MarketOpportunity.reserve(offer), true);
     offer.buyerCharacterId = 99;
 
     const sold = await ListingService.settle(offer);
     assert.strictEqual(sold.adena, 500 + offer.price);
-    assert.strictEqual(sold.inventory['1'].amount, 0);
+    assert.strictEqual(sold.inventory[String(marketItem.selfId)].amount, 0);
     assert.strictEqual(sold.activity, 'shopping', 'selling the final item must close the store as part of the trade event');
     assert.strictEqual(sold.stats.marketStore, null);
     const soldSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 88);
-    assert.strictEqual(soldSync.inventory['1'].amount, 0, 'the optimized sync must persist removal of sold stock');
+    assert.strictEqual(soldSync.inventory[String(marketItem.selfId)].amount, 0, 'the optimized sync must persist removal of sold stock');
     assert.strictEqual(soldSync.inventory['57'].amount, 500 + offer.price, 'the optimized sync must persist the adena payout');
 
     const phantom = {
@@ -154,17 +193,93 @@ async function run() {
     assert.strictEqual(reconciled.state.stats.marketStore, null);
 
     const expiredState = { ...state, characterId: 89, name: 'ExpiredSeller' };
-    const expiredOpened = await ListingService.open(expiredState, { now: 1000, durationMs: 60000 });
+    const expiredOpened = await ListingService.open(expiredState, listingOptions);
     const expiredResult = await ListingService.resolve(expiredOpened.state, 62000);
     assert.strictEqual(expiredResult.closed, true);
     assert.strictEqual(expiredResult.reason, 'expired');
-    assert.strictEqual(expiredResult.state.inventory['1'].amount, 0, 'low-value old gear should be liquidated at the NPC');
-    assert.strictEqual(expiredResult.state.adena, 884, 'NPC payout should use the normal 50% sale price');
+    assert.strictEqual(expiredResult.state.inventory[String(marketItem.selfId)].amount, 0, 'valuable unsold gear should move to the warehouse');
+    assert.strictEqual(expiredResult.state.adena, 500, 'warehouse storage must not mint Adena');
+    assert.strictEqual(expiredResult.warehouseCount, 1);
     assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
+
+    const demandReviewOpened = await ListingService.open(
+        { ...state, characterId: 91, name: 'DemandReviewSeller' },
+        { ...listingOptions, durationMs: 300000 }
+    );
+    LifeState.allStates = () => [];
+    const demandReview = await ListingService.resolve(demandReviewOpened.state, 122000);
+    assert.strictEqual(demandReview.closed, true, 'an active WTS must close when its actionable demand disappears');
+    assert.strictEqual(demandReview.reason, 'no_actionable_demand');
+    LifeState.allStates = originals.allStates;
+
+    const mixedState = {
+        ...state,
+        characterId: 92,
+        name: 'MixedDemandSeller',
+        inventory: {
+            ...state.inventory,
+            [speculativeItem.selfId]: {
+                selfId: speculativeItem.selfId,
+                name: speculativeItem.template.name,
+                amount: 1,
+                equipped: false,
+                slot: speculativeItem.etc?.slot || 0,
+                kind: speculativeItem.template.kind,
+                rank: speculativeItem.etc?.rank || 'none'
+            }
+        }
+    };
+    const latentBuyer = {
+        characterId: 100,
+        name: 'LatentBuyer',
+        adena: 100000000,
+        currentRegion: 'Giran',
+        stats: { equipmentPlan: { status: 'active', strategy: 'drop', target: { selfId: speculativeItem.selfId } } }
+    };
+    const mixedOpened = await ListingService.open(mixedState, {
+        now: 1000,
+        random: () => 0.1,
+        states: [marketBuyer, latentBuyer]
+    });
+    const speculativeLine = mixedOpened.state.stats.marketStore.items.find((item) => Number(item.selfId) === Number(speculativeItem.selfId));
+    assert.strictEqual(mixedOpened.state.stats.marketStore.expiresAt, 1000 + ListingService.DEFAULT_LISTING_MS);
+    assert.strictEqual(speculativeLine.marketExpiresAt, 1000 + ListingService.SPECULATIVE_LISTING_MS, 'speculative lines need their own short TTL in a mixed store');
+    LifeState.allStates = () => [marketBuyer, latentBuyer];
+    const mixedReview = await ListingService.resolve(mixedOpened.state, 1001 + ListingService.SPECULATIVE_LISTING_MS);
+    assert.strictEqual(mixedReview.closed, false, 'active-demand stock should keep the mixed store open');
+    assert.deepStrictEqual(mixedReview.state.stats.marketStore.items.map((item) => Number(item.selfId)), [Number(marketItem.selfId)], 'expired speculative stock must be pruned independently');
+    LifeState.allStates = originals.allStates;
+
+    const hotOpened = await ListingService.open(
+        { ...state, characterId: 93, name: 'HotDemandSeller' },
+        { ...listingOptions, durationMs: 300000 }
+    );
+    let liveStore = { ...hotOpened.state.stats.marketStore, items: hotOpened.state.stats.marketStore.items.map((item) => ({ ...item })) };
+    let privateStoreType = 1;
+    const hotSession = {
+        accountId: 'bot_hot_market',
+        plan: 'merchant',
+        coldMarketState: { ...hotOpened.state, phase: 'hot' },
+        actor: {
+            fetchPrivateStore: () => liveStore,
+            setPrivateStore: (store) => { liveStore = store; },
+            setPrivateStoreType: (value) => { privateStoreType = value; },
+            state: { setSeated: () => {} }
+        }
+    };
+    LifeState.allStates = () => [];
+    const hotReview = await ListingService.resolveHotSession(hotSession, 122000);
+    assert.strictEqual(hotReview.closed, true, 'a visible hot WTS must close when actionable demand disappears');
+    assert.strictEqual(hotSession.coldMarketState.phase, 'hot', 'live maintenance must not dematerialize the actor behind the session');
+    assert.strictEqual(hotSession.coldMarketState.stats.marketStore, null);
+    assert.strictEqual(hotSession.plan, 'shopping');
+    assert.strictEqual(privateStoreType, 0);
+    assert.strictEqual(liveStore.items.length, 0, 'closed hot WTS stock must disappear from live offer discovery');
+    LifeState.allStates = originals.allStates;
 
     const misplacedExpired = await ListingService.open(
         { ...state, characterId: 90, name: 'MisplacedExpiredSeller' },
-        { now: 1000, durationMs: 60000 }
+        listingOptions
     );
     const misplacedExpiredResult = await ListingService.resolve({
         ...misplacedExpired.state,
@@ -197,6 +312,8 @@ run().catch((err) => {
     Database.updateCharacterExperience = originals.updateCharacterExperience;
     Database.updateCharacterVitals = originals.updateCharacterVitals;
     Database.syncInventorySummary = originals.syncInventorySummary;
+    Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
+    LifeState.allStates = originals.allStates;
     LifeState.reset?.();
     MarketOpportunity.resetColdStores();
 });

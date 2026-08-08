@@ -3,6 +3,7 @@ const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
+const buyStoreReservations = new WeakMap();
 
 const TOWN_NPC_SELLERS = {
     Giran: [7081, 7082, 7084, 7085, 7087, 7088, 7090, 7091, 7093, 7094, 7829],
@@ -30,8 +31,38 @@ const SHOT_IDS = new Set([
     3947, 3948, 3949, 3950, 3951, 3952
 ]);
 
+function coldMarketStates() {
+    // The in-memory index is the fast path. Include lifecycle snapshots so
+    // persisted shops are discoverable immediately after a server restart,
+    // before their owner has been materialized hot/cold once.
+    let persisted = [];
+    try {
+        persisted = invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || [];
+    } catch (_) {}
+    const states = new Map(Array.from(coldStoreIndex.entries()));
+    persisted.forEach((state) => {
+        if (state?.activity === 'merchant' && state.stats?.marketStore) states.set(Number(state.characterId), state);
+    });
+    return Array.from(states.values());
+}
+
 function itemName(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId))?.template?.name || `Item ${selfId}`;
+}
+
+function reservedBuyAdena(store) {
+    return store && typeof store === 'object' ? Number(buyStoreReservations.get(store) || 0) : 0;
+}
+
+function affordableBuyCount(buyerState, store, item) {
+    const price = Number(item?.price || 0);
+    if (price <= 0) return 0;
+    const availableAdena = Math.max(0, Number(buyerState?.adena || 0) - reservedBuyAdena(store));
+    return Math.max(0, Math.min(Number(item?.count || 0), Math.floor(availableAdena / price)));
+}
+
+function updateBuyOfferCount(offer) {
+    offer.count = affordableBuyCount(offer.buyerState, offer.store, offer.storeItem);
 }
 
 function normalizeItemLookup(value) {
@@ -145,10 +176,17 @@ function privateOffers(selfId, town) {
         if (town && store.town && store.town !== town) return [];
         const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
         if (!item || Number(item.price) <= 0) return [];
+        const actorName = actor.fetchName?.() || session.name || 'Private Store';
+        const sellerKind = MerchantStoreConfigs[actorName]
+            ? 'fixed'
+            : String(session.accountId || '').startsWith('bot_')
+                ? 'bot'
+                : 'player';
         return [{
             sourceType: 'private_store',
             sourceId: Number(actor.fetchId?.() || 0),
-            sourceName: actor.fetchName?.() || 'Private Store',
+            sourceName: actorName,
+            sellerKind,
             town: store.town || town || null,
             selfId: Number(selfId),
             itemName: itemName(selfId),
@@ -162,10 +200,11 @@ function privateOffers(selfId, town) {
     });
 }
 
-function coldOffers(selfId, town, buyerCharacterId = null) {
-    return Array.from(coldStoreIndex.values()).flatMap((state) => {
+function coldOffers(selfId, town, buyerCharacterId = null, timestamp = Date.now()) {
+    return coldMarketStates().flatMap((state) => {
         const store = state?.stats?.marketStore;
-        if (!store || state.activity !== 'merchant' || Number(state.characterId) === Number(buyerCharacterId)) return [];
+        if (!store || Number(store.storeType || 1) !== 1 || state.activity !== 'merchant' || Number(state.characterId) === Number(buyerCharacterId)) return [];
+        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Number(timestamp)) return [];
         if (town && store.town !== town) return [];
         const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
         if (!item || Number(item.price) <= 0) return [];
@@ -180,6 +219,64 @@ function coldOffers(selfId, town, buyerCharacterId = null) {
             count: Number(item.count),
             available: true,
             sellerState: state,
+            store,
+            storeItem: item
+        }];
+    });
+}
+
+function privateBuyOffers(selfId, town, sellerCharacterId = null) {
+    return (World.user?.sessions || []).flatMap((session) => {
+        const actor = session?.actor;
+        const store = actor?.fetchPrivateStore?.();
+        if (!actor || Number(store?.storeType) !== 3 || store.budgetBacked !== true) return [];
+        if (Number(actor.fetchId?.() || 0) === Number(sellerCharacterId)) return [];
+        if (town && store.town && store.town !== town) return [];
+        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
+        if (!item || Number(item.price) <= 0) return [];
+        const buyerState = session.coldMarketState || null;
+        const count = affordableBuyCount(buyerState, store, item);
+        if (count <= 0) return [];
+        return [{
+            sourceType: 'private_buy_store',
+            sourceId: Number(actor.fetchId?.() || 0),
+            sourceName: actor.fetchName?.() || 'Private Buyer',
+            town: store.town || town || null,
+            selfId: Number(selfId),
+            itemName: item.name || itemName(selfId),
+            price: Number(item.price),
+            count,
+            available: true,
+            buyerState,
+            session,
+            store,
+            storeItem: item
+        }];
+    });
+}
+
+function coldBuyOffers(selfId, town, sellerCharacterId = null) {
+    return coldMarketStates().flatMap((state) => {
+        const store = state?.stats?.marketStore;
+        if (!store || Number(store.storeType) !== 3 || store.budgetBacked !== true || state.activity !== 'merchant') return [];
+        if (Number(state.characterId) === Number(sellerCharacterId)) return [];
+        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Date.now()) return [];
+        if (town && store.town !== town) return [];
+        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
+        if (!item || Number(item.price) <= 0) return [];
+        const count = affordableBuyCount(state, store, item);
+        if (count <= 0) return [];
+        return [{
+            sourceType: 'cold_buy_store',
+            sourceId: Number(state.characterId),
+            sourceName: state.name || store.buyerName || 'Cold Buyer',
+            town: store.town || town || null,
+            selfId: Number(selfId),
+            itemName: item.name || itemName(selfId),
+            price: Number(item.price),
+            count,
+            available: true,
+            buyerState: state,
             store,
             storeItem: item
         }];
@@ -209,7 +306,7 @@ function findOffers(selfId, options = {}) {
     const town = options.town || null;
     return [
         ...privateOffers(selfId, town),
-        ...coldOffers(selfId, town, options.buyerCharacterId),
+        ...coldOffers(selfId, town, options.buyerCharacterId, options.now ?? Date.now()),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available)
         .sort((a, b) => a.price - b.price || (a.sourceType === 'npc' ? 1 : -1));
@@ -218,6 +315,74 @@ function findOffers(selfId, options = {}) {
 function bestOffer(selfId, options = {}) {
     const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
     return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
+}
+
+function findBuyOffers(selfId, options = {}) {
+    const town = options.town || null;
+    return [
+        ...privateBuyOffers(selfId, town, options.sellerCharacterId),
+        ...coldBuyOffers(selfId, town, options.sellerCharacterId)
+    ].filter((offer) => offer.available)
+        .sort((left, right) => right.price - left.price || left.sourceId - right.sourceId);
+}
+
+function bestBuyOffer(selfId, options = {}) {
+    return findBuyOffers(selfId, options)[0] || null;
+}
+
+function reserveBuy(offer, qty = 1) {
+    const count = Math.max(1, Math.floor(Number(qty) || 1));
+    if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return false;
+    if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
+    const buyerStoreItem = (offer.buyerState?.stats?.marketStore?.items || [])
+        .find((item) => Number(item.selfId) === Number(offer.selfId));
+    if (buyerStoreItem && buyerStoreItem !== offer.storeItem && Number(buyerStoreItem.count) < count) return false;
+    const reservedAdena = reservedBuyAdena(offer.store);
+    const reservationAdena = Number(offer.price) * count;
+    const buyerAdena = Number(offer.buyerState?.adena || 0);
+    if (buyerAdena - reservedAdena < reservationAdena) return false;
+    offer.storeItem.count -= count;
+    if (buyerStoreItem && buyerStoreItem !== offer.storeItem) buyerStoreItem.count -= count;
+    offer.buyerStoreItem = buyerStoreItem || offer.storeItem;
+    offer.reservedBuyCount = Number(offer.reservedBuyCount || 0) + count;
+    offer.reservedBuyAdena = Number(offer.reservedBuyAdena || 0) + reservationAdena;
+    buyStoreReservations.set(offer.store, reservedAdena + reservationAdena);
+    updateBuyOfferCount(offer);
+    return true;
+}
+
+function releaseBuy(offer, qty = 1) {
+    if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return;
+    const count = Math.min(
+        Math.max(1, Math.floor(Number(qty) || 1)),
+        Math.max(0, Number(offer.reservedBuyCount || 0))
+    );
+    if (count <= 0) return;
+    offer.storeItem.count += count;
+    if (offer.buyerStoreItem && offer.buyerStoreItem !== offer.storeItem) offer.buyerStoreItem.count += count;
+    offer.reservedBuyCount -= count;
+    const releasedAdena = Math.min(Number(offer.reservedBuyAdena || 0), Number(offer.price) * count);
+    offer.reservedBuyAdena = Math.max(0, Number(offer.reservedBuyAdena || 0) - releasedAdena);
+    const remainingReservation = Math.max(0, reservedBuyAdena(offer.store) - releasedAdena);
+    if (remainingReservation > 0) buyStoreReservations.set(offer.store, remainingReservation);
+    else buyStoreReservations.delete(offer.store);
+    updateBuyOfferCount(offer);
+}
+
+function commitBuy(offer, qty = 1, buyerState = offer?.buyerState) {
+    const count = Math.min(
+        Math.max(1, Math.floor(Number(qty) || 1)),
+        Math.max(0, Number(offer?.reservedBuyCount || 0))
+    );
+    if (count <= 0 || !offer?.store) return;
+    offer.reservedBuyCount -= count;
+    const committedAdena = Math.min(Number(offer.reservedBuyAdena || 0), Number(offer.price) * count);
+    offer.reservedBuyAdena = Math.max(0, Number(offer.reservedBuyAdena || 0) - committedAdena);
+    const remainingReservation = Math.max(0, reservedBuyAdena(offer.store) - committedAdena);
+    if (remainingReservation > 0) buyStoreReservations.set(offer.store, remainingReservation);
+    else buyStoreReservations.delete(offer.store);
+    offer.buyerState = buyerState;
+    updateBuyOfferCount(offer);
 }
 
 // A companion may leave the field for the city that actually sells the
@@ -301,18 +466,25 @@ function release(offer, qty = 1) {
 module.exports = {
     TOWN_NPC_SELLERS,
     bestOffer,
+    bestBuyOffer,
     bestSupplyOffer,
+    commitBuy,
     coldOffers,
+    coldBuyOffers,
     findOffers,
+    findBuyOffers,
     indexColdStore,
     npcOffers,
     npcOffersAll,
     normalizeItemLookup,
     privateOffers,
+    privateBuyOffers,
     resolveSupplyItem,
     removeColdStore,
     resetColdStores,
     supplyCatalog,
     release,
-    reserve
+    releaseBuy,
+    reserve,
+    reserveBuy
 };

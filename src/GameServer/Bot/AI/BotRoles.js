@@ -1,24 +1,54 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
+const DataCache = invoke('GameServer/DataCache');
 
 const ROLE_CLASSES = {
     healer: [15, 16, 29, 30, 42, 43],
-    buffer: [17, 49, 50, 51],
+    buffer: [17, 21, 34, 49, 50, 51, 52],
     tank: [4, 5, 6, 19, 20, 32, 33],
     dagger: [7, 8, 23, 35, 36],
     archer: [9, 22, 24, 37],
-    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41, 52],
+    mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41],
     crafter: [56, 57]
 };
 
 function classIdOf(value) {
-    if (typeof value === 'number') return value;
+    if (typeof value === 'number' || typeof value === 'string') return value;
     if (value && typeof value.fetchClassId === 'function') return value.fetchClassId();
+    if (value?.classId !== null && value?.classId !== undefined) return Number(value.classId);
+    if (value?.stats?.classId !== null && value?.stats?.classId !== undefined) return Number(value.stats.classId);
+    if (value?.stats?.classProgressionClassId !== null && value?.stats?.classProgressionClassId !== undefined) {
+        return Number(value.stats.classProgressionClassId);
+    }
     return null;
 }
 
-function roleClassId(value) {
+function normalizedClassId(value) {
     const classId = classIdOf(value);
-    if (classId === null || classId === undefined) return classId;
+    if (classId === null || classId === undefined || classId === '') return null;
+    const number = Number(classId);
+    return Number.isInteger(number) && number >= 0 ? number : null;
+}
+
+function className(value) {
+    const classId = normalizedClassId(value);
+    if (classId === null) return null;
+    return (DataCache.classTemplates || [])
+        .find((template) => Number(template.classId) === classId)
+        ?.template?.class || null;
+}
+
+function presentation(value) {
+    const classId = normalizedClassId(value);
+    return {
+        classId,
+        className: className(value),
+        role: inferRole(value)
+    };
+}
+
+function roleClassId(value) {
+    const classId = normalizedClassId(value);
+    if (classId === null) return null;
     return Number(ClassProgression.getThirdClass(classId)?.parentClassId || classId);
 }
 
@@ -83,6 +113,8 @@ function partyRoleStance(role) {
 
 module.exports = {
     ROLE_CLASSES,
+    className,
+    presentation,
     inferRole,
     isRole,
     isHealer,

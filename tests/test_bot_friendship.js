@@ -3,7 +3,9 @@ const assert = require('assert');
 require('../src/Global');
 
 const Database = invoke('Database');
+const DataCache = invoke('GameServer/DataCache');
 const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
+DataCache.init();
 const originalExecute = Database.execute;
 let rosterCount = 7;
 let requestSocial = {
@@ -14,6 +16,29 @@ let requestSocial = {
 
 Database.execute = ([sql]) => {
     const text = String(sql);
+    if (text.includes('FROM bot_social_memory s INNER JOIN bot_life_state')) {
+        return Promise.resolve([{
+            botId: 103,
+            name: 'ActualHealer',
+            level: 44,
+            classId: 30,
+            statsJson: JSON.stringify({ role: 'dps', classId: 10 }),
+            trust: 50,
+            familiarity: 12,
+            status: 'accepted',
+            selected: 0
+        }, {
+            botId: 104,
+            name: 'Nika',
+            level: 1,
+            classId: 53,
+            statsJson: JSON.stringify({ classId: 53 }),
+            trust: 40,
+            familiarity: 5,
+            status: null,
+            selected: 0
+        }]);
+    }
     if (text.includes('FROM bot_social_memory')) return Promise.resolve([requestSocial]);
     if (text.includes('INSERT INTO bot_friendships')) return Promise.resolve([]);
     if (text.includes('FROM bot_friendships')) return Promise.resolve([{}]);
@@ -33,6 +58,10 @@ Promise.all([
     assert.strictEqual(first.selected, true);
     assert.strictEqual(second.reason, 'const_full', 'concurrent selections must not exceed eight const members');
     assert.strictEqual(rosterCount, 8);
+    const friends = await BotFriendship.listFriends({ characterId: 42 });
+    assert.strictEqual(friends[0].className, 'Elven Elder', 'friend rows must expose the current profession name');
+    assert.strictEqual(friends[0].role, 'healer', 'current character class must override a stale saved DPS role');
+    assert.strictEqual(friends.length, 1, 'configured static merchants must be absent from friend lists and search results');
     const accepted = await BotFriendship.request({ characterId: 42 }, { characterId: 100, name: 'OldFriend' });
     assert.strictEqual(accepted.ok, true, 'an old abandonment cooldown must not block friendship forever');
     const staticService = await BotFriendship.request({ characterId: 42 }, {
@@ -41,6 +70,13 @@ Promise.all([
         stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
     });
     assert.strictEqual(staticService.reason, 'merchant_duty', 'fixed craft services must not be eligible for friendship');
+    const configuredMerchant = await BotFriendship.request({ characterId: 42 }, {
+        characterId: 104,
+        name: 'Nika',
+        activity: 'merchant',
+        stats: { classId: 53 }
+    });
+    assert.strictEqual(configuredMerchant.reason, 'merchant_duty', 'configured liquidity stores must not accept friend requests');
     requestSocial = { trust: 20, insults: 0, recentlyAbandonedAt: Date.now() - 1000 };
     const coolingDown = await BotFriendship.request({ characterId: 42 }, { characterId: 101, name: 'CoolingFriend' });
     assert.strictEqual(coolingDown.reason, 'recently_abandoned', 'a recent abandonment must still be respected');

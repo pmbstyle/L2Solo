@@ -636,6 +636,8 @@ const BotManager = {
 
                         session.actor.setPrivateStore({
                             storeType: privateStore.storeType,
+                            budgetBacked: privateStore.budgetBacked === true,
+                            buyerCharacterId: Number(privateStore.buyerCharacterId || 0) || null,
                             revision: Math.max(1, Number(privateStore.revision || 1)),
                             title: privateStore.title,
                             town: privateStore.town,

@@ -8,7 +8,7 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 function actor(id, level, clanId = 0, options = {}) {
     return {
         fetchId: () => id,
-        fetchName: () => `Actor${id}`,
+        fetchName: () => options.name || `Actor${id}`,
         fetchLevel: () => level,
         fetchClanId: () => clanId,
         fetchLocX: () => Number(options.locX || 0),
@@ -48,7 +48,8 @@ try {
 
     const merchantClanBot = session(actor(2000005, 55, 6000001), { plan: 'merchant' });
     result = BotAvailability.evaluate(clanPlayer, merchantClanBot);
-    assert.strictEqual(result.available, true, 'same-clan hot bot should ignore merchant duty refusal');
+    assert.strictEqual(result.available, false, 'a fixed merchant must remain unavailable even if stale clan data links it to the player');
+    assert.strictEqual(result.reason, 'merchant_duty');
 
     const farClanBot = session(actor(2000007, 55, 6000001, { locX: 100000 }));
     result = BotAvailability.evaluate(clanPlayer, farClanBot);
@@ -138,6 +139,14 @@ try {
     result = BotAvailability.evaluate(lowPlayer, staticMerchant, { forceFriend: true, ignoreDistance: true });
     assert.strictEqual(result.available, false, 'const friend overrides must never recruit a fixed merchant');
     assert.strictEqual(result.reason, 'merchant_duty');
+
+    const configuredMerchant = session(actor(2000018, 1, 0, { name: 'Nika' }), {
+        plan: 'merchant',
+        coldLifeState: { stats: { classId: 53 } }
+    });
+    result = BotAvailability.evaluate(lowPlayer, configuredMerchant, { forceFriend: true, ignoreDistance: true });
+    assert.strictEqual(result.reason, 'merchant_duty', 'configured liquidity stores must remain static even with a stale life-state snapshot');
+    assert.deepStrictEqual(BotAvailability.listForPlayer(lowPlayer, [configuredMerchant]), [], 'static services must not appear in party candidate lists');
 
     console.log('Bot availability checks passed');
 } finally {

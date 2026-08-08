@@ -199,10 +199,12 @@ const World = {
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         const availability = BotAvailability.evaluate(session, targetSession, options);
         const bot = targetSession.actor;
+        const capacityReservation = options.capacityReservation || targetSession;
 
         BotSocialMemory.recordEvent(session, targetSession, 'invite_attempt', source);
 
         if (!availability.available) {
+            PartyCompanionService.releaseCapacity(session, capacityReservation);
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', availability.reason);
             session.dataSendToMe(ServerResponse.joinParty(0));
             BotManager.botTell(targetSession, session, availability.partyDecision
@@ -218,29 +220,69 @@ const World = {
             return false;
         }
 
-        const attachOptions = {};
-        if (distribution !== undefined && distribution !== null) {
-            attachOptions.distribution = distribution;
-        }
-
-        if (!PartyCompanionService.attach(session, targetSession, attachOptions)) {
+        if (!PartyCompanionService.reserveCapacity(session, capacityReservation)) {
             BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
             session.dataSendToMe(ServerResponse.joinParty(0));
             BotManager.botTell(targetSession, session, "Your party is full. Ask me again after making room.");
             return false;
         }
 
-        BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
-        setTimeout(() => {
-            BotManager.botTell(
-                targetSession,
-                session,
-                availability.partyDecision
-                    ? PersonaPartyDecisionPolicy.reply(availability.partyDecision)
-                    : `I'm with you. Lead the way.`
-            );
-        }, 1000);
-        return true;
+        const attachCompanion = (withdrawal = null) => {
+            const attachOptions = {};
+            if (distribution !== undefined && distribution !== null) {
+                attachOptions.distribution = distribution;
+            }
+            attachOptions.capacityReservation = capacityReservation;
+
+            if (!PartyCompanionService.attach(session, targetSession, attachOptions)) {
+                PartyCompanionService.releaseCapacity(session, capacityReservation);
+                BotSocialMemory.recordEvent(session, targetSession, 'party_refused', 'party_full');
+                session.dataSendToMe(ServerResponse.joinParty(0));
+                BotManager.botTell(targetSession, session, "Your party is full. Ask me again after making room.");
+                if (withdrawal?.withdrawn) {
+                    const BotMerchantStoreService = invoke('GameServer/Bot/Economy/BotMerchantStoreService');
+                    return BotMerchantStoreService.restoreAfterPartyFailure(targetSession, withdrawal).then(() => false);
+                }
+                return false;
+            }
+
+            BotSocialMemory.recordEvent(session, targetSession, 'party_formed', source);
+            setTimeout(() => {
+                BotManager.botTell(
+                    targetSession,
+                    session,
+                    availability.partyDecision
+                        ? PersonaPartyDecisionPolicy.reply(availability.partyDecision)
+                        : `I'm with you. Lead the way.`
+                );
+            }, 1000);
+            return true;
+        };
+
+        const BotMerchantStoreService = invoke('GameServer/Bot/Economy/BotMerchantStoreService');
+        if (!BotMerchantStoreService.needsPartyWithdrawal(targetSession)) return attachCompanion();
+        let completedWithdrawal = null;
+        return BotMerchantStoreService.withdrawForParty(targetSession).then((withdrawal) => {
+            completedWithdrawal = withdrawal;
+            if (withdrawal.ok) return attachCompanion(withdrawal);
+            PartyCompanionService.releaseCapacity(session, capacityReservation);
+            BotSocialMemory.recordEvent(session, targetSession, 'party_refused', withdrawal.reason || 'store_withdrawal_failed');
+            session.dataSendToMe(ServerResponse.joinParty(0));
+            BotManager.botTell(targetSession, session, "Give me a moment to finish this trade, then ask me again.");
+            return false;
+        }).catch(async (error) => {
+            PartyCompanionService.releaseCapacity(session, capacityReservation);
+            if (completedWithdrawal?.withdrawn) {
+                try {
+                    await BotMerchantStoreService.restoreAfterPartyFailure(targetSession, completedWithdrawal);
+                } catch (rollbackError) {
+                    utils.infoWarn('BotParty', 'merchant rollback failed for %s: %s', bot?.fetchName?.() || 'unknown', rollbackError.message || rollbackError);
+                }
+            }
+            utils.infoWarn('BotParty', 'merchant withdrawal failed for %s: %s', bot?.fetchName?.() || 'unknown', error.message || error);
+            session.dataSendToMe(ServerResponse.joinParty(0));
+            return false;
+        });
     },
 
     inviteBotByName(session, actor, name, distribution, source = 'named_invite', options = {}) {
@@ -255,6 +297,8 @@ const World = {
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+        const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+        let capacityReservation = null;
 
         const hotSession = BotManager.findSessionByName(lookup);
         if (hotSession) {
@@ -283,11 +327,20 @@ const World = {
                 return false;
             }
 
+            capacityReservation = state;
+            if (!PartyCompanionService.reserveCapacity(session, capacityReservation)) {
+                BotSocialMemory.recordEvent(session, state, 'party_refused', 'party_full');
+                session.dataSendToMe(ServerResponse.actionFailed());
+                coldBotTell(session, state, `Your party is full. Ask me again after making room.`);
+                return false;
+            }
+
             return PopulationService.requestActivation(state, 'remote_invite', {
                 playerLoc: actorLoc(actor),
                 forceNearPlayer: true
             }).then((result) => {
                 if (!result.ok) {
+                    PartyCompanionService.releaseCapacity(session, capacityReservation);
                     BotSocialMemory.recordEvent(session, state, 'invite_attempt', source);
                     BotSocialMemory.recordEvent(session, state, 'party_refused', result.reason || 'activation_failed');
                     session.dataSendToMe(ServerResponse.actionFailed());
@@ -297,15 +350,20 @@ const World = {
 
                 return waitForBotSession(BotManager, state.name || lookup).then((targetSession) => {
                     if (!targetSession) {
+                        PartyCompanionService.releaseCapacity(session, capacityReservation);
                         session.dataSendToMe(ServerResponse.actionFailed());
                         coldBotTell(session, state, `I tried to come over, but something went wrong.`);
                         return false;
                     }
 
-                    return this.inviteBotCompanion(session, actor, targetSession, distribution, source, options);
+                    return this.inviteBotCompanion(session, actor, targetSession, distribution, source, {
+                        ...options,
+                        capacityReservation
+                    });
                 });
             });
         }).catch((err) => {
+            PartyCompanionService.releaseCapacity(session, capacityReservation);
             utils.infoWarn('BotParty', 'remote invite failed for %s: %s', lookup, err.message);
             session.dataSendToMe(ServerResponse.actionFailed());
             return false;

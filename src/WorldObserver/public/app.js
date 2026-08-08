@@ -1,8 +1,14 @@
+const ActorFilters = window.WorldObserverActorFilters;
+
 const state = {
     snapshot: null,
     selectedId: null,
     phase: 'all',
     search: '',
+    minLevel: null,
+    maxLevel: null,
+    classKey: 'all',
+    classOptionsSignature: null,
     live: true,
     fit: false,
     renderedTileKey: null,
@@ -26,6 +32,56 @@ const COLORS = {
     mixed: '#d8b96d'
 };
 
+const PHASE_LABELS = Object.freeze({
+    hot: 'Active',
+    warm: 'Background',
+    cold: 'Simulated',
+    player: 'Player',
+    players: 'Players'
+});
+
+const ROLE_LABELS = Object.freeze({
+    dps: 'Damage',
+    tank: 'Tank',
+    healer: 'Healer',
+    buffer: 'Buffer',
+    mage: 'Mage',
+    archer: 'Archer',
+    dagger: 'Dagger',
+    crafter: 'Crafter',
+    player: 'Player',
+    member: 'Member'
+});
+
+const ACTIVITY_LABELS = Object.freeze({
+    background_active: 'Active in background',
+    background_resolve: 'Simulating',
+    buy: 'Buying',
+    complete_errand: 'Finishing an errand',
+    crafting: 'Crafting',
+    craft: 'Crafting',
+    dead: 'Dead',
+    find_party: 'Looking for party',
+    focused: 'Focused',
+    grouped: 'In a party',
+    hunting: 'Hunting',
+    idle: 'Idle',
+    merchant: 'Trading',
+    neutral: 'Neutral',
+    offline: 'Offline',
+    online: 'Online',
+    party_wait: 'Looking for party',
+    pk_hunting: 'PK hunting',
+    progress_gear: 'Improving gear',
+    recover: 'Recovering',
+    resting: 'Resting',
+    sell: 'Selling',
+    shopping: 'Shopping',
+    store: 'Store',
+    trade: 'Trading',
+    traveling: 'Traveling'
+});
+
 const els = {
     serverLine: document.querySelector('#serverLine'),
     liveToggle: document.querySelector('#liveToggle'),
@@ -33,6 +89,10 @@ const els = {
     fitButton: document.querySelector('#fitButton'),
     filterStrip: document.querySelector('#filterStrip'),
     actorSearch: document.querySelector('#actorSearch'),
+    minLevelFilter: document.querySelector('#minLevelFilter'),
+    maxLevelFilter: document.querySelector('#maxLevelFilter'),
+    classFilter: document.querySelector('#classFilter'),
+    clearActorFilters: document.querySelector('#clearActorFilters'),
     worldMap: document.querySelector('#worldMap'),
     tileLayer: document.querySelector('#tileLayer'),
     gridLines: document.querySelector('#gridLines'),
@@ -44,6 +104,15 @@ const els = {
     playersTotal: document.querySelector('#playersTotal'),
     populationSubline: document.querySelector('#populationSubline'),
     phaseBars: document.querySelector('#phaseBars'),
+    marketScope: document.querySelector('#marketScope'),
+    marketWts: document.querySelector('#marketWts'),
+    marketWtb: document.querySelector('#marketWtb'),
+    marketTrades: document.querySelector('#marketTrades'),
+    marketAdena: document.querySelector('#marketAdena'),
+    marketTowns: document.querySelector('#marketTowns'),
+    marketTopItem: document.querySelector('#marketTopItem'),
+    marketRecentTrades: document.querySelector('#marketRecentTrades'),
+    marketTradeTop: document.querySelector('#marketTradeTop'),
     actorList: document.querySelector('#actorList'),
     lastRefresh: document.querySelector('#lastRefresh'),
     visibleCount: document.querySelector('#visibleCount'),
@@ -106,6 +175,12 @@ function formatDuration(ms) {
 function formatTime(timestamp) {
     if (!timestamp) return '—';
     return new Date(Number(timestamp)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function compactNumber(value) {
+    const amount = Math.max(0, Number(value || 0));
+    if (amount < 1000) return amount.toLocaleString();
+    return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: amount < 10000 ? 1 : 0 }).format(amount);
 }
 
 function formatRelative(timestamp) {
@@ -187,7 +262,7 @@ function setSvgViewBox() {
         return;
     }
 
-    const locs = [...state.snapshot.bots, ...state.snapshot.players].map((item) => item.loc).filter(Boolean);
+    const locs = filteredActors().map((item) => item.loc).filter(Boolean);
     if (locs.length < 2) {
         state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
         setViewBox();
@@ -266,13 +341,23 @@ function actors() {
     ];
 }
 
+function eligibleActors() {
+    return actors().filter(ActorFilters.isEligible);
+}
+
 function actorSearchText(actor) {
     return [
         actor.name,
         actor.phase,
+        phaseLabel(actor.phase),
         actor.mode,
         actor.intent,
+        displayActivity(actor),
         actor.role,
+        roleLabel(actor.role),
+        actor.className,
+        actor.build?.className,
+        actor.build?.classFamily,
         actor.home?.region,
         actor.spot?.name,
         actor.classId
@@ -282,12 +367,13 @@ function actorSearchText(actor) {
 function isVisible(actor) {
     if (state.phase !== 'all' && state.phase !== 'players' && actor.phase !== state.phase) return false;
     if (state.phase === 'players' && actor.kind !== 'player') return false;
-    return !state.search || actorSearchText(actor).includes(state.search);
+    if (state.search && !actorSearchText(actor).includes(state.search)) return false;
+    return ActorFilters.matches(actor, state);
 }
 
 function filteredActors() {
     const scope = state.clusterScope?.actorKeys;
-    return actors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
+    return eligibleActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
 }
 
 function actorKey(actor) {
@@ -429,7 +515,7 @@ function clusterColor(cluster) {
 }
 
 function actorLabel(actor) {
-    return `${actor.isPk ? 'PK ' : ''}${actor.name} · Lv ${actor.level} · ${actor.intent || actor.mode || 'idle'}`;
+    return `${actor.isPk ? 'PK ' : ''}${actor.name} · Lv ${actor.level} · ${actorClassName(actor)} · ${displayActivity(actor)}`;
 }
 
 function addPointHandlers(group, handler) {
@@ -494,7 +580,7 @@ function renderCluster(cluster) {
         transform: `translate(${cluster.point.x}, ${cluster.point.y})`,
         tabindex: 0,
         role: 'button',
-        'aria-label': `${cluster.size} actors near ${first.home?.region || first.spot?.name || 'this area'}`
+        'aria-label': `${cluster.size} actors near ${clusterLocation(cluster)}`
     });
     addPointHandlers(group, () => focusCluster(cluster));
     group.appendChild(pointHitElement(Math.max(36, radiusPx * 2 + 8)));
@@ -522,7 +608,7 @@ function renderCluster(cluster) {
             'text-anchor': 'middle',
             style: `font-size:${screenUnits(9)}px;stroke-width:${screenUnits(2.2)}px`
         });
-        breakdown.textContent = phaseCounts.map(([key, count]) => `${key} ${count}`).join(' · ');
+        breakdown.textContent = phaseCounts.map(([key, count]) => `${phaseLabel(key)} ${count}`).join(' · ');
         group.appendChild(breakdown);
     }
     els.pointsLayer.appendChild(group);
@@ -535,13 +621,13 @@ function renderPoints() {
     const visible = filteredActors();
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
-    els.visibleCount.textContent = state.clusterScope
-        ? `${visible.length.toLocaleString()} in cluster · ${clusters.length.toLocaleString()} groups`
-        : `${visible.length.toLocaleString()} shown · ${clusters.length.toLocaleString()} groups`;
 }
 
 function renderFilterCounts() {
-    const items = actors().filter((actor) => !state.search || actorSearchText(actor).includes(state.search));
+    const items = eligibleActors().filter((actor) => (
+        (!state.search || actorSearchText(actor).includes(state.search))
+        && ActorFilters.matches(actor, state)
+    ));
     const counts = {
         all: items.length,
         hot: items.filter((actor) => actor.phase === 'hot').length,
@@ -553,6 +639,54 @@ function renderFilterCounts() {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
         if (count) count.textContent = value.toLocaleString();
     });
+}
+
+function renderClassFilter() {
+    const options = ActorFilters.classOptions(eligibleActors());
+    const signature = options.map((option) => `${option.key}:${option.label}`).join('|');
+    if (signature === state.classOptionsSignature) return;
+    state.classOptionsSignature = signature;
+
+    if (state.classKey !== 'all' && !options.some((option) => option.key === state.classKey)) {
+        state.classKey = 'all';
+    }
+    els.classFilter.innerHTML = [
+        '<option value="all">All classes</option>',
+        ...options.map((option) => `<option value="${escapeHtml(option.key)}">${text(option.label)}</option>`)
+    ].join('');
+    els.classFilter.value = state.classKey;
+    renderActorFilterState();
+}
+
+function renderActorFilterState() {
+    const active = state.minLevel !== null || state.maxLevel !== null || state.classKey !== 'all';
+    els.clearActorFilters.hidden = !active;
+}
+
+function renderFilteredActorViews({ counts = true } = {}) {
+    if (counts) renderFilterCounts();
+    if (state.fit) {
+        setSvgViewBox();
+        renderLabels();
+    }
+    renderPoints();
+    renderRoster();
+    renderActorFilterState();
+}
+
+function updateLevelFilter(changed) {
+    state.minLevel = ActorFilters.normalizeLevel(els.minLevelFilter.value);
+    state.maxLevel = ActorFilters.normalizeLevel(els.maxLevelFilter.value);
+    if (state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
+        if (changed === 'min') {
+            state.maxLevel = state.minLevel;
+            els.maxLevelFilter.value = state.maxLevel;
+        } else {
+            state.minLevel = state.maxLevel;
+            els.minLevelFilter.value = state.minLevel;
+        }
+    }
+    renderFilteredActorViews();
 }
 
 function renderPopulation() {
@@ -569,31 +703,96 @@ function renderPopulation() {
         const count = Number(population[phase] || 0);
         const width = Math.max(count ? 2 : 0, (count / phaseTotal) * 100);
         return `<div class="population-bar-row">
-            <span class="phase-label"><i class="legend-dot ${phase}"></i>${phase}</span>
+            <span class="phase-label"><i class="legend-dot ${phase}"></i>${phaseLabel(phase)}</span>
             <div class="population-track"><div class="population-fill ${phase}" style="width:${width}%"></div></div>
             <strong>${count.toLocaleString()}</strong>
         </div>`;
     }).join('');
 }
 
+function renderMarket() {
+    const market = state.snapshot?.population?.marketState || {};
+    const dynamic = market.dynamic || {};
+    const fixed = market.fixed || {};
+    const activity = market.activity || {};
+    const transactions = market.transactions || {};
+    const trades = Number(activity.peerPurchases ?? activity.purchases ?? 0) + Number(activity.dynamicBuyerSales || 0);
+    const tradedAdena = Number(activity.peerPurchaseAdena ?? activity.adenaTraded ?? 0) + Number(activity.dynamicBuyerAdena || 0);
+
+    els.marketWts.textContent = compactNumber(dynamic.wts);
+    els.marketWtb.textContent = compactNumber(dynamic.wtb);
+    els.marketTrades.textContent = compactNumber(trades);
+    els.marketAdena.textContent = compactNumber(tradedAdena);
+    els.marketScope.textContent = `${number(fixed.wts || 0)}/${number(fixed.wtb || 0)} fixed WTS/WTB`;
+
+    const towns = Object.entries(market.byTown || {}).map(([name, town]) => ({ name, ...town }))
+        .filter((town) => Number(town.dynamicWts || 0) + Number(town.dynamicWtb || 0) > 0)
+        .sort((left, right) => (
+            Number(right.dynamicWts || 0) + Number(right.dynamicWtb || 0)
+            - Number(left.dynamicWts || 0) - Number(left.dynamicWtb || 0)
+            || String(left.name).localeCompare(String(right.name))
+        )).slice(0, 4);
+    els.marketTowns.innerHTML = towns.length ? towns.map((town) => {
+        const tradeTown = transactions.byPeerTown?.[town.name] || {};
+        return `
+        <div class="market-town-row" title="${text(`${town.fixedWts || 0} fixed WTS · ${town.fixedWtb || 0} fixed WTB · ${number(tradeTown.adena || 0)} peer Adena`)}">
+            <strong>${text(town.name)}</strong>
+            <span><b>${number(town.dynamicWts || 0)}</b> WTS</span>
+            <span><b>${number(town.dynamicWtb || 0)}</b> WTB</span>
+            <span><b>${number(tradeTown.trades || 0)}</b> tx</span>
+        </div>
+    `;
+    }).join('') : '<div class="list-empty">No dynamic stores open.</div>';
+
+    const top = (market.topItems || [])[0];
+    const demand = top?.demand || {};
+    els.marketTopItem.innerHTML = top
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} for sale (${number(top.speculativeWtsUnits || 0)} speculative) / ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded now, ${number(demand.bots || 0)} planned`
+        : 'No active item flow yet';
+
+    const recent = (transactions.recentPeerTrades || []).slice(0, 3);
+    els.marketRecentTrades.innerHTML = recent.length ? recent.map((trade) => {
+        const side = trade.channel === 'wtb' ? 'WTB' : 'WTS';
+        const counterparty = trade.channel === 'wtb' ? trade.buyer?.name : trade.seller?.name;
+        const action = trade.channel === 'wtb' ? 'sold to' : 'bought from';
+        const at = Number(trade.at || 0) > 0
+            ? new Date(Number(trade.at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '—';
+        return `<div class="market-trade-row" title="${text(`${trade.seller?.name || 'Unknown seller'} → ${trade.buyer?.name || 'Unknown buyer'} · ${number(trade.adena || 0)} Adena`)}">
+            <b>${side}</b>
+            <strong>${text(`${trade.itemName || `Item ${trade.selfId}`} x${number(trade.quantity || 0)} ${action} ${counterparty || 'bot'}`)}</strong>
+            <time>${text(at)}</time>
+        </div>`;
+    }).join('') : '<div class="list-empty">No bot-to-bot trades yet.</div>';
+
+    const topTrade = (transactions.byPeerItem || [])[0];
+    const peerTrades = Number(topTrade?.channels?.wts?.trades || 0) + Number(topTrade?.channels?.wtb?.trades || 0);
+    els.marketTradeTop.innerHTML = topTrade
+        ? `Top traded <strong>${text(topTrade.name)}</strong> · ${number(peerTrades)} deals / ${compactNumber(topTrade.adena || 0)} Adena`
+        : 'No completed item flow yet';
+}
+
 function displayActivity(actor) {
-    if (actor.kind === 'player') return actor.online ? 'online' : 'offline';
-    return actor.intent || actor.mode || 'idle';
+    if (actor.kind === 'player') return actor.online ? 'Online' : 'Offline';
+    return activityLabel(actor.intent || actor.mode || 'idle');
 }
 
 function renderRoster() {
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
-    const list = filteredActors()
-        .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)))
-        .slice(0, 90);
+    const roster = filteredActors()
+        .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
+    const list = roster.slice(0, 90);
+    els.visibleCount.textContent = list.length < roster.length
+        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} listed`
+        : `${roster.length.toLocaleString()} listed`;
     els.actorList.innerHTML = list.length ? list.map((actor) => `
         <button class="actor-row${String(actor.id) === String(state.selectedId?.id) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
             <span class="actor-main">
                 <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
-                <span>${text(actor.kind === 'player' ? displayActivity(actor) : `${actor.phase} · ${actor.role || 'dps'} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
+                <span>${text(actor.kind === 'player' ? actorClassName(actor) : `${phaseLabel(actor.phase)} · ${actorClassName(actor)} · ${roleLabel(actor.role || 'dps')} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
             </span>
-            <span class="actor-loc">${text(actor.home?.region || actor.spot?.name || '')}</span>
+            <span class="actor-loc">${text(readablePlace(actor.home?.region || actor.spot?.name, ''))}</span>
         </button>
     `).join('') : '<div class="list-empty">No actors match this view.</div>';
 }
@@ -608,6 +807,150 @@ function actorById(id, kind) {
 function selectedActor() {
     if (!state.selectedId) return null;
     return state.detail || actorById(state.selectedId.id, state.selectedId.kind);
+}
+
+function reconcileSelectedActor() {
+    if (!state.selectedId || !state.snapshot) return;
+
+    const id = String(state.selectedId.id);
+    const player = state.snapshot.players.find((actor) => String(actor.id) === id);
+    const bot = state.snapshot.bots.find((actor) => String(actor.id) === id);
+    const actor = player || bot;
+    if (!actor) {
+        state.selectedId = null;
+        state.detail = null;
+        state.detailError = null;
+        state.detailLoading = false;
+        state.detailRequest += 1;
+        return;
+    }
+
+    const kind = player ? 'player' : 'bot';
+    if (state.selectedId.kind === kind) return;
+
+    // A live character can move between the bot and player collections.
+    // Never let an old bot detail shadow the authoritative player snapshot.
+    state.selectedId = { id: actor.id, kind };
+    state.detail = null;
+    state.detailError = null;
+    state.detailLoading = false;
+    state.detailRequest += 1;
+}
+
+const BUILD_LABELS = Object.freeze({
+    armor: {
+        heavy: 'Heavy',
+        light: 'Light',
+        robe: 'Robe'
+    },
+    weapon: {
+        one_handed_sword_or_blunt: 'One-handed sword or blunt',
+        one_handed_blunt: 'One-handed blunt',
+        caster_blunt_or_sword: 'Caster blunt or sword',
+        bow: 'Bow',
+        dagger: 'Dagger'
+    },
+    grade: {
+        none: 'No-grade',
+        d: 'D-grade',
+        c: 'C-grade',
+        b: 'B-grade',
+        a: 'A-grade',
+        s: 'S-grade'
+    },
+    playstyle: {
+        simple_solo: 'Simple solo',
+        solo_or_duo_grind: 'Solo or duo grind',
+        safe_solo: 'Safe solo',
+        support_learner: 'Support learner'
+    }
+});
+
+const PRIORITY_LABELS = Object.freeze({
+    pAtk: 'Physical attack',
+    pDef: 'Physical defense',
+    mAtk: 'Magic attack',
+    mDef: 'Magic defense',
+    crit: 'Critical chance',
+    range: 'Range control',
+    evasion: 'Evasion',
+    hp: 'Max HP',
+    maxMp: 'Max MP',
+    cast_speed: 'Cast speed',
+    shot_efficiency: 'Soulshot efficiency',
+    spiritshot_efficiency: 'Spiritshot efficiency',
+    shield_defense: 'Shield defense',
+    aggro_control: 'Aggro control',
+    backstab_windows: 'Backstab positioning',
+    spoil_value: 'Spoil value',
+    carry_weight: 'Carry capacity',
+    craft_materials: 'Crafting materials',
+    mp_conservation: 'MP conservation',
+    buff_uptime: 'Buff uptime'
+});
+
+function humanizeToken(value) {
+    return String(value || '')
+        .replaceAll('_', ' ')
+        .replace(/\bone handed\b/gi, 'one-handed')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readableToken(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const raw = String(value);
+    if (!/[_-]/.test(raw)) return raw;
+    const words = raw.replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
+    return words ? words.charAt(0).toUpperCase() + words.slice(1) : '—';
+}
+
+function phaseLabel(value) {
+    return PHASE_LABELS[value] || readableToken(value);
+}
+
+function roleLabel(value) {
+    return ROLE_LABELS[value] || readableToken(value);
+}
+
+function activityLabel(value) {
+    return ACTIVITY_LABELS[value] || readableToken(value || 'idle');
+}
+
+function actorClassName(actor) {
+    return actor.className
+        || actor.build?.className
+        || (actor.build?.classFamily ? humanizeToken(actor.build.classFamily) : null)
+        || (actor.kind === 'player' ? 'Player' : 'Unknown class');
+}
+
+function readablePlace(value, fallback = '—') {
+    if (!value || /^-?\d+_-?\d+$/.test(String(value))) return fallback;
+    return readableToken(value);
+}
+
+function readableBuildValue(value, kind = '') {
+    if (value === null || value === undefined || value === '') return '—';
+    return BUILD_LABELS[kind]?.[value] || humanizeToken(value);
+}
+
+function readablePriority(value) {
+    return PRIORITY_LABELS[value] || humanizeToken(value);
+}
+
+function partyLeaderLink(actor) {
+    const party = actor.party;
+    if (!party) return 'solo';
+
+    const leader = party.leader && typeof party.leader === 'object'
+        ? party.leader
+        : { name: party.leader || party.leaderName || null };
+    const leaderId = Number(party.leaderId || leader.id || 0) || null;
+    const leaderName = leader.name || (leaderId ? `#${leaderId}` : 'unknown');
+    const leaderKind = ActorFilters.actorKind(leaderId, leader.kind, state.snapshot);
+    const leaderValue = leaderId
+        ? `<a class="inspector-link" href="#${escapeHtml(leaderKind)}-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="${escapeHtml(leaderKind)}">${text(leaderName)}</a>`
+        : text(leaderName);
+    return `${text(roleLabel(party.role || actor.role || 'member'))} · leader ${leaderValue}`;
 }
 
 function statCell(label, value) {
@@ -635,45 +978,56 @@ function renderEquipment(equipment, combat) {
             <div class="equipment-row">
                 <span class="equipment-slot">${text(item.slot)}</span>
                 <strong>${text(item.name)}</strong>
-                <span class="equipment-rank">${text(item.rank, '—')}</span>
+                <span class="equipment-rank">${text(equipmentGrade(item.rank))}</span>
             </div>
         `).join('') : '<div class="list-empty">No equipment snapshot</div>'}</div>
     </section>`;
 }
 
+function equipmentGrade(value) {
+    const grade = String(value || 'no-grade').trim().toLowerCase().replaceAll('_', '-');
+    if (['none', 'no-grade', 'nograde', '0'].includes(grade)) return 'No grade';
+    return `${grade.toUpperCase()} grade`;
+}
+
 function renderBuild(build) {
     if (!build) return '';
     const gear = build.exampleGear?.length ? build.exampleGear.join(' · ') : `${build.armor || '—'} · ${build.weapon || '—'}`;
+    const armor = readableBuildValue(build.armor, 'armor');
+    const weapon = readableBuildValue(build.weapon, 'weapon');
+    const grade = readableBuildValue(build.grade, 'grade');
+    const playstyle = readableBuildValue(build.playstyle, 'playstyle');
+    const priorities = (build.statPriority || []).map(readablePriority).join(' · ');
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Build</h3><span>${text(build.grade || build.classFamily || '')}</span></div>
-        <p class="build-line"><strong>${text(build.armor || '—')}</strong> armor · <strong>${text(build.weapon || '—')}</strong> weapon</p>
-        <p class="muted-copy">${text(build.playstyle || gear)}</p>
-        ${build.statPriority?.length ? `<div class="priority-line">Priority <strong>${text(build.statPriority.join(' · '))}</strong></div>` : ''}
+        <div class="inspector-block-title"><h3>Build</h3><span>${text(grade || build.classFamily || '')}</span></div>
+        <p class="build-line"><strong>${text(armor)}</strong> armor · <strong>${text(weapon)}</strong> weapon</p>
+        <p class="muted-copy">${text(playstyle === '—' ? gear : playstyle)}</p>
+        ${priorities ? `<div class="priority-line"><span>Priority</span><strong>${text(priorities)}</strong></div>` : ''}
     </section>`;
 }
 
 function renderAction(actor) {
     const decision = actor.decisions?.combat || actor.decisions?.hunt || actor.decisions?.role || actor.roleDecision;
     const plan = actor.plan;
-    const target = actor.target?.name || actor.target?.id || actor.spot?.name || actor.spot?.id;
+    const target = readablePlace(actor.target?.name || actor.spot?.name, null);
     const secondary = actor.travel?.reason
-        ? `${actor.travel.reason} → ${actor.travel.townName || 'field'}`
+        ? `${activityLabel(actor.travel.reason)} → ${readablePlace(actor.travel.townName, 'field')}`
         : plan?.next?.npcName
-            ? `${plan.next.npcName} at ${plan.next.spotId || 'next spot'}`
+            ? `${plan.next.npcName} at ${readablePlace(plan.next.spotId, 'next destination')}`
             : target
                 ? `near ${target}`
-                : actor.blockers?.[0] || 'no active target';
+                : actor.blockers?.[0] ? activityLabel(actor.blockers[0]) : 'no active target';
     return `<div class="activity-callout">
         <span>Doing now</span>
-        <strong>${text(actor.intent || actor.mode || 'idle')}</strong>
-        <p>${text(decision?.action || decisionReason(decision) || secondary)}</p>
+        <strong>${text(displayActivity(actor))}</strong>
+        <p>${text(decision?.action ? readableToken(decision.action) : decisionReason(decision) || secondary)}</p>
     </div>`;
 }
 
 function readableDecisionValue(value) {
     if (value === null || value === undefined || value === '') return null;
     if (Array.isArray(value)) return value.map(readableDecisionValue).filter(Boolean).join(' · ') || null;
-    if (typeof value !== 'object') return String(value);
+    if (typeof value !== 'object') return readableToken(value);
     const preferred = ['message', 'reason', 'label', 'action', 'route', 'target', 'spotId', 'code', 'type'];
     for (const key of preferred) {
         const readable = readableDecisionValue(value[key]);
@@ -701,8 +1055,9 @@ function renderDecisions(actor) {
     const decision = actor.decisions?.combat || actor.decisions?.hunt || actor.decisions?.role || actor.roleDecision || actor.lastResolve;
     if (!decision) return '';
     const reason = decisionReason(decision);
+    if (!reason) return '';
     return `<section class="inspector-block compact-block">
-        <div class="inspector-block-title"><h3>Last decision</h3><span>${text(decision.action || 'resolve')}</span></div>
+        <div class="inspector-block-title"><h3>Last decision</h3><span>${text(humanizeToken(decision.action || 'resolve'))}</span></div>
         <p class="muted-copy">${text(reason)}</p>
     </section>`;
 }
@@ -719,8 +1074,8 @@ function renderSignals(actor) {
     const nearbyText = nearby
         ? `${nearby.realPlayers || 0} players · ${nearby.friendlyBots || 0} bots · ${nearby.attackableNpcs || 0} mobs`
         : null;
-    const tradeText = store ? `${store.type || 'store'} · ${store.title || 'open'} · ${store.items || 0} lines` : null;
-    const moodText = ambient ? `${ambient.mood || 'neutral'} · ${ambient.intent || 'idle'}` : null;
+    const tradeText = store ? `${activityLabel(store.type || 'store')} · ${store.title || 'open'} · ${store.items || 0} lines` : null;
+    const moodText = ambient ? `${activityLabel(ambient.mood || 'neutral')} · ${activityLabel(ambient.intent || 'idle')}` : null;
     return `<section class="inspector-block compact-block">
         <div class="inspector-block-title"><h3>Runtime signals</h3><span>bot info</span></div>
         <div class="signal-list">
@@ -739,7 +1094,7 @@ function renderSelectedCard() {
             els.selectedCard.innerHTML = `
                 <span class="eyeline">Opened cluster</span>
                 <strong>${number(state.clusterScope.actorKeys.size)} actors · ${text(state.clusterScope.label)}</strong>
-                <p>Choose a bot from the scoped roster or open a smaller cluster.</p>
+                <p>Choose an actor from the scoped roster or open a smaller cluster.</p>
                 <button class="selection-clear" type="button" data-clear-cluster>All actors</button>
             `;
             return;
@@ -747,11 +1102,11 @@ function renderSelectedCard() {
         els.selectedCard.innerHTML = '<span class="eyeline">Selection</span><strong>No actor selected</strong><p>Choose a point or cluster to inspect the bot.</p>';
         return;
     }
-    const activity = actor.target?.name || actor.spot?.name || actor.intent || actor.mode || 'idle';
+    const activity = readablePlace(actor.target?.name || actor.spot?.name, null) || displayActivity(actor);
     els.selectedCard.innerHTML = `
-        <span class="eyeline">Selected ${text(actor.phase || '')}</span>
+        <span class="eyeline">Selected ${text(phaseLabel(actor.phase || ''))}</span>
         <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
-        <p>Lv ${number(actor.level, '?')} · ${text(actor.role || actor.classFamily || 'bot')} · ${text(activity)}</p>
+        <p>Lv ${number(actor.level, '?')} · ${text(actorClassName(actor))} · ${text(activity)}</p>
         ${state.clusterScope ? '<button class="selection-clear" type="button" data-clear-cluster>All actors</button>' : ''}
     `;
 }
@@ -773,20 +1128,20 @@ function renderInspector() {
                     <strong>${number(scoped.length)} actors in this cluster</strong>
                     <p>${text(state.clusterScope.label)} · roster is scoped to this area.</p>
                     <div class="cluster-phase-counts">
-                        ${['hot', 'warm', 'cold', 'players'].filter((phase) => counts[phase]).map((phase) => `<span><i class="legend-dot ${phase === 'players' ? 'player' : phase}"></i>${phase} <strong>${number(counts[phase])}</strong></span>`).join('')}
+                        ${['hot', 'warm', 'cold', 'players'].filter((phase) => counts[phase]).map((phase) => `<span><i class="legend-dot ${phase === 'players' ? 'player' : phase}"></i>${phaseLabel(phase)} <strong>${number(counts[phase])}</strong></span>`).join('')}
                     </div>
                     <button class="selection-clear" type="button" data-clear-cluster>Show all actors</button>
                 </div>
             `;
             return;
         }
-        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any bot on the map to see its equipment, current action and runtime status.</p></div>`;
+        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any actor on the map to see its current action and runtime status.</p></div>`;
         return;
     }
 
     if (state.detailLoading && !state.detail) {
         els.inspectorFreshness.textContent = 'loading';
-        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading bot info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading actor info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
         return;
     }
 
@@ -802,13 +1157,9 @@ function renderInspector() {
     }
 
     const build = actor.build;
-    const family = build?.classFamily || (actor.classId ? `class ${actor.classId}` : (actor.kind === 'player' ? 'player' : 'bot'));
+    const family = actorClassName(actor);
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
-    const party = actor.party
-        ? actor.party.leader?.name
-            ? `${actor.party.role || actor.role || 'member'} · leader ${actor.party.leader.name}`
-            : `${actor.party.role || actor.role || 'member'} · leader ${actor.party.leaderId || 'unknown'}`
-        : 'solo';
+    const party = partyLeaderLink(actor);
     const freshness = actor.updatedAt ? formatRelative(actor.updatedAt) : 'live';
     els.inspectorFreshness.textContent = state.detailError ? 'stale' : freshness;
     const detailWarning = state.detailError ? `<div class="detail-error">
@@ -819,8 +1170,8 @@ function renderInspector() {
         ${detailWarning}
         <div class="inspector-hero">
             <div class="inspector-avatar" style="--avatar-color:${phaseColor(actor)}">${text(String(actor.name || '?').slice(0, 1).toUpperCase())}</div>
-            <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(actor.role || '—')}</span></div>
-            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(actor.phase || 'bot')}</span>
+            <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(roleLabel(actor.role || '—'))}</span></div>
+            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(phaseLabel(actor.phase || 'bot'))}</span>
         </div>
         <div class="inspector-vitals">
             ${vitalBar('HP', actor.vitals, '#63d37b')}
@@ -828,12 +1179,12 @@ function renderInspector() {
         </div>
         ${renderAction(actor)}
         <div class="detail-grid">
-            <div><span>Mode</span><strong>${text(actor.mode)}</strong></div>
-            <div><span>Region</span><strong>${text(actor.region || actor.home?.region)}</strong></div>
-            <div><span>Spot</span><strong>${text(actor.spot?.name || actor.spot?.id)}</strong></div>
-            <div><span>Party</span><strong>${text(party)}</strong></div>
+            <div><span>Activity</span><strong>${text(activityLabel(actor.mode))}</strong></div>
+            <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
+            <div><span>Spot</span><strong>${text(readablePlace(actor.spot?.name || actor.spot?.id))}</strong></div>
+            <div><span>Party</span><strong>${party}</strong></div>
             <div><span>Position</span><strong>${text(location)}</strong></div>
-            <div><span>Blockers</span><strong>${text(actor.blockers?.join(' · '), 'none')}</strong></div>
+            <div><span>Blockers</span><strong>${text(actor.blockers?.length ? actor.blockers.map(activityLabel).join(' · ') : 'None')}</strong></div>
         </div>
         ${renderSignals(actor)}
         ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
@@ -858,9 +1209,11 @@ function renderSnapshot() {
     renderTiles();
     renderGrid();
     renderLabels();
+    renderClassFilter();
     renderFilterCounts();
     renderPoints();
     renderPopulation();
+    renderMarket();
     renderRoster();
     renderSelected();
 }
@@ -973,6 +1326,7 @@ async function refresh() {
         const response = await fetch('/observer/api/snapshot', { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         state.snapshot = await response.json();
+        reconcileSelectedActor();
         renderSnapshot();
         if (state.selectedId?.kind === 'bot' && !state.detailLoading) loadBotDetail(state.selectedId.id, false);
     } catch (error) {
@@ -1000,6 +1354,12 @@ els.fitButton.addEventListener('click', () => {
 });
 
 document.addEventListener('click', (event) => {
+    const leaderLink = event.target.closest('[data-party-leader-id]');
+    if (leaderLink) {
+        event.preventDefault();
+        selectActor(leaderLink.dataset.partyLeaderId, leaderLink.dataset.partyLeaderKind || 'bot', true);
+        return;
+    }
     if (event.target.closest('[data-retry-detail]')) {
         if (state.selectedId?.kind === 'bot') loadBotDetail(state.selectedId.id);
         return;
@@ -1013,15 +1373,30 @@ els.filterStrip.addEventListener('click', (event) => {
     if (!button) return;
     state.phase = button.dataset.phase;
     els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
-    renderPoints();
-    renderRoster();
+    renderFilteredActorViews({ counts: false });
 });
 
 els.actorSearch.addEventListener('input', (event) => {
     state.search = String(event.target.value || '').trim().toLowerCase();
-    renderFilterCounts();
-    renderPoints();
-    renderRoster();
+    renderFilteredActorViews();
+});
+
+els.minLevelFilter.addEventListener('input', () => updateLevelFilter('min'));
+els.maxLevelFilter.addEventListener('input', () => updateLevelFilter('max'));
+
+els.classFilter.addEventListener('change', (event) => {
+    state.classKey = String(event.target.value || 'all');
+    renderFilteredActorViews();
+});
+
+els.clearActorFilters.addEventListener('click', () => {
+    state.minLevel = null;
+    state.maxLevel = null;
+    state.classKey = 'all';
+    els.minLevelFilter.value = '';
+    els.maxLevelFilter.value = '';
+    els.classFilter.value = 'all';
+    renderFilteredActorViews();
 });
 
 els.actorList.addEventListener('click', (event) => {
@@ -1084,9 +1459,7 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && document.activeElement === els.actorSearch) {
         els.actorSearch.value = '';
         state.search = '';
-        renderFilterCounts();
-        renderPoints();
-        renderRoster();
+        renderFilteredActorViews();
         els.actorSearch.blur();
         return;
     }
