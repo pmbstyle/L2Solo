@@ -37,6 +37,21 @@
                     <button class="filter" data-phase="cold">Simulated <span class="filter-count" data-count-for="cold">0</span></button>
                     <button class="filter" data-phase="players">Players <span class="filter-count" data-count-for="players">0</span></button>
                 </div>
+                <div class="actor-filter-controls" aria-label="Actor filters">
+                    <label class="level-filter">
+                        <span>Lv</span>
+                        <input id="minLevelFilter" type="number" min="1" max="80" inputmode="numeric" placeholder="1" aria-label="Minimum level">
+                        <i>–</i>
+                        <input id="maxLevelFilter" type="number" min="1" max="80" inputmode="numeric" placeholder="80" aria-label="Maximum level">
+                    </label>
+                    <label class="class-filter">
+                        <span>Class</span>
+                        <select id="classFilter" aria-label="Class">
+                            <option value="all">All classes</option>
+                        </select>
+                    </label>
+                    <button class="filter-reset" id="clearActorFilters" type="button" title="Clear level and class filters" hidden>Reset</button>
+                </div>
                 <label class="search-field">
                     <span aria-hidden="true">⌕</span>
                     <input id="actorSearch" type="search" placeholder="Find a bot, role, town…" autocomplete="off">
@@ -146,6 +161,7 @@
         </aside>
     </main>
 
+    <script src="/observer/actorFilters.js"></script>
     <script src="/observer/app.js"></script>
 </body>
 </html>

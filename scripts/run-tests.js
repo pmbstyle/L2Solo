@@ -199,6 +199,7 @@ const tests = [
     'tests/test_trade_equipment_upgrade.js',
     'tests/test_tcp_packet_framing.js',
     'tests/test_world_observer_pk.js',
+    'tests/test_world_observer_filters.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
 ];

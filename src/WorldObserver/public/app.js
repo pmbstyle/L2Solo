@@ -1,8 +1,14 @@
+const ActorFilters = window.WorldObserverActorFilters;
+
 const state = {
     snapshot: null,
     selectedId: null,
     phase: 'all',
     search: '',
+    minLevel: null,
+    maxLevel: null,
+    classKey: 'all',
+    classOptionsSignature: null,
     live: true,
     fit: false,
     renderedTileKey: null,
@@ -83,6 +89,10 @@ const els = {
     fitButton: document.querySelector('#fitButton'),
     filterStrip: document.querySelector('#filterStrip'),
     actorSearch: document.querySelector('#actorSearch'),
+    minLevelFilter: document.querySelector('#minLevelFilter'),
+    maxLevelFilter: document.querySelector('#maxLevelFilter'),
+    classFilter: document.querySelector('#classFilter'),
+    clearActorFilters: document.querySelector('#clearActorFilters'),
     worldMap: document.querySelector('#worldMap'),
     tileLayer: document.querySelector('#tileLayer'),
     gridLines: document.querySelector('#gridLines'),
@@ -252,7 +262,7 @@ function setSvgViewBox() {
         return;
     }
 
-    const locs = [...state.snapshot.bots, ...state.snapshot.players].map((item) => item.loc).filter(Boolean);
+    const locs = filteredActors().map((item) => item.loc).filter(Boolean);
     if (locs.length < 2) {
         state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
         setViewBox();
@@ -331,6 +341,10 @@ function actors() {
     ];
 }
 
+function eligibleActors() {
+    return actors().filter(ActorFilters.isEligible);
+}
+
 function actorSearchText(actor) {
     return [
         actor.name,
@@ -353,12 +367,13 @@ function actorSearchText(actor) {
 function isVisible(actor) {
     if (state.phase !== 'all' && state.phase !== 'players' && actor.phase !== state.phase) return false;
     if (state.phase === 'players' && actor.kind !== 'player') return false;
-    return !state.search || actorSearchText(actor).includes(state.search);
+    if (state.search && !actorSearchText(actor).includes(state.search)) return false;
+    return ActorFilters.matches(actor, state);
 }
 
 function filteredActors() {
     const scope = state.clusterScope?.actorKeys;
-    return actors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
+    return eligibleActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
 }
 
 function actorKey(actor) {
@@ -609,7 +624,10 @@ function renderPoints() {
 }
 
 function renderFilterCounts() {
-    const items = actors().filter((actor) => !state.search || actorSearchText(actor).includes(state.search));
+    const items = eligibleActors().filter((actor) => (
+        (!state.search || actorSearchText(actor).includes(state.search))
+        && ActorFilters.matches(actor, state)
+    ));
     const counts = {
         all: items.length,
         hot: items.filter((actor) => actor.phase === 'hot').length,
@@ -621,6 +639,54 @@ function renderFilterCounts() {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
         if (count) count.textContent = value.toLocaleString();
     });
+}
+
+function renderClassFilter() {
+    const options = ActorFilters.classOptions(eligibleActors());
+    const signature = options.map((option) => `${option.key}:${option.label}`).join('|');
+    if (signature === state.classOptionsSignature) return;
+    state.classOptionsSignature = signature;
+
+    if (state.classKey !== 'all' && !options.some((option) => option.key === state.classKey)) {
+        state.classKey = 'all';
+    }
+    els.classFilter.innerHTML = [
+        '<option value="all">All classes</option>',
+        ...options.map((option) => `<option value="${escapeHtml(option.key)}">${text(option.label)}</option>`)
+    ].join('');
+    els.classFilter.value = state.classKey;
+    renderActorFilterState();
+}
+
+function renderActorFilterState() {
+    const active = state.minLevel !== null || state.maxLevel !== null || state.classKey !== 'all';
+    els.clearActorFilters.hidden = !active;
+}
+
+function renderFilteredActorViews({ counts = true } = {}) {
+    if (counts) renderFilterCounts();
+    if (state.fit) {
+        setSvgViewBox();
+        renderLabels();
+    }
+    renderPoints();
+    renderRoster();
+    renderActorFilterState();
+}
+
+function updateLevelFilter(changed) {
+    state.minLevel = ActorFilters.normalizeLevel(els.minLevelFilter.value);
+    state.maxLevel = ActorFilters.normalizeLevel(els.maxLevelFilter.value);
+    if (state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
+        if (changed === 'min') {
+            state.maxLevel = state.minLevel;
+            els.maxLevelFilter.value = state.maxLevel;
+        } else {
+            state.minLevel = state.maxLevel;
+            els.minLevelFilter.value = state.minLevel;
+        }
+    }
+    renderFilteredActorViews();
 }
 
 function renderPopulation() {
@@ -714,7 +780,6 @@ function displayActivity(actor) {
 function renderRoster() {
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
     const roster = filteredActors()
-        .filter((actor) => actor.kind === 'player' || actor.staticService !== true)
         .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
     const list = roster.slice(0, 90);
     els.visibleCount.textContent = list.length < roster.length
@@ -725,7 +790,7 @@ function renderRoster() {
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
             <span class="actor-main">
                 <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
-                <span>${text(actor.kind === 'player' ? displayActivity(actor) : `${phaseLabel(actor.phase)} · ${roleLabel(actor.role || 'dps')} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
+                <span>${text(actor.kind === 'player' ? actorClassName(actor) : `${phaseLabel(actor.phase)} · ${actorClassName(actor)} · ${roleLabel(actor.role || 'dps')} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
             </span>
             <span class="actor-loc">${text(readablePlace(actor.home?.region || actor.spot?.name, ''))}</span>
         </button>
@@ -1143,6 +1208,7 @@ function renderSnapshot() {
     renderTiles();
     renderGrid();
     renderLabels();
+    renderClassFilter();
     renderFilterCounts();
     renderPoints();
     renderPopulation();
@@ -1306,15 +1372,30 @@ els.filterStrip.addEventListener('click', (event) => {
     if (!button) return;
     state.phase = button.dataset.phase;
     els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
-    renderPoints();
-    renderRoster();
+    renderFilteredActorViews({ counts: false });
 });
 
 els.actorSearch.addEventListener('input', (event) => {
     state.search = String(event.target.value || '').trim().toLowerCase();
-    renderFilterCounts();
-    renderPoints();
-    renderRoster();
+    renderFilteredActorViews();
+});
+
+els.minLevelFilter.addEventListener('input', () => updateLevelFilter('min'));
+els.maxLevelFilter.addEventListener('input', () => updateLevelFilter('max'));
+
+els.classFilter.addEventListener('change', (event) => {
+    state.classKey = String(event.target.value || 'all');
+    renderFilteredActorViews();
+});
+
+els.clearActorFilters.addEventListener('click', () => {
+    state.minLevel = null;
+    state.maxLevel = null;
+    state.classKey = 'all';
+    els.minLevelFilter.value = '';
+    els.maxLevelFilter.value = '';
+    els.classFilter.value = 'all';
+    renderFilteredActorViews();
 });
 
 els.actorList.addEventListener('click', (event) => {
@@ -1377,9 +1458,7 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && document.activeElement === els.actorSearch) {
         els.actorSearch.value = '';
         state.search = '';
-        renderFilterCounts();
-        renderPoints();
-        renderRoster();
+        renderFilteredActorViews();
         els.actorSearch.blur();
         return;
     }

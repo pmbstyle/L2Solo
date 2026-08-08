@@ -152,7 +152,7 @@ const adventuringCrafter = Observer.compactStateBot({
     vitals: {},
     stats: { role: 'crafter' }
 }, new Set());
-assert.strictEqual(adventuringCrafter.staticService, false, 'an adventuring crafter must remain in the roster');
+assert.strictEqual(adventuringCrafter.staticService, false, 'an adventuring crafter remains dynamic even though the Observer role filter hides crafters');
 
 const coldState = {
     characterId: 44,
