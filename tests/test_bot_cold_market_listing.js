@@ -17,7 +17,13 @@ const marketItem = DataCache.items.find((item) => (
 const equippedItem = DataCache.items.find((item) => (
     item !== marketItem && item?.etc?.rank === 'c' && Number(item.etc?.slot || 0) === Number(marketItem?.etc?.slot || 0)
 ));
-assert(marketItem && equippedItem, 'the datapack must contain two C-grade weapons for the listing lifecycle fixture');
+const speculativeItem = DataCache.items.find((item) => (
+    item !== marketItem
+    && (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.'))
+    && Number(item.template?.price || 0) >= 10000
+    && !invoke('GameServer/Bot/Economy/MarketListingPolicy').starterItemIds().has(Number(item.selfId))
+));
+assert(marketItem && equippedItem && speculativeItem, 'the datapack must contain market gear for the listing lifecycle fixture');
 
 const originals = {
     execute: Database.execute,
@@ -28,7 +34,8 @@ const originals = {
     updateCharacterExperience: Database.updateCharacterExperience,
     updateCharacterVitals: Database.updateCharacterVitals,
     syncInventorySummary: Database.syncInventorySummary,
-    transferInventoryToWarehouse: Database.transferInventoryToWarehouse
+    transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
+    allStates: LifeState.allStates
 };
 const calls = [];
 
@@ -119,6 +126,7 @@ async function run() {
     assert(opened.state.stats.marketStore.title.length <= 28, 'a dynamic store title must fit the compact C4 store overlay');
     assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
+    assert(Number(opened.state.stats.marketStore.nextReviewAt) > 1000, 'WTS must schedule demand revalidation before expiry');
     const secondStall = ListingService.chooseGiranPlazaStall(() => 0.1, [opened.state.loc]);
     const dx = secondStall.locX - opened.state.loc.locX;
     const dy = secondStall.locY - opened.state.loc.locY;
@@ -178,6 +186,81 @@ async function run() {
     assert.strictEqual(expiredResult.warehouseCount, 1);
     assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
 
+    const demandReviewOpened = await ListingService.open(
+        { ...state, characterId: 91, name: 'DemandReviewSeller' },
+        { ...listingOptions, durationMs: 300000 }
+    );
+    LifeState.allStates = () => [];
+    const demandReview = await ListingService.resolve(demandReviewOpened.state, 122000);
+    assert.strictEqual(demandReview.closed, true, 'an active WTS must close when its actionable demand disappears');
+    assert.strictEqual(demandReview.reason, 'no_actionable_demand');
+    LifeState.allStates = originals.allStates;
+
+    const mixedState = {
+        ...state,
+        characterId: 92,
+        name: 'MixedDemandSeller',
+        inventory: {
+            ...state.inventory,
+            [speculativeItem.selfId]: {
+                selfId: speculativeItem.selfId,
+                name: speculativeItem.template.name,
+                amount: 1,
+                equipped: false,
+                slot: speculativeItem.etc?.slot || 0,
+                kind: speculativeItem.template.kind,
+                rank: speculativeItem.etc?.rank || 'none'
+            }
+        }
+    };
+    const latentBuyer = {
+        characterId: 100,
+        name: 'LatentBuyer',
+        adena: 100000000,
+        currentRegion: 'Giran',
+        stats: { equipmentPlan: { status: 'active', strategy: 'drop', target: { selfId: speculativeItem.selfId } } }
+    };
+    const mixedOpened = await ListingService.open(mixedState, {
+        now: 1000,
+        random: () => 0.1,
+        states: [marketBuyer, latentBuyer]
+    });
+    const speculativeLine = mixedOpened.state.stats.marketStore.items.find((item) => Number(item.selfId) === Number(speculativeItem.selfId));
+    assert.strictEqual(mixedOpened.state.stats.marketStore.expiresAt, 1000 + ListingService.DEFAULT_LISTING_MS);
+    assert.strictEqual(speculativeLine.marketExpiresAt, 1000 + ListingService.SPECULATIVE_LISTING_MS, 'speculative lines need their own short TTL in a mixed store');
+    LifeState.allStates = () => [marketBuyer, latentBuyer];
+    const mixedReview = await ListingService.resolve(mixedOpened.state, 1001 + ListingService.SPECULATIVE_LISTING_MS);
+    assert.strictEqual(mixedReview.closed, false, 'active-demand stock should keep the mixed store open');
+    assert.deepStrictEqual(mixedReview.state.stats.marketStore.items.map((item) => Number(item.selfId)), [Number(marketItem.selfId)], 'expired speculative stock must be pruned independently');
+    LifeState.allStates = originals.allStates;
+
+    const hotOpened = await ListingService.open(
+        { ...state, characterId: 93, name: 'HotDemandSeller' },
+        { ...listingOptions, durationMs: 300000 }
+    );
+    let liveStore = { ...hotOpened.state.stats.marketStore, items: hotOpened.state.stats.marketStore.items.map((item) => ({ ...item })) };
+    let privateStoreType = 1;
+    const hotSession = {
+        accountId: 'bot_hot_market',
+        plan: 'merchant',
+        coldMarketState: { ...hotOpened.state, phase: 'hot' },
+        actor: {
+            fetchPrivateStore: () => liveStore,
+            setPrivateStore: (store) => { liveStore = store; },
+            setPrivateStoreType: (value) => { privateStoreType = value; },
+            state: { setSeated: () => {} }
+        }
+    };
+    LifeState.allStates = () => [];
+    const hotReview = await ListingService.resolveHotSession(hotSession, 122000);
+    assert.strictEqual(hotReview.closed, true, 'a visible hot WTS must close when actionable demand disappears');
+    assert.strictEqual(hotSession.coldMarketState.phase, 'hot', 'live maintenance must not dematerialize the actor behind the session');
+    assert.strictEqual(hotSession.coldMarketState.stats.marketStore, null);
+    assert.strictEqual(hotSession.plan, 'shopping');
+    assert.strictEqual(privateStoreType, 0);
+    assert.strictEqual(liveStore.items.length, 0, 'closed hot WTS stock must disappear from live offer discovery');
+    LifeState.allStates = originals.allStates;
+
     const misplacedExpired = await ListingService.open(
         { ...state, characterId: 90, name: 'MisplacedExpiredSeller' },
         listingOptions
@@ -214,6 +297,7 @@ run().catch((err) => {
     Database.updateCharacterVitals = originals.updateCharacterVitals;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
+    LifeState.allStates = originals.allStates;
     LifeState.reset?.();
     MarketOpportunity.resetColdStores();
 });

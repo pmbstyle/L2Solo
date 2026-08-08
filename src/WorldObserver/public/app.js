@@ -101,6 +101,8 @@ const els = {
     marketAdena: document.querySelector('#marketAdena'),
     marketTowns: document.querySelector('#marketTowns'),
     marketTopItem: document.querySelector('#marketTopItem'),
+    marketRecentTrades: document.querySelector('#marketRecentTrades'),
+    marketTradeTop: document.querySelector('#marketTradeTop'),
     actorList: document.querySelector('#actorList'),
     lastRefresh: document.querySelector('#lastRefresh'),
     visibleCount: document.querySelector('#visibleCount'),
@@ -650,8 +652,9 @@ function renderMarket() {
     const dynamic = market.dynamic || {};
     const fixed = market.fixed || {};
     const activity = market.activity || {};
-    const trades = Number(activity.purchases || 0) + Number(activity.dynamicBuyerSales || 0);
-    const tradedAdena = Number(activity.adenaTraded || 0) + Number(activity.dynamicBuyerAdena || 0);
+    const transactions = market.transactions || {};
+    const trades = Number(activity.peerPurchases ?? activity.purchases ?? 0) + Number(activity.dynamicBuyerSales || 0);
+    const tradedAdena = Number(activity.peerPurchaseAdena ?? activity.adenaTraded ?? 0) + Number(activity.dynamicBuyerAdena || 0);
 
     els.marketWts.textContent = compactNumber(dynamic.wts);
     els.marketWtb.textContent = compactNumber(dynamic.wtb);
@@ -666,18 +669,44 @@ function renderMarket() {
             - Number(left.dynamicWts || 0) - Number(left.dynamicWtb || 0)
             || String(left.name).localeCompare(String(right.name))
         )).slice(0, 4);
-    els.marketTowns.innerHTML = towns.length ? towns.map((town) => `
-        <div class="market-town-row" title="${text(`${town.fixedWts || 0} fixed WTS · ${town.fixedWtb || 0} fixed WTB`)}">
+    els.marketTowns.innerHTML = towns.length ? towns.map((town) => {
+        const tradeTown = transactions.byPeerTown?.[town.name] || {};
+        return `
+        <div class="market-town-row" title="${text(`${town.fixedWts || 0} fixed WTS · ${town.fixedWtb || 0} fixed WTB · ${number(tradeTown.adena || 0)} peer Adena`)}">
             <strong>${text(town.name)}</strong>
             <span><b>${number(town.dynamicWts || 0)}</b> WTS</span>
             <span><b>${number(town.dynamicWtb || 0)}</b> WTB</span>
+            <span><b>${number(tradeTown.trades || 0)}</b> tx</span>
         </div>
-    `).join('') : '<div class="list-empty">No dynamic stores open.</div>';
+    `;
+    }).join('') : '<div class="list-empty">No dynamic stores open.</div>';
 
     const top = (market.topItems || [])[0];
+    const demand = top?.demand || {};
     els.marketTopItem.innerHTML = top
-        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} for sale / ${number(top.wtbUnits || 0)} wanted`
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} for sale (${number(top.speculativeWtsUnits || 0)} speculative) / ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded now, ${number(demand.bots || 0)} planned`
         : 'No active item flow yet';
+
+    const recent = (transactions.recentPeerTrades || []).slice(0, 3);
+    els.marketRecentTrades.innerHTML = recent.length ? recent.map((trade) => {
+        const side = trade.channel === 'wtb' ? 'WTB' : 'WTS';
+        const counterparty = trade.channel === 'wtb' ? trade.buyer?.name : trade.seller?.name;
+        const action = trade.channel === 'wtb' ? 'sold to' : 'bought from';
+        const at = Number(trade.at || 0) > 0
+            ? new Date(Number(trade.at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '—';
+        return `<div class="market-trade-row" title="${text(`${trade.seller?.name || 'Unknown seller'} → ${trade.buyer?.name || 'Unknown buyer'} · ${number(trade.adena || 0)} Adena`)}">
+            <b>${side}</b>
+            <strong>${text(`${trade.itemName || `Item ${trade.selfId}`} x${number(trade.quantity || 0)} ${action} ${counterparty || 'bot'}`)}</strong>
+            <time>${text(at)}</time>
+        </div>`;
+    }).join('') : '<div class="list-empty">No bot-to-bot trades yet.</div>';
+
+    const topTrade = (transactions.byPeerItem || [])[0];
+    const peerTrades = Number(topTrade?.channels?.wts?.trades || 0) + Number(topTrade?.channels?.wtb?.trades || 0);
+    els.marketTradeTop.innerHTML = topTrade
+        ? `Top traded <strong>${text(topTrade.name)}</strong> · ${number(peerTrades)} deals / ${compactNumber(topTrade.adena || 0)} Adena`
+        : 'No completed item flow yet';
 }
 
 function displayActivity(actor) {

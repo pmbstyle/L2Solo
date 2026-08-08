@@ -900,6 +900,7 @@ const BotLifeState = {
             const store = actor.fetchPrivateStore?.();
             const timestamp = now();
             const storeLoc = marketState.stats.marketStore.loc || marketState.loc;
+            const persistedItems = new Map((marketState.stats.marketStore.items || []).map((item) => [Number(item.selfId), item]));
             const nextState = {
                 ...marketState,
                 phase: 'cold',
@@ -916,8 +917,9 @@ const BotLifeState = {
                         ...(marketState.stats.marketStore || {}),
                         loc: { ...storeLoc },
                         items: (store?.items || []).map((item) => ({
+                            ...(persistedItems.get(Number(item.selfId)) || {}),
                             selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId),
-                            rank: item.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
+                            rank: item.rank || persistedItems.get(Number(item.selfId))?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
                         }))
                     }
                 }
@@ -1177,6 +1179,43 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch expired market stores: %s', err.message);
+            return [];
+        });
+    },
+
+    marketStoreMaintenanceCandidates(limit = 10, timestamp = Date.now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        const at = Number(timestamp) || Date.now();
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND activity = 'merchant'
+            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
+            AND (
+                COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ?
+                OR (
+                    COALESCE(CAST(json_extract(statsJson, '$.marketStore.storeType') AS INTEGER), 1) = 1
+                    AND COALESCE(
+                        CAST(json_extract(statsJson, '$.marketStore.nextReviewAt') AS INTEGER),
+                        CAST(json_extract(statsJson, '$.marketStore.openedAt') AS INTEGER),
+                        0
+                    ) <= ?
+                )
+            )
+            ORDER BY CASE
+                WHEN COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ? THEN 0
+                ELSE 1
+            END ASC,
+            updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [at, at, at]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch market maintenance candidates: %s', err.message);
             return [];
         });
     },
@@ -1773,11 +1812,15 @@ const BotLifeState = {
         const inventory = inventorySummaryFromItems(actor.backpack.fetchItems());
         const liveStore = actor.fetchPrivateStore?.();
         const hasLines = liveStore && (liveStore.items || []).some((item) => Number(item.count || 0) > 0);
+        const persistedItems = new Map((state.stats?.marketStore?.items || []).map((item) => [Number(item.selfId), item]));
         const marketStore = hasLines ? {
             ...(state.stats?.marketStore || {}),
             storeType: Number(liveStore.storeType || state.stats?.marketStore?.storeType || 1),
             budgetBacked: liveStore.budgetBacked === true || state.stats?.marketStore?.budgetBacked === true,
-            items: (liveStore.items || []).map((item) => ({ ...item }))
+            items: (liveStore.items || []).map((item) => ({
+                ...(persistedItems.get(Number(item.selfId)) || {}),
+                ...item
+            }))
         } : null;
         const nextState = {
             ...state,

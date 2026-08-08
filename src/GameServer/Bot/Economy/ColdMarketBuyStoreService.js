@@ -189,7 +189,11 @@ async function settleLine(sellerState, line, town) {
         if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
         if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
     }
-    MarketTelemetry.dynamicBuyerSale?.(qty, Number(offer.price) * qty);
+    MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
+        sellerCharacterId: seller.characterId,
+        sellerName: seller.name,
+        town
+    });
     return { state: seller, sold: true, buyer, offer, qty, adena: Number(offer.price) * qty };
 }
 

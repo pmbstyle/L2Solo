@@ -9,6 +9,7 @@ const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 DataCache.init();
 
@@ -33,6 +34,7 @@ const playerStore = {
 };
 
 async function run() {
+    MarketTelemetry.reset();
     Database.execute = (statement) => {
         calls.push({ type: 'execute', statement });
         return Promise.resolve([]);
@@ -107,6 +109,15 @@ async function run() {
     assert.strictEqual(weaponSync.inventory['1'].equipped, false, 'the optimized sync must persist the replaced weapon');
     assert.strictEqual(weaponSync.inventory['2'].equipped, true, 'the optimized sync must persist the new weapon');
     assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
+    const playerTransactions = MarketTelemetry.transactions();
+    const purchaseTrade = playerTransactions.recentPlayerTrades[0];
+    assert.strictEqual(purchaseTrade.channel, 'player_wts');
+    assert.strictEqual(purchaseTrade.itemName, 'Long Sword');
+    assert.strictEqual(purchaseTrade.seller.name, 'PlayerSeller');
+    assert.strictEqual(purchaseTrade.buyer.name, 'ColdBuyer');
+    assert.strictEqual(purchaseTrade.town, 'Giran');
+    assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a real player WTS must not inflate bot-to-bot telemetry');
+    assert.strictEqual(MarketTelemetry.current().peerPurchases, 0);
 
     const noOffer = await ColdMarketService.tryPurchase({
         ...state,
@@ -188,4 +199,5 @@ run().catch((err) => {
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
+    MarketTelemetry.reset();
 });

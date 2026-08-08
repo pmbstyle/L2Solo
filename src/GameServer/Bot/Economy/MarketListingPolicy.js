@@ -3,6 +3,8 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
+const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
+const SPECULATIVE_SUPPLY_LIMIT = 1;
 
 let newbieItemSource = null;
 let newbieItemIds = new Set();
@@ -33,16 +35,42 @@ function classify(state, item, options = {}) {
 
     const market = MarketDemandIndex.snapshot(item.selfId, {
         ...options,
+        unitPrice: Number(item.price || 0),
         excludeCharacterId: state.characterId
     });
     if (market.demand.bots <= 0) {
         return { action: 'warehouse', reason: 'no_demand', market };
     }
-    const saturationFloor = Math.max(3, market.demand.units * 2);
-    if (market.supply.units >= saturationFloor) {
+    const actionableUnits = Math.max(0, Number(market.demand.fundedUnits || 0));
+    if (actionableUnits > 0) {
+        const availableUnits = Math.max(0, actionableUnits - market.supply.units);
+        if (availableUnits <= 0) return { action: 'warehouse', reason: 'saturated', market };
+        return {
+            action: 'list',
+            reason: 'active_demand',
+            listCount: Math.min(Number(item.count), availableUnits),
+            market
+        };
+    }
+
+    if (market.demand.readyBots > 0) {
+        return { action: 'warehouse', reason: 'unfunded_demand', market };
+    }
+    const speculative = isGear(item)
+        && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
+        && market.supply.units < SPECULATIVE_SUPPLY_LIMIT;
+    if (speculative) {
+        return {
+            action: 'list',
+            reason: 'speculative_demand',
+            listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units),
+            market
+        };
+    }
+    if (market.supply.units >= SPECULATIVE_SUPPLY_LIMIT) {
         return { action: 'warehouse', reason: 'saturated', market };
     }
-    return { action: 'list', reason: market.demand.readyBots > 0 ? 'active_demand' : 'latent_demand', market };
+    return { action: 'warehouse', reason: 'latent_demand', market };
 }
 
 function listingPrice(item, decision) {
@@ -57,7 +85,12 @@ function evaluate(state, options = {}) {
         const decision = classify(state, item, options);
         return {
             ...decision,
-            item: decision.action === 'list' ? { ...item, price: listingPrice(item, decision) } : item
+            item: decision.action === 'list' ? {
+                ...item,
+                count: Math.max(1, Math.min(Number(item.count), Number(decision.listCount || item.count))),
+                price: listingPrice(item, decision),
+                marketReason: decision.reason
+            } : item
         };
     });
     return {
@@ -72,4 +105,13 @@ function evaluate(state, options = {}) {
     };
 }
 
-module.exports = { MARKET_GEAR_MIN_BASE_PRICE, classify, evaluate, isGear, listingPrice, starterItemIds };
+module.exports = {
+    MARKET_GEAR_MIN_BASE_PRICE,
+    SPECULATIVE_GEAR_MIN_BASE_PRICE,
+    SPECULATIVE_SUPPLY_LIMIT,
+    classify,
+    evaluate,
+    isGear,
+    listingPrice,
+    starterItemIds
+};

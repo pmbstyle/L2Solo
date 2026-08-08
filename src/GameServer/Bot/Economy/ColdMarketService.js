@@ -73,7 +73,11 @@ const ColdMarketService = {
             }
             const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
             return settlement.then((sellerState) => {
-                MarketTelemetry.purchase(offer, 1);
+                MarketTelemetry.purchase(offer, 1, {
+                    buyerCharacterId: updated.characterId,
+                    buyerName: updated.name,
+                    town: updated.currentRegion
+                });
                 return GoalState.clear(state.characterId, 'completed').then(() => ({
                 state: updated,
                 purchased: true,

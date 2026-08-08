@@ -40,6 +40,7 @@ function states(options = {}) {
 
 function demandFor(selfId, options = {}) {
     const timestamp = Number(options.now) || Date.now();
+    const unitPrice = Math.max(0, Number(options.unitPrice || 0));
     const excludedCharacterId = Number(options.excludeCharacterId || 0);
     const signals = states(options)
         .filter((state) => Number(state.characterId) !== excludedCharacterId)
@@ -50,12 +51,21 @@ function demandFor(selfId, options = {}) {
         result[signal.town] = (result[signal.town] || 0) + signal.amount;
         return result;
     }, {});
+    const readySignals = signals.filter((signal) => signal.ready);
+    const affordableUnits = (signal) => {
+        if (!signal.ready) return 0;
+        if (unitPrice <= 0) return signal.budget > 0 ? signal.amount : 0;
+        return Math.min(signal.amount, Math.floor(signal.budget / unitPrice));
+    };
     return {
         selfId: Number(selfId),
         bots: signals.length,
-        readyBots: signals.filter((signal) => signal.ready).length,
+        readyBots: readySignals.length,
+        fundedBots: readySignals.filter((signal) => affordableUnits(signal) > 0).length,
         units: signals.reduce((sum, signal) => sum + signal.amount, 0),
-        fundedUnits: signals.reduce((sum, signal) => sum + (signal.ready && signal.budget > 0 ? signal.amount : 0), 0),
+        readyUnits: readySignals.reduce((sum, signal) => sum + signal.amount, 0),
+        fundedUnits: signals.reduce((sum, signal) => sum + affordableUnits(signal), 0),
+        unitPrice,
         towns,
         signals
     };

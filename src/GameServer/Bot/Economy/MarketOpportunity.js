@@ -160,10 +160,17 @@ function privateOffers(selfId, town) {
         if (town && store.town && store.town !== town) return [];
         const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
         if (!item || Number(item.price) <= 0) return [];
+        const actorName = actor.fetchName?.() || 'Private Store';
+        const sellerKind = String(session.accountId || '').startsWith('bot_')
+            ? 'bot'
+            : MerchantStoreConfigs[actorName]
+                ? 'fixed'
+                : 'player';
         return [{
             sourceType: 'private_store',
             sourceId: Number(actor.fetchId?.() || 0),
-            sourceName: actor.fetchName?.() || 'Private Store',
+            sourceName: actorName,
+            sellerKind,
             town: store.town || town || null,
             selfId: Number(selfId),
             itemName: itemName(selfId),

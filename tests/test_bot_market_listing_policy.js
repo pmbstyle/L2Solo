@@ -16,9 +16,16 @@ const usefulWeapon = DataCache.items.find((item) => (
     item?.template?.kind?.startsWith('Weapon.') &&
     Number(item.template.price || 0) > MarketListingPolicy.MARKET_GEAR_MIN_BASE_PRICE
 ));
+const ordinaryGear = DataCache.items.find((item) => (
+    (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.')) &&
+    Number(item.template.price || 0) > MarketListingPolicy.MARKET_GEAR_MIN_BASE_PRICE &&
+    Number(item.template.price || 0) < MarketListingPolicy.SPECULATIVE_GEAR_MIN_BASE_PRICE &&
+    !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
+));
 
 assert(starterWeapon, 'the newbie templates must include a starter weapon');
 assert(usefulWeapon, 'the datapack must include market-worthy gear');
+assert(ordinaryGear, 'the datapack must include ordinary gear below the speculative threshold');
 
 function saleItem(item, count = 1, price = 1000) {
     return {
@@ -55,9 +62,33 @@ const buyer = {
 const demand = MarketDemandIndex.demandFor(targetId, { states: [buyer], now });
 assert.strictEqual(demand.bots, 1);
 assert.strictEqual(demand.readyBots, 1);
+assert.strictEqual(demand.fundedBots, 1);
 
 const demandedDecision = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 1, 9000), { states: [buyer], now });
 assert.strictEqual(demandedDecision.action, 'list', 'useful gear with an active buyer must enter WTS');
+assert.strictEqual(demandedDecision.listCount, 1, 'a seller must not list more units than buyers can fund now');
+
+const unfundedBuyer = { ...buyer, characterId: 21, adena: 100 };
+const unfunded = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 1, 9000), { states: [unfundedBuyer], now });
+assert.strictEqual(unfunded.action, 'warehouse', 'ready demand without enough Adena must not open WTS');
+assert.strictEqual(unfunded.reason, 'unfunded_demand');
+
+const latentBuyer = {
+    ...buyer,
+    characterId: 22,
+    stats: { equipmentPlan: { status: 'active', strategy: 'drop', target: { selfId: targetId, name: usefulWeapon.template.name } } }
+};
+const speculative = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 4, 9000), { states: [latentBuyer], now });
+assert.strictEqual(speculative.action, 'list', 'valuable gear may use one bounded speculative slot');
+assert.strictEqual(speculative.reason, 'speculative_demand');
+assert.strictEqual(speculative.listCount, 1);
+
+const ordinaryLatent = MarketListingPolicy.classify(seller, saleItem(ordinaryGear, 1, 3000), {
+    states: [{ ...latentBuyer, stats: { equipmentPlan: { status: 'active', strategy: 'drop', target: { selfId: ordinaryGear.selfId } } } }],
+    now
+});
+assert.strictEqual(ordinaryLatent.action, 'warehouse', 'ordinary gear must not be listed against latent progression demand');
+assert.strictEqual(ordinaryLatent.reason, 'latent_demand');
 
 const saturatedStates = [buyer, {
     characterId: 30,

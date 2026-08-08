@@ -8,6 +8,7 @@ const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 
 DataCache.init();
@@ -22,6 +23,7 @@ const originals = {
 };
 
 async function run() {
+    MarketTelemetry.reset();
     LifeState.upsertState = (state) => Promise.resolve(state);
     GoalState.clear = () => Promise.resolve(null);
 
@@ -122,6 +124,34 @@ async function run() {
     assert.strictEqual(sale.state.adena, 200);
     assert.strictEqual(sale.sales[0].buyer.adena, 800);
     assert.strictEqual(sale.sales[0].buyer.stats.marketStore.items[0].count, 1);
+    const tradedSnapshot = MarketSnapshot.snapshot();
+    const trade = tradedSnapshot.transactions.recentPeerTrades[0];
+    assert.strictEqual(trade.channel, 'wtb', 'Observer telemetry must distinguish a dynamic buy-store settlement');
+    assert.strictEqual(trade.itemName, 'Stem');
+    assert.strictEqual(trade.quantity, 2);
+    assert.strictEqual(trade.adena, 200);
+    assert.strictEqual(trade.town, 'Giran');
+    assert.strictEqual(trade.seller.name, 'MaterialSeller');
+    assert.strictEqual(trade.buyer.name, 'BudgetBuyer');
+    assert.strictEqual(tradedSnapshot.transactions.byItem[0].channels.wtb.items, 2);
+
+    MarketTelemetry.staticBuyerSale([{
+        selfId: 1864,
+        name: 'Stem',
+        count: 3,
+        npcPrice: 50,
+        buyerName: 'Material Broker',
+        buyerTown: 'Giran'
+    }], 150, { sellerCharacterId: seller.characterId, sellerName: seller.name, town: 'Giran' });
+    const staticTrade = MarketTelemetry.transactions().recentStaticTrades[0];
+    assert.strictEqual(staticTrade.channel, 'static_wtb');
+    assert.strictEqual(staticTrade.quantity, 3);
+    assert.strictEqual(staticTrade.adena, 150);
+    const combinedTrades = MarketTelemetry.transactions();
+    assert.strictEqual(combinedTrades.byItem[0].adena, 350, 'all-channel totals should retain both dynamic and static turnover');
+    assert.strictEqual(combinedTrades.byPeerItem[0].adena, 200, 'peer item totals must exclude static-buyer turnover');
+    assert.strictEqual(combinedTrades.byPeerTown.Giran.adena, 200, 'peer town totals must exclude static-buyer turnover');
+    assert.strictEqual(combinedTrades.byPeerTown.Giran.trades, 1);
 
     console.log('Bot dynamic buy-store checks passed');
 }
@@ -137,4 +167,5 @@ run().catch((error) => {
     LifeState.allStates = originals.allStates;
     GoalState.clear = originals.clearGoal;
     MarketOpportunity.resetColdStores();
+    MarketTelemetry.reset();
 });

@@ -50,6 +50,7 @@ function invalidateCustomerWindows(merchantActor) {
 
 function applyClosed(actor) {
     actor.setPrivateStoreType(0);
+    actor.setPrivateStore?.({ storeType: 0, title: '', items: [] });
     actor.state?.setSeated?.(false);
 }
 
@@ -93,19 +94,93 @@ function persistedState(session, store) {
                 ...marketStore,
                 title: store.title,
                 revision: store.revision,
-                items: store.items.map((line) => ({
-                    selfId: Number(line.selfId),
-                    name: line.name || itemName(line.selfId),
-                    count: Number(line.count),
-                    price: Number(line.price),
-                    rank: line.rank || 'none'
-                }))
+                items: store.items.map((line) => {
+                    const persisted = (marketStore.items || []).find((item) => Number(item.selfId) === Number(line.selfId)) || {};
+                    return {
+                        ...persisted,
+                        selfId: Number(line.selfId),
+                        name: line.name || itemName(line.selfId),
+                        count: Number(line.count),
+                        price: Number(line.price),
+                        rank: line.rank || persisted.rank || 'none'
+                    };
+                })
             },
             lastNegotiatedStoreUpdate: {
                 revision: store.revision,
                 at: Date.now()
             }
         }
+    };
+}
+
+async function applyLifecycle(session, nextState, reason = 'merchant_market_maintenance') {
+    const actor = session?.actor;
+    const current = storeFor(session);
+    if (!actor || !current || !nextState) return { ok: false, reason: 'merchant_store_unavailable' };
+    if (current.repricing === true || Number(current.activePurchases || 0) > 0) {
+        return { ok: false, reason: 'store_busy' };
+    }
+
+    const stateStore = nextState.stats?.marketStore || null;
+    const previous = current;
+    const nextStore = stateStore ? {
+        ...previous,
+        ...stateStore,
+        repricing: false,
+        activePurchases: 0,
+        revision: revision(previous) + 1,
+        title: stateStore.autoTitle === false ? stateStore.title : marketStoreTitle(stateStore.items),
+        items: (stateStore.items || []).map((item) => ({ ...item }))
+    } : null;
+
+    previous.repricing = true;
+    const invalidatedWindows = invalidateCustomerWindows(actor);
+    applyClosed(actor);
+    const closeBroadcastWarning = safelyNotify('close', () => notifyClosed(session, actor));
+
+    let saved;
+    try {
+        const stateToSave = nextStore ? {
+            ...nextState,
+            stats: {
+                ...(nextState.stats || {}),
+                marketStore: {
+                    ...stateStore,
+                    revision: nextStore.revision,
+                    title: nextStore.title,
+                    items: nextStore.items.map((item) => ({ ...item }))
+                }
+            }
+        } : nextState;
+        saved = await LifeState.upsertState(stateToSave, reason);
+        if (!saved) throw new Error('state_save_failed');
+    } catch (error) {
+        restore(session, actor, previous);
+        return { ok: false, reason: 'store_persist_failed', error: error.message || String(error) };
+    }
+
+    session.coldMarketState = saved;
+    if (!nextStore) {
+        session.plan = 'shopping';
+        return {
+            ok: true,
+            reason: 'store_closed',
+            state: saved,
+            invalidatedWindows,
+            broadcastWarning: closeBroadcastWarning
+        };
+    }
+
+    applyOpened(actor, nextStore);
+    const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    return {
+        ok: true,
+        reason: 'store_reopened',
+        state: saved,
+        store: nextStore,
+        invalidatedWindows,
+        broadcastWarning: openBroadcastWarning || closeBroadcastWarning
     };
 }
 
@@ -195,6 +270,7 @@ async function republish(session, agreement) {
 }
 
 module.exports = {
+    applyLifecycle,
     compactLine,
     lineFor,
     republish,

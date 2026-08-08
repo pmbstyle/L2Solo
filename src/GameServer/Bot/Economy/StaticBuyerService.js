@@ -71,7 +71,11 @@ function sell(state, town) {
         town,
         buyers: [...new Set(candidates.map((item) => item.buyerName))]
     }).then((saved) => {
-        if (saved) MarketTelemetry.staticBuyerSale(itemCount, adena);
+        if (saved) MarketTelemetry.staticBuyerSale(candidates, adena, {
+            sellerCharacterId: state.characterId,
+            sellerName: state.name,
+            town
+        });
         return { state: saved || state, sold: !!saved, candidates, itemCount, adena };
     });
 }

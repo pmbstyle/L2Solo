@@ -295,13 +295,18 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .market-totals > div:nth-child(2) strong { color: var(--cyan); }
 .market-town-list { display: grid; gap: 2px; margin-top: 8px; }
 .market-town-list .list-empty { padding: 8px; }
-.market-town-row { display: grid; grid-template-columns: minmax(0, 1fr) 48px 48px; align-items: center; gap: 7px; padding: 4px 5px; border-radius: 5px; color: var(--faint); font-size: 9px; transition: color 140ms ease, background 140ms ease, transform 140ms ease; }
+.market-town-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px 38px; align-items: center; gap: 5px; padding: 4px 5px; border-radius: 5px; color: var(--faint); font-size: 9px; transition: color 140ms ease, background 140ms ease, transform 140ms ease; }
 .market-town-row:hover { color: var(--muted); background: rgba(216, 185, 109, 0.07); transform: translateX(2px); }
 .market-town-row strong { overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .market-town-row span { text-align: right; white-space: nowrap; }
 .market-town-row b { color: var(--gold); font-variant-numeric: tabular-nums; }
-.market-top-item { margin-top: 7px; overflow: hidden; color: var(--faint); font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.market-top-item { display: -webkit-box; margin-top: 7px; overflow: hidden; color: var(--faint); font-size: 9px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .market-top-item strong { color: var(--muted); }
+.market-trade-list { display: grid; gap: 2px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line-soft); }
+.market-trade-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 6px; color: var(--faint); font-size: 8px; }
+.market-trade-row b { color: var(--cyan); font-size: 8px; letter-spacing: 0.05em; }
+.market-trade-row strong { overflow: hidden; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.market-trade-row time { color: var(--faint); font-variant-numeric: tabular-nums; }
 @keyframes market-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 .panel-section { padding: 14px; }
@@ -390,7 +395,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 
 @media (min-width: 1121px) and (max-height: 820px) {
     .side-panel {
-        grid-template-rows: 225px 226px 420px 220px;
+        grid-template-rows: 225px 340px 420px 220px;
         overflow-x: hidden;
         overflow-y: auto;
         padding-right: 4px;
