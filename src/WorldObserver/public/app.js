@@ -606,9 +606,6 @@ function renderPoints() {
     const visible = filteredActors();
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
-    els.visibleCount.textContent = state.clusterScope
-        ? `${visible.length.toLocaleString()} in cluster · ${clusters.length.toLocaleString()} groups`
-        : `${visible.length.toLocaleString()} shown · ${clusters.length.toLocaleString()} groups`;
 }
 
 function renderFilterCounts() {
@@ -716,9 +713,13 @@ function displayActivity(actor) {
 
 function renderRoster() {
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
-    const list = filteredActors()
-        .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)))
-        .slice(0, 90);
+    const roster = filteredActors()
+        .filter((actor) => actor.kind === 'player' || actor.staticService !== true)
+        .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
+    const list = roster.slice(0, 90);
+    els.visibleCount.textContent = list.length < roster.length
+        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} listed`
+        : `${roster.length.toLocaleString()} listed`;
     els.actorList.innerHTML = list.length ? list.map((actor) => `
         <button class="actor-row${String(actor.id) === String(state.selectedId?.id) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>

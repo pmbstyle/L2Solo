@@ -45,6 +45,34 @@ const hotBot = Observer.compactHotBot({
 assert.strictEqual(hotBot.isPk, true, 'hot PK bots must be marked for red rendering');
 assert.strictEqual(hotBot.className, 'Orc Fighter', 'hot bot snapshots must expose a player-facing profession name');
 
+const fixedMerchant = Observer.compactHotBot({
+    id: 50,
+    name: 'Fixed Merchant',
+    level: 40,
+    classId: 53,
+    mode: 'merchant',
+    intent: 'trade',
+    role: 'crafter',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    available: true
+}, new Set(), { plan: 'merchant' });
+assert.strictEqual(fixedMerchant.staticService, true, 'permanent merchant services must be identifiable for roster filtering');
+
+const dynamicMerchant = Observer.compactHotBot({
+    id: 51,
+    name: 'Dynamic Merchant',
+    level: 40,
+    classId: 53,
+    mode: 'merchant',
+    intent: 'trade',
+    role: 'crafter',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    available: true
+}, new Set(), { plan: 'merchant', coldMarketState: {} });
+assert.strictEqual(dynamicMerchant.staticService, false, 'temporary player merchants must remain in the roster');
+
 const baseClassBot = Observer.compactHotBot({
     id: 41,
     name: 'Starter',
@@ -85,6 +113,34 @@ const coldPk = Observer.compactStateBot({
     vitals: {}
 }, new Set());
 assert.strictEqual(coldPk.isPk, true, 'stored PK encounters must remain marked between activations');
+
+const craftService = Observer.compactStateBot({
+    characterId: 48,
+    name: 'Craft Station',
+    level: 70,
+    phase: 'cold',
+    activity: 'crafting',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    stats: {
+        role: 'crafter',
+        craftStationId: 'a_light',
+        craftShop: { stationId: 'a_light', town: 'Giran' }
+    }
+}, new Set());
+assert.strictEqual(craftService.staticService, true, 'dedicated cold craft stations must be identifiable for roster filtering');
+
+const adventuringCrafter = Observer.compactStateBot({
+    characterId: 49,
+    name: 'Adventuring Crafter',
+    level: 40,
+    phase: 'cold',
+    activity: 'hunting',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    stats: { role: 'crafter' }
+}, new Set());
+assert.strictEqual(adventuringCrafter.staticService, false, 'an adventuring crafter must remain in the roster');
 
 const coldState = {
     characterId: 44,

@@ -143,7 +143,20 @@ function compactPlayer(session) {
     };
 }
 
-function compactHotBot(status, pkIds = new Set()) {
+function isStaticServiceSession(session) {
+    const craftStats = session?.coldCraftState?.stats || session?.coldLifeState?.stats || {};
+    if (craftStats.craftStationId || craftStats.craftShop || session?.manufactureShop) return true;
+
+    // Permanent private-store services have no persisted adventurer state.
+    // Dynamic WTS/WTB bots retain a cold market snapshot and must remain part
+    // of the simulated-player roster; craft stations were handled above.
+    return session?.plan === 'merchant'
+        && !session?.coldMarketState
+        && !session?.coldCraftState
+        && !session?.coldLifeState;
+}
+
+function compactHotBot(status, pkIds = new Set(), session = null) {
     const classId = normalizedClassId(status.classId);
     return {
         id: status.id,
@@ -185,6 +198,7 @@ function compactHotBot(status, pkIds = new Set()) {
         blockers: status.blockers || [],
         lastSocialEvent: status.lastSocialEvent || null,
         roleDecision: status.roleDecision || null,
+        staticService: isStaticServiceSession(session),
         isPk: pkIds.has(Number(status.id))
     };
 }
@@ -226,6 +240,7 @@ function compactStateBot(state, hotIds, leaderState = null) {
         trade: null,
         blockers: state.activity === 'dead' ? ['dead'] : [],
         updatedAt: state.updatedAt || 0,
+        staticService: Boolean(stats.craftStationId || stats.craftShop),
         isPk: state.activity === 'pk_hunting'
     };
 }
@@ -478,7 +493,7 @@ function compactHotDetail(status, session) {
     });
     const pkIds = isPkActor(session?.actor) ? new Set([Number(status.id)]) : new Set();
     return {
-        ...compactHotBot(status, pkIds),
+        ...compactHotBot(status, pkIds, session),
         kind: 'bot',
         vitals: fullVitals(status.vitals),
         movement: status.movement || null,
@@ -592,7 +607,11 @@ function snapshot() {
         .map((session) => Number(session.actor.fetchId())));
     const hotBots = BotManager.getAllBotStatuses()
         .filter((status) => status && status.available)
-        .map((status) => compactHotBot(status, pkHotIds));
+        .map((status) => compactHotBot(
+            status,
+            pkHotIds,
+            BotManager.findSessionById(Number(status.id))
+        ));
     const hotIds = new Set(hotBots.map((bot) => Number(bot.id)));
     // The previous 700-item cap made the observer silently report 735 bots
     // (35 hot + 700 cold) while PopulationStatus already knew about the full
