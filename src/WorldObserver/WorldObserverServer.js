@@ -100,6 +100,20 @@ function actorVitals(actor) {
     };
 }
 
+function normalizedClassId(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const classId = Number(value);
+    return Number.isInteger(classId) && classId >= 0 ? classId : null;
+}
+
+function className(value) {
+    const classId = normalizedClassId(value);
+    if (classId === null) return null;
+    return (DataCache.classTemplates || [])
+        .find((template) => Number(template.classId) === classId)
+        ?.template?.class || null;
+}
+
 function isPkActor(actor) {
     return Number(actor?.fetchKarma?.() || 0) > 0;
 }
@@ -115,10 +129,13 @@ function realPlayerSessions() {
 
 function compactPlayer(session) {
     const actor = session.actor;
+    const classId = normalizedClassId(actor.fetchClassId?.());
     return {
         id: actor.fetchId(),
         name: actor.fetchName(),
         level: actor.fetchLevel(),
+        classId,
+        className: className(classId),
         loc: actorLoc(actor),
         vitals: actorVitals(actor),
         online: !!actor.fetchIsOnline(),
@@ -127,12 +144,14 @@ function compactPlayer(session) {
 }
 
 function compactHotBot(status, pkIds = new Set()) {
+    const classId = normalizedClassId(status.classId);
     return {
         id: status.id,
         name: status.name,
         phase: 'hot',
         level: status.level,
-        classId: status.classId,
+        classId,
+        className: className(classId),
         mode: status.mode,
         intent: status.intent,
         role: status.role,
@@ -173,13 +192,15 @@ function compactHotBot(status, pkIds = new Set()) {
 function compactStateBot(state, hotIds, leaderState = null) {
     if (hotIds.has(Number(state.characterId))) return null;
     const stats = state.stats || {};
+    const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
     const leaderId = Number(state.party?.leaderId || stats.leaderId || 0) || null;
     return {
         id: Number(state.characterId),
         name: state.name || 'Bot',
         phase: state.phase || 'cold',
         level: Number(state.level || 1),
-        classId: Number(stats.classId || stats.classProgressionClassId || 0) || null,
+        classId,
+        className: className(classId),
         mode: state.activity || 'hunting',
         intent: state.phase === 'warm' ? 'background_active' : 'background_resolve',
         role: state.party?.role || stats.role || 'dps',
@@ -222,7 +243,7 @@ const EQUIPMENT_SLOTS = {
     10: 'chest',
     11: 'legs',
     12: 'feet',
-    14: 'dual weapon',
+    14: 'two-handed weapon',
     15: 'full armor'
 };
 
@@ -285,9 +306,11 @@ function compactEquipment(equipment) {
 
 function compactBuild(build) {
     if (!build) return null;
+    const classId = normalizedClassId(build.classId);
     return {
         role: build.role || null,
-        classId: Number(build.classId || 0) || null,
+        classId,
+        className: className(classId),
         classFamily: build.classFamily || null,
         grade: build.grade || null,
         tier: build.tier || null,
@@ -364,11 +387,13 @@ function compactPartyLeader(leader) {
     if (!leader) return null;
     const id = Number(leader.id || leader.characterId || 0) || null;
     if (!id) return null;
+    const classId = normalizedClassId(leader.classId);
     return {
         id,
         name: leader.name || null,
         level: Number(leader.level || 0) || null,
-        classId: Number(leader.classId || 0) || null,
+        classId,
+        className: className(classId),
         role: leader.role || null,
         phase: leader.phase || null
     };
@@ -477,11 +502,13 @@ function compactHotDetail(status, session) {
 
 function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
+    const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
     const lastResolve = stats.lastResolveDebug || null;
     return {
         ...compactStateBot(state, new Set(), leaderState),
         kind: 'bot',
-        classId: Number(stats.classId || stats.classProgressionClassId || 0) || null,
+        classId,
+        className: className(classId),
         phase: state.phase || 'cold',
         mode: state.activity || 'hunting',
         intent: coldIntent(state),

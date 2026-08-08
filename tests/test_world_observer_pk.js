@@ -12,6 +12,7 @@ function actor(karma = 0) {
         fetchId: () => 42,
         fetchName: () => 'Kharz',
         fetchLevel: () => 46,
+        fetchClassId: () => 45,
         fetchLocX: () => 76576,
         fetchLocY: () => 50151,
         fetchLocZ: () => -3200,
@@ -26,6 +27,7 @@ function actor(karma = 0) {
 
 const player = Observer.compactPlayer({ actor: actor(720) });
 assert.strictEqual(player.isPk, true, 'red-name players must be marked for the observer map');
+assert.strictEqual(player.className, 'Orc Raider', 'player snapshots must expose the profession name instead of only its numeric id');
 
 const hotBot = Observer.compactHotBot({
     id: 42,
@@ -41,6 +43,22 @@ const hotBot = Observer.compactHotBot({
     available: true
 }, new Set([42]));
 assert.strictEqual(hotBot.isPk, true, 'hot PK bots must be marked for red rendering');
+assert.strictEqual(hotBot.className, 'Orc Fighter', 'hot bot snapshots must expose a player-facing profession name');
+
+const baseClassBot = Observer.compactHotBot({
+    id: 41,
+    name: 'Starter',
+    level: 1,
+    classId: 0,
+    mode: 'hunting',
+    intent: 'hunting',
+    role: 'dps',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    available: true
+});
+assert.strictEqual(baseClassBot.classId, 0, 'base profession id zero must remain valid observer metadata');
+assert.strictEqual(baseClassBot.className, 'Human Fighter', 'base profession id zero must resolve to its class name');
 
 const hotDetail = Observer.compactHotDetail({
     id: 42,
@@ -94,6 +112,8 @@ const coldState = {
 const coldDetail = Observer.compactColdDetail(coldState);
 const authoritativeCombat = ColdCombatProfile.profileFor(coldState);
 assert.strictEqual(coldDetail.classId, 15, 'cold bot detail must preserve class metadata');
+assert.strictEqual(coldDetail.className, 'Cleric', 'cold bot detail must expose the profession name');
+assert.strictEqual(coldDetail.build.className, 'Cleric', 'build metadata must use the same authoritative profession name');
 assert.strictEqual(coldDetail.equipment.equipped[0].slot, 'weapon', 'cold outfit slots must be human-readable');
 assert.strictEqual(coldDetail.combat.pDef, authoritativeCombat.pDef, 'cold bot detail must use authoritative combat formulas');
 assert.strictEqual(coldDetail.combat.atkSpd, authoritativeCombat.atkSpd, 'cold bot detail must not add base and equipment attack speed');
@@ -107,12 +127,14 @@ const legacyColdDetail = Observer.compactColdDetail({
         coldCombat: { version: 3, skillSource: 'database', skills: [] },
         equipment: [
             { selfId: 5, name: 'Mace', slot: 7, rank: 'none', kind: 'Weapon.Blunt' },
+            { selfId: 178, name: 'Bone Staff', slot: 14, rank: 'd', kind: 'Weapon.Blunt' },
             { selfId: 1146, name: "Squire's Shirt", slot: 10, rank: 'none', kind: 'Armor.Leather' },
             { selfId: 1147, name: "Squire's Pants", slot: 11, rank: 'none', kind: 'Armor.Leather' }
         ]
     },
     inventory: {
         5: { selfId: 5, name: 'Mace', slot: 7, kind: 'Weapon.Blunt', equipped: true },
+        178: { selfId: 178, name: 'Bone Staff', slot: 14, kind: 'Weapon.Blunt', equipped: true },
         1146: { selfId: 1146, name: "Squire's Shirt", slot: 10, kind: 'Armor.Leather', equipped: true },
         1147: { selfId: 1147, name: "Squire's Pants", slot: 11, kind: 'Armor.Leather', equipped: true }
     }
@@ -121,6 +143,7 @@ assert(legacyColdDetail.equipment.totals.pAtk > 0, 'legacy cold gear must expose
 assert(legacyColdDetail.equipment.totals.pDef > 0, 'legacy cold gear must expose reconstructed physical defense');
 assert(legacyColdDetail.equipment.equipped[0].stats.pAtk > 0, 'cold gear rows must include datapack item stats');
 assert.strictEqual(legacyColdDetail.equipment.equipped[0].rank, 'no-grade', 'observer must expose a player-facing no-grade label instead of internal none');
+assert.strictEqual(legacyColdDetail.equipment.equipped.find((item) => item.selfId === 178).slot, 'two-handed weapon', 'two-handed paperdoll items must not be mislabeled as dual weapons');
 
 const leaderDetail = Observer.compactColdDetail({
     ...coldState,

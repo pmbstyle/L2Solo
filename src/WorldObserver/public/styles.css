@@ -271,7 +271,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .population-headline span { color: var(--muted); font-size: 12px; }
 .population-subline { margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .population-bars { display: grid; gap: 8px; margin-top: 14px; }
-.population-bar-row { display: grid; grid-template-columns: 55px minmax(0, 1fr) 43px; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.population-bar-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) 43px; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
 .phase-label { display: inline-flex; align-items: center; gap: 6px; }
 .population-track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(237, 240, 232, 0.08); }
 .population-fill { height: 100%; min-width: 2px; border-radius: inherit; }

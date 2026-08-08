@@ -26,6 +26,56 @@ const COLORS = {
     mixed: '#d8b96d'
 };
 
+const PHASE_LABELS = Object.freeze({
+    hot: 'Active',
+    warm: 'Background',
+    cold: 'Simulated',
+    player: 'Player',
+    players: 'Players'
+});
+
+const ROLE_LABELS = Object.freeze({
+    dps: 'Damage',
+    tank: 'Tank',
+    healer: 'Healer',
+    buffer: 'Buffer',
+    mage: 'Mage',
+    archer: 'Archer',
+    dagger: 'Dagger',
+    crafter: 'Crafter',
+    player: 'Player',
+    member: 'Member'
+});
+
+const ACTIVITY_LABELS = Object.freeze({
+    background_active: 'Active in background',
+    background_resolve: 'Simulating',
+    buy: 'Buying',
+    complete_errand: 'Finishing an errand',
+    crafting: 'Crafting',
+    craft: 'Crafting',
+    dead: 'Dead',
+    find_party: 'Looking for party',
+    focused: 'Focused',
+    grouped: 'In a party',
+    hunting: 'Hunting',
+    idle: 'Idle',
+    merchant: 'Trading',
+    neutral: 'Neutral',
+    offline: 'Offline',
+    online: 'Online',
+    party_wait: 'Looking for party',
+    pk_hunting: 'PK hunting',
+    progress_gear: 'Improving gear',
+    recover: 'Recovering',
+    resting: 'Resting',
+    sell: 'Selling',
+    shopping: 'Shopping',
+    store: 'Store',
+    trade: 'Trading',
+    traveling: 'Traveling'
+});
+
 const els = {
     serverLine: document.querySelector('#serverLine'),
     liveToggle: document.querySelector('#liveToggle'),
@@ -283,9 +333,15 @@ function actorSearchText(actor) {
     return [
         actor.name,
         actor.phase,
+        phaseLabel(actor.phase),
         actor.mode,
         actor.intent,
+        displayActivity(actor),
         actor.role,
+        roleLabel(actor.role),
+        actor.className,
+        actor.build?.className,
+        actor.build?.classFamily,
         actor.home?.region,
         actor.spot?.name,
         actor.classId
@@ -442,7 +498,7 @@ function clusterColor(cluster) {
 }
 
 function actorLabel(actor) {
-    return `${actor.isPk ? 'PK ' : ''}${actor.name} · Lv ${actor.level} · ${actor.intent || actor.mode || 'idle'}`;
+    return `${actor.isPk ? 'PK ' : ''}${actor.name} · Lv ${actor.level} · ${actorClassName(actor)} · ${displayActivity(actor)}`;
 }
 
 function addPointHandlers(group, handler) {
@@ -507,7 +563,7 @@ function renderCluster(cluster) {
         transform: `translate(${cluster.point.x}, ${cluster.point.y})`,
         tabindex: 0,
         role: 'button',
-        'aria-label': `${cluster.size} actors near ${first.home?.region || first.spot?.name || 'this area'}`
+        'aria-label': `${cluster.size} actors near ${clusterLocation(cluster)}`
     });
     addPointHandlers(group, () => focusCluster(cluster));
     group.appendChild(pointHitElement(Math.max(36, radiusPx * 2 + 8)));
@@ -535,7 +591,7 @@ function renderCluster(cluster) {
             'text-anchor': 'middle',
             style: `font-size:${screenUnits(9)}px;stroke-width:${screenUnits(2.2)}px`
         });
-        breakdown.textContent = phaseCounts.map(([key, count]) => `${key} ${count}`).join(' · ');
+        breakdown.textContent = phaseCounts.map(([key, count]) => `${phaseLabel(key)} ${count}`).join(' · ');
         group.appendChild(breakdown);
     }
     els.pointsLayer.appendChild(group);
@@ -582,7 +638,7 @@ function renderPopulation() {
         const count = Number(population[phase] || 0);
         const width = Math.max(count ? 2 : 0, (count / phaseTotal) * 100);
         return `<div class="population-bar-row">
-            <span class="phase-label"><i class="legend-dot ${phase}"></i>${phase}</span>
+            <span class="phase-label"><i class="legend-dot ${phase}"></i>${phaseLabel(phase)}</span>
             <div class="population-track"><div class="population-fill ${phase}" style="width:${width}%"></div></div>
             <strong>${count.toLocaleString()}</strong>
         </div>`;
@@ -625,8 +681,8 @@ function renderMarket() {
 }
 
 function displayActivity(actor) {
-    if (actor.kind === 'player') return actor.online ? 'online' : 'offline';
-    return actor.intent || actor.mode || 'idle';
+    if (actor.kind === 'player') return actor.online ? 'Online' : 'Offline';
+    return activityLabel(actor.intent || actor.mode || 'idle');
 }
 
 function renderRoster() {
@@ -639,9 +695,9 @@ function renderRoster() {
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
             <span class="actor-main">
                 <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
-                <span>${text(actor.kind === 'player' ? displayActivity(actor) : `${actor.phase} · ${actor.role || 'dps'} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
+                <span>${text(actor.kind === 'player' ? displayActivity(actor) : `${phaseLabel(actor.phase)} · ${roleLabel(actor.role || 'dps')} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
             </span>
-            <span class="actor-loc">${text(actor.home?.region || actor.spot?.name || '')}</span>
+            <span class="actor-loc">${text(readablePlace(actor.home?.region || actor.spot?.name, ''))}</span>
         </button>
     `).join('') : '<div class="list-empty">No actors match this view.</div>';
 }
@@ -745,6 +801,38 @@ function humanizeToken(value) {
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function readableToken(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const raw = String(value);
+    if (!/[_-]/.test(raw)) return raw;
+    const words = raw.replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
+    return words ? words.charAt(0).toUpperCase() + words.slice(1) : '—';
+}
+
+function phaseLabel(value) {
+    return PHASE_LABELS[value] || readableToken(value);
+}
+
+function roleLabel(value) {
+    return ROLE_LABELS[value] || readableToken(value);
+}
+
+function activityLabel(value) {
+    return ACTIVITY_LABELS[value] || readableToken(value || 'idle');
+}
+
+function actorClassName(actor) {
+    return actor.className
+        || actor.build?.className
+        || (actor.build?.classFamily ? humanizeToken(actor.build.classFamily) : null)
+        || (actor.kind === 'player' ? 'Player' : 'Unknown class');
+}
+
+function readablePlace(value, fallback = '—') {
+    if (!value || /^-?\d+_-?\d+$/.test(String(value))) return fallback;
+    return readableToken(value);
+}
+
 function readableBuildValue(value, kind = '') {
     if (value === null || value === undefined || value === '') return '—';
     return BUILD_LABELS[kind]?.[value] || humanizeToken(value);
@@ -766,7 +854,7 @@ function partyLeaderLink(actor) {
     const leaderValue = leaderId
         ? `<a class="inspector-link" href="#bot-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="bot">${text(leaderName)}</a>`
         : text(leaderName);
-    return `${text(party.role || actor.role || 'member')} · leader ${leaderValue}`;
+    return `${text(roleLabel(party.role || actor.role || 'member'))} · leader ${leaderValue}`;
 }
 
 function statCell(label, value) {
@@ -825,25 +913,25 @@ function renderBuild(build) {
 function renderAction(actor) {
     const decision = actor.decisions?.combat || actor.decisions?.hunt || actor.decisions?.role || actor.roleDecision;
     const plan = actor.plan;
-    const target = actor.target?.name || actor.target?.id || actor.spot?.name || actor.spot?.id;
+    const target = readablePlace(actor.target?.name || actor.spot?.name, null);
     const secondary = actor.travel?.reason
-        ? `${actor.travel.reason} → ${actor.travel.townName || 'field'}`
+        ? `${activityLabel(actor.travel.reason)} → ${readablePlace(actor.travel.townName, 'field')}`
         : plan?.next?.npcName
-            ? `${plan.next.npcName} at ${plan.next.spotId || 'next spot'}`
+            ? `${plan.next.npcName} at ${readablePlace(plan.next.spotId, 'next destination')}`
             : target
                 ? `near ${target}`
-                : actor.blockers?.[0] || 'no active target';
+                : actor.blockers?.[0] ? activityLabel(actor.blockers[0]) : 'no active target';
     return `<div class="activity-callout">
         <span>Doing now</span>
-        <strong>${text(actor.intent || actor.mode || 'idle')}</strong>
-        <p>${text(decision?.action || decisionReason(decision) || secondary)}</p>
+        <strong>${text(displayActivity(actor))}</strong>
+        <p>${text(decision?.action ? readableToken(decision.action) : decisionReason(decision) || secondary)}</p>
     </div>`;
 }
 
 function readableDecisionValue(value) {
     if (value === null || value === undefined || value === '') return null;
     if (Array.isArray(value)) return value.map(readableDecisionValue).filter(Boolean).join(' · ') || null;
-    if (typeof value !== 'object') return String(value);
+    if (typeof value !== 'object') return readableToken(value);
     const preferred = ['message', 'reason', 'label', 'action', 'route', 'target', 'spotId', 'code', 'type'];
     for (const key of preferred) {
         const readable = readableDecisionValue(value[key]);
@@ -871,8 +959,9 @@ function renderDecisions(actor) {
     const decision = actor.decisions?.combat || actor.decisions?.hunt || actor.decisions?.role || actor.roleDecision || actor.lastResolve;
     if (!decision) return '';
     const reason = decisionReason(decision);
+    if (!reason) return '';
     return `<section class="inspector-block compact-block">
-        <div class="inspector-block-title"><h3>Last decision</h3><span>${text(decision.action || 'resolve')}</span></div>
+        <div class="inspector-block-title"><h3>Last decision</h3><span>${text(humanizeToken(decision.action || 'resolve'))}</span></div>
         <p class="muted-copy">${text(reason)}</p>
     </section>`;
 }
@@ -889,8 +978,8 @@ function renderSignals(actor) {
     const nearbyText = nearby
         ? `${nearby.realPlayers || 0} players · ${nearby.friendlyBots || 0} bots · ${nearby.attackableNpcs || 0} mobs`
         : null;
-    const tradeText = store ? `${store.type || 'store'} · ${store.title || 'open'} · ${store.items || 0} lines` : null;
-    const moodText = ambient ? `${ambient.mood || 'neutral'} · ${ambient.intent || 'idle'}` : null;
+    const tradeText = store ? `${activityLabel(store.type || 'store')} · ${store.title || 'open'} · ${store.items || 0} lines` : null;
+    const moodText = ambient ? `${activityLabel(ambient.mood || 'neutral')} · ${activityLabel(ambient.intent || 'idle')}` : null;
     return `<section class="inspector-block compact-block">
         <div class="inspector-block-title"><h3>Runtime signals</h3><span>bot info</span></div>
         <div class="signal-list">
@@ -917,11 +1006,11 @@ function renderSelectedCard() {
         els.selectedCard.innerHTML = '<span class="eyeline">Selection</span><strong>No actor selected</strong><p>Choose a point or cluster to inspect the bot.</p>';
         return;
     }
-    const activity = actor.target?.name || actor.spot?.name || actor.intent || actor.mode || 'idle';
+    const activity = readablePlace(actor.target?.name || actor.spot?.name, null) || displayActivity(actor);
     els.selectedCard.innerHTML = `
-        <span class="eyeline">Selected ${text(actor.phase || '')}</span>
+        <span class="eyeline">Selected ${text(phaseLabel(actor.phase || ''))}</span>
         <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
-        <p>Lv ${number(actor.level, '?')} · ${text(actor.role || actor.classFamily || 'bot')} · ${text(activity)}</p>
+        <p>Lv ${number(actor.level, '?')} · ${text(actorClassName(actor))} · ${text(activity)}</p>
         ${state.clusterScope ? '<button class="selection-clear" type="button" data-clear-cluster>All actors</button>' : ''}
     `;
 }
@@ -943,7 +1032,7 @@ function renderInspector() {
                     <strong>${number(scoped.length)} actors in this cluster</strong>
                     <p>${text(state.clusterScope.label)} · roster is scoped to this area.</p>
                     <div class="cluster-phase-counts">
-                        ${['hot', 'warm', 'cold', 'players'].filter((phase) => counts[phase]).map((phase) => `<span><i class="legend-dot ${phase === 'players' ? 'player' : phase}"></i>${phase} <strong>${number(counts[phase])}</strong></span>`).join('')}
+                        ${['hot', 'warm', 'cold', 'players'].filter((phase) => counts[phase]).map((phase) => `<span><i class="legend-dot ${phase === 'players' ? 'player' : phase}"></i>${phaseLabel(phase)} <strong>${number(counts[phase])}</strong></span>`).join('')}
                     </div>
                     <button class="selection-clear" type="button" data-clear-cluster>Show all actors</button>
                 </div>
@@ -972,7 +1061,7 @@ function renderInspector() {
     }
 
     const build = actor.build;
-    const family = build?.classFamily || (actor.classId ? `class ${actor.classId}` : (actor.kind === 'player' ? 'player' : 'bot'));
+    const family = actorClassName(actor);
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
     const party = partyLeaderLink(actor);
     const freshness = actor.updatedAt ? formatRelative(actor.updatedAt) : 'live';
@@ -985,8 +1074,8 @@ function renderInspector() {
         ${detailWarning}
         <div class="inspector-hero">
             <div class="inspector-avatar" style="--avatar-color:${phaseColor(actor)}">${text(String(actor.name || '?').slice(0, 1).toUpperCase())}</div>
-            <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(actor.role || '—')}</span></div>
-            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(actor.phase || 'bot')}</span>
+            <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(roleLabel(actor.role || '—'))}</span></div>
+            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(phaseLabel(actor.phase || 'bot'))}</span>
         </div>
         <div class="inspector-vitals">
             ${vitalBar('HP', actor.vitals, '#63d37b')}
@@ -994,12 +1083,12 @@ function renderInspector() {
         </div>
         ${renderAction(actor)}
         <div class="detail-grid">
-            <div><span>Mode</span><strong>${text(actor.mode)}</strong></div>
-            <div><span>Region</span><strong>${text(actor.region || actor.home?.region)}</strong></div>
-            <div><span>Spot</span><strong>${text(actor.spot?.name || actor.spot?.id)}</strong></div>
+            <div><span>Activity</span><strong>${text(activityLabel(actor.mode))}</strong></div>
+            <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
+            <div><span>Spot</span><strong>${text(readablePlace(actor.spot?.name || actor.spot?.id))}</strong></div>
             <div><span>Party</span><strong>${party}</strong></div>
             <div><span>Position</span><strong>${text(location)}</strong></div>
-            <div><span>Blockers</span><strong>${text(actor.blockers?.join(' · '), 'none')}</strong></div>
+            <div><span>Blockers</span><strong>${text(actor.blockers?.length ? actor.blockers.map(activityLabel).join(' · ') : 'None')}</strong></div>
         </div>
         ${renderSignals(actor)}
         ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
