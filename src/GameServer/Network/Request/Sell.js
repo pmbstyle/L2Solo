@@ -84,7 +84,12 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         }
 
         for (const line of requested) {
-            sold.push(await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount));
+            sold.push(await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
+                buyerActor: trade.merchant,
+                afterTrade: store.budgetBacked === true && trade.merchant?.session?.coldMarketState
+                    ? () => invoke('GameServer/Bot/Population/BotLifeState').syncMarketSession(trade.merchant.session, 'hot_market_buy_fill')
+                    : null
+            }));
         }
 
         if (sold.length > 0) {

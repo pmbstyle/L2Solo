@@ -1,6 +1,7 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const DataCache = invoke('GameServer/DataCache');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
+const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 let rankIndexSource = null;
@@ -79,7 +80,7 @@ function targetTownForSale(state) {
     // equipment left after that sale may still open a normal private store
     // there. Without this, no-grade local markets can strand materials in a
     // town with no buyer.
-    const buyerTown = StaticBuyerService.bestTownFor(state)?.town;
+    const buyerTown = DynamicBuyerService.bestTownFor(state)?.town || StaticBuyerService.bestTownFor(state)?.town;
     return buyerTown || targetTownForItems(state, ItemDisposition.saleCandidates(state));
 }
 

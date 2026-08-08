@@ -1,0 +1,117 @@
+const DataCache = invoke('GameServer/DataCache');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
+
+const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
+const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
+const SPECULATIVE_SUPPLY_LIMIT = 1;
+
+let newbieItemSource = null;
+let newbieItemIds = new Set();
+
+function starterItemIds() {
+    const source = DataCache.newbieItems || [];
+    if (newbieItemSource !== source) {
+        newbieItemSource = source;
+        newbieItemIds = new Set(source.flatMap((row) => (row.items || []).map((item) => Number(item.selfId || 0))).filter(Boolean));
+    }
+    return newbieItemIds;
+}
+
+function isGear(item = {}) {
+    return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
+}
+
+function classify(state, item, options = {}) {
+    if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
+        return { action: 'ignore', reason: 'invalid_item' };
+    }
+    if (starterItemIds().has(Number(item.selfId))) {
+        return { action: 'npc', reason: 'starter_kit' };
+    }
+    if (isGear(item) && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
+        return { action: 'npc', reason: 'low_value_gear' };
+    }
+
+    const market = MarketDemandIndex.snapshot(item.selfId, {
+        ...options,
+        unitPrice: Number(item.price || 0),
+        excludeCharacterId: state.characterId
+    });
+    if (market.demand.bots <= 0) {
+        return { action: 'warehouse', reason: 'no_demand', market };
+    }
+    const actionableUnits = Math.max(0, Number(market.demand.fundedUnits || 0));
+    if (actionableUnits > 0) {
+        const availableUnits = Math.max(0, actionableUnits - market.supply.units);
+        if (availableUnits <= 0) return { action: 'warehouse', reason: 'saturated', market };
+        return {
+            action: 'list',
+            reason: 'active_demand',
+            listCount: Math.min(Number(item.count), availableUnits),
+            market
+        };
+    }
+
+    if (market.demand.readyBots > 0) {
+        return { action: 'warehouse', reason: 'unfunded_demand', market };
+    }
+    const speculative = isGear(item)
+        && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
+        && market.supply.units < SPECULATIVE_SUPPLY_LIMIT;
+    if (speculative) {
+        return {
+            action: 'list',
+            reason: 'speculative_demand',
+            listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units),
+            market
+        };
+    }
+    if (market.supply.units >= SPECULATIVE_SUPPLY_LIMIT) {
+        return { action: 'warehouse', reason: 'saturated', market };
+    }
+    return { action: 'warehouse', reason: 'latent_demand', market };
+}
+
+function listingPrice(item, decision) {
+    const competition = Number(decision?.market?.supply?.minimumPrice || Infinity);
+    if (!Number.isFinite(competition) || competition <= 0) return Number(item.price);
+    return Math.max(1, Math.min(Number(item.price), Math.floor(competition * 0.98)));
+}
+
+function evaluate(state, options = {}) {
+    const candidates = ItemDisposition.saleCandidates(state, options);
+    const decisions = candidates.map((item) => {
+        const decision = classify(state, item, options);
+        return {
+            ...decision,
+            item: decision.action === 'list' ? {
+                ...item,
+                count: Math.max(1, Math.min(Number(item.count), Number(decision.listCount || item.count))),
+                price: listingPrice(item, decision),
+                marketReason: decision.reason
+            } : item
+        };
+    });
+    return {
+        candidates,
+        decisions,
+        listings: decisions.filter((decision) => decision.action === 'list').map((decision) => decision.item),
+        npc: decisions.filter((decision) => decision.action === 'npc').map((decision) => ({
+            ...decision.item,
+            npcPrice: Math.max(1, Math.floor(Number(decision.item.basePrice || 0) * 0.5))
+        })),
+        warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item)
+    };
+}
+
+module.exports = {
+    MARKET_GEAR_MIN_BASE_PRICE,
+    SPECULATIVE_GEAR_MIN_BASE_PRICE,
+    SPECULATIVE_SUPPLY_LIMIT,
+    classify,
+    evaluate,
+    isGear,
+    listingPrice,
+    starterItemIds
+};

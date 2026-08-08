@@ -1,5 +1,6 @@
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Html = invoke('GameServer/World/Generics/HtmlKit');
 const ServerResponse = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
@@ -33,7 +34,8 @@ function render(session) {
             ? Html.link('Invite', `bot-party invite ${bot.fetchName()}`, { color: Html.COLOR.ok })
             : Html.font(availability.reasonText, Html.COLOR.muted);
         const name = Html.font(bot.fetchName(), Html.COLOR.title);
-        const role = status?.role || 'dps';
+        const profession = BotRoles.presentation(bot);
+        const role = profession.role;
         const mode = status?.mode || 'unknown';
         const hp = pct(status?.vitals?.hpPct);
         const relationship = availability.relationship;
@@ -42,7 +44,7 @@ function render(session) {
 
         body += Html.table([
             Html.row([
-                Html.cell(`${name} Lv ${bot.fetchLevel()} ${Html.font(role, Html.COLOR.link)}`, { width: 180 }),
+                Html.cell(`${name}<br1>${Html.font(`Lv ${bot.fetchLevel()} ${profession.className || 'Unknown profession'}`, Html.COLOR.muted)} ${Html.font(role, Html.COLOR.link)}`, { width: 180 }),
                 Html.cell(action, { width: 90, align: 'right' })
             ])
         ]);

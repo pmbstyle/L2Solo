@@ -698,10 +698,21 @@ const PopulationService = {
     expireStaleMarketStores(timestamp = Date.now()) {
         if (this.marketExpiryCleanupRunning || Config.enabled === false) return Promise.resolve([]);
         this.marketExpiryCleanupRunning = true;
-        return ColdMarketListingService.expireStaleMarketStores(Config.marketExpiryCleanupBatchSize, timestamp)
-            .then((expired) => {
-                if (expired.length) console.info('BotPopulation :: expired market stores closed=%d', expired.length);
-                return expired;
+        const World = invoke('GameServer/World/World');
+        const hotSessions = (World.user?.sessions || []).filter((session) => (
+            session?.actor
+            && session?.coldMarketState?.stats?.marketStore
+        ));
+        return ColdMarketListingService.maintainHotMarketStores(hotSessions, Config.marketExpiryCleanupBatchSize, timestamp)
+            .then((hotMaintained) => ColdMarketListingService.expireStaleMarketStores(Config.marketExpiryCleanupBatchSize, timestamp)
+                .then((coldMaintained) => [...hotMaintained, ...coldMaintained]))
+            .then((maintained) => {
+                if (maintained.length) {
+                    const closed = maintained.filter((result) => result.closed).length;
+                    const revalidated = maintained.filter((result) => result.revalidated).length;
+                    console.info('BotPopulation :: market stores maintained=%d closed=%d revalidated=%d', maintained.length, closed, revalidated);
+                }
+                return maintained;
             })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'expired market cleanup failed: %s', err.message);

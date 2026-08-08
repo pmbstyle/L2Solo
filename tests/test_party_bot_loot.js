@@ -12,6 +12,7 @@ const ActorGenerics = require('../src/GameServer/Actor/Generics');
 const Attack = invoke('GameServer/Actor/Attack');
 
 const originalRewards = DataCache.fetchNpcRewardsFromSelfId;
+const originalFetchItem = DataCache.fetchItemFromSelfId;
 const originalRollGroup = ProgressionRates.rollGroup;
 const originalGroupRate = ProgressionRates.groupRate;
 const originalScaleAmount = ProgressionRates.scaleAmount;
@@ -25,6 +26,11 @@ const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
 try {
     DataCache.fetchNpcRewardsFromSelfId = (_id, callback) => callback({
         rewards: [{ overall: 100, items: [{ selfId: 57, min: 10, max: 10, chance: 100 }] }]
+    });
+    DataCache.fetchItemFromSelfId = (_id, callback) => callback({
+        selfId: 57,
+        template: { kind: 'Other.Currency', name: 'Adena' },
+        etc: { stackable: true }
     });
     ProgressionRates.rollGroup = () => ({ hit: true, amountMultiplier: 1 });
     ProgressionRates.groupRate = () => 1;
@@ -373,6 +379,7 @@ try {
     pickupCalls[10].onComplete();
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalRewards;
+    DataCache.fetchItemFromSelfId = originalFetchItem;
     ProgressionRates.rollGroup = originalRollGroup;
     ProgressionRates.groupRate = originalGroupRate;
     ProgressionRates.scaleAmount = originalScaleAmount;

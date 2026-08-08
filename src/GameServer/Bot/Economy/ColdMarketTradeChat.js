@@ -28,7 +28,8 @@ function offerText(store) {
         .slice(0, 3)
         .map((item) => item.name || `Item ${item.selfId}`);
     if (!names.length) return '';
-    return `WTS ${names.join(', ')}. Sitting in ${store.town || 'town'}.`;
+    const side = Number(store.storeType || 1) === 3 ? 'WTB' : 'WTS';
+    return `${side} ${names.join(', ')}. Sitting in ${store.town || 'town'}.`;
 }
 
 function wantedText(state, goal) {

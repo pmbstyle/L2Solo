@@ -244,6 +244,98 @@ module.exports = {
         ]
     },
 
+    // Starter-village liquidity. These stores complement the dedicated shot
+    // sellers below: each racial starting market gets useful no-grade stock
+    // and a local material/drop buyer instead of routing every bag to TI.
+    "Fael": {
+        title: "Elven field gear",
+        town: "Elven Village",
+        storeType: 1,
+        locX: 46480, locY: 49720, locZ: -3060,
+        items: [
+            s(8, 0.68, 8), s(14, 0.68, 8), s(22, 0.72, 16),
+            s(29, 0.72, 16), s(37, 0.70, 12), s(49, 0.70, 12),
+            s(1864, 0.74, 1800), s(1865, 0.74, 1800), s(1867, 0.74, 1400)
+        ]
+    },
+    "Lethia": {
+        title: "Buy forest drops",
+        town: "Elven Village",
+        storeType: 3,
+        locX: 46720, locY: 49720, locZ: -3060,
+        items: [
+            b(1864, 0.62), b(1865, 0.62), b(1866, 0.60), b(1867, 0.62),
+            b(1868, 0.60), b(1869, 0.60), b(1870, 0.58), b(1871, 0.58),
+            b(1119, 0.62), b(1121, 0.62), b(1122, 0.62), b(1129, 0.62)
+        ]
+    },
+    "Nyra": {
+        title: "Dark forest gear",
+        town: "Dark Elven Village",
+        storeType: 1,
+        locX: 12520, locY: 16580, locZ: -4585,
+        items: [
+            s(12, 0.68, 8), s(3, 0.68, 6), s(22, 0.72, 16),
+            s(29, 0.72, 16), s(37, 0.70, 12), s(49, 0.70, 12),
+            s(1864, 0.74, 1800), s(1866, 0.72, 1600), s(1868, 0.72, 1600)
+        ]
+    },
+    "Varek": {
+        title: "Buy swamp drops",
+        town: "Dark Elven Village",
+        storeType: 3,
+        locX: 12820, locY: 16580, locZ: -4585,
+        items: [
+            b(1864, 0.62), b(1865, 0.60), b(1866, 0.62), b(1867, 0.60),
+            b(1868, 0.62), b(1869, 0.60), b(1870, 0.58), b(1872, 0.60),
+            b(945, 0.60), b(946, 0.60), b(907, 0.58), b(989, 0.58)
+        ]
+    },
+    "Grom": {
+        title: "Plateau gear",
+        town: "Orc Village",
+        storeType: 1,
+        locX: -44840, locY: -112390, locZ: -240,
+        items: [
+            s(5, 0.68, 8), s(254, 0.68, 8), s(20, 0.70, 14),
+            s(22, 0.72, 16), s(29, 0.72, 16), s(37, 0.70, 12),
+            s(1864, 0.74, 1800), s(1868, 0.72, 1600), s(1869, 0.72, 1600)
+        ]
+    },
+    "Korga": {
+        title: "Buy plateau drops",
+        town: "Orc Village",
+        storeType: 3,
+        locX: -44480, locY: -112390, locZ: -240,
+        items: [
+            b(1864, 0.62), b(1865, 0.60), b(1866, 0.60), b(1867, 0.62),
+            b(1868, 0.62), b(1869, 0.62), b(1870, 0.58), b(1872, 0.60),
+            b(1510, 0.58), b(2371, 0.58), b(67, 0.56), b(154, 0.56)
+        ]
+    },
+    "Dori": {
+        title: "Mining supplies",
+        town: "Dwarven Village",
+        storeType: 1,
+        locX: 115330, locY: -178520, locZ: -920,
+        items: [
+            s(152, 0.68, 8), s(154, 0.66, 6), s(20, 0.70, 14),
+            s(22, 0.72, 16), s(29, 0.72, 16), s(49, 0.70, 12),
+            s(1864, 0.74, 1800), s(1866, 0.72, 1600), s(1869, 0.72, 1600)
+        ]
+    },
+    "Minka": {
+        title: "Buy mine drops",
+        town: "Dwarven Village",
+        storeType: 3,
+        locX: 115620, locY: -178520, locZ: -920,
+        items: [
+            b(1864, 0.62), b(1865, 0.60), b(1866, 0.62), b(1867, 0.60),
+            b(1868, 0.60), b(1869, 0.62), b(1870, 0.60), b(1872, 0.60),
+            b(1511, 0.60), b(152, 0.56), b(154, 0.56), b(2006, 0.62)
+        ]
+    },
+
     // Dedicated shot stores sell every player shot type at the town's exact
     // progression grade. They deliberately do not carry lower grades.
     "Tia": {

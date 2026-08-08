@@ -275,7 +275,8 @@ function renderCompanionCard(companionSession, settings) {
     const isPuller = isAssignedPuller(companionSession, settings);
     const stayActive = companionSession.botStay === true;
     const status = BotManager.getBotStatus(companionSession);
-    const role = status?.role || BotRoles.inferRole(bot);
+    const profession = BotRoles.presentation(bot);
+    const role = profession.role;
     const stance = isPuller ? 'pulling' : (stayActive ? 'hold' : 'follow');
     const intent = compactText(status?.intent || companionSession.plan, 'idle');
     const tacticalDecision = status?.decisions?.pvp
@@ -306,7 +307,7 @@ function renderCompanionCard(companionSession, settings) {
 
     const summary = Html.table([
         Html.row([
-            Html.cell(`${Html.link(bot.fetchName(), `bot-status ${bot.fetchName()}`, { color: Html.COLOR.ok })} ${Html.font(`Lv ${bot.fetchLevel()} ${role}`, Html.COLOR.link)}`, { width: 186 }),
+            Html.cell(`${Html.link(bot.fetchName(), `bot-status ${bot.fetchName()}`, { color: Html.COLOR.ok })}<br1>${Html.font(`Lv ${bot.fetchLevel()} ${profession.className || 'Unknown profession'}`, Html.COLOR.muted)} ${Html.font(role, Html.COLOR.link)}`, { width: 186 }),
             Html.cell(Html.font(stance, stance === 'follow' ? Html.COLOR.ok : Html.COLOR.warn), { width: 84, align: 'right' })
         ]),
         Html.row([

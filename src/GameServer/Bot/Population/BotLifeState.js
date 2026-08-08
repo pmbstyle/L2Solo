@@ -900,6 +900,7 @@ const BotLifeState = {
             const store = actor.fetchPrivateStore?.();
             const timestamp = now();
             const storeLoc = marketState.stats.marketStore.loc || marketState.loc;
+            const persistedItems = new Map((marketState.stats.marketStore.items || []).map((item) => [Number(item.selfId), item]));
             const nextState = {
                 ...marketState,
                 phase: 'cold',
@@ -916,8 +917,9 @@ const BotLifeState = {
                         ...(marketState.stats.marketStore || {}),
                         loc: { ...storeLoc },
                         items: (store?.items || []).map((item) => ({
+                            ...(persistedItems.get(Number(item.selfId)) || {}),
                             selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId),
-                            rank: item.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
+                            rank: item.rank || persistedItems.get(Number(item.selfId))?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
                         }))
                     }
                 }
@@ -1177,6 +1179,43 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch expired market stores: %s', err.message);
+            return [];
+        });
+    },
+
+    marketStoreMaintenanceCandidates(limit = 10, timestamp = Date.now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
+        const at = Number(timestamp) || Date.now();
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE phase = 'cold'
+            AND activity = 'merchant'
+            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
+            AND (
+                COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ?
+                OR (
+                    COALESCE(CAST(json_extract(statsJson, '$.marketStore.storeType') AS INTEGER), 1) = 1
+                    AND COALESCE(
+                        CAST(json_extract(statsJson, '$.marketStore.nextReviewAt') AS INTEGER),
+                        CAST(json_extract(statsJson, '$.marketStore.openedAt') AS INTEGER),
+                        0
+                    ) <= ?
+                )
+            )
+            ORDER BY CASE
+                WHEN COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ? THEN 0
+                ELSE 1
+            END ASC,
+            updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [at, at, at]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch market maintenance candidates: %s', err.message);
             return [];
         });
     },
@@ -1766,26 +1805,72 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer) {
+    syncMarketSession(session, reason = 'hot_market_sync') {
+        const state = session?.coldMarketState;
+        const actor = session?.actor;
+        if (!state || !actor?.backpack?.fetchItems) return Promise.resolve(null);
+        const inventory = inventorySummaryFromItems(actor.backpack.fetchItems());
+        const liveStore = actor.fetchPrivateStore?.();
+        const hasLines = liveStore && (liveStore.items || []).some((item) => Number(item.count || 0) > 0);
+        const persistedItems = new Map((state.stats?.marketStore?.items || []).map((item) => [Number(item.selfId), item]));
+        const marketStore = hasLines ? {
+            ...(state.stats?.marketStore || {}),
+            storeType: Number(liveStore.storeType || state.stats?.marketStore?.storeType || 1),
+            budgetBacked: liveStore.budgetBacked === true || state.stats?.marketStore?.budgetBacked === true,
+            items: (liveStore.items || []).map((item) => ({
+                ...(persistedItems.get(Number(item.selfId)) || {}),
+                ...item
+            }))
+        } : null;
+        const nextState = {
+            ...state,
+            phase: 'hot',
+            activity: marketStore ? 'merchant' : 'shopping',
+            adena: inventoryAdena(inventory),
+            inventory,
+            stats: {
+                ...(state.stats || {}),
+                marketStore,
+                marketWanted: marketStore ? state.stats?.marketWanted || null : null,
+                equipment: equipmentSummaryFromInventory(inventory)
+            },
+            timing: {
+                ...(state.timing || {}),
+                nextResolveAt: marketStore ? Number(marketStore.expiresAt || 0) || null : now()
+            }
+        };
+        return this.upsertState(nextState, reason).then((saved) => {
+            if (saved) session.coldMarketState = saved;
+            return saved;
+        });
+    },
+
+    applyMarketPurchase(state, offer, qty = 1) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
-        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < price) return Promise.resolve(null);
+        const count = Number(qty);
+        if (!Number.isSafeInteger(count) || count <= 0) return Promise.resolve(null);
+        const totalPrice = price * count;
+        if (!state || !selfId || price <= 0 || Number(state.adena || 0) < totalPrice) return Promise.resolve(null);
 
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
         const slot = Number(template.etc?.slot || 0);
-        if (!slot) return Promise.resolve(null);
+        if (slot > 0 && count > 1) return Promise.resolve(null);
         const inventory = { ...(state.inventory || {}) };
-        Object.keys(inventory).forEach((key) => {
-            if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
-        });
-        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - price };
+        if (slot) {
+            Object.keys(inventory).forEach((key) => {
+                if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
+            });
+        }
+        inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - totalPrice };
         inventory[String(selfId)] = {
             ...(inventory[String(selfId)] || {}),
             selfId,
             name: template.template?.name || offer.itemName || itemName(selfId),
-            amount: Number(inventory[String(selfId)]?.amount || 0) + 1,
-            equipped: true,
+            amount: Number(inventory[String(selfId)]?.amount || 0) + count,
+            equipped: slot > 0,
+            stackable: slot === 0 || !!inventory[String(selfId)]?.stackable,
             slot,
             rank: template.etc?.rank || 'none',
             kind: template.template?.kind || ''
@@ -1793,15 +1878,16 @@ const BotLifeState = {
         const equipment = equipmentSummaryFromInventory(inventory);
         const nextState = {
             ...state,
-            adena: Number(state.adena) - price,
+            adena: Number(state.adena) - totalPrice,
             activity: 'shopping',
             inventory,
             stats: {
                 ...(state.stats || {}),
                 equipment,
                 marketRetryAfter: null,
+                marketWanted: null,
                 marketLead: null,
-                lastMarketPurchase: { selfId, price, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
+                lastMarketPurchase: { selfId, qty: count, price, totalPrice, sourceType: offer.sourceType, sourceId: offer.sourceId, at: now() }
             },
             updatedAt: now()
         };
@@ -1812,8 +1898,30 @@ const BotLifeState = {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
                 return snapshot;
-            }).catch((err) => {
+            }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
+                const restored = await this.restoreMarketState(state, 'market_purchase_persist_rollback');
+                if (!restored) utils.infoWarn('BotLife', 'failed to compensate market purchase for %s', state.name);
+                return null;
+            });
+    },
+
+    restoreMarketState(state, reason = 'market_transaction_rollback') {
+        if (!state?.characterId || !state.inventory) return Promise.resolve(null);
+        const nextState = {
+            ...state,
+            stats: { ...(state.stats || {}), lastReason: reason },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((error) => {
+                utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
                 return null;
             });
     },
@@ -1873,8 +1981,10 @@ const BotLifeState = {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
                 return snapshot;
-            }).catch((err) => {
+            }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
+                const restored = await this.restoreMarketState(state, 'market_sale_persist_rollback');
+                if (!restored) utils.infoWarn('BotLife', 'failed to compensate market sale for %s', state.name);
                 return null;
             });
     },

@@ -32,10 +32,25 @@
             <div class="map-toolbar" aria-label="Map controls">
                 <div class="filter-strip" id="filterStrip">
                     <button class="filter is-active" data-phase="all">All <span class="filter-count" data-count-for="all">0</span></button>
-                    <button class="filter" data-phase="hot">Hot <span class="filter-count" data-count-for="hot">0</span></button>
-                    <button class="filter" data-phase="warm">Warm <span class="filter-count" data-count-for="warm">0</span></button>
-                    <button class="filter" data-phase="cold">Cold <span class="filter-count" data-count-for="cold">0</span></button>
+                    <button class="filter" data-phase="hot">Active <span class="filter-count" data-count-for="hot">0</span></button>
+                    <button class="filter" data-phase="warm">Background <span class="filter-count" data-count-for="warm">0</span></button>
+                    <button class="filter" data-phase="cold">Simulated <span class="filter-count" data-count-for="cold">0</span></button>
                     <button class="filter" data-phase="players">Players <span class="filter-count" data-count-for="players">0</span></button>
+                </div>
+                <div class="actor-filter-controls" aria-label="Actor filters">
+                    <label class="level-filter">
+                        <span>Lv</span>
+                        <input id="minLevelFilter" type="number" min="1" max="80" inputmode="numeric" placeholder="1" aria-label="Minimum level">
+                        <i>–</i>
+                        <input id="maxLevelFilter" type="number" min="1" max="80" inputmode="numeric" placeholder="80" aria-label="Maximum level">
+                    </label>
+                    <label class="class-filter">
+                        <span>Class</span>
+                        <select id="classFilter" aria-label="Class">
+                            <option value="all">All classes</option>
+                        </select>
+                    </label>
+                    <button class="filter-reset" id="clearActorFilters" type="button" title="Clear level and class filters" hidden>Reset</button>
                 </div>
                 <label class="search-field">
                     <span aria-hidden="true">⌕</span>
@@ -68,9 +83,9 @@
 
                 <div class="map-hint">Scroll to zoom · drag to pan · click a cluster to drill down</div>
                 <div class="map-legend" aria-label="Map legend">
-                    <span><i class="legend-dot hot"></i>hot</span>
-                    <span><i class="legend-dot warm"></i>warm</span>
-                    <span><i class="legend-dot cold"></i>cold</span>
+                    <span><i class="legend-dot hot"></i>active</span>
+                    <span><i class="legend-dot warm"></i>background</span>
+                    <span><i class="legend-dot cold"></i>simulated</span>
                     <span><i class="legend-dot player"></i>player</span>
                     <span><i class="legend-dot pk"></i>PK</span>
                 </div>
@@ -83,7 +98,7 @@
             </div>
         </section>
 
-        <aside class="side-panel" aria-label="World controls and selected bot">
+        <aside class="side-panel" aria-label="World controls and selected actor">
             <section class="population-panel">
                 <div class="section-kicker">Server population</div>
                 <div class="population-headline">
@@ -98,16 +113,40 @@
                 </div>
             </section>
 
+            <section class="market-panel" aria-label="Bot market activity">
+                <div class="section-title market-title">
+                    <div>
+                        <span class="section-kicker">Bot market</span>
+                        <h2>Liquidity</h2>
+                    </div>
+                    <span id="marketScope">current stores</span>
+                </div>
+                <div class="market-totals">
+                    <div><span>WTS</span><strong id="marketWts">0</strong></div>
+                    <div><span>WTB</span><strong id="marketWtb">0</strong></div>
+                    <div><span>Trades</span><strong id="marketTrades">0</strong></div>
+                    <div><span>Adena</span><strong id="marketAdena">0</strong></div>
+                </div>
+                <div class="market-town-list" id="marketTowns">
+                    <div class="list-empty">Waiting for market data.</div>
+                </div>
+                <p class="market-top-item" id="marketTopItem">No active item flow yet</p>
+                <div class="market-trade-list" id="marketRecentTrades">
+                    <div class="list-empty">No bot-to-bot trades yet.</div>
+                </div>
+                <p class="market-top-item" id="marketTradeTop">No completed item flow yet</p>
+            </section>
+
             <section class="panel-section inspector-section">
                 <div class="section-title">
-                    <h2>Selected bot</h2>
+                    <h2>Selected actor</h2>
                     <span id="inspectorFreshness">live</span>
                 </div>
                 <div id="selectedInspector" class="selected-inspector">
                     <div class="inspector-empty">
                         <span class="empty-glyph">◎</span>
                         <strong>Nothing selected</strong>
-                        <p>Click any bot on the map to see its equipment, current action and runtime status.</p>
+                        <p>Click any actor on the map to see its current action and runtime status.</p>
                     </div>
                 </div>
             </section>
@@ -122,6 +161,7 @@
         </aside>
     </main>
 
+    <script src="/observer/actorFilters.js"></script>
     <script src="/observer/app.js"></script>
 </body>
 </html>

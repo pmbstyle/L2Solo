@@ -37,7 +37,26 @@ try {
 
     playerStore.items[0].count = 0;
     assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceType === 'private_store'));
+
+    playerStore.items[0].count = 1;
+    World.user.sessions[0].accountId = 'bot_mira';
+    World.user.sessions[0].actor.fetchName = () => 'Mira';
+    assert.strictEqual(
+        MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
+        'fixed',
+        'configured liquidity merchants must not be counted as peer bots'
+    );
+
+    playerStore.items[0].count = 0;
+    MarketOpportunity.indexColdStore({
+        characterId: 9100,
+        name: 'ExpiredSeller',
+        activity: 'merchant',
+        stats: { marketStore: { storeType: 1, town: 'Giran', expiresAt: Date.now() - 1, items: [{ selfId: 2, price: 900, count: 1 }] } }
+    });
+    assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceName === 'ExpiredSeller'), 'expired cold WTS listings must not remain buyable');
     console.log('Bot market opportunity checks passed');
 } finally {
     World.user = originalUser;
+    MarketOpportunity.resetColdStores();
 }
