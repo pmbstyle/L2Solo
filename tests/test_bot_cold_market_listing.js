@@ -132,6 +132,21 @@ async function run() {
     const dy = secondStall.locY - opened.state.loc.locY;
     assert(Math.sqrt(dx * dx + dy * dy) >= ListingService.GIRAN_STALL_MIN_DISTANCE, 'stores must not overlap on the Giran plaza');
 
+    const partyOpened = await ListingService.open(
+        { ...state, characterId: 94, name: 'PartySeller' },
+        listingOptions
+    );
+    assert(MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran' })
+        .some((entry) => Number(entry.sourceId) === 94), 'active party candidate store must start in market discovery');
+    const partyWithdrawal = await ListingService.withdrawForParty(partyOpened.state, 2000);
+    assert.strictEqual(partyWithdrawal.withdrawn, true);
+    assert.strictEqual(partyWithdrawal.state.activity, 'hunting', 'party priority must end merchant activity before activation');
+    assert.strictEqual(partyWithdrawal.state.stats.marketStore, null, 'party priority must remove the persisted private store');
+    assert.strictEqual(partyWithdrawal.state.stats.marketReturn, null, 'completed market travel must not pull the companion away later');
+    assert.deepStrictEqual(partyWithdrawal.state.loc, state.stats.marketReturn.loc, 'after party duty the bot should retain its pre-market hunting anchor');
+    assert(!MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran' })
+        .some((entry) => Number(entry.sourceId) === 94), 'withdrawn party store must disappear from market discovery immediately');
+
     const buyerRoutedState = {
         ...state,
         characterId: 87,

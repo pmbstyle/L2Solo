@@ -81,6 +81,7 @@ const tests = [
     'tests/test_bot_remote_chat_persona.js',
     'tests/test_cold_bot_chat.js',
     'tests/test_bot_friendship.js',
+    'tests/test_friend_party_market_withdrawal.js',
     'tests/test_bot_goal_planner.js',
     'tests/test_bot_goal_market_priority.js',
     'tests/test_bot_market_goal_reconcile.js',

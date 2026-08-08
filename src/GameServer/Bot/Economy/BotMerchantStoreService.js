@@ -3,6 +3,8 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
+const PARTY_WITHDRAWAL_WAIT_MS = 10000;
+const PARTY_WITHDRAWAL_POLL_MS = 10;
 
 function itemName(selfId) {
     return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId))?.template?.name
@@ -135,6 +137,7 @@ async function applyLifecycle(session, nextState, reason = 'merchant_market_main
     } : null;
 
     previous.repricing = true;
+    session.merchantStoreMutation = true;
     const invalidatedWindows = invalidateCustomerWindows(actor);
     applyClosed(actor);
     const closeBroadcastWarning = safelyNotify('close', () => notifyClosed(session, actor));
@@ -157,12 +160,14 @@ async function applyLifecycle(session, nextState, reason = 'merchant_market_main
         if (!saved) throw new Error('state_save_failed');
     } catch (error) {
         restore(session, actor, previous);
+        session.merchantStoreMutation = false;
         return { ok: false, reason: 'store_persist_failed', error: error.message || String(error) };
     }
 
     session.coldMarketState = saved;
     if (!nextStore) {
         session.plan = 'shopping';
+        session.merchantStoreMutation = false;
         return {
             ok: true,
             reason: 'store_closed',
@@ -173,6 +178,7 @@ async function applyLifecycle(session, nextState, reason = 'merchant_market_main
     }
 
     applyOpened(actor, nextStore);
+    session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
     return {
         ok: true,
@@ -224,6 +230,7 @@ async function republish(session, agreement) {
         previous.repricing = false;
         return { ok: false, reason: 'store_busy' };
     }
+    session.merchantStoreMutation = true;
     const nextItems = previous.items.map((entry) => (
         entry === line
             ? { ...entry, name: entry.name || itemName(entry.selfId), count: quantity, price: unitPrice }
@@ -250,11 +257,13 @@ async function republish(session, agreement) {
         if (!saved) throw new Error('state_save_failed');
     } catch (error) {
         restore(session, actor, previous);
+        session.merchantStoreMutation = false;
         return { ok: false, reason: 'store_persist_failed', error: error.message || String(error) };
     }
 
     session.coldMarketState = saved;
     applyOpened(actor, nextStore);
+    session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
     return {
         ok: true,
@@ -269,11 +278,125 @@ async function republish(session, agreement) {
     };
 }
 
+function needsPartyWithdrawal(session) {
+    const actor = session?.actor;
+    if (!actor) return false;
+    const liveStore = actor.fetchPrivateStore?.();
+    const privateStoreType = Number(actor.fetchPrivateStoreType?.() || 0);
+    const marketState = session.coldMarketState;
+    const persistedStore = marketState?.stats?.marketStore;
+    return session.plan === 'merchant' || privateStoreType !== 0 || !!liveStore || !!persistedStore;
+}
+
+function waitForWithdrawalLock(session, deadline = Date.now() + PARTY_WITHDRAWAL_WAIT_MS) {
+    const actor = session?.actor;
+    if (!actor) return Promise.resolve({ ok: false, reason: 'missing_actor' });
+
+    const store = actor.fetchPrivateStore?.();
+    if (session.merchantStoreMutation !== true && store?.repricing !== true) {
+        if (!store) return Promise.resolve({ ok: true, store: null });
+        store.repricing = true;
+        if (Number(store.activePurchases || 0) === 0) {
+            session.merchantStoreMutation = true;
+            return Promise.resolve({ ok: true, store });
+        }
+        store.repricing = false;
+    }
+
+    if (Date.now() >= deadline) return Promise.resolve({ ok: false, reason: 'store_busy' });
+    return new Promise((resolve) => setTimeout(resolve, PARTY_WITHDRAWAL_POLL_MS))
+        .then(() => waitForWithdrawalLock(session, deadline));
+}
+
+async function withdrawForParty(session) {
+    const actor = session?.actor;
+    if (!actor) return { ok: false, reason: 'missing_actor' };
+    if (!needsPartyWithdrawal(session)) {
+        return { ok: true, withdrawn: false, state: session.coldLifeState || null };
+    }
+
+    const lock = await waitForWithdrawalLock(session);
+    if (!lock.ok) return lock;
+
+    const marketState = session.coldMarketState;
+    const rollback = {
+        plan: session.plan,
+        coldMarketState: marketState || null,
+        coldLifeState: session.coldLifeState || null,
+        store: lock.store || null,
+        storeType: Number(actor.fetchPrivateStoreType?.() || lock.store?.storeType || 0),
+        seated: actor.state?.fetchSeated?.() === true
+    };
+
+    let withdrawnState = marketState || null;
+    try {
+        if (marketState) {
+            const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+            const result = await ListingService.withdrawForParty(marketState);
+            withdrawnState = result.state || marketState;
+        }
+    } catch (error) {
+        if (lock.store) lock.store.repricing = false;
+        session.merchantStoreMutation = false;
+        return { ok: false, reason: 'store_persist_failed', error: error.message || String(error) };
+    }
+
+    const invalidatedWindows = invalidateCustomerWindows(actor);
+    applyClosed(actor);
+    // Unlike ordinary market maintenance, party withdrawal must remove the
+    // store object too. Bot death/recovery treats any remaining object as a
+    // merchant marker, even when its storeType has already been reset to zero.
+    actor.setPrivateStore?.(null);
+    const broadcastWarning = safelyNotify('party withdrawal', () => notifyClosed(session, actor));
+
+    session.plan = 'hunting';
+    session.coldMarketState = null;
+    if (withdrawnState) session.coldLifeState = withdrawnState;
+    session.merchantStoreMutation = false;
+
+    return {
+        ok: true,
+        withdrawn: true,
+        state: withdrawnState,
+        rollback,
+        invalidatedWindows,
+        broadcastWarning
+    };
+}
+
+async function restoreAfterPartyFailure(session, withdrawal) {
+    const actor = session?.actor;
+    const rollback = withdrawal?.rollback;
+    if (!actor || !rollback) return { ok: false, reason: 'rollback_unavailable' };
+
+    let restoredState = rollback.coldMarketState;
+    if (restoredState) {
+        const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+        const result = await ListingService.restoreAfterPartyFailure(restoredState);
+        restoredState = result.state || restoredState;
+    }
+
+    session.plan = rollback.plan;
+    session.coldMarketState = restoredState;
+    session.coldLifeState = rollback.coldLifeState;
+    if (rollback.store) {
+        rollback.store.repricing = false;
+        actor.setPrivateStore?.(rollback.store);
+        actor.setPrivateStoreType?.(rollback.storeType || rollback.store.storeType || 0);
+        actor.state?.setSeated?.(rollback.seated);
+        safelyNotify('party withdrawal rollback', () => notifyOpened(session, actor, rollback.store));
+    }
+    return { ok: true, state: restoredState };
+}
+
 module.exports = {
     applyLifecycle,
     compactLine,
     lineFor,
+    needsPartyWithdrawal,
     republish,
+    restoreAfterPartyFailure,
     revision,
-    storeFor
+    storeFor,
+    withdrawForParty
 };

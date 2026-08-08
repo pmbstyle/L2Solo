@@ -281,6 +281,37 @@ async function main() {
         assert.strictEqual(actor.fetchPrivateStore().revision, 8, 'failed persistence restores the published listing');
         assert.strictEqual(actor.fetchPrivateStoreType(), 1);
         assert.strictEqual(actor.state.fetchSeated(), true);
+
+        failSave = false;
+        actor.fetchPrivateStore().activePurchases = 1;
+        let withdrawalResolved = false;
+        const withdrawalPromise = BotMerchantStoreService.withdrawForParty(bot).then((result) => {
+            withdrawalResolved = true;
+            return result;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        assert.strictEqual(withdrawalResolved, false, 'party withdrawal must wait for an active store transaction');
+        actor.fetchPrivateStore().activePurchases = 0;
+        const withdrawal = await withdrawalPromise;
+        assert.strictEqual(withdrawal.ok, true);
+        assert.strictEqual(withdrawal.withdrawn, true, 'an invited dynamic merchant must leave its market shift');
+        assert.strictEqual(actor.fetchPrivateStoreType(), 0, 'party transition must clear the client private-store flag');
+        assert.strictEqual(actor.fetchPrivateStore(), null, 'party transition must remove the stale store object too');
+        assert.strictEqual(actor.state.fetchSeated(), false, 'the bot must stand before joining its player');
+        assert.strictEqual(bot.plan, 'hunting');
+        assert.strictEqual(bot.coldMarketState, null, 'party bot must no longer be maintained as a hot market store');
+        assert.strictEqual(bot.coldLifeState.stats.marketStore, null, 'persisted market discovery must no longer expose the store');
+        assert.strictEqual(savedStates.at(-1).reason, 'party_market_withdrawal');
+
+        const restored = await BotMerchantStoreService.restoreAfterPartyFailure(bot, withdrawal);
+        assert.strictEqual(restored.ok, true);
+        assert.strictEqual(bot.plan, 'merchant', 'a failed attach must restore the previous merchant plan');
+        assert.strictEqual(bot.coldMarketState.stats.marketStore.id, 'store-72001');
+        assert.strictEqual(actor.fetchPrivateStore(), withdrawal.rollback.store, 'the same settled live store must be reopened');
+        assert.strictEqual(actor.fetchPrivateStore().repricing, false);
+        assert.strictEqual(actor.fetchPrivateStoreType(), 1);
+        assert.strictEqual(actor.state.fetchSeated(), true);
+        assert.strictEqual(savedStates.at(-1).reason, 'party_market_withdrawal_rollback');
     } finally {
         World.user = originalWorldUser;
         LifeState.upsertState = originalUpsert;

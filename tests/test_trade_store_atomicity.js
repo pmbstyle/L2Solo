@@ -96,6 +96,15 @@ async function main() {
         assert.strictEqual(repricedStore.items[0].count, 2, 'a repriced lot must remain untouched');
         assert.strictEqual(repricedBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 100, 'a repriced lot must not deduct Adena');
 
+        const settledStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 1 }] };
+        await TradeService.buyFromStore(actor(11), settledStore, 1864, 1, {
+            afterPurchase: async () => {
+                assert.strictEqual(settledStore.activePurchases, 1, 'seller persistence must remain inside the active store transaction');
+                await Promise.resolve();
+            }
+        });
+        assert.strictEqual(settledStore.activePurchases, 0);
+
         const invalidStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 2 }] };
         const invalidBuyer = actor(5);
         await assert.rejects(
@@ -126,7 +135,13 @@ async function main() {
         seller.backpack.items.push(item(701, 1864, 2, 'Varnish'));
         const budgetBuyer = actor(8, 100);
         const buyStore = { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 10, count: 3 }] };
-        const sold = await TradeService.sellToStore(seller, buyStore, 1864, 2, { buyerActor: budgetBuyer });
+        const sold = await TradeService.sellToStore(seller, buyStore, 1864, 2, {
+            buyerActor: budgetBuyer,
+            afterTrade: async () => {
+                assert.strictEqual(buyStore.activePurchases, 1, 'WTB persistence must remain inside the active store transaction');
+                await Promise.resolve();
+            }
+        });
         assert.strictEqual(sold.totalAdena, 20);
         assert.strictEqual(seller.backpack.fetchItemFromSelfId(57).fetchAmount(), 20, 'seller receives the buyer bot\'s actual Adena');
         assert.strictEqual(budgetBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 80, 'budget-backed WTB deducts the buyer wallet');

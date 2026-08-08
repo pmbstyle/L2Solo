@@ -188,16 +188,20 @@ module.exports = {
             const seller = sellerSession?.actor;
             const store = seller?.fetchPrivateStore?.();
             try {
-                const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1);
-                if (sellerSession?.coldMarketState) {
-                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                        selfId: companionErrand.itemId,
-                        price: bought.totalAdena / bought.qty,
-                        buyerCharacterId: bot.fetchId(),
-                        storeItem: store.items.find((item) => Number(item.selfId) === Number(companionErrand.itemId))
-                    }, bought.qty);
-                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-                }
+                const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId));
+                const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1, {
+                    afterPurchase: sellerSession?.coldMarketState
+                        ? async (purchaseResult) => {
+                            const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
+                                selfId: companionErrand.itemId,
+                                price: purchaseResult.totalAdena / purchaseResult.qty,
+                                buyerCharacterId: bot.fetchId(),
+                                storeItem
+                            }, purchaseResult.qty);
+                            if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
+                        }
+                        : null
+                });
                 clearCompletedMarketPlan(session, bot, {
                     selfId: companionErrand.itemId,
                     price: bought.totalAdena / bought.qty,
@@ -238,10 +242,12 @@ module.exports = {
 
             if (store && store.storeType === 3) {
                 try {
-                    const result = await TradeService.sellInventoryToStore(bot, store, { buyerActor: buyer });
-                    if (store.budgetBacked === true && buyerSession?.coldMarketState) {
-                        await LifeState.syncMarketSession(buyerSession, 'hot_bot_market_buy_fill');
-                    }
+                    const result = await TradeService.sellInventoryToStore(bot, store, {
+                        buyerActor: buyer,
+                        afterTrade: store.budgetBacked === true && buyerSession?.coldMarketState
+                            ? () => LifeState.syncMarketSession(buyerSession, 'hot_bot_market_buy_fill')
+                            : null
+                    });
                     if (result.itemsSold > 0) {
                         soldToBuyer = true;
                         const sample = result.sold.slice(0, 3).map((line) => `${line.qty}x ${line.name}`).join(', ');

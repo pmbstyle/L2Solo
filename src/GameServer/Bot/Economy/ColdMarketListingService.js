@@ -1015,6 +1015,55 @@ function settle(offer, qty = 1) {
     });
 }
 
+function withdrawForParty(state, timestamp = Date.now()) {
+    const store = state?.stats?.marketStore;
+    if (!state || (!store && state.activity !== 'merchant')) {
+        return Promise.resolve({ state, withdrawn: false });
+    }
+
+    const marketReturn = state.stats?.marketReturn;
+    const nextState = {
+        ...state,
+        activity: 'hunting',
+        currentRegion: marketReturn?.regionName || state.currentRegion,
+        spotId: marketReturn?.spotId || state.spotId,
+        loc: marketReturn?.loc ? { ...marketReturn.loc } : state.loc,
+        stats: {
+            ...(state.stats || {}),
+            marketStore: null,
+            marketReturn: null,
+            travel: null
+        },
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp
+        }
+    };
+
+    // A const-party invitation has priority over the current market shift.
+    // Persist the transition before removing market discovery so a failed
+    // write leaves the existing offer and store intact.
+    return LifeState.upsertState(nextState, 'party_market_withdrawal').then((saved) => ({
+        state: saved || nextState,
+        previousState: state,
+        withdrawn: !!store
+    })).then((result) => {
+        MarketOpportunity.removeColdStore(state.characterId);
+        return result;
+    });
+}
+
+function restoreAfterPartyFailure(state) {
+    const store = state?.stats?.marketStore;
+    if (!state || !store) return Promise.resolve({ state, restored: false });
+    return LifeState.upsertState(state, 'party_market_withdrawal_rollback').then((saved) => {
+        const restored = saved || state;
+        MarketOpportunity.indexColdStore(restored);
+        return { state: restored, restored: true };
+    });
+}
+
 module.exports = {
     DEFAULT_LISTING_MS,
     SPECULATIVE_LISTING_MS,
@@ -1065,5 +1114,7 @@ module.exports = {
     open,
     reconcileInventory,
     resolve,
-    settle
+    restoreAfterPartyFailure,
+    settle,
+    withdrawForParty
 };

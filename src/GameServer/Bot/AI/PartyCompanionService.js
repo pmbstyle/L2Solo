@@ -21,6 +21,7 @@ const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
 const AUTOMATED_LOOT_DISTRIBUTIONS = new Set([1, 2, 3, 4]);
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
+const capacityReservations = new WeakMap();
 const PARTY_POSITION_UPDATE_DISTANCE = 150;
 const PARTY_MEMBER_UPDATE_INTERVAL_MS = 1000;
 const DEFAULT_REGROUP_RADIUS = 50;
@@ -191,9 +192,38 @@ function membersForLeader(leaderSession) {
     return botSessions().filter((session) => isActiveCompanion(session, leaderSession));
 }
 
-function hasCapacity(leaderSession, companionSession = null) {
+function reservationsForLeader(leaderSession, create = false) {
+    if (!leaderSession || (typeof leaderSession !== 'object' && typeof leaderSession !== 'function')) return null;
+    let reservations = capacityReservations.get(leaderSession);
+    if (!reservations && create) {
+        reservations = new Set();
+        capacityReservations.set(leaderSession, reservations);
+    }
+    return reservations || null;
+}
+
+function hasCapacity(leaderSession, companionSession = null, reservation = companionSession) {
     if (isActiveCompanion(companionSession, leaderSession)) return true;
-    return membersForLeader(leaderSession).length < MAX_COMPANIONS;
+    const reservations = reservationsForLeader(leaderSession);
+    if (reservation && reservations?.has(reservation)) return true;
+    return membersForLeader(leaderSession).length + Number(reservations?.size || 0) < MAX_COMPANIONS;
+}
+
+function reserveCapacity(leaderSession, reservation) {
+    if (!reservation) return false;
+    const reservations = reservationsForLeader(leaderSession, true);
+    if (reservations.has(reservation)) return true;
+    if (!hasCapacity(leaderSession, null, null)) return false;
+    reservations.add(reservation);
+    return true;
+}
+
+function releaseCapacity(leaderSession, reservation) {
+    const reservations = reservationsForLeader(leaderSession);
+    if (!reservations || !reservation) return false;
+    const released = reservations.delete(reservation);
+    if (reservations.size === 0) capacityReservations.delete(leaderSession);
+    return released;
 }
 
 function lootMembersForLeader(leaderSession, target) {
@@ -760,6 +790,8 @@ const PartyCompanionService = {
     membersForLeader,
 
     hasCapacity,
+    reserveCapacity,
+    releaseCapacity,
 
     activeActorsForLeader(leaderSession) {
         return membersForLeader(leaderSession).map((session) => session.actor).filter(Boolean);
@@ -865,7 +897,9 @@ const PartyCompanionService = {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
         if (!leader || !bot) return false;
-        if (!hasCapacity(leaderSession, companionSession)) return false;
+        const reservation = options.capacityReservation || companionSession;
+        if (!hasCapacity(leaderSession, companionSession, reservation)) return false;
+        releaseCapacity(leaderSession, reservation);
 
         const previousLeader = companionSession.followPlayerSession;
         const distribution = hasOwn(options, 'distribution')

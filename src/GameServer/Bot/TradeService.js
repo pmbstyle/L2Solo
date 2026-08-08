@@ -272,7 +272,11 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
             throw error;
         }
 
-        return { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
+        const result = { qty: buyQty, totalAdena: totalCost, name: itemName(selfId) };
+        if (typeof options.afterPurchase === 'function') {
+            await options.afterPurchase(result, storeItem);
+        }
+        return result;
     } finally {
         store.activePurchases = Math.max(0, Number(store.activePurchases || 0) - 1);
         releaseActorPurchase();
@@ -287,56 +291,72 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
     if (!store || store.storeType !== 3) {
         throw new Error("This store is not buying items.");
     }
-
-    const storeItem = store.items.find((item) => item.selfId === selfId);
-    if (!storeItem) {
-        throw new Error("Item is not wanted.");
+    if (store.repricing === true) {
+        throw new Error("Store listing changed.");
     }
 
-    const actorItem = actor.backpack.fetchItemFromSelfId(selfId);
-    const actorCount = actorItem ? actorItem.fetchAmount() : 0;
-    const sellQty = Math.min(qty, actorCount, storeItem.count);
-    if (sellQty <= 0) {
-        throw new Error("No items to sell.");
-    }
-
-    const totalEarn = storeItem.price * sellQty;
-    const budgetBacked = store.budgetBacked === true;
-    const buyerActor = options.buyerActor || null;
-    if (budgetBacked && (!buyerActor || fetchAdena(buyerActor)?.fetchAmount() < totalEarn)) {
-        throw new Error("Buyer does not have enough Adena.");
-    }
-
-    const originalCount = Number(storeItem.count);
-    storeItem.count = originalCount - sellQty;
-    let sellerItemTaken = false;
-    let buyerAdenaDeducted = false;
-    let buyerItemGiven = false;
+    store.activePurchases = Math.max(0, Number(store.activePurchases || 0)) + 1;
     try {
-        await takeItem(actor, selfId, sellQty);
-        sellerItemTaken = true;
-        if (budgetBacked) {
-            await deductAdena(buyerActor, totalEarn);
-            buyerAdenaDeducted = true;
-            await giveItem(buyerActor, selfId, sellQty);
-            buyerItemGiven = true;
+        if (store.repricing === true) {
+            throw new Error("Store listing changed.");
         }
-        await giveAdena(actor, totalEarn);
-    } catch (error) {
-        storeItem.count = originalCount;
+
+        const storeItem = store.items.find((item) => item.selfId === selfId);
+        if (!storeItem) {
+            throw new Error("Item is not wanted.");
+        }
+
+        const actorItem = actor.backpack.fetchItemFromSelfId(selfId);
+        const actorCount = actorItem ? actorItem.fetchAmount() : 0;
+        const sellQty = Math.min(qty, actorCount, storeItem.count);
+        if (sellQty <= 0) {
+            throw new Error("No items to sell.");
+        }
+
+        const totalEarn = storeItem.price * sellQty;
+        const budgetBacked = store.budgetBacked === true;
+        const buyerActor = options.buyerActor || null;
+        if (budgetBacked && (!buyerActor || fetchAdena(buyerActor)?.fetchAmount() < totalEarn)) {
+            throw new Error("Buyer does not have enough Adena.");
+        }
+
+        const originalCount = Number(storeItem.count);
+        storeItem.count = originalCount - sellQty;
+        let sellerItemTaken = false;
+        let buyerAdenaDeducted = false;
+        let buyerItemGiven = false;
         try {
-            if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
-            if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
-            if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
-        } catch (rollbackError) {
-            if (error && typeof error === 'object') error.rollbackError = rollbackError;
+            await takeItem(actor, selfId, sellQty);
+            sellerItemTaken = true;
+            if (budgetBacked) {
+                await deductAdena(buyerActor, totalEarn);
+                buyerAdenaDeducted = true;
+                await giveItem(buyerActor, selfId, sellQty);
+                buyerItemGiven = true;
+            }
+            await giveAdena(actor, totalEarn);
+        } catch (error) {
+            storeItem.count = originalCount;
+            try {
+                if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
+                if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
+                if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
+            } catch (rollbackError) {
+                if (error && typeof error === 'object') error.rollbackError = rollbackError;
+            }
+            throw error;
         }
-        throw error;
+
+        store.items = store.items.filter((item) => item.count > 0);
+
+        const result = { qty: sellQty, totalAdena: totalEarn, name: itemName(selfId), budgetBacked };
+        if (typeof options.afterTrade === 'function') {
+            await options.afterTrade(result, storeItem);
+        }
+        return result;
+    } finally {
+        store.activePurchases = Math.max(0, Number(store.activePurchases || 0) - 1);
     }
-
-    store.items = store.items.filter((item) => item.count > 0);
-
-    return { qty: sellQty, totalAdena: totalEarn, name: itemName(selfId), budgetBacked };
 }
 
 async function sellInventoryToStore(actor, store, options = {}) {

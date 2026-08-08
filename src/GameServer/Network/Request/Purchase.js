@@ -60,24 +60,25 @@ async function consume(session, data) {
                 throw new Error("Store listing changed.");
             }
             const bought = [];
-            let sellerSession = null;
+            const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
             for (const item of data.list) {
+                const storeItem = store.items.find((entry) => Number(entry.selfId) === Number(item.selfId));
                 const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount, {
                     expectedRevision: trade.revision,
-                    expectedUnitPrice: trade.prices?.[Number(item.selfId)]
+                    expectedUnitPrice: trade.prices?.[Number(item.selfId)],
+                    afterPurchase: sellerSession?.coldMarketState
+                        ? async (purchaseResult) => {
+                            const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
+                                selfId: item.selfId,
+                                price: purchaseResult.totalAdena / purchaseResult.qty,
+                                buyerCharacterId: session.actor.fetchId(),
+                                storeItem
+                            }, purchaseResult.qty);
+                            if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
+                        }
+                        : null
                 });
                 bought.push(result);
-                sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
-                if (sellerSession?.coldMarketState) {
-                    const storeItem = store.items.find((entry) => Number(entry.selfId) === Number(item.selfId));
-                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                        selfId: item.selfId,
-                        price: result.totalAdena / result.qty,
-                        buyerCharacterId: session.actor.fetchId(),
-                        storeItem
-                    }, result.qty);
-                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-                }
             }
 
             if (bought.length > 0) {
