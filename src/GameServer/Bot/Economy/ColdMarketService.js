@@ -50,7 +50,10 @@ const ColdMarketService = {
             buyerCharacterId: state.characterId
         });
         if (!offer) {
-            return BuyStoreService.open(state, goal).then((opened) => {
+            return BuyStoreService.open(state, goal).catch((error) => {
+                utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
+                return { opened: false };
+            }).then((opened) => {
                 if (!opened.opened) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
                 MarketTelemetry.noOffer();
                 return {
@@ -61,9 +64,6 @@ const ColdMarketService = {
                     wanted: true,
                     remoteOffer: null
                 };
-            }).catch((error) => {
-                utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
-                return retryAfterFailedPurchase(state, goal, 'persist_failed');
             });
         }
         if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');

@@ -139,7 +139,7 @@ async function run() {
         characterId: 82,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
     }, { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material' } });
-    assert.strictEqual(failedBuyStore.reason, 'persist_failed', 'a rejected WTB open must enter the normal market retry path');
+    assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a rejected WTB open must enter the normal market retry path');
     assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
     BuyStoreService.open = originals.openBuyStore;
 
