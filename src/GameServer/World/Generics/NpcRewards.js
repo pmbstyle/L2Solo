@@ -42,6 +42,13 @@ function awardDirect(world, session, selfId, amount) {
     maybeBragAboutLoot(session, selfId, amount);
 }
 
+function normalizeDropAmount(selfId, amount, callback) {
+    DataCache.fetchItemFromSelfId(selfId, (itemDetails) => {
+        const stackable = utils.crushOb(itemDetails).stackable === true;
+        callback(stackable ? amount : 1);
+    });
+}
+
 function spawnGroundDrop(world, session, npc, selfId, amount) {
     const point = new SpeckMath.Circle(npc.fetchLocX(), npc.fetchLocY(), 50).createPointWithin();
     const leaderSession = session?.partyCompanion === true && session.followPlayerSession
@@ -80,15 +87,17 @@ function npcRewards(session, npc) {
 
                     if (number <= rewardPartition) { // TODO: Remove locZ hack at some point
                         const baseAmount = utils.oneFromSpan(item.min, item.max);
-                        const amount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier);
-                        if (isBotSession(session) && !(session.partyCompanion === true && session.followPlayerSession)) {
-                            awardDirect(this, session, item.selfId, amount);
-                        } else {
-                            spawnGroundDrop(this, session, npc, item.selfId, amount);
-                            if (!isBotSession(session)) {
-                                BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
+                        const scaledAmount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier);
+                        normalizeDropAmount(item.selfId, scaledAmount, (amount) => {
+                            if (isBotSession(session) && !(session.partyCompanion === true && session.followPlayerSession)) {
+                                awardDirect(this, session, item.selfId, amount);
+                            } else {
+                                spawnGroundDrop(this, session, npc, item.selfId, amount);
+                                if (!isBotSession(session)) {
+                                    BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
+                                }
                             }
-                        }
+                        });
                         break;
                     }
                 }
