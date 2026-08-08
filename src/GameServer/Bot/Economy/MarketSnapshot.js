@@ -1,5 +1,6 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function emptyTown() {
     return { dynamicWts: 0, dynamicWtb: 0, fixedWts: 0, fixedWtb: 0, sellLines: 0, buyLines: 0, sellUnits: 0, buyUnits: 0 };
@@ -57,6 +58,7 @@ function snapshot() {
             wts: Object.values(MerchantStoreConfigs).filter((store) => Number(store?.storeType) === 1).length,
             wtb: Object.values(MerchantStoreConfigs).filter((store) => Number(store?.storeType) === 3).length
         },
+        activity: MarketTelemetry.current(),
         byTown,
         topItems: rankedItems.slice(0, 20)
     };

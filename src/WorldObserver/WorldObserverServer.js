@@ -6,6 +6,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const DataCache = invoke('GameServer/DataCache');
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -147,7 +148,8 @@ function compactHotBot(status, pkIds = new Set()) {
             distance: status.target.distance ? Math.round(status.target.distance) : null
         } : null,
         party: status.party ? {
-            leader: status.party.leader?.name || null,
+            leader: compactPartyLeader(status.party.leader),
+            leaderId: Number(status.party.leader?.id || 0) || null,
             stance: status.party.stance,
             role: status.party.role
         } : null,
@@ -168,9 +170,10 @@ function compactHotBot(status, pkIds = new Set()) {
     };
 }
 
-function compactStateBot(state, hotIds) {
+function compactStateBot(state, hotIds, leaderState = null) {
     if (hotIds.has(Number(state.characterId))) return null;
     const stats = state.stats || {};
+    const leaderId = Number(state.party?.leaderId || stats.leaderId || 0) || null;
     return {
         id: Number(state.characterId),
         name: state.name || 'Bot',
@@ -193,7 +196,8 @@ function compactStateBot(state, hotIds) {
         party: state.party?.partyId ? {
             id: state.party.partyId,
             role: state.party.role || state.stats?.role || 'dps',
-            leaderId: state.party.leaderId || null
+            leaderId,
+            leader: coldPartyLeader(state, leaderState)
         } : null,
         spot: state.spotId ? { id: state.spotId, name: state.spotId } : null,
         movement: { moving: false, towards: false, stuckTicks: 0 },
@@ -227,21 +231,34 @@ function equipmentSlot(slot) {
     return EQUIPMENT_SLOTS[Number(slot)] || (slot ? `slot ${slot}` : 'other');
 }
 
+function itemTemplate(selfId) {
+    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+}
+
+function equipmentRank(value) {
+    const rank = String(value || 'none').trim().toLowerCase().replaceAll('_', '-');
+    return ['none', 'no-grade', 'nograde', '0'].includes(rank) ? 'no-grade' : rank;
+}
+
 function compactItem(item) {
     if (!item) return null;
+    const template = itemTemplate(item.selfId || item.objectId);
+    const stats = item.stats || template?.stats || null;
     return {
         selfId: Number(item.selfId || item.objectId || 0) || null,
-        name: item.name || 'Unknown item',
-        slot: item.slot?.name || equipmentSlot(item.slot),
-        rank: item.rank || 'none',
-        kind: item.kind || '',
-        stats: item.stats ? {
-            pAtk: Number(item.stats.pAtk || 0),
-            mAtk: Number(item.stats.mAtk || 0),
-            pDef: Number(item.stats.pDef || 0),
-            mDef: Number(item.stats.mDef || 0),
-            evasion: Number(item.stats.evasion || 0),
-            critical: Number(item.stats.critical || 0)
+        name: item.name || template?.template?.name || 'Unknown item',
+        slot: item.slot?.name || equipmentSlot(item.slot || template?.etc?.slot),
+        rank: equipmentRank(item.rank || template?.etc?.rank),
+        kind: item.kind || template?.template?.kind || '',
+        stats: stats ? {
+            pAtk: Number(stats.pAtk || 0),
+            mAtk: Number(stats.mAtk || 0),
+            pDef: Number(stats.pDef || 0),
+            mDef: Number(stats.mDef || 0),
+            evasion: Number(stats.evasion || 0),
+            critical: Number(stats.critical || stats.crit || 0),
+            accuracy: Number(stats.accuracy || stats.accur || 0),
+            bonusMp: Number(stats.bonusMp || stats.maxMp || 0)
         } : null
     };
 }
@@ -312,8 +329,23 @@ function fullVitals(vitals = {}) {
 
 function effectiveColdCombat(state) {
     const combat = state.stats?.coldCombat || {};
-    if (!combat.base && !combat.equipment) return null;
-    const profile = ColdCombatProfile.profileFor(state);
+    const inventoryItems = Object.values(state.inventory || {});
+    const hasEquippedInventory = inventoryItems.some((item) => item?.equipped);
+    const hasPersistedEquipment = (Array.isArray(state.stats?.equipment) && state.stats.equipment.length > 0)
+        || hasEquippedInventory;
+    if (!combat.base && !combat.equipment && !hasPersistedEquipment) return null;
+
+    // Some generated/legacy cold rows have a skills-only coldCombat snapshot.
+    // Rebuild the authoritative profile from the equipped inventory instead of
+    // exposing an empty equipment block in the observer.
+    const inventory = hasEquippedInventory
+        ? state.inventory
+        : combat.equipment
+            ? {}
+            : Object.fromEntries((state.stats?.equipment || []).map((item) => [
+                String(item.selfId), { ...item, equipped: true }
+            ]));
+    const profile = ColdCombatProfile.profileFor({ ...state, inventory });
     return {
         pAtk: Number(profile.pAtk || 0),
         mAtk: Number(profile.mAtk || 0),
@@ -326,6 +358,46 @@ function effectiveColdCombat(state) {
         castSpd: Number(profile.castSpd || 0),
         maxMp: Number(profile.maxMp || 0)
     };
+}
+
+function compactPartyLeader(leader) {
+    if (!leader) return null;
+    const id = Number(leader.id || leader.characterId || 0) || null;
+    if (!id) return null;
+    return {
+        id,
+        name: leader.name || null,
+        level: Number(leader.level || 0) || null,
+        classId: Number(leader.classId || 0) || null,
+        role: leader.role || null,
+        phase: leader.phase || null
+    };
+}
+
+function coldPartyLeader(state, leaderState = null) {
+    const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
+    if (!leaderId) return null;
+    if (leaderState) {
+        return compactPartyLeader({
+            id: leaderState.characterId,
+            name: leaderState.name,
+            level: leaderState.level,
+            classId: leaderState.stats?.classId || leaderState.stats?.classProgressionClassId,
+            role: leaderState.party?.role || leaderState.stats?.role,
+            phase: leaderState.phase
+        });
+    }
+    if (leaderId === Number(state.characterId)) {
+        return compactPartyLeader({
+            id: state.characterId,
+            name: state.name,
+            level: state.level,
+            classId: state.stats?.classId || state.stats?.classProgressionClassId,
+            role: state.party?.role || state.stats?.role,
+            phase: state.phase
+        });
+    }
+    return { id: leaderId, name: null, level: null, classId: null, role: null, phase: null };
 }
 
 function compactColdEquipment(state) {
@@ -403,11 +475,11 @@ function compactHotDetail(status, session) {
     };
 }
 
-function compactColdDetail(state) {
+function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const lastResolve = stats.lastResolveDebug || null;
     return {
-        ...compactStateBot(state, new Set()),
+        ...compactStateBot(state, new Set(), leaderState),
         kind: 'bot',
         classId: Number(stats.classId || stats.classProgressionClassId || 0) || null,
         phase: state.phase || 'cold',
@@ -422,7 +494,8 @@ function compactColdDetail(state) {
         party: state.party?.partyId ? {
             id: state.party.partyId,
             role: state.party.role || stats.role || 'dps',
-            leaderId: state.party.leaderId || stats.leaderId || null
+            leaderId: Number(state.party.leaderId || stats.leaderId || 0) || null,
+            leader: coldPartyLeader(state, leaderState)
         } : null,
         build: compactBuild(stats.build),
         equipment: compactColdEquipment(state),
@@ -470,7 +543,7 @@ function buildSyntheticEvents(bots) {
         .map((bot) => {
             const detail = bot.target?.name ? `targeting ${bot.target.name}` :
                 bot.spot?.name ? `near ${bot.spot.name}` :
-                bot.party?.leader ? `following ${bot.party.leader}` :
+                bot.party?.leader?.name ? `following ${bot.party.leader.name}` :
                 bot.intent;
             return {
                 type: bot.mode || 'bot',
@@ -498,8 +571,10 @@ function snapshot() {
     // (35 hot + 700 cold) while PopulationStatus already knew about the full
     // persisted population. Keep the payload bounded by the cache contract,
     // but do not hide the rest of the world from the map.
-    const stateBots = LifeState.allStates(2000)
-        .map((state) => compactStateBot(state, hotIds))
+    const states = LifeState.allStates(2000);
+    const stateById = new Map(states.map((state) => [Number(state.characterId), state]));
+    const stateBots = states
+        .map((state) => compactStateBot(state, hotIds, stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))))
         .filter(Boolean);
     const bots = [...hotBots, ...stateBots];
     const players = realPlayerSessions().map(compactPlayer);
@@ -543,7 +618,27 @@ async function botDetail(characterId) {
 
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const state = await LifeState.findByCharacterId(id);
-    return state ? compactColdDetail(state) : null;
+    if (!state) return null;
+
+    const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
+    let leaderState = leaderId === id ? state : null;
+    if (leaderId && !leaderState) {
+        const leaderSession = BotManager.findSessionById(leaderId);
+        if (leaderSession?.actor) {
+            const leaderStatus = BotManager.getBotStatus(leaderSession);
+            leaderState = {
+                characterId: leaderId,
+                name: leaderSession.actor.fetchName(),
+                level: leaderSession.actor.fetchLevel(),
+                phase: 'hot',
+                party: { role: leaderStatus?.role || null },
+                stats: { classId: leaderSession.actor.fetchClassId?.(), role: leaderStatus?.role || null }
+            };
+        } else {
+            leaderState = await LifeState.findByCharacterId(leaderId);
+        }
+    }
+    return compactColdDetail(state, leaderState);
 }
 
 function sendJson(response, data, statusCode = 200) {

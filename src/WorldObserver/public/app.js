@@ -44,6 +44,13 @@ const els = {
     playersTotal: document.querySelector('#playersTotal'),
     populationSubline: document.querySelector('#populationSubline'),
     phaseBars: document.querySelector('#phaseBars'),
+    marketScope: document.querySelector('#marketScope'),
+    marketWts: document.querySelector('#marketWts'),
+    marketWtb: document.querySelector('#marketWtb'),
+    marketTrades: document.querySelector('#marketTrades'),
+    marketAdena: document.querySelector('#marketAdena'),
+    marketTowns: document.querySelector('#marketTowns'),
+    marketTopItem: document.querySelector('#marketTopItem'),
     actorList: document.querySelector('#actorList'),
     lastRefresh: document.querySelector('#lastRefresh'),
     visibleCount: document.querySelector('#visibleCount'),
@@ -106,6 +113,12 @@ function formatDuration(ms) {
 function formatTime(timestamp) {
     if (!timestamp) return '—';
     return new Date(Number(timestamp)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function compactNumber(value) {
+    const amount = Math.max(0, Number(value || 0));
+    if (amount < 1000) return amount.toLocaleString();
+    return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: amount < 10000 ? 1 : 0 }).format(amount);
 }
 
 function formatRelative(timestamp) {
@@ -576,6 +589,41 @@ function renderPopulation() {
     }).join('');
 }
 
+function renderMarket() {
+    const market = state.snapshot?.population?.marketState || {};
+    const dynamic = market.dynamic || {};
+    const fixed = market.fixed || {};
+    const activity = market.activity || {};
+    const trades = Number(activity.purchases || 0) + Number(activity.dynamicBuyerSales || 0);
+    const tradedAdena = Number(activity.adenaTraded || 0) + Number(activity.dynamicBuyerAdena || 0);
+
+    els.marketWts.textContent = compactNumber(dynamic.wts);
+    els.marketWtb.textContent = compactNumber(dynamic.wtb);
+    els.marketTrades.textContent = compactNumber(trades);
+    els.marketAdena.textContent = compactNumber(tradedAdena);
+    els.marketScope.textContent = `${number(fixed.wts || 0)}/${number(fixed.wtb || 0)} fixed WTS/WTB`;
+
+    const towns = Object.entries(market.byTown || {}).map(([name, town]) => ({ name, ...town }))
+        .filter((town) => Number(town.dynamicWts || 0) + Number(town.dynamicWtb || 0) > 0)
+        .sort((left, right) => (
+            Number(right.dynamicWts || 0) + Number(right.dynamicWtb || 0)
+            - Number(left.dynamicWts || 0) - Number(left.dynamicWtb || 0)
+            || String(left.name).localeCompare(String(right.name))
+        )).slice(0, 4);
+    els.marketTowns.innerHTML = towns.length ? towns.map((town) => `
+        <div class="market-town-row" title="${text(`${town.fixedWts || 0} fixed WTS · ${town.fixedWtb || 0} fixed WTB`)}">
+            <strong>${text(town.name)}</strong>
+            <span><b>${number(town.dynamicWts || 0)}</b> WTS</span>
+            <span><b>${number(town.dynamicWtb || 0)}</b> WTB</span>
+        </div>
+    `).join('') : '<div class="list-empty">No dynamic stores open.</div>';
+
+    const top = (market.topItems || [])[0];
+    els.marketTopItem.innerHTML = top
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} for sale / ${number(top.wtbUnits || 0)} wanted`
+        : 'No active item flow yet';
+}
+
 function displayActivity(actor) {
     if (actor.kind === 'player') return actor.online ? 'online' : 'offline';
     return actor.intent || actor.mode || 'idle';
@@ -610,6 +658,117 @@ function selectedActor() {
     return state.detail || actorById(state.selectedId.id, state.selectedId.kind);
 }
 
+function reconcileSelectedActor() {
+    if (!state.selectedId || !state.snapshot) return;
+
+    const id = String(state.selectedId.id);
+    const player = state.snapshot.players.find((actor) => String(actor.id) === id);
+    const bot = state.snapshot.bots.find((actor) => String(actor.id) === id);
+    const actor = player || bot;
+    if (!actor) {
+        state.selectedId = null;
+        state.detail = null;
+        state.detailError = null;
+        state.detailLoading = false;
+        state.detailRequest += 1;
+        return;
+    }
+
+    const kind = player ? 'player' : 'bot';
+    if (state.selectedId.kind === kind) return;
+
+    // A live character can move between the bot and player collections.
+    // Never let an old bot detail shadow the authoritative player snapshot.
+    state.selectedId = { id: actor.id, kind };
+    state.detail = null;
+    state.detailError = null;
+    state.detailLoading = false;
+    state.detailRequest += 1;
+}
+
+const BUILD_LABELS = Object.freeze({
+    armor: {
+        heavy: 'Heavy',
+        light: 'Light',
+        robe: 'Robe'
+    },
+    weapon: {
+        one_handed_sword_or_blunt: 'One-handed sword or blunt',
+        one_handed_blunt: 'One-handed blunt',
+        caster_blunt_or_sword: 'Caster blunt or sword',
+        bow: 'Bow',
+        dagger: 'Dagger'
+    },
+    grade: {
+        none: 'No-grade',
+        d: 'D-grade',
+        c: 'C-grade',
+        b: 'B-grade',
+        a: 'A-grade',
+        s: 'S-grade'
+    },
+    playstyle: {
+        simple_solo: 'Simple solo',
+        solo_or_duo_grind: 'Solo or duo grind',
+        safe_solo: 'Safe solo',
+        support_learner: 'Support learner'
+    }
+});
+
+const PRIORITY_LABELS = Object.freeze({
+    pAtk: 'Physical attack',
+    pDef: 'Physical defense',
+    mAtk: 'Magic attack',
+    mDef: 'Magic defense',
+    crit: 'Critical chance',
+    range: 'Range control',
+    evasion: 'Evasion',
+    hp: 'Max HP',
+    maxMp: 'Max MP',
+    cast_speed: 'Cast speed',
+    shot_efficiency: 'Soulshot efficiency',
+    spiritshot_efficiency: 'Spiritshot efficiency',
+    shield_defense: 'Shield defense',
+    aggro_control: 'Aggro control',
+    backstab_windows: 'Backstab positioning',
+    spoil_value: 'Spoil value',
+    carry_weight: 'Carry capacity',
+    craft_materials: 'Crafting materials',
+    mp_conservation: 'MP conservation',
+    buff_uptime: 'Buff uptime'
+});
+
+function humanizeToken(value) {
+    return String(value || '')
+        .replaceAll('_', ' ')
+        .replace(/\bone handed\b/gi, 'one-handed')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readableBuildValue(value, kind = '') {
+    if (value === null || value === undefined || value === '') return '—';
+    return BUILD_LABELS[kind]?.[value] || humanizeToken(value);
+}
+
+function readablePriority(value) {
+    return PRIORITY_LABELS[value] || humanizeToken(value);
+}
+
+function partyLeaderLink(actor) {
+    const party = actor.party;
+    if (!party) return 'solo';
+
+    const leader = party.leader && typeof party.leader === 'object'
+        ? party.leader
+        : { name: party.leader || party.leaderName || null };
+    const leaderId = Number(party.leaderId || leader.id || 0) || null;
+    const leaderName = leader.name || (leaderId ? `#${leaderId}` : 'unknown');
+    const leaderValue = leaderId
+        ? `<a class="inspector-link" href="#bot-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="bot">${text(leaderName)}</a>`
+        : text(leaderName);
+    return `${text(party.role || actor.role || 'member')} · leader ${leaderValue}`;
+}
+
 function statCell(label, value) {
     return `<div class="stat-cell"><span>${text(label)}</span><strong>${number(value)}</strong></div>`;
 }
@@ -635,20 +794,31 @@ function renderEquipment(equipment, combat) {
             <div class="equipment-row">
                 <span class="equipment-slot">${text(item.slot)}</span>
                 <strong>${text(item.name)}</strong>
-                <span class="equipment-rank">${text(item.rank, '—')}</span>
+                <span class="equipment-rank">${text(equipmentGrade(item.rank))}</span>
             </div>
         `).join('') : '<div class="list-empty">No equipment snapshot</div>'}</div>
     </section>`;
 }
 
+function equipmentGrade(value) {
+    const grade = String(value || 'no-grade').trim().toLowerCase().replaceAll('_', '-');
+    if (['none', 'no-grade', 'nograde', '0'].includes(grade)) return 'No grade';
+    return `${grade.toUpperCase()} grade`;
+}
+
 function renderBuild(build) {
     if (!build) return '';
     const gear = build.exampleGear?.length ? build.exampleGear.join(' · ') : `${build.armor || '—'} · ${build.weapon || '—'}`;
+    const armor = readableBuildValue(build.armor, 'armor');
+    const weapon = readableBuildValue(build.weapon, 'weapon');
+    const grade = readableBuildValue(build.grade, 'grade');
+    const playstyle = readableBuildValue(build.playstyle, 'playstyle');
+    const priorities = (build.statPriority || []).map(readablePriority).join(' · ');
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Build</h3><span>${text(build.grade || build.classFamily || '')}</span></div>
-        <p class="build-line"><strong>${text(build.armor || '—')}</strong> armor · <strong>${text(build.weapon || '—')}</strong> weapon</p>
-        <p class="muted-copy">${text(build.playstyle || gear)}</p>
-        ${build.statPriority?.length ? `<div class="priority-line">Priority <strong>${text(build.statPriority.join(' · '))}</strong></div>` : ''}
+        <div class="inspector-block-title"><h3>Build</h3><span>${text(grade || build.classFamily || '')}</span></div>
+        <p class="build-line"><strong>${text(armor)}</strong> armor · <strong>${text(weapon)}</strong> weapon</p>
+        <p class="muted-copy">${text(playstyle === '—' ? gear : playstyle)}</p>
+        ${priorities ? `<div class="priority-line"><span>Priority</span><strong>${text(priorities)}</strong></div>` : ''}
     </section>`;
 }
 
@@ -739,7 +909,7 @@ function renderSelectedCard() {
             els.selectedCard.innerHTML = `
                 <span class="eyeline">Opened cluster</span>
                 <strong>${number(state.clusterScope.actorKeys.size)} actors · ${text(state.clusterScope.label)}</strong>
-                <p>Choose a bot from the scoped roster or open a smaller cluster.</p>
+                <p>Choose an actor from the scoped roster or open a smaller cluster.</p>
                 <button class="selection-clear" type="button" data-clear-cluster>All actors</button>
             `;
             return;
@@ -780,13 +950,13 @@ function renderInspector() {
             `;
             return;
         }
-        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any bot on the map to see its equipment, current action and runtime status.</p></div>`;
+        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any actor on the map to see its current action and runtime status.</p></div>`;
         return;
     }
 
     if (state.detailLoading && !state.detail) {
         els.inspectorFreshness.textContent = 'loading';
-        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading bot info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading actor info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
         return;
     }
 
@@ -804,11 +974,7 @@ function renderInspector() {
     const build = actor.build;
     const family = build?.classFamily || (actor.classId ? `class ${actor.classId}` : (actor.kind === 'player' ? 'player' : 'bot'));
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
-    const party = actor.party
-        ? actor.party.leader?.name
-            ? `${actor.party.role || actor.role || 'member'} · leader ${actor.party.leader.name}`
-            : `${actor.party.role || actor.role || 'member'} · leader ${actor.party.leaderId || 'unknown'}`
-        : 'solo';
+    const party = partyLeaderLink(actor);
     const freshness = actor.updatedAt ? formatRelative(actor.updatedAt) : 'live';
     els.inspectorFreshness.textContent = state.detailError ? 'stale' : freshness;
     const detailWarning = state.detailError ? `<div class="detail-error">
@@ -831,7 +997,7 @@ function renderInspector() {
             <div><span>Mode</span><strong>${text(actor.mode)}</strong></div>
             <div><span>Region</span><strong>${text(actor.region || actor.home?.region)}</strong></div>
             <div><span>Spot</span><strong>${text(actor.spot?.name || actor.spot?.id)}</strong></div>
-            <div><span>Party</span><strong>${text(party)}</strong></div>
+            <div><span>Party</span><strong>${party}</strong></div>
             <div><span>Position</span><strong>${text(location)}</strong></div>
             <div><span>Blockers</span><strong>${text(actor.blockers?.join(' · '), 'none')}</strong></div>
         </div>
@@ -861,6 +1027,7 @@ function renderSnapshot() {
     renderFilterCounts();
     renderPoints();
     renderPopulation();
+    renderMarket();
     renderRoster();
     renderSelected();
 }
@@ -973,6 +1140,7 @@ async function refresh() {
         const response = await fetch('/observer/api/snapshot', { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         state.snapshot = await response.json();
+        reconcileSelectedActor();
         renderSnapshot();
         if (state.selectedId?.kind === 'bot' && !state.detailLoading) loadBotDetail(state.selectedId.id, false);
     } catch (error) {
@@ -1000,6 +1168,12 @@ els.fitButton.addEventListener('click', () => {
 });
 
 document.addEventListener('click', (event) => {
+    const leaderLink = event.target.closest('[data-party-leader-id]');
+    if (leaderLink) {
+        event.preventDefault();
+        selectActor(leaderLink.dataset.partyLeaderId, leaderLink.dataset.partyLeaderKind || 'bot', true);
+        return;
+    }
     if (event.target.closest('[data-retry-detail]')) {
         if (state.selectedId?.kind === 'bot') loadBotDetail(state.selectedId.id);
         return;

@@ -47,6 +47,7 @@ module.exports = {
         add('dynamicBuyerItems', Math.max(0, Number(items) || 0));
         add('dynamicBuyerAdena', Math.max(0, Number(adena) || 0));
     },
+    current() { return { ...counters }; },
     snapshot() {
         const delta = Object.fromEntries(Object.keys(counters).map((key) => [key, counters[key] - previous[key]]));
         previous = { ...counters };

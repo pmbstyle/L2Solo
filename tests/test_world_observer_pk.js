@@ -2,6 +2,8 @@ const assert = require('assert');
 
 require('../src/Global');
 
+const DataCache = invoke('GameServer/DataCache');
+DataCache.init();
 const Observer = invoke('WorldObserver/WorldObserverServer');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
@@ -95,6 +97,47 @@ assert.strictEqual(coldDetail.classId, 15, 'cold bot detail must preserve class 
 assert.strictEqual(coldDetail.equipment.equipped[0].slot, 'weapon', 'cold outfit slots must be human-readable');
 assert.strictEqual(coldDetail.combat.pDef, authoritativeCombat.pDef, 'cold bot detail must use authoritative combat formulas');
 assert.strictEqual(coldDetail.combat.atkSpd, authoritativeCombat.atkSpd, 'cold bot detail must not add base and equipment attack speed');
+
+const legacyColdDetail = Observer.compactColdDetail({
+    ...coldState,
+    characterId: 45,
+    name: 'Legacy Gear',
+    stats: {
+        ...coldState.stats,
+        coldCombat: { version: 3, skillSource: 'database', skills: [] },
+        equipment: [
+            { selfId: 5, name: 'Mace', slot: 7, rank: 'none', kind: 'Weapon.Blunt' },
+            { selfId: 1146, name: "Squire's Shirt", slot: 10, rank: 'none', kind: 'Armor.Leather' },
+            { selfId: 1147, name: "Squire's Pants", slot: 11, rank: 'none', kind: 'Armor.Leather' }
+        ]
+    },
+    inventory: {
+        5: { selfId: 5, name: 'Mace', slot: 7, kind: 'Weapon.Blunt', equipped: true },
+        1146: { selfId: 1146, name: "Squire's Shirt", slot: 10, kind: 'Armor.Leather', equipped: true },
+        1147: { selfId: 1147, name: "Squire's Pants", slot: 11, kind: 'Armor.Leather', equipped: true }
+    }
+});
+assert(legacyColdDetail.equipment.totals.pAtk > 0, 'legacy cold gear must expose reconstructed physical attack');
+assert(legacyColdDetail.equipment.totals.pDef > 0, 'legacy cold gear must expose reconstructed physical defense');
+assert(legacyColdDetail.equipment.equipped[0].stats.pAtk > 0, 'cold gear rows must include datapack item stats');
+assert.strictEqual(legacyColdDetail.equipment.equipped[0].rank, 'no-grade', 'observer must expose a player-facing no-grade label instead of internal none');
+
+const leaderDetail = Observer.compactColdDetail({
+    ...coldState,
+    characterId: 46,
+    name: 'Party Member',
+    party: { partyId: 'party-1', leaderId: 47 },
+    stats: { ...coldState.stats, leaderId: 47 }
+}, {
+    characterId: 47,
+    name: 'Party Leader',
+    level: 21,
+    phase: 'cold',
+    party: { role: 'tank' },
+    stats: { classId: 44, role: 'tank' }
+});
+assert.strictEqual(leaderDetail.party.leader.id, 47, 'observer party detail must retain the leader id');
+assert.strictEqual(leaderDetail.party.leader.name, 'Party Leader', 'observer party detail must expose the leader nickname');
 
 const deadDetail = Observer.compactColdDetail({
     ...coldState,

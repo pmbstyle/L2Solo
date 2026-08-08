@@ -83,7 +83,7 @@
             </div>
         </section>
 
-        <aside class="side-panel" aria-label="World controls and selected bot">
+        <aside class="side-panel" aria-label="World controls and selected actor">
             <section class="population-panel">
                 <div class="section-kicker">Server population</div>
                 <div class="population-headline">
@@ -98,16 +98,36 @@
                 </div>
             </section>
 
+            <section class="market-panel" aria-label="Bot market activity">
+                <div class="section-title market-title">
+                    <div>
+                        <span class="section-kicker">Bot market</span>
+                        <h2>Liquidity</h2>
+                    </div>
+                    <span id="marketScope">current stores</span>
+                </div>
+                <div class="market-totals">
+                    <div><span>WTS</span><strong id="marketWts">0</strong></div>
+                    <div><span>WTB</span><strong id="marketWtb">0</strong></div>
+                    <div><span>Trades</span><strong id="marketTrades">0</strong></div>
+                    <div><span>Adena</span><strong id="marketAdena">0</strong></div>
+                </div>
+                <div class="market-town-list" id="marketTowns">
+                    <div class="list-empty">Waiting for market data.</div>
+                </div>
+                <p class="market-top-item" id="marketTopItem">No active item flow yet</p>
+            </section>
+
             <section class="panel-section inspector-section">
                 <div class="section-title">
-                    <h2>Selected bot</h2>
+                    <h2>Selected actor</h2>
                     <span id="inspectorFreshness">live</span>
                 </div>
                 <div id="selectedInspector" class="selected-inspector">
                     <div class="inspector-empty">
                         <span class="empty-glyph">◎</span>
                         <strong>Nothing selected</strong>
-                        <p>Click any bot on the map to see its equipment, current action and runtime status.</p>
+                        <p>Click any actor on the map to see its current action and runtime status.</p>
                     </div>
                 </div>
             </section>

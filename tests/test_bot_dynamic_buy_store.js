@@ -70,6 +70,7 @@ async function run() {
     const marketSnapshot = MarketSnapshot.snapshot();
     assert.strictEqual(marketSnapshot.dynamic.wtb, 1);
     assert.strictEqual(marketSnapshot.byTown.Giran.buyUnits, 3);
+    assert(Number.isFinite(marketSnapshot.activity.dynamicBuyerSales), 'market snapshot must expose non-mutating trade totals to Observer');
     assert(marketSnapshot.byTown['Elven Village'].fixedWtb > 0, 'starter market coverage must be visible in the market snapshot');
     const seller = {
         characterId: 502,
