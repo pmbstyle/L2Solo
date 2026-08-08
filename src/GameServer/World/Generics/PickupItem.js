@@ -14,24 +14,33 @@ function transmitPickup(session, selfId, amount) {
 
 function pickupItem(session, actor, item) {
     const id     = item.fetchId();
-    const selfId = item.fetchSelfId();
-    const amount = item.fetchAmount();
+    const spawnIndex = this.items.spawns.findIndex((spawn) => spawn.fetchId() === id);
+    if (spawnIndex < 0) return false;
 
-    this.items.spawns = this.items.spawns.filter((ob) => ob.fetchId() !== id);
-    session.dataSendToMeAndOthers(ServerResponse.deleteOb(id), item);
+    // PickupExec resolves the ground object before the actor finishes moving.
+    // A player and a bot can therefore both hold the same stale reference and
+    // reach this method on adjacent timers. Removing the canonical spawn first
+    // makes the claim atomic in the world event loop: only one caller may award
+    // the item, distribute Adena, delete the object, or emit pickup text.
+    const [claimedItem] = this.items.spawns.splice(spawnIndex, 1);
+    const selfId = claimedItem.fetchSelfId();
+    const amount = claimedItem.fetchAmount();
+
+    session.dataSendToMeAndOthers(ServerResponse.deleteOb(id), claimedItem);
 
     if (selfId === 57) {
-        const allocations = PartyCompanionService.adenaAllocations(session, amount, item);
+        const allocations = PartyCompanionService.adenaAllocations(session, amount, claimedItem);
         allocations.forEach((entry) => {
             this.purchaseItem(entry.session, selfId, entry.amount);
             transmitPickup(entry.session, selfId, entry.amount);
         });
-        return;
+        return true;
     }
 
-    const recipientSession = PartyCompanionService.resolveLootSession(session, selfId, item);
+    const recipientSession = PartyCompanionService.resolveLootSession(session, selfId, claimedItem);
     this.purchaseItem(recipientSession, selfId, amount);
     transmitPickup(recipientSession, selfId, amount);
+    return true;
 }
 
 module.exports = pickupItem;
