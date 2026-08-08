@@ -190,6 +190,32 @@ async function main() {
         assert.strictEqual(concurrentBuyer.backpack.fetchItemFromSelfId(57), undefined, 'the single funded purchase must consume the buyer wallet exactly once');
         const receivedUnits = [1864, 1865].reduce((sum, id) => sum + Number(concurrentBuyer.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0), 0);
         assert.strictEqual(receivedUnits, 1, 'serialized WTB sales must transfer only the funded item');
+
+        const lineSeller = actor(20, 0);
+        lineSeller.backpack.items.push(item(2001, 1864, 1, 'Varnish'));
+        const failingLineSeller = actor(21, 0);
+        failingLineSeller.backpack.items.push(item(2101, 1865, 1, 'Suede'));
+        const multiLineStore = {
+            storeType: 3,
+            items: [
+                { selfId: 1864, price: 10, count: 1 },
+                { selfId: 1865, price: 10, count: 1 }
+            ]
+        };
+        const workingUpdateItemAmount = Database.updateItemAmount;
+        Database.updateItemAmount = async (characterId) => {
+            if (Number(characterId) === 21) throw new Error('forced second-line payout failure');
+        };
+        const concurrentLines = await Promise.allSettled([
+            TradeService.sellToStore(lineSeller, multiLineStore, 1864, 1),
+            TradeService.sellToStore(failingLineSeller, multiLineStore, 1865, 1)
+        ]);
+        Database.updateItemAmount = workingUpdateItemAmount;
+        assert.strictEqual(concurrentLines.filter((result) => result.status === 'fulfilled').length, 1);
+        assert.strictEqual(concurrentLines.filter((result) => result.status === 'rejected').length, 1);
+        assert.strictEqual(multiLineStore.items.length, 1, 'a successful line must not remove another in-flight WTB line');
+        assert.strictEqual(multiLineStore.items[0].selfId, 1865);
+        assert.strictEqual(multiLineStore.items[0].count, 1, 'a failed WTB line must return to the store at its original quantity');
         console.log('Trade store atomicity checks passed');
     } finally {
         DataCache.items = originalItems;

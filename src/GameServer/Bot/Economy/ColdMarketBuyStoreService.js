@@ -193,6 +193,7 @@ async function settleLine(sellerState, line, town) {
         if (offer.session) offer.session.coldMarketState = restoredBuyer;
         return { state: sellerState, sold: false, buyer: restoredBuyer, reason: 'seller_persist_failed' };
     }
+    MarketOpportunity.commitBuy(offer, qty, purchased);
     let buyer = purchased;
     try {
         buyer = await finishBuyer(purchased);

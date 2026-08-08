@@ -340,7 +340,9 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             }
 
             const originalCount = Number(storeItem.count);
+            const originalIndex = store.items.indexOf(storeItem);
             storeItem.count = originalCount - sellQty;
+            if (storeItem.count <= 0) store.items = store.items.filter((item) => item !== storeItem);
             let sellerItemTaken = false;
             let buyerAdenaDeducted = false;
             let buyerItemGiven = false;
@@ -356,6 +358,9 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                 await giveAdena(actor, totalEarn);
             } catch (error) {
                 storeItem.count = originalCount;
+                if (!store.items.includes(storeItem)) {
+                    store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
+                }
                 try {
                     if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
                     if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
@@ -365,8 +370,6 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                 }
                 throw error;
             }
-
-            store.items = store.items.filter((item) => item.count > 0);
 
             const result = { qty: sellQty, totalAdena: totalEarn, name: itemName(selfId), budgetBacked };
             await runPostCommitCallback('afterTrade', options.afterTrade, result, storeItem);

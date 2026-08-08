@@ -46,6 +46,26 @@ try {
         'fixed',
         'configured liquidity merchants must not be counted as peer bots'
     );
+    World.user.sessions[0].name = 'Mira';
+    World.user.sessions[0].actor.fetchName = () => undefined;
+    assert.strictEqual(
+        MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
+        'fixed',
+        'session identity must keep configured merchants fixed when the actor name is temporarily unavailable'
+    );
+
+    const budgetStore = { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 100, count: 3 }] };
+    const budgetBuyer = { characterId: 9200, adena: 150, stats: { marketStore: budgetStore } };
+    const firstBudgetOffer = { sourceType: 'cold_buy_store', selfId: 1864, price: 100, count: 1, buyerState: budgetBuyer, store: budgetStore, storeItem: budgetStore.items[0] };
+    const overlappingBudgetOffer = { ...firstBudgetOffer };
+    assert.strictEqual(MarketOpportunity.reserveBuy(firstBudgetOffer, 1), true);
+    assert.strictEqual(MarketOpportunity.reserveBuy(overlappingBudgetOffer, 1), false, 'in-flight WTB demand must reserve buyer Adena as well as stock');
+    MarketOpportunity.releaseBuy(firstBudgetOffer, 1);
+    assert.strictEqual(MarketOpportunity.reserveBuy(overlappingBudgetOffer, 1), true, 'releasing a failed settlement must return its budget reservation');
+    const purchasedBuyer = { ...budgetBuyer, adena: 50 };
+    MarketOpportunity.commitBuy(overlappingBudgetOffer, 1, purchasedBuyer);
+    const exhaustedBudgetOffer = { sourceType: 'cold_buy_store', selfId: 1864, price: 100, count: 1, buyerState: purchasedBuyer, store: budgetStore, storeItem: budgetStore.items[0] };
+    assert.strictEqual(MarketOpportunity.reserveBuy(exhaustedBudgetOffer, 1), false, 'a committed purchase must expose the reduced buyer balance');
 
     playerStore.items[0].count = 0;
     MarketOpportunity.indexColdStore({
