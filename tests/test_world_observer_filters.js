@@ -13,6 +13,9 @@ assert.strictEqual(Filters.isEligible({ kind: 'player', role: 'crafter', staticS
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'dps', staticService: true }), false, 'static bot services must stay out of the map and roster');
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'crafter', staticService: false }), false, 'adventuring crafters must stay out of the map and roster too');
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'tank', staticService: false }), true);
+assert.strictEqual(Filters.actorKind(2, null, { players: [{ id: 2 }] }), 'player', 'party links must resolve real-player leaders from the snapshot');
+assert.strictEqual(Filters.actorKind(2, 'bot', { players: [{ id: 2 }] }), 'bot', 'an explicit leader kind must remain authoritative');
+assert.strictEqual(Filters.actorKind(3, null, { players: [{ id: 2 }] }), 'bot', 'unknown party leaders default to bots');
 
 assert.strictEqual(Filters.classKey(actors[0]), 'id:0', 'base profession id zero must remain filterable');
 assert.deepStrictEqual(Filters.classOptions(actors), [

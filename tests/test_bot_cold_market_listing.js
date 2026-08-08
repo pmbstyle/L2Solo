@@ -19,6 +19,7 @@ const equippedItem = DataCache.items.find((item) => (
 ));
 const speculativeItem = DataCache.items.find((item) => (
     item !== marketItem
+    && item !== equippedItem
     && (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.'))
     && Number(item.template?.price || 0) >= 10000
     && !invoke('GameServer/Bot/Economy/MarketListingPolicy').starterItemIds().has(Number(item.selfId))
@@ -136,7 +137,7 @@ async function run() {
         { ...state, characterId: 94, name: 'PartySeller' },
         listingOptions
     );
-    assert(MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran' })
+    assert(MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran', now: 1001 })
         .some((entry) => Number(entry.sourceId) === 94), 'active party candidate store must start in market discovery');
     const partyWithdrawal = await ListingService.withdrawForParty(partyOpened.state, 2000);
     assert.strictEqual(partyWithdrawal.withdrawn, true);
@@ -144,7 +145,7 @@ async function run() {
     assert.strictEqual(partyWithdrawal.state.stats.marketStore, null, 'party priority must remove the persisted private store');
     assert.strictEqual(partyWithdrawal.state.stats.marketReturn, null, 'completed market travel must not pull the companion away later');
     assert.deepStrictEqual(partyWithdrawal.state.loc, state.stats.marketReturn.loc, 'after party duty the bot should retain its pre-market hunting anchor');
-    assert(!MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran' })
+    assert(!MarketOpportunity.findOffers(marketItem.selfId, { town: 'Giran', now: 2000 })
         .some((entry) => Number(entry.sourceId) === 94), 'withdrawn party store must disappear from market discovery immediately');
 
     const buyerRoutedState = {
@@ -166,9 +167,9 @@ async function run() {
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
     assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation?.source, undefined, 'a bot must not sell to a buyer in another town before travelling there');
 
-    const ownOffer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 88 });
+    const ownOffer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 88, now: 1001 });
     assert(!ownOffer || ownOffer.sourceType !== 'cold_store', 'seller must not buy its own listing');
-    const offer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 99 });
+    const offer = MarketOpportunity.bestOffer(marketItem.selfId, { town: 'Giran', buyerCharacterId: 99, now: 1001 });
     assert.strictEqual(offer.sourceType, 'cold_store');
     assert.strictEqual(MarketOpportunity.reserve(offer), true);
     offer.buyerCharacterId = 99;

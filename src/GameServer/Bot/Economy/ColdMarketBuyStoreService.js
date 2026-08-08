@@ -13,6 +13,10 @@ function templateFor(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
 }
 
+function cloneState(state) {
+    return state ? JSON.parse(JSON.stringify(state)) : null;
+}
+
 function buyTitle(item, count) {
     const suffix = count > 1 ? ` x${count}` : '';
     const text = `WTB ${item?.template?.name || `Item ${item?.selfId || '?'}`}${suffix}`;
@@ -112,7 +116,7 @@ function open(state, goal, options = {}) {
     });
 }
 
-function finishBuyer(buyer, offer) {
+function finishBuyer(buyer) {
     const store = buyer.stats?.marketStore;
     const hasDemand = (store?.items || []).some((item) => Number(item.count || 0) > 0);
     if (hasDemand) {
@@ -164,24 +168,36 @@ async function settleLine(sellerState, line, town) {
     });
     if (!offer) return { state: sellerState, sold: false };
     const qty = Math.min(Number(line.count || 0), Number(offer.count || 0));
-    if (qty <= 0 || !MarketOpportunity.reserveBuy(offer, qty)) return { state: sellerState, sold: false };
-
     const buyerState = LifeState.snapshot(offer.sourceId) || offer.buyerState;
-    if (!buyerState) {
-        MarketOpportunity.releaseBuy(offer, qty);
-        return { state: sellerState, sold: false };
-    }
+    if (!buyerState || qty <= 0) return { state: sellerState, sold: false };
+    const buyerBefore = cloneState(buyerState);
+    offer.buyerState = buyerState;
+    if (!MarketOpportunity.reserveBuy(offer, qty)) return { state: sellerState, sold: false };
+
     offer.buyerCharacterId = Number(buyerState.characterId);
     const purchased = await LifeState.applyMarketPurchase(buyerState, offer, qty);
     if (!purchased) {
         MarketOpportunity.releaseBuy(offer, qty);
         return { state: sellerState, sold: false };
     }
-    const buyer = await finishBuyer(purchased, offer);
     const seller = await LifeState.applyMarketSale(sellerState, offer, qty);
     if (!seller) {
         utils.infoWarn('BotMarket', 'dynamic WTB seller persistence failed after buyer %s filled %s', buyerState.name, line.name);
-        return { state: sellerState, sold: false, buyer, reason: 'seller_persist_failed' };
+        const restoredBuyer = await LifeState.restoreMarketState(buyerBefore, 'cold_market_buy_seller_rollback');
+        if (!restoredBuyer) {
+            utils.infoWarn('BotMarket', 'dynamic WTB buyer rollback failed for %s after seller persistence failure', buyerState.name);
+            return { state: sellerState, sold: false, buyer: purchased, reason: 'buyer_rollback_failed' };
+        }
+        MarketOpportunity.releaseBuy(offer, qty);
+        MarketOpportunity.indexColdStore(restoredBuyer);
+        if (offer.session) offer.session.coldMarketState = restoredBuyer;
+        return { state: sellerState, sold: false, buyer: restoredBuyer, reason: 'seller_persist_failed' };
+    }
+    let buyer = purchased;
+    try {
+        buyer = await finishBuyer(purchased);
+    } catch (error) {
+        utils.infoWarn('BotMarket', 'dynamic WTB finalization failed after committed trade for %s: %s', buyerState.name, error?.message || String(error));
     }
     if (offer.session) {
         offer.session.coldMarketState = buyer;

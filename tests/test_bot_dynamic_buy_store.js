@@ -18,6 +18,7 @@ const originals = {
     upsertState: LifeState.upsertState,
     applyMarketPurchase: LifeState.applyMarketPurchase,
     applyMarketSale: LifeState.applyMarketSale,
+    restoreMarketState: LifeState.restoreMarketState,
     allStates: LifeState.allStates,
     clearGoal: GoalState.clear
 };
@@ -135,6 +136,35 @@ async function run() {
     assert.strictEqual(trade.buyer.name, 'BudgetBuyer');
     assert.strictEqual(tradedSnapshot.transactions.byItem[0].channels.wtb.items, 2);
 
+    const rollbackBuyer = {
+        ...buyer,
+        adena: 1000,
+        inventory: { ...buyer.inventory, 57: { ...buyer.inventory[57], amount: 1000 } },
+        stats: {
+            ...buyer.stats,
+            marketStore: {
+                ...buyer.stats.marketStore,
+                items: [{ selfId: 1864, name: 'Stem', kind: 'Other.Material', price: 100, count: 2 }]
+            }
+        }
+    };
+    MarketOpportunity.resetColdStores();
+    MarketOpportunity.indexColdStore(rollbackBuyer);
+    LifeState.allStates = () => [rollbackBuyer];
+    LifeState.snapshot = (id) => Number(id) === rollbackBuyer.characterId ? rollbackBuyer : null;
+    LifeState.applyMarketSale = () => Promise.resolve(null);
+    let restoredBuyer = null;
+    LifeState.restoreMarketState = (state) => {
+        restoredBuyer = state;
+        return Promise.resolve(state);
+    };
+    const failedSettlement = await BuyStoreService.sellToBestBuyer(seller, 'Giran');
+    assert.strictEqual(failedSettlement.sold, false, 'a seller persistence failure must not report a completed WTB trade');
+    assert.strictEqual(restoredBuyer.adena, 1000, 'buyer Adena must be compensated after seller persistence fails');
+    assert.strictEqual(Number(restoredBuyer.inventory[1864]?.amount || 0), 0, 'the compensated buyer must not keep the uncommitted item');
+    assert.strictEqual(restoredBuyer.stats.marketStore.items[0].count, 2, 'the original WTB demand must be restored');
+    assert.strictEqual(MarketOpportunity.bestBuyOffer(1864, { town: 'Giran' }).count, 2, 'restored demand must be discoverable again');
+
     MarketTelemetry.staticBuyerSale([{
         selfId: 1864,
         name: 'Stem',
@@ -164,6 +194,7 @@ run().catch((error) => {
     LifeState.upsertState = originals.upsertState;
     LifeState.applyMarketPurchase = originals.applyMarketPurchase;
     LifeState.applyMarketSale = originals.applyMarketSale;
+    LifeState.restoreMarketState = originals.restoreMarketState;
     LifeState.allStates = originals.allStates;
     GoalState.clear = originals.clearGoal;
     MarketOpportunity.resetColdStores();

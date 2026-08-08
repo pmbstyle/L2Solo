@@ -1848,13 +1848,15 @@ const BotLifeState = {
     applyMarketPurchase(state, offer, qty = 1) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
-        const count = Math.max(1, Math.floor(Number(qty) || 1));
+        const count = Number(qty);
+        if (!Number.isSafeInteger(count) || count <= 0) return Promise.resolve(null);
         const totalPrice = price * count;
         if (!state || !selfId || price <= 0 || Number(state.adena || 0) < totalPrice) return Promise.resolve(null);
 
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
         const slot = Number(template.etc?.slot || 0);
+        if (slot > 0 && count > 1) return Promise.resolve(null);
         const inventory = { ...(state.inventory || {}) };
         if (slot) {
             Object.keys(inventory).forEach((key) => {
@@ -1896,8 +1898,30 @@ const BotLifeState = {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
                 return snapshot;
-            }).catch((err) => {
+            }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
+                const restored = await this.restoreMarketState(state, 'market_purchase_persist_rollback');
+                if (!restored) utils.infoWarn('BotLife', 'failed to compensate market purchase for %s', state.name);
+                return null;
+            });
+    },
+
+    restoreMarketState(state, reason = 'market_transaction_rollback') {
+        if (!state?.characterId || !state.inventory) return Promise.resolve(null);
+        const nextState = {
+            ...state,
+            stats: { ...(state.stats || {}), lastReason: reason },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                return snapshot;
+            }).catch((error) => {
+                utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
                 return null;
             });
     },
@@ -1957,8 +1981,10 @@ const BotLifeState = {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
                 return snapshot;
-            }).catch((err) => {
+            }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
+                const restored = await this.restoreMarketState(state, 'market_sale_persist_rollback');
+                if (!restored) utils.infoWarn('BotLife', 'failed to compensate market sale for %s', state.name);
                 return null;
             });
     },

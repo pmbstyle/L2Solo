@@ -30,6 +30,12 @@
         return String(actor?.role || '').trim().toLowerCase() !== 'crafter';
     }
 
+    function actorKind(actorId, hintedKind, snapshot = {}) {
+        if (hintedKind === 'player' || hintedKind === 'bot') return hintedKind;
+        if ((snapshot?.players || []).some((actor) => Number(actor.id) === Number(actorId))) return 'player';
+        return 'bot';
+    }
+
     function matches(actor, filters = {}) {
         const minLevel = normalizeLevel(filters.minLevel);
         const maxLevel = normalizeLevel(filters.maxLevel);
@@ -54,5 +60,5 @@
             .sort((left, right) => left.label.localeCompare(right.label, 'en', { sensitivity: 'base' }));
     }
 
-    return { classKey, className, classOptions, isEligible, matches, normalizeLevel };
+    return { actorKind, classKey, className, classOptions, isEligible, matches, normalizeLevel };
 }));

@@ -13,17 +13,21 @@ const staticMerchantPlaceholders = staticMerchantNames.map(() => '?').join(', ')
 
 function id(subject) { return Number(subject?.characterId || subject?.actor?.fetchId?.() || 0); }
 function page(value) { return Math.max(0, Number(value) || 0); }
+function falsyJsonMarker(alias, path) {
+    const value = `json_extract(COALESCE(${alias}.statsJson, '{}'), '${path}')`;
+    return `(${value} IS NULL OR ${value} = 0 OR ${value} = '')`;
+}
 function staticServiceSql(alias = 'l') {
     const configuredMerchantClause = staticMerchantNames.length
         ? `AND ${alias}.characterName COLLATE NOCASE NOT IN (${staticMerchantPlaceholders})`
         : '';
-    return `AND json_extract(COALESCE(${alias}.statsJson, '{}'), '$.craftStationId') IS NULL
-        AND json_extract(COALESCE(${alias}.statsJson, '{}'), '$.craftShop') IS NULL
+    return `AND ${falsyJsonMarker(alias, '$.craftStationId')}
+        AND ${falsyJsonMarker(alias, '$.craftShop')}
         ${configuredMerchantClause}`;
 }
 function normalize(row) {
     let stats = {};
-    try { stats = JSON.parse(row.statsJson || '{}'); } catch {}
+    try { stats = JSON.parse(row.statsJson || '{}'); } catch { stats = {}; }
     const classId = Number(row.classId ?? stats.classId ?? stats.classProgressionClassId);
     const profession = BotRoles.presentation(Number.isFinite(classId) ? classId : null);
     return {

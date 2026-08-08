@@ -6,6 +6,7 @@ const BotNegotiationService = invoke('GameServer/Bot/Economy/BotNegotiationServi
 const BotMerchantStoreService = invoke('GameServer/Bot/Economy/BotMerchantStoreService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ServerResponse = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
 const Item = invoke('GameServer/Item/Item');
@@ -129,6 +130,7 @@ async function main() {
 
     const originalWorldUser = World.user;
     const originalUpsert = LifeState.upsertState;
+    const originalRestoreAfterPartyFailure = ListingService.restoreAfterPartyFailure;
     const originalSnapshot = BotSocialMemory.getSnapshot;
     const responseNames = ['actionFailed', 'sitAndStand', 'charInfo', 'privateStoreMsg'];
     const originalResponses = Object.fromEntries(responseNames.map((name) => [name, ServerResponse[name]]));
@@ -312,9 +314,24 @@ async function main() {
         assert.strictEqual(actor.fetchPrivateStoreType(), 1);
         assert.strictEqual(actor.state.fetchSeated(), true);
         assert.strictEqual(savedStates.at(-1).reason, 'party_market_withdrawal_rollback');
+
+        ListingService.restoreAfterPartyFailure = () => Promise.reject(new Error('forced rollback persistence failure'));
+        bot.plan = 'hunting';
+        bot.coldMarketState = null;
+        actor.setPrivateStore(null);
+        actor.setPrivateStoreType(0);
+        actor.state.setSeated(false);
+        const fallbackRestore = await BotMerchantStoreService.restoreAfterPartyFailure(bot, withdrawal);
+        assert.strictEqual(fallbackRestore.ok, true, 'live merchant state must still be restored when rollback persistence rejects');
+        assert.match(fallbackRestore.restoreWarning, /forced rollback persistence failure/);
+        assert.strictEqual(bot.plan, 'merchant');
+        assert.strictEqual(actor.fetchPrivateStore(), withdrawal.rollback.store);
+        assert.strictEqual(actor.fetchPrivateStoreType(), 1);
+        assert.strictEqual(actor.state.fetchSeated(), true);
     } finally {
         World.user = originalWorldUser;
         LifeState.upsertState = originalUpsert;
+        ListingService.restoreAfterPartyFailure = originalRestoreAfterPartyFailure;
         BotSocialMemory.getSnapshot = originalSnapshot;
         responseNames.forEach((name) => { ServerResponse[name] = originalResponses[name]; });
         BotNegotiationService.reset();

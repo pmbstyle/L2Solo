@@ -370,10 +370,16 @@ async function restoreAfterPartyFailure(session, withdrawal) {
     if (!actor || !rollback) return { ok: false, reason: 'rollback_unavailable' };
 
     let restoredState = rollback.coldMarketState;
+    let restoreWarning = null;
     if (restoredState) {
-        const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
-        const result = await ListingService.restoreAfterPartyFailure(restoredState);
-        restoredState = result.state || restoredState;
+        try {
+            const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+            const result = await ListingService.restoreAfterPartyFailure(restoredState);
+            restoredState = result.state || restoredState;
+        } catch (error) {
+            restoreWarning = error?.message || String(error);
+            utils.infoWarn('BotMarket', 'failed to persist party withdrawal rollback for %s: %s', actor.fetchName?.() || 'bot', restoreWarning);
+        }
     }
 
     session.plan = rollback.plan;
@@ -386,7 +392,7 @@ async function restoreAfterPartyFailure(session, withdrawal) {
         actor.state?.setSeated?.(rollback.seated);
         safelyNotify('party withdrawal rollback', () => notifyOpened(session, actor, rollback.store));
     }
-    return { ok: true, state: restoredState };
+    return { ok: true, state: restoredState, restoreWarning };
 }
 
 module.exports = {

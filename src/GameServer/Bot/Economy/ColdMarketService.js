@@ -61,6 +61,9 @@ const ColdMarketService = {
                     wanted: true,
                     remoteOffer: null
                 };
+            }).catch((error) => {
+                utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
+                return retryAfterFailedPurchase(state, goal, 'persist_failed');
             });
         }
         if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');

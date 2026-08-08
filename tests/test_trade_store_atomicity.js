@@ -97,13 +97,15 @@ async function main() {
         assert.strictEqual(repricedBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 100, 'a repriced lot must not deduct Adena');
 
         const settledStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 1 }] };
-        await TradeService.buyFromStore(actor(11), settledStore, 1864, 1, {
+        const settledPurchase = await TradeService.buyFromStore(actor(11), settledStore, 1864, 1, {
             afterPurchase: async () => {
                 assert.strictEqual(settledStore.activePurchases, 1, 'seller persistence must remain inside the active store transaction');
-                await Promise.resolve();
+                throw new Error('forced post-purchase callback failure');
             }
         });
         assert.strictEqual(settledStore.activePurchases, 0);
+        assert.strictEqual(settledPurchase.qty, 1, 'a failed post-commit callback must not turn a completed purchase into a failure');
+        assert.match(settledPurchase.callbackWarning, /forced post-purchase callback failure/);
 
         const invalidStore = { storeType: 1, items: [{ selfId: 1864, price: 10, count: 2 }] };
         const invalidBuyer = actor(5);
@@ -139,10 +141,11 @@ async function main() {
             buyerActor: budgetBuyer,
             afterTrade: async () => {
                 assert.strictEqual(buyStore.activePurchases, 1, 'WTB persistence must remain inside the active store transaction');
-                await Promise.resolve();
+                throw new Error('forced post-trade callback failure');
             }
         });
         assert.strictEqual(sold.totalAdena, 20);
+        assert.match(sold.callbackWarning, /forced post-trade callback failure/, 'a committed WTB sale must survive callback failure');
         assert.strictEqual(seller.backpack.fetchItemFromSelfId(57).fetchAmount(), 20, 'seller receives the buyer bot\'s actual Adena');
         assert.strictEqual(budgetBuyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 80, 'budget-backed WTB deducts the buyer wallet');
         assert.strictEqual(budgetBuyer.backpack.fetchItemFromSelfId(1864).fetchAmount(), 2, 'the purchased item enters the buyer inventory');
@@ -158,6 +161,35 @@ async function main() {
         );
         assert.strictEqual(protectedSeller.backpack.fetchItemFromSelfId(1864).fetchAmount(), 1, 'an unfunded WTB must not consume seller stock');
         assert.strictEqual(unaffordableStore.items[0].count, 1);
+
+        const invalidSeller = actor(15, 0);
+        invalidSeller.backpack.items.push(item(1501, 1864, 2, 'Varnish'));
+        const invalidBuyStore = { storeType: 3, items: [{ selfId: 1864, price: 10, count: 2 }] };
+        await assert.rejects(TradeService.sellToStore(invalidSeller, invalidBuyStore, 1864, 'wat'), /Invalid quantity/);
+        await assert.rejects(TradeService.sellToStore(invalidSeller, invalidBuyStore, 1864, 1.5), /Invalid quantity/);
+        assert.strictEqual(invalidSeller.backpack.fetchItemFromSelfId(1864).fetchAmount(), 2);
+        assert.strictEqual(invalidBuyStore.items[0].count, 2);
+
+        const noWalletBuyer = actor(16, 0);
+        noWalletBuyer.backpack.items = [];
+        await assert.rejects(
+            TradeService.sellToStore(invalidSeller, { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 10, count: 1 }] }, 1864, 1, { buyerActor: noWalletBuyer }),
+            /Buyer does not have enough Adena/
+        );
+
+        const concurrentBuyer = actor(17, 10);
+        const varnishSeller = actor(18, 0);
+        varnishSeller.backpack.items.push(item(1801, 1864, 1, 'Varnish'));
+        const suedeSeller = actor(19, 0);
+        suedeSeller.backpack.items.push(item(1901, 1865, 1, 'Suede'));
+        const concurrentSales = await Promise.allSettled([
+            TradeService.sellToStore(varnishSeller, { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 10, count: 1 }] }, 1864, 1, { buyerActor: concurrentBuyer }),
+            TradeService.sellToStore(suedeSeller, { storeType: 3, budgetBacked: true, items: [{ selfId: 1865, price: 10, count: 1 }] }, 1865, 1, { buyerActor: concurrentBuyer })
+        ]);
+        assert.strictEqual(concurrentSales.filter((result) => result.status === 'fulfilled').length, 1, 'one buyer wallet must not fund two concurrent WTB stores');
+        assert.strictEqual(concurrentBuyer.backpack.fetchItemFromSelfId(57), undefined, 'the single funded purchase must consume the buyer wallet exactly once');
+        const receivedUnits = [1864, 1865].reduce((sum, id) => sum + Number(concurrentBuyer.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0), 0);
+        assert.strictEqual(receivedUnits, 1, 'serialized WTB sales must transfer only the funded item');
         console.log('Trade store atomicity checks passed');
     } finally {
         DataCache.items = originalItems;

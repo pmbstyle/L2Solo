@@ -946,8 +946,9 @@ function partyLeaderLink(actor) {
         : { name: party.leader || party.leaderName || null };
     const leaderId = Number(party.leaderId || leader.id || 0) || null;
     const leaderName = leader.name || (leaderId ? `#${leaderId}` : 'unknown');
+    const leaderKind = ActorFilters.actorKind(leaderId, leader.kind, state.snapshot);
     const leaderValue = leaderId
-        ? `<a class="inspector-link" href="#bot-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="bot">${text(leaderName)}</a>`
+        ? `<a class="inspector-link" href="#${escapeHtml(leaderKind)}-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="${escapeHtml(leaderKind)}">${text(leaderName)}</a>`
         : text(leaderName);
     return `${text(roleLabel(party.role || actor.role || 'member'))} · leader ${leaderValue}`;
 }

@@ -10,6 +10,7 @@ const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 
 DataCache.init();
 
@@ -23,7 +24,8 @@ const originals = {
     clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
-    reserve: MarketOpportunity.reserve
+    reserve: MarketOpportunity.reserve,
+    openBuyStore: BuyStoreService.open
 };
 
 const calls = [];
@@ -130,6 +132,17 @@ async function run() {
     assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
     assert(noOffer.state.stats.marketRetryAfter > Date.now(), 'a buyer with no offer must wait before retrying the same market trip');
 
+    MarketOpportunity.bestOffer = () => null;
+    BuyStoreService.open = () => Promise.reject(new Error('forced buy-store persistence failure'));
+    const failedBuyStore = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 82,
+        stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
+    }, { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material' } });
+    assert.strictEqual(failedBuyStore.reason, 'persist_failed', 'a rejected WTB open must enter the normal market retry path');
+    assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
+    BuyStoreService.open = originals.openBuyStore;
+
     MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
     MarketOpportunity.reserve = () => false;
     const changedOffer = await ColdMarketService.tryPurchase({
@@ -141,6 +154,35 @@ async function run() {
     assert.strictEqual(changedOffer.reason, 'offer_changed');
     assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
     assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');
+
+    const duplicateArmorPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 83,
+        adena: 1010000,
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 1010000 } }
+    }, { selfId: 354, price: 505000, sourceType: 'cold_store' }, 2);
+    assert.strictEqual(duplicateArmorPurchase, null, 'slotted non-stackable equipment must never be stored as one inventory row with quantity greater than one');
+
+    const workingInventorySync = Database.syncInventorySummary;
+    let rejectFirstPurchaseSync = true;
+    Database.syncInventorySummary = (characterId, inventory) => {
+        calls.push({ type: 'inventory-sync', characterId, inventory });
+        if (Number(characterId) === 84 && rejectFirstPurchaseSync) {
+            rejectFirstPurchaseSync = false;
+            return Promise.reject(new Error('forced inventory sync failure'));
+        }
+        return Promise.resolve();
+    };
+    const partiallyPersisted = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 84
+    }, { selfId: 2, price: 1000, sourceType: 'cold_store' });
+    assert.strictEqual(partiallyPersisted, null);
+    const compensationSyncs = calls.filter((call) => call.type === 'inventory-sync' && call.characterId === 84);
+    assert.strictEqual(compensationSyncs.length, 2, 'a partial purchase write must immediately restore the original inventory snapshot');
+    assert.strictEqual(compensationSyncs[1].inventory['57'].amount, 1000);
+    assert.strictEqual(compensationSyncs[1].inventory['2'], undefined);
+    Database.syncInventorySummary = workingInventorySync;
 
     const armorPurchase = await BotLifeState.applyMarketPurchase({
         ...state,
@@ -199,5 +241,6 @@ run().catch((err) => {
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
+    BuyStoreService.open = originals.openBuyStore;
     MarketTelemetry.reset();
 });
