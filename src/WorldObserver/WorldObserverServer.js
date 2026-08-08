@@ -5,6 +5,7 @@ const path = require('path');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const DataCache = invoke('GameServer/DataCache');
 const MIME_TYPES = {
@@ -144,16 +145,7 @@ function compactPlayer(session) {
 }
 
 function isStaticServiceSession(session) {
-    const craftStats = session?.coldCraftState?.stats || session?.coldLifeState?.stats || {};
-    if (craftStats.craftStationId || craftStats.craftShop || session?.manufactureShop) return true;
-
-    // Permanent private-store services have no persisted adventurer state.
-    // Dynamic WTS/WTB bots retain a cold market snapshot and must remain part
-    // of the simulated-player roster; craft stations were handled above.
-    return session?.plan === 'merchant'
-        && !session?.coldMarketState
-        && !session?.coldCraftState
-        && !session?.coldLifeState;
+    return BotServiceIdentity.isStaticService(session);
 }
 
 function compactHotBot(status, pkIds = new Set(), session = null) {
@@ -240,7 +232,7 @@ function compactStateBot(state, hotIds, leaderState = null) {
         trade: null,
         blockers: state.activity === 'dead' ? ['dead'] : [],
         updatedAt: state.updatedAt || 0,
-        staticService: Boolean(stats.craftStationId || stats.craftShop),
+        staticService: BotServiceIdentity.isStaticService(state),
         isPk: state.activity === 'pk_hunting'
     };
 }

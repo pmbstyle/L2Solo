@@ -1,18 +1,25 @@
 const Database = invoke('Database');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 
 const FRIEND_TRUST = 8;
 const MAX_CONST_MEMBERS = 8;
 const PAGE_SIZE = 12;
 const RECENT_ABANDON_MS = 5 * 60 * 1000;
 const rosterWrites = new Map();
+const staticMerchantNames = BotServiceIdentity.configuredMerchantNames();
+const staticMerchantPlaceholders = staticMerchantNames.map(() => '?').join(', ');
 
 function id(subject) { return Number(subject?.characterId || subject?.actor?.fetchId?.() || 0); }
 function page(value) { return Math.max(0, Number(value) || 0); }
-function isStaticService(state = {}) {
-    const stats = state.stats || {};
-    return Boolean(stats.craftStationId || stats.craftShop);
+function staticServiceSql(alias = 'l') {
+    const configuredMerchantClause = staticMerchantNames.length
+        ? `AND ${alias}.characterName COLLATE NOCASE NOT IN (${staticMerchantPlaceholders})`
+        : '';
+    return `AND json_extract(COALESCE(${alias}.statsJson, '{}'), '$.craftStationId') IS NULL
+        AND json_extract(COALESCE(${alias}.statsJson, '{}'), '$.craftShop') IS NULL
+        ${configuredMerchantClause}`;
 }
 function normalize(row) {
     let stats = {};
@@ -38,11 +45,10 @@ function list(playerId, where, currentPage) {
         LEFT JOIN bot_friendships f ON f.playerId = s.playerId AND f.botId = s.botId
         LEFT JOIN bot_friend_roster r ON r.playerId = s.playerId AND r.botId = s.botId
         WHERE s.playerId = ? AND ${where}
-        AND json_extract(COALESCE(l.statsJson, '{}'), '$.craftStationId') IS NULL
-        AND json_extract(COALESCE(l.statsJson, '{}'), '$.craftShop') IS NULL
+        ${staticServiceSql('l')}
         ORDER BY s.trust DESC, s.familiarity DESC, l.characterName COLLATE NOCASE LIMIT ? OFFSET ?`,
-        [playerId, PAGE_SIZE, page(currentPage) * PAGE_SIZE]
-    ]).then((rows) => rows.map(normalize));
+        [playerId, ...staticMerchantNames, PAGE_SIZE, page(currentPage) * PAGE_SIZE]
+    ]).then((rows) => rows.map(normalize).filter((bot) => !BotServiceIdentity.isStaticService(bot)));
 }
 
 const BotFriendship = {
@@ -53,7 +59,10 @@ const BotFriendship = {
     isFriend(player, botId) {
         const playerId = id(player);
         if (!playerId || !botId) return Promise.resolve(false);
-        return Database.execute(["SELECT 1 FROM bot_friendships WHERE playerId = ? AND botId = ? AND status = 'accepted'", [playerId, Number(botId)]]).then((rows) => !!rows[0]);
+        return Database.execute([`SELECT 1 FROM bot_friendships f
+            INNER JOIN bot_life_state l ON l.characterId = f.botId
+            WHERE f.playerId = ? AND f.botId = ? AND f.status = 'accepted'
+            ${staticServiceSql('l')}`, [playerId, Number(botId), ...staticMerchantNames]]).then((rows) => !!rows[0]);
     },
     remove(player, botId) {
         const playerId = id(player);
@@ -65,7 +74,7 @@ const BotFriendship = {
     request(player, state) {
         const playerId = id(player), botId = Number(state?.characterId || 0);
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
-        if (isStaticService(state)) return Promise.resolve({ ok: false, reason: 'merchant_duty', trust: 0, persona: null });
+        if (BotServiceIdentity.isStaticService(state)) return Promise.resolve({ ok: false, reason: 'merchant_duty', trust: 0, persona: null });
         return Database.execute(['SELECT * FROM bot_social_memory WHERE playerId = ? AND botId = ?', [playerId, botId]]).then((rows) => {
             const social = rows[0] || {};
             const now = Date.now();
@@ -107,13 +116,14 @@ const BotFriendship = {
         const playerId = id(player);
         if (!playerId) return Promise.resolve([]);
         return Database.execute([`SELECT l.* FROM bot_friend_roster r INNER JOIN bot_friendships f ON f.playerId = r.playerId AND f.botId = r.botId AND f.status = 'accepted'
-            INNER JOIN bot_life_state l ON l.characterId = r.botId WHERE r.playerId = ? ORDER BY r.selectedAt`, [playerId]]);
+            INNER JOIN bot_life_state l ON l.characterId = r.botId WHERE r.playerId = ?
+            ${staticServiceSql('l')} ORDER BY r.selectedAt`, [playerId, ...staticMerchantNames]])
+            .then((rows) => rows.filter((state) => !BotServiceIdentity.isStaticService(state)));
     },
     selectedCount(player) {
         const playerId = id(player);
         if (!playerId) return Promise.resolve(0);
-        return Database.execute(['SELECT COUNT(*) AS count FROM bot_friend_roster WHERE playerId = ?', [playerId]])
-            .then((rows) => Number(rows[0]?.count || 0));
+        return this.selected(player).then((rows) => rows.length);
     }
 };
 module.exports = BotFriendship;

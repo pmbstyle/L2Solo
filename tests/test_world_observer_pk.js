@@ -130,6 +130,18 @@ const craftService = Observer.compactStateBot({
 }, new Set());
 assert.strictEqual(craftService.staticService, true, 'dedicated cold craft stations must be identifiable for roster filtering');
 
+const configuredMerchantState = Observer.compactStateBot({
+    characterId: 50,
+    name: 'Nika',
+    level: 1,
+    phase: 'hot',
+    activity: 'merchant',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    stats: { classId: 53 }
+}, new Set());
+assert.strictEqual(configuredMerchantState.staticService, true, 'configured merchants must stay hidden even when a stale life-state row exists');
+
 const adventuringCrafter = Observer.compactStateBot({
     characterId: 49,
     name: 'Adventuring Crafter',
