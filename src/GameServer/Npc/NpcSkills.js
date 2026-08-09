@@ -25,7 +25,8 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_saints.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_patriots.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_ascetics.json'),
-    ...require('../../../data/Npcs/Skills/c4_necropolis_of_pilgrims.json')
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_pilgrims.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_worshipers.json')
 ];
 
 // These action skills belong to temporary servitors, but their NPC templates

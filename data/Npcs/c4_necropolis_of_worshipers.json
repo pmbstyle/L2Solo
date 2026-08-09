@@ -1,0 +1,246 @@
+[
+  {
+    "selfId": 1148,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Liviona",
+      "title": "",
+      "level": 44,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 354,
+      "pAtkRnd": 30,
+      "pDef": 196,
+      "mAtk": 176,
+      "mDef": 187,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1799,
+      "maxMp": 648,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084710743802,
+      "sp": 143
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1217,
+    "template": {
+      "kind": "Monster",
+      "name": "Holy Land Priest",
+      "title": "",
+      "level": 42,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 311,
+      "pAtkRnd": 30,
+      "pDef": 183,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 148
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 27.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084467120181,
+      "sp": 127
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1218,
+    "template": {
+      "kind": "Monster",
+      "name": "Vault Overlord",
+      "title": "",
+      "level": 45,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 415,
+      "pAtkRnd": 10,
+      "pDef": 216,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 40.5
+    },
+    "equipment": {
+      "weapon": 297,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143209876543,
+      "sp": 161
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1219,
+    "template": {
+      "kind": "Monster",
+      "name": "Vault Priest",
+      "title": "",
+      "level": 47,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 427,
+      "pAtkRnd": 30,
+      "pDef": 215,
+      "mAtk": 216,
+      "mDef": 206,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 148
+    },
+    "vitals": {
+      "maxHp": 2016,
+      "maxMp": 738,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084653689452,
+      "sp": 171
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]
