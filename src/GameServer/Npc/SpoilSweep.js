@@ -228,3 +228,4 @@ const SpoilSweep = {
 };
 
 module.exports = SpoilSweep;
+module.exports.rollSpoils = rollSpoils;

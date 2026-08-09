@@ -2,8 +2,13 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 const activeSkills = require('../../../data/Skills/Active/active.json');
+const passiveSkills = require('../../../data/Skills/Passive/passive.json');
 const npcActiveSkills = require('../../../data/Npcs/Skills/active.json');
-const npcSkillRows = require('../../../data/Npcs/Skills/skills.json');
+const c4SwampSkills = require('../../../data/Npcs/Skills/c4_swamp_of_screams_templates.json');
+const npcSkillRows = [
+    ...require('../../../data/Npcs/Skills/skills.json'),
+    ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json')
+];
 
 // These action skills belong to temporary servitors, but their NPC templates
 // are generated from class summon skills rather than ordinary spawn rows.
@@ -27,7 +32,8 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...npcActiveSkills, ...summonActionSkills].map((skill) => [Number(skill.selfId), skill])
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...summonActionSkills]
+        .map((skill) => [Number(skill.selfId), skill])
 );
 
 const skillsByNpc = new Map();
@@ -92,12 +98,21 @@ function combatSkillsFor(npc) {
         if (skill.fetchSemantic?.().notUsedInC4) return false;
         if (!COMBAT_SKILL_TYPES.has(skill.fetchSkillType?.())) return false;
         if (!['enemy', 'self'].includes(skill.fetchTargetKind?.())) return false;
-        if (skill.fetchTargetKind?.() === 'enemy' && Number(skill.fetchDistance?.()) < 0) return false;
+        if (
+            skill.fetchTargetKind?.() === 'enemy' &&
+            Number(skill.fetchDistance?.()) < 0 &&
+            skill.fetchSemantic?.().sourceTarget !== 'aura'
+        ) return false;
         return true;
     });
 }
 
+function passiveSkillsFor(npc) {
+    return forNpc(npc).filter((skill) => skill.fetchPassive?.() === true);
+}
+
 module.exports = {
     forNpc,
-    combatSkillsFor
+    combatSkillsFor,
+    passiveSkillsFor
 };

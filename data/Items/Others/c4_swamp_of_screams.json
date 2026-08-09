@@ -1,0 +1,302 @@
+[
+  {
+    "selfId": 5162,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Spiritshot (S) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 250000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5272,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Soulshot (S) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 250000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5277,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Spiritshot (S) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 250000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5282,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Blessed Spiritshot (S) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 285000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5440,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elysian(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5442,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soul Bow(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5444,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Carnage Bow(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5456,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Tallum Glaive(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5462,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Branch of The Mother Tree(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5464,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dark Legion's Edge(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5466,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sword of Miracles(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5532,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Meteor Shower Head",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 59308
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5535,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Carnage Bow Stave",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 58615
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5536,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Bloody Orchid Head",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 58785
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5539,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Blood Tornado Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 59308
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5543,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Dasparion's Staff Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 58754
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6333,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Phoenix Ring(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 17420
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6337,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Earring(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 39000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6339,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Ring(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 26000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6670,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 6",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 1200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

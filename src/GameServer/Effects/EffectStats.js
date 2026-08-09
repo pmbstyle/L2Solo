@@ -21,7 +21,10 @@ function statValues(actor, stat) {
 }
 
 function passiveStatValues(actor, stat) {
-    const skills = actor?.skillset?.fetchSkills?.() || [];
+    const skills = [
+        ...(actor?.skillset?.fetchSkills?.() || []),
+        ...(actor?.fetchPassiveSkills?.() || [])
+    ];
     return skills
         .filter((skill) => skill?.fetchPassive?.() === true)
         .map((skill) => C4SkillRules.resolve({

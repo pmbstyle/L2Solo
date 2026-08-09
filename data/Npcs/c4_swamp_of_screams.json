@@ -1,0 +1,673 @@
+[
+  {
+    "selfId": 1508,
+    "template": {
+      "kind": "Monster",
+      "name": "Splinter Stakato",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1123,
+      "pAtkRnd": 5,
+      "pDef": 364,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 235,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.940312213039,
+      "sp": 796
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1509,
+    "template": {
+      "kind": "Monster",
+      "name": "Splinter Stakato Walker",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1286,
+      "pAtkRnd": 30,
+      "pDef": 339,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.658498552016,
+      "sp": 709
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1510,
+    "template": {
+      "kind": "Monster",
+      "name": "Splinter Stakato Soldier",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1473,
+      "pAtkRnd": 10,
+      "pDef": 371,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.940311418685,
+      "sp": 867
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1511,
+    "template": {
+      "kind": "Monster",
+      "name": "Splinter Stakato Drone",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1265,
+      "pAtkRnd": 10,
+      "pDef": 460,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 132,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.088636841,
+      "sp": 973
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1512,
+    "template": {
+      "kind": "Monster",
+      "name": "Splinter Stakato Drone",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1086,
+      "pAtkRnd": 10,
+      "pDef": 569,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 132,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.578775510204,
+      "sp": 1253
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1513,
+    "template": {
+      "kind": "Monster",
+      "name": "Needle Stakato",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1314,
+      "pAtkRnd": 5,
+      "pDef": 399,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 235,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.940204081633,
+      "sp": 943
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1514,
+    "template": {
+      "kind": "Monster",
+      "name": "Needle Stakato Walker",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1499,
+      "pAtkRnd": 30,
+      "pDef": 371,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.658401110891,
+      "sp": 839
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1515,
+    "template": {
+      "kind": "Monster",
+      "name": "Needle Stakato Soldier",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1710,
+      "pAtkRnd": 10,
+      "pDef": 406,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.940393518519,
+      "sp": 1022
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1516,
+    "template": {
+      "kind": "Monster",
+      "name": "Needle Stakato Drone",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1463,
+      "pAtkRnd": 10,
+      "pDef": 502,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 214
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 132,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.940326515294,
+      "sp": 1064
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1517,
+    "template": {
+      "kind": "Monster",
+      "name": "Needle Stakato Drone",
+      "title": "",
+      "level": 74,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1250,
+      "pAtkRnd": 10,
+      "pDef": 620,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 214
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 132,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.578707085464,
+      "sp": 1472
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1518,
+    "template": {
+      "kind": "Monster",
+      "name": "Frenzy Stakato Soldier",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1417,
+      "pAtkRnd": 5,
+      "pDef": 337,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 235,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.73053633218,
+      "sp": 773
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  }
+]

@@ -252,6 +252,13 @@ class Npc extends NpcModel {
         return this.combatSkills;
     }
 
+    fetchPassiveSkills() {
+        if (!this.passiveSkills) {
+            this.passiveSkills = NpcSkills.passiveSkillsFor(this);
+        }
+        return this.passiveSkills;
+    }
+
     fetchSkillCastRange(skill, actor) {
         return Math.max(
             0,

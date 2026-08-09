@@ -570,7 +570,8 @@ class Attack {
         const semantic = skill.fetchSemantic?.() || {};
         const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: semantic.trait === 'bow' || this.isBowAttack(actor)
+            bow: semantic.trait === 'bow' || this.isBowAttack(actor),
+            blunt: this.isBluntAttack(actor)
         });
         const damage = Math.round(Formulas.calcPhysicalDamage(
             actor.fetchCollectivePAtk(),
@@ -611,7 +612,10 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, { bow: this.isBowAttack(actor) });
+        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
+            bow: this.isBowAttack(actor),
+            blunt: this.isBluntAttack(actor)
+        });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
@@ -649,7 +653,10 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(src, dst), rng);
-        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, { bow: this.isBowAttack(src) });
+        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, {
+            bow: this.isBowAttack(src),
+            blunt: this.isBluntAttack(src)
+        });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
@@ -700,6 +707,11 @@ class Attack {
     isBowAttack(creature) {
         const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
         return kind === 'Weapon.Bow';
+    }
+
+    isBluntAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -843,8 +855,9 @@ function traitVulnerabilityModifier(target, trait) {
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
-function incomingWeaponVulnerabilityModifier(target, { bow = false } = {}) {
+function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false } = {}) {
     if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
+    if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
     return 1;
 }
 
