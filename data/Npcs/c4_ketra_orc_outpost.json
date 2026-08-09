@@ -1,0 +1,1344 @@
+[
+  {
+    "selfId": 1324,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Footman",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1664,
+      "pAtkRnd": 10,
+      "pDef": 544,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.572440546467,
+      "sp": 1009
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1325,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra's War Hound",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2543,
+      "pAtkRnd": 30,
+      "pDef": 495,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.520492494518,
+      "sp": 975
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1326,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Kookaburra",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1375,
+      "pAtkRnd": 30,
+      "pDef": 560,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520492494518,
+      "sp": 975
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1327,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Raider",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2075,
+      "pAtkRnd": 10,
+      "pDef": 459,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 24
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 6919,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.683103221565,
+      "sp": 1120
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1328,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Scout",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3464,
+      "pAtkRnd": 5,
+      "pDef": 611,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 49,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 288,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.613412228797,
+      "sp": 1074
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1329,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Shaman",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1765,
+      "pAtkRnd": 20,
+      "pDef": 481,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 92,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.595096939593,
+      "sp": 1103
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1330,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Kookaburra",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2026,
+      "pAtkRnd": 30,
+      "pDef": 685,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520429418362,
+      "sp": 1051
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1331,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Warrior",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1996,
+      "pAtkRnd": 10,
+      "pDef": 524,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 24
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 6919,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.45375,
+      "sp": 1044
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1332,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Lieutenant",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2291,
+      "pAtkRnd": 30,
+      "pDef": 634,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 26,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 38.5
+    },
+    "equipment": {
+      "weapon": 6719,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.628125,
+      "sp": 1169
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1333,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Windsus",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1540,
+      "pAtkRnd": 30,
+      "pDef": 710,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 38,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520499923792,
+      "sp": 1133
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1334,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Medium",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1863,
+      "pAtkRnd": 20,
+      "pDef": 499,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 92,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.27602499619,
+      "sp": 1695
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1335,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Elite Soldier",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1912,
+      "pAtkRnd": 10,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.431439619274,
+      "sp": 1106
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1336,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc White Captain",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1738,
+      "pAtkRnd": 10,
+      "pDef": 657,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 36,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 28.8
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.683075550268,
+      "sp": 1300
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1337,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Elder Buffalo",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2249,
+      "pAtkRnd": 30,
+      "pDef": 736,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.52053999129,
+      "sp": 1217
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1338,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Seer",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2155,
+      "pAtkRnd": 20,
+      "pDef": 470,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 213,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.000725794745,
+      "sp": 1602
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1339,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc General",
+      "title": "",
+      "level": 84,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3372,
+      "pAtkRnd": 30,
+      "pDef": 511,
+      "mAtk": 1296,
+      "mDef": 502,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 26,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4766,
+      "maxMp": 2011,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 46.2
+    },
+    "equipment": {
+      "weapon": 6719,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.487244897959,
+      "sp": 1234
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1340,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Battalion Commander",
+      "title": "",
+      "level": 84,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2006,
+      "pAtkRnd": 10,
+      "pDef": 619,
+      "mAtk": 1296,
+      "mDef": 502,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4766,
+      "maxMp": 2011,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 6919,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.487244897959,
+      "sp": 1234
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1341,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Elder Kookaburra",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1696,
+      "pAtkRnd": 30,
+      "pDef": 647,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520553633218,
+      "sp": 1307
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1342,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Orc Grand Seer",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2052,
+      "pAtkRnd": 20,
+      "pDef": 629,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 213,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.000830449827,
+      "sp": 1720
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1343,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Commander",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1630,
+      "pAtkRnd": 10,
+      "pDef": 587,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 0,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 6919,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.499618960524,
+      "sp": 1862
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1345,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra's Head Shaman",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2257,
+      "pAtkRnd": 20,
+      "pDef": 572,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 210,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.710726643599,
+      "sp": 1471
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1347,
+    "template": {
+      "kind": "Monster",
+      "name": "Ketra Prophet",
+      "title": "",
+      "level": 87,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2141,
+      "pAtkRnd": 20,
+      "pDef": 650,
+      "mAtk": 1406,
+      "mDef": 528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4899,
+      "maxMp": 2127,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 213,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "ketra_orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.481041088651,
+      "sp": 2289
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  }
+]

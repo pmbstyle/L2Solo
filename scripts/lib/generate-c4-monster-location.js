@@ -103,12 +103,16 @@ module.exports = function generateC4MonsterLocation(config) {
     const filename = `${config.slug}.json`;
     const mobIds = [...config.mobIds].sort((a, b) => a - b);
     const mobIdSet = new Set(mobIds);
+    const respawnByMob = new Map(Object.entries(config.respawnByMob || {})
+        .map(([npcId, respawn]) => [Number(npcId), Number(respawn)]));
     const reusedMobIdSet = new Set(config.reusedMobIds || []);
     const newMobIds = mobIds.filter((id) => !reusedMobIdSet.has(id));
     const newMobIdSet = new Set(newMobIds);
     const npcRowsById = new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
+    const sourceLabels = config.sourceLabels || [config.sourceLabel];
+    const sourceLabelSet = new Set(sourceLabels);
     const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
-        row[1] === config.sourceLabel
+        sourceLabelSet.has(row[1])
         && npcRowsById.get(Number(row[3]))?.[11] === 'L2Monster'
     );
     if (spawnRows.length !== config.spawnRows) {
@@ -117,7 +121,9 @@ module.exports = function generateC4MonsterLocation(config) {
     if (spawnRows.some((row) => !mobIdSet.has(Number(row[3])))) {
         throw new Error(`${config.displayName} contains an unexpected source monster`);
     }
-    if (spawnRows.some((row) => Number(row[2]) !== 1 || Number(row[10]) !== config.respawn || Number(row[12]) !== 0)) {
+    if (spawnRows.some((row) => Number(row[2]) !== 1
+        || Number(row[10]) !== (respawnByMob.get(Number(row[3])) ?? config.respawn)
+        || Number(row[12]) !== 0)) {
         throw new Error(`Unexpected ${config.displayName} count, respawn, or period semantics`);
     }
     assertExact([...new Set(spawnRows.map((row) => Number(row[3])))].sort((a, b) => a - b), mobIds, 'monster ids');
@@ -186,7 +192,7 @@ module.exports = function generateC4MonsterLocation(config) {
         coords: spawnRows.filter((row) => Number(row[3]) === npcId)
             .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
         total: 1,
-        respawn: config.respawn,
+        respawn: respawnByMob.get(npcId) ?? config.respawn,
         bias: 0
     }));
     const spawns = [{ selfId: config.areaId, bounds: [], spawns: spawnDefinitions }];

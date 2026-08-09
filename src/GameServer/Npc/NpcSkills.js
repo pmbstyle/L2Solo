@@ -11,6 +11,7 @@ const c4ForestSkills = require('../../../data/Npcs/Skills/c4_forest_of_the_dead_
 const c4DevilsIsleSkills = require('../../../data/Npcs/Skills/c4_devils_isle_templates.json');
 const c4NecropolisSacrificeSkills = require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice_templates.json');
 const c4DevastatedCastleSkills = require('../../../data/Npcs/Skills/c4_devastated_castle_templates.json');
+const c4KetraOrcOutpostSkills = require('../../../data/Npcs/Skills/c4_ketra_orc_outpost_templates.json');
 const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/skills.json'),
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -20,6 +21,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_devils_isle.json'),
     ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
     ...require('../../../data/Npcs/Skills/c4_devastated_castle.json'),
+    ...require('../../../data/Npcs/Skills/c4_ketra_orc_outpost.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),
@@ -58,7 +60,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 

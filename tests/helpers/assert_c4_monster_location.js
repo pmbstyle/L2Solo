@@ -46,13 +46,17 @@ module.exports = function assertC4MonsterLocation(config) {
         'the additive import must remain limited to monster families absent from the old datapack');
 
     const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
+    const respawnByMob = new Map(Object.entries(config.respawnByMob || {})
+        .map(([npcId, respawn]) => [Number(npcId), Number(respawn)]));
     const expectedSpawnRows = config.spawnCounts.reduce((sum, [, count]) => sum + count, 0);
     assert.strictEqual(spawnArea.spawns.length, config.mobIds.length,
         'spawn definitions must cover every source monster family');
     assert.strictEqual(spawnCoords.length, expectedSpawnRows,
         `the import must retain all ${expectedSpawnRows} Lisvus monster spawn rows`);
     assert.ok(spawnArea.spawns.every((spawn) =>
-        spawn.total === 1 && spawn.respawn === config.respawn && spawn.bias === 0));
+        spawn.total === 1
+        && spawn.respawn === (respawnByMob.get(Number(spawn.selfId)) ?? config.respawn)
+        && spawn.bias === 0));
     assert.deepStrictEqual(spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]), config.spawnCounts,
         'every family must retain its exact local population');
 
