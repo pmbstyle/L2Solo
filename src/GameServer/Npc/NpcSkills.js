@@ -9,6 +9,7 @@ const c4GardenSkills = require('../../../data/Npcs/Skills/c4_garden_of_beasts_te
 const c4ValleySkills = require('../../../data/Npcs/Skills/c4_valley_of_saints_templates.json');
 const c4ForestSkills = require('../../../data/Npcs/Skills/c4_forest_of_the_dead_templates.json');
 const c4DevilsIsleSkills = require('../../../data/Npcs/Skills/c4_devils_isle_templates.json');
+const c4NecropolisSacrificeSkills = require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice_templates.json');
 const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/skills.json'),
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -16,7 +17,8 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_valley_of_saints.json'),
     ...require('../../../data/Npcs/Skills/c4_forest_of_the_dead.json'),
     ...require('../../../data/Npcs/Skills/c4_devils_isle.json'),
-    ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json')
+    ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json')
 ];
 
 // These action skills belong to temporary servitors, but their NPC templates
@@ -41,7 +43,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 

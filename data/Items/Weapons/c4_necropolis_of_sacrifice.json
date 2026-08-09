@@ -1,0 +1,29 @@
+[
+  {
+    "selfId": 5285,
+    "template": {
+      "kind": "Weapon.GreatSword",
+      "name": "Heavy Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1520,
+      "price": 409000
+    },
+    "stats": {
+      "pAtk": 49,
+      "pAtkRnd": 10,
+      "mAtk": 26,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "d",
+      "cristals": 743
+    }
+  }
+]

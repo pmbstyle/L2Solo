@@ -1,0 +1,978 @@
+[
+  {
+    "selfId": 1139,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Barbed Bat",
+      "title": "",
+      "level": 23,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 75,
+      "pAtkRnd": 30,
+      "pDef": 91,
+      "mAtk": 31,
+      "mDef": 87,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 648,
+      "maxMp": 257,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.238185255198,
+      "sp": 31
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1140,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Wisp",
+      "title": "",
+      "level": 26,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 96,
+      "pAtkRnd": 30,
+      "pDef": 102,
+      "mAtk": 41,
+      "mDef": 98,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 132
+    },
+    "vitals": {
+      "maxHp": 770,
+      "maxMp": 303,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.165680473373,
+      "sp": 39
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1141,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Serpent",
+      "title": "",
+      "level": 28,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 113,
+      "pAtkRnd": 10,
+      "pDef": 110,
+      "mAtk": 49,
+      "mDef": 106,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 859,
+      "maxMp": 334,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 46
+    },
+    "equipment": {
+      "weapon": 73,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.18112244898,
+      "sp": 48
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1142,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Keeper Spartoi",
+      "title": "",
+      "level": 29,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 111,
+      "pAtkRnd": 5,
+      "pDef": 149,
+      "mAtk": 53,
+      "mDef": 110,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 906,
+      "maxMp": 349,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 221,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.10225921522,
+      "sp": 49
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1166,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Scout",
+      "title": "",
+      "level": 21,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 66,
+      "pAtkRnd": 30,
+      "pDef": 69,
+      "mAtk": 25,
+      "mDef": 80,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 575,
+      "maxMp": 227,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 33.6
+    },
+    "equipment": {
+      "weapon": 5795,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.34693877551,
+      "sp": 27
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1167,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Witch",
+      "title": "",
+      "level": 24,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 98,
+      "pAtkRnd": 30,
+      "pDef": 92,
+      "mAtk": 34,
+      "mDef": 90,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 121
+    },
+    "vitals": {
+      "maxHp": 687,
+      "maxMp": 272,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 5797,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.197916666667,
+      "sp": 34
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1168,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Warrior",
+      "title": "",
+      "level": 27,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 126,
+      "pAtkRnd": 30,
+      "pDef": 103,
+      "mAtk": 45,
+      "mDef": 102,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 813,
+      "maxMp": 318,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 33.6
+    },
+    "equipment": {
+      "weapon": 5796,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.172839506173,
+      "sp": 43
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1169,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Guard",
+      "title": "",
+      "level": 30,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 140,
+      "pAtkRnd": 30,
+      "pDef": 99,
+      "mAtk": 58,
+      "mDef": 114,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 954,
+      "maxMp": 365,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 5795,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.258888888889,
+      "sp": 62
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1187,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Slave",
+      "title": "",
+      "level": 21,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 76,
+      "pAtkRnd": 30,
+      "pDef": 69,
+      "mAtk": 25,
+      "mDef": 80,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 575,
+      "maxMp": 227,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 5791,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.34693877551,
+      "sp": 27
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1188,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Acolyte",
+      "title": "",
+      "level": 24,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 98,
+      "pAtkRnd": 30,
+      "pDef": 92,
+      "mAtk": 34,
+      "mDef": 90,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 121
+    },
+    "vitals": {
+      "maxHp": 687,
+      "maxMp": 272,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 5793,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.197916666667,
+      "sp": 34
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1189,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Overseer",
+      "title": "",
+      "level": 27,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 126,
+      "pAtkRnd": 30,
+      "pDef": 103,
+      "mAtk": 45,
+      "mDef": 102,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 813,
+      "maxMp": 318,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 5792,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.172839506173,
+      "sp": 43
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1190,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Footman",
+      "title": "",
+      "level": 30,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 160,
+      "pAtkRnd": 30,
+      "pDef": 99,
+      "mAtk": 58,
+      "mDef": 114,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 954,
+      "maxMp": 365,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 5791,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.258888888889,
+      "sp": 62
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1208,
+    "template": {
+      "kind": "Monster",
+      "name": "Holy Land Watchman",
+      "title": "",
+      "level": 20,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 57,
+      "pAtkRnd": 5,
+      "pDef": 94,
+      "mAtk": 23,
+      "mDef": 76,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 541,
+      "maxMp": 213,
+      "revHp": 15.8,
+      "revMp": 1.21,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 216,
+      "shield": 111,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.3025,
+      "sp": 23
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1209,
+    "template": {
+      "kind": "Monster",
+      "name": "Holy Land Seer",
+      "title": "",
+      "level": 22,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 68,
+      "pAtkRnd": 30,
+      "pDef": 87,
+      "mAtk": 28,
+      "mDef": 83,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 121
+    },
+    "vitals": {
+      "maxHp": 611,
+      "maxMp": 242,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.264462809917,
+      "sp": 29
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1210,
+    "template": {
+      "kind": "Monster",
+      "name": "Vault Guardian",
+      "title": "",
+      "level": 25,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 88,
+      "pAtkRnd": 30,
+      "pDef": 116,
+      "mAtk": 37,
+      "mDef": 94,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 728,
+      "maxMp": 287,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 24
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.248,
+      "sp": 39
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1211,
+    "template": {
+      "kind": "Monster",
+      "name": "Vault Seer",
+      "title": "",
+      "level": 27,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 104,
+      "pAtkRnd": 30,
+      "pDef": 106,
+      "mAtk": 45,
+      "mDef": 102,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 121
+    },
+    "vitals": {
+      "maxHp": 813,
+      "maxMp": 318,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.138545953361,
+      "sp": 42
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

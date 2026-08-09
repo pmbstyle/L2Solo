@@ -159,6 +159,7 @@ const tests = [
     'tests/test_c4_forest_of_the_dead.js',
     'tests/test_c4_devils_isle.js',
     'tests/test_c4_elmore_northeast_coast.js',
+    'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',

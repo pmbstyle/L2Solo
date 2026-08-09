@@ -1,0 +1,2033 @@
+[
+  {
+    "selfId": 1139,
+    "template": {
+      "name": "Catacomb Barbed Bat"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 27,
+            "name": "Hard Leather Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 2.42949
+          },
+          {
+            "selfId": 33,
+            "name": "Hard Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 3.89946
+          },
+          {
+            "selfId": 1927,
+            "name": "Hard Leather Shirt Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 35.786515
+          },
+          {
+            "selfId": 1929,
+            "name": "Hard Leather Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 57.884535
+          }
+        ],
+        "overall": 3.0953
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 430,
+            "max": 759,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 49.019681
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 49.019681
+          },
+          {
+            "selfId": 3953,
+            "name": "Recipe: Blessed Spiritshot D",
+            "min": 1,
+            "max": 1,
+            "chance": 1.960639
+          }
+        ],
+        "overall": 37.7683
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1804,
+            "name": "Recipe: Soulshot: D-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 3.7606
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 9.6575
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 9.4966
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1140,
+    "template": {
+      "name": "Catacomb Wisp"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 477,
+            "max": 911,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 347,
+            "name": "Ring Mail Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 38.45753
+          },
+          {
+            "selfId": 376,
+            "name": "Iron Plate Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 61.54247
+          }
+        ],
+        "overall": 0.1919
+      },
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 38.710455
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 58.065682
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.322447
+          },
+          {
+            "selfId": 2260,
+            "name": "Recipe: Mace of Judgment",
+            "min": 1,
+            "max": 1,
+            "chance": 0.901417
+          }
+        ],
+        "overall": 26.5582
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 3,
+            "chance": 54.9553
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 17.1735
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2152,
+            "name": "Recipe: Enchanted Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 19.3505
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1141,
+    "template": {
+      "name": "Catacomb Serpent"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 545,
+            "max": 1067,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 432,
+            "name": "Cursed Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 38.4278
+          },
+          {
+            "selfId": 465,
+            "name": "Cursed Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 61.5722
+          }
+        ],
+        "overall": 0.2964
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 44.053001
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 44.053001
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.202592
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.405184
+          },
+          {
+            "selfId": 2178,
+            "name": "Recipe: Dark Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 5.286221
+          }
+        ],
+        "overall": 43.1991
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 16.9543
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1931,
+            "name": "Leather Boot Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 16.6219
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2178,
+            "name": "Recipe: Dark Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 20.3452
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1142,
+    "template": {
+      "name": "Grave Keeper Spartoi"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 535,
+            "max": 1059,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 848,
+            "name": "Enchanted Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 3.762791
+          },
+          {
+            "selfId": 879,
+            "name": "Enchanted Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 5.646512
+          },
+          {
+            "selfId": 911,
+            "name": "Enchanted Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 2.823256
+          },
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 87.767442
+          }
+        ],
+        "overall": 2.15
+      },
+      {
+        "items": [
+          {
+            "selfId": 955,
+            "name": "Scroll: Enchant Weapon (Grade D)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.153409
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.805121
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.36098
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 7.68049
+          }
+        ],
+        "overall": 44.9125
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 13.8128
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1933,
+            "name": "Dark Stocking Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 14.8528
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 19.6344
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1166,
+    "template": {
+      "name": "Lith Scout"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 25,
+            "name": "Piece Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.298706
+          },
+          {
+            "selfId": 26,
+            "name": "Bronze Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 1.482226
+          },
+          {
+            "selfId": 32,
+            "name": "Piece Bone Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 3.672068
+          },
+          {
+            "selfId": 34,
+            "name": "Bronze Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 2.378261
+          },
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 36.92166
+          },
+          {
+            "selfId": 1928,
+            "name": "Piece Bone Gaiters Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 53.24708
+          }
+        ],
+        "overall": 2.3883
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 39.290643
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.716317
+          },
+          {
+            "selfId": 2176,
+            "name": "Recipe: Leather Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 18.799278
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 3,
+            "chance": 26.193762
+          }
+        ],
+        "overall": 33.3316
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 53,
+            "max": 109,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 23,
+            "max": 42,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 88.6728
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 35.4691
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 9.1087
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1167,
+    "template": {
+      "name": "Lith Witch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.803684
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 44.859874
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 44.859874
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 7.476568
+          }
+        ],
+        "overall": 43.1575
+      },
+      {
+        "items": [
+          {
+            "selfId": 1102,
+            "name": "Tunic of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 38.384578
+          },
+          {
+            "selfId": 1105,
+            "name": "Stockings of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 61.615422
+          }
+        ],
+        "overall": 0.4098
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 72,
+            "max": 143,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 21,
+            "max": 39,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1804,
+            "name": "Recipe: Soulshot: D-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 3.9326
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 9.9308
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2151,
+            "name": "Recipe: Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 27.3857
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1168,
+    "template": {
+      "name": "Lith Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 847,
+            "name": "Red Crescent Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 4.119988
+          },
+          {
+            "selfId": 890,
+            "name": "Ring of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 6.159917
+          },
+          {
+            "selfId": 910,
+            "name": "Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 3.086647
+          },
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 86.633448
+          }
+        ],
+        "overall": 2.9903
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 27.915887
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 11.166254
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 1.860874
+          },
+          {
+            "selfId": 2262,
+            "name": "Recipe: Elven Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.433396
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 2.791563
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 1,
+            "chance": 55.832026
+          }
+        ],
+        "overall": 39.5943
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 97,
+            "max": 190,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 22,
+            "max": 41,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 7.8778
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 18.4636
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 11.8167
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1169,
+    "template": {
+      "name": "Lith Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 605,
+            "name": "Leather Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 1123,
+            "name": "Blue Buckskin Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 0.4774
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 47.318695
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 47.318695
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 4.73175
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.63086
+          }
+        ],
+        "overall": 33.6049
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 3.412439
+          },
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 128,
+            "max": 259,
+            "chance": 96.587561
+          }
+        ],
+        "overall": 72.4731
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 44,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 88.1783
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 15.9184
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 22.6274
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1187,
+    "template": {
+      "name": "Gigant Slave"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 25,
+            "name": "Piece Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.298706
+          },
+          {
+            "selfId": 26,
+            "name": "Bronze Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 1.482226
+          },
+          {
+            "selfId": 32,
+            "name": "Piece Bone Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 3.672068
+          },
+          {
+            "selfId": 34,
+            "name": "Bronze Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 2.378261
+          },
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 36.92166
+          },
+          {
+            "selfId": 1928,
+            "name": "Piece Bone Gaiters Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 53.24708
+          }
+        ],
+        "overall": 2.3883
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 67.526632
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 13.505326
+          },
+          {
+            "selfId": 2176,
+            "name": "Recipe: Leather Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 16.154572
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 2.81347
+          }
+        ],
+        "overall": 38.7884
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 53,
+            "max": 109,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 23,
+            "max": 42,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 88.6728
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 35.4691
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 9.1087
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1188,
+    "template": {
+      "name": "Gigant Acolyte"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.803684
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 44.859874
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 44.859874
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 7.476568
+          }
+        ],
+        "overall": 43.1575
+      },
+      {
+        "items": [
+          {
+            "selfId": 1102,
+            "name": "Tunic of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 38.384578
+          },
+          {
+            "selfId": 1105,
+            "name": "Stockings of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 61.615422
+          }
+        ],
+        "overall": 0.4098
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 72,
+            "max": 143,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 21,
+            "max": 39,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1804,
+            "name": "Recipe: Soulshot: D-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 3.9326
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 9.9308
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2151,
+            "name": "Recipe: Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 27.3857
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1189,
+    "template": {
+      "name": "Gigant Overseer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 847,
+            "name": "Red Crescent Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 4.119988
+          },
+          {
+            "selfId": 890,
+            "name": "Ring of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 6.159917
+          },
+          {
+            "selfId": 910,
+            "name": "Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 3.086647
+          },
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 86.633448
+          }
+        ],
+        "overall": 2.9903
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 77.453912
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.490782
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.581651
+          },
+          {
+            "selfId": 2262,
+            "name": "Recipe: Elven Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.601178
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.872477
+          }
+        ],
+        "overall": 34.2494
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 97,
+            "max": 190,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 22,
+            "max": 41,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 7.8778
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 18.4636
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 11.8167
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1190,
+    "template": {
+      "name": "Gigant Footman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 605,
+            "name": "Leather Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 1123,
+            "name": "Blue Buckskin Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 0.4774
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 62.565245
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 31.282623
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 3.128239
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.417146
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 2.606748
+          }
+        ],
+        "overall": 42.3593
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 2.859942
+          },
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 128,
+            "max": 259,
+            "chance": 97.140058
+          }
+        ],
+        "overall": 72.0609
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 44,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 88.1783
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 15.9184
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 22.6274
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1208,
+    "template": {
+      "name": "Holy Land Watchman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 38,
+            "name": "Low Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 4.132774
+          },
+          {
+            "selfId": 50,
+            "name": "Leather Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 4.132774
+          },
+          {
+            "selfId": 1925,
+            "name": "Leather Gloves Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 91.734453
+          }
+        ],
+        "overall": 11.1257
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 365,
+            "max": 635,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 9.09075
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 36.3637
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 54.54555
+          }
+        ],
+        "overall": 28.5345
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 13.173
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 79.038
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1897,
+            "name": "Necklace of Wisdom Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 18.8186
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1209,
+    "template": {
+      "name": "Holy Land Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 409,
+            "max": 734,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 625,
+            "name": "Bone Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 58.790817
+          },
+          {
+            "selfId": 1148,
+            "name": "Hard Leather Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 41.209183
+          }
+        ],
+        "overall": 0.7013
+      },
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 7.692228
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 46.153886
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 46.153886
+          }
+        ],
+        "overall": 38.4141
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1804,
+            "name": "Recipe: Soulshot: D-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 3.6013
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 9.2484
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2151,
+            "name": "Recipe: Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 25.0789
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1210,
+    "template": {
+      "name": "Vault Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 484,
+            "max": 907,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 123,
+            "name": "Saber",
+            "min": 1,
+            "max": 1,
+            "chance": 1.565435
+          },
+          {
+            "selfId": 2017,
+            "name": "Saber Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 42.788562
+          },
+          {
+            "selfId": 5285,
+            "name": "Heavy Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 1.565435
+          },
+          {
+            "selfId": 5531,
+            "name": "Heavy Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 54.080568
+          }
+        ],
+        "overall": 0.4791
+      },
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 36.495431
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 54.743324
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.18969
+          },
+          {
+            "selfId": 2182,
+            "name": "Recipe: Scale Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 6.571554
+          }
+        ],
+        "overall": 28.1912
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 73.3287
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 4.3997
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 17.1864
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1211,
+    "template": {
+      "name": "Vault Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 495,
+            "max": 955,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 156,
+            "name": "Hand Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 33.226837
+          },
+          {
+            "selfId": 167,
+            "name": "Scalpel",
+            "min": 1,
+            "max": 1,
+            "chance": 33.226837
+          },
+          {
+            "selfId": 178,
+            "name": "Bone Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 33.546326
+          }
+        ],
+        "overall": 0.0313
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 46.118504
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 46.118504
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.305804
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.611609
+          },
+          {
+            "selfId": 5437,
+            "name": "Recipe: Heavy Sword(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.845578
+          }
+        ],
+        "overall": 37.2408
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1931,
+            "name": "Leather Boot Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 15.0011
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1932,
+            "name": "Bone Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 18.2155
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2152,
+            "name": "Recipe: Enchanted Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 20.2039
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
