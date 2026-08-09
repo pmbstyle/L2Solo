@@ -1,0 +1,1776 @@
+[
+  {
+    "selfId": 1144,
+    "template": {
+      "name": "Catacomb Shadow"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 47,
+            "name": "Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 41.172291
+          },
+          {
+            "selfId": 628,
+            "name": "Hoplon",
+            "min": 1,
+            "max": 1,
+            "chance": 58.827709
+          }
+        ],
+        "overall": 0.2815
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 702,
+            "max": 1399,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 42.349668
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 42.349668
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.823215
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.058038
+          },
+          {
+            "selfId": 2187,
+            "name": "Recipe: Manticore Skin Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 1.890392
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 3.529019
+          }
+        ],
+        "overall": 34.7547
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1901,
+            "name": "Tiger's Eye Earring Stone",
+            "min": 1,
+            "max": 1,
+            "chance": 22.9413
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1938,
+            "name": "Mithril Banded Mail Material",
+            "min": 1,
+            "max": 1,
+            "chance": 11.166
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2154,
+            "name": "Recipe: Elven Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 17.7832
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1145,
+    "template": {
+      "name": "Catacomb Stakato Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 893,
+            "max": 1781,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 129,
+            "name": "Sword of Revolution",
+            "min": 1,
+            "max": 1,
+            "chance": 0.453501
+          },
+          {
+            "selfId": 2034,
+            "name": "Sword of Revolution Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.953708
+          },
+          {
+            "selfId": 2146,
+            "name": "Recipe: Artisan's frame",
+            "min": 1,
+            "max": 1,
+            "chance": 65.592791
+          }
+        ],
+        "overall": 1.6979
+      },
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 37.379106
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 22.427507
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 33.64126
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 2.803492
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.345642
+          },
+          {
+            "selfId": 5473,
+            "name": "Recipe: Durable Metal Plate (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 2.402993
+          }
+        ],
+        "overall": 46.3422
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 15.0797
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 17.593
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1902,
+            "name": "Elven Earring Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 21.3897
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1146,
+    "template": {
+      "name": "Grave Keeper Dark Horror"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 951,
+            "max": 1898,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 88,
+            "name": "Morning Star",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270865
+          },
+          {
+            "selfId": 90,
+            "name": "Goat Head Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270865
+          },
+          {
+            "selfId": 158,
+            "name": "Tarbar",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270865
+          },
+          {
+            "selfId": 169,
+            "name": "Skull Breaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270865
+          },
+          {
+            "selfId": 172,
+            "name": "Heavy Bone Club",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270865
+          },
+          {
+            "selfId": 2031,
+            "name": "Morning Star Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.077874
+          },
+          {
+            "selfId": 2032,
+            "name": "Goat Head Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 18.33418
+          },
+          {
+            "selfId": 2035,
+            "name": "Tarbar Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.077874
+          },
+          {
+            "selfId": 2036,
+            "name": "Skull Breaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.077874
+          },
+          {
+            "selfId": 2037,
+            "name": "Heavy Bone Club Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.077874
+          }
+        ],
+        "overall": 0.5907
+      },
+      {
+        "items": [
+          {
+            "selfId": 7643,
+            "name": "Spellbook - Summon Nightshade",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 7644,
+            "name": "Spellbook - Summon Cursed Man",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 7.3278
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 7.9584
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1903,
+            "name": "Elven Ring Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 37.8338
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 16.201
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1170,
+    "template": {
+      "name": "Lith Medium"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 47,
+            "name": "Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 41.154971
+          },
+          {
+            "selfId": 628,
+            "name": "Hoplon",
+            "min": 1,
+            "max": 1,
+            "chance": 58.845029
+          }
+        ],
+        "overall": 0.2736
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 59.574114
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 29.787057
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 2.978539
+          },
+          {
+            "selfId": 2155,
+            "name": "Recipe: Elven Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 4.781071
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.397069
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 2.482151
+          }
+        ],
+        "overall": 48.0269
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 108,
+            "max": 211,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 33,
+            "max": 63,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 22,
+            "max": 41,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1901,
+            "name": "Tiger's Eye Earring Stone",
+            "min": 1,
+            "max": 1,
+            "chance": 22.298
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1938,
+            "name": "Mithril Banded Mail Material",
+            "min": 1,
+            "max": 1,
+            "chance": 10.8528
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2154,
+            "name": "Recipe: Elven Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2845
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1171,
+    "template": {
+      "name": "Lith Overlord"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 83,
+            "name": "Sword of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 28.735632
+          },
+          {
+            "selfId": 127,
+            "name": "Crimson Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 21.264368
+          },
+          {
+            "selfId": 130,
+            "name": "Elven Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 21.264368
+          },
+          {
+            "selfId": 144,
+            "name": "Sword of Occult",
+            "min": 1,
+            "max": 1,
+            "chance": 28.735632
+          }
+        ],
+        "overall": 0.0174
+      },
+      {
+        "items": [
+          {
+            "selfId": 124,
+            "name": "Two-Handed Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.005428
+          },
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 44,
+            "chance": 99.994572
+          }
+        ],
+        "overall": 70.0038
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 58.528977
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 3,
+            "chance": 29.264381
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 3.901803
+          },
+          {
+            "selfId": 2026,
+            "name": "Two-Handed Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.469717
+          },
+          {
+            "selfId": 2191,
+            "name": "Recipe: RIP Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 7.835121
+          }
+        ],
+        "overall": 46.6451
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 96,
+            "max": 192,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 68,
+            "max": 136,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 5,
+            "chance": 68.463
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 5,
+            "chance": 68.463
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1939,
+            "name": "Mithril Banded Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 18.0403
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1172,
+    "template": {
+      "name": "Lith Patrolman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 88,
+            "name": "Morning Star",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 90,
+            "name": "Goat Head Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 158,
+            "name": "Tarbar",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 169,
+            "name": "Skull Breaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 172,
+            "name": "Heavy Bone Club",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 2031,
+            "name": "Morning Star Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2032,
+            "name": "Goat Head Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 18.334655
+          },
+          {
+            "selfId": 2035,
+            "name": "Tarbar Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2036,
+            "name": "Skull Breaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2037,
+            "name": "Heavy Bone Club Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          }
+        ],
+        "overall": 0.6305
+      },
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 36.73773
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 44.085223
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 2,
+            "max": 6,
+            "chance": 16.531992
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.645055
+          }
+        ],
+        "overall": 37.8442
+      },
+      {
+        "items": [
+          {
+            "selfId": 2147,
+            "name": "Recipe: Blacksmith's frame",
+            "min": 1,
+            "max": 1,
+            "chance": 2.490124
+          },
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 105,
+            "max": 206,
+            "chance": 97.509876
+          }
+        ],
+        "overall": 71.7876
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 89,
+            "max": 178,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 45,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2903
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1902,
+            "name": "Elven Earring Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 24.5252
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2903
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1191,
+    "template": {
+      "name": "Gigant Cleric"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 47,
+            "name": "Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 41.154971
+          },
+          {
+            "selfId": 628,
+            "name": "Hoplon",
+            "min": 1,
+            "max": 1,
+            "chance": 58.845029
+          }
+        ],
+        "overall": 0.2736
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 43.97845
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 43.97845
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 4.397614
+          },
+          {
+            "selfId": 2155,
+            "name": "Recipe: Elven Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 7.059086
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.5864
+          }
+        ],
+        "overall": 39.0348
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 108,
+            "max": 211,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 33,
+            "max": 63,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 22,
+            "max": 41,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1901,
+            "name": "Tiger's Eye Earring Stone",
+            "min": 1,
+            "max": 1,
+            "chance": 22.298
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1938,
+            "name": "Mithril Banded Mail Material",
+            "min": 1,
+            "max": 1,
+            "chance": 10.8528
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2154,
+            "name": "Recipe: Elven Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2845
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1192,
+    "template": {
+      "name": "Gigant Officer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 83,
+            "name": "Sword of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 28.735632
+          },
+          {
+            "selfId": 127,
+            "name": "Crimson Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 21.264368
+          },
+          {
+            "selfId": 130,
+            "name": "Elven Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 21.264368
+          },
+          {
+            "selfId": 144,
+            "name": "Sword of Occult",
+            "min": 1,
+            "max": 1,
+            "chance": 28.735632
+          }
+        ],
+        "overall": 0.0174
+      },
+      {
+        "items": [
+          {
+            "selfId": 124,
+            "name": "Two-Handed Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.005428
+          },
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 44,
+            "chance": 99.994572
+          }
+        ],
+        "overall": 70.0038
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 58.528977
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 3,
+            "chance": 29.264381
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 3.901803
+          },
+          {
+            "selfId": 2026,
+            "name": "Two-Handed Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.469717
+          },
+          {
+            "selfId": 2191,
+            "name": "Recipe: RIP Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 7.835121
+          }
+        ],
+        "overall": 46.6451
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 96,
+            "max": 192,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 68,
+            "max": 136,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 5,
+            "chance": 68.463
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 5,
+            "chance": 68.463
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1939,
+            "name": "Mithril Banded Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 18.0403
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1193,
+    "template": {
+      "name": "Gigant Raider"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 88,
+            "name": "Morning Star",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 90,
+            "name": "Goat Head Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 158,
+            "name": "Tarbar",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 169,
+            "name": "Skull Breaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 172,
+            "name": "Heavy Bone Club",
+            "min": 1,
+            "max": 1,
+            "chance": 0.269627
+          },
+          {
+            "selfId": 2031,
+            "name": "Morning Star Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2032,
+            "name": "Goat Head Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 18.334655
+          },
+          {
+            "selfId": 2035,
+            "name": "Tarbar Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2036,
+            "name": "Skull Breaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          },
+          {
+            "selfId": 2037,
+            "name": "Heavy Bone Club Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.079302
+          }
+        ],
+        "overall": 0.6305
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 89,
+            "max": 178,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 105,
+            "max": 206,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 24,
+            "max": 45,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 7638,
+            "name": "Spellbook - Mass Summon Storm Cubic",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 7639,
+            "name": "Spellbook - Mass Summon Aqua Cubic",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 7640,
+            "name": "Spellbook - Mass Summon Phantom Cubic",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          }
+        ],
+        "overall": 7.8204
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2903
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1902,
+            "name": "Elven Earring Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 24.5252
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2903
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1213,
+    "template": {
+      "name": "Holy Land Monk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 626,
+            "max": 1255,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 275,
+            "name": "Long Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 2.065704
+          },
+          {
+            "selfId": 276,
+            "name": "Elven Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 2.065704
+          },
+          {
+            "selfId": 2024,
+            "name": "Elven Bow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 95.868591
+          }
+        ],
+        "overall": 0.4018
+      },
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 20.511088
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 3,
+            "max": 9,
+            "chance": 11.281098
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 33.843503
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 13.537443
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 20.826868
+          }
+        ],
+        "overall": 47.9448
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 16.2437
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 23.0897
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1214,
+    "template": {
+      "name": "Vault Sentinel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 781,
+            "max": 1559,
+            "chance": 99.661294
+          },
+          {
+            "selfId": 241,
+            "name": "Shilen Knife",
+            "min": 1,
+            "max": 1,
+            "chance": 0.005837
+          },
+          {
+            "selfId": 2028,
+            "name": "Shilen Knife Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.332869
+          }
+        ],
+        "overall": 70.2379
+      },
+      {
+        "items": [
+          {
+            "selfId": 223,
+            "name": "Kukuri",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 238,
+            "name": "Dagger of Mana",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 239,
+            "name": "Mystic Knife",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          }
+        ],
+        "overall": 0.012
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 43.898814
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 43.898814
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.926409
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.316246
+          },
+          {
+            "selfId": 2189,
+            "name": "Recipe: Mithril Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 1.959717
+          }
+        ],
+        "overall": 44.8126
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 3,
+            "chance": 92.4982
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 12.3331
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1901,
+            "name": "Tiger's Eye Earring Stone",
+            "min": 1,
+            "max": 1,
+            "chance": 25.552
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1215,
+    "template": {
+      "name": "Vault Monk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 824,
+            "max": 1645,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 318,
+            "name": "Crucifix of Blood",
+            "min": 1,
+            "max": 1,
+            "chance": 1.522199
+          },
+          {
+            "selfId": 2042,
+            "name": "Crucifix of Blood Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 98.477801
+          }
+        ],
+        "overall": 0.473
+      },
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 3.695506
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 34.491495
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 51.737396
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 4.311167
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 2.069237
+          },
+          {
+            "selfId": 5473,
+            "name": "Recipe: Durable Metal Plate (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 3.695198
+          }
+        ],
+        "overall": 32.4854
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 13.9345
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1902,
+            "name": "Elven Earring Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.7653
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 13.9345
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
