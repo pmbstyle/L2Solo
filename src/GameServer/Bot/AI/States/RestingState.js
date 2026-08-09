@@ -14,9 +14,20 @@ const EMERGENCY_RETREAT_DISTANCE = 850;
 const MANA_REGEN_CAST_RETRY_MS = 8000;
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
 const NEWBIE_GUIDE_RECOVERY_MAX_LEVEL = 20;
+const PARTY_REST_FORMATION_TOLERANCE = 45;
 
 function point(actor) {
     return new SpeckMath.Point3D(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+}
+
+function distanceToPartyFormation(session, bot, player) {
+    const target = PartyCompanionService.formationTargetFor(session) || {
+        locX: player.fetchLocX(),
+        locY: player.fetchLocY()
+    };
+    const dx = bot.fetchLocX() - target.locX;
+    const dy = bot.fetchLocY() - target.locY;
+    return Math.sqrt((dx * dx) + (dy * dy));
 }
 
 function standUp(session, bot) {
@@ -141,14 +152,16 @@ module.exports = {
             const leaderSeated = player.state?.fetchSeated?.() === true;
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-            const recovered = hpRatio >= 0.95 && mpRatio >= 0.95;
+            const recovered = hpRatio >= 0.95 && (
+                !BotRoles.needsPartyManaRecovery(bot) || mpRatio >= 0.95
+            );
 
             // A companion can join while it is already sitting from a prior
             // hunt. If it is in a starter town, send low-level bots to the
             // Newbie Guide instead of making the new party wait for normal
             // seated regeneration. This checks the bot's own position, so it
             // never leaves a farming spot just because the leader is in town.
-            if (!combatTargetId && !recovered && canRecoverAtNewbieGuide(bot, BotAI)) {
+            if (!session.explicitRestOrder && !combatTargetId && !recovered && canRecoverAtNewbieGuide(bot, BotAI)) {
                 beginNewbieGuideRecovery(session, bot, playerSession);
                 recordWakeDecision(session, bot, hpRatio < 0.95 ? 'recover_hp' : 'recover_mp', 'newbie_guide_recovery');
                 BotAI.say(session, "I'm recovering at the Newbie Guide, then I'll return to you.");
@@ -159,11 +172,15 @@ module.exports = {
             // the seated leader before its low-resource branch, so the bot
             // moves into formation and then sits there without oscillating.
             // A companion resting alone still finishes recovery in place.
-            const shouldRegroupForPartyRest = leaderSeated && distance > 250;
+            const shouldRegroupForPartyRest = !session.explicitRestOrder &&
+                leaderSeated &&
+                distance > 250 &&
+                distanceToPartyFormation(session, bot, player) > PARTY_REST_FORMATION_TOLERANCE;
             const shouldFollowLeader = shouldRegroupForPartyRest || (recovered && (
                 distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
             ));
             if (combatTargetId || shouldFollowLeader) {
+                delete session.explicitRestOrder;
                 session.plan = 'following';
                 session.currentTargetId = combatTargetId || undefined;
                 session.townGossip = false;
@@ -219,6 +236,7 @@ module.exports = {
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
         if (hpRatio >= 0.95 && mpRatio >= 0.95) {
+            delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
             if (session.followPlayerSession && session.partyCompanion === true) {

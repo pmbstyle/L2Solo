@@ -217,18 +217,31 @@ function beginSupportCast(session, provider, target, skill) {
         if (session) session.pendingSupportCast = undefined;
         return false;
     }
+    const partyAura = skill?.fetchTargetKind?.() === 'party' && Number(skill?.fetchDistance?.()) < 0;
+    const targetMatches = Number(pending.targetId) === actorOrder(target);
     if (
         Number(pending.providerId) !== actorOrder(provider) ||
-        Number(pending.targetId) !== actorOrder(target) ||
+        (!targetMatches && !partyAura) ||
         Number(pending.skillId) !== Number(skill?.fetchSelfId?.() || 0)
     ) {
         return false;
     }
 
-    reserve({ provider, target, skill });
+    let supportTarget = target;
+    if (partyAura && !targetMatches) {
+        const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+        const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+            ? session.followPlayerSession
+            : session;
+        supportTarget = PartyAwareness.partyActors(leaderSession)
+            .find((member) => actorOrder(member) === Number(pending.targetId));
+        if (!supportTarget) return false;
+    }
+
+    reserve({ provider, target: supportTarget, skill });
     session.pendingSupportCast = undefined;
     session.activeSupportCast = {
-        targetId: actorOrder(target),
+        targetId: actorOrder(supportTarget),
         skillId: Number(skill.fetchSelfId())
     };
     return true;

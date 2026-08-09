@@ -342,8 +342,15 @@ class Attack {
                 ? session.followPlayerSession
                 : session;
             const party = PartyAwareness.partyActors(leaderSession)
-                .filter((target) => this.isValidSkillTarget(target, skill, actor));
-            return party.length > 0 ? party : [primary];
+                .filter((target) => (
+                    this.isValidSkillTarget(target, skill, actor) &&
+                    (radius <= 0 || this.distance2d(actor, target) <= radius)
+                ));
+            if (party.length > 0) return party;
+            return this.isValidSkillTarget(primary, skill, actor) &&
+                (radius <= 0 || this.distance2d(actor, primary) <= radius)
+                ? [primary]
+                : [];
         }
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {

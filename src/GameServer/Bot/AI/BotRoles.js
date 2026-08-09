@@ -10,6 +10,11 @@ const ROLE_CLASSES = {
     mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41],
     crafter: [56, 57]
 };
+const PARTY_MANA_RECOVERY_ROLES = new Set(['mage', 'archer', 'healer']);
+// Prophet and the Orc mystic line cast as their primary party job. Sword
+// Singer and Bladedancer share the buffer role, but they are melee fighters
+// whose combat loop must not stop merely because their MP is low.
+const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
 
 function classIdOf(value) {
     if (typeof value === 'number' || typeof value === 'string') return value;
@@ -84,6 +89,13 @@ function canBuff(value) {
     return isRole(value, 'buffer');
 }
 
+function needsPartyManaRecovery(value) {
+    const role = inferRole(value);
+    return PARTY_MANA_RECOVERY_ROLES.has(role) || (
+        role === 'buffer' && CASTER_BUFFER_CLASSES.has(roleClassId(value))
+    );
+}
+
 function isRanged(roleOrActor) {
     const role = typeof roleOrActor === 'string' ? roleOrActor : inferRole(roleOrActor);
     return role === 'archer' || role === 'mage';
@@ -120,6 +132,7 @@ module.exports = {
     isHealer,
     isTank,
     canBuff,
+    needsPartyManaRecovery,
     isRanged,
     hasMeleeWeapon,
     partyRoleStance
