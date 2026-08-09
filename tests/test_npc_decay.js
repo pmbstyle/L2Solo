@@ -5,6 +5,9 @@ require('../src/Global');
 const NpcDecay = invoke('GameServer/World/Generics/NpcDecay');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const RemoveNpc = invoke('GameServer/World/Generics/RemoveNpc');
+const NpcDie = invoke('GameServer/Npc/Generics/Die');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 function npcInfo(id) {
     const packet = Buffer.alloc(5);
@@ -165,6 +168,60 @@ function wait(ms) {
         rewardFailureWorld.npc.spawns.length,
         0,
         'a reward exception must not strand the corpse before decay is registered'
+    );
+
+    const effectViewer = viewer();
+    effectViewer.dataSendToMeAndOthers = function dataSendToMeAndOthers(packet) {
+        this.dataSendToMe(packet);
+    };
+    const effectNpc = npc(9100009, 5);
+    effectNpc.fetchKind = () => 'Npc.Monster';
+    effectNpc.effects = {};
+    effectNpc.activeBuffs = {};
+    effectNpc.effectTimers = {};
+    effectNpc.effectExpiryTimers = {};
+    effectNpc.state = {
+        dead: false,
+        fetchDead() { return this.dead; },
+        setDead(value) { this.dead = value; }
+    };
+    const sleepEffect = EffectStore.apply(effectNpc, {
+        key: 'sleep',
+        id: 1097,
+        level: 7,
+        type: 'debuff',
+        durationMs: 25
+    });
+    assert.strictEqual(
+        EffectTicker.scheduleExpiry(effectViewer, effectNpc, sleepEffect),
+        true,
+        'a control effect on a living NPC should have an expiry timer'
+    );
+    assert(effectNpc.effectExpiryTimers.sleep, 'the regression requires a live effect expiry timer before death');
+
+    NpcVisibility.trackNpcPacket(effectViewer, npcInfo(effectNpc.fetchId()));
+    const effectWorld = world([effectNpc], [effectViewer]);
+    effectNpc.state.setDead(true);
+    NpcDie.clearEffectsOnDeath(effectNpc);
+    NpcDecay.schedule(effectWorld, effectViewer, effectNpc, 5);
+    await wait(60);
+
+    assert.strictEqual(effectNpc.effectExpiryTimers.sleep, undefined, 'NPC death must cancel delayed effect expiry');
+    assert.deepStrictEqual(effectNpc.effects, {}, 'NPC death must clear authoritative effects');
+    assert.deepStrictEqual(effectNpc.activeBuffs, {}, 'NPC death must clear legacy effect bookkeeping');
+    assert.strictEqual(effectWorld.npc.spawns.length, 0, 'the debuffed corpse must still decay normally');
+    assert.strictEqual(effectViewer.knownNpcIds.has(effectNpc.fetchId()), false, 'effect expiry must not restore a decayed NPC to the known-object set');
+    assert.strictEqual(
+        effectViewer.sent.filter((packet) => packet[0] === 0x16).length,
+        0,
+        'effect expiry must not send NpcInfo after the corpse was deleted'
+    );
+
+    EffectTicker.refreshEffects(effectViewer, effectNpc);
+    assert.strictEqual(
+        effectViewer.sent.filter((packet) => packet[0] === 0x16).length,
+        0,
+        'a defensive refresh must not broadcast NpcInfo for a dead or removed NPC'
     );
 
     console.log('NPC decay lifecycle regression checks passed');
