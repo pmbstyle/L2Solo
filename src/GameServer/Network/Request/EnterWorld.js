@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const Database       = invoke('Database');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const ClanService    = invoke('GameServer/Clan/ClanService');
+const GameTime       = invoke('GameServer/World/GameTime');
 
 function sendClanWindow(session) {
     const clan = ClanService.clanForActor(session.actor);
@@ -25,7 +26,7 @@ function enterWorld(session, buffer) {
         });
 
         session.actor.enterWorld();
-        session.dataSendToMe(ServerResponse.sunrise()); // TODO: Server timer
+        session.dataSendToMe(GameTime.isNight() ? ServerResponse.sunset() : ServerResponse.sunrise());
         sendClanWindow(session);
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(session.actor));

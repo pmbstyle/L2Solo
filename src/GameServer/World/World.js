@@ -2,6 +2,8 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const NpcDecay       = invoke('GameServer/World/Generics/NpcDecay');
+const GameTime       = invoke('GameServer/World/GameTime');
+const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
 
 function actorLoc(actor) {
     return {
@@ -101,13 +103,19 @@ const World = {
 
     init() {
         NpcDecay.stop(this);
+        DayNightSpawnManager.stop(this);
         this.user  = { sessions : [], revision: 0 };
-        this.npc   = { spawns   : [], grid: {}, nextId: 1000000 };
+        this.gameTime = GameTime;
+        this.npc   = {
+            spawns: [], grid: {}, nextId: 1000000,
+            periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: []
+        };
         this.items = { spawns   : [], nextId: 5000000 };
 
         World.spawnNpcs();
         this.indexSpawnsInGrid();
         NpcDecay.start(this);
+        DayNightSpawnManager.start(this);
         invoke('GameServer/Npc/NpcAggro').startAggroTicker(this);
     },
 

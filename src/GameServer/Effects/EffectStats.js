@@ -1,5 +1,6 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const GameTime = invoke('GameServer/World/GameTime');
 
 function multiplier(actor, stat, fallback = 1) {
     return statValues(actor, stat)
@@ -65,8 +66,7 @@ function matchesCondition(actor, condition = {}) {
             ? !!clock.isNight()
             : typeof actor?.isNight === 'function'
                 ? !!actor.isNight()
-                // L2's world day is four real hours: each game hour lasts ten minutes.
-                : Math.floor(Date.now() / 600000) % 24 < 6 || Math.floor(Date.now() / 600000) % 24 >= 18;
+                : GameTime.isNight();
         if (night !== condition.night) return false;
     }
     return true;

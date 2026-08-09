@@ -1,0 +1,167 @@
+[
+  {
+    "selfId": 5156,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soulshot (A) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 150000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5157,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 250000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5276,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Spiritshot (A) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 150000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5281,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Blessed Spiritshot (A) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 170000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5434,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dragon Slayer(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5460,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dasparion's Staff(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5542,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Halberd Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 59308
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6329,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Phoenix Necklace(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 34800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6331,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Phoenix Earring(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 26200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6671,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 7",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 1800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6901,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Shining Arrow (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 200000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

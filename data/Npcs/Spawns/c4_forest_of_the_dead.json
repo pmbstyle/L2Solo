@@ -1,0 +1,3940 @@
+[
+  {
+    "selfId": "c4-forest-of-the-dead",
+    "bounds": [],
+    "spawns": [
+      {
+        "selfId": 1547,
+        "name": "Corrupted Knight",
+        "coords": [
+          {
+            "locX": 47606,
+            "locY": -58036,
+            "locZ": -2392,
+            "head": 0
+          },
+          {
+            "locX": 47835,
+            "locY": -57077,
+            "locZ": -2496,
+            "head": 0
+          },
+          {
+            "locX": 49167,
+            "locY": -57514,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 49828,
+            "locY": -57248,
+            "locZ": -2648,
+            "head": 0
+          },
+          {
+            "locX": 50149,
+            "locY": -56582,
+            "locZ": -2592,
+            "head": 0
+          },
+          {
+            "locX": 50725,
+            "locY": -56350,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 49518,
+            "locY": -55697,
+            "locZ": -2648,
+            "head": 0
+          },
+          {
+            "locX": 46625,
+            "locY": -57423,
+            "locZ": -2216,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1547,
+        "name": "Corrupted Knight",
+        "coords": [
+          {
+            "locX": 48536,
+            "locY": -55831,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 48027,
+            "locY": -56062,
+            "locZ": -2536,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1548,
+        "name": "Resurrected Knight",
+        "coords": [
+          {
+            "locX": 49688,
+            "locY": -55415,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 49338,
+            "locY": -56672,
+            "locZ": -2608,
+            "head": 0
+          },
+          {
+            "locX": 48569,
+            "locY": -56478,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 48584,
+            "locY": -57028,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 49129,
+            "locY": -56102,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 50671,
+            "locY": -56097,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 49831,
+            "locY": -56091,
+            "locZ": -2624,
+            "head": 0
+          },
+          {
+            "locX": 47578,
+            "locY": -56799,
+            "locZ": -2392,
+            "head": 0
+          },
+          {
+            "locX": 47503,
+            "locY": -57703,
+            "locZ": -2408,
+            "head": 0
+          },
+          {
+            "locX": 48529,
+            "locY": -57876,
+            "locZ": -2672,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1549,
+        "name": "Corrupted Guard",
+        "coords": [
+          {
+            "locX": 46967,
+            "locY": -57949,
+            "locZ": -2288,
+            "head": 0
+          },
+          {
+            "locX": 48783,
+            "locY": -57640,
+            "locZ": -2648,
+            "head": 0
+          },
+          {
+            "locX": 49483,
+            "locY": -56769,
+            "locZ": -2592,
+            "head": 0
+          },
+          {
+            "locX": 49526,
+            "locY": -56046,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 48861,
+            "locY": -55321,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 48863,
+            "locY": -56828,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 50024,
+            "locY": -59443,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 50710,
+            "locY": -59332,
+            "locZ": -2768,
+            "head": 0
+          },
+          {
+            "locX": 50706,
+            "locY": -60594,
+            "locZ": -2744,
+            "head": 0
+          },
+          {
+            "locX": 50463,
+            "locY": -61405,
+            "locZ": -2584,
+            "head": 0
+          },
+          {
+            "locX": 50194,
+            "locY": -60964,
+            "locZ": -2624,
+            "head": 0
+          },
+          {
+            "locX": 53877,
+            "locY": -59043,
+            "locZ": -3296,
+            "head": 0
+          },
+          {
+            "locX": 53378,
+            "locY": -59545,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 52559,
+            "locY": -59990,
+            "locZ": -2976,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1552,
+        "name": "Resurrected Guard",
+        "coords": [
+          {
+            "locX": 50902,
+            "locY": -61550,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 51537,
+            "locY": -61249,
+            "locZ": -2792,
+            "head": 0
+          },
+          {
+            "locX": 51317,
+            "locY": -60678,
+            "locZ": -2800,
+            "head": 0
+          },
+          {
+            "locX": 52440,
+            "locY": -60323,
+            "locZ": -2936,
+            "head": 0
+          },
+          {
+            "locX": 53477,
+            "locY": -60199,
+            "locZ": -3048,
+            "head": 0
+          },
+          {
+            "locX": 52946,
+            "locY": -59606,
+            "locZ": -3096,
+            "head": 0
+          },
+          {
+            "locX": 50651,
+            "locY": -50371,
+            "locZ": -2824,
+            "head": 0
+          },
+          {
+            "locX": 51158,
+            "locY": -50845,
+            "locZ": -2784,
+            "head": 0
+          },
+          {
+            "locX": 50239,
+            "locY": -52165,
+            "locZ": -2888,
+            "head": 0
+          },
+          {
+            "locX": 50709,
+            "locY": -52928,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 50942,
+            "locY": -49222,
+            "locZ": -2944,
+            "head": 0
+          },
+          {
+            "locX": 60316,
+            "locY": -51703,
+            "locZ": -2968,
+            "head": 0
+          },
+          {
+            "locX": 59779,
+            "locY": -52288,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 60261,
+            "locY": -52695,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 59702,
+            "locY": -52908,
+            "locZ": -3064,
+            "head": 0
+          },
+          {
+            "locX": 58970,
+            "locY": -53897,
+            "locZ": -3264,
+            "head": 0
+          },
+          {
+            "locX": 58939,
+            "locY": -54541,
+            "locZ": -3184,
+            "head": 0
+          },
+          {
+            "locX": 59104,
+            "locY": -55594,
+            "locZ": -3216,
+            "head": 0
+          },
+          {
+            "locX": 58341,
+            "locY": -56172,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57439,
+            "locY": -56653,
+            "locZ": -3376,
+            "head": 0
+          },
+          {
+            "locX": 57543,
+            "locY": -55825,
+            "locZ": -3304,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1553,
+        "name": "Trampled Man",
+        "coords": [
+          {
+            "locX": 49084,
+            "locY": -56652,
+            "locZ": -2624,
+            "head": 0
+          },
+          {
+            "locX": 48665,
+            "locY": -56346,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 48325,
+            "locY": -57700,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 48127,
+            "locY": -58500,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 49286,
+            "locY": -57626,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 49833,
+            "locY": -56757,
+            "locZ": -2584,
+            "head": 0
+          },
+          {
+            "locX": 49876,
+            "locY": -55365,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 49209,
+            "locY": -55832,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 51137,
+            "locY": -58952,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 50183,
+            "locY": -58715,
+            "locZ": -2760,
+            "head": 0
+          },
+          {
+            "locX": 49793,
+            "locY": -59267,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 50362,
+            "locY": -60677,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 51005,
+            "locY": -61221,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 52404,
+            "locY": -59630,
+            "locZ": -2952,
+            "head": 0
+          },
+          {
+            "locX": 51849,
+            "locY": -60206,
+            "locZ": -2888,
+            "head": 0
+          },
+          {
+            "locX": 53574,
+            "locY": -59686,
+            "locZ": -3168,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1555,
+        "name": "Slaughter Executioner",
+        "coords": [
+          {
+            "locX": 48536,
+            "locY": -55831,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 48027,
+            "locY": -56062,
+            "locZ": -2536,
+            "head": 0
+          },
+          {
+            "locX": 49084,
+            "locY": -56652,
+            "locZ": -2624,
+            "head": 0
+          },
+          {
+            "locX": 48665,
+            "locY": -56346,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 48325,
+            "locY": -57700,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 48127,
+            "locY": -58500,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 49286,
+            "locY": -57626,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 49833,
+            "locY": -56757,
+            "locZ": -2584,
+            "head": 0
+          },
+          {
+            "locX": 49876,
+            "locY": -55365,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 49209,
+            "locY": -55832,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 50675,
+            "locY": -59203,
+            "locZ": -2760,
+            "head": 0
+          },
+          {
+            "locX": 49698,
+            "locY": -60886,
+            "locZ": -2680,
+            "head": 0
+          },
+          {
+            "locX": 50177,
+            "locY": -61547,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 51021,
+            "locY": -61847,
+            "locZ": -2576,
+            "head": 0
+          },
+          {
+            "locX": 51414,
+            "locY": -61701,
+            "locZ": -2656,
+            "head": 0
+          },
+          {
+            "locX": 51137,
+            "locY": -58952,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 50183,
+            "locY": -58715,
+            "locZ": -2760,
+            "head": 0
+          },
+          {
+            "locX": 49793,
+            "locY": -59267,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 50362,
+            "locY": -60677,
+            "locZ": -2672,
+            "head": 0
+          },
+          {
+            "locX": 51005,
+            "locY": -61221,
+            "locZ": -2688,
+            "head": 0
+          },
+          {
+            "locX": 52404,
+            "locY": -59630,
+            "locZ": -2952,
+            "head": 0
+          },
+          {
+            "locX": 51849,
+            "locY": -60206,
+            "locZ": -2888,
+            "head": 0
+          },
+          {
+            "locX": 53574,
+            "locY": -59686,
+            "locZ": -3168,
+            "head": 0
+          },
+          {
+            "locX": 53130,
+            "locY": -60575,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 53920,
+            "locY": -59258,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53109,
+            "locY": -59165,
+            "locZ": -3208,
+            "head": 0
+          },
+          {
+            "locX": 54564,
+            "locY": -58884,
+            "locZ": -3416,
+            "head": 0
+          },
+          {
+            "locX": 54695,
+            "locY": -59700,
+            "locZ": -3256,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1557,
+        "name": "Bone Snatcher",
+        "coords": [
+          {
+            "locX": 50675,
+            "locY": -59203,
+            "locZ": -2760,
+            "head": 0
+          },
+          {
+            "locX": 49698,
+            "locY": -60886,
+            "locZ": -2680,
+            "head": 0
+          },
+          {
+            "locX": 50177,
+            "locY": -61547,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 51021,
+            "locY": -61847,
+            "locZ": -2576,
+            "head": 0
+          },
+          {
+            "locX": 51414,
+            "locY": -61701,
+            "locZ": -2656,
+            "head": 0
+          },
+          {
+            "locX": 53130,
+            "locY": -60575,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 53920,
+            "locY": -59258,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53109,
+            "locY": -59165,
+            "locZ": -3208,
+            "head": 0
+          },
+          {
+            "locX": 54564,
+            "locY": -58884,
+            "locZ": -3416,
+            "head": 0
+          },
+          {
+            "locX": 54695,
+            "locY": -59700,
+            "locZ": -3256,
+            "head": 0
+          },
+          {
+            "locX": 50651,
+            "locY": -50371,
+            "locZ": -2824,
+            "head": 0
+          },
+          {
+            "locX": 51158,
+            "locY": -50845,
+            "locZ": -2784,
+            "head": 0
+          },
+          {
+            "locX": 50239,
+            "locY": -52165,
+            "locZ": -2888,
+            "head": 0
+          },
+          {
+            "locX": 50709,
+            "locY": -52928,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 50942,
+            "locY": -49222,
+            "locZ": -2944,
+            "head": 0
+          },
+          {
+            "locX": 58877,
+            "locY": -54473,
+            "locZ": -3200,
+            "head": 0
+          },
+          {
+            "locX": 59859,
+            "locY": -54113,
+            "locZ": -3224,
+            "head": 0
+          },
+          {
+            "locX": 59932,
+            "locY": -53555,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 59558,
+            "locY": -53238,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 59382,
+            "locY": -53801,
+            "locZ": -3240,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1559,
+        "name": "Bone Maker",
+        "coords": [
+          {
+            "locX": 50902,
+            "locY": -61550,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 51537,
+            "locY": -61249,
+            "locZ": -2792,
+            "head": 0
+          },
+          {
+            "locX": 51317,
+            "locY": -60678,
+            "locZ": -2800,
+            "head": 0
+          },
+          {
+            "locX": 52440,
+            "locY": -60323,
+            "locZ": -2936,
+            "head": 0
+          },
+          {
+            "locX": 53477,
+            "locY": -60199,
+            "locZ": -3048,
+            "head": 0
+          },
+          {
+            "locX": 52946,
+            "locY": -59606,
+            "locZ": -3096,
+            "head": 0
+          },
+          {
+            "locX": 59230,
+            "locY": -52339,
+            "locZ": -3224,
+            "head": 0
+          },
+          {
+            "locX": 60343,
+            "locY": -52399,
+            "locZ": -3024,
+            "head": 0
+          },
+          {
+            "locX": 60335,
+            "locY": -51304,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 59889,
+            "locY": -50734,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 60008,
+            "locY": -53840,
+            "locZ": -3176,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1560,
+        "name": "Bone Shaper",
+        "coords": [
+          {
+            "locX": 50477,
+            "locY": -53112,
+            "locZ": -2832,
+            "head": 0
+          },
+          {
+            "locX": 51135,
+            "locY": -52651,
+            "locZ": -2872,
+            "head": 0
+          },
+          {
+            "locX": 52439,
+            "locY": -51751,
+            "locZ": -3048,
+            "head": 0
+          },
+          {
+            "locX": 51223,
+            "locY": -50366,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 50661,
+            "locY": -50988,
+            "locZ": -2816,
+            "head": 0
+          },
+          {
+            "locX": 57651,
+            "locY": -57366,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 57479,
+            "locY": -56340,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 58591,
+            "locY": -56157,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57921,
+            "locY": -55653,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 58586,
+            "locY": -55192,
+            "locZ": -3232,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1561,
+        "name": "Sacrificed Man",
+        "coords": [
+          {
+            "locX": 54788,
+            "locY": -56144,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 54860,
+            "locY": -55067,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 54442,
+            "locY": -54337,
+            "locZ": -3120,
+            "head": 0
+          },
+          {
+            "locX": 58138,
+            "locY": -56992,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 58320,
+            "locY": -55917,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 58197,
+            "locY": -55189,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 59375,
+            "locY": -53820,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 59583,
+            "locY": -52914,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 59599,
+            "locY": -52087,
+            "locZ": -3112,
+            "head": 0
+          },
+          {
+            "locX": 60271,
+            "locY": -52020,
+            "locZ": -2992,
+            "head": 0
+          },
+          {
+            "locX": 60098,
+            "locY": -51343,
+            "locZ": -2912,
+            "head": 0
+          },
+          {
+            "locX": 58133,
+            "locY": -51647,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 57724,
+            "locY": -51131,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 56908,
+            "locY": -51662,
+            "locZ": -3104,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1562,
+        "name": "Guillotine's Ghost",
+        "coords": [
+          {
+            "locX": 58138,
+            "locY": -56992,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 58320,
+            "locY": -55917,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 58197,
+            "locY": -55189,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 59375,
+            "locY": -53820,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 59583,
+            "locY": -52914,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 59599,
+            "locY": -52087,
+            "locZ": -3112,
+            "head": 0
+          },
+          {
+            "locX": 60271,
+            "locY": -52020,
+            "locZ": -2992,
+            "head": 0
+          },
+          {
+            "locX": 60098,
+            "locY": -51343,
+            "locZ": -2912,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1563,
+        "name": "Bone Collector",
+        "coords": [
+          {
+            "locX": 54746,
+            "locY": -56945,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53826,
+            "locY": -56627,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 53379,
+            "locY": -55737,
+            "locZ": -3064,
+            "head": 0
+          },
+          {
+            "locX": 50888,
+            "locY": -51439,
+            "locZ": -2920,
+            "head": 0
+          },
+          {
+            "locX": 50591,
+            "locY": -52055,
+            "locZ": -2904,
+            "head": 0
+          },
+          {
+            "locX": 51408,
+            "locY": -51807,
+            "locZ": -3056,
+            "head": 0
+          },
+          {
+            "locX": 52802,
+            "locY": -51307,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 52133,
+            "locY": -50948,
+            "locZ": -3096,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1564,
+        "name": "Skull Collector",
+        "coords": [
+          {
+            "locX": 54746,
+            "locY": -56945,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53826,
+            "locY": -56627,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 53379,
+            "locY": -55737,
+            "locZ": -3064,
+            "head": 0
+          },
+          {
+            "locX": 50888,
+            "locY": -51439,
+            "locZ": -2920,
+            "head": 0
+          },
+          {
+            "locX": 50591,
+            "locY": -52055,
+            "locZ": -2904,
+            "head": 0
+          },
+          {
+            "locX": 51408,
+            "locY": -51807,
+            "locZ": -3056,
+            "head": 0
+          },
+          {
+            "locX": 52802,
+            "locY": -51307,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 52133,
+            "locY": -50948,
+            "locZ": -3096,
+            "head": 0
+          },
+          {
+            "locX": 58541,
+            "locY": -54553,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 57455,
+            "locY": -55249,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 57795,
+            "locY": -56317,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 58137,
+            "locY": -57629,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 58732,
+            "locY": -56918,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 58133,
+            "locY": -51647,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 57724,
+            "locY": -51131,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 56908,
+            "locY": -51662,
+            "locZ": -3104,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1565,
+        "name": "Bone Animator",
+        "coords": [
+          {
+            "locX": 53616,
+            "locY": -55692,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 53915,
+            "locY": -56593,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54662,
+            "locY": -57008,
+            "locZ": -3312,
+            "head": 0
+          },
+          {
+            "locX": 50477,
+            "locY": -53112,
+            "locZ": -2832,
+            "head": 0
+          },
+          {
+            "locX": 51135,
+            "locY": -52651,
+            "locZ": -2872,
+            "head": 0
+          },
+          {
+            "locX": 52439,
+            "locY": -51751,
+            "locZ": -3048,
+            "head": 0
+          },
+          {
+            "locX": 51223,
+            "locY": -50366,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 50661,
+            "locY": -50988,
+            "locZ": -2816,
+            "head": 0
+          },
+          {
+            "locX": 57651,
+            "locY": -57366,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 57479,
+            "locY": -56340,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 58591,
+            "locY": -56157,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57921,
+            "locY": -55653,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 58586,
+            "locY": -55192,
+            "locZ": -3232,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1566,
+        "name": "Skull Animator",
+        "coords": [
+          {
+            "locX": 53616,
+            "locY": -55692,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 53915,
+            "locY": -56593,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54662,
+            "locY": -57008,
+            "locZ": -3312,
+            "head": 0
+          },
+          {
+            "locX": 58877,
+            "locY": -54473,
+            "locZ": -3200,
+            "head": 0
+          },
+          {
+            "locX": 59859,
+            "locY": -54113,
+            "locZ": -3224,
+            "head": 0
+          },
+          {
+            "locX": 59932,
+            "locY": -53555,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 59558,
+            "locY": -53238,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 59382,
+            "locY": -53801,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 56705,
+            "locY": -52962,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 58278,
+            "locY": -53041,
+            "locZ": -3448,
+            "head": 0
+          },
+          {
+            "locX": 57959,
+            "locY": -52212,
+            "locZ": -3176,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1567,
+        "name": "Bone Slayer",
+        "coords": [
+          {
+            "locX": 58541,
+            "locY": -54553,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 57455,
+            "locY": -55249,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 57795,
+            "locY": -56317,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 58137,
+            "locY": -57629,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 58732,
+            "locY": -56918,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 56705,
+            "locY": -52962,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 58278,
+            "locY": -53041,
+            "locZ": -3448,
+            "head": 0
+          },
+          {
+            "locX": 57959,
+            "locY": -52212,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 49239,
+            "locY": -41885,
+            "locZ": -2160,
+            "head": 0
+          },
+          {
+            "locX": 48679,
+            "locY": -41409,
+            "locZ": -2200,
+            "head": 0
+          },
+          {
+            "locX": 49853,
+            "locY": -39734,
+            "locZ": -2216,
+            "head": 0
+          },
+          {
+            "locX": 50690,
+            "locY": -40715,
+            "locZ": -2224,
+            "head": 0
+          },
+          {
+            "locX": 49579,
+            "locY": -40567,
+            "locZ": -2248,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1569,
+        "name": "Devil Bat",
+        "coords": [
+          {
+            "locX": 54788,
+            "locY": -56144,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 54860,
+            "locY": -55067,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 54442,
+            "locY": -54337,
+            "locZ": -3120,
+            "head": 0
+          },
+          {
+            "locX": 54678,
+            "locY": -56682,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54530,
+            "locY": -55364,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 53578,
+            "locY": -54253,
+            "locZ": -3024,
+            "head": 0
+          },
+          {
+            "locX": 51388,
+            "locY": -52773,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 51616,
+            "locY": -53310,
+            "locZ": -2816,
+            "head": 0
+          },
+          {
+            "locX": 53966,
+            "locY": -51786,
+            "locZ": -3040,
+            "head": 0
+          },
+          {
+            "locX": 53162,
+            "locY": -51515,
+            "locZ": -3080,
+            "head": 0
+          },
+          {
+            "locX": 50735,
+            "locY": -49675,
+            "locZ": -2880,
+            "head": 0
+          },
+          {
+            "locX": 59230,
+            "locY": -52339,
+            "locZ": -3224,
+            "head": 0
+          },
+          {
+            "locX": 60343,
+            "locY": -52399,
+            "locZ": -3024,
+            "head": 0
+          },
+          {
+            "locX": 60335,
+            "locY": -51304,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 59889,
+            "locY": -50734,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 60008,
+            "locY": -53840,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 56911,
+            "locY": -51997,
+            "locZ": -3112,
+            "head": 0
+          },
+          {
+            "locX": 56347,
+            "locY": -52636,
+            "locZ": -3248,
+            "head": 0
+          },
+          {
+            "locX": 56326,
+            "locY": -53644,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57634,
+            "locY": -52728,
+            "locZ": -3240,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1570,
+        "name": "Ghost of Betrayer",
+        "coords": [
+          {
+            "locX": 54678,
+            "locY": -56682,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54530,
+            "locY": -55364,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 53578,
+            "locY": -54253,
+            "locZ": -3024,
+            "head": 0
+          },
+          {
+            "locX": 56911,
+            "locY": -51997,
+            "locZ": -3112,
+            "head": 0
+          },
+          {
+            "locX": 56347,
+            "locY": -52636,
+            "locZ": -3248,
+            "head": 0
+          },
+          {
+            "locX": 56326,
+            "locY": -53644,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57634,
+            "locY": -52728,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 49500,
+            "locY": -41375,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 50042,
+            "locY": -40808,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 49128,
+            "locY": -40288,
+            "locZ": -2224,
+            "head": 0
+          },
+          {
+            "locX": 60537,
+            "locY": -48137,
+            "locZ": -2752,
+            "head": 0
+          },
+          {
+            "locX": 60343,
+            "locY": -48346,
+            "locZ": -2744,
+            "head": 0
+          },
+          {
+            "locX": 60498,
+            "locY": -47581,
+            "locZ": -2728,
+            "head": 0
+          },
+          {
+            "locX": 60383,
+            "locY": -46579,
+            "locZ": -2424,
+            "head": 0
+          },
+          {
+            "locX": 55557,
+            "locY": -48001,
+            "locZ": -3168,
+            "head": 0
+          },
+          {
+            "locX": 56254,
+            "locY": -48938,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 57232,
+            "locY": -47528,
+            "locZ": -2824,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1571,
+        "name": "Ghost of Rebellion Soldier",
+        "coords": [
+          {
+            "locX": 48418,
+            "locY": -45335,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 48096,
+            "locY": -43849,
+            "locZ": -2512,
+            "head": 0
+          },
+          {
+            "locX": 47788,
+            "locY": -44267,
+            "locZ": -2384,
+            "head": 0
+          },
+          {
+            "locX": 61124,
+            "locY": -45712,
+            "locZ": -2568,
+            "head": 0
+          },
+          {
+            "locX": 61586,
+            "locY": -46424,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 61044,
+            "locY": -46919,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 54520,
+            "locY": -48223,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 53906,
+            "locY": -48190,
+            "locZ": -3344,
+            "head": 0
+          },
+          {
+            "locX": 54608,
+            "locY": -49142,
+            "locZ": -3200,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1572,
+        "name": "Bone Sweeper",
+        "coords": [
+          {
+            "locX": 50543,
+            "locY": -47113,
+            "locZ": -3392,
+            "head": 0
+          },
+          {
+            "locX": 50594,
+            "locY": -45885,
+            "locZ": -3168,
+            "head": 0
+          },
+          {
+            "locX": 49583,
+            "locY": -45329,
+            "locZ": -2976,
+            "head": 0
+          },
+          {
+            "locX": 48871,
+            "locY": -41838,
+            "locZ": -2176,
+            "head": 0
+          },
+          {
+            "locX": 60271,
+            "locY": -47841,
+            "locZ": -2736,
+            "head": 0
+          },
+          {
+            "locX": 59560,
+            "locY": -48114,
+            "locZ": -2720,
+            "head": 0
+          },
+          {
+            "locX": 59270,
+            "locY": -47594,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 60078,
+            "locY": -46796,
+            "locZ": -2496,
+            "head": 0
+          },
+          {
+            "locX": 55748,
+            "locY": -49097,
+            "locZ": -3080,
+            "head": 0
+          },
+          {
+            "locX": 55648,
+            "locY": -49845,
+            "locZ": -3104,
+            "head": 0
+          },
+          {
+            "locX": 55092,
+            "locY": -49068,
+            "locZ": -3104,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1573,
+        "name": "Atrox",
+        "coords": [
+          {
+            "locX": 54048,
+            "locY": -54670,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 54851,
+            "locY": -56283,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54175,
+            "locY": -56646,
+            "locZ": -3376,
+            "head": 0
+          },
+          {
+            "locX": 57275,
+            "locY": -51383,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 57360,
+            "locY": -52552,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 56573,
+            "locY": -52246,
+            "locZ": -3184,
+            "head": 0
+          },
+          {
+            "locX": 50543,
+            "locY": -47113,
+            "locZ": -3392,
+            "head": 0
+          },
+          {
+            "locX": 50594,
+            "locY": -45885,
+            "locZ": -3168,
+            "head": 0
+          },
+          {
+            "locX": 49583,
+            "locY": -45329,
+            "locZ": -2976,
+            "head": 0
+          },
+          {
+            "locX": 48871,
+            "locY": -41838,
+            "locZ": -2176,
+            "head": 0
+          },
+          {
+            "locX": 49500,
+            "locY": -41375,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 50042,
+            "locY": -40808,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 49128,
+            "locY": -40288,
+            "locZ": -2224,
+            "head": 0
+          },
+          {
+            "locX": 51288,
+            "locY": -39548,
+            "locZ": -2032,
+            "head": 0
+          },
+          {
+            "locX": 51139,
+            "locY": -38515,
+            "locZ": -1864,
+            "head": 0
+          },
+          {
+            "locX": 60371,
+            "locY": -47156,
+            "locZ": -2696,
+            "head": 0
+          },
+          {
+            "locX": 59604,
+            "locY": -46657,
+            "locZ": -2576,
+            "head": 0
+          },
+          {
+            "locX": 60388,
+            "locY": -46022,
+            "locZ": -2544,
+            "head": 0
+          },
+          {
+            "locX": 58721,
+            "locY": -48937,
+            "locZ": -2808,
+            "head": 0
+          },
+          {
+            "locX": 54226,
+            "locY": -48559,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53752,
+            "locY": -49038,
+            "locZ": -3280,
+            "head": 0
+          },
+          {
+            "locX": 55168,
+            "locY": -49364,
+            "locZ": -3088,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1574,
+        "name": "Bone Grinder",
+        "coords": [
+          {
+            "locX": 48165,
+            "locY": -44671,
+            "locZ": -2368,
+            "head": 0
+          },
+          {
+            "locX": 48260,
+            "locY": -43792,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 48852,
+            "locY": -42343,
+            "locZ": -2240,
+            "head": 0
+          },
+          {
+            "locX": 47922,
+            "locY": -42001,
+            "locZ": -1968,
+            "head": 0
+          },
+          {
+            "locX": 47676,
+            "locY": -42661,
+            "locZ": -1848,
+            "head": 0
+          },
+          {
+            "locX": 46839,
+            "locY": -42134,
+            "locZ": -1832,
+            "head": 0
+          },
+          {
+            "locX": 47068,
+            "locY": -41622,
+            "locZ": -1768,
+            "head": 0
+          },
+          {
+            "locX": 46687,
+            "locY": -40857,
+            "locZ": -1968,
+            "head": 0
+          },
+          {
+            "locX": 59644,
+            "locY": -47486,
+            "locZ": -2704,
+            "head": 0
+          },
+          {
+            "locX": 58796,
+            "locY": -49470,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 58534,
+            "locY": -48549,
+            "locZ": -2680,
+            "head": 0
+          },
+          {
+            "locX": 54226,
+            "locY": -48559,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 53752,
+            "locY": -49038,
+            "locZ": -3280,
+            "head": 0
+          },
+          {
+            "locX": 55168,
+            "locY": -49364,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 57471,
+            "locY": -45126,
+            "locZ": -2608,
+            "head": 0
+          },
+          {
+            "locX": 57483,
+            "locY": -45984,
+            "locZ": -2736,
+            "head": 0
+          },
+          {
+            "locX": 56851,
+            "locY": -45610,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 56018,
+            "locY": -45147,
+            "locZ": -2952,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1577,
+        "name": "Ghost of Guillotine",
+        "coords": [
+          {
+            "locX": 48165,
+            "locY": -44671,
+            "locZ": -2368,
+            "head": 0
+          },
+          {
+            "locX": 48260,
+            "locY": -43792,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 48852,
+            "locY": -42343,
+            "locZ": -2240,
+            "head": 0
+          },
+          {
+            "locX": 49239,
+            "locY": -41885,
+            "locZ": -2160,
+            "head": 0
+          },
+          {
+            "locX": 48679,
+            "locY": -41409,
+            "locZ": -2200,
+            "head": 0
+          },
+          {
+            "locX": 49853,
+            "locY": -39734,
+            "locZ": -2216,
+            "head": 0
+          },
+          {
+            "locX": 50690,
+            "locY": -40715,
+            "locZ": -2224,
+            "head": 0
+          },
+          {
+            "locX": 49579,
+            "locY": -40567,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 60343,
+            "locY": -48346,
+            "locZ": -2744,
+            "head": 0
+          },
+          {
+            "locX": 60498,
+            "locY": -47581,
+            "locZ": -2728,
+            "head": 0
+          },
+          {
+            "locX": 60383,
+            "locY": -46579,
+            "locZ": -2424,
+            "head": 0
+          },
+          {
+            "locX": 60543,
+            "locY": -45606,
+            "locZ": -2520,
+            "head": 0
+          },
+          {
+            "locX": 61564,
+            "locY": -45859,
+            "locZ": -2544,
+            "head": 0
+          },
+          {
+            "locX": 59828,
+            "locY": -46270,
+            "locZ": -2560,
+            "head": 0
+          },
+          {
+            "locX": 55748,
+            "locY": -49097,
+            "locZ": -3080,
+            "head": 0
+          },
+          {
+            "locX": 55648,
+            "locY": -49845,
+            "locZ": -3104,
+            "head": 0
+          },
+          {
+            "locX": 55092,
+            "locY": -49068,
+            "locZ": -3104,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1578,
+        "name": "Behemoth Zombie",
+        "coords": [
+          {
+            "locX": 50513,
+            "locY": -36225,
+            "locZ": -1688,
+            "head": 0
+          },
+          {
+            "locX": 48763,
+            "locY": -35805,
+            "locZ": -1512,
+            "head": 0
+          },
+          {
+            "locX": 49860,
+            "locY": -35989,
+            "locZ": -1568,
+            "head": 0
+          },
+          {
+            "locX": 49282,
+            "locY": -36549,
+            "locZ": -1488,
+            "head": 0
+          },
+          {
+            "locX": 47292,
+            "locY": -36405,
+            "locZ": -1584,
+            "head": 0
+          },
+          {
+            "locX": 47306,
+            "locY": -37312,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47668,
+            "locY": -38458,
+            "locZ": -1712,
+            "head": 0
+          },
+          {
+            "locX": 47900,
+            "locY": -39171,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 46559,
+            "locY": -39483,
+            "locZ": -1936,
+            "head": 0
+          },
+          {
+            "locX": 60371,
+            "locY": -47156,
+            "locZ": -2696,
+            "head": 0
+          },
+          {
+            "locX": 59604,
+            "locY": -46657,
+            "locZ": -2576,
+            "head": 0
+          },
+          {
+            "locX": 60388,
+            "locY": -46022,
+            "locZ": -2544,
+            "head": 0
+          },
+          {
+            "locX": 58721,
+            "locY": -48937,
+            "locZ": -2808,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1579,
+        "name": "Ghost of Rebellion Leader",
+        "coords": [
+          {
+            "locX": 47922,
+            "locY": -42001,
+            "locZ": -1968,
+            "head": 0
+          },
+          {
+            "locX": 47676,
+            "locY": -42661,
+            "locZ": -1848,
+            "head": 0
+          },
+          {
+            "locX": 46839,
+            "locY": -42134,
+            "locZ": -1832,
+            "head": 0
+          },
+          {
+            "locX": 47068,
+            "locY": -41622,
+            "locZ": -1768,
+            "head": 0
+          },
+          {
+            "locX": 59338,
+            "locY": -47119,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 60084,
+            "locY": -46497,
+            "locZ": -2512,
+            "head": 0
+          },
+          {
+            "locX": 60362,
+            "locY": -45743,
+            "locZ": -2528,
+            "head": 0
+          },
+          {
+            "locX": 57732,
+            "locY": -48609,
+            "locZ": -2840,
+            "head": 0
+          },
+          {
+            "locX": 57451,
+            "locY": -49456,
+            "locZ": -3016,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1580,
+        "name": "Bone Caster",
+        "coords": [
+          {
+            "locX": 48418,
+            "locY": -45335,
+            "locZ": -2632,
+            "head": 0
+          },
+          {
+            "locX": 48096,
+            "locY": -43849,
+            "locZ": -2512,
+            "head": 0
+          },
+          {
+            "locX": 47788,
+            "locY": -44267,
+            "locZ": -2384,
+            "head": 0
+          },
+          {
+            "locX": 51288,
+            "locY": -39548,
+            "locZ": -2032,
+            "head": 0
+          },
+          {
+            "locX": 51139,
+            "locY": -38515,
+            "locZ": -1864,
+            "head": 0
+          },
+          {
+            "locX": 46832,
+            "locY": -39995,
+            "locZ": -2016,
+            "head": 0
+          },
+          {
+            "locX": 54520,
+            "locY": -48223,
+            "locZ": -3336,
+            "head": 0
+          },
+          {
+            "locX": 53906,
+            "locY": -48190,
+            "locZ": -3344,
+            "head": 0
+          },
+          {
+            "locX": 54608,
+            "locY": -49142,
+            "locZ": -3200,
+            "head": 0
+          },
+          {
+            "locX": 55384,
+            "locY": -45226,
+            "locZ": -2872,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1581,
+        "name": "Bone Puppeteer",
+        "coords": [
+          {
+            "locX": 46665,
+            "locY": -40387,
+            "locZ": -2056,
+            "head": 0
+          },
+          {
+            "locX": 47337,
+            "locY": -37731,
+            "locZ": -1768,
+            "head": 0
+          },
+          {
+            "locX": 46794,
+            "locY": -36869,
+            "locZ": -1632,
+            "head": 0
+          },
+          {
+            "locX": 48262,
+            "locY": -36194,
+            "locZ": -1464,
+            "head": 0
+          },
+          {
+            "locX": 48786,
+            "locY": -37466,
+            "locZ": -1680,
+            "head": 0
+          },
+          {
+            "locX": 50311,
+            "locY": -36408,
+            "locZ": -1704,
+            "head": 0
+          },
+          {
+            "locX": 60543,
+            "locY": -45606,
+            "locZ": -2520,
+            "head": 0
+          },
+          {
+            "locX": 61564,
+            "locY": -45859,
+            "locZ": -2544,
+            "head": 0
+          },
+          {
+            "locX": 59828,
+            "locY": -46270,
+            "locZ": -2560,
+            "head": 0
+          },
+          {
+            "locX": 55602,
+            "locY": -45389,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 56641,
+            "locY": -45690,
+            "locZ": -2896,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1582,
+        "name": "Vampire Soldier",
+        "coords": [
+          {
+            "locX": 47869,
+            "locY": -44809,
+            "locZ": -2280,
+            "head": 0
+          },
+          {
+            "locX": 50888,
+            "locY": -38089,
+            "locZ": -1744,
+            "head": 0
+          },
+          {
+            "locX": 50302,
+            "locY": -38632,
+            "locZ": -1928,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1582,
+        "name": "Vampire Soldier",
+        "coords": [
+          {
+            "locX": 46687,
+            "locY": -40857,
+            "locZ": -1968,
+            "head": 0
+          },
+          {
+            "locX": 46832,
+            "locY": -39995,
+            "locZ": -2016,
+            "head": 0
+          },
+          {
+            "locX": 46819,
+            "locY": -39146,
+            "locZ": -1824,
+            "head": 0
+          },
+          {
+            "locX": 48104,
+            "locY": -39472,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47554,
+            "locY": -38683,
+            "locZ": -1744,
+            "head": 0
+          },
+          {
+            "locX": 47097,
+            "locY": -37901,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47194,
+            "locY": -37474,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 60271,
+            "locY": -47841,
+            "locZ": -2736,
+            "head": 0
+          },
+          {
+            "locX": 59560,
+            "locY": -48114,
+            "locZ": -2720,
+            "head": 0
+          },
+          {
+            "locX": 59270,
+            "locY": -47594,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 60078,
+            "locY": -46796,
+            "locZ": -2496,
+            "head": 0
+          },
+          {
+            "locX": 55995,
+            "locY": -49507,
+            "locZ": -3120,
+            "head": 0
+          },
+          {
+            "locX": 54899,
+            "locY": -49706,
+            "locZ": -2952,
+            "head": 0
+          },
+          {
+            "locX": 54614,
+            "locY": -48491,
+            "locZ": -3288,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1583,
+        "name": "Bone Scavenger",
+        "coords": [
+          {
+            "locX": 46281,
+            "locY": -37205,
+            "locZ": -1672,
+            "head": 0
+          },
+          {
+            "locX": 46591,
+            "locY": -36695,
+            "locZ": -1648,
+            "head": 0
+          },
+          {
+            "locX": 48353,
+            "locY": -36680,
+            "locZ": -1336,
+            "head": 0
+          },
+          {
+            "locX": 49108,
+            "locY": -37431,
+            "locZ": -1696,
+            "head": 0
+          },
+          {
+            "locX": 49953,
+            "locY": -36330,
+            "locZ": -1640,
+            "head": 0
+          },
+          {
+            "locX": 49937,
+            "locY": -36622,
+            "locZ": -1672,
+            "head": 0
+          },
+          {
+            "locX": 48064,
+            "locY": -35987,
+            "locZ": -1520,
+            "head": 0
+          },
+          {
+            "locX": 46220,
+            "locY": -36387,
+            "locZ": -1656,
+            "head": 0
+          },
+          {
+            "locX": 45907,
+            "locY": -37365,
+            "locZ": -1656,
+            "head": 0
+          },
+          {
+            "locX": 46953,
+            "locY": -38272,
+            "locZ": -1648,
+            "head": 0
+          },
+          {
+            "locX": 47638,
+            "locY": -39222,
+            "locZ": -1744,
+            "head": 0
+          },
+          {
+            "locX": 56138,
+            "locY": -45668,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 56691,
+            "locY": -45861,
+            "locZ": -2840,
+            "head": 0
+          },
+          {
+            "locX": 57385,
+            "locY": -45629,
+            "locZ": -2752,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1585,
+        "name": "Vampire Magician",
+        "coords": [
+          {
+            "locX": 49860,
+            "locY": -35989,
+            "locZ": -1568,
+            "head": 0
+          },
+          {
+            "locX": 49282,
+            "locY": -36549,
+            "locZ": -1488,
+            "head": 0
+          },
+          {
+            "locX": 47292,
+            "locY": -36405,
+            "locZ": -1584,
+            "head": 0
+          },
+          {
+            "locX": 47306,
+            "locY": -37312,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47668,
+            "locY": -38458,
+            "locZ": -1712,
+            "head": 0
+          },
+          {
+            "locX": 47900,
+            "locY": -39171,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 60042,
+            "locY": -42141,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 59221,
+            "locY": -42362,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 55384,
+            "locY": -45226,
+            "locZ": -2872,
+            "head": 0
+          },
+          {
+            "locX": 55112,
+            "locY": -44053,
+            "locZ": -2928,
+            "head": 0
+          },
+          {
+            "locX": 55544,
+            "locY": -44500,
+            "locZ": -2936,
+            "head": 0
+          },
+          {
+            "locX": 57349,
+            "locY": -46255,
+            "locZ": -2768,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1586,
+        "name": "Vampire Adept",
+        "coords": [
+          {
+            "locX": 53788,
+            "locY": -40379,
+            "locZ": -2144,
+            "head": 0
+          },
+          {
+            "locX": 55624,
+            "locY": -40631,
+            "locZ": -2784,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1586,
+        "name": "Vampire Adept",
+        "coords": [
+          {
+            "locX": 46953,
+            "locY": -38272,
+            "locZ": -1648,
+            "head": 0
+          },
+          {
+            "locX": 47638,
+            "locY": -39222,
+            "locZ": -1744,
+            "head": 0
+          },
+          {
+            "locX": 46406,
+            "locY": -40009,
+            "locZ": -2016,
+            "head": 0
+          },
+          {
+            "locX": 47566,
+            "locY": -36619,
+            "locZ": -1576,
+            "head": 0
+          },
+          {
+            "locX": 48921,
+            "locY": -36541,
+            "locZ": -1432,
+            "head": 0
+          },
+          {
+            "locX": 49681,
+            "locY": -35721,
+            "locZ": -1512,
+            "head": 0
+          },
+          {
+            "locX": 50513,
+            "locY": -36225,
+            "locZ": -1688,
+            "head": 0
+          },
+          {
+            "locX": 48763,
+            "locY": -35805,
+            "locZ": -1512,
+            "head": 0
+          },
+          {
+            "locX": 60686,
+            "locY": -42166,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 57751,
+            "locY": -41812,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 57471,
+            "locY": -45126,
+            "locZ": -2608,
+            "head": 0
+          },
+          {
+            "locX": 57483,
+            "locY": -45984,
+            "locZ": -2736,
+            "head": 0
+          },
+          {
+            "locX": 56851,
+            "locY": -45610,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 56018,
+            "locY": -45147,
+            "locZ": -2952,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1587,
+        "name": "Vampire Warrior",
+        "coords": [
+          {
+            "locX": 55479,
+            "locY": -44060,
+            "locZ": -2984,
+            "head": 0
+          },
+          {
+            "locX": 55289,
+            "locY": -44657,
+            "locZ": -2968,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1587,
+        "name": "Vampire Warrior",
+        "coords": [
+          {
+            "locX": 46406,
+            "locY": -40009,
+            "locZ": -2016,
+            "head": 0
+          },
+          {
+            "locX": 47566,
+            "locY": -36619,
+            "locZ": -1576,
+            "head": 0
+          },
+          {
+            "locX": 48921,
+            "locY": -36541,
+            "locZ": -1432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1587,
+        "name": "Vampire Warrior",
+        "coords": [
+          {
+            "locX": 55602,
+            "locY": -45389,
+            "locZ": -2896,
+            "head": 0
+          },
+          {
+            "locX": 56641,
+            "locY": -45690,
+            "locZ": -2896,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1588,
+        "name": "Vampire Wizard",
+        "coords": [
+          {
+            "locX": 54056,
+            "locY": -39844,
+            "locZ": -1712,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1589,
+        "name": "Vampire Wizard",
+        "coords": [
+          {
+            "locX": 46559,
+            "locY": -39483,
+            "locZ": -1936,
+            "head": 0
+          },
+          {
+            "locX": 46665,
+            "locY": -40387,
+            "locZ": -2056,
+            "head": 0
+          },
+          {
+            "locX": 47337,
+            "locY": -37731,
+            "locZ": -1768,
+            "head": 0
+          },
+          {
+            "locX": 46794,
+            "locY": -36869,
+            "locZ": -1632,
+            "head": 0
+          },
+          {
+            "locX": 48262,
+            "locY": -36194,
+            "locZ": -1464,
+            "head": 0
+          },
+          {
+            "locX": 48786,
+            "locY": -37466,
+            "locZ": -1680,
+            "head": 0
+          },
+          {
+            "locX": 50311,
+            "locY": -36408,
+            "locZ": -1704,
+            "head": 0
+          },
+          {
+            "locX": 59234,
+            "locY": -41792,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 59437,
+            "locY": -42557,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 56138,
+            "locY": -45668,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 56691,
+            "locY": -45861,
+            "locZ": -2840,
+            "head": 0
+          },
+          {
+            "locX": 57385,
+            "locY": -45629,
+            "locZ": -2752,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1590,
+        "name": "Vampire Magister",
+        "coords": [
+          {
+            "locX": 53708,
+            "locY": -39219,
+            "locZ": -2048,
+            "head": 0
+          },
+          {
+            "locX": 58331,
+            "locY": -45085,
+            "locZ": -2536,
+            "head": 0
+          },
+          {
+            "locX": 57485,
+            "locY": -44686,
+            "locZ": -2544,
+            "head": 0
+          },
+          {
+            "locX": 56576,
+            "locY": -45889,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 55156,
+            "locY": -43707,
+            "locZ": -2896,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1590,
+        "name": "Vampire Magister",
+        "coords": [
+          {
+            "locX": 49681,
+            "locY": -35721,
+            "locZ": -1512,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1591,
+        "name": "Vampire Magister",
+        "coords": [
+          {
+            "locX": 49937,
+            "locY": -36622,
+            "locZ": -1672,
+            "head": 0
+          },
+          {
+            "locX": 48064,
+            "locY": -35987,
+            "locZ": -1520,
+            "head": 0
+          },
+          {
+            "locX": 46220,
+            "locY": -36387,
+            "locZ": -1656,
+            "head": 0
+          },
+          {
+            "locX": 45907,
+            "locY": -37365,
+            "locZ": -1656,
+            "head": 0
+          },
+          {
+            "locX": 58886,
+            "locY": -42430,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 60096,
+            "locY": -42638,
+            "locZ": -3000,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1593,
+        "name": "Vampire Warlord",
+        "coords": [
+          {
+            "locX": 53087,
+            "locY": -39549,
+            "locZ": -2368,
+            "head": 0
+          },
+          {
+            "locX": 57912,
+            "locY": -45479,
+            "locZ": -2616,
+            "head": 0
+          },
+          {
+            "locX": 57634,
+            "locY": -44762,
+            "locZ": -2584,
+            "head": 0
+          },
+          {
+            "locX": 56355,
+            "locY": -45441,
+            "locZ": -3008,
+            "head": 0
+          },
+          {
+            "locX": 55852,
+            "locY": -44786,
+            "locZ": -2944,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 1593,
+        "name": "Vampire Warlord",
+        "coords": [
+          {
+            "locX": 46819,
+            "locY": -39146,
+            "locZ": -1824,
+            "head": 0
+          },
+          {
+            "locX": 48104,
+            "locY": -39472,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47554,
+            "locY": -38683,
+            "locZ": -1744,
+            "head": 0
+          },
+          {
+            "locX": 47097,
+            "locY": -37901,
+            "locZ": -1736,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1594,
+        "name": "Vampire Warlord",
+        "coords": [
+          {
+            "locX": 47988,
+            "locY": -38781,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 46341,
+            "locY": -39761,
+            "locZ": -1992,
+            "head": 0
+          },
+          {
+            "locX": 46281,
+            "locY": -37205,
+            "locZ": -1672,
+            "head": 0
+          },
+          {
+            "locX": 46591,
+            "locY": -36695,
+            "locZ": -1648,
+            "head": 0
+          },
+          {
+            "locX": 48353,
+            "locY": -36680,
+            "locZ": -1336,
+            "head": 0
+          },
+          {
+            "locX": 49108,
+            "locY": -37431,
+            "locZ": -1696,
+            "head": 0
+          },
+          {
+            "locX": 49953,
+            "locY": -36330,
+            "locZ": -1640,
+            "head": 0
+          },
+          {
+            "locX": 61107,
+            "locY": -42717,
+            "locZ": -3000,
+            "head": 0
+          },
+          {
+            "locX": 57710,
+            "locY": -41463,
+            "locZ": -3152,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 1596,
+        "name": "Requiem Lord",
+        "coords": [
+          {
+            "locX": 54048,
+            "locY": -54670,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 54851,
+            "locY": -56283,
+            "locZ": -3368,
+            "head": 0
+          },
+          {
+            "locX": 54175,
+            "locY": -56646,
+            "locZ": -3376,
+            "head": 0
+          },
+          {
+            "locX": 51388,
+            "locY": -52773,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 51616,
+            "locY": -53310,
+            "locZ": -2816,
+            "head": 0
+          },
+          {
+            "locX": 53966,
+            "locY": -51786,
+            "locZ": -3040,
+            "head": 0
+          },
+          {
+            "locX": 53162,
+            "locY": -51515,
+            "locZ": -3080,
+            "head": 0
+          },
+          {
+            "locX": 50735,
+            "locY": -49675,
+            "locZ": -2880,
+            "head": 0
+          },
+          {
+            "locX": 57275,
+            "locY": -51383,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 57360,
+            "locY": -52552,
+            "locZ": -3240,
+            "head": 0
+          },
+          {
+            "locX": 56573,
+            "locY": -52246,
+            "locZ": -3184,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1599,
+        "name": "Requiem Priest",
+        "coords": [
+          {
+            "locX": 47194,
+            "locY": -37474,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 47988,
+            "locY": -38781,
+            "locZ": -1736,
+            "head": 0
+          },
+          {
+            "locX": 46341,
+            "locY": -39761,
+            "locZ": -1992,
+            "head": 0
+          },
+          {
+            "locX": 57732,
+            "locY": -48609,
+            "locZ": -2840,
+            "head": 0
+          },
+          {
+            "locX": 57451,
+            "locY": -49456,
+            "locZ": -3016,
+            "head": 0
+          },
+          {
+            "locX": 55112,
+            "locY": -44053,
+            "locZ": -2928,
+            "head": 0
+          },
+          {
+            "locX": 55544,
+            "locY": -44500,
+            "locZ": -2936,
+            "head": 0
+          },
+          {
+            "locX": 57349,
+            "locY": -46255,
+            "locZ": -2768,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      },
+      {
+        "selfId": 1599,
+        "name": "Requiem Priest",
+        "coords": [
+          {
+            "locX": 59644,
+            "locY": -47486,
+            "locZ": -2704,
+            "head": 0
+          },
+          {
+            "locX": 58796,
+            "locY": -49470,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 58534,
+            "locY": -48549,
+            "locZ": -2680,
+            "head": 0
+          },
+          {
+            "locX": 60537,
+            "locY": -48137,
+            "locZ": -2752,
+            "head": 0
+          },
+          {
+            "locX": 55557,
+            "locY": -48001,
+            "locZ": -3168,
+            "head": 0
+          },
+          {
+            "locX": 56254,
+            "locY": -48938,
+            "locZ": -3032,
+            "head": 0
+          },
+          {
+            "locX": 57232,
+            "locY": -47528,
+            "locZ": -2824,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "night"
+      },
+      {
+        "selfId": 12789,
+        "name": "Corpse of Deadman",
+        "coords": [
+          {
+            "locX": 54628,
+            "locY": -54580,
+            "locZ": -3144,
+            "head": 0
+          },
+          {
+            "locX": 54282,
+            "locY": -54372,
+            "locZ": -3088,
+            "head": 0
+          },
+          {
+            "locX": 54164,
+            "locY": -54938,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 54688,
+            "locY": -55261,
+            "locZ": -3184,
+            "head": 0
+          },
+          {
+            "locX": 54930,
+            "locY": -55645,
+            "locZ": -3264,
+            "head": 0
+          },
+          {
+            "locX": 54981,
+            "locY": -54831,
+            "locZ": -3200,
+            "head": 0
+          },
+          {
+            "locX": 54960,
+            "locY": -54173,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 54588,
+            "locY": -53995,
+            "locZ": -3104,
+            "head": 0
+          },
+          {
+            "locX": 52636,
+            "locY": -51351,
+            "locZ": -3072,
+            "head": 0
+          },
+          {
+            "locX": 52380,
+            "locY": -51661,
+            "locZ": -3056,
+            "head": 0
+          },
+          {
+            "locX": 51353,
+            "locY": -51782,
+            "locZ": -3040,
+            "head": 0
+          },
+          {
+            "locX": 51076,
+            "locY": -51509,
+            "locZ": -2984,
+            "head": 0
+          },
+          {
+            "locX": 50667,
+            "locY": -51150,
+            "locZ": -2848,
+            "head": 0
+          },
+          {
+            "locX": 50791,
+            "locY": -51965,
+            "locZ": -2920,
+            "head": 0
+          },
+          {
+            "locX": 51052,
+            "locY": -52300,
+            "locZ": -2920,
+            "head": 0
+          },
+          {
+            "locX": 50973,
+            "locY": -50770,
+            "locZ": -2800,
+            "head": 0
+          },
+          {
+            "locX": 50806,
+            "locY": -50365,
+            "locZ": -2824,
+            "head": 0
+          },
+          {
+            "locX": 51297,
+            "locY": -50445,
+            "locZ": -2880,
+            "head": 0
+          },
+          {
+            "locX": 57795,
+            "locY": -56499,
+            "locZ": -3352,
+            "head": 0
+          },
+          {
+            "locX": 57951,
+            "locY": -56935,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 58547,
+            "locY": -56897,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57928,
+            "locY": -57450,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 58210,
+            "locY": -58051,
+            "locZ": -3344,
+            "head": 0
+          },
+          {
+            "locX": 57435,
+            "locY": -57513,
+            "locZ": -3320,
+            "head": 0
+          },
+          {
+            "locX": 57050,
+            "locY": -56817,
+            "locZ": -3360,
+            "head": 0
+          },
+          {
+            "locX": 57345,
+            "locY": -56206,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57852,
+            "locY": -55924,
+            "locZ": -3344,
+            "head": 0
+          },
+          {
+            "locX": 58225,
+            "locY": -56306,
+            "locZ": -3328,
+            "head": 0
+          },
+          {
+            "locX": 57575,
+            "locY": -52434,
+            "locZ": -3208,
+            "head": 0
+          },
+          {
+            "locX": 57720,
+            "locY": -52135,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 57956,
+            "locY": -51857,
+            "locZ": -3176,
+            "head": 0
+          },
+          {
+            "locX": 57777,
+            "locY": -51542,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 58123,
+            "locY": -51235,
+            "locZ": -3160,
+            "head": 0
+          },
+          {
+            "locX": 58277,
+            "locY": -51635,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 57648,
+            "locY": -51248,
+            "locZ": -3184,
+            "head": 0
+          },
+          {
+            "locX": 57318,
+            "locY": -51082,
+            "locZ": -3128,
+            "head": 0
+          },
+          {
+            "locX": 50203,
+            "locY": -45475,
+            "locZ": -2944,
+            "head": 0
+          },
+          {
+            "locX": 49756,
+            "locY": -45188,
+            "locZ": -2960,
+            "head": 0
+          },
+          {
+            "locX": 49350,
+            "locY": -45241,
+            "locZ": -2920,
+            "head": 0
+          },
+          {
+            "locX": 49131,
+            "locY": -44975,
+            "locZ": -2792,
+            "head": 0
+          },
+          {
+            "locX": 48900,
+            "locY": -45391,
+            "locZ": -2776,
+            "head": 0
+          },
+          {
+            "locX": 56886,
+            "locY": -45690,
+            "locZ": -2856,
+            "head": 0
+          },
+          {
+            "locX": 57223,
+            "locY": -45885,
+            "locZ": -2776,
+            "head": 0
+          },
+          {
+            "locX": 57405,
+            "locY": -45563,
+            "locZ": -2736,
+            "head": 0
+          },
+          {
+            "locX": 57624,
+            "locY": -45653,
+            "locZ": -2680,
+            "head": 0
+          },
+          {
+            "locX": 57619,
+            "locY": -45353,
+            "locZ": -2664,
+            "head": 0
+          },
+          {
+            "locX": 57416,
+            "locY": -46077,
+            "locZ": -2752,
+            "head": 0
+          },
+          {
+            "locX": 57416,
+            "locY": -46378,
+            "locZ": -2752,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "always"
+      },
+      {
+        "selfId": 12789,
+        "name": "Corpse of Deadman",
+        "coords": [
+          {
+            "locX": 59338,
+            "locY": -47119,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 60084,
+            "locY": -46497,
+            "locZ": -2512,
+            "head": 0
+          },
+          {
+            "locX": 60362,
+            "locY": -45743,
+            "locZ": -2528,
+            "head": 0
+          },
+          {
+            "locX": 61124,
+            "locY": -45712,
+            "locZ": -2568,
+            "head": 0
+          },
+          {
+            "locX": 61586,
+            "locY": -46424,
+            "locZ": -2552,
+            "head": 0
+          },
+          {
+            "locX": 61044,
+            "locY": -46919,
+            "locZ": -2640,
+            "head": 0
+          },
+          {
+            "locX": 55995,
+            "locY": -49507,
+            "locZ": -3120,
+            "head": 0
+          },
+          {
+            "locX": 54899,
+            "locY": -49706,
+            "locZ": -2952,
+            "head": 0
+          },
+          {
+            "locX": 54614,
+            "locY": -48491,
+            "locZ": -3288,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 240,
+        "bias": 0,
+        "period": "day"
+      }
+    ]
+  }
+]

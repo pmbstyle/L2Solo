@@ -19,6 +19,9 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/c4_garden_of_beasts'),
             ...validateModel(path + 'Npcs/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/c4_elmore_northeast_coast'),
             ...C4LateTownGatekeepers.npcs
         ];
         DataCache.npcSpawns       = [
@@ -26,13 +29,19 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/Spawns/c4_garden_of_beasts'),
             ...validateModel(path + 'Npcs/Spawns/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/Spawns/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/Spawns/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/Spawns/c4_elmore_northeast_coast'),
             ...C4LateTownGatekeepers.spawns
         ];
         DataCache.npcRewards      = [
             ...validateModel(path + 'Npcs/Rewards/rewards'),
             ...validateModel(path + 'Npcs/Rewards/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts'),
-            ...validateModel(path + 'Npcs/Rewards/c4_valley_of_saints')
+            ...validateModel(path + 'Npcs/Rewards/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/Rewards/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/Rewards/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/Rewards/c4_elmore_northeast_coast')
         ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
@@ -50,7 +59,10 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_s_grade'),
             ...validateModel(path + 'Items/Others/c4_swamp_of_screams'),
             ...validateModel(path + 'Items/Others/c4_garden_of_beasts'),
-            ...validateModel(path + 'Items/Others/c4_valley_of_saints')
+            ...validateModel(path + 'Items/Others/c4_valley_of_saints'),
+            ...validateModel(path + 'Items/Others/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Items/Others/c4_devils_isle'),
+            ...validateModel(path + 'Items/Others/c4_elmore_northeast_coast')
         ];
 
         DataCache.skills = [

@@ -230,9 +230,15 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.DRAIN) {
+        const effectResisted = semantic.effect
+            && resistEffect(actor, target, skill, semantic, magicSkill, rng);
         const drain = applyDrain(session, actor, target, skill, semantic, magicSkill, context.attack, rng, context.cubicMAtk);
         result.damage = drain.damage;
         result.heal = drain.heal;
+        if (semantic.effect) {
+            result.effectResisted = effectResisted;
+            if (!effectResisted) result.effect = applyEffect(session, target, skill, semantic, actor);
+        }
         return result;
     }
 

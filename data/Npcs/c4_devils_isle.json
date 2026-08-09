@@ -1,0 +1,917 @@
+[
+  {
+    "selfId": 832,
+    "template": {
+      "kind": "Monster",
+      "name": "Zaken's Pikeman",
+      "title": "",
+      "level": 43,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 249,
+      "pAtkRnd": 10,
+      "pDef": 252,
+      "mAtk": 163,
+      "mDef": 181,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1728,
+      "maxMp": 618,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 292,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.471065440779,
+      "sp": 184
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 833,
+    "template": {
+      "kind": "Monster",
+      "name": "Zaken's Archer",
+      "title": "",
+      "level": 44,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 592,
+      "pAtkRnd": 5,
+      "pDef": 260,
+      "mAtk": 176,
+      "mDef": 187,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1799,
+      "maxMp": 648,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 279,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.5625,
+      "sp": 207
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 834,
+    "template": {
+      "kind": "Monster",
+      "name": "Mardian",
+      "title": "",
+      "level": 42,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 342,
+      "pAtkRnd": 30,
+      "pDef": 196,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 79,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 26,
+      "size": 25.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.276077097506,
+      "sp": 150
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 835,
+    "template": {
+      "kind": "Monster",
+      "name": "Zaken's Seer",
+      "title": "",
+      "level": 45,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 283,
+      "pAtkRnd": 30,
+      "pDef": 269,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.223703703704,
+      "sp": 172
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 836,
+    "template": {
+      "kind": "Monster",
+      "name": "Pirate Zombie",
+      "title": "",
+      "level": 44,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 341,
+      "pAtkRnd": 5,
+      "pDef": 209,
+      "mAtk": 176,
+      "mDef": 187,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 12,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1799,
+      "maxMp": 648,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 225,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.462809917355,
+      "sp": 194
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 839,
+    "template": {
+      "kind": "Monster",
+      "name": "Unpleasant Humming",
+      "title": "",
+      "level": 46,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 301,
+      "pAtkRnd": 30,
+      "pDef": 327,
+      "mAtk": 202,
+      "mDef": 199,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 23,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1943,
+      "maxMp": 707,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.359640831758,
+      "sp": 204
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 840,
+    "template": {
+      "kind": "Monster",
+      "name": "Death Flyer",
+      "title": "",
+      "level": 47,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 320,
+      "pAtkRnd": 30,
+      "pDef": 287,
+      "mAtk": 216,
+      "mDef": 206,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2016,
+      "maxMp": 738,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.34495246718,
+      "sp": 213
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 841,
+    "template": {
+      "kind": "Monster",
+      "name": "Fiend Archer",
+      "title": "",
+      "level": 48,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 757,
+      "pAtkRnd": 30,
+      "pDef": 296,
+      "mAtk": 231,
+      "mDef": 212,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2091,
+      "maxMp": 768,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "demonic_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.324652777778,
+      "sp": 223
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 842,
+    "template": {
+      "kind": "Monster",
+      "name": "Musveren",
+      "title": "",
+      "level": 49,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 361,
+      "pAtkRnd": 30,
+      "pDef": 359,
+      "mAtk": 247,
+      "mDef": 219,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2168,
+      "maxMp": 799,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.211995002082,
+      "sp": 215
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 843,
+    "template": {
+      "kind": "Monster",
+      "name": "Zaken's Royal Guard",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 335,
+      "pAtkRnd": 5,
+      "pDef": 370,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 225,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.4708,
+      "sp": 277
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 844,
+    "template": {
+      "kind": "Monster",
+      "name": "Kaim Vanul",
+      "title": "",
+      "level": 51,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 405,
+      "pAtkRnd": 30,
+      "pDef": 381,
+      "mAtk": 281,
+      "mDef": 232,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2323,
+      "maxMp": 861,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "demonic_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.260668973472,
+      "sp": 250
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 845,
+    "template": {
+      "kind": "Monster",
+      "name": "Pirate's Zombie Captain",
+      "title": "",
+      "level": 52,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 375,
+      "pAtkRnd": 5,
+      "pDef": 393,
+      "mAtk": 300,
+      "mDef": 239,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 15,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2402,
+      "maxMp": 892,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 232,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.832100591716,
+      "sp": 383
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 846,
+    "template": {
+      "kind": "Monster",
+      "name": "Doll Blader",
+      "title": "",
+      "level": 53,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 396,
+      "pAtkRnd": 30,
+      "pDef": 344,
+      "mAtk": 319,
+      "mDef": 247,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2481,
+      "maxMp": 923,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 6,
+      "size": 12
+    },
+    "equipment": {
+      "weapon": 5129,
+      "shield": 5129,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.399430402278,
+      "sp": 309
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 847,
+    "template": {
+      "kind": "Monster",
+      "name": "Vale Master",
+      "title": "",
+      "level": 54,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 477,
+      "pAtkRnd": 30,
+      "pDef": 354,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.286008230453,
+      "sp": 299
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 986,
+    "template": {
+      "kind": "Monster",
+      "name": "Sairon",
+      "title": "",
+      "level": 54,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 636,
+      "pAtkRnd": 30,
+      "pDef": 313,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 20.54,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 20.5
+    },
+    "equipment": {
+      "weapon": 5129,
+      "shield": 5129,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "demonic_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.894375857339,
+      "sp": 440
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

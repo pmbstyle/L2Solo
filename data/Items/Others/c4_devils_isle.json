@@ -1,0 +1,152 @@
+[
+  {
+    "selfId": 4937,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Adamantite Earrings (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 12120
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4941,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Gaiters (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 26000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4959,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10380
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5155,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soulshot (B) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 100000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5159,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Spiritshot (C) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 25000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5160,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Spiritshot (B) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 100000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5274,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Spiritshot (C) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 60000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5436,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Berserker Blade(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 122600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6668,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 4",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 560
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6669,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 5",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 860
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]
