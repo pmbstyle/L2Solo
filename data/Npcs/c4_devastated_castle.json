@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 1004,
+    "template": {
+      "kind": "Monster",
+      "name": "Dismal Pole",
+      "title": "",
+      "level": 58,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 828,
+      "pAtkRnd": 30,
+      "pDef": 384,
+      "mAtk": 428,
+      "mDef": 284,
+      "accur": 4.75,
+      "atkSpd": 237,
+      "castSpd": 216,
+      "atkRadius": 80
+    },
+    "speed": {
+      "walk": 60,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2889,
+      "maxMp": 1084,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 80
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.557372175981,
+      "sp": 443
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1005,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Predator",
+      "title": "",
+      "level": 59,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 902,
+      "pAtkRnd": 30,
+      "pDef": 326,
+      "mAtk": 453,
+      "mDef": 291,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2971,
+      "maxMp": 1117,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.646653260557,
+      "sp": 490
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1006,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Servant",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 946,
+      "pAtkRnd": 30,
+      "pDef": 335,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.513055555556,
+      "sp": 473
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

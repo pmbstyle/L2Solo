@@ -254,6 +254,9 @@ module.exports = function generateC4MonsterLocation(config) {
     writeJson(`data/Npcs/Spawns/${filename}`, spawns);
     writeJson(`data/Npcs/Rewards/${filename}`, rewards);
     writeJson(`data/Npcs/Skills/${filename}`, skillRows);
+    if (config.skillTemplates) {
+        writeJson(`data/Npcs/Skills/${config.slug}_templates.json`, config.skillTemplates);
+    }
     writeJson(`data/Items/Others/${filename}`, missingItems);
 
     return {
@@ -261,6 +264,7 @@ module.exports = function generateC4MonsterLocation(config) {
         spawns: spawnRows.length,
         drops: dropRows.length,
         skills: skillRows.length,
+        skillTemplates: config.skillTemplates?.length || 0,
         items: missingItems.length
     };
 };

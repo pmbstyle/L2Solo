@@ -60,14 +60,14 @@ module.exports = function assertC4MonsterLocation(config) {
     assert.deepStrictEqual(
         [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
         [expectedRegionKey],
-        'the source rows must stay in the expected underground geodata region'
+        'the source rows must stay in the expected geodata region'
     );
     verifyGeodataWhenAvailable(GeodataEngine, [config.region], config.displayName, () => {
         const heightDeltas = spawnCoords.map((coord) => Math.abs(
             GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
         ));
         assert.ok(heightDeltas.every((delta) => delta <= (config.maxHeightDelta || 0)),
-            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of underground geodata`);
+            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of geodata`);
     });
 
     const sample = npcs.find((npc) => npc.selfId === config.sample.id);

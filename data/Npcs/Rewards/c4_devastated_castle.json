@@ -1,0 +1,479 @@
+[
+  {
+    "selfId": 1004,
+    "template": {
+      "name": "Dismal Pole"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 700,
+            "max": 1425,
+            "chance": 99.275994
+          },
+          {
+            "selfId": 2384,
+            "name": "Zubei's Leather Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 0.00156
+          },
+          {
+            "selfId": 2388,
+            "name": "Zubei's Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.002553
+          },
+          {
+            "selfId": 4066,
+            "name": "Zubei's Leather Shirt Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 0.285915
+          },
+          {
+            "selfId": 4067,
+            "name": "Zubei's Leather Gaiter Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 0.433978
+          }
+        ],
+        "overall": 70.5105
+      },
+      {
+        "items": [
+          {
+            "selfId": 2390,
+            "name": "Avadon Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.450161
+          },
+          {
+            "selfId": 4068,
+            "name": "Avadon Leather Armor Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 99.549839
+          }
+        ],
+        "overall": 0.1555
+      },
+      {
+        "items": [
+          {
+            "selfId": 4911,
+            "name": "Spellbook: Curse Disease",
+            "min": 1,
+            "max": 1,
+            "chance": 10.152712
+          },
+          {
+            "selfId": 4925,
+            "name": "Amulet: Pa'agrio's Haste",
+            "min": 1,
+            "max": 1,
+            "chance": 10.152712
+          },
+          {
+            "selfId": 6669,
+            "name": "Deluxe Chest Key - Grade 5",
+            "min": 1,
+            "max": 1,
+            "chance": 79.694577
+          }
+        ],
+        "overall": 4.9898
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 5.9425
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 1.8795
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4951,
+            "name": "Recipe: Avadon Robe (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7616
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1005,
+    "template": {
+      "name": "Grave Predator"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 767,
+            "max": 1563,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 78,
+            "name": "Great Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.079114
+          },
+          {
+            "selfId": 142,
+            "name": "Keshanberk",
+            "min": 1,
+            "max": 1,
+            "chance": 0.079114
+          },
+          {
+            "selfId": 148,
+            "name": "Sword of Valhalla",
+            "min": 1,
+            "max": 1,
+            "chance": 0.079114
+          },
+          {
+            "selfId": 4104,
+            "name": "Great Sword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 21.202532
+          },
+          {
+            "selfId": 4107,
+            "name": "Keshanberk Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 20.886076
+          },
+          {
+            "selfId": 4108,
+            "name": "Sword of Valhalla Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 20.886076
+          },
+          {
+            "selfId": 4167,
+            "name": "Recipe: Blue Wolf Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 34.612342
+          },
+          {
+            "selfId": 4197,
+            "name": "Recipe: Demon Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 2.175633
+          }
+        ],
+        "overall": 0.2528
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 68.653977
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 13.730698
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 6.865105
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 9.807502
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.571685
+          },
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.371034
+          }
+        ],
+        "overall": 20.4833
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0762
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 19.0431
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4050,
+            "name": "Adamantite Ring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 11.7987
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1006,
+    "template": {
+      "name": "Doom Servant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 731,
+            "max": 1487,
+            "chance": 99.558812
+          },
+          {
+            "selfId": 357,
+            "name": "Zubei's Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.000996
+          },
+          {
+            "selfId": 383,
+            "name": "Zubei's Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.001564
+          },
+          {
+            "selfId": 4056,
+            "name": "Zubei's Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 0.172379
+          },
+          {
+            "selfId": 4057,
+            "name": "Zubei's Gaiter Material",
+            "min": 1,
+            "max": 1,
+            "chance": 0.266249
+          }
+        ],
+        "overall": 70.3102
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 63.529066
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 31.764533
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 3.176358
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 1.058312
+          },
+          {
+            "selfId": 4193,
+            "name": "Recipe: Lance",
+            "min": 1,
+            "max": 1,
+            "chance": 0.024204
+          },
+          {
+            "selfId": 5003,
+            "name": "Recipe: Art of Battle Axe (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.024204
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.423325
+          }
+        ],
+        "overall": 21.0713
+      },
+      {
+        "items": [
+          {
+            "selfId": 2376,
+            "name": "Avadon Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.152633
+          },
+          {
+            "selfId": 2379,
+            "name": "Avadon Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.254388
+          },
+          {
+            "selfId": 4064,
+            "name": "Avadon Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 30.806411
+          },
+          {
+            "selfId": 4065,
+            "name": "Avadon Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 47.596032
+          },
+          {
+            "selfId": 4173,
+            "name": "Recipe: Blue Wolf Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 21.190537
+          }
+        ],
+        "overall": 0.3931
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 948,
+            "name": "Scroll: Enchant Armor (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4532
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4066,
+            "name": "Zubei's Leather Shirt Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 4.2738
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4130,
+            "name": "Recipe: Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 2.9428
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
