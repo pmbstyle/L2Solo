@@ -182,6 +182,106 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 }));
 assert.strictEqual(upgrades.length, 0, 'mage should not upgrade into no-grade full-body robes');
 
+const fullPlate = wearable(1130, { kind: 'Armor.Chain', slot: 15, pDef: 239, rank: 'c', equipped: true });
+const brigandineTunic = wearable(1131, { kind: 'Armor.Chain', slot: 10, pDef: 103, rank: 'd' });
+const brigandineGaiters = wearable(1132, { kind: 'Armor.Chain', slot: 11, pDef: 64, rank: 'd' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [fullPlate, brigandineTunic, brigandineGaiters],
+    paperdoll: { 15: { id: 1130 } }
+}));
+assert.strictEqual(upgrades.length, 0,
+    'a tank must keep Full Plate instead of repeatedly swapping to weaker Brigandine gaiters');
+
+const weakFullBody = wearable(1140, { kind: 'Armor.Chain', slot: 15, pDef: 100, rank: 'd', equipped: true });
+const strongerChest = wearable(1141, { kind: 'Armor.Chain', slot: 10, pDef: 80, rank: 'c' });
+const strongerPants = wearable(1142, { kind: 'Armor.Chain', slot: 11, pDef: 70, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [weakFullBody, strongerChest, strongerPants],
+    paperdoll: { 15: { id: 1140 } }
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1141, 1142],
+    'a complete stronger chest and pants layout should replace weaker full-body armor together');
+
+const pairedPaperdoll = { 15: { id: 1140 } };
+const pairedApplySession = upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [weakFullBody, strongerChest, strongerPants],
+    paperdoll: pairedPaperdoll
+});
+pairedApplySession.actor.fetchName = () => 'TorsoUpgradeTank';
+pairedApplySession.actor.state = { fetchHits: () => null, fetchCasts: () => null };
+pairedApplySession.actor.backpack.equipGear = (_session, item) => {
+    weakFullBody.setEquipped(false);
+    delete pairedPaperdoll[15];
+    item.setEquipped(true);
+    pairedPaperdoll[item.fetchSlot()] = { id: item.fetchId() };
+};
+const pairedApplyResult = BotEquipmentUpgrade.applyCandidate(pairedApplySession, 1141, { force: true });
+assert.deepStrictEqual(pairedApplyResult, { applied: false, reason: 'requires_equipment_optimization' },
+    'single-item equip must reject a torso change that is only safe as a complete layout');
+assert.strictEqual(strongerChest.fetchEquipped(), false,
+    'rejecting a paired torso layout must not equip the requested chest');
+assert.strictEqual(strongerPants.fetchEquipped(), false,
+    'rejecting a paired torso layout must not silently equip its pants');
+assert(!BotEquipmentUpgrade.listSafeLoadouts(pairedApplySession).some(({ itemId }) => [1141, 1142].includes(itemId)),
+    'paired torso layouts must not be exposed as independent single-item choices');
+const pairedOptimization = BotEquipmentUpgrade.applyBestUpgrades(pairedApplySession, { force: true });
+assert.deepStrictEqual(pairedOptimization.map(({ item }) => item.fetchId()), [1141, 1142],
+    'full equipment optimization should still apply the complete winning torso layout');
+assert.strictEqual(strongerChest.fetchEquipped(), true);
+assert.strictEqual(strongerPants.fetchEquipped(), true);
+
+const intermediateSword = wearable(1143, { kind: 'Weapon.Sword', slot: 7, pAtk: 20 });
+const bestSword = wearable(1144, { kind: 'Weapon.Sword', slot: 7, pAtk: 30 });
+const oldSword = wearable(1145, { kind: 'Weapon.Sword', slot: 7, pAtk: 10, equipped: true });
+const intermediatePaperdoll = { 7: { id: 1145 } };
+const intermediateSession = upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [oldSword, intermediateSword, bestSword],
+    paperdoll: intermediatePaperdoll
+});
+intermediateSession.actor.fetchName = () => 'CandidateTank';
+intermediateSession.actor.state = { fetchHits: () => null, fetchCasts: () => null };
+intermediateSession.actor.backpack.equipGear = (_session, item) => {
+    oldSword.setEquipped(false);
+    item.setEquipped(true);
+    intermediatePaperdoll[7] = { id: item.fetchId() };
+};
+const intermediateResult = BotEquipmentUpgrade.applyCandidate(intermediateSession, 1143, { force: true });
+assert.strictEqual(intermediateResult.applied, true,
+    'single-item equip should accept a strict upgrade even when a stronger candidate also exists');
+assert.strictEqual(intermediateSword.fetchEquipped(), true);
+assert.strictEqual(bestSword.fetchEquipped(), false);
+
+const weakChest = wearable(1150, { kind: 'Armor.Chain', slot: 10, pDef: 50, rank: 'd', equipped: true });
+const weakPants = wearable(1151, { kind: 'Armor.Chain', slot: 11, pDef: 40, rank: 'd', equipped: true });
+const strongerFullBody = wearable(1152, { kind: 'Armor.Chain', slot: 15, pDef: 120, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [weakChest, weakPants, strongerFullBody],
+    paperdoll: { 10: { id: 1150 }, 11: { id: 1151 } }
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1152],
+    'stronger full-body armor should replace a weaker chest and pants layout');
+
+const strongChestOnly = wearable(1160, { kind: 'Armor.Chain', slot: 10, pDef: 130, rank: 'c', equipped: true });
+const weakerFullBody = wearable(1161, { kind: 'Armor.Chain', slot: 15, pDef: 120, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 5,
+    level: 50,
+    items: [strongChestOnly, weakerFullBody],
+    paperdoll: { 10: { id: 1160 } }
+}));
+assert.strictEqual(upgrades.length, 0,
+    'full-body coverage must not justify a lower-scoring torso downgrade');
+
 const lowOldSword = wearable(1201, { kind: 'Weapon.Sword', slot: 7, pAtk: 8, equipped: true });
 const tooHighGradeSword = wearable(1202, { kind: 'Weapon.Sword', slot: 7, pAtk: 80, rank: 'd' });
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
