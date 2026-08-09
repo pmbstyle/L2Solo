@@ -246,7 +246,7 @@ function activateNearPlayer(playerSession, state) {
         const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
         const BotManager = invoke('GameServer/Bot/BotManager');
         const World = invoke('GameServer/World/World');
-        const availability = BotAvailability.evaluateState(playerSession, state, { ignoreDistance: true });
+        const availability = BotAvailability.evaluateState(playerSession, state);
         if (!availability.available) {
             return Promise.resolve({ ok: false, reason: availability.reason, availability });
         }

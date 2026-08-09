@@ -79,8 +79,7 @@ async function run() {
         };
 
         const merchantInvite = World.inviteBotCompanion(player, player.actor, seller, 1, 'friend_const', {
-            forceFriend: true,
-            ignoreDistance: true
+            forceFriend: true
         });
         assert(merchantInvite && typeof merchantInvite.then === 'function', 'merchant invite must wait for store withdrawal');
         assert.strictEqual(await merchantInvite, true);
@@ -88,8 +87,7 @@ async function run() {
 
         attached = null;
         const hunterInvite = World.inviteBotCompanion(player, player.actor, hunter, 1, 'friend_const', {
-            forceFriend: true,
-            ignoreDistance: true
+            forceFriend: true
         });
         assert.strictEqual(hunterInvite, true, 'ordinary friend invite must preserve the synchronous native party path');
         assert.strictEqual(attached, hunter);

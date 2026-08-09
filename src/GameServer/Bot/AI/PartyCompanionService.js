@@ -751,6 +751,7 @@ function cancelCompanionAction(companionSession) {
     if (!actor) return;
     actor.attack?.abortCast?.(companionSession, actor);
     actor.attack?.clearTimers?.();
+    actor.attack?.resetQueuedEvent?.();
     actor.state?.setHits?.(false);
     actor.state?.setCasts?.(false);
     actor.automation?.abortAll?.(actor);
@@ -906,6 +907,11 @@ const PartyCompanionService = {
             ? setDistribution(leaderSession, options.distribution)
             : distributionForLeader(leaderSession);
 
+        // A hot bot may accept while it is still fighting or moving in its
+        // old solo context. Clear those server-owned timers before changing
+        // ownership; unselecting or teleporting alone does not stop Attack.
+        cancelCompanionAction(companionSession);
+
         if (options.sendJoin !== false) {
             leaderSession.dataSendToMe(ServerResponse.joinParty(1));
         }
@@ -926,6 +932,9 @@ const PartyCompanionService = {
         }
 
         refreshLeaderView(leaderSession);
+        // Far-away solo bots can have a background AI tick scheduled up to
+        // 30 seconds out. Start follow/catch-up immediately after attachment.
+        invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leader.fetchId(),
             botId: bot.fetchId(),

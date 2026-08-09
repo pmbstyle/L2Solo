@@ -138,7 +138,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 - `.admin` - open the admin menu.
 - `.sell` - sell all unequipped non-Adena items for 50% item value.
 - `.bot` - open the party control panel.
-- `.botparty`- search for bots around player location to join player party
+- `.botparty`- search active bots to join the player party; distant companions catch up after joining
 - `.botfriends` - friend list and const party management
 - `.botstatus` - show a bot overview panel.
 - `.botstatus <name>` - show detailed status for a specific bot.

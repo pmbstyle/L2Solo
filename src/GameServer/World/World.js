@@ -476,7 +476,6 @@ const World = {
                     : Promise.resolve(state);
                 return Promise.all([leaveActiveParty, leaveBackgroundParty])
                     .then(() => this.inviteBotByName(session, actor, name, distribution, source, {
-                        ignoreDistance: true,
                         forceFriend: true
                     }));
             });
