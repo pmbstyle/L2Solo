@@ -18,18 +18,21 @@ const DataCache = {
             ...validateModel(path + 'Npcs/npcs'),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/c4_valley_of_saints'),
             ...C4LateTownGatekeepers.npcs
         ];
         DataCache.npcSpawns       = [
             ...validateModel(path + 'Npcs/Spawns/spawns'),
             ...validateModel(path + 'Npcs/Spawns/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/Spawns/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/Spawns/c4_valley_of_saints'),
             ...C4LateTownGatekeepers.spawns
         ];
         DataCache.npcRewards      = [
             ...validateModel(path + 'Npcs/Rewards/rewards'),
             ...validateModel(path + 'Npcs/Rewards/c4_swamp_of_screams'),
-            ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts')
+            ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/Rewards/c4_valley_of_saints')
         ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
@@ -46,7 +49,8 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_sealed_a_grade'),
             ...validateModel(path + 'Items/Others/c4_s_grade'),
             ...validateModel(path + 'Items/Others/c4_swamp_of_screams'),
-            ...validateModel(path + 'Items/Others/c4_garden_of_beasts')
+            ...validateModel(path + 'Items/Others/c4_garden_of_beasts'),
+            ...validateModel(path + 'Items/Others/c4_valley_of_saints')
         ];
 
         DataCache.skills = [

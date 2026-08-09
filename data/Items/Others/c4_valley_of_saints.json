@@ -1,0 +1,152 @@
+[
+  {
+    "selfId": 5161,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Spiritshot (A) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 150000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5166,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blessed Spiritshot (A) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 180000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5230,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Mithril Arrow (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 80000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5271,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Soulshot (A) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 150000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5446,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Bloody Orchid(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5448,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soul Separator(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5450,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dragon Grinder(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 540000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5452,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blood Tornado(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5470,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Tallum Blade(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6335,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Necklace(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 52000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

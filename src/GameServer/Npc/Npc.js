@@ -9,6 +9,7 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const AttackHelper   = new Attack();
 
@@ -149,6 +150,11 @@ class Npc extends NpcModel {
                 lastChaseRepathAt = Date.now();
 
                 const combatSkill = this.selectCombatSkill(actor);
+                if (combatSkill?.fetchTargetKind?.() === 'self') {
+                    this.stopForCombatAction(session);
+                    this.castSkill(session, this, combatSkill);
+                    return;
+                }
                 const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);
 
                 this.automation.scheduleAction(session, this, actor, actionRange, () => {
@@ -273,10 +279,23 @@ class Npc extends NpcModel {
 
     selectCombatSkill(actor) {
         if (!EffectRestrictions.canCast(this)) return null;
-        return this.fetchCombatSkills().find((skill) => {
-            if (skill.fetchTargetKind() !== 'enemy') return false;
+        const skills = this.fetchCombatSkills().filter((skill) => {
             if (this.fetchMp() < skill.fetchConsumedMp()) return false;
             return this.canUseSkill(skill);
+        });
+        const selfBuff = skills.find((skill) => {
+            if (skill.fetchTargetKind() !== 'self') return false;
+            const semantic = skill.fetchSemantic?.() || {};
+            if (semantic.effectType !== 'buff' || !semantic.effect) return false;
+            return !EffectStore.list(this).some((effect) => (
+                Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+            ));
+        });
+        if (selfBuff) return selfBuff;
+
+        return skills.find((skill) => {
+            if (skill.fetchTargetKind() !== 'enemy') return false;
+            return true;
         }) || null;
     }
 

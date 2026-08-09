@@ -1,0 +1,1283 @@
+[
+  {
+    "selfId": 1520,
+    "template": {
+      "kind": "Monster",
+      "name": "Eye of Splendor",
+      "title": "",
+      "level": 60,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 860,
+      "pAtkRnd": 10,
+      "pDef": 368,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 326,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.073888888889,
+      "sp": 648
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1521,
+    "template": {
+      "kind": "Monster",
+      "name": "Claws of Splendor",
+      "title": "",
+      "level": 60,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 711,
+      "pAtkRnd": 10,
+      "pDef": 446,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 326,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.038888888889,
+      "sp": 637
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1523,
+    "template": {
+      "kind": "Monster",
+      "name": "Flash of Splendor",
+      "title": "",
+      "level": 61,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 901,
+      "pAtkRnd": 10,
+      "pDef": 378,
+      "mAtk": 505,
+      "mDef": 307,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3137,
+      "maxMp": 1184,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 326,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.02338081161,
+      "sp": 663
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1524,
+    "template": {
+      "kind": "Monster",
+      "name": "Blade of Splendor",
+      "title": "",
+      "level": 61,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1200,
+      "pAtkRnd": 5,
+      "pDef": 284,
+      "mAtk": 505,
+      "mDef": 307,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3137,
+      "maxMp": 1184,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 242,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.157484547165,
+      "sp": 707
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1526,
+    "template": {
+      "kind": "Monster",
+      "name": "Wisdom of Splendor",
+      "title": "",
+      "level": 62,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 944,
+      "pAtkRnd": 20,
+      "pDef": 388,
+      "mAtk": 532,
+      "mDef": 315,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3219,
+      "maxMp": 1217,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 193,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.398543184183,
+      "sp": 822
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1527,
+    "template": {
+      "kind": "Monster",
+      "name": "Anger of Splendor",
+      "title": "",
+      "level": 63,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 20,
+      "pDef": 398,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 193,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.048878810784,
+      "sp": 734
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1529,
+    "template": {
+      "kind": "Monster",
+      "name": "Soul of Splendor",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 20,
+      "pDef": 398,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 193,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.85865457294,
+      "sp": 666
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1530,
+    "template": {
+      "kind": "Monster",
+      "name": "Victory of Splendor",
+      "title": "",
+      "level": 64,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1031,
+      "pAtkRnd": 20,
+      "pDef": 408,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 196,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.95458984375,
+      "sp": 733
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1531,
+    "template": {
+      "kind": "Monster",
+      "name": "Punishment of Splendor",
+      "title": "",
+      "level": 64,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1373,
+      "pAtkRnd": 5,
+      "pDef": 306,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 242,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.157470703125,
+      "sp": 809
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1532,
+    "template": {
+      "kind": "Monster",
+      "name": "Shout of Splendor",
+      "title": "",
+      "level": 65,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1077,
+      "pAtkRnd": 20,
+      "pDef": 418,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 196,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.238106508876,
+      "sp": 879
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1533,
+    "template": {
+      "kind": "Monster",
+      "name": "Alliance of Splendor",
+      "title": "",
+      "level": 65,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 890,
+      "pAtkRnd": 20,
+      "pDef": 430,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 196,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.838343195266,
+      "sp": 722
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1535,
+    "template": {
+      "kind": "Monster",
+      "name": "Signet of Splendor",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1123,
+      "pAtkRnd": 20,
+      "pDef": 428,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 189,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.142102846648,
+      "sp": 878
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1536,
+    "template": {
+      "kind": "Monster",
+      "name": "Crown of Splendor",
+      "title": "",
+      "level": 66,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1123,
+      "pAtkRnd": 20,
+      "pDef": 428,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 189,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.177915518825,
+      "sp": 893
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1537,
+    "template": {
+      "kind": "Monster",
+      "name": "Fang of Splendor",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 966,
+      "pAtkRnd": 20,
+      "pDef": 451,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 170
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 189,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.983738026286,
+      "sp": 848
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1539,
+    "template": {
+      "kind": "Monster",
+      "name": "Wailing of Splendor",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1557,
+      "pAtkRnd": 5,
+      "pDef": 329,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 242,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.157496101582,
+      "sp": 922
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1541,
+    "template": {
+      "kind": "Monster",
+      "name": "Pilgrim of Splendor",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 10,
+      "pDef": 338,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 315,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.505416981607,
+      "sp": 898
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1544,
+    "template": {
+      "kind": "Monster",
+      "name": "Judge of Splendor",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1169,
+      "pAtkRnd": 10,
+      "pDef": 439,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "saint_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.524170193807,
+      "sp": 1079
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 5214,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian of Forbidden Knowledge",
+      "title": "Quest Monster",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 10,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 0,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "guard_of_secrets_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 5215,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian of Forbidden Knowledge",
+      "title": "Quest Monster",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 10,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 0,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "guard_of_secrets_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 5216,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian of Forbidden Knowledge",
+      "title": "Quest Monster",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 10,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 0,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "guard_of_secrets_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 5317,
+    "template": {
+      "kind": "Monster",
+      "name": "Restrainer of Glory",
+      "title": "Quest Monster",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1314,
+      "pAtkRnd": 20,
+      "pDef": 399,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 161,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  }
+]
