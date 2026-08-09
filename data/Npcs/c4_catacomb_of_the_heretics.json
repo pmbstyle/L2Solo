@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 1143,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Scavenger Bat",
+      "title": "",
+      "level": 31,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 142,
+      "pAtkRnd": 30,
+      "pDef": 124,
+      "mAtk": 64,
+      "mDef": 118,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1004,
+      "maxMp": 381,
+      "revHp": 28.44,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084287200832,
+      "sp": 57
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1236,
+    "template": {
+      "kind": "Monster",
+      "name": "Barrow Sentinel",
+      "title": "",
+      "level": 30,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 132,
+      "pAtkRnd": 10,
+      "pDef": 140,
+      "mAtk": 58,
+      "mDef": 114,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 954,
+      "maxMp": 365,
+      "revHp": 22.12,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 69,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.063333333333,
+      "sp": 52
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1237,
+    "template": {
+      "kind": "Monster",
+      "name": "Barrow Monk",
+      "title": "",
+      "level": 32,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 154,
+      "pAtkRnd": 30,
+      "pDef": 129,
+      "mAtk": 69,
+      "mDef": 123,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 121
+    },
+    "vitals": {
+      "maxHp": 1056,
+      "maxMp": 397,
+      "revHp": 28.44,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 25.3
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.083984375,
+      "sp": 62
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1238,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Sentinel",
+      "title": "",
+      "level": 35,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 192,
+      "pAtkRnd": 30,
+      "pDef": 169,
+      "mAtk": 89,
+      "mDef": 137,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1220,
+      "maxMp": 446,
+      "revHp": 28.44,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.142857142857,
+      "sp": 83
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1239,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Monk",
+      "title": "",
+      "level": 37,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 222,
+      "pAtkRnd": 30,
+      "pDef": 154,
+      "mAtk": 104,
+      "mDef": 147,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 132
+    },
+    "vitals": {
+      "maxHp": 1338,
+      "maxMp": 480,
+      "revHp": 28.44,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 43.2
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084733382031,
+      "sp": 91
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

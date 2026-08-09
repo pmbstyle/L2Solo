@@ -34,6 +34,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_necropolis_of_martyrs'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_dark_omen'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_heretics'),
             ...C4LateTownGatekeepers.npcs
         ];
         DataCache.npcSpawns       = [
@@ -56,6 +57,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_martyrs'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_dark_omen'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_heretics'),
             ...C4LateTownGatekeepers.spawns
         ];
         DataCache.npcRewards      = [
@@ -77,7 +79,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_worshipers'),
             ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_martyrs'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_dark_omen'),
-            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_apostate')
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_heretics')
         ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
@@ -111,7 +114,8 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_necropolis_of_worshipers'),
             ...validateModel(path + 'Items/Others/c4_necropolis_of_martyrs'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_dark_omen'),
-            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_apostate')
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_heretics')
         ];
 
         DataCache.skills = [

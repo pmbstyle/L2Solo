@@ -1,0 +1,680 @@
+[
+  {
+    "selfId": 1143,
+    "template": {
+      "name": "Catacomb Scavenger Bat"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 593,
+            "max": 1182,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 605,
+            "name": "Leather Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 1123,
+            "name": "Blue Buckskin Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 0.4602
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 41.666952
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 41.666952
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.083078
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.166646
+          },
+          {
+            "selfId": 2250,
+            "name": "Recipe: Bone Arrow",
+            "min": 1,
+            "max": 1,
+            "chance": 7.812401
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 2.60397
+          }
+        ],
+        "overall": 40.8722
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 955,
+            "name": "Scroll: Enchant Weapon (Grade D)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.561
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 93.4937
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 9.3493
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1236,
+    "template": {
+      "name": "Barrow Sentinel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 546,
+            "max": 1092,
+            "chance": 99.98743
+          },
+          {
+            "selfId": 126,
+            "name": "Artisan's Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006285
+          },
+          {
+            "selfId": 128,
+            "name": "Knight's Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006285
+          }
+        ],
+        "overall": 70.0088
+      },
+      {
+        "items": [
+          {
+            "selfId": 69,
+            "name": "Bastard Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 2.297009
+          },
+          {
+            "selfId": 125,
+            "name": "Spinebone Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 2.297009
+          },
+          {
+            "selfId": 2021,
+            "name": "Spinebone Sword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 95.405983
+          }
+        ],
+        "overall": 0.1872
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 28.645965
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 57.29193
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 9.548574
+          },
+          {
+            "selfId": 2184,
+            "name": "Recipe: Mithril Banded Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 4.513531
+          }
+        ],
+        "overall": 41.1496
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 78.4397
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 14.1604
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2153,
+            "name": "Recipe: Tiger's Eye Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 20.1284
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1237,
+    "template": {
+      "name": "Barrow Monk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 626,
+            "max": 1255,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 86,
+            "name": "Tomahawk",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 179,
+            "name": "Mace of Prayer",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 180,
+            "name": "Mace of Judgment",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 181,
+            "name": "Mace of Miracle",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 182,
+            "name": "Doom Hammer",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 183,
+            "name": "Mystic Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 184,
+            "name": "Conjuror's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 185,
+            "name": "Staff of Mana",
+            "min": 1,
+            "max": 1,
+            "chance": 1.012966
+          },
+          {
+            "selfId": 2022,
+            "name": "Mace of Judgment Head",
+            "min": 1,
+            "max": 1,
+            "chance": 51.175041
+          },
+          {
+            "selfId": 2023,
+            "name": "Conjuror's Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 40.721232
+          }
+        ],
+        "overall": 0.2468
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 27.956409
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 11.18244
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 1.863637
+          },
+          {
+            "selfId": 2265,
+            "name": "Recipe: Spiked Club",
+            "min": 1,
+            "max": 1,
+            "chance": 0.289035
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 2.795455
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 1,
+            "chance": 55.913025
+          }
+        ],
+        "overall": 48.3678
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1933,
+            "name": "Dark Stocking Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 17.4667
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1935,
+            "name": "Scale Mail Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 8.2942
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2183,
+            "name": "Recipe: Mithril Banded Mail",
+            "min": 1,
+            "max": 1,
+            "chance": 9.7676
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1238,
+    "template": {
+      "name": "Grave Sentinel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 781,
+            "max": 1559,
+            "chance": 99.971008
+          },
+          {
+            "selfId": 260,
+            "name": "Triple-Edged Jamadhr",
+            "min": 1,
+            "max": 1,
+            "chance": 0.028992
+          }
+        ],
+        "overall": 70.0203
+      },
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 56.945171
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 2.277651
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 13.666637
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 21.026025
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.277651
+          },
+          {
+            "selfId": 2190,
+            "name": "Recipe: Mithril Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 2.440323
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.366542
+          }
+        ],
+        "overall": 41.1257
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 73.9985
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 3,
+            "chance": 56.922
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1901,
+            "name": "Tiger's Eye Earring Stone",
+            "min": 1,
+            "max": 1,
+            "chance": 25.552
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1239,
+    "template": {
+      "name": "Grave Monk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 824,
+            "max": 1645,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 279,
+            "name": "Strengthened Long Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 1.219306
+          },
+          {
+            "selfId": 2040,
+            "name": "Strengthened Long Bow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 98.780694
+          }
+        ],
+        "overall": 0.5905
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 43.98187
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 43.98187
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 2.931933
+          },
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 3.141282
+          },
+          {
+            "selfId": 2208,
+            "name": "Recipe: Ogre Power Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 4.497078
+          },
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 1.465966
+          }
+        ],
+        "overall": 38.2137
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 13.9345
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1902,
+            "name": "Elven Earring Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.7653
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2145,
+            "name": "Recipe: Mithril Alloy",
+            "min": 1,
+            "max": 1,
+            "chance": 13.9345
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
