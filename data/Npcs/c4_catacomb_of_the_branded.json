@@ -1,0 +1,978 @@
+[
+  {
+    "selfId": 1147,
+    "template": {
+      "kind": "Monster",
+      "name": "Catacomb Gargoyle",
+      "title": "",
+      "level": 43,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 332,
+      "pAtkRnd": 30,
+      "pDef": 223,
+      "mAtk": 163,
+      "mDef": 181,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 154,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 1728,
+      "maxMp": 618,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143320713899,
+      "sp": 143
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1149,
+    "template": {
+      "kind": "Monster",
+      "name": "Decayed Ancient Pikeman",
+      "title": "",
+      "level": 46,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 401,
+      "pAtkRnd": 10,
+      "pDef": 245,
+      "mAtk": 202,
+      "mDef": 199,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 1943,
+      "maxMp": 707,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 96,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143194706994,
+      "sp": 171
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1150,
+    "template": {
+      "kind": "Monster",
+      "name": "Decayed Ancient Soldier",
+      "title": "",
+      "level": 49,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 480,
+      "pAtkRnd": 10,
+      "pDef": 270,
+      "mAtk": 247,
+      "mDef": 219,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 2168,
+      "maxMp": 799,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 125,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143273635985,
+      "sp": 203
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1151,
+    "template": {
+      "kind": "Monster",
+      "name": "Decayed Ancient Knight",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 509,
+      "pAtkRnd": 5,
+      "pDef": 278,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 227,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.1432,
+      "sp": 215
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1173,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Shaman",
+      "title": "",
+      "level": 42,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 377,
+      "pAtkRnd": 30,
+      "pDef": 178,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 5798,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.200680272109,
+      "sp": 141
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1174,
+    "template": {
+      "kind": "Monster",
+      "name": "Lith Commander",
+      "title": "",
+      "level": 45,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 457,
+      "pAtkRnd": 30,
+      "pDef": 196,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 5796,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.348641975309,
+      "sp": 190
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1175,
+    "template": {
+      "kind": "Monster",
+      "name": "Lilim Butcher",
+      "title": "",
+      "level": 48,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 480,
+      "pAtkRnd": 5,
+      "pDef": 183,
+      "mAtk": 231,
+      "mDef": 212,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2091,
+      "maxMp": 768,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 232,
+      "shield": 232,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.342447916667,
+      "sp": 226
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1176,
+    "template": {
+      "kind": "Monster",
+      "name": "Lilim Magus",
+      "title": "",
+      "level": 51,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 652,
+      "pAtkRnd": 30,
+      "pDef": 237,
+      "mAtk": 281,
+      "mDef": 232,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 2323,
+      "maxMp": 861,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30.6
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.200692041522,
+      "sp": 238
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1194,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Confessor",
+      "title": "",
+      "level": 42,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 377,
+      "pAtkRnd": 30,
+      "pDef": 178,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 5794,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.200680272109,
+      "sp": 141
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1195,
+    "template": {
+      "kind": "Monster",
+      "name": "Gigant Commander",
+      "title": "",
+      "level": 45,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 457,
+      "pAtkRnd": 30,
+      "pDef": 196,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 42.5
+    },
+    "equipment": {
+      "weapon": 5792,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.348641975309,
+      "sp": 190
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1196,
+    "template": {
+      "kind": "Monster",
+      "name": "Nephilim Sentinel",
+      "title": "",
+      "level": 48,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 548,
+      "pAtkRnd": 30,
+      "pDef": 183,
+      "mAtk": 231,
+      "mDef": 212,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 71,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2091,
+      "maxMp": 768,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 32.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.342447916667,
+      "sp": 226
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1197,
+    "template": {
+      "kind": "Monster",
+      "name": "Nephilim Priest",
+      "title": "",
+      "level": 51,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 652,
+      "pAtkRnd": 30,
+      "pDef": 237,
+      "mAtk": 281,
+      "mDef": 232,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 2323,
+      "maxMp": 861,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.303729334871,
+      "sp": 258
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1240,
+    "template": {
+      "kind": "Monster",
+      "name": "Barrow Overlord",
+      "title": "",
+      "level": 40,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 10,
+      "pDef": 183,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 28.44,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 30.5
+    },
+    "equipment": {
+      "weapon": 129,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.063125,
+      "sp": 110
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1241,
+    "template": {
+      "kind": "Monster",
+      "name": "Barrow Priest",
+      "title": "",
+      "level": 42,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 311,
+      "pAtkRnd": 30,
+      "pDef": 183,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 148
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 27.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084467120181,
+      "sp": 127
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1242,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Overlord",
+      "title": "",
+      "level": 45,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 415,
+      "pAtkRnd": 10,
+      "pDef": 216,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 40.5
+    },
+    "equipment": {
+      "weapon": 297,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143209876543,
+      "sp": 161
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1243,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Priest",
+      "title": "",
+      "level": 47,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 427,
+      "pAtkRnd": 30,
+      "pDef": 215,
+      "mAtk": 216,
+      "mDef": 206,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 148
+    },
+    "vitals": {
+      "maxHp": 2016,
+      "maxMp": 738,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084653689452,
+      "sp": 171
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]
