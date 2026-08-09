@@ -1,0 +1,167 @@
+[
+  {
+    "selfId": 4927,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet: Chant of Revenge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 7700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4958,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10380
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4975,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Necklace of Black Ore (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 24600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4980,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Doom Shield (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16900
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4982,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Gaiters (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 40200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4984,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Leather Armor (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 70600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4985,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Leather Armor of Doom (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 70600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4990,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Helmet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 24200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5000,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sword of Damascus (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5001,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Lance (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5005,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Demon Dagger (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]
