@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 1253,
+    "template": {
+      "kind": "Monster",
+      "name": "Crypt Preacher",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1413,
+      "pAtkRnd": 10,
+      "pDef": 417,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 52
+    },
+    "equipment": {
+      "weapon": 326,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084683641975,
+      "sp": 571
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1254,
+    "template": {
+      "kind": "Monster",
+      "name": "Tomb Guard",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 10,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 220
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143466666667,
+      "sp": 678
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1255,
+    "template": {
+      "kind": "Monster",
+      "name": "Tomb Preacher",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1664,
+      "pAtkRnd": 30,
+      "pDef": 463,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 50.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.212683420476,
+      "sp": 778
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

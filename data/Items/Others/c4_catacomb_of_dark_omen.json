@@ -1,0 +1,92 @@
+[
+  {
+    "selfId": 7646,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Curse of Doom",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7647,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Curse of Abyss",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7648,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Arcane Chaos",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7662,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Elemental Protection",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7663,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Divine Protection",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7664,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Arcane Protection",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]
