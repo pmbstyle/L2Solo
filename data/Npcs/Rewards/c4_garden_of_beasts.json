@@ -1,0 +1,2958 @@
+[
+  {
+    "selfId": 1274,
+    "template": {
+      "name": "Kookaburra"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 569,
+            "max": 1164,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 864,
+            "name": "Earring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.218214
+          },
+          {
+            "selfId": 895,
+            "name": "Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.320047
+          },
+          {
+            "selfId": 926,
+            "name": "Necklace of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.160023
+          },
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 35.888857
+          },
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 43.453593
+          },
+          {
+            "selfId": 4054,
+            "name": "Necklace of Black Ore Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.959267
+          }
+        ],
+        "overall": 0.6874
+      },
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 26.080102
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 36.512326
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 18.25601
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 7.302221
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 11.23428
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.60834
+          },
+          {
+            "selfId": 5456,
+            "name": "Recipe: Tallum Glaive(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006722
+          }
+        ],
+        "overall": 32.7284
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4087,
+            "name": "Stockings of Doom Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3226
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4088,
+            "name": "Blue Wolf Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 5.3512
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6333,
+            "name": "Recipe: Sealed Phoenix Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.6256
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1275,
+    "template": {
+      "name": "Kookaburra"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 569,
+            "max": 1164,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 864,
+            "name": "Earring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.218214
+          },
+          {
+            "selfId": 895,
+            "name": "Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.320047
+          },
+          {
+            "selfId": 926,
+            "name": "Necklace of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.160023
+          },
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 35.888857
+          },
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 43.453593
+          },
+          {
+            "selfId": 4054,
+            "name": "Necklace of Black Ore Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.959267
+          }
+        ],
+        "overall": 0.6874
+      },
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 26.080102
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 36.512326
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 18.25601
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 7.302221
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 11.23428
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.60834
+          },
+          {
+            "selfId": 5456,
+            "name": "Recipe: Tallum Glaive(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006722
+          }
+        ],
+        "overall": 32.7284
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4087,
+            "name": "Stockings of Doom Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3226
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4088,
+            "name": "Blue Wolf Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 5.3512
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6333,
+            "name": "Recipe: Sealed Phoenix Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.6256
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1276,
+    "template": {
+      "name": "Kookaburra"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 569,
+            "max": 1164,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 864,
+            "name": "Earring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.218214
+          },
+          {
+            "selfId": 895,
+            "name": "Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.320047
+          },
+          {
+            "selfId": 926,
+            "name": "Necklace of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.160023
+          },
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 35.888857
+          },
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 43.453593
+          },
+          {
+            "selfId": 4054,
+            "name": "Necklace of Black Ore Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.959267
+          }
+        ],
+        "overall": 0.6874
+      },
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 26.080102
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 36.512326
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 18.25601
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 7.302221
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 11.23428
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.60834
+          },
+          {
+            "selfId": 5456,
+            "name": "Recipe: Tallum Glaive(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006722
+          }
+        ],
+        "overall": 32.7284
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4087,
+            "name": "Stockings of Doom Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3226
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4088,
+            "name": "Blue Wolf Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 5.3512
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6333,
+            "name": "Recipe: Sealed Phoenix Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.6256
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1277,
+    "template": {
+      "name": "Kookaburra"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 400,
+            "max": 818,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 864,
+            "name": "Earring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.206996
+          },
+          {
+            "selfId": 895,
+            "name": "Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.310495
+          },
+          {
+            "selfId": 926,
+            "name": "Necklace of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.144898
+          },
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 35.89319
+          },
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 43.469261
+          },
+          {
+            "selfId": 4054,
+            "name": "Necklace of Black Ore Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 19.97516
+          }
+        ],
+        "overall": 0.4831
+      },
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 26.080193
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 36.512096
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 18.256048
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 7.302245
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 11.234524
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.608376
+          },
+          {
+            "selfId": 5456,
+            "name": "Recipe: Tallum Glaive(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006518
+          }
+        ],
+        "overall": 23.0121
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4087,
+            "name": "Stockings of Doom Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3362
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4088,
+            "name": "Blue Wolf Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 3.7626
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6333,
+            "name": "Recipe: Sealed Phoenix Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.143
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1278,
+    "template": {
+      "name": "Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 590,
+            "max": 1200,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          }
+        ],
+        "overall": 0.0736
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.948166
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.371336
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.884266
+          },
+          {
+            "selfId": 6339,
+            "name": "Recipe: Sealed Majestic Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.340197
+          }
+        ],
+        "overall": 16.2847
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0163
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.926
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 1.2302
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1279,
+    "template": {
+      "name": "Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 590,
+            "max": 1200,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          }
+        ],
+        "overall": 0.0736
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.948166
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.371336
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.884266
+          },
+          {
+            "selfId": 6339,
+            "name": "Recipe: Sealed Majestic Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.340197
+          }
+        ],
+        "overall": 16.2847
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0163
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.926
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 1.2302
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1280,
+    "template": {
+      "name": "Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 590,
+            "max": 1200,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.13587
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.86413
+          }
+        ],
+        "overall": 0.0736
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228018
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.948166
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.371336
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.884266
+          },
+          {
+            "selfId": 6339,
+            "name": "Recipe: Sealed Majestic Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.340197
+          }
+        ],
+        "overall": 16.2847
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0163
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.926
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 1.2302
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1281,
+    "template": {
+      "name": "Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 415,
+            "max": 844,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.19305
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.19305
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.80695
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.80695
+          }
+        ],
+        "overall": 0.0518
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228435
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.228435
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.948446
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.371115
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.883835
+          },
+          {
+            "selfId": 6339,
+            "name": "Recipe: Sealed Majestic Ring(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.339735
+          }
+        ],
+        "overall": 11.4501
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0114
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0573
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 0.865
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1282,
+    "template": {
+      "name": "Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 622,
+            "max": 1263,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          }
+        ],
+        "overall": 0.0774
+      },
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.036858
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.957403
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.393215
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.886928
+          }
+        ],
+        "overall": 17.0927
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0171
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0804
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.524
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1283,
+    "template": {
+      "name": "Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 622,
+            "max": 1263,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          }
+        ],
+        "overall": 0.0774
+      },
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.036858
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.957403
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.393215
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.886928
+          }
+        ],
+        "overall": 17.0927
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0171
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0804
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.524
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1284,
+    "template": {
+      "name": "Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 622,
+            "max": 1263,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129199
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.870801
+          }
+        ],
+        "overall": 0.0774
+      },
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.036858
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362798
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.957403
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.393215
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.886928
+          }
+        ],
+        "overall": 17.0927
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0171
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0804
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.524
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1285,
+    "template": {
+      "name": "Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 437,
+            "max": 888,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.18315
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.18315
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.81685
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.81685
+          }
+        ],
+        "overall": 0.0546
+      },
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.036611
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362717
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.362717
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.957182
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.393786
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.886988
+          }
+        ],
+        "overall": 12.0182
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.012
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.1659
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3685
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1286,
+    "template": {
+      "name": "Buffalo"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 629,
+            "max": 1280,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.913137
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.382227
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.563371
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 1.281685
+          },
+          {
+            "selfId": 5440,
+            "name": "Recipe: Elysian(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.014024
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.845557
+          }
+        ],
+        "overall": 19.9659
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          }
+        ],
+        "overall": 0.5436
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 10.3976
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 15.5963
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3347
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1287,
+    "template": {
+      "name": "Buffalo"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 629,
+            "max": 1280,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.913137
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.382227
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.563371
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 1.281685
+          },
+          {
+            "selfId": 5440,
+            "name": "Recipe: Elysian(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.014024
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.845557
+          }
+        ],
+        "overall": 19.9659
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          }
+        ],
+        "overall": 0.5436
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 10.3976
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 15.5963
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3347
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1288,
+    "template": {
+      "name": "Buffalo"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 629,
+            "max": 1280,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.913137
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.382227
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.563371
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 1.281685
+          },
+          {
+            "selfId": 5440,
+            "name": "Recipe: Elysian(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.014024
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.845557
+          }
+        ],
+        "overall": 19.9659
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.165563
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.834437
+          }
+        ],
+        "overall": 0.5436
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 10.3976
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 15.5963
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3347
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1289,
+    "template": {
+      "name": "Buffalo"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 442,
+            "max": 900,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.913323
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.382095
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.563682
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 1.281485
+          },
+          {
+            "selfId": 5440,
+            "name": "Recipe: Elysian(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.014247
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.845168
+          }
+        ],
+        "overall": 14.0384
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.157068
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.157068
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.157068
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.157068
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.842932
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.842932
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.842932
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.842932
+          }
+        ],
+        "overall": 0.382
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 7.3108
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9662
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3447
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1290,
+    "template": {
+      "name": "Grendel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 661,
+            "max": 1347,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          }
+        ],
+        "overall": 0.0826
+      },
+      {
+        "items": [
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.015069
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.318082
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.636164
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.302246
+          }
+        ],
+        "overall": 23.2261
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.1367
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9369
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.4266
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1291,
+    "template": {
+      "name": "Grendel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 661,
+            "max": 1347,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          }
+        ],
+        "overall": 0.0826
+      },
+      {
+        "items": [
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.015069
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.318082
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.636164
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.302246
+          }
+        ],
+        "overall": 23.2261
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.1367
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9369
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.4266
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1292,
+    "template": {
+      "name": "Grendel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 661,
+            "max": 1347,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121065
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.878935
+          }
+        ],
+        "overall": 0.0826
+      },
+      {
+        "items": [
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.015069
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 46.36422
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.318082
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.636164
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.302246
+          }
+        ],
+        "overall": 23.2261
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.1367
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9369
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.4266
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1293,
+    "template": {
+      "name": "Grendel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 465,
+            "max": 947,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 80,
+            "name": "Tallum Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.172414
+          },
+          {
+            "selfId": 150,
+            "name": "Elemental Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.172414
+          },
+          {
+            "selfId": 5547,
+            "name": "Elemental Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.827586
+          },
+          {
+            "selfId": 5548,
+            "name": "Tallum Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.827586
+          }
+        ],
+        "overall": 0.058
+      },
+      {
+        "items": [
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.015308
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 46.364538
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 46.364538
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.317706
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 4.636025
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.301884
+          }
+        ],
+        "overall": 16.3308
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0961
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 7.69
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.003
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

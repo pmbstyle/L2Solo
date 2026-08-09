@@ -153,6 +153,7 @@ const tests = [
     'tests/test_gatekeeper_teleports.js',
     'tests/test_geodata_regions.js',
     'tests/test_c4_swamp_of_screams.js',
+    'tests/test_c4_garden_of_beasts.js',
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',

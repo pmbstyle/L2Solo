@@ -206,6 +206,10 @@ class Npc extends NpcModel {
         return effectAdjusted(super.fetchCollectivePAtk(), this, 'pAtk');
     }
 
+    fetchMaxHp() {
+        return effectAdjusted(super.fetchMaxHp(), this, 'maxHp');
+    }
+
     fetchCollectiveMAtk() {
         return effectAdjusted(super.fetchCollectiveMAtk(), this, 'mAtk');
     }

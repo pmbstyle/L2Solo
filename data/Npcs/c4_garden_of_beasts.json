@@ -1,0 +1,1222 @@
+[
+  {
+    "selfId": 1274,
+    "template": {
+      "kind": "Monster",
+      "name": "Kookaburra",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1169,
+      "pAtkRnd": 30,
+      "pDef": 373,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.86143907329,
+      "sp": 796
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1275,
+    "template": {
+      "kind": "Monster",
+      "name": "Kookaburra",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1415,
+      "pAtkRnd": 30,
+      "pDef": 308,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.86143907329,
+      "sp": 796
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1276,
+    "template": {
+      "kind": "Monster",
+      "name": "Kookaburra",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1063,
+      "pAtkRnd": 30,
+      "pDef": 410,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.86143907329,
+      "sp": 796
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1277,
+    "template": {
+      "kind": "Monster",
+      "name": "Kookaburra",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1169,
+      "pAtkRnd": 30,
+      "pDef": 373,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 26.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308754733794,
+      "sp": 560
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1278,
+    "template": {
+      "kind": "Monster",
+      "name": "Antelope",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1217,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861591695502,
+      "sp": 832
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1279,
+    "template": {
+      "kind": "Monster",
+      "name": "Antelope",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1106,
+      "pAtkRnd": 30,
+      "pDef": 494,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861591695502,
+      "sp": 832
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1280,
+    "template": {
+      "kind": "Monster",
+      "name": "Antelope",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1473,
+      "pAtkRnd": 30,
+      "pDef": 371,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861591695502,
+      "sp": 832
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1281,
+    "template": {
+      "kind": "Monster",
+      "name": "Antelope",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1217,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308823529412,
+      "sp": 584
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1282,
+    "template": {
+      "kind": "Monster",
+      "name": "Bandersnatch",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1757,
+      "pAtkRnd": 30,
+      "pDef": 460,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898760764545,
+      "sp": 884
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1283,
+    "template": {
+      "kind": "Monster",
+      "name": "Bandersnatch",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2127,
+      "pAtkRnd": 30,
+      "pDef": 380,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898760764545,
+      "sp": 884
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1284,
+    "template": {
+      "kind": "Monster",
+      "name": "Bandersnatch",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1598,
+      "pAtkRnd": 30,
+      "pDef": 506,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898760764545,
+      "sp": 884
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1285,
+    "template": {
+      "kind": "Monster",
+      "name": "Bandersnatch",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1757,
+      "pAtkRnd": 30,
+      "pDef": 460,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.335013652594,
+      "sp": 622
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1286,
+    "template": {
+      "kind": "Monster",
+      "name": "Buffalo",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1825,
+      "pAtkRnd": 30,
+      "pDef": 470,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861428571429,
+      "sp": 904
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1287,
+    "template": {
+      "kind": "Monster",
+      "name": "Buffalo",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1659,
+      "pAtkRnd": 30,
+      "pDef": 517,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861428571429,
+      "sp": 904
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1288,
+    "template": {
+      "kind": "Monster",
+      "name": "Buffalo",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2209,
+      "pAtkRnd": 30,
+      "pDef": 388,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.861428571429,
+      "sp": 904
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1289,
+    "template": {
+      "kind": "Monster",
+      "name": "Buffalo",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1825,
+      "pAtkRnd": 30,
+      "pDef": 470,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308775510204,
+      "sp": 636
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1290,
+    "template": {
+      "kind": "Monster",
+      "name": "Grendel",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1894,
+      "pAtkRnd": 30,
+      "pDef": 481,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898829597302,
+      "sp": 960
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1291,
+    "template": {
+      "kind": "Monster",
+      "name": "Grendel",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1721,
+      "pAtkRnd": 30,
+      "pDef": 529,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898829597302,
+      "sp": 960
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1292,
+    "template": {
+      "kind": "Monster",
+      "name": "Grendel",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2291,
+      "pAtkRnd": 30,
+      "pDef": 397,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.898829597302,
+      "sp": 960
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1293,
+    "template": {
+      "kind": "Monster",
+      "name": "Grendel",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1894,
+      "pAtkRnd": 30,
+      "pDef": 481,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "animal_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.335052568935,
+      "sp": 676
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  }
+]
