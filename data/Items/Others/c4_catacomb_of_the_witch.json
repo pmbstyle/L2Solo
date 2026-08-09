@@ -1,0 +1,47 @@
+[
+  {
+    "selfId": 5811,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Mass Slow",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 7700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5814,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Servitor Blessing",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 7700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5815,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Wild Magic",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 7700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

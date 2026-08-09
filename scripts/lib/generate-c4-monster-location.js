@@ -1,0 +1,254 @@
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const root = path.resolve(__dirname, '..', '..');
+const vendorRepo = path.join(root, 'tmp', 'vendor', 'l2j-lisvus');
+const vendorRoot = path.join(vendorRepo, 'datapack');
+const expectedLisvusRevision = 'fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975';
+
+function read(relativePath) {
+    const filepath = path.join(vendorRoot, relativePath);
+    if (!fs.existsSync(filepath)) throw new Error(`Missing Lisvus source: ${filepath}`);
+    return fs.readFileSync(filepath, 'utf8');
+}
+
+function parseTuple(line) {
+    const start = line.indexOf('(');
+    if (start < 0) return null;
+    const values = [];
+    let value = '';
+    let quoted = false;
+    let escaped = false;
+    for (let index = start + 1; index < line.length; index++) {
+        const char = line[index];
+        if (escaped) { value += char; escaped = false; continue; }
+        if (char === '\\' && quoted) { escaped = true; continue; }
+        if (char === "'") {
+            if (quoted && line[index + 1] === "'") { value += "'"; index++; }
+            else quoted = !quoted;
+            continue;
+        }
+        if (!quoted && (char === ',' || char === ')')) {
+            const trimmed = value.trim();
+            values.push(/^[-+]?\d+(?:\.\d+)?$/.test(trimmed) ? Number(trimmed) : trimmed);
+            value = '';
+            if (char === ')') return values;
+            continue;
+        }
+        value += char;
+    }
+    return null;
+}
+
+function tuples(relativePath) {
+    return read(relativePath).split(/\r?\n/).map(parseTuple).filter(Boolean);
+}
+
+function writeJson(relativePath, value) {
+    const filepath = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(filepath), { recursive: true });
+    fs.writeFileSync(filepath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function round(value, digits = 6) {
+    return Number(Number(value).toFixed(digits));
+}
+
+function loadedItems(excludedFilename) {
+    return ['Armors', 'Weapons', 'Others'].flatMap((directory) => {
+        const itemDirectory = path.join(root, 'data', 'Items', directory);
+        return fs.readdirSync(itemDirectory)
+            .filter((name) => name.endsWith('.json') && name !== excludedFilename)
+            .flatMap((name) => require(path.join(itemDirectory, name)));
+    });
+}
+
+function vendorItems() {
+    const directory = path.join(vendorRoot, 'data', 'stats', 'items');
+    const items = new Map();
+    fs.readdirSync(directory).filter((name) => name.endsWith('.xml')).forEach((name) => {
+        const xml = fs.readFileSync(path.join(directory, name), 'utf8');
+        const matcher = /<item\s+id="(\d+)"\s+name="([^"]*)"\s+type="([^"]+)"[^>]*>([\s\S]*?)<\/item>/g;
+        for (const match of xml.matchAll(matcher)) {
+            const sets = new Map();
+            for (const setMatch of match[4].matchAll(/<set\s+name="([^"]+)"\s+val="([^"]*)"\s*\/>/g)) {
+                sets.set(setMatch[1], setMatch[2]);
+            }
+            items.set(Number(match[1]), { id: Number(match[1]), name: match[2], type: match[3], sets });
+        }
+    });
+    return items;
+}
+
+function itemKind(item) {
+    const type = String(item.sets.get('etcitem_type') || '').toUpperCase();
+    if (type === 'RECIPE') return 'Other.Recipe';
+    if (type === 'MATERIAL') return 'Other.Material';
+    return 'Other';
+}
+
+function assertExact(actual, expected, label) {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`Expected ${label} ${expected.join(', ')}, found ${actual.join(', ')}`);
+    }
+}
+
+module.exports = function generateC4MonsterLocation(config) {
+    const lisvusRevision = execFileSync('git', ['-C', vendorRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    if (lisvusRevision !== expectedLisvusRevision) {
+        throw new Error(`Expected Lisvus ${expectedLisvusRevision}, found ${lisvusRevision}`);
+    }
+
+    const filename = `${config.slug}.json`;
+    const mobIds = [...config.mobIds].sort((a, b) => a - b);
+    const mobIdSet = new Set(mobIds);
+    const npcRowsById = new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
+    const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
+        row[1] === config.sourceLabel
+        && npcRowsById.get(Number(row[3]))?.[11] === 'L2Monster'
+    );
+    if (spawnRows.length !== config.spawnRows) {
+        throw new Error(`Expected ${config.spawnRows} ${config.displayName} monster spawns, found ${spawnRows.length}`);
+    }
+    if (spawnRows.some((row) => !mobIdSet.has(Number(row[3])))) {
+        throw new Error(`${config.displayName} contains an unexpected source monster`);
+    }
+    if (spawnRows.some((row) => Number(row[2]) !== 1 || Number(row[10]) !== config.respawn || Number(row[12]) !== 0)) {
+        throw new Error(`Unexpected ${config.displayName} count, respawn, or period semantics`);
+    }
+    assertExact([...new Set(spawnRows.map((row) => Number(row[3])))].sort((a, b) => a - b), mobIds, 'monster ids');
+
+    const skillRows = tuples('sql/npcskills.sql')
+        .filter((row) => mobIdSet.has(Number(row[0])))
+        .map((row) => ({ npcId: Number(row[0]), skillId: Number(row[1]), level: Number(row[2]) }));
+    if (skillRows.length !== config.skillRows) {
+        throw new Error(`Expected ${config.skillRows} NPC skill rows, found ${skillRows.length}`);
+    }
+    const raceBySkill = new Map([
+        [4290, 'undead'], [4291, 'construct'], [4292, 'beast'], [4293, 'animal'],
+        [4294, 'plant'], [4295, 'humanoid'], [4296, 'spirit'], [4297, 'divine'],
+        [4298, 'demonic'], [4299, 'dragon'], [4300, 'giant'], [4301, 'insect'], [4302, 'fairy']
+    ]);
+    const raceByNpc = new Map();
+    skillRows.forEach((row) => {
+        const race = raceBySkill.get(row.skillId);
+        if (race) raceByNpc.set(row.npcId, race);
+    });
+
+    const existingItems = loadedItems(filename);
+    const existingItemsById = new Map(existingItems.map((item) => [Number(item.selfId), item]));
+    const sourceItemsById = vendorItems();
+    const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
+        const [
+            id, , name, , title, , , collisionRadius, collisionHeight, level, , type,
+            attackRange, hp, mp, hpRegen, mpRegen, str, con, dex, int, wit, men,
+            exp, sp, pAtk, pDef, mAtk, mDef, atkSpd, aggro, castSpd, rightHand, leftHand,
+            , walk, run, faction, helpRadius, undead
+        ] = row;
+        const race = raceByNpc.get(id);
+        if (type !== 'L2Monster' || !race) throw new Error(`Invalid source NPC ${id}: type=${type} race=${race}`);
+        const weapon = existingItemsById.get(Number(rightHand));
+        return {
+            selfId: id,
+            template: { kind: 'Monster', name, title, level, hostile: Number(aggro) > 0 },
+            base: { str, dex, con, int, wit, men },
+            stats: {
+                pAtk, pAtkRnd: Number(weapon?.stats?.pAtkRnd ?? 30), pDef, mAtk, mDef,
+                accur: Number(weapon?.stats?.accur ?? 4.75), atkSpd, castSpd, atkRadius: attackRange
+            },
+            speed: { walk, run },
+            vitals: { maxHp: hp, maxMp: mp, revHp: hpRegen, revMp: mpRegen, corpseTime: 7000 },
+            collision: { radius: collisionRadius, size: collisionHeight },
+            equipment: { weapon: rightHand, shield: leftHand, reuseTime: 0 },
+            clan: { clanName: faction === 'NULL' ? '' : faction, helpRadius },
+            rewards: { exp: level > 0 ? round(exp / (level * level), 12) : 0, sp },
+            traits: { race, undead: Number(undead) !== 0 }
+        };
+    });
+
+    const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
+    const spawnDefinitions = mobIds.map((npcId) => ({
+        selfId: npcId,
+        name: npcNameById.get(npcId),
+        coords: spawnRows.filter((row) => Number(row[3]) === npcId)
+            .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
+        total: 1,
+        respawn: config.respawn,
+        bias: 0
+    }));
+    const spawns = [{ selfId: config.areaId, bounds: [], spawns: spawnDefinitions }];
+
+    const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
+    if (dropRows.length !== config.dropRows) {
+        throw new Error(`Expected ${config.dropRows} monster drops, found ${dropRows.length}`);
+    }
+    function sourceItemName(itemId) {
+        const existing = existingItemsById.get(itemId);
+        if (existing) return existing.template.name;
+        const source = sourceItemsById.get(itemId);
+        if (!source) throw new Error(`Missing item template ${itemId}`);
+        return source.name;
+    }
+
+    const rewards = mobIds.map((mobId) => {
+        const rows = dropRows.filter((row) => Number(row[0]) === mobId);
+        const categories = new Map();
+        rows.filter((row) => Number(row[4]) >= 0).forEach((row) => {
+            const category = Number(row[4]);
+            if (!categories.has(category)) categories.set(category, []);
+            categories.get(category).push(row);
+        });
+        const normal = [...categories.values()].map((categoryRows) => {
+            const totalChance = categoryRows.reduce((sum, row) => sum + Number(row[5]), 0);
+            return {
+                items: categoryRows.map((row) => ({
+                    selfId: Number(row[1]), name: sourceItemName(Number(row[1])), min: Number(row[2]),
+                    max: Number(row[3]), chance: round(Number(row[5]) / totalChance * 100)
+                })),
+                overall: round(totalChance / 10000)
+            };
+        });
+        const spoils = rows.filter((row) => Number(row[4]) === -1).map((row) => ({
+            items: [{
+                selfId: Number(row[1]), name: sourceItemName(Number(row[1])), min: Number(row[2]),
+                max: Number(row[3]), chance: round(Number(row[5]) / 10000)
+            }],
+            overall: 100
+        }));
+        return { selfId: mobId, template: { name: npcNameById.get(mobId) }, rewards: normal, spoils };
+    });
+
+    const requiredItemIds = new Set(dropRows.map((row) => Number(row[1])));
+    const missingSourceItems = [...requiredItemIds]
+        .filter((id) => !existingItemsById.has(id))
+        .sort((a, b) => a - b)
+        .map((id) => sourceItemsById.get(id));
+    if (missingSourceItems.some((source) => !source)) throw new Error('Missing a required Lisvus item template');
+    if (missingSourceItems.some((source) => source.type === 'Weapon')) {
+        throw new Error(`Unsupported weapon dependencies: ${missingSourceItems.filter((source) => source.type === 'Weapon').map((source) => source.id).join(', ')}`);
+    }
+    const missingItems = missingSourceItems.map((source) => ({
+        selfId: source.id,
+        template: {
+            kind: itemKind(source), name: source.name, class1: 4, class2: 0,
+            mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
+        },
+        etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }
+    }));
+    assertExact(missingItems.map((item) => item.selfId), config.missingItemIds, 'item dependencies');
+
+    writeJson(`data/Npcs/${filename}`, npcs);
+    writeJson(`data/Npcs/Spawns/${filename}`, spawns);
+    writeJson(`data/Npcs/Rewards/${filename}`, rewards);
+    writeJson(`data/Npcs/Skills/${filename}`, skillRows);
+    writeJson(`data/Items/Others/${filename}`, missingItems);
+
+    return {
+        npcs: npcs.length,
+        spawns: spawnRows.length,
+        drops: dropRows.length,
+        skills: skillRows.length,
+        items: missingItems.length
+    };
+};
