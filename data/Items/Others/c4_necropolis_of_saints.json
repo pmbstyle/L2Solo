@@ -1,0 +1,62 @@
+[
+  {
+    "selfId": 7654,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Warrior Bane",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7655,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Mage Bane",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7660,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Warrior Bane",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7661,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mage Bane",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

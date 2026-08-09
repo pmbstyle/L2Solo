@@ -1,0 +1,154 @@
+[
+  {
+    "selfId": 1163,
+    "template": {
+      "name": "Lesser Ancient Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3493,
+            "max": 7152,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.181255
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.181255
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.181255
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.181255
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.818745
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.818745
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.818745
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.818745
+          }
+        ],
+        "overall": 3.0344
+      },
+      {
+        "items": [
+          {
+            "selfId": 7654,
+            "name": "Spellbook - Mass Warrior Bane",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 7655,
+            "name": "Spellbook - Mass Mage Bane",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 7660,
+            "name": "Spellbook - Warrior Bane",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 7661,
+            "name": "Spellbook - Mage Bane",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          }
+        ],
+        "overall": 4.4308
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0967
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.9041
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.9041
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

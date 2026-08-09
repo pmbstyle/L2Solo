@@ -1,0 +1,63 @@
+[
+  {
+    "selfId": 1163,
+    "template": {
+      "kind": "Monster",
+      "name": "Lesser Ancient Shaman",
+      "title": "",
+      "level": 76,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1614,
+      "pAtkRnd": 30,
+      "pDef": 454,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 220
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.08466066482,
+      "sp": 669
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

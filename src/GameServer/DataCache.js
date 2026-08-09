@@ -26,6 +26,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_witch'),
             ...validateModel(path + 'Npcs/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_saints'),
             ...C4LateTownGatekeepers.npcs
         ];
         DataCache.npcSpawns       = [
@@ -40,6 +41,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_witch'),
             ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_saints'),
             ...C4LateTownGatekeepers.spawns
         ];
         DataCache.npcRewards      = [
@@ -53,7 +55,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_witch'),
-            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_the_disciples')
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_saints')
         ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
@@ -79,7 +82,8 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_witch'),
-            ...validateModel(path + 'Items/Others/c4_necropolis_of_the_disciples')
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_saints')
         ];
 
         DataCache.skills = [
