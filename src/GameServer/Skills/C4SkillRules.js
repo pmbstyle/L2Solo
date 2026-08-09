@@ -673,6 +673,7 @@ const RULES = {
     4279: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { fireVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4009: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { fireVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4229: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, levelDepend: 1, castRange: 700, effectRange: 1200 },
+    4228: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, levelDepend: 1, castRange: 700, effectRange: 1200 },
     4280: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { waterVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4284: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { bleedVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4281: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { windVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },

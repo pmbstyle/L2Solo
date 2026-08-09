@@ -1,0 +1,368 @@
+[
+  {
+    "selfId": 804,
+    "template": {
+      "kind": "Monster",
+      "name": "Crokian Lad",
+      "title": "",
+      "level": 41,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 291,
+      "pAtkRnd": 30,
+      "pDef": 208,
+      "mAtk": 141,
+      "mDef": 169,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1593,
+      "maxMp": 560,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 36,
+      "size": 61
+    },
+    "equipment": {
+      "weapon": 5128,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.531231409875,
+      "sp": 168
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 805,
+    "template": {
+      "kind": "Monster",
+      "name": "Dailaon Lad",
+      "title": "",
+      "level": 42,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 762,
+      "pAtkRnd": 30,
+      "pDef": 196,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 40,
+      "size": 58
+    },
+    "equipment": {
+      "weapon": 5127,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.581632653061,
+      "sp": 186
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 806,
+    "template": {
+      "kind": "Monster",
+      "name": "Crokian Lad Warrior",
+      "title": "",
+      "level": 43,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 365,
+      "pAtkRnd": 30,
+      "pDef": 202,
+      "mAtk": 163,
+      "mDef": 181,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1728,
+      "maxMp": 618,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 36,
+      "size": 61
+    },
+    "equipment": {
+      "weapon": 5128,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.448350459708,
+      "sp": 181
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 807,
+    "template": {
+      "kind": "Monster",
+      "name": "Farhite Lad",
+      "title": "",
+      "level": 44,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 390,
+      "pAtkRnd": 30,
+      "pDef": 178,
+      "mAtk": 176,
+      "mDef": 187,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1799,
+      "maxMp": 648,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 5131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.455061983471,
+      "sp": 193
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 808,
+    "template": {
+      "kind": "Monster",
+      "name": "Nos Lad",
+      "title": "",
+      "level": 45,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 343,
+      "pAtkRnd": 10,
+      "pDef": 262,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 52,
+      "size": 86
+    },
+    "equipment": {
+      "weapon": 128,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.721975308642,
+      "sp": 242
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 991,
+    "template": {
+      "kind": "Monster",
+      "name": "Swamp Tribe",
+      "title": "",
+      "level": 45,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 377,
+      "pAtkRnd": 30,
+      "pDef": 238,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 5131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.537777777778,
+      "sp": 357
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  }
+]

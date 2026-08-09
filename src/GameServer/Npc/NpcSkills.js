@@ -15,6 +15,7 @@ const c4KetraOrcOutpostSkills = require('../../../data/Npcs/Skills/c4_ketra_orc_
 const c4HotSpringsSkills = require('../../../data/Npcs/Skills/c4_hot_springs_templates.json');
 const c4WallOfArgosSkills = require('../../../data/Npcs/Skills/c4_wall_of_argos_templates.json');
 const c4ForgeOfTheGodsSkills = require('../../../data/Npcs/Skills/c4_forge_of_the_gods_templates.json');
+const c4FieldsSkills = require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers_templates.json');
 const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/skills.json'),
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -29,6 +30,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_wall_of_argos.json'),
     ...require('../../../data/Npcs/Skills/c4_shrine_of_loyalty.json'),
     ...require('../../../data/Npcs/Skills/c4_forge_of_the_gods.json'),
+    ...require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),
@@ -67,7 +69,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 
