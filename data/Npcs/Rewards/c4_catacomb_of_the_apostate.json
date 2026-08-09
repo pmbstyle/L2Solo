@@ -1,0 +1,769 @@
+[
+  {
+    "selfId": 1152,
+    "template": {
+      "name": "Purgatory Wisp"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1616,
+            "max": 3283,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 400,
+            "name": "Theca Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.308239
+          },
+          {
+            "selfId": 401,
+            "name": "Drake Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.161956
+          },
+          {
+            "selfId": 420,
+            "name": "Theca Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.496317
+          },
+          {
+            "selfId": 1984,
+            "name": "Theca Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 27.58999
+          },
+          {
+            "selfId": 1985,
+            "name": "Theca Leather Gaiters Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 44.381171
+          },
+          {
+            "selfId": 1987,
+            "name": "Drake Leather Armor Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 19.633248
+          },
+          {
+            "selfId": 4941,
+            "name": "Recipe: Zubei's Gaiters (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 7.429079
+          }
+        ],
+        "overall": 1.9141
+      },
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.103814
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 51.984841
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 20.793993
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 10.396856
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 14.852691
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.866241
+          },
+          {
+            "selfId": 4959,
+            "name": "Recipe: Avadon Boots (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.001564
+          }
+        ],
+        "overall": 35.5444
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8007
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 13.6989
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4600,
+            "name": "Greater Dye of WIT (Wit+2 Men-2)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.3345
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1244,
+    "template": {
+      "name": "Crypt Archon"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1404,
+            "max": 2854,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 60,
+            "name": "Composite Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.635063
+          },
+          {
+            "selfId": 1977,
+            "name": "Composite Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 68.266085
+          },
+          {
+            "selfId": 2170,
+            "name": "Recipe: Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 31.098852
+          }
+        ],
+        "overall": 1.5589
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 43.691337
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 43.691337
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.912557
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.281712
+          },
+          {
+            "selfId": 2970,
+            "name": "Recipe: Ring of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 1.549269
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.873788
+          }
+        ],
+        "overall": 47.048
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 77.3226
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1914,
+            "name": "Earring of Binding Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 19.5478
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4601,
+            "name": "Greater Dye of STR (Str+3 Con-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7731
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1245,
+    "template": {
+      "name": "Crypt Inquisitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1558,
+            "max": 3150,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 60,
+            "name": "Composite Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.926316
+          },
+          {
+            "selfId": 1977,
+            "name": "Composite Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 99.073684
+          }
+        ],
+        "overall": 1.1875
+      },
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 37.423057
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 56.134709
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.245309
+          },
+          {
+            "selfId": 2353,
+            "name": "Recipe: Samurai Longsword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.091393
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.122655
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.488089
+          },
+          {
+            "selfId": 4122,
+            "name": "Recipe: Maestro Holder",
+            "min": 1,
+            "max": 1,
+            "chance": 2.494788
+          }
+        ],
+        "overall": 40.4844
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1915,
+            "name": "Ring of Ages Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 33.8927
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 6.8085
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2170,
+            "name": "Recipe: Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 9.0727
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1246,
+    "template": {
+      "name": "Tomb Archon"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1837,
+            "max": 3743,
+            "chance": 98.275545
+          },
+          {
+            "selfId": 855,
+            "name": "Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.018672
+          },
+          {
+            "selfId": 1918,
+            "name": "Nassen's Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 1.705783
+          }
+        ],
+        "overall": 71.2283
+      },
+      {
+        "items": [
+          {
+            "selfId": 119,
+            "name": "Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 0.377143
+          },
+          {
+            "selfId": 886,
+            "name": "Ring of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 0.754286
+          },
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 36.56381
+          },
+          {
+            "selfId": 2917,
+            "name": "Ring of Binding Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 61.379048
+          },
+          {
+            "selfId": 4965,
+            "name": "Recipe: Sprite's Staff (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.925714
+          }
+        ],
+        "overall": 2.625
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 28.987148
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 57.974297
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 9.662314
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 1.525487
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.724513
+          },
+          {
+            "selfId": 4127,
+            "name": "Recipe: Adamantite Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 1.076231
+          },
+          {
+            "selfId": 4183,
+            "name": "Recipe: Heavy War Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.050009
+          }
+        ],
+        "overall": 48.3911
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 13,
+            "chance": 86.8351
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1918,
+            "name": "Nassen's Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 19.7438
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 7.5981
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1247,
+    "template": {
+      "name": "Tomb Inquisitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1877,
+            "max": 3833,
+            "chance": 97.48489
+          },
+          {
+            "selfId": 554,
+            "name": "Zubei's Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.009331
+          },
+          {
+            "selfId": 612,
+            "name": "Zubei's Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 0.009331
+          },
+          {
+            "selfId": 4097,
+            "name": "Zubei's Boots Design",
+            "min": 1,
+            "max": 1,
+            "chance": 1.248224
+          },
+          {
+            "selfId": 4100,
+            "name": "Zubei's Gauntlets Part",
+            "min": 1,
+            "max": 1,
+            "chance": 1.248224
+          }
+        ],
+        "overall": 71.806
+      },
+      {
+        "items": [
+          {
+            "selfId": 600,
+            "name": "Avadon Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.321857
+          },
+          {
+            "selfId": 2464,
+            "name": "Avadon Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.321857
+          },
+          {
+            "selfId": 4073,
+            "name": "Avadon Gloves Part",
+            "min": 1,
+            "max": 1,
+            "chance": 43.704282
+          },
+          {
+            "selfId": 4098,
+            "name": "Avadon Boots Design",
+            "min": 1,
+            "max": 1,
+            "chance": 43.704282
+          },
+          {
+            "selfId": 4173,
+            "name": "Recipe: Blue Wolf Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 11.947723
+          }
+        ],
+        "overall": 2.0506
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 60.146505
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 30.073138
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 3.007085
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 6.014398
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.392268
+          },
+          {
+            "selfId": 4131,
+            "name": "Recipe: Necklace of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.366606
+          }
+        ],
+        "overall": 43.6436
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 24.4718
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.0493
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4613,
+            "name": "Greater Dye of STR (Str+4 Con-4)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.6434
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

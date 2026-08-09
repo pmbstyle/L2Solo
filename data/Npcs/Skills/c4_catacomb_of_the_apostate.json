@@ -1,0 +1,137 @@
+[
+  {
+    "npcId": 1152,
+    "skillId": 4291,
+    "level": 1
+  },
+  {
+    "npcId": 1152,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1152,
+    "skillId": 4281,
+    "level": 2
+  },
+  {
+    "npcId": 1152,
+    "skillId": 4276,
+    "level": 1
+  },
+  {
+    "npcId": 1152,
+    "skillId": 4151,
+    "level": 5
+  },
+  {
+    "npcId": 1152,
+    "skillId": 4160,
+    "level": 5
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4274,
+    "level": 1
+  },
+  {
+    "npcId": 1244,
+    "skillId": 4317,
+    "level": 1
+  },
+  {
+    "npcId": 1245,
+    "skillId": 4298,
+    "level": 1
+  },
+  {
+    "npcId": 1245,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1245,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1245,
+    "skillId": 4333,
+    "level": 3
+  },
+  {
+    "npcId": 1245,
+    "skillId": 4099,
+    "level": 2
+  },
+  {
+    "npcId": 1246,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1246,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1246,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1246,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1246,
+    "skillId": 4032,
+    "level": 5
+  },
+  {
+    "npcId": 1247,
+    "skillId": 4298,
+    "level": 1
+  },
+  {
+    "npcId": 1247,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1247,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1247,
+    "skillId": 4333,
+    "level": 3
+  },
+  {
+    "npcId": 1247,
+    "skillId": 4002,
+    "level": 5
+  }
+]
