@@ -243,16 +243,10 @@ module.exports = function generateC4MonsterLocation(config) {
     const missingItems = missingSourceItems.map((source) => ({
         selfId: source.id,
         template: {
-            kind: config.itemOverrides?.[source.id]?.kind || itemKind(source),
-            name: source.name,
-            class1: 4,
-            class2: config.itemOverrides?.[source.id]?.class2 ?? 0,
+            kind: itemKind(source), name: source.name, class1: 4, class2: 0,
             mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
         },
-        etc: {
-            stackable: source.sets.get('is_stackable') === 'true',
-            consumable: config.itemOverrides?.[source.id]?.consumable ?? false
-        }
+        etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }
     }));
     assertExact(missingItems.map((item) => item.selfId), config.missingItemIds, 'item dependencies');
 
