@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 6350,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet: Pa'agrio's Honor",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 8700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6352,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Prayer",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 8700
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

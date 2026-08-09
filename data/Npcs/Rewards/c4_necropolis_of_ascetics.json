@@ -1,0 +1,507 @@
+[
+  {
+    "selfId": 1158,
+    "template": {
+      "name": "Hell Keeper Crimson Doll"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2798,
+            "max": 5718,
+            "chance": 99.17332
+          },
+          {
+            "selfId": 2391,
+            "name": "Blue Wolf Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.00425
+          },
+          {
+            "selfId": 4082,
+            "name": "Blue Wolf Leather Armor Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 0.82243
+          }
+        ],
+        "overall": 70.5835
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 29.481238
+          },
+          {
+            "selfId": 1830,
+            "name": "Scroll of Escape: Castle",
+            "min": 1,
+            "max": 1,
+            "chance": 28.301873
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 5,
+            "max": 15,
+            "chance": 14.150937
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 2,
+            "max": 6,
+            "chance": 17.688791
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 7.075468
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 2.358489
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.943203
+          }
+        ],
+        "overall": 41.4969
+      },
+      {
+        "items": [
+          {
+            "selfId": 2392,
+            "name": "Leather Armor of Doom",
+            "min": 1,
+            "max": 1,
+            "chance": 0.497171
+          },
+          {
+            "selfId": 4083,
+            "name": "Leather Armor of Doom Design",
+            "min": 1,
+            "max": 1,
+            "chance": 99.502829
+          }
+        ],
+        "overall": 0.5833
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 29.8243
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.9277
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1224,
+    "template": {
+      "name": "Sepulcher Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2056,
+            "max": 4180,
+            "chance": 99.696921
+          },
+          {
+            "selfId": 92,
+            "name": "Sprite's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.001282
+          },
+          {
+            "selfId": 4106,
+            "name": "Sprite's Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.301797
+          }
+        ],
+        "overall": 70.2128
+      },
+      {
+        "items": [
+          {
+            "selfId": 91,
+            "name": "Heavy War Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.370199
+          },
+          {
+            "selfId": 4105,
+            "name": "Heavy War Axe Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.629801
+          }
+        ],
+        "overall": 0.2161
+      },
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 92.696154
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.276601
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 2.162809
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.564042
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.162809
+          },
+          {
+            "selfId": 4158,
+            "name": "Recipe: Doom Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.137584
+          }
+        ],
+        "overall": 38.6673
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 17.882
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 16.9879
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4613,
+            "name": "Greater Dye of STR (Str+4 Con-4)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7029
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1225,
+    "template": {
+      "name": "Sepulcher Sage"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2256,
+            "max": 4571,
+            "chance": 99.336151
+          },
+          {
+            "selfId": 2391,
+            "name": "Blue Wolf Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003406
+          },
+          {
+            "selfId": 4082,
+            "name": "Blue Wolf Leather Armor Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 0.660443
+          }
+        ],
+        "overall": 70.4678
+      },
+      {
+        "items": [
+          {
+            "selfId": 2392,
+            "name": "Leather Armor of Doom",
+            "min": 1,
+            "max": 1,
+            "chance": 0.491873
+          },
+          {
+            "selfId": 4083,
+            "name": "Leather Armor of Doom Design",
+            "min": 1,
+            "max": 1,
+            "chance": 99.508127
+          }
+        ],
+        "overall": 0.4676
+      },
+      {
+        "items": [
+          {
+            "selfId": 6350,
+            "name": "Amulet: Pa'agrio's Honor",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 6352,
+            "name": "Spellbook: Prayer",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 3.7878
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 19.7496
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4053,
+            "name": "Ring of Black Ore Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 23.9104
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7438
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1226,
+    "template": {
+      "name": "Sepulcher Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2634,
+            "max": 5340,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 79,
+            "name": "Sword of Damascus",
+            "min": 1,
+            "max": 1,
+            "chance": 0.331283
+          },
+          {
+            "selfId": 4114,
+            "name": "Sword of Damascus Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 99.668717
+          }
+        ],
+        "overall": 0.4226
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 48.085692
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 32.057128
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 16.028564
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.530601
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.202007
+          },
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096008
+          }
+        ],
+        "overall": 44.4756
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 23.0702
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4054,
+            "name": "Necklace of Black Ore Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 12.8347
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8688
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
