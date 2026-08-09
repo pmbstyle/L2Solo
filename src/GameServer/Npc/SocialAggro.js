@@ -23,7 +23,7 @@ function distance2d(a, b) {
 }
 
 function canAssist(helper, attackedNpc, attacker, attackedClan, radius) {
-    if (!helper || helper === attackedNpc) return false;
+    if (!helper || !attackedNpc || !attacker || helper === attackedNpc) return false;
     if (actorId(helper) === actorId(attackedNpc)) return false;
     if (!helper.fetchAttackable?.() || helper.isDead?.()) return false;
     if (helper.state?.fetchDead?.() || helper.state?.fetchCombats?.()) return false;
@@ -31,7 +31,7 @@ function canAssist(helper, attackedNpc, attacker, attackedClan, radius) {
     if (actorId(attacker) && helper.fetchDestId?.() === actorId(attacker)) return false;
     if (!helper.fetchLocX || !attackedNpc.fetchLocX) return false;
     if (distance2d(helper, attackedNpc) > radius) return false;
-    if (Math.abs(helper.fetchLocZ() - attacker.fetchLocZ()) >= MAX_ASSIST_Z_DIFFERENCE) return false;
+    if (Math.abs(helper.fetchLocZ() - attackedNpc.fetchLocZ()) > MAX_ASSIST_Z_DIFFERENCE) return false;
 
     return GeodataEngine.hasLineOfSight(
         attackedNpc.fetchLocX(), attackedNpc.fetchLocY(), attackedNpc.fetchLocZ(),

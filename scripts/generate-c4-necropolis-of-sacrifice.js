@@ -139,13 +139,17 @@ const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
     const race = raceByNpc.get(id);
     if (type !== 'L2Monster' || !race) throw new Error(`Invalid source NPC ${id}: type=${type} race=${race}`);
     const weapon = existingItemsById.get(Number(rightHand));
+    const sourceWeapon = sourceItemsById.get(Number(rightHand));
+    const sourceWeaponStat = (name, fallback) => Number(
+        sourceWeapon?.body?.match(new RegExp(`stat="${name}" val="([^"]+)"`))?.[1] ?? fallback
+    );
     return {
         selfId: id,
         template: { kind: 'Monster', name, title, level, hostile: Number(aggro) > 0 },
         base: { str, dex, con, int, wit, men },
         stats: {
-            pAtk, pAtkRnd: Number(weapon?.stats?.pAtkRnd ?? 30), pDef, mAtk, mDef,
-            accur: Number(weapon?.stats?.accur ?? 4.75), atkSpd, castSpd, atkRadius: attackRange
+            pAtk, pAtkRnd: Number(weapon?.stats?.pAtkRnd ?? sourceWeapon?.sets?.get('random_damage') ?? 30), pDef, mAtk, mDef,
+            accur: Number(weapon?.stats?.accur ?? sourceWeaponStat('accCombat', 4.75)), atkSpd, castSpd, atkRadius: attackRange
         },
         speed: { walk, run },
         vitals: { maxHp: hp, maxMp: mp, revHp: hpRegen, revMp: mpRegen, corpseTime: 7000 },
@@ -207,7 +211,10 @@ const rewards = mobIds.map((mobId) => {
     return { selfId: mobId, template: { name: npcNameById.get(mobId) }, rewards: normal, spoils };
 });
 
-const requiredItemIds = new Set(dropRows.map((row) => Number(row[1])));
+const requiredItemIds = new Set([
+    ...dropRows.map((row) => Number(row[1])),
+    ...npcs.flatMap((npc) => [Number(npc.equipment.weapon), Number(npc.equipment.shield)]).filter(Boolean)
+]);
 const missingSourceItems = [...requiredItemIds].filter((id) => !existingItemsById.has(id)).sort((a, b) => a - b).map((id) => {
     const source = sourceItemsById.get(id);
     if (!source) throw new Error(`Missing source item ${id}`);
@@ -216,11 +223,16 @@ const missingSourceItems = [...requiredItemIds].filter((id) => !existingItemsByI
 const missingWeapons = missingSourceItems.filter((source) => source.type === 'Weapon').map((source) => {
     const stat = (name) => Number(source.body.match(new RegExp(`stat="${name}" val="([^"]+)"`))?.[1] || 0);
     const weaponType = String(source.sets.get('weapon_type') || '').toUpperCase();
-    if (weaponType !== 'BIGSWORD') throw new Error(`Unsupported weapon dependency ${source.id}: ${weaponType}`);
+    const weaponKinds = {
+        BIGSWORD: { kind: 'Weapon.GreatSword', slot: 14 },
+        SWORD: { kind: 'Weapon.Sword', slot: 7 }
+    };
+    const weaponKind = weaponKinds[weaponType];
+    if (!weaponKind) throw new Error(`Unsupported weapon dependency ${source.id}: ${weaponType}`);
     return {
         selfId: source.id,
         template: {
-            kind: 'Weapon.GreatSword', name: source.name, class1: 0, class2: 0,
+            kind: weaponKind.kind, name: source.name, class1: 0, class2: 0,
             mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
         },
         stats: {
@@ -228,7 +240,7 @@ const missingWeapons = missingSourceItems.filter((source) => source.type === 'We
             mAtk: stat('mAtk'), atkSpd: stat('pAtkSpd'), crit: stat('rCrit'), accur: stat('accCombat')
         },
         etc: {
-            slot: 14, mp: 0, soulshot: Number(source.sets.get('soulshots') || 0),
+            slot: weaponKind.slot, mp: 0, soulshot: Number(source.sets.get('soulshots') || 0),
             spiritshot: Number(source.sets.get('spiritshots') || 0),
             rank: String(source.sets.get('crystal_type') || 'none').toLowerCase(),
             cristals: Number(source.sets.get('crystal_count') || 0)
@@ -245,8 +257,9 @@ const missingItems = missingSourceItems.filter((source) => source.type !== 'Weap
         etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }
     };
 });
-if (JSON.stringify(missingWeapons.map((item) => item.selfId)) !== JSON.stringify([5285])) {
-    throw new Error(`Expected weapon dependency 5285, found ${missingWeapons.map((item) => item.selfId).join(', ')}`);
+const expectedMissingWeaponIds = [5285, 5791, 5792, 5793, 5795, 5796, 5797];
+if (JSON.stringify(missingWeapons.map((item) => item.selfId)) !== JSON.stringify(expectedMissingWeaponIds)) {
+    throw new Error(`Expected weapon dependencies ${expectedMissingWeaponIds.join(', ')}, found ${missingWeapons.map((item) => item.selfId).join(', ')}`);
 }
 const expectedMissingItemIds = [5437, 5531, 6037, 6360, 6362];
 if (JSON.stringify(missingItems.map((item) => item.selfId)) !== JSON.stringify(expectedMissingItemIds)) {

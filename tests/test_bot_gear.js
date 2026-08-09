@@ -117,6 +117,10 @@ assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKin
     'Sword Singer must not inherit caster weapon compatibility from the shared buffer role');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 34), false,
     'Bladedancer must not inherit caster weapon compatibility from the shared buffer role');
+assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.Blunt'],
+    'Titan must inherit the Destroyer blunt preference through its normalized parent class');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
+    'Dominator must inherit Overlord caster compatibility through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
     'Sword Singer must reject caster staves stored under the shared blunt family');
 assert.strictEqual(BotWeaponCompatibility.isCasterWeapon('Weapon.Sword', 'Broadsword', 11, 9), false,

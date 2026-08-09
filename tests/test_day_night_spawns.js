@@ -18,6 +18,20 @@ assert.strictEqual(GameTime.isNight(midnight + GameTime.REAL_DAY_MS), true, 'a C
 assert.strictEqual(GameTime.msUntilTransition(midnight), 60 * 60 * 1000);
 assert.strictEqual(GameTime.msUntilTransition(midnight + 60 * 60 * 1000), 3 * 60 * 60 * 1000);
 
+const originalTimezone = process.env.TZ;
+try {
+    process.env.TZ = 'America/New_York';
+    const dstForwardEvening = new Date(2026, 2, 8, 22, 30, 0, 0).getTime();
+    assert.strictEqual(
+        GameTime.msUntilTransition(dstForwardEvening),
+        90 * 60 * 1000,
+        'a DST-forward day must reschedule at local midnight before the later four-hour cycle boundary'
+    );
+} finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+}
+
 DataCache.init();
 const template = DataCache.npcs.find((npc) => npc.template.kind === 'Monster');
 assert.ok(template, 'fixture requires one loaded monster template');

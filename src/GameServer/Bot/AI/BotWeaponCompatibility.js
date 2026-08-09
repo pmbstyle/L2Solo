@@ -2,7 +2,7 @@ const ClassProgression = invoke('GameServer/ClassProgression');
 
 const CASTER_ROLES = new Set(['mage', 'healer']);
 const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
-const ORC_BLUNT_CLASSES = new Set([44, 45, 47, 49, 50, 51, 53, 54, 56]);
+const ORC_BLUNT_CLASSES = new Set([44, 45, 46, 47, 49, 50, 51, 52, 53, 54, 55, 56, 57]);
 const CASTER_WEAPON_NAME = /\b(staff|wand|rod|spellbook|voodoo|scroll)\b/i;
 
 function baseClassId(classId) {
@@ -47,7 +47,7 @@ function weaponKindsFor(role, classId) {
     if (role === 'archer') return ['Weapon.Bow'];
     if (role === 'dagger') return ['Weapon.Knife'];
     if (isCasterRole(role, classId)) return ['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'];
-    if (ORC_BLUNT_CLASSES.has(Number(classId))) return ['Weapon.Blunt'];
+    if (ORC_BLUNT_CLASSES.has(baseClassId(classId))) return ['Weapon.Blunt'];
     return ['Weapon.Sword', 'Weapon.Blunt'];
 }
 

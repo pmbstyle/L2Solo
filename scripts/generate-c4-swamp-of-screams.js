@@ -151,8 +151,8 @@ const npcs = npcRows.map((row) => {
         vitals: { maxHp: hp, maxMp: mp, revHp: hpRegen, revMp: mpRegen, corpseTime: 7000 },
         collision: { radius: collisionRadius, size: collisionHeight },
         equipment: { weapon: rightHand, shield: leftHand, reuseTime: 0 },
-        clan: { clanName: faction, helpRadius },
-        rewards: { exp: round(exp / (level * level), 12), sp },
+        clan: { clanName: faction === 'NULL' ? '' : faction, helpRadius },
+        rewards: { exp: level > 0 ? round(exp / (level * level), 12) : 0, sp },
         traits: { race: 'insect', undead: Number(undead) !== 0 }
     };
 });
@@ -166,6 +166,7 @@ if (spawnRows.some((row) => Number(row[2]) !== 1 || row[1] !== 'NPC_C4')) {
 
 const spawnDefinitions = [...mobIds].map((npcId) => {
     const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
+    if (!rows.length) throw new Error(`Missing Swamp of Screams spawns for NPC ${npcId}`);
     return {
         selfId: npcId,
         name: npcNameById.get(npcId),

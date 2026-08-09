@@ -541,6 +541,21 @@ try {
     assert.strictEqual(targetWakeBot.state.fetchSeated(), false, 'resting companion should stand when leader attacks');
     assert.strictEqual(targetWakeSession.currentTargetId, 1005, 'resting companion should remember leader target');
 
+    const physicalRestBot = fakeActor(2999001, {
+        locX: 0, locY: 0, hp: 100, maxHp: 100, mp: 10, maxMp: 100, classId: 5
+    });
+    physicalRestBot.state.setSeated(true);
+    const physicalRestSession = fakeSession('bot_physical_rest_complete', physicalRestBot);
+    physicalRestSession.plan = 'resting';
+    World.user = { sessions: [physicalRestSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    RestingState.tick(physicalRestSession, physicalRestBot, {}, { say() {} });
+    assert.strictEqual(physicalRestSession.plan, 'hunting',
+        'a physical bot must finish resting once HP is recovered even when MP is below the caster threshold');
+    assert.strictEqual(physicalRestBot.state.fetchSeated(), false,
+        'a recovered physical bot must stand instead of waiting for unneeded MP');
+
     const restingPullBot = fakeActor(2000013, { locX: 80, locY: 0, hp: 20, maxHp: 100, mp: 10, maxMp: 100 });
     restingPullBot.state.setSeated(true);
     const restingPullSession = fakeSession('bot_resting_pull_pause', restingPullBot);
@@ -1351,7 +1366,8 @@ try {
     assert.strictEqual(transferTankBasicAttacks, 1, 'after one transfer attempt the tank must continue with normal combat');
 
     const tacticalPaladin = fakeActor(2000058, { locX: 0, locY: 0, classId: 5, hp: 40, maxHp: 100, mp: 100, maxMp: 100 });
-    learnSkill(tacticalPaladin, { selfId: 110, name: 'Ultimate Defense', mp: 20 });
+    const legacyUltimateDefense = learnSkill(tacticalPaladin, { selfId: 110, name: 'Ultimate Defense', mp: 20 });
+    legacyUltimateDefense.fetchSemantic = undefined;
     const survivalTactic = PartyClassTactics.selfAction(tacticalPaladin, { role: 'tank', activeMobs: 2 });
     assert.strictEqual(survivalTactic?.skill.fetchSelfId(), 110, 'a pressured low-HP Paladin should use Ultimate Defense as a class tactic');
 
@@ -1376,6 +1392,11 @@ try {
         18,
         'a Paladin should use Hate Aura when multiple loose mobs are inside its native radius'
     );
+    const legacyHatePaladin = fakeActor(2999002, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    const legacyHateAura = learnSkill(legacyHatePaladin, { selfId: 18, name: 'Legacy Hate Aura', distance: -1, mp: 20 });
+    legacyHateAura.fetchSemantic = undefined;
+    assert.strictEqual(PartyClassTactics.tankMassAggroAction(legacyHatePaladin, hateTargets), null,
+        'legacy skills without semantic metadata must be ignored safely instead of throwing');
 
     const shieldStunPaladin = fakeActor(2000062, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
     learnSkill(shieldStunPaladin, { selfId: 92, name: 'Shield Stun', distance: 40, mp: 20 });

@@ -25,5 +25,167 @@
       "rank": "d",
       "cristals": 743
     }
+  },
+  {
+    "selfId": 5791,
+    "template": {
+      "kind": "Weapon.GreatSword",
+      "name": "Tomb Guard A",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2180,
+      "price": 967000
+    },
+    "stats": {
+      "pAtk": 78,
+      "pAtkRnd": 10,
+      "mAtk": 39,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "d",
+      "cristals": 0
+    }
+  },
+  {
+    "selfId": 5792,
+    "template": {
+      "kind": "Weapon.GreatSword",
+      "name": "Tomb Guard B",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2180,
+      "price": 967000
+    },
+    "stats": {
+      "pAtk": 78,
+      "pAtkRnd": 10,
+      "mAtk": 39,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "d",
+      "cristals": 0
+    }
+  },
+  {
+    "selfId": 5793,
+    "template": {
+      "kind": "Weapon.Sword",
+      "name": "Tomb Savant A",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "pAtkRnd": 10,
+      "mAtk": 83,
+      "atkSpd": 379,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 0
+    }
+  },
+  {
+    "selfId": 5795,
+    "template": {
+      "kind": "Weapon.GreatSword",
+      "name": "Tomb Guard A",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2180,
+      "price": 967000
+    },
+    "stats": {
+      "pAtk": 78,
+      "pAtkRnd": 10,
+      "mAtk": 39,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "d",
+      "cristals": 0
+    }
+  },
+  {
+    "selfId": 5796,
+    "template": {
+      "kind": "Weapon.GreatSword",
+      "name": "Tomb Guard B",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2180,
+      "price": 967000
+    },
+    "stats": {
+      "pAtk": 78,
+      "pAtkRnd": 10,
+      "mAtk": 39,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "d",
+      "cristals": 0
+    }
+  },
+  {
+    "selfId": 5797,
+    "template": {
+      "kind": "Weapon.Sword",
+      "name": "Tomb Savant A",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "pAtkRnd": 10,
+      "mAtk": 83,
+      "atkSpd": 379,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 0
+    }
   }
 ]

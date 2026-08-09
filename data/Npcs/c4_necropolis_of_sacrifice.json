@@ -262,11 +262,11 @@
     },
     "stats": {
       "pAtk": 66,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 69,
       "mAtk": 25,
       "mDef": 80,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 317,
       "castSpd": 289,
       "atkRadius": 40
@@ -323,11 +323,11 @@
     },
     "stats": {
       "pAtk": 98,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 92,
       "mAtk": 34,
       "mDef": 90,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40
@@ -384,11 +384,11 @@
     },
     "stats": {
       "pAtk": 126,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 103,
       "mAtk": 45,
       "mDef": 102,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40
@@ -445,11 +445,11 @@
     },
     "stats": {
       "pAtk": 140,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 99,
       "mAtk": 58,
       "mDef": 114,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 317,
       "castSpd": 289,
       "atkRadius": 40
@@ -506,11 +506,11 @@
     },
     "stats": {
       "pAtk": 76,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 69,
       "mAtk": 25,
       "mDef": 80,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40
@@ -567,11 +567,11 @@
     },
     "stats": {
       "pAtk": 98,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 92,
       "mAtk": 34,
       "mDef": 90,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40
@@ -628,11 +628,11 @@
     },
     "stats": {
       "pAtk": 126,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 103,
       "mAtk": 45,
       "mDef": 102,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40
@@ -689,11 +689,11 @@
     },
     "stats": {
       "pAtk": 160,
-      "pAtkRnd": 30,
+      "pAtkRnd": 10,
       "pDef": 99,
       "mAtk": 58,
       "mDef": 114,
-      "accur": 4.75,
+      "accur": 0,
       "atkSpd": 278,
       "castSpd": 253,
       "atkRadius": 40

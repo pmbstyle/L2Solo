@@ -122,6 +122,25 @@ async function main() {
         assert.strictEqual(marker.sha256, sha256);
         assert.strictEqual(marker.fileCount, 2);
 
+        const concurrentTarget = path.join(testRoot, 'concurrent', 'Geodata');
+        const concurrentRequestsBefore = requests;
+        const concurrent = await Promise.all([
+            ensureGeodata({
+                ...options,
+                targetDirectory: concurrentTarget,
+                tempDirectory: path.join(testRoot, 'concurrent-temp-a')
+            }),
+            ensureGeodata({
+                ...options,
+                targetDirectory: concurrentTarget,
+                tempDirectory: path.join(testRoot, 'concurrent-temp-b')
+            })
+        ]);
+        assert.strictEqual((await fs.promises.readFile(path.join(concurrentTarget, 'test_02.l2j'), 'utf8')), 'bravo!');
+        assert.ok(concurrent.some((result) => result.downloaded), 'one concurrent installer must publish the target');
+        assert.ok(concurrent.some((result) => result.concurrentInstall), 'the losing installer must reuse the valid published target');
+        assert.strictEqual(requests - concurrentRequestsBefore, 2, 'the regression must exercise two simultaneous downloads');
+
         const badTarget = path.join(testRoot, 'bad-checksum', 'Geodata');
         await assert.rejects(() => ensureGeodata({
             ...options,

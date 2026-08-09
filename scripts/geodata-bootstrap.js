@@ -129,9 +129,13 @@ async function renameWithRetries(source, destination, options = {}) {
     for (let attempt = 0; ; attempt += 1) {
         try {
             await fs.promises.rename(source, destination);
-            return;
+            return 'renamed';
         } catch (error) {
-            const retryable = ['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error.code);
+            if (['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error.code) && options.acceptDestination) {
+                if (await options.acceptDestination()) return 'destination-ready';
+                if (error.code !== 'EPERM') throw error;
+            }
+            const retryable = ['EBUSY', 'EPERM'].includes(error.code);
             if (!retryable || attempt >= retries) throw error;
             await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
@@ -182,7 +186,7 @@ async function ensureGeodata(options = {}) {
 
     await fs.promises.mkdir(path.dirname(targetDirectory), { recursive: true });
     await fs.promises.mkdir(tempDirectory, { recursive: true });
-    const token = `${process.pid}-${Date.now()}`;
+    const token = `${process.pid}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
     const archivePath = path.join(tempDirectory, `geodata-${token}.zip`);
     const stagingDirectory = path.join(path.dirname(targetDirectory), `.Geodata.installing-${token}`);
     let installRoot = null;
@@ -213,15 +217,19 @@ async function ensureGeodata(options = {}) {
             installedAt: new Date().toISOString()
         }, null, 2)}\n`);
 
-        await renameWithRetries(installRoot, targetDirectory);
-        installRoot = null;
-        logger(`installed ${extracted.inspection.fileCount} region files in ${targetDirectory}`);
+        const installOutcome = await renameWithRetries(installRoot, targetDirectory, {
+            acceptDestination: async () => (await inspectDirectory(targetDirectory, validationOptions)).valid
+        });
+        const reusedConcurrentInstall = installOutcome === 'destination-ready';
+        if (!reusedConcurrentInstall) installRoot = null;
+        logger(`${reusedConcurrentInstall ? 'reused concurrent install' : 'installed'} ${extracted.inspection.fileCount} region files in ${targetDirectory}`);
         result = {
-            downloaded: true,
+            downloaded: !reusedConcurrentInstall,
             directory: targetDirectory,
             fileCount: extracted.inspection.fileCount,
             sha256: downloaded.sha256,
-            bytes: downloaded.bytes
+            bytes: downloaded.bytes,
+            concurrentInstall: reusedConcurrentInstall
         };
     } catch (error) {
         operationError = error;

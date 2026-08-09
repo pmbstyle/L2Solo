@@ -235,7 +235,11 @@ module.exports = {
 
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-        if (hpRatio >= 0.95 && mpRatio >= 0.95) {
+        const restingWithLeader = session.partyCompanion === true
+            && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
+        if (hpRatio >= 0.95 && (
+            !BotRoles.shouldRestForMana(bot) || mpRatio >= 0.95
+        ) && !restingWithLeader) {
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);

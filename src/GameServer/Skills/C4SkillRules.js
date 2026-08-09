@@ -719,7 +719,7 @@ const RULES = {
     4642: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { castSpdMul: [1.05, 1.07, 1.09] } },
     4643: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'slow', effect: 'decrease_speed', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 40, statsByLevel: { runSpdMul: [0.85, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }, castRange: 40, effectRange: 200 },
     4622: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 1, absorbPart: 0.8, castRange: 500, effectRange: 1000 },
-    4649: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', ssBoost: 0, baseLandRate: 100, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
+    4649: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 80, ssBoost: 0, baseLandRate: 100, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
     4650: { skillType: NOT_DONE, trait: 'not_done', target: 'self', ssBoost: 0 },
     4651: { skillType: NOT_DONE, trait: 'not_done', target: 'self', ssBoost: 0 },
     4652: { skillType: NOT_DONE, trait: 'not_done', target: 'self', ssBoost: 0 },

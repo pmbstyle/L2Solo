@@ -258,6 +258,19 @@ class Automation extends SelectedModel {
             locZ: Number(to.locZ),
         };
 
+        if (!Object.values(destination).every(Number.isFinite)) {
+            return false;
+        }
+
+        // Coordinate movement is currently used by NPC path waypoints, but
+        // keep it safe for a session moving its own actor too. An older
+        // interpolator must not keep writing stale coordinates after the new
+        // route has been announced.
+        if (session?.actor === src && session.moveTimer) {
+            clearInterval(session.moveTimer);
+            session.moveTimer = null;
+        }
+
         this.clearDestId();
         session.dataSendToMeAndOthers(
             ServerResponse.moveToLocation(src.fetchId(), { from, to: destination }),
@@ -277,6 +290,7 @@ class Automation extends SelectedModel {
             src.setLocXYZ(destination);
             callback(destination);
         }, ticks);
+        return true;
     }
 
     fetchDistanceRatio() {

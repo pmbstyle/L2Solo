@@ -187,6 +187,7 @@ const rewards = mobIds.map((mobId) => {
     });
     const normal = [...categories.values()].map((categoryRows) => {
         const totalChance = categoryRows.reduce((sum, row) => sum + Number(row[5]), 0);
+        if (totalChance <= 0) throw new Error(`Invalid non-positive drop category chance for NPC ${mobId}`);
         return {
             items: categoryRows.map((row) => ({
                 selfId: Number(row[1]), name: sourceItemName(Number(row[1])), min: Number(row[2]),

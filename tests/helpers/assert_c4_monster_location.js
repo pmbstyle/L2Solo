@@ -71,6 +71,7 @@ module.exports = function assertC4MonsterLocation(config) {
     });
 
     const sample = npcs.find((npc) => npc.selfId === config.sample.id);
+    assert.ok(sample, `representative NPC ${config.sample.id} must be loaded`);
     assert.deepStrictEqual(
         {
             id: sample.selfId, name: sample.template.name, level: sample.template.level,
@@ -112,7 +113,9 @@ module.exports = function assertC4MonsterLocation(config) {
         'all source skill rows must exist across new and reused bindings');
     Object.entries(config.combatSkills).forEach(([npcIdText, skillIds]) => {
         const npcId = Number(npcIdText);
-        const instance = npcInstance(npcs.find((npc) => npc.selfId === npcId), 9990000 + npcId);
+        const template = npcs.find((npc) => npc.selfId === npcId);
+        assert.ok(template, `combat NPC ${npcId} must be loaded`);
+        const instance = npcInstance(template, 9990000 + npcId);
         assert.strictEqual(
             NpcSkills.forNpc(instance).length,
             allBindings.filter((binding) => binding.npcId === npcId).length,

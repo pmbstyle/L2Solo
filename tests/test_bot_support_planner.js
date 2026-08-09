@@ -337,6 +337,34 @@ World.npc = { grid: {}, spawns: [corruptedKnight] };
 World.fetchNpcsInRadius = () => [corruptedKnight];
 action = BotSupportPlanner.nextAction(holyBuffer, [{ actor: holyTarget, leader: true }], [holyBuffer]);
 assert.strictEqual(action?.skill.fetchSelfId(), 1043, 'authoritative undead metadata must enable Holy Weapon even when the NPC name has no undead token');
+
+const positionlessTarget = actor('PositionlessTarget', 0);
+positionlessTarget.fetchLocX = () => 20;
+positionlessTarget.fetchLocY = () => 0;
+const positionlessUndead = {
+    fetchId: () => 9002,
+    fetchName: () => 'Positionless Undead',
+    fetchAttackable: () => true,
+    fetchUndead: () => true,
+    fetchDestId: () => 0,
+    isDead: () => false,
+    skillset: { fetchSkills: () => [] }
+};
+World.fetchNpcsInRadius = () => [positionlessUndead];
+action = BotSupportPlanner.nextAction(holyBuffer, [{ actor: positionlessTarget, leader: true }], [holyBuffer]);
+assert.strictEqual(action, null, 'an NPC without position accessors must not be treated as adjacent to the party');
+
+const cachedTarget = actor('CachedTarget', 0);
+cachedTarget.fetchLocX = () => 30;
+cachedTarget.fetchLocY = () => 0;
+let encounterScans = 0;
+World.fetchNpcsInRadius = () => {
+    encounterScans += 1;
+    return [corruptedKnight];
+};
+BotSupportPlanner.nextAction(holyBuffer, [{ actor: cachedTarget, leader: true }], [holyBuffer]);
+BotSupportPlanner.nextAction(holyBuffer, [{ actor: cachedTarget, leader: true }], [holyBuffer]);
+assert.strictEqual(encounterScans, 1, 'companion planning passes must reuse the same short-lived party encounter scan');
 World.npc = originalNpcWorld;
 World.fetchNpcsInRadius = originalFetchNpcsInRadius;
 

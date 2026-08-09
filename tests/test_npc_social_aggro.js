@@ -81,6 +81,11 @@ try {
     assert.strictEqual(otherClan.assists.length, 0, 'different clan should not assist');
     assert.strictEqual(farHelper.assists.length, 0, 'same clan outside help radius should not assist');
     assert.strictEqual(busyHelper.assists.length, 0, 'helper already in combat should not be retargeted');
+    assert.strictEqual(
+        SocialAggro.canAssist(helper, attacked, null, 'Goblin', 300),
+        false,
+        'a missing attacker must not crash or activate social aggro'
+    );
 
     const upperFloorHelper = npc(1008, { clanName: 'Goblin', locX: 100, locZ: -9047 });
     const lowerFloorAttacked = npc(1009, { clanName: 'Goblin', locZ: -12089 });
@@ -90,6 +95,12 @@ try {
         SocialAggro.canAssist(upperFloorHelper, lowerFloorAttacked, lowerFloorAttacker, 'Goblin', 300),
         false,
         'a clan helper must not assist an attacker from another dungeon floor'
+    );
+    const edgeFloorHelper = npc(1011, { clanName: 'Goblin', locX: 100, locZ: 600 });
+    assert.strictEqual(
+        SocialAggro.canAssist(edgeFloorHelper, attacked, attacker(), 'Goblin', 300),
+        true,
+        'the exact sourced social-assist Z boundary must remain eligible'
     );
 
     const hiddenHelper = npc(1010, { clanName: 'Goblin', locX: 100 });

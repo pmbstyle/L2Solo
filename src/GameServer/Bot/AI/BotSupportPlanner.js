@@ -21,6 +21,8 @@ const SITUATIONAL_BUFF_EFFECTS = new Set([
     'mental_shield',
     'resist_poison'
 ]);
+const ENCOUNTER_CONTEXT_CACHE_MS = 500;
+const encounterContextCache = new WeakMap();
 
 // These are single-target buffs whose value depends on the recipient's combat
 // role. Defensive, resistance and movement buffs intentionally stay universal.
@@ -143,7 +145,10 @@ function encounterContext(members) {
         seen.add(id);
         if (!npc?.fetchAttackable?.() || npc.isDead?.()) return false;
         const targetingParty = actorIds.has(Number(npc.fetchDestId?.()));
-        return targetingParty || actors.some((actor) => distance2d(actor, npc) <= 1400);
+        return targetingParty || actors.some((actor) => {
+            const gap = distance2d(actor, npc);
+            return gap !== null && gap <= 1400;
+        });
     });
     const names = nearby.map((npc) => String(npc.fetchName?.() || '')).join(' ').toLowerCase();
     const skills = nearby.flatMap((npc) => npc.skillset?.fetchSkills?.() || npc.skillset?.skills || []);
@@ -154,6 +159,22 @@ function encounterContext(members) {
         poison: /\b(poison|venom|toxin)\b/.test(`${names} ${tokens}`),
         mental: /\b(fear|sleep|derangement|mental|madness)\b/.test(`${names} ${tokens}`)
     };
+}
+
+function cachedEncounterContext(members) {
+    const cacheOwner = members.find((member) => member?.leader)?.actor || members[0]?.actor;
+    if (!cacheOwner || (typeof cacheOwner !== 'object' && typeof cacheOwner !== 'function')) {
+        return encounterContext(members);
+    }
+    const memberKey = members.map((member) => actorOrder(member?.actor)).sort((a, b) => a - b).join(',');
+    const now = Date.now();
+    const cached = encounterContextCache.get(cacheOwner);
+    if (cached && cached.memberKey === memberKey && now - cached.at < ENCOUNTER_CONTEXT_CACHE_MS) {
+        return cached.context;
+    }
+    const context = encounterContext(members);
+    encounterContextCache.set(cacheOwner, { memberKey, at: now, context });
+    return context;
 }
 
 function situationalBuffUseful(effect, context = {}) {
@@ -288,7 +309,7 @@ function actionCompare(a, b) {
 }
 
 function allActions(members, providers, respectReservations = true) {
-    const context = encounterContext(members);
+    const context = cachedEncounterContext(members);
     return members
         .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
         .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)

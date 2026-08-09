@@ -496,10 +496,6 @@ function partyActorIds(leaderSession) {
         .filter((id) => id !== null && id !== undefined));
 }
 
-function partyAggroCount(leaderSession) {
-    return partyAggroMonsters(leaderSession).length;
-}
-
 function partyAggroMonsters(leaderSession) {
     const ids = partyActorIds(leaderSession);
     if (ids.size === 0) return [];
@@ -897,6 +893,11 @@ module.exports = {
             : (rawThreatIsHeldPull || rawThreatOnlyTargetsTravellingPuller || (combatMode === 'passive' && rawPartyThreat?.targetId !== bot.fetchId())
             ? null
             : rawPartyThreat);
+        let partyAggroCache = null;
+        const currentPartyAggroMonsters = () => {
+            if (partyAggroCache === null) partyAggroCache = partyAggroMonsters(playerSession);
+            return partyAggroCache;
+        };
         const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
         announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
@@ -1090,7 +1091,7 @@ module.exports = {
 
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
-            const unsafeToRefresh = unsafeSupportMoment(bot, partyAggroCount(playerSession));
+            const unsafeToRefresh = unsafeSupportMoment(bot, currentPartyAggroMonsters().length);
             const inTown = TownPathfinder.isInsideTown({
                 locX: player.fetchLocX(),
                 locY: player.fetchLocY(),
@@ -1202,7 +1203,7 @@ module.exports = {
         // threat. The target may be a social ranged add that is still outside
         // melee range, so let the normal defence branch react immediately.
         if (!acted && !partyThreat && !leaderTargetId && supportBuffTarget && !healerNeedsAction) {
-            const activeMobs = partyAggroCount(playerSession);
+            const activeMobs = currentPartyAggroMonsters().length;
             if (unsafeSupportMoment(bot, activeMobs)) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
                     buff: supportBuffTarget.effect,
@@ -1360,7 +1361,7 @@ module.exports = {
             keepRoleDecision = true;
         }
 
-        const activePartyThreats = partyThreat ? partyAggroMonsters(playerSession) : [];
+        const activePartyThreats = partyThreat ? currentPartyAggroMonsters() : [];
         const protectedSession = partyThreat?.targetId
             ? PartyAwareness.partySessions(playerSession).find((memberSession) => (
                 Number(memberSession.actor?.fetchId?.()) === Number(partyThreat.targetId)
@@ -1440,7 +1441,7 @@ module.exports = {
         // quiet order, not an "avoid overpull" failure that should overwrite
         // the tank's otherwise useful role status every tick.
         if (!acted && role === 'tank' && partySettings.pullMode === 'auto') {
-            const activeMobs = partyAggroCount(playerSession);
+            const activeMobs = currentPartyAggroMonsters().length;
             const blockReason = PartyPulling.hasDeadPartyMember(playerSession)
                 ? 'party_revival'
                 : pullBlockReason(session, botVitals, partyVitals, activeMobs, partySettings);

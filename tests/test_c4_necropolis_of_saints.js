@@ -17,7 +17,6 @@ const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_availa
 DataCache.init();
 
 const mobIds = [1161, 1162, 1163, 1183, 1184, 1185, 1204, 1205, 1206, 1228, 1230, 1231];
-const reusedMobIds = new Set([1161, 1162, 1183, 1184, 1185, 1204, 1205, 1206, 1228, 1230, 1231]);
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));

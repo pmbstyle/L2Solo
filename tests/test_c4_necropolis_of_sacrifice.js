@@ -84,6 +84,26 @@ assert.deepStrictEqual(
     { kind: 'Weapon.GreatSword', pAtk: 49, mAtk: 26, shots: 2, rank: 'd', crystals: 743 },
     'the missing Heavy Sword drop must load as its exact weapon type rather than a generic item'
 );
+const equipmentItemIds = new Set(npcs.flatMap((npc) => [npc.equipment.weapon, npc.equipment.shield]).filter(Boolean));
+equipmentItemIds.forEach((itemId) => {
+    assert.ok(DataCache.items.some((item) => item.selfId === itemId),
+        `equipped NPC item ${itemId} must have a loaded template`);
+});
+const tombSavant = DataCache.items.find((item) => item.selfId === 5793);
+assert.deepStrictEqual(
+    {
+        kind: tombSavant.template.kind, slot: tombSavant.etc.slot,
+        pAtk: tombSavant.stats.pAtk, mAtk: tombSavant.stats.mAtk,
+        pAtkRnd: tombSavant.stats.pAtkRnd, atkSpd: tombSavant.stats.atkSpd
+    },
+    { kind: 'Weapon.Sword', slot: 7, pAtk: 156, mAtk: 83, pAtkRnd: 10, atkSpd: 379 },
+    'NPC equipment dependencies must retain their exact Lisvus weapon semantics'
+);
+assert.deepStrictEqual(
+    { pAtkRnd: npcs.find((npc) => npc.selfId === 1188).stats.pAtkRnd, accur: npcs.find((npc) => npc.selfId === 1188).stats.accur },
+    { pAtkRnd: 10, accur: 0 },
+    'NPC combat stats must derive random damage and accuracy from the equipped source weapon'
+);
 
 function npcInstance(template, objectId) {
     return new Npc(objectId, {

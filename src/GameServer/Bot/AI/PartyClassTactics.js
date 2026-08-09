@@ -33,7 +33,7 @@ function usable(actor, skill, reserveRatio = 0.10) {
 function active(actor, skill) {
     if (!skill) return false;
     const id = Number(skill.fetchSelfId?.() || 0);
-    const effect = String(skill.fetchSemantic?.().effect || '').toLowerCase();
+    const effect = String((skill.fetchSemantic?.() || {}).effect || '').toLowerCase();
     return EffectStore.list(actor, { includeDebuffs: false }).some((entry) => (
         Number(entry.id || 0) === id || (effect && String(entry.key || '').toLowerCase() === effect)
     ));
@@ -83,7 +83,7 @@ function tankMassAggroAction(actor, threats) {
     const others = threats.filter((target) => Number(target.fetchDestId?.()) !== Number(actor.fetchId?.()));
     const hateAura = learned(actor, 18);
     if (others.length >= 2 && usable(actor, hateAura, 0.08)) {
-        const radius = Math.max(0, Number(hateAura.fetchSemantic?.().radius) || 0);
+        const radius = Math.max(0, Number((hateAura.fetchSemantic?.() || {}).radius) || 0);
         const inAura = others.filter((target) => Math.hypot(
             Number(actor.fetchLocX?.() || 0) - Number(target.fetchLocX?.() || 0),
             Number(actor.fetchLocY?.() || 0) - Number(target.fetchLocY?.() || 0)

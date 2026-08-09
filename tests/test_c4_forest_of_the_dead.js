@@ -149,6 +149,12 @@ assert.strictEqual(EffectStats.multiplier(knightInstance, 'holyVuln'), 1.2,
     'Sacred Attack Weak Point level three must expose the exact Lisvus vulnerability');
 assert.strictEqual(EffectStats.multiplier(knightInstance, 'pDefMul'), 1.43,
     'NPC High P. Def. level six must expose the exact Lisvus multiplier');
+const poisonAura = NpcSkills.forNpc(knightInstance).find((skill) => skill.fetchSelfId() === 4649);
+assert.deepStrictEqual(
+    { sourceTarget: poisonAura.fetchSemantic().sourceTarget, radius: poisonAura.fetchSemantic().radius },
+    { sourceTarget: 'aura', radius: 80 },
+    'NPC Poison must preserve Lisvus TARGET_AURA with the engine default 80-unit skill radius'
+);
 
 const skullCollector = npcInstance(npcs.find((npc) => npc.selfId === 1564), 9601564);
 const drainRoot = NpcSkills.forNpc(skullCollector).find((skill) => skill.fetchSelfId() === 4658);
