@@ -168,6 +168,7 @@ const tests = [
     'tests/test_c4_necropolis_of_ascetics.js',
     'tests/test_c4_necropolis_of_pilgrims.js',
     'tests/test_c4_necropolis_of_worshipers.js',
+    'tests/test_c4_necropolis_of_martyrs.js',
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',
