@@ -36,5 +36,6 @@ assertC4MonsterLocation({
 assertMonsterEmptyBeforeSlice({
     slug: 'c4_fields_of_silence_and_whispers',
     displayName: 'Fields of Silence and Whispers',
+    ignoreSlugs: ['c4_alligator_island'],
     box: { minX: 103662, maxX: 127319, minY: 166091, maxY: 191725, minZ: -3864, maxZ: -2672 }
 });

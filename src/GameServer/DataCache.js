@@ -16,7 +16,7 @@ const DataCache = {
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
         const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
         DataCache.npcs            = [
-            ...validateModel(path + 'Npcs/npcs'),
+            ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/c4_garden_of_beasts'),
             ...validateModel(path + 'Npcs/c4_valley_of_saints'),
@@ -30,6 +30,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/c4_forge_of_the_gods'),
             ...validateModel(path + 'Npcs/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Npcs/c4_alligator_island'),
             ...validateModel(path + 'Npcs/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_witch'),
@@ -62,6 +63,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/Spawns/c4_forge_of_the_gods'),
             ...validateModel(path + 'Npcs/Spawns/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Npcs/Spawns/c4_alligator_island'),
             ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_witch'),
@@ -80,7 +82,7 @@ const DataCache = {
             ...C4SevenSignsDungeonTeleports.spawns
         ];
         DataCache.npcRewards      = [
-            ...validateModel(path + 'Npcs/Rewards/rewards'),
+            ...validateModel(path + 'Npcs/Rewards/rewards').filter((reward) => reward.selfId !== 135),
             ...validateModel(path + 'Npcs/Rewards/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts'),
             ...validateModel(path + 'Npcs/Rewards/c4_valley_of_saints'),
@@ -94,6 +96,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/Rewards/c4_forge_of_the_gods'),
             ...validateModel(path + 'Npcs/Rewards/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Npcs/Rewards/c4_alligator_island'),
             ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_witch'),
@@ -137,6 +140,7 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Items/Others/c4_forge_of_the_gods'),
             ...validateModel(path + 'Items/Others/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Items/Others/c4_alligator_island'),
             ...validateModel(path + 'Items/Others/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_branded'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_witch'),

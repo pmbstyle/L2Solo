@@ -31,6 +31,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_shrine_of_loyalty.json'),
     ...require('../../../data/Npcs/Skills/c4_forge_of_the_gods.json'),
     ...require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers.json'),
+    ...require('../../../data/Npcs/Skills/c4_alligator_island.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),

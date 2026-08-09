@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 7641,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Summon Queen of Cat",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7642,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Summon Unicorn Seraphim",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

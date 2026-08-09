@@ -1,0 +1,439 @@
+[
+  {
+    "selfId": 135,
+    "template": {
+      "name": "Alligator"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 325,
+            "max": 649,
+            "chance": 99.706862
+          },
+          {
+            "selfId": 261,
+            "name": "Bich'Hwa",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004131
+          },
+          {
+            "selfId": 2039,
+            "name": "Bich'Hwa Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.289007
+          }
+        ],
+        "overall": 70.2058
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 43.898232
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 43.898232
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 7.316372
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 1.155096
+          },
+          {
+            "selfId": 2286,
+            "name": "Recipe: Bonebreaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182837
+          },
+          {
+            "selfId": 2296,
+            "name": "Recipe: Atuba Mace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182837
+          },
+          {
+            "selfId": 2985,
+            "name": "Recipe: Plate Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 3.366394
+          }
+        ],
+        "overall": 17.3925
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 17.2318
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2038,
+            "name": "Maingauche Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8193
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5231,
+            "name": "Recipe: Metal Hardener (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 5.5387
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 791,
+    "template": {
+      "name": "Crokian Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 613,
+            "max": 1223,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 352,
+            "name": "Brigandine Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 0.371132
+          },
+          {
+            "selfId": 1941,
+            "name": "Brigandine Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 22.191916
+          },
+          {
+            "selfId": 2198,
+            "name": "Recipe: Sage's Rag",
+            "min": 1,
+            "max": 1,
+            "chance": 10.033983
+          },
+          {
+            "selfId": 2377,
+            "name": "Mithril Scale Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.594706
+          },
+          {
+            "selfId": 2378,
+            "name": "Brigandine Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.594706
+          },
+          {
+            "selfId": 2918,
+            "name": "Mithril Scale Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 33.106779
+          },
+          {
+            "selfId": 2919,
+            "name": "Brigandine Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 33.106779
+          }
+        ],
+        "overall": 2.2364
+      },
+      {
+        "items": [
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 28.526483
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 5.704497
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 14.263241
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 19.017211
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 31.696684
+          },
+          {
+            "selfId": 3020,
+            "name": "Recipe: Elven Long Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.791884
+          }
+        ],
+        "overall": 7.5011
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1825,
+            "name": "Recipe: Oriharukon",
+            "min": 1,
+            "max": 1,
+            "chance": 10.3491
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2041,
+            "name": "War Pick Head",
+            "min": 1,
+            "max": 1,
+            "chance": 1.6162
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2196,
+            "name": "Recipe: Plate Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 5.938
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 792,
+    "template": {
+      "name": "Farhite"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 570,
+            "max": 1136,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 88,
+            "name": "Morning Star",
+            "min": 1,
+            "max": 1,
+            "chance": 0.256556
+          },
+          {
+            "selfId": 90,
+            "name": "Goat Head Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.256556
+          },
+          {
+            "selfId": 158,
+            "name": "Tarbar",
+            "min": 1,
+            "max": 1,
+            "chance": 0.256556
+          },
+          {
+            "selfId": 169,
+            "name": "Skull Breaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.256556
+          },
+          {
+            "selfId": 172,
+            "name": "Heavy Bone Club",
+            "min": 1,
+            "max": 1,
+            "chance": 0.256556
+          },
+          {
+            "selfId": 2031,
+            "name": "Morning Star Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.096921
+          },
+          {
+            "selfId": 2032,
+            "name": "Goat Head Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 18.329532
+          },
+          {
+            "selfId": 2035,
+            "name": "Tarbar Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.096921
+          },
+          {
+            "selfId": 2036,
+            "name": "Skull Breaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.096921
+          },
+          {
+            "selfId": 2037,
+            "name": "Heavy Bone Club Head",
+            "min": 1,
+            "max": 1,
+            "chance": 20.096921
+          }
+        ],
+        "overall": 0.3508
+      },
+      {
+        "items": [
+          {
+            "selfId": 7641,
+            "name": "Spellbook - Summon Queen of Cat",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 7642,
+            "name": "Spellbook - Summon Unicorn Seraphim",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 4.3552
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1903,
+            "name": "Elven Ring Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 22.4868
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2035,
+            "name": "Tarbar Head",
+            "min": 1,
+            "max": 1,
+            "chance": 1.3647
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2202,
+            "name": "Recipe: Assault Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 13.7841
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
