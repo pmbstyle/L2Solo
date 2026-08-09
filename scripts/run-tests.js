@@ -172,6 +172,7 @@ const tests = [
     'tests/test_c4_catacomb_of_dark_omen.js',
     'tests/test_c4_catacomb_of_the_apostate.js',
     'tests/test_c4_catacomb_of_the_heretics.js',
+    'tests/test_c4_catacomb_of_the_forbidden_path.js',
     'tests/test_item_skill_use.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',
