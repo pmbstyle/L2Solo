@@ -1,0 +1,612 @@
+[
+  {
+    "selfId": 1153,
+    "template": {
+      "kind": "Monster",
+      "name": "Purgatory Serpent",
+      "title": "",
+      "level": 56,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 706,
+      "pAtkRnd": 10,
+      "pDef": 281,
+      "mAtk": 382,
+      "mDef": 269,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 2724,
+      "maxMp": 1019,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 46
+    },
+    "equipment": {
+      "weapon": 73,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.143494897959,
+      "sp": 294
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1154,
+    "template": {
+      "kind": "Monster",
+      "name": "Hell Keeper Medusa",
+      "title": "",
+      "level": 58,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 710,
+      "pAtkRnd": 30,
+      "pDef": 384,
+      "mAtk": 428,
+      "mDef": 284,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 2889,
+      "maxMp": 1084,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.115636147444,
+      "sp": 317
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1155,
+    "template": {
+      "kind": "Monster",
+      "name": "Purgatory Conjurer",
+      "title": "",
+      "level": 59,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 820,
+      "pAtkRnd": 30,
+      "pDef": 305,
+      "mAtk": 453,
+      "mDef": 291,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 2971,
+      "maxMp": 1117,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084745762712,
+      "sp": 322
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1177,
+    "template": {
+      "kind": "Monster",
+      "name": "Lilim Knight Errant",
+      "title": "",
+      "level": 54,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 769,
+      "pAtkRnd": 30,
+      "pDef": 258,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 61,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 5800,
+      "shield": 5799,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.503772290809,
+      "sp": 349
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1178,
+    "template": {
+      "kind": "Monster",
+      "name": "Lilim Marauder",
+      "title": "",
+      "level": 57,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 786,
+      "pAtkRnd": 5,
+      "pDef": 239,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 229,
+      "shield": 229,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_lilim",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.44567559249,
+      "sp": 390
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1198,
+    "template": {
+      "kind": "Monster",
+      "name": "Nephilim Swordsman",
+      "title": "",
+      "level": 54,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 769,
+      "pAtkRnd": 30,
+      "pDef": 258,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 71,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 37.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.503772290809,
+      "sp": 349
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1199,
+    "template": {
+      "kind": "Monster",
+      "name": "Nephilim Guard",
+      "title": "",
+      "level": 57,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 899,
+      "pAtkRnd": 30,
+      "pDef": 239,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 71,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 32.4
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_nephi",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.44567559249,
+      "sp": 390
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1221,
+    "template": {
+      "kind": "Monster",
+      "name": "Sepulcher Inquisitor",
+      "title": "",
+      "level": 52,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 570,
+      "pAtkRnd": 30,
+      "pDef": 251,
+      "mAtk": 300,
+      "mDef": 239,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 2402,
+      "maxMp": 892,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084689349112,
+      "sp": 227
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1222,
+    "template": {
+      "kind": "Monster",
+      "name": "Sepulcher Archon",
+      "title": "",
+      "level": 55,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 737,
+      "pAtkRnd": 10,
+      "pDef": 292,
+      "mAtk": 360,
+      "mDef": 261,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2643,
+      "maxMp": 987,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 49.5
+    },
+    "equipment": {
+      "weapon": 298,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.14347107438,
+      "sp": 279
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1223,
+    "template": {
+      "kind": "Monster",
+      "name": "Sepulcher Inquisitor",
+      "title": "",
+      "level": 57,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 743,
+      "pAtkRnd": 30,
+      "pDef": 289,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 46
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084641428132,
+      "sp": 293
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

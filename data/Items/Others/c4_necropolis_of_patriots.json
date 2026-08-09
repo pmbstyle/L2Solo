@@ -1,0 +1,137 @@
+[
+  {
+    "selfId": 4944,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Breastplate (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 41600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4965,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sprite's Staff (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4968,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Kris (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5003,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Art of Battle Axe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5280,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Blessed Spiritshot (B) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 130000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5809,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Aqua Splash",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5810,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Rain of Fire",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5816,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Advanced Block",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6351,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet: Ritual of Life",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 8200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]
