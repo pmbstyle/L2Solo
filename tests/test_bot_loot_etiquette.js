@@ -27,6 +27,39 @@ const deadBotSession = {
     partyCompanion: true
 };
 
+const casterDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: () => 29 } }, {
+    selfId: 321,
+    name: 'Demon Fangs',
+    kind: 'Weapon.Etc',
+    weapon: true,
+    armor: false,
+    shot: false,
+    potion: false,
+    scroll: false,
+    pAtk: 67,
+    mAtk: 66,
+    price: 1520000
+});
+assert(casterDemand.reasons.includes('caster weapon'), 'a healer must recognize Weapon.Etc caster drops without relying on name heuristics');
+
+const physicalSword = {
+    selfId: 148,
+    name: 'Sword of Damascus',
+    kind: 'Weapon.Sword',
+    weapon: true,
+    armor: false,
+    shot: false,
+    potion: false,
+    scroll: false,
+    pAtk: 194,
+    mAtk: 61,
+    price: 13100000
+};
+const healerSwordDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: () => 29 } }, physicalSword);
+const fighterSwordDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: () => 0 } }, physicalSword);
+assert(!healerSwordDemand.reasons.includes('caster weapon'), 'a healer must not claim an ordinary physical sword as caster gear');
+assert(fighterSwordDemand.score > healerSwordDemand.score, 'a physical sword must retain higher demand for a melee damage dealer');
+
 assert.strictEqual(
     BotLootEtiquette.shouldRecordIgnoredRequest({ playerSession, botSession: liveBotSession }),
     true,

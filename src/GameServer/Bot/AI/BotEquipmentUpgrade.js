@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const ARMOR_SLOTS = {
@@ -53,18 +54,6 @@ function armorStyleFor(role) {
     return 'heavy';
 }
 
-function weaponKindsFor(role, classId) {
-    if (role === 'archer') return ['Weapon.Bow'];
-    if (role === 'dagger') return ['Weapon.Knife'];
-    if (role === 'mage' || role === 'healer' || role === 'buffer') {
-        return ['Weapon.Sword', 'Weapon.Blunt'];
-    }
-    if ([44, 45, 47, 49, 50, 51, 53, 54, 56].includes(Number(classId))) {
-        return ['Weapon.Blunt'];
-    }
-    return ['Weapon.Sword', 'Weapon.Blunt'];
-}
-
 function armorKindsFor(role, slot) {
     const style = armorStyleFor(role);
     if ([ARMOR_SLOTS.chest, ARMOR_SLOTS.pants, ARMOR_SLOTS.fullArmor].includes(Number(slot))) {
@@ -99,8 +88,14 @@ function isSuitableItem(actor, item) {
     const slot = Number(item.fetchSlot());
 
     if (item.isWeapon()) {
-        const kinds = weaponKindsFor(role, actor.fetchClassId());
-        if (!kinds.includes(kind)) return false;
+        if (!BotWeaponCompatibility.isSuitableWeapon(
+            kind,
+            item.fetchName(),
+            item.fetchPAtk(),
+            item.fetchMAtk(),
+            role,
+            actor.fetchClassId()
+        )) return false;
         if (!['mage', 'healer', 'buffer', 'archer'].includes(role) && slot !== ARMOR_SLOTS.weapon) return false;
         return true;
     }
@@ -120,10 +115,12 @@ function scoreItem(actor, item) {
     const slot = Number(item.fetchSlot());
 
     if (item.isWeapon()) {
-        if (role === 'mage' || role === 'healer' || role === 'buffer') {
-            return item.fetchMAtk() * 3 + item.fetchPAtk();
-        }
-        return item.fetchPAtk() * 2 + item.fetchMAtk();
+        return BotWeaponCompatibility.scoreWeapon(
+            item.fetchPAtk(),
+            item.fetchMAtk(),
+            role,
+            actor.fetchClassId()
+        );
     }
 
     if (kind === 'Armor.Jewel') return item.fetchMDef();
@@ -137,6 +134,11 @@ function currentItemForSlot(backpack, slot) {
         return backpack.fetchEquippedWeapon ? backpack.fetchEquippedWeapon() : null;
     }
     return backpack.fetchItemRaw(backpack.fetchPaperdollId(slot));
+}
+
+function currentItemForExactSlot(backpack, slot) {
+    const item = currentItemForSlot(backpack, slot);
+    return Number(item?.fetchSlot()) === Number(slot) ? item : null;
 }
 
 function currentScoreForSlot(actor, slot) {
@@ -153,6 +155,86 @@ function currentScoreForSlot(actor, slot) {
 
     const current = currentItemForSlot(backpack, slot);
     return current ? scoreItem(actor, current) : 0;
+}
+
+function isTorsoSlot(slot) {
+    return [ARMOR_SLOTS.chest, ARMOR_SLOTS.pants, ARMOR_SLOTS.fullArmor].includes(Number(slot));
+}
+
+function bestItemForSlot(actor, current, candidates, slot) {
+    return candidates.reduce((best, item) => {
+        if (Number(item.fetchSlot()) !== Number(slot)) return best;
+        if (!best || scoreItem(actor, item) > scoreItem(actor, best)) return item;
+        return best;
+    }, current || null);
+}
+
+function sameItem(left, right) {
+    if (!left || !right) return !left && !right;
+    return Number(left.fetchId()) === Number(right.fetchId());
+}
+
+function upgradeEntry(actor, item, slot) {
+    return { item, slot, score: scoreItem(actor, item) };
+}
+
+function findTorsoUpgrades(actor, suitableItems) {
+    const backpack = actor?.backpack;
+    if (!backpack) return [];
+
+    const candidates = suitableItems.filter((item) => isTorsoSlot(item.fetchSlot()));
+    // Full-body armor is mirrored into paperdoll chest slot 10 for the client.
+    // Match the item's real slot so that alias is not counted as a separate chest.
+    const currentFull = currentItemForExactSlot(backpack, ARMOR_SLOTS.fullArmor);
+    const currentChest = currentItemForExactSlot(backpack, ARMOR_SLOTS.chest);
+    const currentPants = currentItemForExactSlot(backpack, ARMOR_SLOTS.pants);
+    const bestFull = bestItemForSlot(actor, currentFull, candidates, ARMOR_SLOTS.fullArmor);
+    const bestChest = bestItemForSlot(actor, currentChest, candidates, ARMOR_SLOTS.chest);
+    const bestPants = bestItemForSlot(actor, currentPants, candidates, ARMOR_SLOTS.pants);
+    const hasFullLayout = !!bestFull;
+    const hasSplitLayout = !!bestChest && !!bestPants;
+
+    // Do not remove a complete full-body armor for a lone chest or pants item.
+    // The paperdoll slots conflict, so torso upgrades must be compared as layouts.
+    if (!hasFullLayout && !hasSplitLayout) {
+        return [
+            !sameItem(bestChest, currentChest) && bestChest
+                ? upgradeEntry(actor, bestChest, ARMOR_SLOTS.chest)
+                : null,
+            !sameItem(bestPants, currentPants) && bestPants
+                ? upgradeEntry(actor, bestPants, ARMOR_SLOTS.pants)
+                : null
+        ].filter(Boolean);
+    }
+
+    const fullScore = hasFullLayout ? scoreItem(actor, bestFull) : 0;
+    const splitScore = hasSplitLayout
+        ? scoreItem(actor, bestChest) + scoreItem(actor, bestPants)
+        : 0;
+    const partialSplitScore = (bestChest ? scoreItem(actor, bestChest) : 0) +
+        (bestPants ? scoreItem(actor, bestPants) : 0);
+    const chooseFull = hasFullLayout && (
+        (!hasSplitLayout && (!!currentFull || fullScore > partialSplitScore)) ||
+        (hasSplitLayout && (
+            fullScore > splitScore ||
+            (fullScore === splitScore && !!currentFull)
+        ))
+    );
+
+    if (chooseFull) {
+        return sameItem(bestFull, currentFull)
+            ? []
+            : [upgradeEntry(actor, bestFull, ARMOR_SLOTS.fullArmor)];
+    }
+
+    return [
+        !sameItem(bestChest, currentChest)
+            ? upgradeEntry(actor, bestChest, ARMOR_SLOTS.chest)
+            : null,
+        !sameItem(bestPants, currentPants)
+            ? upgradeEntry(actor, bestPants, ARMOR_SLOTS.pants)
+            : null
+    ].filter(Boolean);
 }
 
 function candidateSlots(item) {
@@ -181,11 +263,13 @@ function bestUpgradeSlot(actor, item, plannedScores) {
 function findBestUpgrades(session) {
     const actor = session?.actor;
     const items = actor?.backpack?.fetchItems ? actor.backpack.fetchItems() : [];
+    const suitableItems = items.filter((item) => isSuitableItem(actor, item));
+    const torsoUpgrades = findTorsoUpgrades(actor, suitableItems);
     const plannedScores = new Map();
     const usedIds = new Set();
 
-    return items
-        .filter((item) => isSuitableItem(actor, item))
+    const otherUpgrades = suitableItems
+        .filter((item) => !isTorsoSlot(item.fetchSlot()))
         .sort((a, b) => scoreItem(actor, b) - scoreItem(actor, a) || b.fetchPrice() - a.fetchPrice())
         .reduce((upgrades, item) => {
             if (usedIds.has(item.fetchId())) return upgrades;
@@ -197,21 +281,18 @@ function findBestUpgrades(session) {
             usedIds.add(item.fetchId());
             plannedScores.set(slot, itemScore);
 
-            if (slot === ARMOR_SLOTS.fullArmor) {
-                plannedScores.set(ARMOR_SLOTS.chest, itemScore);
-                plannedScores.set(ARMOR_SLOTS.pants, itemScore);
-            }
-
             upgrades.push({ item, slot, score: itemScore });
             return upgrades;
         }, []);
+
+    return [...torsoUpgrades, ...otherUpgrades];
 }
 
 function canApplyNow(session, options = {}) {
     if (!options.force && !isBotSession(session)) return false;
     const actor = session?.actor;
     if (!actor?.backpack || actor.isDead?.()) return false;
-    if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.() || actor.state?.fetchTowards?.()) return false;
+    if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.()) return false;
     if (!options.force && session.lastEquipmentUpgradeCheckAt && Date.now() - session.lastEquipmentUpgradeCheckAt < UPGRADE_COOLDOWN_MS) return false;
     return true;
 }
@@ -222,6 +303,16 @@ function safeCandidate(session, itemId) {
     const item = items.find((candidate) => Number(candidate.fetchId?.()) === Number(itemId || 0));
     if (!item) return { item: null, slot: null, reason: 'item_not_found' };
     if (!isSuitableItem(actor, item)) return { item, slot: null, reason: 'incompatible_item' };
+
+    if (isTorsoSlot(item.fetchSlot())) {
+        const torsoUpgrades = findTorsoUpgrades(actor, items.filter((candidate) => isSuitableItem(actor, candidate)));
+        const upgrade = torsoUpgrades.find(({ item: candidate }) => Number(candidate.fetchId()) === Number(itemId));
+        if (!upgrade) return { item, slot: null, reason: 'not_an_upgrade' };
+        if (torsoUpgrades.length > 1) {
+            return { item, slot: null, reason: 'requires_equipment_optimization' };
+        }
+        return { ...upgrade, reason: null };
+    }
 
     const slot = bestUpgradeSlot(actor, item, new Map());
     if (!slot) return { item, slot: null, reason: 'not_an_upgrade' };
@@ -281,15 +372,19 @@ function applyBestUpgrades(session, options = {}) {
 }
 
 function listSafeLoadouts(session) {
-    return findBestUpgrades(session).map(({ item, slot, score }) => ({
-        itemId: item.fetchId(),
-        selfId: item.fetchSelfId(),
-        name: item.fetchName(),
-        slot,
-        score,
-        rank: item.fetchRank?.() || 'none',
-        kind: item.fetchKind()
-    }));
+    const upgrades = findBestUpgrades(session);
+    const torsoUpgrades = upgrades.filter(({ item }) => isTorsoSlot(item.fetchSlot()));
+    return upgrades
+        .filter(({ item }) => !isTorsoSlot(item.fetchSlot()) || torsoUpgrades.length === 1)
+        .map(({ item, slot, score }) => ({
+            itemId: item.fetchId(),
+            selfId: item.fetchSelfId(),
+            name: item.fetchName(),
+            slot,
+            score,
+            rank: item.fetchRank?.() || 'none',
+            kind: item.fetchKind()
+        }));
 }
 
 function applyCandidate(session, itemId, options = {}) {
@@ -297,7 +392,7 @@ function applyCandidate(session, itemId, options = {}) {
     session.lastEquipmentUpgradeCheckAt = Date.now();
     const candidate = safeCandidate(session, itemId);
     if (candidate.reason) return { applied: false, reason: candidate.reason };
-    applyUpgradeEntries(session, [{ item: candidate.item, slot: candidate.slot, score: candidate.score }]);
+    applyUpgradeEntries(session, [candidate]);
     return {
         applied: true,
         reason: 'equipment_equipped',

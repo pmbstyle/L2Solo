@@ -71,6 +71,10 @@ class NpcModel extends CreatureModel {
         return this.model.helpRadius ?? this.model.clan?.helpRadius ?? 0;
     }
 
+    fetchUndead() {
+        return this.model.undead === true;
+    }
+
     fetchOwnerId() {
         return this.model.ownerId ?? 0;
     }

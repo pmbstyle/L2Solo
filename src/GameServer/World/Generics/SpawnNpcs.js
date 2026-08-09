@@ -37,6 +37,19 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     return instance;
 }
 
+function normalizePeriod(spawn) {
+    return ['day', 'night'].includes(spawn?.period) ? spawn.period : 'always';
+}
+
+function isPeriodic(spawn) {
+    return normalizePeriod(spawn) !== 'always';
+}
+
+function isPeriodActive(spawn, mode = 'day') {
+    const period = normalizePeriod(spawn);
+    return period === 'always' || period === mode;
+}
+
 function randomCoords(definition) {
     const { spawn, bounds } = definition;
     if (utils.size(spawn.coords) > 0) {
@@ -55,6 +68,7 @@ function randomCoords(definition) {
 }
 
 function spawnNpc(world, definition) {
+    if (!isPeriodActive(definition?.spawn, world?.npc?.periodMode)) return null;
     const coords = randomCoords(definition);
     const npc = createNpc(world, definition.npc, coords, definition);
     // Respawns happen independently of player movement.  Announce the new
@@ -122,6 +136,7 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
 }
 
 function spawnNpcs() {
+    this.npc.periodDefinitions = [];
     DataCache.npcSpawns.forEach((item) => {
         const bounds = item.bounds;
 
@@ -136,14 +151,23 @@ function spawnNpcs() {
                                 ...definition,
                                 spawn: { ...definition.spawn, coords: [structuredClone(info)] }
                             };
-                            createNpc(this, npc, {
-                                locX: info.locX, locY: info.locY, locZ: info.locZ,
-                                head: npc.template.kind === 'Monster' && info.head === 0 ? utils.randomNumber(65536) : info.head,
-                            }, fixedDefinition);
+                            if (isPeriodic(fixedDefinition.spawn)) this.npc.periodDefinitions.push(fixedDefinition);
+                            if (isPeriodActive(fixedDefinition.spawn, this.npc.periodMode)) {
+                                createNpc(this, npc, {
+                                    locX: info.locX, locY: info.locY, locZ: info.locZ,
+                                    head: npc.template.kind === 'Monster' && info.head === 0 ? utils.randomNumber(65536) : info.head,
+                                }, fixedDefinition);
+                            }
                         });
                     }
                     else { // Random location within bounds
-                        spawnNpc(this, definition);
+                        const randomDefinition = {
+                            ...definition,
+                            spawn: structuredClone(definition.spawn),
+                            bounds: structuredClone(definition.bounds)
+                        };
+                        if (isPeriodic(randomDefinition.spawn)) this.npc.periodDefinitions.push(randomDefinition);
+                        spawnNpc(this, randomDefinition);
                     }
                 }
             });
@@ -159,6 +183,8 @@ module.exports.spawnQuestNpc = spawnQuestNpc;
 module.exports.despawnQuestNpc = despawnQuestNpc;
 module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
+module.exports.isPeriodic = isPeriodic;
+module.exports.isPeriodActive = isPeriodActive;
 module.exports.shouldRespawn = function shouldRespawn(spawn) {
     return Number(spawn?.respawn) > 0;
 };

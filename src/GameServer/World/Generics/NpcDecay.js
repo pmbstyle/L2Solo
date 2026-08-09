@@ -98,6 +98,48 @@ function decay(world, npc) {
     return true;
 }
 
+function decayMany(world, npcs) {
+    if (!world?.npc?.spawns || !Array.isArray(npcs) || npcs.length === 0) return 0;
+
+    const removed = new Set();
+    const notifications = [];
+    npcs.forEach((npc) => {
+        if (!npc?.fetchId || npc.corpseDecayState === 'removed') return;
+        try {
+            const npcId = npc.fetchId();
+            removed.add(npc);
+            notifications.push({ npcId, sourceSession: npc.corpseDecaySession });
+            npc.corpseDecayState = 'removed';
+            npc.corpseDecayAt = 0;
+            npc.corpseDecaySession = null;
+            npc.corpseDecaySweepFailures = 0;
+            clearTimer(npc);
+        }
+        catch (error) {
+            logWarning('failed to prepare NPC for batch decay', error);
+        }
+    });
+    if (removed.size === 0) return 0;
+
+    world.npc.spawns = world.npc.spawns.filter((entry) => !removed.has(entry));
+    try {
+        world.indexSpawnsInGrid?.();
+    }
+    catch (error) {
+        logWarning('grid rebuild failed during batch decay', error);
+    }
+
+    notifications.forEach(({ npcId, sourceSession }) => {
+        try {
+            NpcVisibility.deleteKnownNpc(world, sourceSession, npcId);
+        }
+        catch (error) {
+            logWarning(`failed to notify deletion for NPC ${npcId}`, error);
+        }
+    });
+    return removed.size;
+}
+
 function discardUnremovableNpc(world, npc, attempts) {
     if (!world?.npc?.spawns || !npc) return false;
 
@@ -181,6 +223,7 @@ function stop(world) {
 module.exports = {
     schedule,
     decay,
+    decayMany,
     sweepExpired,
     start,
     stop

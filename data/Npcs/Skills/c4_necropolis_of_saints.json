@@ -1,0 +1,27 @@
+[
+  {
+    "npcId": 1163,
+    "skillId": 4298,
+    "level": 1
+  },
+  {
+    "npcId": 1163,
+    "skillId": 4305,
+    "level": 1
+  },
+  {
+    "npcId": 1163,
+    "skillId": 4281,
+    "level": 2
+  },
+  {
+    "npcId": 1163,
+    "skillId": 4276,
+    "level": 1
+  },
+  {
+    "npcId": 1163,
+    "skillId": 4076,
+    "level": 3
+  }
+]

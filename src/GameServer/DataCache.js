@@ -14,9 +14,80 @@ const DataCache = {
         DataCache.revitalize      = validateModel(path + 'Templates/Revitalize/revitalize');
         DataCache.skillTree       = validateModel(path + 'Skills/Tree/tree');
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
-        DataCache.npcs            = [...validateModel(path + 'Npcs/npcs'), ...C4LateTownGatekeepers.npcs];
-        DataCache.npcSpawns       = [...validateModel(path + 'Npcs/Spawns/spawns'), ...C4LateTownGatekeepers.spawns];
-        DataCache.npcRewards      = validateModel(path + 'Npcs/Rewards/rewards');
+        const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
+        DataCache.npcs            = [
+            ...validateModel(path + 'Npcs/npcs'),
+            ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
+            ...validateModel(path + 'Npcs/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/c4_elmore_northeast_coast'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_sacrifice'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_branded'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_witch'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_saints'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_patriots'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_ascetics'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_pilgrims'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_worshipers'),
+            ...validateModel(path + 'Npcs/c4_necropolis_of_martyrs'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_dark_omen'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_heretics'),
+            ...validateModel(path + 'Npcs/c4_catacomb_of_the_forbidden_path'),
+            ...C4LateTownGatekeepers.npcs,
+            ...C4SevenSignsDungeonTeleports.npcs
+        ];
+        DataCache.npcSpawns       = [
+            ...validateModel(path + 'Npcs/Spawns/spawns'),
+            ...validateModel(path + 'Npcs/Spawns/c4_swamp_of_screams'),
+            ...validateModel(path + 'Npcs/Spawns/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/Spawns/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/Spawns/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/Spawns/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/Spawns/c4_elmore_northeast_coast'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_sacrifice'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_branded'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_witch'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_saints'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_patriots'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_ascetics'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_pilgrims'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_worshipers'),
+            ...validateModel(path + 'Npcs/Spawns/c4_necropolis_of_martyrs'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_dark_omen'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_heretics'),
+            ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_forbidden_path'),
+            ...C4LateTownGatekeepers.spawns,
+            ...C4SevenSignsDungeonTeleports.spawns
+        ];
+        DataCache.npcRewards      = [
+            ...validateModel(path + 'Npcs/Rewards/rewards'),
+            ...validateModel(path + 'Npcs/Rewards/c4_swamp_of_screams'),
+            ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts'),
+            ...validateModel(path + 'Npcs/Rewards/c4_valley_of_saints'),
+            ...validateModel(path + 'Npcs/Rewards/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Npcs/Rewards/c4_devils_isle'),
+            ...validateModel(path + 'Npcs/Rewards/c4_elmore_northeast_coast'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_sacrifice'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_branded'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_witch'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_saints'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_patriots'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_ascetics'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_pilgrims'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_worshipers'),
+            ...validateModel(path + 'Npcs/Rewards/c4_necropolis_of_martyrs'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_dark_omen'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_heretics'),
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_forbidden_path')
+        ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
 
@@ -27,10 +98,31 @@ const DataCache = {
             ...validateModel(path + 'Items/Armors/c4_s_grade'),
             ...validateModel(path + 'Items/Weapons/weapons'),
             ...validateModel(path + 'Items/Weapons/c4_s_grade'),
+            ...validateModel(path + 'Items/Weapons/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Items/Others/others'),
             ...validateModel(path + 'Items/Others/c4_a_grade'),
             ...validateModel(path + 'Items/Others/c4_sealed_a_grade'),
-            ...validateModel(path + 'Items/Others/c4_s_grade')
+            ...validateModel(path + 'Items/Others/c4_s_grade'),
+            ...validateModel(path + 'Items/Others/c4_swamp_of_screams'),
+            ...validateModel(path + 'Items/Others/c4_garden_of_beasts'),
+            ...validateModel(path + 'Items/Others/c4_valley_of_saints'),
+            ...validateModel(path + 'Items/Others/c4_forest_of_the_dead'),
+            ...validateModel(path + 'Items/Others/c4_devils_isle'),
+            ...validateModel(path + 'Items/Others/c4_elmore_northeast_coast'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_sacrifice'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_branded'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_witch'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_the_disciples'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_saints'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_patriots'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_ascetics'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_pilgrims'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_worshipers'),
+            ...validateModel(path + 'Items/Others/c4_necropolis_of_martyrs'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_dark_omen'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_apostate'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_heretics'),
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_forbidden_path')
         ];
 
         DataCache.skills = [

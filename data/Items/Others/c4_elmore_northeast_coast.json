@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 5273,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Spiritshot (D) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 5000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6035,
+    "template": {
+      "kind": "Other",
+      "name": "Magic Haste Potion",
+      "class1": 4,
+      "class2": 0,
+      "mass": 20,
+      "price": 2400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

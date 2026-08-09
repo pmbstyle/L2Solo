@@ -1,0 +1,77 @@
+[
+  {
+    "selfId": 5437,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Heavy Sword(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 8180
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5531,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Heavy Sword Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 11912
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6037,
+    "template": {
+      "kind": "Other",
+      "name": "Waking Scroll",
+      "class1": 4,
+      "class2": 0,
+      "mass": 5,
+      "price": 120
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6360,
+    "template": {
+      "kind": "Other",
+      "name": "Blue Seal Stone",
+      "class1": 4,
+      "class2": 0,
+      "mass": 0,
+      "price": 3
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6362,
+    "template": {
+      "kind": "Other",
+      "name": "Red Seal Stone",
+      "class1": 4,
+      "class2": 0,
+      "mass": 0,
+      "price": 10
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

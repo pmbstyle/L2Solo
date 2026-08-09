@@ -3,6 +3,8 @@
 // its first ten seconds in the world.
 const SPAWN_AGGRO_DELAY_MS = 10000;
 const AGGRO_RADIUS = 500;
+const MAX_AGGRO_Z_DIFFERENCE = 400;
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 function isHotBotSession(session) {
     return !!(
@@ -38,12 +40,23 @@ function distanceSquared(first, second) {
     return (dx * dx) + (dy * dy);
 }
 
+function canEngage(npc, actor, now = Date.now()) {
+    if (!isAlive(actor) || !isEligible(npc, now)) return false;
+    if (distanceSquared(npc, actor) > AGGRO_RADIUS * AGGRO_RADIUS) return false;
+    if (Math.abs(npc.fetchLocZ() - actor.fetchLocZ()) > MAX_AGGRO_Z_DIFFERENCE) return false;
+
+    return GeodataEngine.hasLineOfSight(
+        npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
+        actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()
+    );
+}
+
 function engageNearby(session, actor, { world = invoke('GameServer/World/World'), now = Date.now(), npcs = null } = {}) {
     if (!isAlive(actor)) return [];
 
     const nearby = npcs || world.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), AGGRO_RADIUS);
     return nearby
-        .filter((npc) => isEligible(npc, now) && distanceSquared(npc, actor) <= AGGRO_RADIUS * AGGRO_RADIUS)
+        .filter((npc) => canEngage(npc, actor, now))
         .map((npc) => {
             npc.enterCombatState(session, actor);
             return npc;
@@ -80,9 +93,11 @@ function startAggroTicker(world = invoke('GameServer/World/World'), {
 module.exports = {
     AGGRO_RADIUS,
     SPAWN_AGGRO_DELAY_MS,
+    MAX_AGGRO_Z_DIFFERENCE,
     isHotBotSession,
     isLiveSession,
     isEligible,
+    canEngage,
     engageNearby,
     armSpawnGrace,
     tickLiveActors,

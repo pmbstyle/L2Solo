@@ -1,0 +1,2503 @@
+[
+  {
+    "selfId": 1547,
+    "template": {
+      "kind": "Monster",
+      "name": "Corrupted Knight",
+      "title": "",
+      "level": 63,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 10,
+      "pDef": 398,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.044847568657,
+      "sp": 733
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1548,
+    "template": {
+      "kind": "Monster",
+      "name": "Resurrected Knight",
+      "title": "",
+      "level": 63,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 10,
+      "pDef": 398,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.76845553036,
+      "sp": 634
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1549,
+    "template": {
+      "kind": "Monster",
+      "name": "Corrupted Guard",
+      "title": "",
+      "level": 64,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 902,
+      "pAtkRnd": 5,
+      "pDef": 408,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.044677734375,
+      "sp": 767
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1552,
+    "template": {
+      "kind": "Monster",
+      "name": "Resurrected Guard",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1307,
+      "pAtkRnd": 5,
+      "pDef": 322,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 221,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.085629017447,
+      "sp": 855
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1553,
+    "template": {
+      "kind": "Monster",
+      "name": "Trampled Man",
+      "title": "",
+      "level": 65,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1077,
+      "pAtkRnd": 30,
+      "pDef": 355,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 44
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.483313609467,
+      "sp": 582
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1555,
+    "template": {
+      "kind": "Monster",
+      "name": "Slaughter Executioner",
+      "title": "",
+      "level": 65,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 979,
+      "pAtkRnd": 30,
+      "pDef": 391,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.803313609467,
+      "sp": 708
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1557,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Snatcher",
+      "title": "",
+      "level": 66,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1123,
+      "pAtkRnd": 20,
+      "pDef": 428,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.014233241506,
+      "sp": 826
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1559,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Maker",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1020,
+      "pAtkRnd": 20,
+      "pDef": 471,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.202938475666,
+      "sp": 903
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1560,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Shaper",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1020,
+      "pAtkRnd": 20,
+      "pDef": 471,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.202938475666,
+      "sp": 903
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1561,
+    "template": {
+      "kind": "Monster",
+      "name": "Sacrificed Man",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1063,
+      "pAtkRnd": 30,
+      "pDef": 410,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 44
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.794831811094,
+      "sp": 767
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1562,
+    "template": {
+      "kind": "Monster",
+      "name": "Guillotine's Ghost",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1169,
+      "pAtkRnd": 30,
+      "pDef": 373,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.858765872132,
+      "sp": 795
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1563,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Collector",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1286,
+      "pAtkRnd": 20,
+      "pDef": 399,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.159723769214,
+      "sp": 923
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1564,
+    "template": {
+      "kind": "Monster",
+      "name": "Skull Collector",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1286,
+      "pAtkRnd": 20,
+      "pDef": 399,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.054577856984,
+      "sp": 878
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1565,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Animator",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1339,
+      "pAtkRnd": 20,
+      "pDef": 408,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.014273356401,
+      "sp": 900
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1566,
+    "template": {
+      "kind": "Monster",
+      "name": "Skull Animator",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1339,
+      "pAtkRnd": 20,
+      "pDef": 408,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.20285467128,
+      "sp": 984
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1567,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Slayer",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1106,
+      "pAtkRnd": 20,
+      "pDef": 494,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.633001730104,
+      "sp": 1176
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1569,
+    "template": {
+      "kind": "Monster",
+      "name": "Devil Bat",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1217,
+      "pAtkRnd": 30,
+      "pDef": 382,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.753460207612,
+      "sp": 783
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1570,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Betrayer",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1150,
+      "pAtkRnd": 30,
+      "pDef": 506,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.587271581601,
+      "sp": 739
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1571,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Rebellion Soldier",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1265,
+      "pAtkRnd": 10,
+      "pDef": 460,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.251207729469,
+      "sp": 1049
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1572,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Sweeper",
+      "title": "",
+      "level": 69,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1392,
+      "pAtkRnd": 20,
+      "pDef": 418,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.159630329763,
+      "sp": 1006
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1573,
+    "template": {
+      "kind": "Monster",
+      "name": "Atrox",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2127,
+      "pAtkRnd": 30,
+      "pDef": 380,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 115,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.406217181264,
+      "sp": 1121
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1574,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Grinder",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1194,
+      "pAtkRnd": 20,
+      "pDef": 517,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.63306122449,
+      "sp": 1279
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1577,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Guillotine",
+      "title": "",
+      "level": 70,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1314,
+      "pAtkRnd": 30,
+      "pDef": 399,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.672448979592,
+      "sp": 813
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1578,
+    "template": {
+      "kind": "Monster",
+      "name": "Behemoth Zombie",
+      "title": "",
+      "level": 71,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1239,
+      "pAtkRnd": 30,
+      "pDef": 529,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 99
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.044832374529,
+      "sp": 1034
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1579,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Rebellion Leader",
+      "title": "",
+      "level": 71,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1193,
+      "pAtkRnd": 5,
+      "pDef": 481,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 221,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.150962110692,
+      "sp": 1088
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1580,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Caster",
+      "title": "",
+      "level": 71,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1499,
+      "pAtkRnd": 20,
+      "pDef": 437,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.014282880381,
+      "sp": 1019
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1581,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Puppeteer",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1499,
+      "pAtkRnd": 20,
+      "pDef": 437,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.202935925412,
+      "sp": 1114
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1582,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Soldier",
+      "title": "",
+      "level": 71,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1649,
+      "pAtkRnd": 5,
+      "pDef": 397,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 23.5
+    },
+    "equipment": {
+      "weapon": 234,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.35885736957,
+      "sp": 1193
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1583,
+    "template": {
+      "kind": "Monster",
+      "name": "Bone Scavenger",
+      "title": "",
+      "level": 72,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1554,
+      "pAtkRnd": 20,
+      "pDef": 446,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.159722222222,
+      "sp": 1137
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1585,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Magician",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1710,
+      "pAtkRnd": 5,
+      "pDef": 406,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 70,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 6,
+      "size": 21.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.85725308642,
+      "sp": 978
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1586,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Adept",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1710,
+      "pAtkRnd": 10,
+      "pDef": 406,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 50,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 5.5,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 99,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.194058641975,
+      "sp": 1156
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1587,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Warrior",
+      "title": "",
+      "level": 72,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1710,
+      "pAtkRnd": 5,
+      "pDef": 406,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 234,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.286265432099,
+      "sp": 1204
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1588,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Wizard",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1947,
+      "pAtkRnd": 5,
+      "pDef": 377,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 70,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 6,
+      "size": 21.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.864514918371,
+      "sp": 1022
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1589,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Wizard",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1099,
+      "pAtkRnd": 5,
+      "pDef": 668,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 70,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 6,
+      "size": 21.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.908050290861,
+      "sp": 1046
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1590,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Magister",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1770,
+      "pAtkRnd": 10,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 50,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 5.5,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 99,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.864514918371,
+      "sp": 1022
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1591,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Magister",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1770,
+      "pAtkRnd": 10,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 50,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 5.5,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 99,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.150872583974,
+      "sp": 1179
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1593,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Warlord",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2459,
+      "pAtkRnd": 30,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 47,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 31.5
+    },
+    "equipment": {
+      "weapon": 6723,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.504409832989,
+      "sp": 1373
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1594,
+    "template": {
+      "kind": "Monster",
+      "name": "Vampire Warlord",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2459,
+      "pAtkRnd": 30,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 47,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 31.5
+    },
+    "equipment": {
+      "weapon": 6723,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "vampire_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.358979170576,
+      "sp": 1294
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1596,
+    "template": {
+      "kind": "Monster",
+      "name": "Requiem Lord",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1106,
+      "pAtkRnd": 20,
+      "pDef": 494,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.603373702422,
+      "sp": 1163
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1599,
+    "template": {
+      "kind": "Monster",
+      "name": "Requiem Priest",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1239,
+      "pAtkRnd": 20,
+      "pDef": 529,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 20,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 178,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "necro_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.529260067447,
+      "sp": 1279
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 12789,
+    "template": {
+      "kind": "Monster",
+      "name": "Corpse of Deadman",
+      "title": "",
+      "level": 63,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 987,
+      "pAtkRnd": 30,
+      "pDef": 398,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 0
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

@@ -142,7 +142,7 @@ function inferIntent(session, bot, vitals, target) {
     if (session.plan === 'pk_hunting') {
         return target ? 'hunt_player' : 'find_player';
     }
-    if (vitals.hpPct < 0.35 || vitals.mpPct < 0.20) return 'recover';
+    if (vitals.hpPct < 0.35 || (BotRoles.shouldRestForMana(bot) && vitals.mpPct < 0.20)) return 'recover';
     return target ? 'fight_target' : 'find_target';
 }
 
@@ -151,7 +151,7 @@ function collectBlockers(session, bot, vitals, party) {
 
     if (bot.state.fetchDead()) blockers.push('dead');
     if (vitals.hpPct < 0.35) blockers.push('low_hp');
-    if (vitals.mpPct < 0.20) blockers.push('low_mp');
+    if (BotRoles.shouldRestForMana(bot) && vitals.mpPct < 0.20) blockers.push('low_mp');
     if (session.stuckTicks >= 3) blockers.push('stuck');
     if (party && party.leader && party.leader.distance > 1000) blockers.push('too_far_from_leader');
     if (session.plan === 'hunting' && session.noTargetTicks >= 3) blockers.push('no_targets_nearby');
@@ -167,6 +167,7 @@ function nearbySnapshot(bot) {
     let hostilePlayers = 0;
     let attackableNpcs = 0;
     let eligibleAttackableNpcs = 0;
+    const attackableNames = new Map();
 
     World.user.sessions.forEach((session) => {
         const actor = session.actor;
@@ -187,6 +188,8 @@ function nearbySnapshot(bot) {
     World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 1500).forEach((npc) => {
         if (npc.fetchAttackable() && !npc.isDead()) {
             attackableNpcs++;
+            const name = String(npc.fetchName?.() || 'Unknown NPC');
+            attackableNames.set(name, Number(attackableNames.get(name) || 0) + 1);
             const levelGap = Number(npc.fetchLevel?.() || bot.fetchLevel()) - Number(bot.fetchLevel() || 1);
             if (levelGap >= BotTargetScorer.MIN_LEVEL_GAP && levelGap <= BotTargetScorer.MAX_LEVEL_ADVANTAGE) {
                 eligibleAttackableNpcs++;
@@ -194,7 +197,11 @@ function nearbySnapshot(bot) {
         }
     });
 
-    return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs, eligibleAttackableNpcs };
+    const attackableNpcNames = [...attackableNames.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 3)
+        .map(([name, count]) => ({ name, count }));
+    return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs, eligibleAttackableNpcs, attackableNpcNames };
 }
 
 function tradeSnapshot(session, bot) {
@@ -280,7 +287,9 @@ const BotStatus = {
                 pullerId: pull.puller?.actor?.fetchId?.() || null,
                 targetId: pull.target?.fetchId?.() || null,
                 phase: pull.phase,
-                paused: pull.paused || null
+                paused: pull.paused || null,
+                selectionScore: pull.selectionScore ?? null,
+                selectionReasons: pull.selectionReasons || []
             } : null,
             decision: session.roleDecision || null,
             members: PartyAwareness.partySessions(leaderSession)

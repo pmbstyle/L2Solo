@@ -89,11 +89,12 @@ try {
         activity: 'hunting',
         loc: { locX: 100000, locY: 0, locZ: 0 },
         vitals: { hp: 100, maxHp: 100 },
-        stats: {}
+        stats: {},
+        persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
     };
     result = BotAvailability.evaluateState(lowPlayer, farColdBot);
-    assert.strictEqual(result.available, false, 'far cold bot should obey the same invite range as a hot bot');
-    assert.strictEqual(result.reason, 'too_far');
+    assert.strictEqual(result.available, true, 'distance should not block a cold bot that can activate near the player');
+    assert.strictEqual(Math.round(result.distance), 100000, 'availability should still expose distance for sorting and presentation');
 
     const socialBot = session(actor(2000012, 20), {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
@@ -107,20 +108,38 @@ try {
     result = BotAvailability.evaluate(lowPlayer, soloBot);
     assert.strictEqual(result.available, false, 'a reserved persona may decline after all hard checks pass');
     assert.strictEqual(result.reason, 'prefers_solo');
-    result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true, ignoreDistance: true });
+    result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true });
     assert.strictEqual(result.available, true, 'a const friend invite must override persona solo preference');
 
     const farLowFriend = session(actor(2000015, 55, 0, { locX: 100000 }), {
         persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
     });
-    result = BotAvailability.evaluate(lowPlayer, farLowFriend, { forceFriend: true, ignoreDistance: true });
-    assert.strictEqual(result.available, true, 'a const friend invite must override distance and level soft gates');
+    result = BotAvailability.evaluate(lowPlayer, farLowFriend, { forceFriend: true });
+    assert.strictEqual(result.available, true, 'a const friend invite must override level and persona soft gates');
 
     const farSocialBot = session(actor(2000014, 20, 0, { locX: 100000 }), {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
     });
     result = BotAvailability.evaluate(lowPlayer, farSocialBot);
-    assert.strictEqual(result.reason, 'too_far', 'persona must not override a hard invite gate');
+    assert.strictEqual(result.available, true, 'distance should not block a hot bot because companion catch-up handles arrival');
+    assert.strictEqual(Math.round(result.distance), 100000, 'hot-bot distance should remain available to the party browser');
+    assert.deepStrictEqual(BotAvailability.listForPlayer(lowPlayer, [farSocialBot]).map((entry) => entry.session), [farSocialBot],
+        '.botparty candidate discovery should keep an available distant hot bot');
+
+    const ownCompanion = session(actor(2000019, 20), {
+        partyCompanion: true,
+        followPlayerSession: lowPlayer
+    });
+    const otherPlayer = session(actor(2000020, 20));
+    const otherCompanion = session(actor(2000021, 20), {
+        partyCompanion: true,
+        followPlayerSession: otherPlayer
+    });
+    const partyCandidates = BotAvailability.listForPlayer(lowPlayer, [ownCompanion, otherCompanion]);
+    assert.deepStrictEqual(partyCandidates.map((entry) => entry.session), [otherCompanion],
+        '.botparty should hide companions already attached to the requesting player');
+    assert.strictEqual(partyCandidates[0].availability.reason, 'already_grouped',
+        'a companion attached to another player should remain visible with its unavailable reason');
 
     const staticCraftState = {
         characterId: 2000016,
@@ -131,12 +150,12 @@ try {
         vitals: { hp: 100, maxHp: 100 },
         stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
     };
-    result = BotAvailability.evaluateState(lowPlayer, staticCraftState, { forceFriend: true, ignoreDistance: true });
+    result = BotAvailability.evaluateState(lowPlayer, staticCraftState, { forceFriend: true });
     assert.strictEqual(result.available, false, 'const friend overrides must never recruit a public craft service');
     assert.strictEqual(result.reason, 'merchant_duty');
 
     const staticMerchant = session(actor(2000017, 20), { plan: 'merchant' });
-    result = BotAvailability.evaluate(lowPlayer, staticMerchant, { forceFriend: true, ignoreDistance: true });
+    result = BotAvailability.evaluate(lowPlayer, staticMerchant, { forceFriend: true });
     assert.strictEqual(result.available, false, 'const friend overrides must never recruit a fixed merchant');
     assert.strictEqual(result.reason, 'merchant_duty');
 
@@ -144,7 +163,7 @@ try {
         plan: 'merchant',
         coldLifeState: { stats: { classId: 53 } }
     });
-    result = BotAvailability.evaluate(lowPlayer, configuredMerchant, { forceFriend: true, ignoreDistance: true });
+    result = BotAvailability.evaluate(lowPlayer, configuredMerchant, { forceFriend: true });
     assert.strictEqual(result.reason, 'merchant_duty', 'configured liquidity stores must remain static even with a stale life-state snapshot');
     assert.deepStrictEqual(BotAvailability.listForPlayer(lowPlayer, [configuredMerchant]), [], 'static services must not appear in party candidate lists');
 

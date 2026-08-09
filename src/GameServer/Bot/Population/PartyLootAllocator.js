@@ -37,11 +37,12 @@ function recipientScore(state, item, projected) {
     const template = templateFor(item);
     if (!template || !equipmentDrop(item)) return -Infinity;
     const role = GearAcquisitionPlanner.roleFor(state);
+    const classId = Number(state.stats?.classId ?? state.classId ?? 0);
     if (!GearAcquisitionPlanner.suitable(template, state, role)) return -Infinity;
 
     const inventory = projectedInventory(state, projected);
     const owned = inventoryTemplates(inventory);
-    if (!GearAcquisitionPlanner.isSlotUpgrade(template, owned, role)) return -Infinity;
+    if (!GearAcquisitionPlanner.isSlotUpgrade(template, owned, role, classId)) return -Infinity;
 
     const targetId = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
     const targetBonus = Number(template.selfId) === targetId ? 100000 : 0;
@@ -50,8 +51,8 @@ function recipientScore(state, item, projected) {
             (WEAPON_SLOTS.has(Number(ownedItem.etc?.slot || 0)) ? 'weapon' : Number(ownedItem.etc?.slot || 0))
             === (WEAPON_SLOTS.has(Number(template.etc?.slot || 0)) ? 'weapon' : Number(template.etc?.slot || 0))
         ))
-        .reduce((best, ownedItem) => Math.max(best, GearAcquisitionPlanner.itemScore(ownedItem, role)), 0);
-    const improvement = Math.max(1, GearAcquisitionPlanner.itemScore(template, role) - current + 2);
+        .reduce((best, ownedItem) => Math.max(best, GearAcquisitionPlanner.itemScore(ownedItem, role, classId)), 0);
+    const improvement = Math.max(1, GearAcquisitionPlanner.itemScore(template, role, classId) - current + 2);
     const fairness = -Number(state.stats?.partyGearReceived || 0) * 0.01;
     return targetBonus + slotPriority(template) * improvement + fairness;
 }

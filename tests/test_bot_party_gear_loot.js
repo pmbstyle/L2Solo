@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 DataCache.init();
 
@@ -58,5 +59,30 @@ const unsuitable = PartyLootAllocator.transferGearDrops([
 ]);
 assert.strictEqual(unsuitable.transfers.length, 0, 'incompatible equipment must remain with the original loot recipient');
 assert.strictEqual(unsuitable.memberResults[0].result.materialize.items[0].selfId, bow.selfId);
+
+const originalIsSlotUpgrade = GearAcquisitionPlanner.isSlotUpgrade;
+const originalItemScore = GearAcquisitionPlanner.itemScore;
+const observedClassIds = [];
+try {
+    GearAcquisitionPlanner.isSlotUpgrade = (item, owned, role, classId) => {
+        observedClassIds.push(classId);
+        return true;
+    };
+    GearAcquisitionPlanner.itemScore = (item, role, classId) => {
+        observedClassIds.push(classId);
+        return Number(item.stats?.pAtk || 1);
+    };
+    PartyLootAllocator.recipientScore({
+        characterId: 103,
+        level: 20,
+        stats: { role: 'tank', classId: 5 },
+        inventory: {}
+    }, { selfId: sword.selfId, kind: sword.template.kind }, new Map());
+    assert.ok(observedClassIds.length >= 2 && observedClassIds.every((classId) => classId === 5),
+        'party loot upgrade and score checks must receive the recipient class id');
+} finally {
+    GearAcquisitionPlanner.isSlotUpgrade = originalIsSlotUpgrade;
+    GearAcquisitionPlanner.itemScore = originalItemScore;
+}
 
 console.log('Bot party gear loot checks passed');

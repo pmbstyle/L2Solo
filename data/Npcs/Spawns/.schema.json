@@ -78,6 +78,10 @@
                         },
                         "bias": {
                             "type": "integer"
+                        },
+                        "period": {
+                            "type": "string",
+                            "enum": ["always", "day", "night"]
                         }
                     },
                     "required": [

@@ -1,0 +1,77 @@
+[
+  {
+    "selfId": 7638,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Summon Storm Cubic",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7639,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Summon Aqua Cubic",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7640,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Summon Phantom Cubic",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7643,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Summon Nightshade",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7644,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Summon Cursed Man",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

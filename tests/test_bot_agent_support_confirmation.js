@@ -28,6 +28,7 @@ const originalSkillExec = Generics.skillExec;
 const originalCanBuff = BotRoles.canBuff;
 const originalIsHealer = BotRoles.isHealer;
 const originalBuffSkill = BotSkillCapabilities.buffSkill;
+const originalSupportBuffs = BotSkillCapabilities.supportBuffs;
 const originalHealSkill = BotSkillCapabilities.healSkill;
 const originalTell = BotAI.tell;
 const messages = [];
@@ -52,6 +53,7 @@ try {
     };
     BotRoles.canBuff = () => true;
     BotSkillCapabilities.buffSkill = () => buffSkill;
+    BotSkillCapabilities.supportBuffs = () => [{ type: 'might', skill: buffSkill }];
 
     const buff = BotAgentTools.execute(botSession, {
         action: 'buff_target',
@@ -93,6 +95,7 @@ try {
     BotRoles.canBuff = originalCanBuff;
     BotRoles.isHealer = originalIsHealer;
     BotSkillCapabilities.buffSkill = originalBuffSkill;
+    BotSkillCapabilities.supportBuffs = originalSupportBuffs;
     BotSkillCapabilities.healSkill = originalHealSkill;
     BotAI.tell = originalTell;
     BotPartyChat.cancelExpectedSkillResult({ pendingPartyChatResult: undefined });

@@ -255,7 +255,7 @@ function skillsSnapshot(actor, text = '') {
         passiveCount: skills.filter((skill) => skill.fetchPassive()).length,
         support: {
             canHeal: BotRoles.isHealer(actor),
-            canBuff: BotRoles.canBuff(actor),
+            canBuff: BotSkillCapabilities.supportBuffs(actor).length > 0,
             // Advertise only buffs backed by a learned, executable friendly
             // skill. The old global list made the LLM request Might/Shield on
             // classes that only had native chants or resistance buffs.

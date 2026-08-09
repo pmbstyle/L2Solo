@@ -1,0 +1,491 @@
+[
+  {
+    "selfId": 1148,
+    "template": {
+      "name": "Catacomb Liviona"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1099,
+            "max": 2253,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 281,
+            "name": "Crystallized Ice Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 1.207417
+          },
+          {
+            "selfId": 2074,
+            "name": "Crystallized Ice Bow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 98.792583
+          }
+        ],
+        "overall": 0.4638
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 46.724999
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 2,
+            "max": 6,
+            "chance": 11.681123
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 4.672399
+          },
+          {
+            "selfId": 2163,
+            "name": "Recipe: Earring of Protection",
+            "min": 1,
+            "max": 1,
+            "chance": 2.383841
+          },
+          {
+            "selfId": 2217,
+            "name": "Recipe: Knight's Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 2.76472
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.623003
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 3,
+            "chance": 31.149915
+          }
+        ],
+        "overall": 39.5664
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 5,
+            "chance": 91.2739
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 27.3822
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 3.651
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1217,
+    "template": {
+      "name": "Holy Land Priest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1020,
+            "max": 2061,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 396,
+            "name": "Salamander Skin Mail",
+            "min": 1,
+            "max": 1,
+            "chance": 1.434255
+          },
+          {
+            "selfId": 1952,
+            "name": "Salamander Skin Mail Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 98.565745
+          }
+        ],
+        "overall": 2.0359
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 57.368858
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 22.947433
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 3.824389
+          },
+          {
+            "selfId": 2161,
+            "name": "Recipe: Aquastone Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 5.56984
+          },
+          {
+            "selfId": 2993,
+            "name": "Recipe: Dwarven Chain Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 4.552896
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 5.736584
+          }
+        ],
+        "overall": 36.4032
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 11,
+            "chance": 83.1781
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 16.6355
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1905,
+            "name": "Omen Beast's Eye Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 24.2738
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1218,
+    "template": {
+      "name": "Vault Overlord"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1220,
+            "max": 2478,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 354,
+            "name": "Chain Mail Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 0.477012
+          },
+          {
+            "selfId": 381,
+            "name": "Chain Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.764573
+          },
+          {
+            "selfId": 1959,
+            "name": "Chain Mail Shirt Material",
+            "min": 1,
+            "max": 1,
+            "chance": 32.548462
+          },
+          {
+            "selfId": 1960,
+            "name": "Chain Gaiters Part",
+            "min": 1,
+            "max": 1,
+            "chance": 66.209953
+          }
+        ],
+        "overall": 2.9559
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 66.866436
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 3,
+            "chance": 22.288718
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 6.686475
+          },
+          {
+            "selfId": 2213,
+            "name": "Recipe: Dwarven Chain Mail Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 1.038259
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 2.228731
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.89138
+          }
+        ],
+        "overall": 35.6077
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1908,
+            "name": "Moonstone Earring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 28.6241
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1909,
+            "name": "Aquastone Ring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 40.8198
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2163,
+            "name": "Recipe: Earring of Protection",
+            "min": 1,
+            "max": 1,
+            "chance": 15.422
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1219,
+    "template": {
+      "name": "Vault Priest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1258,
+            "max": 2567,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 440,
+            "name": "Robe of Seal",
+            "min": 1,
+            "max": 1,
+            "chance": 1.245211
+          },
+          {
+            "selfId": 1970,
+            "name": "Robe of Seal Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 98.754789
+          }
+        ],
+        "overall": 1.566
+      },
+      {
+        "items": [
+          {
+            "selfId": 5812,
+            "name": "Spellbook: Servitor Empowerment",
+            "min": 1,
+            "max": 1,
+            "chance": 37.209134
+          },
+          {
+            "selfId": 5813,
+            "name": "Spellbook: Servitor Cure",
+            "min": 1,
+            "max": 1,
+            "chance": 62.790866
+          }
+        ],
+        "overall": 6.8932
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1911,
+            "name": "Earring of Protection Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 23.2505
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1912,
+            "name": "Ring of Protection Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 33.6857
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2166,
+            "name": "Recipe: Earrings of Binding (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 10.5967
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

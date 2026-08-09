@@ -2,6 +2,12 @@ const SpoilSweep     = invoke('GameServer/Npc/SpoilSweep');
 const SpawnNpcs      = invoke('GameServer/World/Generics/SpawnNpcs');
 const NpcDecay        = invoke('GameServer/World/Generics/NpcDecay');
 
+function canRespawnDefinition(world, definition, periodRevision) {
+    if (!SpawnNpcs.isPeriodic(definition?.spawn)) return true;
+    return Number(world?.npc?.periodRevision || 0) === Number(periodRevision || 0)
+        && SpawnNpcs.isPeriodActive(definition.spawn, world?.npc?.periodMode);
+}
+
 function removeNpc(session, npc) {
     const npcId = npc.fetchId();
 
@@ -23,8 +29,10 @@ function removeNpc(session, npc) {
     const definition = npc.spawnDefinition;
     if (SpawnNpcs.shouldRespawn(definition?.spawn)) {
         const delayMs = SpawnNpcs.respawnDelayMs(definition.spawn);
+        const periodRevision = Number(this.npc?.periodRevision || 0);
         setTimeout(() => {
             try {
+                if (!canRespawnDefinition(this, definition, periodRevision)) return;
                 this.spawnNpc(this, definition);
                 this.indexSpawnsInGrid();
             }
@@ -45,3 +53,4 @@ function removeNpc(session, npc) {
 }
 
 module.exports = removeNpc;
+module.exports.canRespawnDefinition = canRespawnDefinition;

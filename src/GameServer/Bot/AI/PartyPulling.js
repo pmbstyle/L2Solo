@@ -21,6 +21,7 @@ const PULL_DELIVERY_CAMP_DISTANCE = 350;
 const PULL_UNREACHABLE_RETRY_MS = 30000;
 const PULL_ROUTE_SEARCH_BATCH = 5;
 const PULL_ROUTE_SEARCH_COOLDOWN_MS = 5000;
+const PULL_SOCIAL_RISK_RADIUS = 320;
 
 function point(actor) {
     return {
@@ -86,6 +87,21 @@ function pullState(leaderSession) {
     return leaderSession.partyPullState;
 }
 
+function traceEncounter(leaderSession, event, details = {}) {
+    const state = pullState(leaderSession);
+    const fields = Object.entries({
+        leader: leaderSession?.actor?.fetchName?.() || leaderSession?.actor?.fetchId?.(),
+        encounter: state.encounterId,
+        event,
+        phase: state.phase,
+        target: state.targetId,
+        ...details
+    }).filter(([, value]) => value !== null && value !== undefined)
+        .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : value}`)
+        .join(' ');
+    console.info('PartyEncounter :: %s', fields);
+}
+
 function npcById(id) {
     if (!id) return null;
     return (World.npc?.spawns || []).find((npc) => Number(npc.fetchId?.()) === Number(id)) || null;
@@ -105,7 +121,7 @@ function clearFinishedTarget(leaderSession) {
     return npc;
 }
 
-function beginTarget(leaderSession, puller, target, source) {
+function beginTarget(leaderSession, puller, target, source, selection = null) {
     const state = pullState(leaderSession);
     if (Number(state.targetId) === Number(target.fetchId())) return state;
 
@@ -115,8 +131,16 @@ function beginTarget(leaderSession, puller, target, source) {
         source,
         phase: source === 'bot' ? 'approach' : 'return',
         startedAt: Date.now(),
-        announced: false
+        announced: false,
+        encounterId: `${leaderSession.actor.fetchId()}:${target.fetchId()}:${Date.now()}`,
+        selectionScore: selection?.score ?? null,
+        selectionReasons: selection?.reasons || []
     };
+    traceEncounter(leaderSession, selection?.event || 'selected', {
+        source,
+        score: selection?.score,
+        reasons: selection?.reasons || []
+    });
     return leaderSession.partyPullState;
 }
 
@@ -263,6 +287,48 @@ function rejectTarget(leaderSession, target) {
     leaderSession.partyPullState = {};
 }
 
+function partyReferenceLevel(leaderSession) {
+    const levels = PartyAwareness.partyActors(leaderSession)
+        .map((actor) => Number(actor.fetchLevel?.() || 0))
+        .filter((level) => level > 0)
+        .sort((a, b) => a - b);
+    if (levels.length === 0) return Number(leaderSession?.actor?.fetchLevel?.() || 1);
+    return levels[Math.floor((levels.length - 1) / 2)];
+}
+
+function socialRisk(target) {
+    const clan = String(target.fetchClanName?.() || '').trim();
+    const helpRadius = Math.max(0, Number(target.fetchClanHelpRadius?.()) || 0);
+    const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius);
+    const nearby = World.fetchNpcsInRadius(target.fetchLocX(), target.fetchLocY(), radius)
+        .filter((npc) => npc !== target && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
+    const socialAllies = clan && helpRadius > 0
+        ? nearby.filter((npc) => (
+            String(npc.fetchClanName?.() || '').trim() === clan &&
+            distance2d(point(target), point(npc)) <= helpRadius
+        )).length
+        : 0;
+    const crowd = nearby.filter((npc) => distance2d(point(target), point(npc)) <= PULL_SOCIAL_RISK_RADIUS).length;
+    return { socialAllies, crowd };
+}
+
+function scorePullTarget(bot, leaderSession, npc) {
+    const referenceLevel = partyReferenceLevel(leaderSession);
+    const targetLevel = Number(npc.fetchLevel?.() || referenceLevel);
+    const levelGap = Math.abs(targetLevel - referenceLevel);
+    const risk = socialRisk(npc);
+    const campDistance = distance2d(point(leaderSession.actor), point(npc));
+    const approachDistance = distance2d(point(bot), point(npc));
+    const score = Math.round(1000 - levelGap * 110 - risk.socialAllies * 240 - risk.crowd * 60 - campDistance / 6 - approachDistance / 12);
+    const reasons = [
+        `level_gap:${levelGap}`,
+        `social:${risk.socialAllies}`,
+        `crowd:${risk.crowd}`,
+        `camp:${Math.round(campDistance)}`
+    ];
+    return { target: npc, score, reasons };
+}
+
 function freeMonsters(bot) {
     return World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), PULL_SEARCH_RADIUS)
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
@@ -273,7 +339,9 @@ function freeMonsters(bot) {
 function nearestFreeMonster(bot, leaderSession) {
     const now = Date.now();
     return freeMonsters(bot)
-        .filter((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) <= now)[0] || null;
+        .filter((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) <= now)
+        .map((npc) => scorePullTarget(bot, leaderSession, npc))
+        .sort((a, b) => b.score - a.score || distance(point(bot), point(a.target)) - distance(point(bot), point(b.target)))[0] || null;
 }
 
 function incomingMobOnPuller(bot) {
@@ -369,7 +437,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
     if (incoming) {
         const switchedTarget = Number(incoming.fetchId()) !== Number(target?.fetchId?.());
         if (switchedTarget) {
-            beginTarget(leaderSession, puller, incoming, 'bot');
+            beginTarget(leaderSession, puller, incoming, 'bot', { event: 'adopted_incoming_add', reasons: ['already_targeting_puller'] });
             state = pullState(leaderSession);
             target = incoming;
         }
@@ -403,6 +471,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         bot.state?.setHits?.(false);
         clearPullMove(state);
         state.phase = 'return';
+        traceEncounter(leaderSession, 'aggro_confirmed');
     }
 
     // Recovery/add pauses may cancel an approach or an unconfirmed opening
@@ -446,7 +515,8 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         if (Number(leaderSession.partyPullSearchRetryAt || 0) > Date.now()) {
             return { handled: true, puller, action: 'route_search_cooldown' };
         }
-        target = nearestFreeMonster(bot, leaderSession);
+        const selection = nearestFreeMonster(bot, leaderSession);
+        target = selection?.target || null;
         if (!target) {
             const rejectedNearby = freeMonsters(bot)
                 .some((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) > Date.now());
@@ -458,7 +528,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
             return { handled: true, puller, idle: true };
         }
         leaderSession.partyPullSearchRetryAt = undefined;
-        beginTarget(leaderSession, puller, target, 'bot');
+        beginTarget(leaderSession, puller, target, 'bot', selection);
         state = pullState(leaderSession);
     }
 
@@ -491,6 +561,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         // very hit that is supposed to put the mob into combat.
         state.phase = 'aggro';
         state.aggroRequestedAt = Date.now();
+        traceEncounter(leaderSession, 'aggro_requested');
         if (!state.announced) {
             state.announced = true;
             BotPartyChat.announce(session, {
@@ -519,6 +590,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
             return { handled: true, puller, action: 'retry_aggro', target };
         }
         state.phase = 'return';
+        traceEncounter(leaderSession, 'aggro_confirmed');
     }
 
     if (state.phase === 'return' && distance(point(bot), point(leaderSession.actor)) > PULL_RETURN_DISTANCE) {
@@ -532,6 +604,9 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         // attack radius; normal assist movement can finish the engagement.
         clearPullMove(state);
         state.phase = 'engage';
+        traceEncounter(leaderSession, 'delivered', {
+            durationMs: Date.now() - Number(state.startedAt || Date.now())
+        });
         return { handled: false, puller, target };
     }
 
@@ -569,7 +644,9 @@ function current(leaderSession, settings) {
         target,
         paused: pauseReason(leaderSession, puller),
         engageable,
-        phase: state.phase || null
+        phase: state.phase || null,
+        selectionScore: state.selectionScore ?? null,
+        selectionReasons: state.selectionReasons || []
     };
 }
 
@@ -588,6 +665,7 @@ module.exports = {
     canDeliverPull,
     hasDeadPartyMember,
     attackRange,
+    scorePullTarget,
     cancelForRevival,
     PULL_AGGRO_TIMEOUT_MS
 };

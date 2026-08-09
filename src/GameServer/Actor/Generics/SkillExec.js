@@ -4,12 +4,36 @@ function canTargetEnemyNpc(npc, data = {}) {
     return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
 }
 
+function cancelFailedSupportTarget(session, actor, data, skill) {
+    const target = { fetchId: () => Number(data?.id || 0) };
+    invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, target, skill, 'missing_target');
+    invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, target, skill);
+}
+
 function skillExec(session, actor, data) {
     const skill = actor.skillset.fetchSkill(data.selfId);
     if (!skill) return;
     const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 
     if (skill.fetchTargetKind() === 'self') {
+        actor.attack.remoteHit(session, actor, skill);
+        return;
+    }
+
+    // C4 party auras use a negative distance to mean that the cast originates
+    // from the caster and expands to party members in Attack.resolveSkillTargets.
+    // Treating that value as a zero-radius movement target makes the caster try
+    // to stand on the selected party member and lets normal follow movement
+    // cancel the cast before it ever starts.
+    if (skill.fetchTargetKind() === 'party' && Number(skill.fetchDistance()) < 0) {
+        actor.attack.remoteHit(session, actor, skill);
+        return;
+    }
+
+    // Hate Aura and similar C4 TARGET_AURA enemy skills are centred on the
+    // caster as well. Attack.resolveSkillTargets will fan the native effect
+    // out only to valid enemies inside the sourced radius.
+    if (skill.fetchTargetKind() === 'enemy' && skill.fetchSemantic?.().sourceTarget === 'aura' && Number(skill.fetchDistance()) < 0) {
         actor.attack.remoteHit(session, actor, skill);
         return;
     }
@@ -58,6 +82,7 @@ function skillExec(session, actor, data) {
                 }
             });
         }).catch((err) => {
+            cancelFailedSupportTarget(session, actor, data, skill);
             utils.infoWarn('GameServer', 'Skill -> ' + err);
         });
     });
@@ -65,3 +90,4 @@ function skillExec(session, actor, data) {
 
 module.exports = skillExec;
 module.exports.canTargetEnemyNpc = canTargetEnemyNpc;
+module.exports.cancelFailedSupportTarget = cancelFailedSupportTarget;

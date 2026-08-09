@@ -2,6 +2,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { ensureGeodata } = require('./geodata-bootstrap');
 
 const rootDir = path.resolve(__dirname, '..');
 const isWindows = process.platform === 'win32';
@@ -51,6 +52,14 @@ function startServer() {
     });
 }
 
+async function main() {
+    await ensureGeodata({ logger: log });
+    startServer();
+}
+
 process.on('SIGINT', () => stopServer('SIGINT'));
 process.on('SIGTERM', () => stopServer('SIGTERM'));
-startServer();
+main().catch((error) => {
+    console.error(`Startup    :: geodata bootstrap failed: ${error.message}`);
+    process.exit(1);
+});

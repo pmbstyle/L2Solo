@@ -1,0 +1,47 @@
+[
+  {
+    "selfId": 5164,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blessed Spiritshot (C) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 60000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6036,
+    "template": {
+      "kind": "Other",
+      "name": "Greater Magic Haste Potion",
+      "class1": 4,
+      "class2": 0,
+      "mass": 20,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6361,
+    "template": {
+      "kind": "Other",
+      "name": "Green Seal Stone",
+      "class1": 4,
+      "class2": 0,
+      "mass": 0,
+      "price": 5
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

@@ -3,6 +3,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const BotToolRegistry = invoke('GameServer/Bot/AI/BotToolRegistry');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
@@ -50,6 +51,7 @@ const ACTIONS = [
     'decline_price',
     'open_negotiated_trade'
 ];
+const NON_MUTATING_ACTIONS = new Set(['none', 'say', 'list_safe_loadouts', 'list_party_candidates']);
 
 const PK_LOCKED_ACTIONS = new Set([
     'follow_player', 'regroup_party', 'stay_party', 'stay_here', 'hunt', 'rest', 'shop', 'fetch_resources', 'move_to_spot',
@@ -194,7 +196,6 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     const target = targetSession?.actor;
     const buffType = String(decision.buffType || '').toLowerCase();
     if (!target) return { applied: false, reason: 'invalid_buff_target' };
-    if (!BotRoles.canBuff(bot)) return { applied: false, reason: 'bot_cannot_buff' };
     const skill = BotSkillCapabilities.buffSkill(bot, buffType);
     const semantic = skill?.fetchSemantic?.() || {};
     const targetKind = semantic.target || skill?.fetchTargetKind?.();
@@ -211,6 +212,7 @@ function applyBuffTarget(session, bot, decision, targetSession) {
         skill,
         kind: 'support'
     });
+    BotSupportPlanner.queueSupportCast(session, { provider: bot, target, skill });
     invoke(path.actor).skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
     return { applied: true, reason: `buff_requested:${buffType}` };
 }
@@ -318,7 +320,10 @@ function executeLegacy(session, decision, visiblePlayers) {
         clearChatArrival(session, 'rest');
         const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
         const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
-        if (hpRatio >= 0.95 && mpRatio >= 0.95) {
+        const partyReady = session.partyCompanion === true && session.followPlayerSession &&
+            !BotRoles.shouldRestForMana(bot);
+        if (hpRatio >= 0.95 && (partyReady || mpRatio >= 0.95)) {
+            delete session.explicitRestOrder;
             stand(session, bot);
             session.currentTargetId = undefined;
             if (session.partyCompanion === true && session.followPlayerSession) {
@@ -331,6 +336,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         }
 
         session.plan = 'resting';
+        session.explicitRestOrder = true;
         session.currentTargetId = undefined;
         bot.unselect();
         sit(session, bot);
@@ -955,7 +961,7 @@ function registerTools() {
                 if (name === 'give_resources' && session.activeTrade) return false;
                 if (['offer_resources', 'update_trade_offer', 'cancel_trade'].includes(name) && !session.activeTrade) return false;
                 if (name === 'buff_target') {
-                    try { if (!BotRoles.canBuff(session.actor)) return false; } catch (_) { return true; }
+                    try { if (BotSkillCapabilities.supportBuffs(session.actor).length === 0) return false; } catch (_) { return true; }
                 }
                 if (name === 'heal_target') {
                     try { if (!BotRoles.isHealer(session.actor)) return false; } catch (_) { return true; }
@@ -985,6 +991,11 @@ function execute(session, decision, visiblePlayers, requestContext = null) {
     });
     const format = (resolved) => {
         const { idempotent, ...publicOutcome } = resolved;
+        // Keep a direct rest order when a later command is rejected. Only a
+        // successfully applied mutation has enough authority to supersede it.
+        if (resolved.applied && decision.action !== 'rest' && !NON_MUTATING_ACTIONS.has(decision.action)) {
+            delete session.explicitRestOrder;
+        }
         return { ...publicOutcome, applied: resolved.applied, reason: resolved.reason };
     };
     return outcome && typeof outcome.then === 'function' ? outcome.then(format) : format(outcome);

@@ -3,6 +3,7 @@ const SpeckMath = invoke('GameServer/SpeckMath');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const ADENA_ID = 57;
 const REQUEST_RANGE = 1600;
@@ -69,6 +70,8 @@ function itemInfo(itemDetails, selfId) {
         kind,
         price: Number(template.price || 0),
         rank: itemDetails.etc?.rank || 'none',
+        pAtk: Number(itemDetails.stats?.pAtk || 0),
+        mAtk: Number(itemDetails.stats?.mAtk || 0),
         stackable: !!itemDetails.etc?.stackable,
         weapon: kind.startsWith('Weapon.'),
         armor: kind.startsWith('Armor.'),
@@ -105,11 +108,18 @@ function itemDemand(botSession, info) {
     const name = info.name.toLowerCase();
     const weaponType = info.kind.replace('Weapon.', '');
     const armorType = info.kind.replace('Armor.', '');
+    const casterRole = BotWeaponCompatibility.isCasterRole(role, classId);
+    const casterWeapon = BotWeaponCompatibility.isCasterWeapon(info.kind, info.name, info.pAtk, info.mAtk);
+    const currentWeapon = botSession.actor.backpack?.fetchEquippedWeapon?.();
+    const candidateWeaponScore = BotWeaponCompatibility.scoreWeapon(info.pAtk, info.mAtk, role, classId);
+    const currentWeaponScore = currentWeapon
+        ? BotWeaponCompatibility.scoreWeapon(currentWeapon.fetchPAtk?.(), currentWeapon.fetchMAtk?.(), role, classId)
+        : 0;
 
     if (info.weapon) {
         if (role === 'archer' && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
         else if (role === 'dagger' && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
-        else if ((role === 'mage' || role === 'healer' || role === 'buffer') && /staff|wand|rod|spellbook|voodoo|scroll/.test(name)) addDemand(result, 6, 'caster weapon');
+        else if (casterRole && casterWeapon && candidateWeaponScore > currentWeaponScore) addDemand(result, 6, 'caster weapon');
         else if (role === 'tank' && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
         else if ((role === 'dps' || role === 'dagger') && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
@@ -200,6 +210,7 @@ function expireRequest(request) {
 }
 
 const BotLootEtiquette = {
+    itemDemand,
     shouldRecordIgnoredRequest,
 
     observeDrop(playerSession, npc, selfId, amount) {

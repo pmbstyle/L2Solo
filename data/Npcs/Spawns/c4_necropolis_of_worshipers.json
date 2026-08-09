@@ -1,0 +1,962 @@
+[
+  {
+    "selfId": "c4-necropolis-of-worshipers",
+    "bounds": [],
+    "spawns": [
+      {
+        "selfId": 1147,
+        "name": "Catacomb Gargoyle",
+        "coords": [
+          {
+            "locX": 116520,
+            "locY": 174006,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117008,
+            "locY": 174055,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117417,
+            "locY": 178613,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118231,
+            "locY": 173833,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119361,
+            "locY": 178615,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119282,
+            "locY": 175962,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119698,
+            "locY": 173712,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120110,
+            "locY": 178784,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120562,
+            "locY": 173872,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121627,
+            "locY": 176159,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122030,
+            "locY": 176677,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1148,
+        "name": "Catacomb Liviona",
+        "coords": [
+          {
+            "locX": 111387,
+            "locY": 178642,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111411,
+            "locY": 178384,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111823,
+            "locY": 178797,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112232,
+            "locY": 176891,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112664,
+            "locY": 177339,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113127,
+            "locY": 174840,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113528,
+            "locY": 177933,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113931,
+            "locY": 178525,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113781,
+            "locY": 177891,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114846,
+            "locY": 174559,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115274,
+            "locY": 177211,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115771,
+            "locY": 177630,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116203,
+            "locY": 177214,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117493,
+            "locY": 178616,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1149,
+        "name": "Decayed Ancient Pikeman",
+        "coords": [
+          {
+            "locX": 116975,
+            "locY": 182826,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116978,
+            "locY": 182819,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117394,
+            "locY": 181587,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117795,
+            "locY": 180397,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118227,
+            "locY": 180813,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118637,
+            "locY": 183780,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119903,
+            "locY": 180552,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119507,
+            "locY": 181883,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119910,
+            "locY": 179855,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120264,
+            "locY": 180243,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120781,
+            "locY": 181563,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121271,
+            "locY": 182075,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121734,
+            "locY": 179794,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122146,
+            "locY": 184341,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1174,
+        "name": "Lith Commander",
+        "coords": [
+          {
+            "locX": 111379,
+            "locY": 178800,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111800,
+            "locY": 176923,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112880,
+            "locY": 177339,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113285,
+            "locY": 174345,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113683,
+            "locY": 177489,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114474,
+            "locY": 174064,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114877,
+            "locY": 174658,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115339,
+            "locY": 177342,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116395,
+            "locY": 177606,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116160,
+            "locY": 177364,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1175,
+        "name": "Lilim Butcher",
+        "coords": [
+          {
+            "locX": 117016,
+            "locY": 175747,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117425,
+            "locY": 176475,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118167,
+            "locY": 173801,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119096,
+            "locY": 176455,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119499,
+            "locY": 177447,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119914,
+            "locY": 173808,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120346,
+            "locY": 174224,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121647,
+            "locY": 175879,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122049,
+            "locY": 178719,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1176,
+        "name": "Lilim Magus",
+        "coords": [
+          {
+            "locX": 117019,
+            "locY": 184030,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117425,
+            "locY": 181661,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117855,
+            "locY": 180950,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117908,
+            "locY": 180702,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118706,
+            "locY": 183278,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120046,
+            "locY": 180392,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119562,
+            "locY": 181801,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119972,
+            "locY": 179485,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120389,
+            "locY": 181595,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120797,
+            "locY": 182068,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121245,
+            "locY": 181601,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121666,
+            "locY": 184341,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122086,
+            "locY": 179698,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1195,
+        "name": "Gigant Commander",
+        "coords": [
+          {
+            "locX": 111379,
+            "locY": 178576,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111427,
+            "locY": 178856,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111872,
+            "locY": 176731,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112376,
+            "locY": 177179,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112880,
+            "locY": 176731,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113282,
+            "locY": 174345,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113683,
+            "locY": 177933,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114505,
+            "locY": 174163,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114908,
+            "locY": 175054,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115339,
+            "locY": 177086,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115771,
+            "locY": 177598,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116176,
+            "locY": 178479,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1196,
+        "name": "Nephilim Sentinel",
+        "coords": [
+          {
+            "locX": 117015,
+            "locY": 178354,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117148,
+            "locY": 175482,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117425,
+            "locY": 175883,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118135,
+            "locY": 174217,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119096,
+            "locY": 177348,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119499,
+            "locY": 176754,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119914,
+            "locY": 173872,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120351,
+            "locY": 178411,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121839,
+            "locY": 176751,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1197,
+        "name": "Nephilim Priest",
+        "coords": [
+          {
+            "locX": 117022,
+            "locY": 182031,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117024,
+            "locY": 182179,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117425,
+            "locY": 181587,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117826,
+            "locY": 180623,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118427,
+            "locY": 183500,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118830,
+            "locY": 184314,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119605,
+            "locY": 181627,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120020,
+            "locY": 179788,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120457,
+            "locY": 181663,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120977,
+            "locY": 182075,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121634,
+            "locY": 184309,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122086,
+            "locY": 179474,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1217,
+        "name": "Holy Land Priest",
+        "coords": [
+          {
+            "locX": 111366,
+            "locY": 178378,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111373,
+            "locY": 178837,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 111800,
+            "locY": 177019,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112099,
+            "locY": 177258,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 112736,
+            "locY": 176795,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113148,
+            "locY": 174992,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113558,
+            "locY": 174035,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 113962,
+            "locY": 178007,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114474,
+            "locY": 175450,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 114877,
+            "locY": 174461,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115339,
+            "locY": 177150,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 115771,
+            "locY": 177566,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116181,
+            "locY": 178597,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1218,
+        "name": "Vault Overlord",
+        "coords": [
+          {
+            "locX": 116361,
+            "locY": 174021,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 116459,
+            "locY": 174014,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117022,
+            "locY": 175957,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117425,
+            "locY": 176549,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118199,
+            "locY": 174057,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119096,
+            "locY": 176457,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119499,
+            "locY": 175962,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119914,
+            "locY": 173936,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120317,
+            "locY": 178736,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121627,
+            "locY": 175641,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122049,
+            "locY": 178751,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1219,
+        "name": "Vault Priest",
+        "coords": [
+          {
+            "locX": 117008,
+            "locY": 184025,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117022,
+            "locY": 182179,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117428,
+            "locY": 179814,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 117846,
+            "locY": 180665,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118427,
+            "locY": 183352,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 118830,
+            "locY": 184240,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120056,
+            "locY": 180266,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 119650,
+            "locY": 181780,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120065,
+            "locY": 179633,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120166,
+            "locY": 181856,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 120879,
+            "locY": 181595,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 121638,
+            "locY": 179762,
+            "locZ": -5432,
+            "head": 0
+          },
+          {
+            "locX": 122050,
+            "locY": 184277,
+            "locZ": -5432,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      }
+    ]
+  }
+]

@@ -1,0 +1,418 @@
+[
+  {
+    "selfId": 1253,
+    "template": {
+      "name": "Crypt Preacher"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3110,
+            "max": 6350,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 32.860431
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 19.716065
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 31.545705
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 5.257456
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.628728
+          },
+          {
+            "selfId": 5166,
+            "name": "Recipe: Blessed Spiritshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.105188
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 7.886426
+          }
+        ],
+        "overall": 41.3546
+      },
+      {
+        "items": [
+          {
+            "selfId": 5304,
+            "name": "Sealed Tallum Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 0.199222
+          },
+          {
+            "selfId": 5305,
+            "name": "Sealed Tallum Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.332037
+          },
+          {
+            "selfId": 5308,
+            "name": "Sealed Dark Crystal Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.132815
+          },
+          {
+            "selfId": 5485,
+            "name": "Sealed Tallum Tunic Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 30.348164
+          },
+          {
+            "selfId": 5486,
+            "name": "Sealed Dark Crystal Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 21.35471
+          },
+          {
+            "selfId": 5489,
+            "name": "Sealed Tallum Stockings Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 47.633052
+          }
+        ],
+        "overall": 1.0541
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1807,
+            "name": "Recipe: Soulshot: A-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0305
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 3035,
+            "name": "Recipe: Spiritshot A",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0305
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 4.5733
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1254,
+    "template": {
+      "name": "Tomb Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3587,
+            "max": 7319,
+            "chance": 94.784548
+          },
+          {
+            "selfId": 6323,
+            "name": "Sealed Phoenix Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006906
+          },
+          {
+            "selfId": 6324,
+            "name": "Sealed Phoenix Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.009072
+          },
+          {
+            "selfId": 6325,
+            "name": "Sealed Phoenix Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.013676
+          },
+          {
+            "selfId": 6341,
+            "name": "Sealed Phoenix Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 1.643022
+          },
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 1.270248
+          },
+          {
+            "selfId": 6345,
+            "name": "Sealed Phoenix Ring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 2.272527
+          }
+        ],
+        "overall": 73.8517
+      },
+      {
+        "items": [
+          {
+            "selfId": 7646,
+            "name": "Spellbook - Curse of Doom",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 7647,
+            "name": "Spellbook - Curse of Abyss",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          },
+          {
+            "selfId": 7648,
+            "name": "Spellbook - Arcane Chaos",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333
+          }
+        ],
+        "overall": 4.5381
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.099
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 35.6449
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.9987
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1255,
+    "template": {
+      "name": "Tomb Preacher"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3814,
+            "max": 7793,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 5297,
+            "name": "Sealed Dark Crystal Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.201005
+          },
+          {
+            "selfId": 5298,
+            "name": "Sealed Dark Crystal Leggings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.332431
+          },
+          {
+            "selfId": 5301,
+            "name": "Sealed Tallum Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.139157
+          },
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.344028
+          },
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.352918
+          },
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 47.63046
+          }
+        ],
+        "overall": 1.2935
+      },
+      {
+        "items": [
+          {
+            "selfId": 7662,
+            "name": "Spellbook - Elemental Protection",
+            "min": 1,
+            "max": 1,
+            "chance": 33.332643
+          },
+          {
+            "selfId": 7663,
+            "name": "Spellbook - Divine Protection",
+            "min": 1,
+            "max": 1,
+            "chance": 33.332643
+          },
+          {
+            "selfId": 7664,
+            "name": "Spellbook - Arcane Protection",
+            "min": 1,
+            "max": 1,
+            "chance": 33.334714
+          }
+        ],
+        "overall": 4.8295
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 8.2464
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 4.2554
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5487,
+            "name": "Sealed Robe of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 4.2704
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

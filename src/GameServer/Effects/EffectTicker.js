@@ -58,8 +58,14 @@ function refreshEffects(session, target) {
         target.session.dataSendToMe(ServerResponse.userInfo(target));
     }
 
-    if (target?.fetchKind && session?.dataSendToMeAndOthers) {
-        session.dataSendToMeAndOthers(ServerResponse.npcInfo(target), target);
+    const removedNpc = target?.fetchKind && (
+        target.state?.fetchDead?.() === true ||
+        target.corpseDecayState === 'removed'
+    );
+    if (target?.fetchKind) {
+        if (!removedNpc && session?.dataSendToMeAndOthers) {
+            session.dataSendToMeAndOthers(ServerResponse.npcInfo(target), target);
+        }
     } else if (target?.session?.dataSendToOthers && target?.backpack?.fetchPaperdollSelfId) {
         target.session.dataSendToOthers(ServerResponse.charInfo(target), target);
     }

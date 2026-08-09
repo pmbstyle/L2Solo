@@ -53,6 +53,13 @@ assert.ok(hint.statPriority.includes('buff_uptime'), 'buffers should value buff 
 assert.ok(hint.consumables.includes('spiritshots_for_backup_heals'), 'buffers should reserve shots for backup heals');
 assert.ok(hint.warnings.some((warning) => warning.includes('not a Bishop')), 'Prophet hints should not claim main-healer behavior');
 
+hint = GearSkillHints.forCharacter({ classId: 21, level: 48 });
+assert.strictEqual(hint.role, 'buffer');
+assert.strictEqual(hint.weapon, 'melee_sword_or_blunt', 'Sword Singer hints must not advertise caster weapons');
+
+hint = GearSkillHints.forCharacter({ level: 48 }, { role: 'buffer' });
+assert.strictEqual(hint.weapon, 'caster_weapon', 'a buffer with unknown class data must keep the safe caster weapon hint');
+
 hint = GearSkillHints.forCharacter({ classId: 5, level: 40 });
 assert.strictEqual(hint.role, 'tank');
 assert.strictEqual(hint.tier, 'c_grade_tank');

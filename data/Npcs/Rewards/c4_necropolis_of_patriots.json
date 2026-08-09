@@ -1,0 +1,1702 @@
+[
+  {
+    "selfId": 1153,
+    "template": {
+      "name": "Purgatory Serpent"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1906,
+            "max": 3892,
+            "chance": 98.855954
+          },
+          {
+            "selfId": 357,
+            "name": "Zubei's Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.002401
+          },
+          {
+            "selfId": 383,
+            "name": "Zubei's Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003813
+          },
+          {
+            "selfId": 4056,
+            "name": "Zubei's Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 0.44697
+          },
+          {
+            "selfId": 4057,
+            "name": "Zubei's Gaiter Material",
+            "min": 1,
+            "max": 1,
+            "chance": 0.690862
+          }
+        ],
+        "overall": 70.8101
+      },
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.344227
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 30.553377
+          },
+          {
+            "selfId": 3955,
+            "name": "Recipe: Blessed Spiritshot B",
+            "min": 1,
+            "max": 1,
+            "chance": 1.738562
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 29.028322
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 7.568627
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 29.028322
+          },
+          {
+            "selfId": 5280,
+            "name": "Recipe: Greater Blessed Spiritshot (B) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.738562
+          }
+        ],
+        "overall": 2.295
+      },
+      {
+        "items": [
+          {
+            "selfId": 2376,
+            "name": "Avadon Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.197604
+          },
+          {
+            "selfId": 2379,
+            "name": "Avadon Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.321107
+          },
+          {
+            "selfId": 4064,
+            "name": "Avadon Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 39.076201
+          },
+          {
+            "selfId": 4065,
+            "name": "Avadon Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 60.405088
+          }
+        ],
+        "overall": 0.8097
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.1895
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 24.8435
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.126
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1154,
+    "template": {
+      "name": "Hell Keeper Medusa"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2005,
+            "max": 4083,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 90.748901
+          },
+          {
+            "selfId": 5809,
+            "name": "Spellbook: Aqua Splash",
+            "min": 1,
+            "max": 1,
+            "chance": 2.419745
+          },
+          {
+            "selfId": 5810,
+            "name": "Spellbook: Rain of Fire",
+            "min": 1,
+            "max": 1,
+            "chance": 2.419745
+          },
+          {
+            "selfId": 5816,
+            "name": "Spellbook: Advanced Block",
+            "min": 1,
+            "max": 1,
+            "chance": 2.419745
+          },
+          {
+            "selfId": 6351,
+            "name": "Amulet: Ritual of Life",
+            "min": 1,
+            "max": 1,
+            "chance": 1.991865
+          }
+        ],
+        "overall": 35.9914
+      },
+      {
+        "items": [
+          {
+            "selfId": 2397,
+            "name": "Tunic of Zubei",
+            "min": 1,
+            "max": 1,
+            "chance": 0.162508
+          },
+          {
+            "selfId": 2402,
+            "name": "Stockings of Zubei",
+            "min": 1,
+            "max": 1,
+            "chance": 0.262109
+          },
+          {
+            "selfId": 2406,
+            "name": "Avadon Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.110086
+          },
+          {
+            "selfId": 4069,
+            "name": "Tunic of Zubei Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 30.263158
+          },
+          {
+            "selfId": 4070,
+            "name": "Stockings of Zubei Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 45.95303
+          },
+          {
+            "selfId": 4071,
+            "name": "Avadon Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 23.249109
+          }
+        ],
+        "overall": 1.9076
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 26.0988
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4613,
+            "name": "Greater Dye of STR (Str+4 Con-4)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.6863
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4614,
+            "name": "Greater Dye of STR (Str+4 Dex-4)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.6863
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1155,
+    "template": {
+      "name": "Purgatory Conjurer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2021,
+            "max": 4119,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 856,
+            "name": "Adamantite Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.212515
+          },
+          {
+            "selfId": 887,
+            "name": "Adamantite Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.320084
+          },
+          {
+            "selfId": 918,
+            "name": "Adamantite Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.160042
+          },
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 34.002361
+          },
+          {
+            "selfId": 4050,
+            "name": "Adamantite Ring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 40.165289
+          },
+          {
+            "selfId": 4051,
+            "name": "Adamantite Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 25.139709
+          }
+        ],
+        "overall": 3.8115
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 20.892421
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.462505
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.218606
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 2.437508
+          },
+          {
+            "selfId": 4154,
+            "name": "Recipe: Doom Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.86519
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 3,
+            "chance": 73.12377
+          }
+        ],
+        "overall": 33.7845
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4050,
+            "name": "Adamantite Ring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 31.0911
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4051,
+            "name": "Adamantite Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 19.4613
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4130,
+            "name": "Recipe: Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 8.1463
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1177,
+    "template": {
+      "name": "Lilim Knight Errant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 299,
+            "name": "Orcish Poleaxe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.218914
+          },
+          {
+            "selfId": 301,
+            "name": "Scorpion",
+            "min": 1,
+            "max": 1,
+            "chance": 0.284588
+          },
+          {
+            "selfId": 303,
+            "name": "Widow Maker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.284588
+          },
+          {
+            "selfId": 2113,
+            "name": "Scorpion Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.712785
+          },
+          {
+            "selfId": 2114,
+            "name": "Widowmaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 33.712785
+          },
+          {
+            "selfId": 2122,
+            "name": "Orcish Poleaxe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 31.78634
+          }
+        ],
+        "overall": 0.4568
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 52.347144
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 20.938858
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 10.46921
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 14.956233
+          },
+          {
+            "selfId": 3034,
+            "name": "Recipe: Spiritshot B",
+            "min": 1,
+            "max": 1,
+            "chance": 0.10462
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.87227
+          },
+          {
+            "selfId": 4944,
+            "name": "Recipe: Avadon Breastplate (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.25157
+          },
+          {
+            "selfId": 4968,
+            "name": "Recipe: Kris (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.060096
+          }
+        ],
+        "overall": 45.5937
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 148,
+            "max": 301,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 314,
+            "max": 633,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 13,
+            "max": 27,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0342
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 17.6944
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4594,
+            "name": "Greater Dye of DEX (Dex+2 Con-2)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.7237
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1178,
+    "template": {
+      "name": "Lilim Marauder"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 948,
+            "name": "Scroll: Enchant Armor (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.112649
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 60.165821
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 30.08291
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 3.008225
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 6.01645
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.392396
+          },
+          {
+            "selfId": 4162,
+            "name": "Recipe: Tunic of Doom",
+            "min": 1,
+            "max": 1,
+            "chance": 0.18716
+          },
+          {
+            "selfId": 5003,
+            "name": "Recipe: Art of Battle Axe (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.03439
+          }
+        ],
+        "overall": 45.3623
+      },
+      {
+        "items": [
+          {
+            "selfId": 2384,
+            "name": "Zubei's Leather Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004886
+          },
+          {
+            "selfId": 2388,
+            "name": "Zubei's Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.007958
+          },
+          {
+            "selfId": 4066,
+            "name": "Zubei's Leather Shirt Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 0.898235
+          },
+          {
+            "selfId": 4067,
+            "name": "Zubei's Leather Gaiter Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 1.363686
+          },
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 13,
+            "max": 26,
+            "chance": 97.725236
+          }
+        ],
+        "overall": 71.6294
+      },
+      {
+        "items": [
+          {
+            "selfId": 2390,
+            "name": "Avadon Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.463243
+          },
+          {
+            "selfId": 4068,
+            "name": "Avadon Leather Armor Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 99.536757
+          }
+        ],
+        "overall": 0.4965
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 73,
+            "max": 146,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 391,
+            "max": 782,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2218
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.9998
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4610,
+            "name": "Greater Dye of MEN (Men+3 Wit-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.232
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1198,
+    "template": {
+      "name": "Nephilim Swordsman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 299,
+            "name": "Orcish Poleaxe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.218914
+          },
+          {
+            "selfId": 301,
+            "name": "Scorpion",
+            "min": 1,
+            "max": 1,
+            "chance": 0.284588
+          },
+          {
+            "selfId": 303,
+            "name": "Widow Maker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.284588
+          },
+          {
+            "selfId": 2113,
+            "name": "Scorpion Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.712785
+          },
+          {
+            "selfId": 2114,
+            "name": "Widowmaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 33.712785
+          },
+          {
+            "selfId": 2122,
+            "name": "Orcish Poleaxe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 31.78634
+          }
+        ],
+        "overall": 0.4568
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 52.347144
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 20.938858
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 10.46921
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 14.956233
+          },
+          {
+            "selfId": 3034,
+            "name": "Recipe: Spiritshot B",
+            "min": 1,
+            "max": 1,
+            "chance": 0.10462
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.87227
+          },
+          {
+            "selfId": 4944,
+            "name": "Recipe: Avadon Breastplate (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.25157
+          },
+          {
+            "selfId": 4968,
+            "name": "Recipe: Kris (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.060096
+          }
+        ],
+        "overall": 45.5937
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 148,
+            "max": 301,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 314,
+            "max": 633,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 13,
+            "max": 27,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0342
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 17.6944
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4593,
+            "name": "Greater Dye of DEX (Dex+2 Str-2)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.7237
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1199,
+    "template": {
+      "name": "Nephilim Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 948,
+            "name": "Scroll: Enchant Armor (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.188793
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 33.611565
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 50.417348
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 5.041476
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 10.083276
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.657542
+          }
+        ],
+        "overall": 30.9334
+      },
+      {
+        "items": [
+          {
+            "selfId": 2384,
+            "name": "Zubei's Leather Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004886
+          },
+          {
+            "selfId": 2388,
+            "name": "Zubei's Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.007958
+          },
+          {
+            "selfId": 4066,
+            "name": "Zubei's Leather Shirt Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 0.898235
+          },
+          {
+            "selfId": 4067,
+            "name": "Zubei's Leather Gaiter Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 1.363686
+          },
+          {
+            "selfId": 6362,
+            "name": "Red Seal Stone",
+            "min": 13,
+            "max": 26,
+            "chance": 97.725236
+          }
+        ],
+        "overall": 71.6294
+      },
+      {
+        "items": [
+          {
+            "selfId": 2390,
+            "name": "Avadon Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.463243
+          },
+          {
+            "selfId": 4068,
+            "name": "Avadon Leather Armor Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 99.536757
+          }
+        ],
+        "overall": 0.4965
+      },
+      {
+        "items": [
+          {
+            "selfId": 4163,
+            "name": "Recipe: Blue Wolf Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.220939
+          },
+          {
+            "selfId": 6361,
+            "name": "Green Seal Stone",
+            "min": 391,
+            "max": 782,
+            "chance": 99.779061
+          }
+        ],
+        "overall": 70.155
+      },
+      {
+        "items": [
+          {
+            "selfId": 6360,
+            "name": "Blue Seal Stone",
+            "min": 73,
+            "max": 146,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2218
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.9998
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4611,
+            "name": "Greater Dye of WIT (Wit+3 Int-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.232
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1221,
+    "template": {
+      "name": "Sepulcher Inquisitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1558,
+            "max": 3150,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 64,
+            "name": "Composite Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.683054
+          },
+          {
+            "selfId": 608,
+            "name": "Mithril Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 0.683054
+          },
+          {
+            "selfId": 1981,
+            "name": "Mithril Gauntlets Design",
+            "min": 1,
+            "max": 1,
+            "chance": 49.316946
+          },
+          {
+            "selfId": 2956,
+            "name": "Composite Boots Part",
+            "min": 1,
+            "max": 1,
+            "chance": 49.316946
+          }
+        ],
+        "overall": 4.7434
+      },
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 26.72801
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 2,
+            "max": 6,
+            "chance": 10.691153
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 2,
+            "max": 6,
+            "chance": 13.364131
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.672725
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 5.345451
+          },
+          {
+            "selfId": 2234,
+            "name": "Recipe: Divine Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.597299
+          },
+          {
+            "selfId": 3955,
+            "name": "Recipe: Blessed Spiritshot B",
+            "min": 1,
+            "max": 1,
+            "chance": 0.080144
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.348551
+          },
+          {
+            "selfId": 5280,
+            "name": "Recipe: Greater Blessed Spiritshot (B) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.080144
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 3,
+            "chance": 40.092392
+          }
+        ],
+        "overall": 39.6786
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 11,
+            "chance": 85.485
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 11,
+            "chance": 85.485
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4605,
+            "name": "Greater Dye of DEX (Dex+3 Str-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8548
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1222,
+    "template": {
+      "name": "Sepulcher Archon"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1837,
+            "max": 3743,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 52.082745
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 20.833148
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 10.41645
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 14.880714
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.867852
+          },
+          {
+            "selfId": 4126,
+            "name": "Recipe: Adamantite Earrings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.859188
+          },
+          {
+            "selfId": 4183,
+            "name": "Recipe: Heavy War Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.059903
+          }
+        ],
+        "overall": 40.3986
+      },
+      {
+        "items": [
+          {
+            "selfId": 2414,
+            "name": "Full Plate Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.410941
+          },
+          {
+            "selfId": 2497,
+            "name": "Full Plate Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.586311
+          },
+          {
+            "selfId": 2959,
+            "name": "Full Plate Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 38.097108
+          },
+          {
+            "selfId": 2966,
+            "name": "Full Plate Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 60.269598
+          },
+          {
+            "selfId": 4965,
+            "name": "Recipe: Sprite's Staff (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.636042
+          }
+        ],
+        "overall": 3.8205
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.9118
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1920,
+            "name": "Necklace of Binding Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 15.5991
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4126,
+            "name": "Recipe: Adamantite Earrings",
+            "min": 1,
+            "max": 1,
+            "chance": 7.5228
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1223,
+    "template": {
+      "name": "Sepulcher Inquisitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1877,
+            "max": 3833,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 78,
+            "name": "Great Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.127747
+          },
+          {
+            "selfId": 142,
+            "name": "Keshanberk",
+            "min": 1,
+            "max": 1,
+            "chance": 0.127747
+          },
+          {
+            "selfId": 148,
+            "name": "Sword of Valhalla",
+            "min": 1,
+            "max": 1,
+            "chance": 0.127747
+          },
+          {
+            "selfId": 4104,
+            "name": "Great Sword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.546244
+          },
+          {
+            "selfId": 4107,
+            "name": "Keshanberk Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.035258
+          },
+          {
+            "selfId": 4108,
+            "name": "Sword of Valhalla Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.035258
+          }
+        ],
+        "overall": 0.3914
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 52.090086
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 20.836034
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 10.417753
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 14.882882
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.868102
+          },
+          {
+            "selfId": 4130,
+            "name": "Recipe: Ring of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 0.845348
+          },
+          {
+            "selfId": 4182,
+            "name": "Recipe: Great Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.059796
+          }
+        ],
+        "overall": 37.7951
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 24.4718
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4129,
+            "name": "Recipe: Earrings of Black Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.0493
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4603,
+            "name": "Greater Dye of CON (Con+3 Str-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0368
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

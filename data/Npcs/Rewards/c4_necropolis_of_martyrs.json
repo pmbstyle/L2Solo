@@ -1,0 +1,126 @@
+[
+  {
+    "selfId": 1227,
+    "template": {
+      "name": "Sepulcher Sage"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2811,
+            "max": 5744,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 287,
+            "name": "Bow of Peril",
+            "min": 1,
+            "max": 1,
+            "chance": 0.332521
+          },
+          {
+            "selfId": 4121,
+            "name": "Bow of Peril Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 99.667479
+          }
+        ],
+        "overall": 0.4511
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 3,
+            "max": 9,
+            "chance": 35.663542
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 42.796251
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 7.132708
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 3.566043
+          },
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.142393
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 10.699063
+          }
+        ],
+        "overall": 32.1645
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4077,
+            "name": "Doom Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 31.4447
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.932
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 69.9015
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

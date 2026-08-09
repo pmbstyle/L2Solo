@@ -1,0 +1,863 @@
+[
+  {
+    "selfId": 1124,
+    "template": {
+      "name": "Red Eye Barbed Bat"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 121,
+            "max": 200,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 309,
+            "name": "Tears of Eva",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 310,
+            "name": "Relic of The Saints",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 0.022
+      },
+      {
+        "items": [
+          {
+            "selfId": 1800,
+            "name": "Recipe: Piece Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 12.674296
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 40.304088
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 40.304088
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 6.717528
+          }
+        ],
+        "overall": 9.2802
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.1105
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 25.3256
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1897,
+            "name": "Necklace of Wisdom Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 6.0299
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1125,
+    "template": {
+      "name": "Northern Trimden"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 15,
+            "name": "Short Spear",
+            "min": 1,
+            "max": 1,
+            "chance": 6.028556
+          },
+          {
+            "selfId": 2011,
+            "name": "Short Spear Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 93.971444
+          }
+        ],
+        "overall": 0.1891
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 124,
+            "max": 211,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 8.196142
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 32.787092
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 49.180638
+          },
+          {
+            "selfId": 2140,
+            "name": "Recipe: High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 9.836128
+          }
+        ],
+        "overall": 7.9208
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1800,
+            "name": "Recipe: Piece Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 8.2944
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1801,
+            "name": "Recipe: Piece Bone Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 13.2878
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1924,
+            "name": "Leather Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 8.5085
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1126,
+    "template": {
+      "name": "Kerope Werewolf"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 24,
+            "name": "Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 19.245837
+          },
+          {
+            "selfId": 31,
+            "name": "Bone Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 30.754163
+          },
+          {
+            "selfId": 390,
+            "name": "Cotton Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 19.245837
+          },
+          {
+            "selfId": 412,
+            "name": "Cotton Pants",
+            "min": 1,
+            "max": 1,
+            "chance": 30.754163
+          }
+        ],
+        "overall": 0.2042
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 125,
+            "max": 217,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 31.915047
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 15.957223
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 10.638349
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 31.915047
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 6.382889
+          },
+          {
+            "selfId": 2143,
+            "name": "Recipe: Synthetic Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 3.191445
+          }
+        ],
+        "overall": 16.6727
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 54.0431
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 27.0215
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1925,
+            "name": "Leather Gloves Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 17.719
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1127,
+    "template": {
+      "name": "Northern Goblin"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 25,
+            "name": "Piece Bone Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.295253
+          },
+          {
+            "selfId": 26,
+            "name": "Bronze Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 1.473657
+          },
+          {
+            "selfId": 32,
+            "name": "Piece Bone Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 3.66458
+          },
+          {
+            "selfId": 34,
+            "name": "Bronze Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3735
+          },
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 36.932707
+          },
+          {
+            "selfId": 1928,
+            "name": "Piece Bone Gaiters Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 53.260303
+          }
+        ],
+        "overall": 0.7668
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 130,
+            "max": 231,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 72.414921
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 14.482984
+          },
+          {
+            "selfId": 2151,
+            "name": "Recipe: Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 10.085488
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 3.016607
+          }
+        ],
+        "overall": 11.6157
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1804,
+            "name": "Recipe: Soulshot: D-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.1391
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 2.9252
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1926,
+            "name": "Piece Bone Breastplate Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 2.8764
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1128,
+    "template": {
+      "name": "Spine Golem"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 137,
+            "max": 246,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1102,
+            "name": "Tunic of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 38.424821
+          },
+          {
+            "selfId": 1105,
+            "name": "Stockings of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 61.575179
+          }
+        ],
+        "overall": 0.1257
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 23.428703
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 17.571084
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 17.571084
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 17.571084
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 23.428703
+          },
+          {
+            "selfId": 2256,
+            "name": "Recipe: Assassin Knife",
+            "min": 1,
+            "max": 1,
+            "chance": 0.429342
+          }
+        ],
+        "overall": 16.9096
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 30.1771
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1927,
+            "name": "Hard Leather Shirt Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.4073
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2151,
+            "name": "Recipe: Necklace of Devotion",
+            "min": 1,
+            "max": 1,
+            "chance": 8.4059
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1129,
+    "template": {
+      "name": "Kerope Werewolf Chief"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 147,
+            "max": 260,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 846,
+            "name": "Coral Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 8.719306
+          },
+          {
+            "selfId": 878,
+            "name": "Blue Coral Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 13.0422
+          },
+          {
+            "selfId": 909,
+            "name": "Blue Diamond Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 6.543155
+          },
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 71.695339
+          }
+        ],
+        "overall": 0.6801
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 47.096582
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 47.096582
+          },
+          {
+            "selfId": 3032,
+            "name": "Recipe: Spiritshot D",
+            "min": 1,
+            "max": 1,
+            "chance": 1.88303
+          },
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 3.923806
+          }
+        ],
+        "overall": 10.0795
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 32.1422
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1928,
+            "name": "Piece Bone Gaiters Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 4.682
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2176,
+            "name": "Recipe: Leather Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 15.3791
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1130,
+    "template": {
+      "name": "Northern Goblin Leader"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 39,
+            "name": "Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 5.623155
+          },
+          {
+            "selfId": 51,
+            "name": "Bracer",
+            "min": 1,
+            "max": 1,
+            "chance": 5.623155
+          },
+          {
+            "selfId": 1930,
+            "name": "Boot Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 88.753689
+          }
+        ],
+        "overall": 1.9313
+      },
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 151,
+            "max": 278,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 8.896555
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 35.587283
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 53.381457
+          },
+          {
+            "selfId": 5273,
+            "name": "Recipe: Greater Spiritshot (D) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 2.134705
+          }
+        ],
+        "overall": 9.3924
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1929,
+            "name": "Hard Leather Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 4.3804
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1930,
+            "name": "Boot Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 8.7046
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2177,
+            "name": "Recipe: Bone Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 10.846
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

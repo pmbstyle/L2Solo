@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 1152,
+    "template": {
+      "kind": "Monster",
+      "name": "Purgatory Wisp",
+      "title": "",
+      "level": 53,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 602,
+      "pAtkRnd": 30,
+      "pDef": 258,
+      "mAtk": 319,
+      "mDef": 247,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 2481,
+      "maxMp": 923,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084727661089,
+      "sp": 239
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1244,
+    "template": {
+      "kind": "Monster",
+      "name": "Crypt Archon",
+      "title": "",
+      "level": 50,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 560,
+      "pAtkRnd": 10,
+      "pDef": 253,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 33
+    },
+    "equipment": {
+      "weapon": 131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.0632,
+      "sp": 200
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1245,
+    "template": {
+      "kind": "Monster",
+      "name": "Crypt Inquisitor",
+      "title": "",
+      "level": 52,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 570,
+      "pAtkRnd": 30,
+      "pDef": 251,
+      "mAtk": 300,
+      "mDef": 239,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 2402,
+      "maxMp": 892,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084689349112,
+      "sp": 227
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1246,
+    "template": {
+      "kind": "Monster",
+      "name": "Tomb Archon",
+      "title": "",
+      "level": 55,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 737,
+      "pAtkRnd": 10,
+      "pDef": 292,
+      "mAtk": 360,
+      "mDef": 261,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 2643,
+      "maxMp": 987,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 49.5
+    },
+    "equipment": {
+      "weapon": 298,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.14347107438,
+      "sp": 279
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1247,
+    "template": {
+      "kind": "Monster",
+      "name": "Tomb Inquisitor",
+      "title": "",
+      "level": 57,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 743,
+      "pAtkRnd": 30,
+      "pDef": 289,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 46
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "c_dungeon_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.084641428132,
+      "sp": 293
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

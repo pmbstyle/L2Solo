@@ -2,8 +2,37 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 const activeSkills = require('../../../data/Skills/Active/active.json');
+const passiveSkills = require('../../../data/Skills/Passive/passive.json');
 const npcActiveSkills = require('../../../data/Npcs/Skills/active.json');
-const npcSkillRows = require('../../../data/Npcs/Skills/skills.json');
+const c4SwampSkills = require('../../../data/Npcs/Skills/c4_swamp_of_screams_templates.json');
+const c4GardenSkills = require('../../../data/Npcs/Skills/c4_garden_of_beasts_templates.json');
+const c4ValleySkills = require('../../../data/Npcs/Skills/c4_valley_of_saints_templates.json');
+const c4ForestSkills = require('../../../data/Npcs/Skills/c4_forest_of_the_dead_templates.json');
+const c4DevilsIsleSkills = require('../../../data/Npcs/Skills/c4_devils_isle_templates.json');
+const c4NecropolisSacrificeSkills = require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice_templates.json');
+const npcSkillRows = [
+    ...require('../../../data/Npcs/Skills/skills.json'),
+    ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
+    ...require('../../../data/Npcs/Skills/c4_garden_of_beasts.json'),
+    ...require('../../../data/Npcs/Skills/c4_valley_of_saints.json'),
+    ...require('../../../data/Npcs/Skills/c4_forest_of_the_dead.json'),
+    ...require('../../../data/Npcs/Skills/c4_devils_isle.json'),
+    ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_the_disciples.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_saints.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_patriots.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_ascetics.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_pilgrims.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_worshipers.json'),
+    ...require('../../../data/Npcs/Skills/c4_necropolis_of_martyrs.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_dark_omen.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_apostate.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_heretics.json'),
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_forbidden_path.json')
+];
 
 // These action skills belong to temporary servitors, but their NPC templates
 // are generated from class summon skills rather than ordinary spawn rows.
@@ -27,7 +56,8 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...npcActiveSkills, ...summonActionSkills].map((skill) => [Number(skill.selfId), skill])
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills]
+        .map((skill) => [Number(skill.selfId), skill])
 );
 
 const skillsByNpc = new Map();
@@ -92,12 +122,21 @@ function combatSkillsFor(npc) {
         if (skill.fetchSemantic?.().notUsedInC4) return false;
         if (!COMBAT_SKILL_TYPES.has(skill.fetchSkillType?.())) return false;
         if (!['enemy', 'self'].includes(skill.fetchTargetKind?.())) return false;
-        if (skill.fetchTargetKind?.() === 'enemy' && Number(skill.fetchDistance?.()) < 0) return false;
+        if (
+            skill.fetchTargetKind?.() === 'enemy' &&
+            Number(skill.fetchDistance?.()) < 0 &&
+            skill.fetchSemantic?.().sourceTarget !== 'aura'
+        ) return false;
         return true;
     });
 }
 
+function passiveSkillsFor(npc) {
+    return forNpc(npc).filter((skill) => skill.fetchPassive?.() === true);
+}
+
 module.exports = {
     forNpc,
-    combatSkillsFor
+    combatSkillsFor,
+    passiveSkillsFor
 };

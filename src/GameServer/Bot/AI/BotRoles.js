@@ -1,5 +1,6 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DataCache = invoke('GameServer/DataCache');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const ROLE_CLASSES = {
     healer: [15, 16, 29, 30, 42, 43],
@@ -10,6 +11,11 @@ const ROLE_CLASSES = {
     mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41],
     crafter: [56, 57]
 };
+const MANA_REST_ROLES = new Set(['mage', 'archer', 'healer']);
+// Prophet and the Orc mystic line cast as their primary party job. Sword
+// Singer and Bladedancer share the buffer role, but they are melee fighters
+// whose combat loop must not stop merely because their MP is low.
+const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
 
 function classIdOf(value) {
     if (typeof value === 'number' || typeof value === 'string') return value;
@@ -84,6 +90,20 @@ function canBuff(value) {
     return isRole(value, 'buffer');
 }
 
+function shouldRestForMana(value) {
+    const role = inferRole(value);
+    return MANA_REST_ROLES.has(role) || (
+        role === 'buffer' && CASTER_BUFFER_CLASSES.has(roleClassId(value))
+    );
+}
+
+// Sitting and receiving Recharge are deliberately separate policies. A tank
+// must stay on its feet with the melee line, but an empty MP bar prevents it
+// from using Aggression/Hate Aura and therefore threatens the whole party.
+function needsPartyManaRecovery(value) {
+    return shouldRestForMana(value) || inferRole(value) === 'tank';
+}
+
 function isRanged(roleOrActor) {
     const role = typeof roleOrActor === 'string' ? roleOrActor : inferRole(roleOrActor);
     return role === 'archer' || role === 'mage';
@@ -95,10 +115,12 @@ function hasMeleeWeapon(actor) {
 
     const kind = String(weapon.fetchKind?.() || '');
     const name = String(weapon.fetchName?.() || '');
-    // C4 stores staves, wands and rods under Weapon.Blunt together with real
-    // clubs and maces. Their names are the authoritative distinction in the
-    // datapack, so do not let a support class treat every blunt as melee.
-    const casterWeapon = /\b(staff|wand|rod|spellbook|voodoo|scroll)\b/i.test(name);
+    const casterWeapon = BotWeaponCompatibility.isCasterWeapon(
+        kind,
+        name,
+        weapon.fetchPAtk?.(),
+        weapon.fetchMAtk?.()
+    );
     return kind.startsWith('Weapon.') && kind !== 'Weapon.Bow' && !casterWeapon;
 }
 
@@ -120,6 +142,8 @@ module.exports = {
     isHealer,
     isTank,
     canBuff,
+    shouldRestForMana,
+    needsPartyManaRecovery,
     isRanged,
     hasMeleeWeapon,
     partyRoleStance

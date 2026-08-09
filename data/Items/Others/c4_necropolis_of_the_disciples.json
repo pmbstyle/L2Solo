@@ -1,0 +1,152 @@
+[
+  {
+    "selfId": 7645,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Balance Life",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7665,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Prophecy of Water",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7666,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Prophecy of Fire",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7667,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Prophecy of Wind",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7672,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet - Chant of Spirit",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7673,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet - Chant of Victory",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7674,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet - Pa'agrio's Eye",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7675,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet - Pa'agrio's Soul",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7676,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet - Seal of Despair",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7835,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet: Seal of Disease",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

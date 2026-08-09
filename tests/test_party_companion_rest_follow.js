@@ -17,6 +17,11 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
+const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
@@ -25,6 +30,8 @@ const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const SkillModel = invoke('GameServer/Model/Skill');
+const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
+const ActorGenerics = invoke(path.actor);
 
 class FakeState {
     constructor() {
@@ -42,7 +49,9 @@ class FakeState {
     fetchTowards() { return this.towards; }
     setTowards(value) { this.towards = value; }
     fetchHits() { return this.hits; }
+    setHits(value) { this.hits = value; }
     fetchCasts() { return this.casts; }
+    setCasts(value) { this.casts = value; }
     fetchAnimated() { return this.animated; }
     fetchPickinUp() { return false; }
     setCombats() {}
@@ -209,6 +218,7 @@ const originalBotSessions = BotManager.sessions;
 const originalBotPartySay = BotManager.botPartySay;
 const originalApplySupportBuff = BotBuffs.applySupportBuff;
 const originalFindOffers = MarketOpportunity.findOffers;
+const originalSkillExec = ActorGenerics.skillExec;
 
 function lastPartyAllPacket(session) {
     return [...session.packets].reverse().find((packet) => packet[0] === 0x4e);
@@ -403,6 +413,18 @@ try {
     assert.strictEqual(campBot.state.fetchSeated(), true, 'companion should sit down when party leader sits nearby');
     assert.strictEqual(campSession.currentTargetId, undefined, 'sitting with leader should clear stale target');
 
+    const supportCampBot = fakeActor(2000056, { locX: -330, locY: 0, classId: 17 });
+    const supportCampSession = fakeSession('bot_support_camp_follow', supportCampBot);
+    supportCampSession.followPlayerSession = leaderSession;
+    supportCampSession.partyCompanion = true;
+    supportCampSession.plan = 'following';
+    World.user = { sessions: [leaderSession, supportCampSession] };
+
+    FollowingState.tick(supportCampSession, supportCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+
+    assert.strictEqual(supportCampBot.state.fetchSeated(), true, 'support should sit after reaching its formation slot even when that slot is farther than the generic leader leash');
+    assert.strictEqual(supportCampBot.moves.length, 0, 'a support already at its rest formation slot must not loop on another approach');
+
     const farCampBot = fakeActor(2000015, { locX: 900, locY: 0 });
     const farCampSession = fakeSession('bot_far_camp_follow', farCampBot);
     farCampSession.followPlayerSession = leaderSession;
@@ -519,6 +541,21 @@ try {
     assert.strictEqual(targetWakeBot.state.fetchSeated(), false, 'resting companion should stand when leader attacks');
     assert.strictEqual(targetWakeSession.currentTargetId, 1005, 'resting companion should remember leader target');
 
+    const physicalRestBot = fakeActor(2999001, {
+        locX: 0, locY: 0, hp: 100, maxHp: 100, mp: 10, maxMp: 100, classId: 5
+    });
+    physicalRestBot.state.setSeated(true);
+    const physicalRestSession = fakeSession('bot_physical_rest_complete', physicalRestBot);
+    physicalRestSession.plan = 'resting';
+    World.user = { sessions: [physicalRestSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    RestingState.tick(physicalRestSession, physicalRestBot, {}, { say() {} });
+    assert.strictEqual(physicalRestSession.plan, 'hunting',
+        'a physical bot must finish resting once HP is recovered even when MP is below the caster threshold');
+    assert.strictEqual(physicalRestBot.state.fetchSeated(), false,
+        'a recovered physical bot must stand instead of waiting for unneeded MP');
+
     const restingPullBot = fakeActor(2000013, { locX: 80, locY: 0, hp: 20, maxHp: 100, mp: 10, maxMp: 100 });
     restingPullBot.state.setSeated(true);
     const restingPullSession = fakeSession('bot_resting_pull_pause', restingPullBot);
@@ -565,6 +602,20 @@ try {
     FollowingState.tick(regroupingRestSession, regroupingRestBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(regroupingRestSession.roleDecision.reason, 'move_near_sitting_leader', 'the regrouping companion should move into the seated leader formation before sitting again');
     assert.strictEqual(regroupingRestBot.moves.length, 1, 'party rest regrouping should issue one formation move');
+
+    const orderedRestBot = fakeActor(2000057, { locX: 900, locY: 0, hp: 100, maxHp: 100, mp: 10, maxMp: 100, classId: 17 });
+    orderedRestBot.state.setSeated(true);
+    const orderedRestSession = fakeSession('bot_ordered_rest', orderedRestBot);
+    orderedRestSession.followPlayerSession = leaderSession;
+    orderedRestSession.partyCompanion = true;
+    orderedRestSession.plan = 'resting';
+    orderedRestSession.explicitRestOrder = true;
+    World.user = { sessions: [leaderSession, orderedRestSession] };
+
+    RestingState.tick(orderedRestSession, orderedRestBot, {}, { say() {} });
+
+    assert.strictEqual(orderedRestSession.plan, 'resting', 'a direct sit order should override automatic rest regrouping until recovery finishes');
+    assert.strictEqual(orderedRestBot.state.fetchSeated(), true, 'a directly seated companion must not stand again just because its formation slot is distant');
     leader.state.setSeated(false);
 
     leader.destId = 1003;
@@ -926,6 +977,119 @@ try {
     assert.match(lowManaHealChat[0], /No MP|need MP/, 'the party should receive a concrete MP limitation instead of a fake heal confirmation');
     BotManager.botPartySay = originalBotPartySay;
 
+    const healChoiceBot = fakeActor(2000101, { classId: 15, mp: 500, maxMp: 500 });
+    learnSkill(healChoiceBot, { selfId: 1011, name: 'Heal', spell: true, mp: 30 });
+    learnSkill(healChoiceBot, { selfId: 1015, name: 'Battle Heal', spell: true, mp: 45 });
+    learnSkill(healChoiceBot, { selfId: 1027, name: 'Group Heal', spell: true, mp: 80, distance: -1 });
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot).fetchSelfId(), 1011, 'routine healing should prefer the efficient single-target Heal');
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot, { emergency: true }).fetchSelfId(), 1015, 'emergency healing should prefer Battle Heal');
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot, { group: true }).fetchSelfId(), 1027, 'multiple wounded members should unlock Group Heal');
+
+    const manaLeader = fakeActor(2000102, { locX: 0, locY: 0, classId: 0, mp: 5, maxMp: 100 });
+    const manaLeaderSession = fakeSession('player_mana_policy_party', manaLeader);
+    const rechargeHealer = fakeActor(2000103, { locX: 80, locY: 0, classId: 15 });
+    learnSkill(rechargeHealer, { selfId: 1013, name: 'Recharge', spell: true, mp: 20 });
+    const rechargeHealerSession = fakeSession('bot_party_recharger', rechargeHealer);
+    rechargeHealerSession.followPlayerSession = manaLeaderSession;
+    rechargeHealerSession.partyCompanion = true;
+    rechargeHealerSession.plan = 'following';
+    const lowManaArcher = fakeActor(2000104, { locX: 120, locY: 0, classId: 9, mp: 10, maxMp: 100 });
+    const lowManaArcherSession = fakeSession('bot_low_mana_archer', lowManaArcher);
+    lowManaArcherSession.followPlayerSession = manaLeaderSession;
+    lowManaArcherSession.partyCompanion = true;
+    lowManaArcherSession.plan = 'following';
+    const lowManaSinger = fakeActor(2000108, { locX: 100, locY: 0, classId: 21, mp: 1, maxMp: 100 });
+    const lowManaSingerSession = fakeSession('bot_low_mana_singer', lowManaSinger);
+    lowManaSingerSession.followPlayerSession = manaLeaderSession;
+    lowManaSingerSession.partyCompanion = true;
+    lowManaSingerSession.plan = 'following';
+    const lowManaDancer = fakeActor(2000109, { locX: 110, locY: 0, classId: 34, mp: 1, maxMp: 100 });
+    const lowManaDancerSession = fakeSession('bot_low_mana_dancer', lowManaDancer);
+    lowManaDancerSession.followPlayerSession = manaLeaderSession;
+    lowManaDancerSession.partyCompanion = true;
+    lowManaDancerSession.plan = 'following';
+    World.user = { sessions: [manaLeaderSession, rechargeHealerSession, lowManaArcherSession, lowManaSingerSession, lowManaDancerSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    const rechargeCasts = [];
+    FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+        skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(rechargeCasts, [{ id: lowManaArcher.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should skip a lower-MP melee fighter and restore a ranged party member instead');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), false, 'Sword Singer is a melee buffer and must not recover MP as a caster');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), false, 'Bladedancer is a melee buffer and must not recover MP as a caster');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(fakeActor(2000111, { classId: 17 })), true, 'Prophet remains a caster buffer and should recover MP');
+    const lowManaPaladin = fakeActor(2000112, { classId: 5 });
+    assert.strictEqual(BotRoles.shouldRestForMana(lowManaPaladin), false, 'a Paladin must stay standing with the melee line when MP is low');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaPaladin), true, 'a Paladin must remain eligible for Recharge so taunt control does not collapse');
+
+    World.user = { sessions: [manaLeaderSession, lowManaSingerSession] };
+    FollowingState.tick(lowManaSingerSession, lowManaSinger, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(lowManaSingerSession.plan, 'following', 'low MP alone must not seat a Sword Singer');
+    assert.strictEqual(lowManaSinger.state.fetchSeated(), false, 'Sword Singer should stay on its feet at low MP');
+
+    World.user = { sessions: [manaLeaderSession, lowManaDancerSession] };
+    FollowingState.tick(lowManaDancerSession, lowManaDancer, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(lowManaDancerSession.plan, 'following', 'low MP alone must not seat a Bladedancer');
+    assert.strictEqual(lowManaDancer.state.fetchSeated(), false, 'Bladedancer should stay on its feet at low MP');
+
+    rechargeCasts.length = 0;
+    rechargeHealerSession.currentTargetId = undefined;
+    rechargeHealer.unselect();
+    World.user = { sessions: [manaLeaderSession, rechargeHealerSession] };
+    FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+        skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(rechargeCasts.length, 0, 'a melee party member must not receive Recharge even when it is the only low-MP target');
+
+    const rechargePaladin = fakeActor(2000112, { locX: 100, locY: 0, classId: 5, mp: 10, maxMp: 100 });
+    const rechargePaladinSession = fakeSession('bot_low_mana_paladin', rechargePaladin);
+    rechargePaladinSession.followPlayerSession = manaLeaderSession;
+    rechargePaladinSession.partyCompanion = true;
+    rechargePaladinSession.plan = 'following';
+    rechargeCasts.length = 0;
+    manaLeaderSession.partyRecoveryCast = undefined;
+    World.user = { sessions: [manaLeaderSession, rechargeHealerSession, rechargePaladinSession] };
+    FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+        skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(rechargeCasts, [{ id: rechargePaladin.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should restore a standing tank below its taunt reserve');
+
+    const lowManaMelee = fakeActor(2000105, { locX: 80, locY: 0, classId: 0, hp: 100, maxHp: 100, mp: 1, maxMp: 100 });
+    const lowManaMeleeSession = fakeSession('bot_low_mana_melee', lowManaMelee);
+    lowManaMeleeSession.followPlayerSession = manaLeaderSession;
+    lowManaMeleeSession.partyCompanion = true;
+    lowManaMeleeSession.plan = 'following';
+    World.user = { sessions: [manaLeaderSession, lowManaMeleeSession] };
+    FollowingState.tick(lowManaMeleeSession, lowManaMelee, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(lowManaMeleeSession.plan, 'following', 'a melee companion must keep following at critically low MP');
+    assert.strictEqual(lowManaMelee.state.fetchSeated(), false, 'low MP alone must never seat a melee companion');
+
+    lowManaMelee.state.setSeated(true);
+    lowManaMeleeSession.plan = 'resting';
+    RestingState.tick(lowManaMeleeSession, lowManaMelee, {}, { say() {} });
+    assert.strictEqual(lowManaMeleeSession.plan, 'following', 'a melee companion already resting only for MP should immediately return to the party');
+    assert.strictEqual(lowManaMelee.state.fetchSeated(), false, 'the stale MP-rest state must stand the melee companion up');
+
+    const lowManaArcherRest = fakeActor(2000106, { locX: 80, locY: 0, classId: 9, hp: 100, maxHp: 100, mp: 1, maxMp: 100 });
+    const lowManaArcherRestSession = fakeSession('bot_low_mana_archer_rest', lowManaArcherRest);
+    lowManaArcherRestSession.followPlayerSession = manaLeaderSession;
+    lowManaArcherRestSession.partyCompanion = true;
+    lowManaArcherRestSession.plan = 'following';
+    World.user = { sessions: [manaLeaderSession, lowManaArcherRestSession] };
+    FollowingState.tick(lowManaArcherRestSession, lowManaArcherRest, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(lowManaArcherRestSession.plan, 'resting', 'a low-MP archer should still enter party recovery');
+    assert.strictEqual(lowManaArcherRest.state.fetchSeated(), true, 'ranged MP users should continue sitting to recover mana');
+
+    const lowHpMelee = fakeActor(2000107, { locX: 80, locY: 0, classId: 0, hp: 20, maxHp: 100, mp: 1, maxMp: 100 });
+    const lowHpMeleeSession = fakeSession('bot_low_hp_melee_rest', lowHpMelee);
+    lowHpMeleeSession.followPlayerSession = manaLeaderSession;
+    lowHpMeleeSession.partyCompanion = true;
+    lowHpMeleeSession.plan = 'following';
+    World.user = { sessions: [manaLeaderSession, lowHpMeleeSession] };
+    FollowingState.tick(lowHpMeleeSession, lowHpMelee, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(lowHpMeleeSession.plan, 'resting', 'low HP must still seat a melee companion regardless of its MP policy');
+
     const healerAssistBot = fakeActor(2000027, { locX: 700, locY: 0, classId: 15 });
     const healerAssistSession = fakeSession('bot_healer_basic_assist', healerAssistBot);
     healerAssistSession.followPlayerSession = healerLeaderSession;
@@ -966,6 +1130,132 @@ try {
         executePvPCombat() {}
     });
     assert.strictEqual(healerAssistOptions?.basicAttackOnly, true, 'a healer with a melee weapon may assist using only a basic attack');
+
+    learnSkill(healerAssistBot, { selfId: 1011, name: 'Heal', spell: true, mp: 15 });
+    healerLeader.hp = 30;
+    healerAssistBot.locX = 80;
+    healerAssistBot.state.setHits(true);
+    let interruptedAttackTimers = 0;
+    healerAssistBot.attack = {
+        clearTimers() { interruptedAttackTimers++; }
+    };
+    healerAssistOptions = null;
+    const preemptiveHealCasts = [];
+    FollowingState.tick(healerAssistSession, healerAssistBot, {
+        skillExec(_session, _bot, data) { preemptiveHealCasts.push(data); }
+    }, {
+        say() {},
+        executeCombat() { throw new Error('priority healing must interrupt an existing basic-attack loop'); },
+        executePvPCombat() {}
+    });
+    assert.deepStrictEqual(preemptiveHealCasts, [{ id: healerLeader.fetchId(), selfId: 1011, ctrl: false }], 'a wounded party member must preempt an active healer melee loop');
+    assert.strictEqual(interruptedAttackTimers, 1, 'preempting for a heal should cancel the scheduled follow-up melee hit');
+    assert.strictEqual(healerAssistBot.state.fetchHits(), false, 'the healer must leave the native hitting state before casting');
+    healerLeader.hp = 100;
+
+    const buffLeader = fakeActor(2000100, { locX: 700, locY: 0 });
+    const buffLeaderSession = fakeSession('player_buff_approach', buffLeader);
+    const approachBufferBot = fakeActor(2000101, { locX: 0, locY: 0, classId: 17 });
+    learnSkill(approachBufferBot, { selfId: 1204, name: 'Wind Walk', spell: true, distance: 400, mp: 20 });
+    EffectStore.apply(approachBufferBot, { key: 'windWalk', id: 1204, level: 1, type: 'buff', stats: {}, durationMs: 600000 });
+    const approachBufferSession = fakeSession('bot_buff_approach', approachBufferBot);
+    approachBufferSession.followPlayerSession = buffLeaderSession;
+    approachBufferSession.partyCompanion = true;
+    approachBufferSession.plan = 'following';
+    World.user = { sessions: [buffLeaderSession, approachBufferSession] };
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+    const approachBuffCasts = [];
+    FollowingState.tick(approachBufferSession, approachBufferBot, {
+        skillExec(_session, _bot, data) { approachBuffCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.strictEqual(approachBuffCasts.length, 0, 'an out-of-range buff should approach through party pathfinding before casting');
+    assert.strictEqual(approachBufferSession.pendingSupportApproach?.kind, 'buff:windWalk', 'the missing buff must remain the authoritative pending support action');
+    assert.strictEqual(approachBufferSession.roleDecision.action, 'move_for_support', 'the bot must report an approach, not a completed buff');
+    approachBufferBot.locX = 350;
+    FollowingState.tick(approachBufferSession, approachBufferBot, {
+        skillExec(_session, _bot, data) { approachBuffCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(approachBuffCasts, [{ id: buffLeader.fetchId(), selfId: 1204, ctrl: false }], 'a pending buff should cast as soon as the provider reaches native range');
+    assert.strictEqual(approachBufferSession.pendingSupportApproach, undefined, 'a completed buff approach must release its movement state');
+
+    const partyAura = learnSkill(approachBufferBot, { selfId: 1007, name: 'Chant of Battle', spell: true, distance: -1, mp: 60 });
+    assert.strictEqual(partyAura.fetchSemantic().radius, 1000, 'Chant of Battle should preserve its native 1000-unit aura radius');
+    assert.strictEqual(
+        C4SkillRules.resolve({ selfId: 1328, name: 'Mass Summon Storm Cubic', distance: -1 }).radius,
+        80,
+        'party skills without a wider datapack radius should retain the native C4 default instead of inheriting buff range'
+    );
+    let partyAuraTarget = null;
+    const previousFetchUserForAura = World.fetchUser;
+    World.fetchUser = () => ({
+        catch() { return this; },
+        then(resolve) {
+            resolve(buffLeader);
+            return { catch() { return this; } };
+        }
+    });
+    approachBufferBot.attack = {
+        remoteHit(_session, target, skill) {
+            partyAuraTarget = { target, skill };
+        }
+    };
+    SkillExec(approachBufferSession, approachBufferBot, { id: buffLeader.fetchId(), selfId: partyAura.fetchSelfId(), ctrl: false });
+    World.fetchUser = previousFetchUserForAura;
+    assert.strictEqual(partyAuraTarget?.target, approachBufferBot, 'a negative-range party aura must originate from its caster');
+    assert.strictEqual(partyAuraTarget?.skill, partyAura, 'the native party aura cast must preserve the learned skill');
+
+    BotSupportPlanner.queueSupportCast(approachBufferSession, {
+        provider: approachBufferBot,
+        target: buffLeader,
+        skill: partyAura
+    });
+    assert.strictEqual(
+        BotSupportPlanner.beginSupportCast(approachBufferSession, approachBufferBot, approachBufferBot, partyAura),
+        true,
+        'a caster-centered party aura must still claim the logical party member selected by the support planner'
+    );
+    assert.strictEqual(approachBufferSession.pendingSupportCast, undefined, 'an accepted party aura must consume its queued support marker');
+    assert.strictEqual(approachBufferSession.activeSupportCast?.targetId, buffLeader.fetchId(), 'the active party aura should retain its logical support target');
+    BotSupportPlanner.cancelSupportCast(approachBufferSession, approachBufferBot);
+
+    const hateAura = learnSkill(approachBufferBot, { selfId: 18, name: 'Hate Aura', spell: false, distance: -1, mp: 40 });
+    partyAuraTarget = null;
+    approachBufferBot.attack = {
+        remoteHit(_session, target, skill) {
+            partyAuraTarget = { target, skill };
+        }
+    };
+    SkillExec(approachBufferSession, approachBufferBot, { id: 999999, selfId: hateAura.fetchSelfId(), ctrl: true });
+    assert.strictEqual(partyAuraTarget?.target, approachBufferBot, 'an enemy TARGET_AURA such as Hate Aura must originate from its caster');
+    assert.strictEqual(partyAuraTarget?.skill, hateAura, 'Hate Aura must reach native area target resolution unchanged');
+
+    const missingTarget = fakeActor(2000110, { locX: 100, locY: 0 });
+    const missingTargetBuff = learnSkill(approachBufferBot, { selfId: 1068, name: 'Might', spell: true, distance: 400, mp: 20 });
+    BotSupportPlanner.queueSupportCast(approachBufferSession, {
+        provider: approachBufferBot,
+        target: missingTarget,
+        skill: missingTargetBuff
+    });
+    BotPartyChat.expectSkillResult(approachBufferSession, {
+        target: missingTarget,
+        skill: missingTargetBuff,
+        kind: 'support'
+    });
+    const failedLookup = (message) => ({
+        then() { return this; },
+        catch(reject) { reject(new Error(message)); return this; }
+    });
+    World.fetchNpc = () => failedLookup('missing npc');
+    World.fetchUser = () => failedLookup('missing user');
+    SkillExec(approachBufferSession, approachBufferBot, { id: missingTarget.fetchId(), selfId: missingTargetBuff.fetchSelfId(), ctrl: false });
+    assert.strictEqual(approachBufferSession.pendingSupportCast, undefined, 'a disappeared support target must release the queued party-support pause immediately');
+    assert.strictEqual(approachBufferSession.pendingPartyChatResult, undefined, 'a disappeared support target must cancel its pending success announcement');
+    World.fetchNpc = originalFetchNpc;
+    World.fetchUser = originalFetchUser;
+    World.user = { sessions: [healerLeaderSession, healerAssistSession] };
+    World.npc = { spawns: [healerAssistThreat] };
+    World.fetchNpcsInRadius = () => [healerAssistThreat];
 
     const busyAssistBot = fakeActor(2000098, { locX: 650, locY: 0, classId: 0 });
     const busyAssistSession = fakeSession('bot_busy_party_assist', busyAssistBot);
@@ -1075,6 +1365,59 @@ try {
     assert.strictEqual(aggressionCasts, 1, 'a failed threat transfer must not cast Aggression again on the next AI tick');
     assert.strictEqual(transferTankBasicAttacks, 1, 'after one transfer attempt the tank must continue with normal combat');
 
+    const tacticalPaladin = fakeActor(2000058, { locX: 0, locY: 0, classId: 5, hp: 40, maxHp: 100, mp: 100, maxMp: 100 });
+    const legacyUltimateDefense = learnSkill(tacticalPaladin, { selfId: 110, name: 'Ultimate Defense', mp: 20 });
+    legacyUltimateDefense.fetchSemantic = undefined;
+    const survivalTactic = PartyClassTactics.selfAction(tacticalPaladin, { role: 'tank', activeMobs: 2 });
+    assert.strictEqual(survivalTactic?.skill.fetchSelfId(), 110, 'a pressured low-HP Paladin should use Ultimate Defense as a class tactic');
+
+    const tacticalTitan = fakeActor(2000061, { locX: 0, locY: 0, classId: 113, hp: 25, maxHp: 100, mp: 100, maxMp: 100 });
+    learnSkill(tacticalTitan, { selfId: 139, name: 'Guts', mp: 20 });
+    assert.strictEqual(
+        PartyClassTactics.selfAction(tacticalTitan, { role: 'dps', activeMobs: 2 })?.skill.fetchSelfId(),
+        139,
+        'Titan must retain inherited Destroyer survival tactics after third-class transfer'
+    );
+
+    const hateTacticPaladin = fakeActor(2000059, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    learnSkill(hateTacticPaladin, { selfId: 18, name: 'Hate Aura', distance: -1, mp: 20 });
+    const hateTargets = [1, 2].map((offset) => ({
+        fetchId: () => 1100 + offset,
+        fetchDestId: () => healerLeader.fetchId(),
+        fetchLocX: () => offset * 50,
+        fetchLocY: () => 0
+    }));
+    assert.strictEqual(
+        PartyClassTactics.tankMassAggroAction(hateTacticPaladin, hateTargets)?.skill.fetchSelfId(),
+        18,
+        'a Paladin should use Hate Aura when multiple loose mobs are inside its native radius'
+    );
+    const legacyHatePaladin = fakeActor(2999002, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    const legacyHateAura = learnSkill(legacyHatePaladin, { selfId: 18, name: 'Legacy Hate Aura', distance: -1, mp: 20 });
+    legacyHateAura.fetchSemantic = undefined;
+    assert.strictEqual(PartyClassTactics.tankMassAggroAction(legacyHatePaladin, hateTargets), null,
+        'legacy skills without semantic metadata must be ignored safely instead of throwing');
+
+    const shieldStunPaladin = fakeActor(2000062, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    learnSkill(shieldStunPaladin, { selfId: 92, name: 'Shield Stun', distance: 40, mp: 20 });
+    assert.strictEqual(
+        PartyClassTactics.tankStunAction(shieldStunPaladin, hateTargets, { protectedRole: 'leader' }),
+        null,
+        'a shieldless tank must not reserve every combat tick for an unusable Shield Stun'
+    );
+    shieldStunPaladin.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Shield' }];
+    assert.strictEqual(
+        PartyClassTactics.tankStunAction(shieldStunPaladin, hateTargets, { protectedRole: 'leader' })?.skill.fetchSelfId(),
+        92,
+        'an equipped shield should enable Shield Stun party protection'
+    );
+
+    const controlOracle = fakeActor(2000060, { locX: 0, locY: 0, classId: 29, mp: 100, maxMp: 100 });
+    learnSkill(controlOracle, { selfId: 1201, name: 'Dryad Root', mp: 15 });
+    const controlledAdd = PartyClassTactics.supportCrowdControl(controlOracle, hateTargets, { primaryTargetId: hateTargets[0].fetchId() });
+    assert.strictEqual(controlledAdd?.target.fetchId(), hateTargets[1].fetchId(), 'support crowd control should skip the focused target and control an add');
+    assert.strictEqual(controlledAdd?.skill.fetchSelfId(), 1201, 'an Oracle should use learned Dryad Root for add control');
+
     const autoPullTank = fakeActor(2000097, { locX: 90, locY: 0, mp: 20, maxMp: 100, classId: 4 });
     const autoPullTankSession = fakeSession('bot_auto_pull_tank', autoPullTank);
     autoPullTankSession.followPlayerSession = healerLeaderSession;
@@ -1110,6 +1453,25 @@ try {
     assert.strictEqual(autoPullSkillCast, false, 'auto pull must not cast Aggression even when it is learned');
     assert.strictEqual(autoPullOptions?.basicAttackOnly, true, 'auto pull should start with a basic attack');
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
+
+    const scoredPuller = fakeActor(2000099, { locX: 0, locY: 0, level: 40, classId: 5 });
+    const scoredLeader = fakeActor(2000100, { locX: 0, locY: 0, level: 40, classId: 0 });
+    const scoredLeaderSession = fakeSession('player_scored_pull', scoredLeader);
+    const scoredPullerSession = fakeSession('bot_scored_pull', scoredPuller);
+    scoredPullerSession.followPlayerSession = scoredLeaderSession;
+    scoredPullerSession.partyCompanion = true;
+    const crowdedTarget = { ...autoPullTarget, fetchId: () => 1011, fetchLevel: () => 40, fetchLocX: () => 300, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
+    const socialAdd = { ...autoPullTarget, fetchId: () => 1012, fetchLevel: () => 40, fetchLocX: () => 320, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
+    const safeTarget = { ...autoPullTarget, fetchId: () => 1013, fetchLevel: () => 40, fetchLocX: () => 800 };
+    World.user = { sessions: [scoredLeaderSession, scoredPullerSession] };
+    World.fetchNpcsInRadius = (x) => x < 500 ? [crowdedTarget, socialAdd] : [safeTarget];
+    const crowdedScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, crowdedTarget);
+    const safeScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, safeTarget);
+    assert.ok(safeScore.score > crowdedScore.score, 'pull scoring should prefer a slightly farther isolated mob over a crowded social-risk target');
+    assert.ok(crowdedScore.reasons.includes('social:1'), 'pull scoring should expose its social-risk reason');
+    World.user = { sessions: [healerLeaderSession, autoPullTankSession] };
+    World.npc = { spawns: [autoPullTarget] };
+    World.fetchNpcsInRadius = () => [autoPullTarget];
 
     // The shared party setting is authoritative. A stale per-session mirror
     // must never revive the legacy tank fallback after Pull Off.
@@ -2001,6 +2363,23 @@ try {
     toolSession.plan = 'following';
     World.user = { sessions: [leaderSession, toolSession] };
 
+    toolBot.classId = 15;
+    learnSkill(toolBot, { selfId: 1204, name: 'Wind Walk', spell: true, distance: 400, mp: 20 });
+    let learnedHealerBuffCast = null;
+    ActorGenerics.skillExec = (_session, _bot, data) => { learnedHealerBuffCast = data; };
+    const learnedHealerBuff = BotAgentTools.execute(toolSession, {
+        action: 'buff_target',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: leader.fetchName(),
+        spotId: '',
+        buffType: 'windWalk',
+        reason: 'player_order'
+    }, [{ id: leader.fetchId(), name: leader.fetchName() }]);
+    assert.strictEqual(learnedHealerBuff.applied, true, 'a healer that actually learned the requested friendly buff should be allowed to use it');
+    assert.deepStrictEqual(learnedHealerBuffCast, { id: leader.fetchId(), selfId: 1204, ctrl: false }, 'the direct buff tool should execute the learned skill instead of rejecting the healer role');
+    assert.strictEqual(toolSession.pendingSupportCast?.skillId, 1204, 'a direct buff request must protect its native approach from normal follow movement');
+
     const huntResult = BotAgentTools.execute(toolSession, {
         action: 'hunt',
         confidence: 0.9,
@@ -2045,6 +2424,46 @@ try {
     assert.strictEqual(restResult.reason, 'already_recovered', 'rest tool should not keep a fully recovered bot seated');
     assert.strictEqual(toolBot.state.fetchSeated(), false, 'fully recovered companion should stand');
     assert.strictEqual(toolSession.plan, 'following', 'fully recovered companion should return to following');
+
+    toolBot.setMp(50);
+    const orderedRestResult = BotAgentTools.execute(toolSession, {
+        action: 'rest',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: '',
+        spotId: '',
+        buffType: '',
+        reason: 'player_order'
+    }, []);
+    assert.strictEqual(orderedRestResult.reason, 'rest', 'a direct rest order should seat a companion that still needs recovery');
+    assert.strictEqual(toolSession.explicitRestOrder, true, 'the rest tool should preserve direct player authority across later AI ticks');
+    assert.strictEqual(toolBot.state.fetchSeated(), true, 'a companion with missing recovery resources should obey the direct sit order');
+
+    toolBot.setMp(1);
+    const rejectedDuringRest = BotAgentTools.execute(toolSession, {
+        action: 'buff_target',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: leader.fetchName(),
+        spotId: '',
+        buffType: 'windWalk',
+        reason: 'player_order'
+    }, [{ id: leader.fetchId(), name: leader.fetchName() }]);
+    assert.strictEqual(rejectedDuringRest.reason, 'low_mp_for_buff', 'the invalidating command should reach its native MP rejection');
+    assert.strictEqual(toolSession.explicitRestOrder, true, 'a rejected mutation must not cancel an active direct rest order');
+
+    toolBot.setMp(50);
+    const successfulMutation = BotAgentTools.execute(toolSession, {
+        action: 'hunt',
+        confidence: 0.9,
+        reply: '',
+        targetPlayerName: '',
+        spotId: '',
+        buffType: '',
+        reason: 'player_order'
+    }, []);
+    assert.strictEqual(successfulMutation.applied, true, 'the replacement party-hunt order should be accepted');
+    assert.strictEqual(toolSession.explicitRestOrder, undefined, 'a successfully applied mutation should supersede the direct rest order');
 
     Math.random = () => 0;
     const huntingCompanion = fakeActor(2000004, { locX: 0, locY: 0 });
@@ -2117,6 +2536,7 @@ try {
     BotManager.botPartySay = originalBotPartySay;
     BotBuffs.applySupportBuff = originalApplySupportBuff;
     MarketOpportunity.findOffers = originalFindOffers;
+    ActorGenerics.skillExec = originalSkillExec;
 }
 
 console.log('Party companion rest/follow regression checks passed');

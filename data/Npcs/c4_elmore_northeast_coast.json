@@ -1,0 +1,429 @@
+[
+  {
+    "selfId": 1124,
+    "template": {
+      "kind": "Monster",
+      "name": "Red Eye Barbed Bat",
+      "title": "",
+      "level": 18,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 48,
+      "pAtkRnd": 30,
+      "pDef": 73,
+      "mAtk": 19,
+      "mDef": 70,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 99
+    },
+    "vitals": {
+      "maxHp": 476,
+      "maxMp": 193,
+      "revHp": 3.95,
+      "revMp": 1.21,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.975308641975,
+      "sp": 28
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1125,
+    "template": {
+      "kind": "Monster",
+      "name": "Northern Trimden",
+      "title": "",
+      "level": 19,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 53,
+      "pAtkRnd": 30,
+      "pDef": 90,
+      "mAtk": 21,
+      "mDef": 73,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 508,
+      "maxMp": 203,
+      "revHp": 3.95,
+      "revMp": 1.21,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 27,
+      "size": 25.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.894736842105,
+      "sp": 31
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1126,
+    "template": {
+      "kind": "Monster",
+      "name": "Kerope Werewolf",
+      "title": "",
+      "level": 20,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 57,
+      "pAtkRnd": 30,
+      "pDef": 80,
+      "mAtk": 23,
+      "mDef": 76,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 137
+    },
+    "vitals": {
+      "maxHp": 541,
+      "maxMp": 213,
+      "revHp": 3.95,
+      "revMp": 1.21,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 29.7
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "werewolf_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.78,
+      "sp": 32
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1127,
+    "template": {
+      "kind": "Monster",
+      "name": "Northern Goblin",
+      "title": "",
+      "level": 21,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 63,
+      "pAtkRnd": 20,
+      "pDef": 98,
+      "mAtk": 25,
+      "mDef": 80,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 132
+    },
+    "vitals": {
+      "maxHp": 575,
+      "maxMp": 227,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 4,
+      "size": 15
+    },
+    "equipment": {
+      "weapon": 152,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "goblin_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.732426303855,
+      "sp": 35
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1128,
+    "template": {
+      "kind": "Monster",
+      "name": "Spine Golem",
+      "title": "",
+      "level": 22,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 68,
+      "pAtkRnd": 30,
+      "pDef": 102,
+      "mAtk": 28,
+      "mDef": 83,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 25,
+      "run": 25
+    },
+    "vitals": {
+      "maxHp": 611,
+      "maxMp": 242,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 40.3
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.696280991736,
+      "sp": 39
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1129,
+    "template": {
+      "kind": "Monster",
+      "name": "Kerope Werewolf Chief",
+      "title": "",
+      "level": 23,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 82,
+      "pAtkRnd": 30,
+      "pDef": 82,
+      "mAtk": 31,
+      "mDef": 87,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 648,
+      "maxMp": 257,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 29.7
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "werewolf_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.691871455577,
+      "sp": 43
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1130,
+    "template": {
+      "kind": "Monster",
+      "name": "Northern Goblin Leader",
+      "title": "",
+      "level": 24,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 81,
+      "pAtkRnd": 10,
+      "pDef": 111,
+      "mAtk": 34,
+      "mDef": 90,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 137
+    },
+    "vitals": {
+      "maxHp": 687,
+      "maxMp": 272,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 4,
+      "size": 15
+    },
+    "equipment": {
+      "weapon": 66,
+      "shield": 102,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "goblin_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.65625,
+      "sp": 47
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  }
+]

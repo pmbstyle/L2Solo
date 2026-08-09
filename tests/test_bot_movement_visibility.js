@@ -95,6 +95,26 @@ actor.session.accountId = 'player_test';
 automation.abortAll(actor);
 assert.strictEqual(packets.length, 1, 'Player automation keeps its existing explicit StopMove lifecycle');
 
+actor.fetchCollectiveRunSpd = () => 100000;
+actor.setLocXYZ = () => {};
+actor.session.actor = actor;
+actor.session.accountId = 'bot_test';
+actor.session.moveTimer = setInterval(() => {}, 1000);
+assert.strictEqual(
+    automation.scheduleMoveToCoords(actor.session, actor, { locX: 110, locY: 210, locZ: -300 }),
+    true,
+    'finite coordinate movement must be accepted'
+);
+assert.strictEqual(actor.session.moveTimer, null, 'a replacement coordinate route must clear the actor session\'s stale interpolator');
+automation.abortAll(actor, { notifyClient: false });
+const packetsBeforeInvalidMove = packets.length;
+assert.strictEqual(
+    automation.scheduleMoveToCoords(actor.session, actor, { locX: NaN, locY: 210, locZ: -300 }),
+    false,
+    'non-finite coordinate movement must be rejected'
+);
+assert.strictEqual(packets.length, packetsBeforeInvalidMove, 'a rejected coordinate move must not announce or schedule a route');
+
 const previewPlan = {
     finalTarget: { locX: 500, locY: 0, locZ: 0 },
     waypoint: { locX: 250, locY: 100, locZ: 0 },

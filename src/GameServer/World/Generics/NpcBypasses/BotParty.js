@@ -23,7 +23,7 @@ function render(session) {
         BotManager.sessions.filter((botSession) => botSession.plan !== 'merchant')
     ).slice(0, 18);
     let body = `${Html.font('Available Bots', Html.COLOR.title)}<br1>`;
-    body += `${Html.font('Nearby bots you can invite as real companions.', Html.COLOR.muted)}<br>`;
+    body += `${Html.font('Active bots you can invite as real companions. Distant companions will catch up.', Html.COLOR.muted)}<br>`;
 
     candidates.forEach((candidate) => {
         const bot = candidate.bot;

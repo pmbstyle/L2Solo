@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 5812,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Servitor Empowerment",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 5400
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5813,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Servitor Cure",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

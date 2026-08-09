@@ -4,6 +4,7 @@ const VirtualObstacles = invoke('GameServer/Geodata/VirtualObstacles/index');
 
 const REGION_OFFSET_X = 20;
 const REGION_OFFSET_Y = 18;
+const MAX_LAYER_STEP = 64;
 
 function getRegionX(x) {
     return (x >> 15) + REGION_OFFSET_X;
@@ -289,13 +290,19 @@ const GeodataEngine = {
     hasLineOfSight(fromX, fromY, fromZ, toX, toY, toZ) {
         let cx = fromX >> 4;
         let cy = fromY >> 4;
-        let cz = fromZ;
 
         const targetCx = toX >> 4;
         const targetCy = toY >> 4;
+        const startCell = this.getCellData((cx << 4) + 8, (cy << 4) + 8, fromZ);
+        const targetCell = this.getCellData((targetCx << 4) + 8, (targetCy << 4) + 8, toZ);
+        const hasLayerData = this.hasGeo(fromX, fromY) && this.hasGeo(toX, toY);
+        let cz = startCell.z;
 
         if (cx === targetCx && cy === targetCy) {
-            return true;
+            // A multilevel block can contain several floors in the same XY
+            // cell.  Treating that as unconditional visibility is exactly
+            // what lets Cruma mobs see through a ceiling.
+            return !hasLayerData || startCell.z === targetCell.z;
         }
 
         const dx = targetCx - cx;
@@ -320,7 +327,8 @@ const GeodataEngine = {
                 const cellHoriz = this.getCellData((nextCx << 4) + 8, (cy << 4) + 8, cz);
                 const cellDiag = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cellHoriz.z);
 
-                let path1Passable = true;
+                let path1Passable = Math.abs(cellHoriz.z - cellCurr.z) <= MAX_LAYER_STEP
+                    && Math.abs(cellDiag.z - cellHoriz.z) <= MAX_LAYER_STEP;
                 if (diffX > 0) {
                     path1Passable = path1Passable && ((cellCurr.nswe & 1) !== 0) && ((cellHoriz.nswe & 2) !== 0);
                 } else {
@@ -333,28 +341,30 @@ const GeodataEngine = {
                 }
 
                 const cellVert = this.getCellData((cx << 4) + 8, (nextCy << 4) + 8, cz);
-                let path2Passable = true;
+                const cellDiagViaVertical = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cellVert.z);
+                let path2Passable = Math.abs(cellVert.z - cellCurr.z) <= MAX_LAYER_STEP
+                    && Math.abs(cellDiagViaVertical.z - cellVert.z) <= MAX_LAYER_STEP;
                 if (diffY > 0) {
                     path2Passable = path2Passable && ((cellCurr.nswe & 4) !== 0) && ((cellVert.nswe & 8) !== 0);
                 } else {
                     path2Passable = path2Passable && ((cellCurr.nswe & 8) !== 0) && ((cellVert.nswe & 4) !== 0);
                 }
                 if (diffX > 0) {
-                    path2Passable = path2Passable && ((cellVert.nswe & 1) !== 0) && ((cellDiag.nswe & 2) !== 0);
+                    path2Passable = path2Passable && ((cellVert.nswe & 1) !== 0) && ((cellDiagViaVertical.nswe & 2) !== 0);
                 } else {
-                    path2Passable = path2Passable && ((cellVert.nswe & 2) !== 0) && ((cellDiag.nswe & 1) !== 0);
+                    path2Passable = path2Passable && ((cellVert.nswe & 2) !== 0) && ((cellDiagViaVertical.nswe & 1) !== 0);
                 }
 
                 if (!path1Passable && !path2Passable) {
                     return false;
                 }
 
-                cz = cellDiag.z;
+                cz = path1Passable ? cellDiag.z : cellDiagViaVertical.z;
             } else {
                 const cellCurr = this.getCellData((cx << 4) + 8, (cy << 4) + 8, cz);
                 const cellNext = this.getCellData((nextCx << 4) + 8, (nextCy << 4) + 8, cz);
 
-                if (Math.abs(cellNext.z - cellCurr.z) > 64) {
+                if (Math.abs(cellNext.z - cellCurr.z) > MAX_LAYER_STEP) {
                     return false;
                 }
 
@@ -382,7 +392,12 @@ const GeodataEngine = {
             floatCy += yInc;
         }
 
-        return true;
+        // Walking the source layer is intentional: getCellData selects the
+        // layer nearest to cz at every step.  The ray is only valid if it
+        // finishes on the target's resolved layer instead of a floor above
+        // or below it. Missing geodata keeps the historical permissive
+        // fallback so uncovered outdoor regions do not become opaque.
+        return !hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP;
     },
 
     findPath(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000) {
@@ -390,38 +405,59 @@ const GeodataEngine = {
         const startCy = startY >> 4;
         const endCx = endX >> 4;
         const endCy = endY >> 4;
+        const startCell = this.getCellData((startCx << 4) + 8, (startCy << 4) + 8, startZ);
+        const endCell = this.getCellData((endCx << 4) + 8, (endCy << 4) + 8, endZ);
+        const hasLayerData = this.hasGeo(startX, startY) && this.hasGeo(endX, endY);
+        const heuristic = (cx, cy, cz) => {
+            const horizontalSteps = Math.abs(endCx - cx) + Math.abs(endCy - cy);
+            const verticalSteps = hasLayerData
+                ? Math.ceil(Math.abs(endCell.z - cz) / MAX_LAYER_STEP)
+                : 0;
+            return Math.max(horizontalSteps, verticalSteps) * 16;
+        };
 
         if (startCx === endCx && startCy === endCy) {
+            if (hasLayerData && startCell.z !== endCell.z) {
+                return null;
+            }
             return [{ locX: endX, locY: endY, locZ: endZ }];
         }
 
         const startNode = {
             cx: startCx,
             cy: startCy,
-            cz: startZ,
+            cz: startCell.z,
             g: 0,
-            h: (Math.abs(endCx - startCx) + Math.abs(endCy - startCy)) * 16,
+            h: heuristic(startCx, startCy, startCell.z),
             f: 0,
             parent: null
         };
         startNode.f = startNode.g + startNode.h;
 
         const openList = [startNode];
-        const visited = new Set();
-        visited.add(`${startCx},${startCy}`);
+        const bestCosts = new Map();
+        bestCosts.set(`${startCx},${startCy},${startCell.z}`, 0);
 
         let targetNode = null;
         let nodesExpanded = 0;
 
         while (openList.length > 0) {
+            const current = openList.shift();
+            const currentKey = `${current.cx},${current.cy},${current.cz}`;
+            if (current.g !== bestCosts.get(currentKey)) {
+                continue;
+            }
+
             nodesExpanded++;
             if (nodesExpanded > maxNodes) {
                 break;
             }
 
-            const current = openList.shift();
-
-            if (current.cx === endCx && current.cy === endCy) {
+            if (
+                current.cx === endCx
+                && current.cy === endCy
+                && (!hasLayerData || current.cz === endCell.z)
+            ) {
                 targetNode = current;
                 break;
             }
@@ -438,28 +474,28 @@ const GeodataEngine = {
             for (const dir of directions) {
                 const nCx = current.cx + dir.dx;
                 const nCy = current.cy + dir.dy;
-                const key = `${nCx},${nCy}`;
-
-                if (visited.has(key)) {
-                    continue;
-                }
-
                 if ((currentCell.nswe & dir.bit) === 0) {
                     continue;
                 }
 
                 const nCell = this.getCellData((nCx << 4) + 8, (nCy << 4) + 8, currentCell.z);
+                const key = `${nCx},${nCy},${nCell.z}`;
 
                 if ((nCell.nswe & dir.oppBit) === 0) {
                     continue;
                 }
 
-                if (Math.abs(nCell.z - currentCell.z) > 64) {
+                if (Math.abs(nCell.z - currentCell.z) > MAX_LAYER_STEP) {
                     continue;
                 }
 
                 const g = current.g + 16;
-                const h = (Math.abs(endCx - nCx) + Math.abs(endCy - nCy)) * 16;
+                const previousCost = bestCosts.get(key);
+                if (previousCost !== undefined && previousCost <= g) {
+                    continue;
+                }
+
+                const h = heuristic(nCx, nCy, nCell.z);
                 const f = g + h;
 
                 const neighbor = {
@@ -472,7 +508,7 @@ const GeodataEngine = {
                     parent: current
                 };
 
-                visited.add(key);
+                bestCosts.set(key, g);
 
                 let inserted = false;
                 for (let i = 0; i < openList.length; i++) {

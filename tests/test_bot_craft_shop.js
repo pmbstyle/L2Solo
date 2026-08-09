@@ -142,17 +142,24 @@ async function run() {
         return Math.hypot(Number(station.loc.locX) - Number(previous.loc.locX), Number(station.loc.locY) - Number(previous.loc.locY)) < 250;
     }), 'C weapon progression must remain a contiguous group on the outer market perimeter');
 
-    const nonDroppableResources = [1883, 1886, 1887, 1888, 1890, 1891, 1892, 1893, 5220, 5550, 5551, 4045, 4046, 4047, 4048, 5552, 5553, 5554];
+    const craftableResources = [1883, 1886, 1887, 1888, 1890, 1891, 1892, 1893, 5220, 5550, 5551, 4045, 4046, 4047, 4048, 5552, 5553, 5554];
+    const sourcedDropResources = new Set([5220, 5550]);
     const resourceRecipeIds = new Set(CraftShopService.CraftStations
         .filter((station) => station.grade === 'resource')
         .flatMap((station) => station.recipeIds));
-    nonDroppableResources.forEach((itemId) => {
+    craftableResources.forEach((itemId) => {
         const recipe = C4RecipeItems.resolveByProductId(itemId);
-        assert(recipe && resourceRecipeIds.has(recipe.recipeId), `crafted-only resource ${itemId} must have a Giran crafting station`);
+        assert(recipe && resourceRecipeIds.has(recipe.recipeId), `craftable resource ${itemId} must have a Giran crafting station`);
         const isDropped = (DataCache.npcRewards || []).some((reward) => ['rewards', 'spoils'].some((kind) => (
             (reward[kind] || []).some((group) => (group.items || []).some((item) => Number(item.selfId) === itemId))
         )));
-        assert.strictEqual(isDropped, false, `crafted-only resource ${itemId} must not be sourced as a direct NPC drop or spoil`);
+        assert.strictEqual(
+            isDropped,
+            sourcedDropResources.has(itemId),
+            sourcedDropResources.has(itemId)
+                ? `Lisvus resource ${itemId} must remain available from its direct NPC drop`
+                : `crafted-only resource ${itemId} must not be sourced as a direct NPC drop or spoil`
+        );
     });
 
     const sealedAGradeRecipes = Object.values(C4RecipeItems.loadRecipeItems())

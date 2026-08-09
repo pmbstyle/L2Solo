@@ -189,21 +189,21 @@ class Attack {
             .includes(skill.fetchTargetKind?.());
 
         if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'invalid_target');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.canUseSkill?.(skill) === false) {
             session.dataSendToMe?.(ServerResponse.actionFailed());
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'reuse');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.fetchMp() < skill.fetchConsumedMp()) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'depleted_mp');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
@@ -211,7 +211,7 @@ class Attack {
         const conditionFailure = this.skillUseConditionFailure(actor, skill);
         if (conditionFailure) {
             this.rejectSkillUseCondition(session, actor, conditionFailure);
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, conditionFailure.code || conditionFailure.reason || 'condition');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
@@ -342,8 +342,15 @@ class Attack {
                 ? session.followPlayerSession
                 : session;
             const party = PartyAwareness.partyActors(leaderSession)
-                .filter((target) => this.isValidSkillTarget(target, skill, actor));
-            return party.length > 0 ? party : [primary];
+                .filter((target) => (
+                    this.isValidSkillTarget(target, skill, actor) &&
+                    (radius <= 0 || this.distance2d(actor, target) <= radius)
+                ));
+            if (party.length > 0) return party;
+            return this.isValidSkillTarget(primary, skill, actor) &&
+                (radius <= 0 || this.distance2d(actor, primary) <= radius)
+                ? [primary]
+                : [];
         }
 
         if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
@@ -563,7 +570,8 @@ class Attack {
         const semantic = skill.fetchSemantic?.() || {};
         const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: semantic.trait === 'bow' || this.isBowAttack(actor)
+            bow: semantic.trait === 'bow' || this.isBowAttack(actor),
+            blunt: this.isBluntAttack(actor)
         });
         const damage = Math.round(Formulas.calcPhysicalDamage(
             actor.fetchCollectivePAtk(),
@@ -604,7 +612,10 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, { bow: this.isBowAttack(actor) });
+        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
+            bow: this.isBowAttack(actor),
+            blunt: this.isBluntAttack(actor)
+        });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
@@ -642,7 +653,10 @@ class Attack {
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(src, dst), rng);
-        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, { bow: this.isBowAttack(src) });
+        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, {
+            bow: this.isBowAttack(src),
+            blunt: this.isBluntAttack(src)
+        });
         const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
             ? 1
             : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
@@ -693,6 +707,11 @@ class Attack {
     isBowAttack(creature) {
         const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
         return kind === 'Weapon.Bow';
+    }
+
+    isBluntAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -836,8 +855,9 @@ function traitVulnerabilityModifier(target, trait) {
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
-function incomingWeaponVulnerabilityModifier(target, { bow = false } = {}) {
+function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false } = {}) {
     if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
+    if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
     return 1;
 }
 

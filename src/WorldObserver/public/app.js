@@ -847,6 +847,7 @@ const BUILD_LABELS = Object.freeze({
         one_handed_sword_or_blunt: 'One-handed sword or blunt',
         one_handed_blunt: 'One-handed blunt',
         caster_blunt_or_sword: 'Caster blunt or sword',
+        caster_weapon: 'Caster weapon',
         bow: 'Bow',
         dagger: 'Dagger'
     },

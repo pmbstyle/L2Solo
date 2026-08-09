@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 5547,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Elemental Sword Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 58785
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5548,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Tallum Blade Edge",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 58785
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

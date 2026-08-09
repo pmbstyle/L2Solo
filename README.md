@@ -110,6 +110,14 @@ That command will start the L2Solo Launcher.
 
 Press `Start` in the launcher to run the server. 
 
+On the first server start, L2Solo checks `data/Geodata`. If the region files are missing, it downloads the verified C4 geodata pack from `https://l2solo.com/files/geodata.zip` and installs it before opening the game server. The archive is about 209 MiB and expands to about 900 MiB. You can prepare it without starting the server with:
+
+```bash
+npm run geodata
+```
+
+Custom mirrors and external geodata directories can be configured with `L2NODE_GEODATA_URL`, `L2NODE_GEODATA_SHA256`, and `L2NODE_GEODATA_DIR`.
+
 ## Configuration
 
 Committed defaults live in `config/default.ini`.
@@ -138,7 +146,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 - `.admin` - open the admin menu.
 - `.sell` - sell all unequipped non-Adena items for 50% item value.
 - `.bot` - open the party control panel.
-- `.botparty`- search for bots around player location to join player party
+- `.botparty`- search active bots to join the player party; distant companions catch up after joining
 - `.botfriends` - friend list and const party management
 - `.botstatus` - show a bot overview panel.
 - `.botstatus <name>` - show detailed status for a specific bot.

@@ -2,7 +2,6 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const PersonaPartyDecisionPolicy = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
 const SpeckMath = invoke('GameServer/SpeckMath');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 const MAX_LEVEL_GAP = 12;
 const RECENT_ABANDON_MS = 5 * 60 * 1000;
@@ -28,7 +27,6 @@ function reasonText(reason) {
         bot_dead: 'dead',
         already_grouped: 'already grouped',
         merchant_duty: 'merchant duty',
-        too_far: 'too far',
         low_trust: 'low trust',
         recently_abandoned: 'recently abandoned',
         level_gap_too_large: 'level gap too large',
@@ -64,8 +62,6 @@ function emptyResult(playerSession, botSubject) {
 }
 
 const BotAvailability = {
-    inviteRange: Config.partyInviteRange,
-
     evaluate(playerSession, botSession, options = {}) {
         const player = playerSession?.actor;
         const bot = botSession?.actor;
@@ -84,7 +80,6 @@ const BotAvailability = {
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
         else if (!options.forceFriend && botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (!options.forceFriend && botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
-        else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
         else if (!options.forceFriend && result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (!options.forceFriend && Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
@@ -117,7 +112,6 @@ const BotAvailability = {
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
         else if (!options.forceFriend && (state.activity === 'merchant' || state.activity === 'crafting')) reason = 'merchant_duty';
-        else if (!options.ignoreDistance && result.distance !== null && result.distance > Config.partyInviteRange) reason = 'too_far';
         else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
         else if (!options.forceFriend && result.memory.recentlyAbandonedAt && Date.now() - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
         else if (!options.forceFriend && Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
@@ -138,6 +132,7 @@ const BotAvailability = {
     listForPlayer(playerSession, botSessions) {
         return botSessions
             .filter((session) => session.actor && !BotServiceIdentity.isStaticService(session))
+            .filter((session) => !(session.partyCompanion === true && session.followPlayerSession === playerSession))
             .map((session) => ({
                 session,
                 bot: session.actor,
