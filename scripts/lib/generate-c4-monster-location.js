@@ -124,7 +124,7 @@ module.exports = function generateC4MonsterLocation(config) {
     }
     if (spawnRows.some((row) => Number(row[2]) !== 1
         || Number(row[10]) !== (respawnByMob.get(Number(row[3])) ?? config.respawn)
-        || Number(row[12]) !== 0)) {
+        || Number(row[12]) !== (config.sourcePeriod || 0))) {
         throw new Error(`Unexpected ${config.displayName} count, respawn, or period semantics`);
     }
     assertExact([...new Set(spawnRows.map((row) => Number(row[3])))].sort((a, b) => a - b), mobIds, 'monster ids');
@@ -187,15 +187,19 @@ module.exports = function generateC4MonsterLocation(config) {
     });
 
     const npcNameById = new Map(mobIds.map((id) => [id, npcRowsById.get(id)[2]]));
-    const spawnDefinitions = mobIds.map((npcId) => ({
-        selfId: npcId,
-        name: npcNameById.get(npcId),
-        coords: spawnRows.filter((row) => Number(row[3]) === npcId)
-            .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1,
-        respawn: respawnByMob.get(npcId) ?? config.respawn,
-        bias: 0
-    }));
+    const spawnDefinitions = mobIds.map((npcId) => {
+        const definition = {
+            selfId: npcId,
+            name: npcNameById.get(npcId),
+            coords: spawnRows.filter((row) => Number(row[3]) === npcId)
+                .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
+            total: 1,
+            respawn: respawnByMob.get(npcId) ?? config.respawn,
+            bias: 0
+        };
+        if (config.period) definition.period = config.period;
+        return definition;
+    });
     const spawns = [{ selfId: config.areaId, bounds: [], spawns: spawnDefinitions }];
 
     const dropRows = tuples('sql/droplist.sql').filter((row) => newMobIdSet.has(Number(row[0])));

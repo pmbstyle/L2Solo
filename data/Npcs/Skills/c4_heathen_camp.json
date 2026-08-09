@@ -1,0 +1,172 @@
+[
+  {
+    "npcId": 1438,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4381,
+    "level": 1
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4274,
+    "level": 1
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4279,
+    "level": 1
+  },
+  {
+    "npcId": 1438,
+    "skillId": 4032,
+    "level": 6
+  },
+  {
+    "npcId": 1439,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1439,
+    "skillId": 4381,
+    "level": 1
+  },
+  {
+    "npcId": 1439,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1439,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1439,
+    "skillId": 4073,
+    "level": 6
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4381,
+    "level": 1
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4274,
+    "level": 1
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4279,
+    "level": 1
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4071,
+    "level": 2
+  },
+  {
+    "npcId": 1440,
+    "skillId": 4040,
+    "level": 6
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4381,
+    "level": 1
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4274,
+    "level": 1
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4279,
+    "level": 1
+  },
+  {
+    "npcId": 1441,
+    "skillId": 4072,
+    "level": 6
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4381,
+    "level": 1
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4274,
+    "level": 1
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4279,
+    "level": 1
+  },
+  {
+    "npcId": 1442,
+    "skillId": 4232,
+    "level": 6
+  }
+]

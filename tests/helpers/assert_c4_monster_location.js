@@ -56,7 +56,8 @@ module.exports = function assertC4MonsterLocation(config) {
     assert.ok(spawnArea.spawns.every((spawn) =>
         spawn.total === 1
         && spawn.respawn === (respawnByMob.get(Number(spawn.selfId)) ?? config.respawn)
-        && spawn.bias === 0));
+        && spawn.bias === 0
+        && (!config.period || spawn.period === config.period)));
     assert.deepStrictEqual(spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]), config.spawnCounts,
         'every family must retain its exact local population');
 

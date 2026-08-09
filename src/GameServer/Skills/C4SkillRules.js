@@ -703,6 +703,7 @@ const RULES = {
     4337: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { holyVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4311: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { maxHpMul: 0.5 } },
     4389: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { confusionVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
+    4381: { skillType: DUMMY, trait: 'broadcast', target: 'self', ssBoost: 0 },
     4579: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     4561: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, castRange: 150, effectRange: 650 },
     4563: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
