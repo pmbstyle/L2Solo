@@ -151,6 +151,7 @@ const tests = [
     'tests/test_equipment_slots.js',
     'tests/test_fall_damage.js',
     'tests/test_gatekeeper_teleports.js',
+    'tests/test_geodata_bootstrap.js',
     'tests/test_geodata_regions.js',
     'tests/test_day_night_spawns.js',
     'tests/test_c4_swamp_of_screams.js',
