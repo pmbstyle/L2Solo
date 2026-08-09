@@ -176,6 +176,7 @@ const tests = [
     'tests/test_c4_fields_of_silence_and_whispers.js',
     'tests/test_c4_alligator_island.js',
     'tests/test_c4_heathen_camp.js',
+    'tests/test_c4_imperial_tomb.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',

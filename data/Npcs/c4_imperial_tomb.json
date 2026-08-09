@@ -1,0 +1,2259 @@
+[
+  {
+    "selfId": 1396,
+    "template": {
+      "kind": "Monster",
+      "name": "Carrion Scarab",
+      "title": "",
+      "level": 78,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1417,
+      "pAtkRnd": 30,
+      "pDef": 672,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 40.29,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.344838921762,
+      "sp": 895
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1397,
+    "template": {
+      "kind": "Monster",
+      "name": "Carrion Scarab",
+      "title": "",
+      "level": 78,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2282,
+      "pAtkRnd": 30,
+      "pDef": 417,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 40.29,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.167488494412,
+      "sp": 777
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1398,
+    "template": {
+      "kind": "Monster",
+      "name": "Soldier Scarab",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1715,
+      "pAtkRnd": 30,
+      "pDef": 555,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.108481262327,
+      "sp": 738
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1399,
+    "template": {
+      "kind": "Monster",
+      "name": "Soldier Scarab",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1715,
+      "pAtkRnd": 30,
+      "pDef": 555,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.271531886917,
+      "sp": 846
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1400,
+    "template": {
+      "kind": "Monster",
+      "name": "Hexa Beetle",
+      "title": "",
+      "level": 79,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1765,
+      "pAtkRnd": 30,
+      "pDef": 566,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 54.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.059285370934,
+      "sp": 732
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1401,
+    "template": {
+      "kind": "Monster",
+      "name": "Hexa Beetle",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1941,
+      "pAtkRnd": 30,
+      "pDef": 514,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 54.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.165037654222,
+      "sp": 806
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1402,
+    "template": {
+      "kind": "Monster",
+      "name": "Katraxis",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1544,
+      "pAtkRnd": 30,
+      "pDef": 566,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 52.8
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.202211184105,
+      "sp": 831
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1403,
+    "template": {
+      "kind": "Monster",
+      "name": "Katraxis",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1544,
+      "pAtkRnd": 30,
+      "pDef": 566,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 52.8
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.110078513059,
+      "sp": 767
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1404,
+    "template": {
+      "kind": "Monster",
+      "name": "Tera Beetle",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1649,
+      "pAtkRnd": 30,
+      "pDef": 634,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 54.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.3290625,
+      "sp": 1673
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1405,
+    "template": {
+      "kind": "Monster",
+      "name": "Tera Beetle",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 30,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 54.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.1165625,
+      "sp": 802
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1406,
+    "template": {
+      "kind": "Monster",
+      "name": "Knight of Empire",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 10,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.3209375,
+      "sp": 949
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1407,
+    "template": {
+      "kind": "Monster",
+      "name": "Knight of Empire",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 10,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 40.29,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.40890625,
+      "sp": 1012
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1408,
+    "template": {
+      "kind": "Monster",
+      "name": "Royal Guard of Empire",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1996,
+      "pAtkRnd": 10,
+      "pDef": 524,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 304,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.1496875,
+      "sp": 825
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1410,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian Scarab",
+      "title": "",
+      "level": 81,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1863,
+      "pAtkRnd": 30,
+      "pDef": 587,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 214
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 26.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.158664837677,
+      "sp": 863
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1411,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian Scarab",
+      "title": "",
+      "level": 81,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1863,
+      "pAtkRnd": 30,
+      "pDef": 587,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 214
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 26.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.155921353452,
+      "sp": 861
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1412,
+    "template": {
+      "kind": "Monster",
+      "name": "Ustralith",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1347,
+      "pAtkRnd": 30,
+      "pDef": 710,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 66
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.475689681451,
+      "sp": 1099
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1413,
+    "template": {
+      "kind": "Monster",
+      "name": "Ustralith",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1793,
+      "pAtkRnd": 30,
+      "pDef": 534,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 66
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.134735558604,
+      "sp": 845
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1414,
+    "template": {
+      "kind": "Monster",
+      "name": "Assassin of Empire",
+      "title": "",
+      "level": 81,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1973,
+      "pAtkRnd": 5,
+      "pDef": 485,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.102880658436,
+      "sp": 821
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1415,
+    "template": {
+      "kind": "Monster",
+      "name": "Assassin of Empire",
+      "title": "",
+      "level": 81,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1482,
+      "pAtkRnd": 5,
+      "pDef": 646,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.112482853224,
+      "sp": 828
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1416,
+    "template": {
+      "kind": "Monster",
+      "name": "Imperial Commander",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1863,
+      "pAtkRnd": 10,
+      "pDef": 587,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 134,
+      "shield": 6721,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.316415180613,
+      "sp": 980
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1417,
+    "template": {
+      "kind": "Monster",
+      "name": "Imperial Commander",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2255,
+      "pAtkRnd": 10,
+      "pDef": 485,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 134,
+      "shield": 6721,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.913885078494,
+      "sp": 1425
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1418,
+    "template": {
+      "kind": "Monster",
+      "name": "Imperial Royal Guard",
+      "title": "",
+      "level": 82,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1912,
+      "pAtkRnd": 10,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 142,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.194229625223,
+      "sp": 922
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1420,
+    "template": {
+      "kind": "Monster",
+      "name": "Ashuras",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1912,
+      "pAtkRnd": 30,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 45,
+      "run": 220
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.145746579417,
+      "sp": 885
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1421,
+    "template": {
+      "kind": "Monster",
+      "name": "Ashuras",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1912,
+      "pAtkRnd": 30,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 45,
+      "run": 220
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.075401546698,
+      "sp": 830
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1424,
+    "template": {
+      "kind": "Monster",
+      "name": "Ashkenas",
+      "title": "",
+      "level": 82,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2544,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 45,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.381320642475,
+      "sp": 1067
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1425,
+    "template": {
+      "kind": "Monster",
+      "name": "Ashkenas",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2544,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 45,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.404521118382,
+      "sp": 1085
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1426,
+    "template": {
+      "kind": "Monster",
+      "name": "Abraxion",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2722,
+      "pAtkRnd": 30,
+      "pDef": 608,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 34,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.367832776891,
+      "sp": 1896
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1427,
+    "template": {
+      "kind": "Monster",
+      "name": "Abraxion",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2722,
+      "pAtkRnd": 30,
+      "pDef": 608,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 34,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.391638844535,
+      "sp": 1114
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1428,
+    "template": {
+      "kind": "Monster",
+      "name": "Hasturan",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2994,
+      "pAtkRnd": 30,
+      "pDef": 553,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 34,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.063144142836,
+      "sp": 851
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1429,
+    "template": {
+      "kind": "Monster",
+      "name": "Hasturan",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2474,
+      "pAtkRnd": 30,
+      "pDef": 669,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 34,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.110030483379,
+      "sp": 889
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1430,
+    "template": {
+      "kind": "Monster",
+      "name": "Arimanes",
+      "title": "",
+      "level": 83,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3293,
+      "pAtkRnd": 30,
+      "pDef": 503,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 38,
+      "run": 231
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 57.75
+    },
+    "equipment": {
+      "weapon": 6722,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.277543910582,
+      "sp": 1023
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1431,
+    "template": {
+      "kind": "Monster",
+      "name": "Arimanes",
+      "title": "",
+      "level": 83,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2249,
+      "pAtkRnd": 30,
+      "pDef": 736,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 38,
+      "run": 231
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 57.75
+    },
+    "equipment": {
+      "weapon": 6722,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.089708230512,
+      "sp": 872
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1432,
+    "template": {
+      "kind": "Monster",
+      "name": "Chakram Beetle",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 30,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 54.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.89921875,
+      "sp": 1364
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1434,
+    "template": {
+      "kind": "Monster",
+      "name": "Seer of Blood",
+      "title": "",
+      "level": 82,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2655,
+      "pAtkRnd": 30,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 34,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 3.504015466984,
+      "sp": 2707
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1798,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Gatekeeper",
+      "title": "",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1614,
+      "pAtkRnd": 10,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.229916897507,
+      "sp": 759
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1799,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Gatekeeper",
+      "title": "",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1614,
+      "pAtkRnd": 10,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 40.29,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.50796398892,
+      "sp": 931
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1800,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of Vassal",
+      "title": "",
+      "level": 77,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1664,
+      "pAtkRnd": 30,
+      "pDef": 544,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 15,
+      "run": 15
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.115871141845,
+      "sp": 716
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]
