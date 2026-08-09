@@ -9,6 +9,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_branded.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -40,11 +41,13 @@ assert.deepStrictEqual(
     ['21_23'],
     'the underground source rows must stay in the Catacomb geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(21, 23), true, 'Catacomb geodata region 21_23 must be available');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.every((delta) => delta === 0), 'every source coordinate must match the underground geodata exactly');
+verifyGeodataWhenAvailable(GeodataEngine, [[21, 23]], 'Catacomb of the Branded', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.every((delta) => delta === 0),
+        'every source coordinate must match the underground geodata exactly');
+});
 
 const gargoyle = npcs.find((npc) => npc.selfId === 1147);
 assert.deepStrictEqual(

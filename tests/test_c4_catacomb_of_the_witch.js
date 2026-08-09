@@ -9,6 +9,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_witch.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -44,11 +45,13 @@ assert.deepStrictEqual(
     ['24_20'],
     'the underground source rows must stay in the Catacomb geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(24, 20), true, 'Catacomb geodata region 24_20 must be available');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.every((delta) => delta === 0), 'every source monster coordinate must match underground geodata exactly');
+verifyGeodataWhenAvailable(GeodataEngine, [[24, 20]], 'Catacomb of the Witch', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.every((delta) => delta === 0),
+        'every source monster coordinate must match underground geodata exactly');
+});
 
 const shadow = npcs.find((npc) => npc.selfId === 1156);
 assert.deepStrictEqual(

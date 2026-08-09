@@ -8,6 +8,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_elmore_northeast_coast.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -36,16 +37,15 @@ assert.deepStrictEqual(
     ['24_11', '25_11', '25_12'],
     'source spawns must stay in their three northeast coast geodata regions'
 );
-[[24, 11], [25, 11], [25, 12]].forEach(([x, y]) => {
-    assert.strictEqual(GeodataEngine.loadRegion(x, y), true, `geodata region ${x}_${y} must be available`);
+verifyGeodataWhenAvailable(GeodataEngine, [[24, 11], [25, 11], [25, 12]], 'Elmore northeast coast', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 279,
+        'at least 279 source coordinates must agree with geodata within 128 Z');
+    assert.strictEqual(Math.max(...heightDeltas), 747,
+        'coastal cliff coordinates must stay within the audited source/geodata maximum delta');
 });
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 279,
-    'at least 279 source coordinates must agree with geodata within 128 Z');
-assert.strictEqual(Math.max(...heightDeltas), 747,
-    'coastal cliff coordinates must stay within the audited source/geodata maximum delta');
 
 const bat = npcs.find((npc) => npc.selfId === 1124);
 assert.deepStrictEqual(

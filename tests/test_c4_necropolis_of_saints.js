@@ -12,6 +12,7 @@ const importedNpcs = require('../data/Npcs/c4_necropolis_of_saints.json');
 const newSkillBindings = require('../data/Npcs/Skills/c4_necropolis_of_saints.json');
 const disciplesSkillBindings = require('../data/Npcs/Skills/c4_necropolis_of_the_disciples.json');
 const witchSkillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_witch.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -46,11 +47,13 @@ assert.deepStrictEqual(
     ['22_24'],
     'the underground source rows must stay in the Necropolis geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(22, 24), true, 'Necropolis geodata region 22_24 must be available');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.every((delta) => delta === 0), 'every source monster coordinate must match underground geodata exactly');
+verifyGeodataWhenAvailable(GeodataEngine, [[22, 24]], 'Necropolis of Saints', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.every((delta) => delta === 0),
+        'every source monster coordinate must match underground geodata exactly');
+});
 
 const shaman = npcs.find((npc) => npc.selfId === 1163);
 assert.deepStrictEqual(

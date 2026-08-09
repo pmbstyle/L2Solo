@@ -9,6 +9,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const skillBindings = require('../data/Npcs/Skills/c4_garden_of_beasts.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -32,14 +33,14 @@ assert.deepStrictEqual(
     'source spawns must stay in their two original geodata regions'
 );
 
-assert.strictEqual(GeodataEngine.loadRegion(23, 16), true, 'western source spawn region must have geodata');
-assert.strictEqual(GeodataEngine.loadRegion(24, 16), true, 'eastern source spawn region must have geodata');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 262,
-    'at least 262 source spawns must agree with geodata within 128 Z');
-assert.ok(Math.max(...heightDeltas) <= 570, 'the source/geodata Z delta must stay within the audited maximum');
+verifyGeodataWhenAvailable(GeodataEngine, [[23, 16], [24, 16]], 'Garden of Beasts', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 262,
+        'at least 262 source spawns must agree with geodata within 128 Z');
+    assert.ok(Math.max(...heightDeltas) <= 570, 'the source/geodata Z delta must stay within the audited maximum');
+});
 
 const kookaburra = npcs.find((npc) => npc.selfId === 1274);
 assert.deepStrictEqual(

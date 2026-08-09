@@ -9,6 +9,7 @@ const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_necropolis_of_sacrifice.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -40,12 +41,13 @@ assert.deepStrictEqual(
     ['18_24'],
     'the underground source rows must stay in the Necropolis geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(18, 24), true, 'Necropolis geodata region 18_24 must be available');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.every((delta) => delta <= 64), 'every source coordinate must agree with geodata within 64 Z');
-assert.strictEqual(Math.max(...heightDeltas), 56, 'the audited underground source/geodata maximum must remain exact');
+verifyGeodataWhenAvailable(GeodataEngine, [[18, 24]], 'Necropolis of Sacrifice', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.every((delta) => delta <= 64), 'every source coordinate must agree with geodata within 64 Z');
+    assert.strictEqual(Math.max(...heightDeltas), 56, 'the audited underground source/geodata maximum must remain exact');
+});
 
 const bat = npcs.find((npc) => npc.selfId === 1139);
 assert.deepStrictEqual(

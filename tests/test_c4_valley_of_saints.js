@@ -9,6 +9,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_valley_of_saints.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -33,14 +34,15 @@ assert.deepStrictEqual(
     ['22_15'],
     'all source spawns must remain in the original Valley geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(22, 15), true, 'the source spawn region must have geodata');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 333,
-    'at least 333 source coordinates must agree with the selected geodata layer within 128 Z');
-assert.ok(Math.max(...heightDeltas) <= 3800,
-    'multi-level Valley coordinates must stay within the audited source/geodata maximum delta');
+verifyGeodataWhenAvailable(GeodataEngine, [[22, 15]], 'Valley of Saints', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 333,
+        'at least 333 source coordinates must agree with the selected geodata layer within 128 Z');
+    assert.ok(Math.max(...heightDeltas) <= 3800,
+        'multi-level Valley coordinates must stay within the audited source/geodata maximum delta');
+});
 
 const eye = npcs.find((npc) => npc.selfId === 1520);
 assert.deepStrictEqual(

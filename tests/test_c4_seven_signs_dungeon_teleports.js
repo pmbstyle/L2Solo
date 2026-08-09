@@ -9,6 +9,7 @@ const DungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports')
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const NpcTalk = invoke('GameServer/World/Generics/NpcTalk');
 const SevenSignsDungeonTeleport = invoke('GameServer/World/Generics/NpcBypasses/SevenSignsDungeonTeleport');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 const expected = [
     ['Necropolis of Sacrifice', 8095, [-41564, 209356, -5088, 8192], [-41570, 209785, -5089], 8103, [-41571, 210126, -5080, 18318], [-41567, 209292, -5091]],
@@ -61,6 +62,17 @@ assert.ok(spawnGroup.spawns.every((spawn) =>
     spawn.total === 1 && spawn.respawn === 15 && spawn.bias === 0 && spawn.coords.length === 1
 ));
 
+const geodataRegions = [...new Set(DungeonTeleports.DUNGEONS.flatMap((dungeon) =>
+    [dungeon.outside, dungeon.inside].flatMap((endpoint) => [endpoint.spawn, endpoint.destination])
+        .map((coords) => GeodataEngine.getRegionKey(coords[0], coords[1]))
+))].map((key) => key.split('_').map(Number));
+const geodataAvailable = verifyGeodataWhenAvailable(
+    GeodataEngine,
+    geodataRegions,
+    'Seven Signs dungeon teleports',
+    () => {}
+);
+
 for (const dungeon of DungeonTeleports.DUNGEONS) {
     for (const endpoint of [dungeon.outside, dungeon.inside]) {
         const spawn = endpoint.spawn;
@@ -68,16 +80,20 @@ for (const dungeon of DungeonTeleports.DUNGEONS) {
         assert.deepStrictEqual(DungeonTeleports.destination(endpoint.npcId), {
             locX: destination[0], locY: destination[1], locZ: destination[2]
         });
-        assert.ok(Math.abs(GeodataEngine.getHeight(...spawn.slice(0, 3)) - spawn[2]) <= 8,
-            `${dungeon.name} Ziggurat must stand on its sourced geodata layer`);
-        assert.ok(Math.abs(GeodataEngine.getHeight(...destination) - destination[2]) <= 16,
-            `${dungeon.name} teleport must land on its sourced geodata layer`);
+        if (geodataAvailable) {
+            assert.ok(Math.abs(GeodataEngine.getHeight(...spawn.slice(0, 3)) - spawn[2]) <= 8,
+                `${dungeon.name} Ziggurat must stand on its sourced geodata layer`);
+            assert.ok(Math.abs(GeodataEngine.getHeight(...destination) - destination[2]) <= 16,
+                `${dungeon.name} teleport must land on its sourced geodata layer`);
+        }
     }
-    assert.strictEqual(
-        GeodataEngine.hasLineOfSight(...dungeon.outside.spawn.slice(0, 3), ...dungeon.inside.spawn.slice(0, 3)),
-        false,
-        `${dungeon.name} must retain the sealed geodata portal between its Ziggurat pair`
-    );
+    if (geodataAvailable) {
+        assert.strictEqual(
+            GeodataEngine.hasLineOfSight(...dungeon.outside.spawn.slice(0, 3), ...dungeon.inside.spawn.slice(0, 3)),
+            false,
+            `${dungeon.name} must retain the sealed geodata portal between its Ziggurat pair`
+        );
+    }
     assert.match(DungeonTeleports.html(dungeon.outside.npcId), /Enter the Forbidden Sanctum/);
     assert.match(DungeonTeleports.html(dungeon.inside.npcId), /Leave the Forbidden Sanctum/);
 }

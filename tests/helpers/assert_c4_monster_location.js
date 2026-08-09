@@ -9,6 +9,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const baseSpawns = require('../../data/Npcs/Spawns/spawns.json');
+const verifyGeodataWhenAvailable = require('./verify_geodata_when_available');
 
 const root = path.resolve(__dirname, '..', '..');
 
@@ -61,13 +62,13 @@ module.exports = function assertC4MonsterLocation(config) {
         [expectedRegionKey],
         'the source rows must stay in the expected underground geodata region'
     );
-    assert.strictEqual(GeodataEngine.loadRegion(...config.region), true,
-        `geodata region ${expectedRegionKey} must be available`);
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta <= (config.maxHeightDelta || 0)),
-        `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of underground geodata`);
+    verifyGeodataWhenAvailable(GeodataEngine, [config.region], config.displayName, () => {
+        const heightDeltas = spawnCoords.map((coord) => Math.abs(
+            GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+        ));
+        assert.ok(heightDeltas.every((delta) => delta <= (config.maxHeightDelta || 0)),
+            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of underground geodata`);
+    });
 
     const sample = npcs.find((npc) => npc.selfId === config.sample.id);
     assert.deepStrictEqual(

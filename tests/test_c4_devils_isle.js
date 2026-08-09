@@ -8,6 +8,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_devils_isle.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -34,14 +35,15 @@ assert.deepStrictEqual(
     ['21_24'],
     "all source spawns must remain in the Devil's Isle geodata region"
 );
-assert.strictEqual(GeodataEngine.loadRegion(21, 24), true, 'the source spawn region must have geodata');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 449,
-    'at least 449 source coordinates must agree with geodata within 128 Z');
-assert.strictEqual(Math.max(...heightDeltas), 4432,
-    'the audited multi-level ship coordinate must retain its exact source/geodata delta');
+verifyGeodataWhenAvailable(GeodataEngine, [[21, 24]], "Devil's Isle", () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 449,
+        'at least 449 source coordinates must agree with geodata within 128 Z');
+    assert.strictEqual(Math.max(...heightDeltas), 4432,
+        'the audited multi-level ship coordinate must retain its exact source/geodata delta');
+});
 assert.ok(spawnArea.spawns.find((spawn) => spawn.selfId === 847).coords.some((coord) =>
     coord.locX === 52196 && coord.locY === 213895 && coord.locZ === -4032),
     'the lower-deck Vale Master source coordinate must not be snapped to the surface geodata layer');

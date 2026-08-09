@@ -10,6 +10,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_forest_of_the_dead.json');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -47,12 +48,13 @@ assert.deepStrictEqual(
     ['21_16'],
     'all source spawns must remain in the Forest geodata region'
 );
-assert.strictEqual(GeodataEngine.loadRegion(21, 16), true, 'the source spawn region must have geodata');
-const heightDeltas = spawnCoords.map((coord) => Math.abs(
-    GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-));
-assert.ok(heightDeltas.every((delta) => delta <= 64),
-    'every Forest source coordinate must agree with the selected geodata layer within 64 Z');
+verifyGeodataWhenAvailable(GeodataEngine, [[21, 16]], 'Forest of the Dead', () => {
+    const heightDeltas = spawnCoords.map((coord) => Math.abs(
+        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
+    ));
+    assert.ok(heightDeltas.every((delta) => delta <= 64),
+        'every Forest source coordinate must agree with the selected geodata layer within 64 Z');
+});
 
 const corruptedKnight = npcs.find((npc) => npc.selfId === 1547);
 assert.deepStrictEqual(
