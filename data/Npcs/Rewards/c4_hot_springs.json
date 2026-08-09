@@ -1,0 +1,1305 @@
+[
+  {
+    "selfId": 1314,
+    "template": {
+      "name": "Hot Springs Bandersnatchling"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2391,
+            "max": 4868,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 269,
+            "name": "Blood Tornado",
+            "min": 1,
+            "max": 1,
+            "chance": 0.303644
+          },
+          {
+            "selfId": 5539,
+            "name": "Blood Tornado Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.696356
+          }
+        ],
+        "overall": 0.2964
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 80.222377
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 5.615502
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 4.679051
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 9.358903
+          },
+          {
+            "selfId": 5272,
+            "name": "Recipe: Greater Soulshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.124166
+          }
+        ],
+        "overall": 12.4833
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4944
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6335,
+            "name": "Recipe: Sealed Majestic Necklace(70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 2.2819
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6341,
+            "name": "Sealed Phoenix Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 16.41
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1315,
+    "template": {
+      "name": "Hot Springs Buffalo"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2492,
+            "max": 5073,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 288,
+            "name": "Carnage Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.288
+          },
+          {
+            "selfId": 5535,
+            "name": "Carnage Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.712
+          }
+        ],
+        "overall": 0.3125
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 32.883234
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 19.729941
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 31.568026
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 5.261136
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.630719
+          },
+          {
+            "selfId": 5277,
+            "name": "Recipe: Greater Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.035088
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 7.891855
+          }
+        ],
+        "overall": 33.0594
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 41.2195
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 61.8292
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 13.2198
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1316,
+    "template": {
+      "name": "Hot Springs Flava"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2604,
+            "max": 5307,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 235,
+            "name": "Bloody Orchid",
+            "min": 1,
+            "max": 1,
+            "chance": 0.306937
+          },
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.693063
+          }
+        ],
+        "overall": 0.3258
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 22.972257
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 55.133822
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 2,
+            "max": 6,
+            "chance": 13.783354
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 5.513342
+          },
+          {
+            "selfId": 3036,
+            "name": "Recipe: Spiritshot S",
+            "min": 1,
+            "max": 1,
+            "chance": 0.024453
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 1.837781
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.734991
+          }
+        ],
+        "overall": 49.4836
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 21.5511
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 8.6204
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 13.8237
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1317,
+    "template": {
+      "name": "Hot Springs Atroxspawn"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2461,
+            "max": 5016,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 269,
+            "name": "Blood Tornado",
+            "min": 1,
+            "max": 1,
+            "chance": 0.294792
+          },
+          {
+            "selfId": 5539,
+            "name": "Blood Tornado Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.705208
+          }
+        ],
+        "overall": 0.3053
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 48.116498
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 32.077586
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 16.038913
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.532207
+          },
+          {
+            "selfId": 3957,
+            "name": "Recipe: Blessed Spiritshot S",
+            "min": 1,
+            "max": 1,
+            "chance": 0.031907
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.202888
+          }
+        ],
+        "overall": 41.683
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5450,
+            "name": "Recipe: Dragon Grinder(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2263
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5456,
+            "name": "Recipe: Tallum Glaive(60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2263
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6345,
+            "name": "Sealed Phoenix Ring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 23.3778
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1318,
+    "template": {
+      "name": "Hot Springs Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2572,
+            "max": 5243,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 32.883406
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 19.729927
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 31.568176
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 5.261216
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.630462
+          },
+          {
+            "selfId": 5157,
+            "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.034842
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 7.891971
+          }
+        ],
+        "overall": 34.1537
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.179565
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.179565
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.179565
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.179565
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.820435
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.820435
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.820435
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.820435
+          }
+        ],
+        "overall": 2.2276
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 730,
+            "name": "Scroll: Enchant Armor (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.5323
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 5.3713
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 63.876
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1319,
+    "template": {
+      "name": "Hot Springs Nepenthes"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2902,
+            "max": 5920,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 288,
+            "name": "Carnage Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.301949
+          },
+          {
+            "selfId": 5535,
+            "name": "Carnage Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.698051
+          }
+        ],
+        "overall": 0.3643
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 93.549421
+          },
+          {
+            "selfId": 7649,
+            "name": "Spellbook - Fire Vortex",
+            "min": 1,
+            "max": 1,
+            "chance": 1.290116
+          },
+          {
+            "selfId": 7650,
+            "name": "Spellbook - Ice Vortex",
+            "min": 1,
+            "max": 1,
+            "chance": 1.290116
+          },
+          {
+            "selfId": 7651,
+            "name": "Spellbook - Wind Vortex",
+            "min": 1,
+            "max": 1,
+            "chance": 1.290116
+          },
+          {
+            "selfId": 7652,
+            "name": "Spellbook - Light Vortex",
+            "min": 1,
+            "max": 1,
+            "chance": 1.290116
+          },
+          {
+            "selfId": 7653,
+            "name": "Spellbook - Dark Vortex",
+            "min": 1,
+            "max": 1,
+            "chance": 1.290116
+          }
+        ],
+        "overall": 47.4221
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5157,
+            "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3204
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5495,
+            "name": "Sealed Shield of Nightmare Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9466
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5502,
+            "name": "Sealed Boots of Nightmare Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 12.1751
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1320,
+    "template": {
+      "name": "Hot Springs Yeti"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2640,
+            "max": 5387,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 235,
+            "name": "Bloody Orchid",
+            "min": 1,
+            "max": 1,
+            "chance": 0.30248
+          },
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.69752
+          }
+        ],
+        "overall": 0.3306
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 48.116438
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 32.077551
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 16.038887
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.53235
+          },
+          {
+            "selfId": 3036,
+            "name": "Recipe: Spiritshot S",
+            "min": 1,
+            "max": 1,
+            "chance": 0.031959
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.202816
+          }
+        ],
+        "overall": 44.745
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 23.017
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9331
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5503,
+            "name": "Sealed Majestic Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 11.079
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1321,
+    "template": {
+      "name": "Hot Springs Atrox"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2752,
+            "max": 5635,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 269,
+            "name": "Blood Tornado",
+            "min": 1,
+            "max": 1,
+            "chance": 0.321262
+          },
+          {
+            "selfId": 5539,
+            "name": "Blood Tornado Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.678738
+          }
+        ],
+        "overall": 0.3424
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 3,
+            "max": 9,
+            "chance": 26.965427
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 32.358321
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 16.179161
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 23.113087
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.348283
+          },
+          {
+            "selfId": 5167,
+            "name": "Recipe: Blessed Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.035721
+          }
+        ],
+        "overall": 41.7123
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 3,
+            "chance": 68.5417
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 5,
+            "chance": 65.2778
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6346,
+            "name": "Sealed Majestic Ring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 22.3153
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1322,
+    "template": {
+      "name": "Hot Springs Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2752,
+            "max": 5635,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 288,
+            "name": "Carnage Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.317552
+          },
+          {
+            "selfId": 5535,
+            "name": "Carnage Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.682448
+          }
+        ],
+        "overall": 0.3464
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 36.892009
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 39.351422
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 3,
+            "chance": 19.675711
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.361045
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.18042
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.513271
+          },
+          {
+            "selfId": 5272,
+            "name": "Recipe: Greater Soulshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.026123
+          }
+        ],
+        "overall": 48.9995
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5272,
+            "name": "Recipe: Greater Soulshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3046
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5277,
+            "name": "Recipe: Greater Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3046
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0756
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1323,
+    "template": {
+      "name": "Hot Springs Grendel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2719,
+            "max": 5567,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 235,
+            "name": "Bloody Orchid",
+            "min": 1,
+            "max": 1,
+            "chance": 0.292997
+          },
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.707003
+          }
+        ],
+        "overall": 0.3413
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 48.1165
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 32.077522
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 16.038761
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.532333
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.202842
+          },
+          {
+            "selfId": 5277,
+            "name": "Recipe: Greater Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.032041
+          }
+        ],
+        "overall": 46.1906
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 23.7605
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 11.2863
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0386
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

@@ -1,0 +1,612 @@
+[
+  {
+    "selfId": 1314,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Bandersnatchling",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2032,
+      "pAtkRnd": 30,
+      "pDef": 502,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.615500093826,
+      "sp": 886
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1315,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Buffalo",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2032,
+      "pAtkRnd": 30,
+      "pDef": 502,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.683430287108,
+      "sp": 923
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1316,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Flava",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1513,
+      "pAtkRnd": 30,
+      "pDef": 512,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.927684441198,
+      "sp": 1100
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1317,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Atroxspawn",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2102,
+      "pAtkRnd": 30,
+      "pDef": 512,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 115,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.615412710007,
+      "sp": 922
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1318,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Antelope",
+      "title": "",
+      "level": 74,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1513,
+      "pAtkRnd": 30,
+      "pDef": 512,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.688641344047,
+      "sp": 964
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1319,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Nepenthes",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2172,
+      "pAtkRnd": 30,
+      "pDef": 523,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 52,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 2.068622222222,
+      "sp": 1227
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1320,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Yeti",
+      "title": "",
+      "level": 75,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1563,
+      "pAtkRnd": 30,
+      "pDef": 523,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 17,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.683555555556,
+      "sp": 999
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1321,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Atrox",
+      "title": "",
+      "level": 76,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 30,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 115,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.927804709141,
+      "sp": 1190
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1322,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Bandersnatch",
+      "title": "",
+      "level": 76,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 30,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.927804709141,
+      "sp": 1190
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1323,
+    "template": {
+      "kind": "Monster",
+      "name": "Hot Springs Grendel",
+      "title": "",
+      "level": 76,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2242,
+      "pAtkRnd": 30,
+      "pDef": 534,
+      "mAtk": 994,
+      "mDef": 433,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4297,
+      "maxMp": 1710,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.688538781163,
+      "sp": 1042
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  }
+]

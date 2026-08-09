@@ -109,10 +109,11 @@ module.exports = function generateC4MonsterLocation(config) {
     const newMobIds = mobIds.filter((id) => !reusedMobIdSet.has(id));
     const newMobIdSet = new Set(newMobIds);
     const npcRowsById = new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
-    const sourceLabels = config.sourceLabels || [config.sourceLabel];
+    const sourceLabels = config.sourceLabels || (config.sourceLabel ? [config.sourceLabel] : []);
     const sourceLabelSet = new Set(sourceLabels);
+    const sourcePrefixes = config.sourcePrefixes || [];
     const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
-        sourceLabelSet.has(row[1])
+        (sourceLabelSet.has(row[1]) || sourcePrefixes.some((prefix) => String(row[1]).startsWith(prefix)))
         && npcRowsById.get(Number(row[3]))?.[11] === 'L2Monster'
     );
     if (spawnRows.length !== config.spawnRows) {

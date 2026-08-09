@@ -1,12 +1,10 @@
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
 
 require('../src/Global');
 
-const DataCache = invoke('GameServer/DataCache');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
+const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 const spawnAreas = require('../data/Npcs/Spawns/c4_ketra_orc_outpost.json');
 
@@ -67,42 +65,11 @@ assertC4MonsterLocation({
     }
 });
 
-const locationBox = {
-    minX: 132272 - 300, maxX: 159607 + 300,
-    minY: -95555 - 300, maxY: -68265 + 300,
-    minZ: -5584 - 256, maxZ: -2832 + 256
-};
-
-function intersects(minX, maxX, minY, maxY, minZ, maxZ) {
-    return maxX >= locationBox.minX && minX <= locationBox.maxX
-        && maxY >= locationBox.minY && minY <= locationBox.maxY
-        && maxZ >= locationBox.minZ && minZ <= locationBox.maxZ;
-}
-
-const monsterIds = new Set(DataCache.npcs
-    .filter((npc) => npc.template.kind === 'Monster')
-    .map((npc) => Number(npc.selfId)));
-const spawnDirectory = path.resolve(__dirname, '..', 'data', 'Npcs', 'Spawns');
-const preexistingPresence = fs.readdirSync(spawnDirectory)
-    .filter((filename) => filename.endsWith('.json') && filename !== 'c4_ketra_orc_outpost.json')
-    .flatMap((filename) => require(path.join(spawnDirectory, filename)))
-    .filter((area) => Array.isArray(area?.spawns)
-        && area.spawns.some((spawn) => monsterIds.has(Number(spawn.selfId))))
-    .filter((area) => {
-        const monsterSpawns = area.spawns.filter((spawn) => monsterIds.has(Number(spawn.selfId)));
-        if (monsterSpawns.some((spawn) => (spawn.coords || []).some((coord) => intersects(
-            coord.locX, coord.locX, coord.locY, coord.locY, coord.locZ, coord.locZ
-        )))) return true;
-        if (!area.bounds?.length) return false;
-        const xs = area.bounds.map((bound) => Number(bound.locX));
-        const ys = area.bounds.map((bound) => Number(bound.locY));
-        const minZs = area.bounds.map((bound) => Number(bound.minZ));
-        const maxZs = area.bounds.map((bound) => Number(bound.maxZ));
-        return intersects(Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys),
-            Math.min(...minZs), Math.max(...maxZs));
-    });
-assert.deepStrictEqual(preexistingPresence, [],
-    'Ketra Orc Outpost must remain an additive slice for a previously monster-empty location');
+assertMonsterEmptyBeforeSlice({
+    slug: 'c4_ketra_orc_outpost',
+    displayName: 'Ketra Orc Outpost',
+    box: { minX: 132272, maxX: 159607, minY: -95555, maxY: -68265, minZ: -5584, maxZ: -2832 }
+});
 
 verifyGeodataWhenAvailable(GeodataEngine, [[24, 15]], 'Ketra Orc Outpost', () => {
     const coords = spawnAreas[0].spawns.flatMap((spawn) => spawn.coords);
