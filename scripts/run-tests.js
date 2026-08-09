@@ -172,6 +172,7 @@ const tests = [
     'tests/test_c4_hot_springs.js',
     'tests/test_c4_wall_of_argos.js',
     'tests/test_c4_shrine_of_loyalty.js',
+    'tests/test_c4_forge_of_the_gods.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',
