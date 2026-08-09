@@ -168,6 +168,7 @@ const tests = [
     'tests/test_c4_devils_isle.js',
     'tests/test_c4_elmore_northeast_coast.js',
     'tests/test_c4_devastated_castle.js',
+    'tests/test_c4_mithril_mines.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',

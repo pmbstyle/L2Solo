@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 1136,
+    "template": {
+      "kind": "Monster",
+      "name": "Dead Pit Horror",
+      "title": "",
+      "level": 28,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 113,
+      "pAtkRnd": 30,
+      "pDef": 110,
+      "mAtk": 49,
+      "mDef": 106,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 110
+    },
+    "vitals": {
+      "maxHp": 859,
+      "maxMp": 334,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.251275510204,
+      "sp": 52
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1137,
+    "template": {
+      "kind": "Monster",
+      "name": "Iron Ore Golem",
+      "title": "",
+      "level": 29,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 111,
+      "pAtkRnd": 30,
+      "pDef": 149,
+      "mAtk": 53,
+      "mDef": 110,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 23
+    },
+    "vitals": {
+      "maxHp": 906,
+      "maxMp": 349,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.256837098692,
+      "sp": 57
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1138,
+    "template": {
+      "kind": "Monster",
+      "name": "Greedy Geist",
+      "title": "",
+      "level": 30,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 132,
+      "pAtkRnd": 30,
+      "pDef": 119,
+      "mAtk": 58,
+      "mDef": 114,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 954,
+      "maxMp": 365,
+      "revHp": 5.53,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.26,
+      "sp": 62
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

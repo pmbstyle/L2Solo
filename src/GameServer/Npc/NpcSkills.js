@@ -20,6 +20,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_devils_isle.json'),
     ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
     ...require('../../../data/Npcs/Skills/c4_devastated_castle.json'),
+    ...require('../../../data/Npcs/Skills/c4_mithril_mines.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),

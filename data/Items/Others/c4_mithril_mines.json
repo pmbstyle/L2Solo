@@ -1,0 +1,17 @@
+[
+  {
+    "selfId": 6387,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Blessed Scroll of Resurrection for Pets",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 6000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": true
+    }
+  }
+]
