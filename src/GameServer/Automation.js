@@ -246,6 +246,39 @@ class Automation extends SelectedModel {
         }, ticks);
     }
 
+    scheduleMoveToCoords(session, src, to, callback = () => {}) {
+        const from = {
+            locX: src.fetchLocX(),
+            locY: src.fetchLocY(),
+            locZ: src.fetchLocZ(),
+        };
+        const destination = {
+            locX: Number(to.locX),
+            locY: Number(to.locY),
+            locZ: Number(to.locZ),
+        };
+
+        this.clearDestId();
+        session.dataSendToMeAndOthers(
+            ServerResponse.moveToLocation(src.fetchId(), { from, to: destination }),
+            src
+        );
+        src.state.setTowards('path');
+
+        const ticks = this.ticksToMove(
+            from.locX, from.locY, from.locZ,
+            destination.locX, destination.locY, destination.locZ,
+            0,
+            src.fetchCollectiveRunSpd()
+        );
+
+        Timer.start(this.timer.action, () => {
+            src.state.setTowards(false);
+            src.setLocXYZ(destination);
+            callback(destination);
+        }, ticks);
+    }
+
     fetchDistanceRatio() {
         if (Timer.exists(this.timer.action)) {
             return Timer.completeness(this.timer.action);

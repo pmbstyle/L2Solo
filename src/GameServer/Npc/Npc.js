@@ -17,6 +17,10 @@ const AttackHelper   = new Attack();
 // that request on every 100ms combat tick yields visible stop/start jitter.
 const CHASE_REPATH_DISTANCE = 120;
 const CHASE_REPATH_INTERVAL_MS = 300;
+const NPC_PATH_MAX_NODES = 8000;
+const NPC_PATH_RETRY_INTERVAL_MS = 500;
+const NPC_PATH_MAX_RETRY_INTERVAL_MS = 4000;
+const NPC_PATH_FAILURE_TIMEOUT_MS = 10000;
 
 class Npc extends NpcModel {
     constructor(id, data) {
@@ -100,6 +104,12 @@ class Npc extends NpcModel {
                 locZ: 0,
             };
             let lastChaseRepathAt = 0;
+            let activeMoveCoords = null;
+            let activePathWaypoints = [];
+            let activePathTargetCoords = null;
+            let pathFailureStartedAt = 0;
+            let pathFailureCount = 0;
+            let nextPathRetryAt = 0;
 
             this.timer.combat = setInterval(() => {
                 // A dead target cannot be chased or hit.  Leaving the NPC in
@@ -124,17 +134,27 @@ class Npc extends NpcModel {
                 const newDstZ = actor.fetchLocZ();
 
                 if (this.state.inMotion()) {
-                    const targetDrift = new SpeckMath.Point(coords.locX, coords.locY)
-                        .distance(new SpeckMath.Point(newDstX, newDstY));
+                    const targetDrift = activePathTargetCoords
+                        ? new SpeckMath.Point3D(
+                            activePathTargetCoords.locX,
+                            activePathTargetCoords.locY,
+                            activePathTargetCoords.locZ
+                        ).distance(new SpeckMath.Point3D(newDstX, newDstY, newDstZ))
+                        : new SpeckMath.Point(coords.locX, coords.locY)
+                            .distance(new SpeckMath.Point(newDstX, newDstY));
                     const canRepath = Date.now() - lastChaseRepathAt >= CHASE_REPATH_INTERVAL_MS;
                     if (targetDrift >= CHASE_REPATH_DISTANCE && canRepath) {
                         const progress = Math.min(1, Math.max(0, Number(this.automation.fetchDistanceRatio()) || 0));
+                        const moveTarget = activeMoveCoords || coords;
                         this.setLocXYZ(
                             new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ())
-                                .midPoint(new SpeckMath.Point3D(coords.locX, coords.locY, coords.locZ), progress)
+                                .midPoint(new SpeckMath.Point3D(moveTarget.locX, moveTarget.locY, moveTarget.locZ), progress)
                                 .toCoords()
                         );
                         this.automation.abortAll(this);
+                        activeMoveCoords = null;
+                        activePathWaypoints = [];
+                        activePathTargetCoords = null;
                         // The authoritative chase position changed before the
                         // scheduled move ended.  Freeze the client at exactly
                         // that position before scheduling the next chase leg.
@@ -157,11 +177,75 @@ class Npc extends NpcModel {
                 }
                 const actionRange = combatSkill ? this.fetchSkillCastRange(combatSkill, actor) : this.fetchCombatAttackRange(actor);
 
+                if (!this.hasCombatLineOfSight(actor)) {
+                    const now = Date.now();
+                    if (activePathTargetCoords) {
+                        const pathTargetDrift = new SpeckMath.Point3D(
+                            activePathTargetCoords.locX,
+                            activePathTargetCoords.locY,
+                            activePathTargetCoords.locZ
+                        ).distance(new SpeckMath.Point3D(newDstX, newDstY, newDstZ));
+                        if (pathTargetDrift >= CHASE_REPATH_DISTANCE) {
+                            activePathWaypoints = [];
+                            activePathTargetCoords = null;
+                        }
+                    }
+
+                    if (activePathWaypoints.length === 0) {
+                        if (now < nextPathRetryAt) {
+                            return;
+                        }
+
+                        const path = this.fetchCombatPath(actor);
+                        if (!path || path.length <= 1) {
+                            pathFailureStartedAt ||= now;
+                            pathFailureCount++;
+                            const retryDelay = Math.min(
+                                NPC_PATH_MAX_RETRY_INTERVAL_MS,
+                                NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
+                            );
+                            nextPathRetryAt = now + retryDelay;
+                            if (now - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
+                                this.abortCombatState(session);
+                            }
+                            return;
+                        }
+
+                        activePathWaypoints = path.slice(1);
+                        activePathTargetCoords = { locX: newDstX, locY: newDstY, locZ: newDstZ };
+                        pathFailureStartedAt = 0;
+                        pathFailureCount = 0;
+                        nextPathRetryAt = 0;
+                    }
+
+                    activeMoveCoords = activePathWaypoints.shift();
+                    this.automation.scheduleMoveToCoords(session, this, activeMoveCoords, () => {
+                        activeMoveCoords = null;
+                    });
+                    return;
+                }
+
+                pathFailureStartedAt = 0;
+                pathFailureCount = 0;
+                nextPathRetryAt = 0;
+                activePathWaypoints = [];
+                activePathTargetCoords = null;
+                const stopCoords = this.fetchCombatStopCoords(actor, actionRange);
+                activeMoveCoords = stopCoords;
+
                 this.automation.scheduleAction(session, this, actor, actionRange, () => {
+                    activeMoveCoords = null;
                     if (!EffectRestrictions.canAttack(this)) {
                         return;
                     }
-                    this.setLocXYZ(this.fetchCombatStopCoords(actor, actionRange));
+                    this.setLocXYZ(stopCoords);
+
+                    // The target may have crossed a doorway or rounded a wall
+                    // while the chase timer was running. Never turn a stale
+                    // straight-line move into an attack through geometry.
+                    if (!this.hasCombatLineOfSight(actor)) {
+                        return;
+                    }
 
                     if (combatSkill && this.isTargetInAttackRange(actor, actionRange)) {
                         this.stopForCombatAction(session);
@@ -255,6 +339,21 @@ class Npc extends NpcModel {
         return distance <= attackRange + 1;
     }
 
+    hasCombatLineOfSight(actor) {
+        return GeodataEngine.hasLineOfSight(
+            this.fetchLocX(), this.fetchLocY(), this.fetchLocZ(),
+            actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()
+        );
+    }
+
+    fetchCombatPath(actor) {
+        return GeodataEngine.findPath(
+            this.fetchLocX(), this.fetchLocY(), this.fetchLocZ(),
+            actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
+            NPC_PATH_MAX_NODES
+        );
+    }
+
     fetchCombatSkills() {
         if (!this.combatSkills) {
             this.combatSkills = NpcSkills.combatSkillsFor(this);
@@ -323,6 +422,7 @@ class Npc extends NpcModel {
 
     castSkill(session, actor, skill) {
         if (!EffectRestrictions.canCast(this)) return;
+        if (actor !== this && !this.hasCombatLineOfSight(actor)) return;
         this.attack.remoteHit({
             actor: this,
             dataSendToMe: (packet) => session.dataSendToMe?.(packet),
@@ -331,6 +431,7 @@ class Npc extends NpcModel {
     }
 
     abortCombatState(session) {
+        const wasMoving = this.state.inMotion();
         clearTimeout(this.timer.combatStart);
         this.timer.combatStart = undefined;
         clearInterval(this.timer.combat);
@@ -344,6 +445,10 @@ class Npc extends NpcModel {
         this.state.setCombatEnded();
         this.automation.abortAll(this);
 
+        if (wasMoving) {
+            this.stopForCombatAction(session);
+        }
+
         this.setStateRun(false);
         this.setStateAttack(false);
         session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
@@ -351,7 +456,11 @@ class Npc extends NpcModel {
     }
 
     meleeHit(session, src, dst) {
-        if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
+        if (
+            !EffectRestrictions.canAttack(src)
+            || this.checkParticipants(session, src, dst)
+            || !this.hasCombatLineOfSight(dst)
+        ) {
             return;
         }
 

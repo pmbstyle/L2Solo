@@ -3,25 +3,27 @@ const assert = require('assert');
 require('../src/Global');
 
 const NpcAggro = invoke('GameServer/Npc/NpcAggro');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
-function actorAt(id, x, y = 0) {
+function actorAt(id, x, y = 0, z = 0) {
     return {
         fetchId: () => id,
         fetchLocX: () => x,
         fetchLocY: () => y,
-        fetchLocZ: () => 0,
+        fetchLocZ: () => z,
         fetchIsOnline: () => true,
         isDead: () => false,
         state: { fetchDead: () => false }
     };
 }
 
-function hostileNpcAt(x, y = 0) {
+function hostileNpcAt(x, y = 0, z = 0) {
     const npc = {
         combats: 0,
         fetchHostile: () => true,
         fetchLocX: () => x,
         fetchLocY: () => y,
+        fetchLocZ: () => z,
         state: {
             fetchDead: () => false,
             fetchCombats: () => false
@@ -34,6 +36,9 @@ function hostileNpcAt(x, y = 0) {
     };
     return npc;
 }
+
+const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
+GeodataEngine.hasLineOfSight = () => true;
 
 const bot = actorAt(2000001, 100);
 const hotSession = { constructor: { name: 'BotSession' }, accountId: 'bot_hot_aggro', actor: bot };
@@ -84,5 +89,27 @@ world.user.sessions = [{ accountId: 'player_stationary', actor: player }];
 NpcAggro.armSpawnGrace(playerNpc, 20000);
 NpcAggro.tickLiveActors(world, 30000);
 assert.strictEqual(playerNpc.target, player, 'the shared ticker must also aggro a stationary player after initial-spawn grace');
+
+const crumaFirstFloorNpc = hostileNpcAt(23741, 117274, -12089);
+const crumaSecondFloorActor = actorAt(10002, 23765, 117288, -9047);
+assert.deepStrictEqual(
+    NpcAggro.engageNearby({ actor: crumaSecondFloorActor }, crumaSecondFloorActor, {
+        npcs: [crumaFirstFloorNpc],
+        now: Date.now()
+    }),
+    [],
+    'a hostile NPC must not auto-aggro a target on another Cruma floor even when their XY positions overlap'
+);
+
+const hiddenNpc = hostileNpcAt(0, 0, 0);
+const hiddenActor = actorAt(10003, 100, 0, 0);
+GeodataEngine.hasLineOfSight = () => false;
+assert.strictEqual(
+    NpcAggro.canEngage(hiddenNpc, hiddenActor),
+    false,
+    'a hostile NPC must not auto-aggro a target hidden behind geodata'
+);
+
+GeodataEngine.hasLineOfSight = originalHasLineOfSight;
 
 console.log('NPC hot-bot aggro regression checks passed');

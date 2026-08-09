@@ -1,5 +1,8 @@
 const World     = invoke('GameServer/World/World');
 const SpeckMath = invoke('GameServer/SpeckMath');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+
+const MAX_ASSIST_Z_DIFFERENCE = 600;
 
 function clanName(npc) {
     return String(npc?.fetchClanName?.() || '').trim();
@@ -27,7 +30,13 @@ function canAssist(helper, attackedNpc, attacker, attackedClan, radius) {
     if (clanName(helper) !== attackedClan) return false;
     if (actorId(attacker) && helper.fetchDestId?.() === actorId(attacker)) return false;
     if (!helper.fetchLocX || !attackedNpc.fetchLocX) return false;
-    return distance2d(helper, attackedNpc) <= radius;
+    if (distance2d(helper, attackedNpc) > radius) return false;
+    if (Math.abs(helper.fetchLocZ() - attacker.fetchLocZ()) >= MAX_ASSIST_Z_DIFFERENCE) return false;
+
+    return GeodataEngine.hasLineOfSight(
+        attackedNpc.fetchLocX(), attackedNpc.fetchLocY(), attackedNpc.fetchLocZ(),
+        helper.fetchLocX(), helper.fetchLocY(), helper.fetchLocZ()
+    );
 }
 
 function notifyClan(session, attackedNpc, attacker) {
@@ -49,6 +58,7 @@ function notifyClan(session, attackedNpc, attacker) {
 }
 
 module.exports = {
+    MAX_ASSIST_Z_DIFFERENCE,
     notifyClan,
     canAssist
 };

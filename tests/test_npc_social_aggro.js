@@ -4,6 +4,7 @@ require('../src/Global');
 
 const World = invoke('GameServer/World/World');
 const SocialAggro = invoke('GameServer/Npc/SocialAggro');
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 function state({ dead = false, combat = false } = {}) {
     return {
@@ -21,7 +22,7 @@ function npc(id, options = {}) {
         dead: options.dead ?? false,
         locX: options.locX ?? 0,
         locY: options.locY ?? 0,
-        locZ: 0,
+        locZ: options.locZ ?? 0,
         state: state({ dead: options.stateDead, combat: options.combat }),
         assists: []
     };
@@ -56,8 +57,10 @@ function attacker() {
 }
 
 const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const originalHasLineOfSight = GeodataEngine.hasLineOfSight;
 
 try {
+    GeodataEngine.hasLineOfSight = () => true;
     const attacked = npc(1001, { clanName: 'Goblin', helpRadius: 300 });
     const helper = npc(1002, { clanName: 'Goblin', locX: 250 });
     const otherClan = npc(1003, { clanName: 'Demonic', locX: 150 });
@@ -79,6 +82,25 @@ try {
     assert.strictEqual(farHelper.assists.length, 0, 'same clan outside help radius should not assist');
     assert.strictEqual(busyHelper.assists.length, 0, 'helper already in combat should not be retargeted');
 
+    const upperFloorHelper = npc(1008, { clanName: 'Goblin', locX: 100, locZ: -9047 });
+    const lowerFloorAttacked = npc(1009, { clanName: 'Goblin', locZ: -12089 });
+    const lowerFloorAttacker = attacker();
+    lowerFloorAttacker.fetchLocZ = () => -12089;
+    assert.strictEqual(
+        SocialAggro.canAssist(upperFloorHelper, lowerFloorAttacked, lowerFloorAttacker, 'Goblin', 300),
+        false,
+        'a clan helper must not assist an attacker from another dungeon floor'
+    );
+
+    const hiddenHelper = npc(1010, { clanName: 'Goblin', locX: 100 });
+    GeodataEngine.hasLineOfSight = () => false;
+    assert.strictEqual(
+        SocialAggro.canAssist(hiddenHelper, attacked, attacker(), 'Goblin', 300),
+        false,
+        'a clan helper must not receive an assist call through geodata'
+    );
+    GeodataEngine.hasLineOfSight = () => true;
+
     const blankClan = npc(1006, { clanName: '', helpRadius: 300 });
     const blankHelper = npc(1007, { clanName: '', locX: 100 });
     World.fetchNpcsInRadius = () => [blankClan, blankHelper];
@@ -86,6 +108,7 @@ try {
     assert.strictEqual(blankHelper.assists.length, 0, 'blank-clan helper should stay passive');
 } finally {
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+    GeodataEngine.hasLineOfSight = originalHasLineOfSight;
 }
 
 console.log('NPC social aggro checks passed');
