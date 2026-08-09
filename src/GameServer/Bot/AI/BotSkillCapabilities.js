@@ -21,15 +21,34 @@ function learnedSkill(actor, selfId) {
     return actor?.skillset?.fetchSkill?.(selfId) || null;
 }
 
-function healSkill(actor) {
+function healSkills(actor) {
     return activeSkills(actor)
         .filter((skill) => FRIENDLY_HEAL_TYPES.has(skill.fetchSkillType?.()))
-        .filter((skill) => ['friendly', 'party'].includes(skill.fetchTargetKind?.()))
-        .sort((a, b) => {
-            const aTarget = a.fetchTargetKind?.() === 'friendly' ? 1 : 0;
-            const bTarget = b.fetchTargetKind?.() === 'friendly' ? 1 : 0;
-            return bTarget - aTarget || Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0);
-        })[0] || null;
+        .filter((skill) => ['friendly', 'party'].includes(skill.fetchTargetKind?.()));
+}
+
+function healName(skill) {
+    return String(skill?.fetchName?.() || skill?.model?.name || '').toLowerCase();
+}
+
+function selectHealSkill(actor, { emergency = false, group = false } = {}) {
+    const usable = healSkills(actor);
+    const pool = group
+        ? usable.filter((skill) => skill.fetchTargetKind?.() === 'party')
+        : usable.filter((skill) => skill.fetchTargetKind?.() === 'friendly');
+    if (pool.length === 0) return null;
+    return pool.sort((a, b) => {
+        const aBattle = /battle heal/.test(healName(a)) ? 1 : 0;
+        const bBattle = /battle heal/.test(healName(b)) ? 1 : 0;
+        const urgency = emergency ? bBattle - aBattle : aBattle - bBattle;
+        return urgency ||
+            Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0) ||
+            Number(a.fetchConsumedMp?.() || 0) - Number(b.fetchConsumedMp?.() || 0);
+    })[0] || null;
+}
+
+function healSkill(actor) {
+    return selectHealSkill(actor);
 }
 
 function buffSkill(actor, buffType) {
@@ -66,6 +85,8 @@ module.exports = {
     aggressionSkill: (actor) => learnedSkill(actor, 28),
     buffSkill,
     supportBuffs,
+    healSkills,
+    selectHealSkill,
     healSkill,
     manaRechargeSkill,
     learnedSkill

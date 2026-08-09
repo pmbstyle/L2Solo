@@ -7,6 +7,8 @@ DataCache.init();
 
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Item = invoke('GameServer/Item/Item');
 
 assert.strictEqual(BotGear.ensureCharacterGear, undefined,
@@ -93,6 +95,81 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 }));
 assert.strictEqual(upgrades.length, 1, 'mage should only upgrade to a suitable caster weapon');
 assert.strictEqual(upgrades[0].item.fetchId(), 1103);
+
+const demonFangsTemplate = itemTemplate(321);
+assert.strictEqual(demonFangsTemplate.template.name, 'Demon Fangs', 'the regression fixture must use the real C4 caster weapon');
+const healerOldBlunt = wearable(1120, { kind: 'Weapon.Blunt', slot: 7, pAtk: 10, mAtk: 8, equipped: true });
+const demonFangs = wearable(1121, {
+    selfId: demonFangsTemplate.selfId,
+    name: demonFangsTemplate.template.name,
+    kind: demonFangsTemplate.template.kind,
+    price: demonFangsTemplate.template.price,
+    rank: demonFangsTemplate.etc.rank,
+    slot: demonFangsTemplate.etc.slot,
+    pAtk: demonFangsTemplate.stats.pAtk,
+    mAtk: demonFangsTemplate.stats.mAtk
+});
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'healer', 29), true,
+    'Weapon.Etc must be a compatible family for caster support classes');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 17), true,
+    'Prophet must retain caster weapon compatibility');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 21), false,
+    'Sword Singer must not inherit caster weapon compatibility from the shared buffer role');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 34), false,
+    'Bladedancer must not inherit caster weapon compatibility from the shared buffer role');
+assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
+    'Sword Singer must reject caster staves stored under the shared blunt family');
+assert.strictEqual(BotWeaponCompatibility.isCasterWeapon('Weapon.Sword', 'Broadsword', 11, 9), false,
+    'close starter stats must not turn an ordinary physical sword into caster gear');
+assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Sword', 'Broadsword', 11, 9, 'buffer', 21), true,
+    'a newly promoted Sword Singer must retain a starter melee weapon until a real upgrade exists');
+assert.strictEqual(BotRoles.hasMeleeWeapon({ backpack: { fetchEquippedWeapon: () => demonFangs } }), false,
+    'Demon Fangs must not make a healer eligible for melee assist');
+const singerPlan = BotGear.planFor({ classId: 21, level: 33 });
+const singerWeapon = itemTemplate(bySlot(singerPlan, 7)?.selfId || bySlot(singerPlan, 14)?.selfId);
+assert(singerWeapon && !BotWeaponCompatibility.isCasterWeapon(
+    singerWeapon.template.kind,
+    singerWeapon.template.name,
+    singerWeapon.stats.pAtk,
+    singerWeapon.stats.mAtk
+), 'Sword Singer generated gear must retain a real melee weapon');
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 29,
+    level: 33,
+    items: [healerOldBlunt, demonFangs],
+    paperdoll: { 7: { id: 1120 } }
+}));
+assert.strictEqual(upgrades.length, 1, 'a healer must replace an obsolete no-grade weapon with traded Demon Fangs');
+assert.strictEqual(upgrades[0].item.fetchSelfId(), 321);
+
+const singerSword = wearable(1122, { kind: 'Weapon.Sword', slot: 7, pAtk: 50, mAtk: 10, equipped: true });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 21,
+    level: 33,
+    items: [singerSword, demonFangs],
+    paperdoll: { 7: { id: 1122 } }
+}));
+assert.strictEqual(upgrades.length, 0, 'a Sword Singer must keep its melee weapon instead of equipping traded caster gear');
+
+const movingTradeSession = upgradeSession({
+    classId: 29,
+    level: 33,
+    items: [healerOldBlunt, demonFangs],
+    paperdoll: { 7: { id: 1120 } }
+});
+movingTradeSession.actor.fetchName = () => 'TradeHealer';
+movingTradeSession.actor.state = {
+    fetchHits: () => null,
+    fetchCasts: () => null,
+    fetchTowards: () => ({ locX: 1, locY: 1, locZ: 0 })
+};
+movingTradeSession.actor.backpack.equipGear = (_session, item) => {
+    healerOldBlunt.setEquipped(false);
+    item.setEquipped(true);
+};
+const movingTradeUpgrades = BotEquipmentUpgrade.applyBestUpgrades(movingTradeSession, { force: true });
+assert.strictEqual(movingTradeUpgrades.length, 1, 'safe equipment upgrades must not starve while the companion is following');
+assert.strictEqual(demonFangs.fetchEquipped(), true);
 
 const mageTunic = wearable(1110, { kind: 'Armor.Fabric', slot: 10, pDef: 21, maxMp: 38, equipped: true });
 const mageStockings = wearable(1111, { kind: 'Armor.Fabric', slot: 11, pDef: 13, maxMp: 23, equipped: true });

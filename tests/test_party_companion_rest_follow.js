@@ -19,6 +19,8 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -960,6 +962,14 @@ try {
     assert.match(lowManaHealChat[0], /No MP|need MP/, 'the party should receive a concrete MP limitation instead of a fake heal confirmation');
     BotManager.botPartySay = originalBotPartySay;
 
+    const healChoiceBot = fakeActor(2000101, { classId: 15, mp: 500, maxMp: 500 });
+    learnSkill(healChoiceBot, { selfId: 1011, name: 'Heal', spell: true, mp: 30 });
+    learnSkill(healChoiceBot, { selfId: 1015, name: 'Battle Heal', spell: true, mp: 45 });
+    learnSkill(healChoiceBot, { selfId: 1027, name: 'Group Heal', spell: true, mp: 80, distance: -1 });
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot).fetchSelfId(), 1011, 'routine healing should prefer the efficient single-target Heal');
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot, { emergency: true }).fetchSelfId(), 1015, 'emergency healing should prefer Battle Heal');
+    assert.strictEqual(BotSkillCapabilities.selectHealSkill(healChoiceBot, { group: true }).fetchSelfId(), 1027, 'multiple wounded members should unlock Group Heal');
+
     const manaLeader = fakeActor(2000102, { locX: 0, locY: 0, classId: 0, mp: 5, maxMp: 100 });
     const manaLeaderSession = fakeSession('player_mana_policy_party', manaLeader);
     const rechargeHealer = fakeActor(2000103, { locX: 80, locY: 0, classId: 15 });
@@ -994,6 +1004,9 @@ try {
     assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), false, 'Sword Singer is a melee buffer and must not recover MP as a caster');
     assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), false, 'Bladedancer is a melee buffer and must not recover MP as a caster');
     assert.strictEqual(BotRoles.needsPartyManaRecovery(fakeActor(2000111, { classId: 17 })), true, 'Prophet remains a caster buffer and should recover MP');
+    const lowManaPaladin = fakeActor(2000112, { classId: 5 });
+    assert.strictEqual(BotRoles.shouldRestForMana(lowManaPaladin), false, 'a Paladin must stay standing with the melee line when MP is low');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaPaladin), true, 'a Paladin must remain eligible for Recharge so taunt control does not collapse');
 
     World.user = { sessions: [manaLeaderSession, lowManaSingerSession] };
     FollowingState.tick(lowManaSingerSession, lowManaSinger, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -1013,6 +1026,19 @@ try {
         skillExec(_session, _bot, data) { rechargeCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(rechargeCasts.length, 0, 'a melee party member must not receive Recharge even when it is the only low-MP target');
+
+    const rechargePaladin = fakeActor(2000112, { locX: 100, locY: 0, classId: 5, mp: 10, maxMp: 100 });
+    const rechargePaladinSession = fakeSession('bot_low_mana_paladin', rechargePaladin);
+    rechargePaladinSession.followPlayerSession = manaLeaderSession;
+    rechargePaladinSession.partyCompanion = true;
+    rechargePaladinSession.plan = 'following';
+    rechargeCasts.length = 0;
+    manaLeaderSession.partyRecoveryCast = undefined;
+    World.user = { sessions: [manaLeaderSession, rechargeHealerSession, rechargePaladinSession] };
+    FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+        skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+    }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+    assert.deepStrictEqual(rechargeCasts, [{ id: rechargePaladin.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should restore a standing tank below its taunt reserve');
 
     const lowManaMelee = fakeActor(2000105, { locX: 80, locY: 0, classId: 0, hp: 100, maxHp: 100, mp: 1, maxMp: 100 });
     const lowManaMeleeSession = fakeSession('bot_low_mana_melee', lowManaMelee);
@@ -1178,6 +1204,17 @@ try {
     assert.strictEqual(approachBufferSession.activeSupportCast?.targetId, buffLeader.fetchId(), 'the active party aura should retain its logical support target');
     BotSupportPlanner.cancelSupportCast(approachBufferSession, approachBufferBot);
 
+    const hateAura = learnSkill(approachBufferBot, { selfId: 18, name: 'Hate Aura', spell: false, distance: -1, mp: 40 });
+    partyAuraTarget = null;
+    approachBufferBot.attack = {
+        remoteHit(_session, target, skill) {
+            partyAuraTarget = { target, skill };
+        }
+    };
+    SkillExec(approachBufferSession, approachBufferBot, { id: 999999, selfId: hateAura.fetchSelfId(), ctrl: true });
+    assert.strictEqual(partyAuraTarget?.target, approachBufferBot, 'an enemy TARGET_AURA such as Hate Aura must originate from its caster');
+    assert.strictEqual(partyAuraTarget?.skill, hateAura, 'Hate Aura must reach native area target resolution unchanged');
+
     const missingTarget = fakeActor(2000110, { locX: 100, locY: 0 });
     const missingTargetBuff = learnSkill(approachBufferBot, { selfId: 1068, name: 'Might', spell: true, distance: 400, mp: 20 });
     BotSupportPlanner.queueSupportCast(approachBufferSession, {
@@ -1313,6 +1350,53 @@ try {
     assert.strictEqual(aggressionCasts, 1, 'a failed threat transfer must not cast Aggression again on the next AI tick');
     assert.strictEqual(transferTankBasicAttacks, 1, 'after one transfer attempt the tank must continue with normal combat');
 
+    const tacticalPaladin = fakeActor(2000058, { locX: 0, locY: 0, classId: 5, hp: 40, maxHp: 100, mp: 100, maxMp: 100 });
+    learnSkill(tacticalPaladin, { selfId: 110, name: 'Ultimate Defense', mp: 20 });
+    const survivalTactic = PartyClassTactics.selfAction(tacticalPaladin, { role: 'tank', activeMobs: 2 });
+    assert.strictEqual(survivalTactic?.skill.fetchSelfId(), 110, 'a pressured low-HP Paladin should use Ultimate Defense as a class tactic');
+
+    const tacticalTitan = fakeActor(2000061, { locX: 0, locY: 0, classId: 113, hp: 25, maxHp: 100, mp: 100, maxMp: 100 });
+    learnSkill(tacticalTitan, { selfId: 139, name: 'Guts', mp: 20 });
+    assert.strictEqual(
+        PartyClassTactics.selfAction(tacticalTitan, { role: 'dps', activeMobs: 2 })?.skill.fetchSelfId(),
+        139,
+        'Titan must retain inherited Destroyer survival tactics after third-class transfer'
+    );
+
+    const hateTacticPaladin = fakeActor(2000059, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    learnSkill(hateTacticPaladin, { selfId: 18, name: 'Hate Aura', distance: -1, mp: 20 });
+    const hateTargets = [1, 2].map((offset) => ({
+        fetchId: () => 1100 + offset,
+        fetchDestId: () => healerLeader.fetchId(),
+        fetchLocX: () => offset * 50,
+        fetchLocY: () => 0
+    }));
+    assert.strictEqual(
+        PartyClassTactics.tankMassAggroAction(hateTacticPaladin, hateTargets)?.skill.fetchSelfId(),
+        18,
+        'a Paladin should use Hate Aura when multiple loose mobs are inside its native radius'
+    );
+
+    const shieldStunPaladin = fakeActor(2000062, { locX: 0, locY: 0, classId: 5, mp: 100, maxMp: 100 });
+    learnSkill(shieldStunPaladin, { selfId: 92, name: 'Shield Stun', distance: 40, mp: 20 });
+    assert.strictEqual(
+        PartyClassTactics.tankStunAction(shieldStunPaladin, hateTargets, { protectedRole: 'leader' }),
+        null,
+        'a shieldless tank must not reserve every combat tick for an unusable Shield Stun'
+    );
+    shieldStunPaladin.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Shield' }];
+    assert.strictEqual(
+        PartyClassTactics.tankStunAction(shieldStunPaladin, hateTargets, { protectedRole: 'leader' })?.skill.fetchSelfId(),
+        92,
+        'an equipped shield should enable Shield Stun party protection'
+    );
+
+    const controlOracle = fakeActor(2000060, { locX: 0, locY: 0, classId: 29, mp: 100, maxMp: 100 });
+    learnSkill(controlOracle, { selfId: 1201, name: 'Dryad Root', mp: 15 });
+    const controlledAdd = PartyClassTactics.supportCrowdControl(controlOracle, hateTargets, { primaryTargetId: hateTargets[0].fetchId() });
+    assert.strictEqual(controlledAdd?.target.fetchId(), hateTargets[1].fetchId(), 'support crowd control should skip the focused target and control an add');
+    assert.strictEqual(controlledAdd?.skill.fetchSelfId(), 1201, 'an Oracle should use learned Dryad Root for add control');
+
     const autoPullTank = fakeActor(2000097, { locX: 90, locY: 0, mp: 20, maxMp: 100, classId: 4 });
     const autoPullTankSession = fakeSession('bot_auto_pull_tank', autoPullTank);
     autoPullTankSession.followPlayerSession = healerLeaderSession;
@@ -1348,6 +1432,25 @@ try {
     assert.strictEqual(autoPullSkillCast, false, 'auto pull must not cast Aggression even when it is learned');
     assert.strictEqual(autoPullOptions?.basicAttackOnly, true, 'auto pull should start with a basic attack');
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
+
+    const scoredPuller = fakeActor(2000099, { locX: 0, locY: 0, level: 40, classId: 5 });
+    const scoredLeader = fakeActor(2000100, { locX: 0, locY: 0, level: 40, classId: 0 });
+    const scoredLeaderSession = fakeSession('player_scored_pull', scoredLeader);
+    const scoredPullerSession = fakeSession('bot_scored_pull', scoredPuller);
+    scoredPullerSession.followPlayerSession = scoredLeaderSession;
+    scoredPullerSession.partyCompanion = true;
+    const crowdedTarget = { ...autoPullTarget, fetchId: () => 1011, fetchLevel: () => 40, fetchLocX: () => 300, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
+    const socialAdd = { ...autoPullTarget, fetchId: () => 1012, fetchLevel: () => 40, fetchLocX: () => 320, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
+    const safeTarget = { ...autoPullTarget, fetchId: () => 1013, fetchLevel: () => 40, fetchLocX: () => 800 };
+    World.user = { sessions: [scoredLeaderSession, scoredPullerSession] };
+    World.fetchNpcsInRadius = (x) => x < 500 ? [crowdedTarget, socialAdd] : [safeTarget];
+    const crowdedScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, crowdedTarget);
+    const safeScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, safeTarget);
+    assert.ok(safeScore.score > crowdedScore.score, 'pull scoring should prefer a slightly farther isolated mob over a crowded social-risk target');
+    assert.ok(crowdedScore.reasons.includes('social:1'), 'pull scoring should expose its social-risk reason');
+    World.user = { sessions: [healerLeaderSession, autoPullTankSession] };
+    World.npc = { spawns: [autoPullTarget] };
+    World.fetchNpcsInRadius = () => [autoPullTarget];
 
     // The shared party setting is authoritative. A stale per-session mirror
     // must never revive the legacy tank fallback after Pull Off.

@@ -189,21 +189,21 @@ class Attack {
             .includes(skill.fetchTargetKind?.());
 
         if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'invalid_target');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.canUseSkill?.(skill) === false) {
             session.dataSendToMe?.(ServerResponse.actionFailed());
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'reuse');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
 
         if (actor.fetchMp() < skill.fetchConsumedMp()) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'depleted_mp');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
@@ -211,7 +211,7 @@ class Attack {
         const conditionFailure = this.skillUseConditionFailure(actor, skill);
         if (conditionFailure) {
             this.rejectSkillUseCondition(session, actor, conditionFailure);
-            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill);
+            invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, conditionFailure.code || conditionFailure.reason || 'condition');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }

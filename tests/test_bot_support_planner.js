@@ -5,6 +5,7 @@ require('../src/Global');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const World = invoke('GameServer/World/World');
 
 function skill(id, name, level, effect, stats, target = 'friendly', type = null) {
     return {
@@ -268,5 +269,75 @@ assert.strictEqual(BotSupportPlanner.beginSupportCast(queuedSupportSession, queu
 queuedSupportSession.currentTargetId = queuedSupportTarget.fetchId();
 assert.strictEqual(BotSupportPlanner.cancelSupportCast(queuedSupportSession, queuedSupportBuffer), true, 'an interrupted support cast should be cancellable');
 assert.strictEqual(queuedSupportSession.currentTargetId, undefined, 'a cancelled support cast must also clear its stale target');
+
+const auraSkill = {
+    ...partyShield,
+    fetchDistance: () => -1,
+    fetchSemantic: () => ({ effectType: 'buff', effect: 'party_shield', stats: { pDefMul: 1.08 }, target: 'party', radius: 1000 })
+};
+const auraBuffer = actor('AuraBuffer', 49, [auraSkill]);
+auraBuffer.fetchLocX = () => 0;
+auraBuffer.fetchLocY = () => 0;
+const distantAuraPuller = actor('DistantAuraPuller', 4);
+distantAuraPuller.fetchLocX = () => 1200;
+distantAuraPuller.fetchLocY = () => 0;
+assert.strictEqual(
+    BotSupportPlanner.partyAuraCanReach(auraBuffer, distantAuraPuller, auraSkill),
+    false,
+    'a caster-centred party aura must not claim a puller beyond its native effect radius'
+);
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: distantAuraPuller, puller: true }], [auraBuffer]),
+    false,
+    'a distant puller must not be frozen in approach for an aura that cannot reach it'
+);
+const auraSession = {};
+auraBuffer.session = auraSession;
+BotSupportPlanner.queueSupportCast(auraSession, { provider: auraBuffer, target: distantAuraPuller, skill: auraSkill });
+assert.strictEqual(
+    BotSupportPlanner.cancelPendingSupportCast(auraSession, auraBuffer, auraBuffer, auraSkill, 'reuse'),
+    true,
+    'a rejected caster-centred aura must clear the logical recipient reservation'
+);
+
+const cooldownBuffer = actor('CooldownBuffer', 49, [sharedShield]);
+cooldownBuffer.canUseSkill = () => false;
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: actor('CooldownTarget', 4), puller: true }], [cooldownBuffer]),
+    false,
+    'a support skill on native reuse must not pause pulling or produce retry spam'
+);
+
+assert.strictEqual(BotSupportPlanner.situationalBuffUseful('holy_weapon', { undead: false }), false, 'Holy Weapon should stay out of a living-mob field package');
+assert.strictEqual(BotSupportPlanner.situationalBuffUseful('holy_weapon', { undead: true }), true, 'Holy Weapon should enter an undead encounter package');
+assert.strictEqual(BotSupportPlanner.situationalBuffUseful('resist_poison', { poison: true }), true, 'Resist Poison should enter a poison encounter package');
+assert.strictEqual(BotSupportPlanner.situationalBuffUseful('decrease_weight', {}), false, 'Decrease Weight should remain on-demand without authoritative load pressure');
+
+const originalNpcWorld = World.npc;
+const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const holyWeapon = skill(1043, 'Holy Weapon', 1, 'holy_weapon', { holyAttack: 20 });
+const holyBuffer = actor('HolyBuffer', 17, [holyWeapon]);
+holyBuffer.fetchLocX = () => 0;
+holyBuffer.fetchLocY = () => 0;
+const holyTarget = actor('HolyTarget', 0);
+holyTarget.fetchLocX = () => 10;
+holyTarget.fetchLocY = () => 0;
+const corruptedKnight = {
+    fetchId: () => 9001,
+    fetchName: () => 'Corrupted Knight',
+    fetchAttackable: () => true,
+    fetchUndead: () => true,
+    fetchDestId: () => holyTarget.fetchId(),
+    fetchLocX: () => 50,
+    fetchLocY: () => 0,
+    isDead: () => false,
+    skillset: { fetchSkills: () => [] }
+};
+World.npc = { grid: {}, spawns: [corruptedKnight] };
+World.fetchNpcsInRadius = () => [corruptedKnight];
+action = BotSupportPlanner.nextAction(holyBuffer, [{ actor: holyTarget, leader: true }], [holyBuffer]);
+assert.strictEqual(action?.skill.fetchSelfId(), 1043, 'authoritative undead metadata must enable Holy Weapon even when the NPC name has no undead token');
+World.npc = originalNpcWorld;
+World.fetchNpcsInRadius = originalFetchNpcsInRadius;
 
 console.log('Bot support planner checks passed');

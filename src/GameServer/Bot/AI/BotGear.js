@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const ARMOR_SLOTS = {
     earringRight: 1,
@@ -130,18 +131,6 @@ function choose(rank, level, predicate, score) {
     }, null);
 }
 
-function weaponKindsFor(role, classId) {
-    if (role === 'archer') return ['Weapon.Bow'];
-    if (role === 'dagger') return ['Weapon.Knife'];
-    if (role === 'mage' || role === 'healer' || role === 'buffer') {
-        return ['Weapon.Sword', 'Weapon.Blunt'];
-    }
-    if ([44, 45, 47, 49, 50, 51, 53, 54, 56].includes(Number(classId))) {
-        return ['Weapon.Blunt'];
-    }
-    return ['Weapon.Sword', 'Weapon.Blunt'];
-}
-
 function armorStyleFor(role) {
     if (role === 'mage' || role === 'healer' || role === 'buffer') return 'robe';
     if (role === 'archer' || role === 'dagger') return 'light';
@@ -149,18 +138,15 @@ function armorStyleFor(role) {
 }
 
 function chooseWeapon(rank, level, role, classId) {
-    const kinds = weaponKindsFor(role, classId);
+    const kinds = BotWeaponCompatibility.weaponKindsFor(role, classId);
     const prefersOneHander = !(role === 'mage' || role === 'healer' || role === 'buffer' || role === 'archer');
     const weapon = choose(
         rank,
         level,
-        (item) => kinds.includes(item.kind) && (!prefersOneHander || item.slot === ARMOR_SLOTS.weapon),
-        (item) => {
-            if (role === 'mage' || role === 'healer' || role === 'buffer') {
-                return item.mAtk * 3 + item.pAtk;
-            }
-            return item.pAtk * 2 + item.mAtk;
-        }
+        (item) => kinds.includes(item.kind)
+            && BotWeaponCompatibility.isSuitableWeapon(item.kind, item.name, item.pAtk, item.mAtk, role, classId)
+            && (!prefersOneHander || item.slot === ARMOR_SLOTS.weapon),
+        (item) => BotWeaponCompatibility.scoreWeapon(item.pAtk, item.mAtk, role, classId)
     );
 
     if (weapon) return weapon;
@@ -168,7 +154,11 @@ function chooseWeapon(rank, level, role, classId) {
     return choose(
         rank,
         level,
-        (item) => item.kind.startsWith('Weapon.'),
+        (item) => item.kind.startsWith('Weapon.') && (
+            role !== 'buffer'
+            || BotWeaponCompatibility.isCasterRole(role, classId)
+            || !BotWeaponCompatibility.isCasterWeapon(item.kind, item.name, item.pAtk, item.mAtk)
+        ),
         (item) => item.pAtk + item.mAtk
     );
 }

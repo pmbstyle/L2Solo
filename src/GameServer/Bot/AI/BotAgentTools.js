@@ -321,7 +321,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
         const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
         const partyReady = session.partyCompanion === true && session.followPlayerSession &&
-            !BotRoles.needsPartyManaRecovery(bot);
+            !BotRoles.shouldRestForMana(bot);
         if (hpRatio >= 0.95 && (partyReady || mpRatio >= 0.95)) {
             delete session.explicitRestOrder;
             stand(session, bot);

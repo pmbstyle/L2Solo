@@ -100,7 +100,14 @@ assert.strictEqual(GearAcquisitionPlanner.planFor(serviceCrafter, { spots: [ston
 const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
-assert(['Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+assert(['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+const demonFangs = DataCache.items.find((item) => Number(item.selfId) === 321);
+assert.strictEqual(GearAcquisitionPlanner.suitable(demonFangs, { level: 33, stats: { classId: 29, role: 'healer' } }, 'healer'), true,
+    'caster support acquisition must recognize Demon Fangs as a D-grade equipment target');
+assert.strictEqual(GearAcquisitionPlanner.suitable(demonFangs, { level: 33, stats: { classId: 21, role: 'buffer' } }, 'buffer'), false,
+    'Sword Singer acquisition must reject caster-only Weapon.Etc gear');
+assert.strictEqual(GearAcquisitionPlanner.suitable(demonFangs, { level: 33, stats: { classId: 34, role: 'buffer' } }, 'buffer'), false,
+    'Bladedancer acquisition must reject caster-only Weapon.Etc gear');
 let targetOfferChecks = 0;
 const scoredOnceTarget = GearAcquisitionPlanner.preferredTarget(mage, {
     findMarketOffer: (item) => {
@@ -180,7 +187,7 @@ const entryWeaponOnly = {
     [target.item.selfId]: { selfId: target.item.selfId, amount: 1 }
 };
 const afterEntryWeapon = GearAcquisitionPlanner.preferredTarget({ ...mage, inventory: entryWeaponOnly });
-assert(!['Weapon.Sword', 'Weapon.Blunt'].includes(afterEntryWeapon.item.template.kind), 'a C-grade mage must gear another slot after its entry weapon instead of crafting alternate weapons');
+assert(!['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'].includes(afterEntryWeapon.item.template.kind), 'a C-grade mage must gear another slot after its entry weapon instead of crafting alternate weapons');
 let entryBandInventory = {};
 for (;;) {
     const entryBandTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, inventory: entryBandInventory });

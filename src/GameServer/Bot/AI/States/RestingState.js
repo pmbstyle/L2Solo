@@ -153,7 +153,7 @@ module.exports = {
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             const recovered = hpRatio >= 0.95 && (
-                !BotRoles.needsPartyManaRecovery(bot) || mpRatio >= 0.95
+                !BotRoles.shouldRestForMana(bot) || mpRatio >= 0.95
             );
 
             // A companion can join while it is already sitting from a prior

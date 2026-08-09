@@ -1,6 +1,7 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
+const World = invoke('GameServer/World/World');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 const CAST_RESERVATION_MS = 5000;
@@ -14,6 +15,12 @@ const EXCLUDED_PARTY_BUFF_EFFECTS = new Set(['kiss_of_eva']);
 const PHYSICAL_ROLES = new Set(['tank', 'dagger', 'archer', 'dps']);
 const CASTER_ROLES = new Set(['mage', 'healer', 'buffer']);
 const DAMAGE_DEALER_ROLES = new Set(['dagger', 'archer', 'dps']);
+const SITUATIONAL_BUFF_EFFECTS = new Set([
+    'decrease_weight',
+    'holy_weapon',
+    'mental_shield',
+    'resist_poison'
+]);
 
 // These are single-target buffs whose value depends on the recipient's combat
 // role. Defensive, resistance and movement buffs intentionally stay universal.
@@ -66,13 +73,110 @@ function supportSkills(actor) {
         });
 }
 
-function isUsefulForTarget(target, skill) {
+function normalizedEffect(value) {
+    return String(value || '')
+        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+}
+
+function actorPoint(actor) {
+    if (
+        !actor ||
+        typeof actor.fetchLocX !== 'function' ||
+        typeof actor.fetchLocY !== 'function'
+    ) {
+        return null;
+    }
+    const locX = Number(actor.fetchLocX());
+    const locY = Number(actor.fetchLocY());
+    if (!Number.isFinite(locX) || !Number.isFinite(locY)) return null;
+    return { locX, locY };
+}
+
+function distance2d(a, b) {
+    const from = actorPoint(a);
+    const to = actorPoint(b);
+    if (!from || !to) return null;
+    return Math.hypot(from.locX - to.locX, from.locY - to.locY);
+}
+
+function partyAuraRadius(skill) {
     const semantic = skill?.fetchSemantic?.() || {};
+    const partyAura = (semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party') &&
+        Number(skill?.fetchDistance?.()) < 0;
+    if (!partyAura) return null;
+    return Math.max(0, Number(semantic.radius) || 0);
+}
+
+function partyAuraCanReach(provider, target, skill) {
+    const radius = partyAuraRadius(skill);
+    if (radius === null || radius <= 0) return true;
+    const distance = distance2d(provider, target);
+    // Unit tests and legacy actors without position data remain eligible. A
+    // live party aura, however, must be planned against its real effect area.
+    return distance === null || distance <= radius;
+}
+
+function skillTokens(skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    return [
+        skill?.fetchName?.(),
+        semantic.effect,
+        semantic.trait,
+        semantic.effectType
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function encounterContext(members) {
+    const actors = members.map((member) => member?.actor).filter(Boolean);
+    const actorIds = new Set(actors.map((actor) => Number(actor.fetchId?.())).filter(Number.isFinite));
+    const seen = new Set();
+    const nearby = actors.flatMap((actor) => {
+        const point = actorPoint(actor);
+        if (!point || !World.npc?.grid || typeof World.fetchNpcsInRadius !== 'function') return [];
+        return World.fetchNpcsInRadius(point.locX, point.locY, 1400);
+    }).filter((npc) => {
+        const id = Number(npc?.fetchId?.());
+        if (seen.has(id)) return false;
+        seen.add(id);
+        if (!npc?.fetchAttackable?.() || npc.isDead?.()) return false;
+        const targetingParty = actorIds.has(Number(npc.fetchDestId?.()));
+        return targetingParty || actors.some((actor) => distance2d(actor, npc) <= 1400);
+    });
+    const names = nearby.map((npc) => String(npc.fetchName?.() || '')).join(' ').toLowerCase();
+    const skills = nearby.flatMap((npc) => npc.skillset?.fetchSkills?.() || npc.skillset?.skills || []);
+    const tokens = skills.map(skillTokens).join(' ');
+    return {
+        undead: nearby.some((npc) => npc.fetchUndead?.() === true) ||
+            /\b(zombie|skeleton|ghoul|ghost|corpse|bone|undead|doom|shade|specter|spirit|vampire)\b/.test(names),
+        poison: /\b(poison|venom|toxin)\b/.test(`${names} ${tokens}`),
+        mental: /\b(fear|sleep|derangement|mental|madness)\b/.test(`${names} ${tokens}`)
+    };
+}
+
+function situationalBuffUseful(effect, context = {}) {
+    const key = normalizedEffect(effect);
+    if (!SITUATIONAL_BUFF_EFFECTS.has(key)) return true;
+    if (key === 'holy_weapon') return context.undead === true;
+    if (key === 'resist_poison') return context.poison === true;
+    if (key === 'mental_shield') return context.mental === true;
+    // Inventory load is not yet exposed as authoritative runtime state. Keep
+    // Decrease Weight on-demand instead of making every field party cast it.
+    return false;
+}
+
+function isUsefulForTarget(target, skill, provider = null, context = {}) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    if (!situationalBuffUseful(semantic.effect, context)) return false;
     // Party skills retain their native all-members behaviour. The role policy
     // only prevents wasting individual casts on roles that cannot use them.
-    if (semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party') return true;
+    if (semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party') {
+        return partyAuraCanReach(provider, target, skill);
+    }
 
-    const allowedRoles = INDIVIDUAL_BUFF_TARGET_ROLES[semantic.effect];
+    const allowedRoles = INDIVIDUAL_BUFF_TARGET_ROLES[normalizedEffect(semantic.effect)];
     return !allowedRoles || allowedRoles.has(BotRoles.inferRole(target));
 }
 
@@ -133,6 +237,7 @@ function canStartSupportCast(action) {
     const mp = Number(actor?.fetchMp?.() || 0);
     const maxMp = Math.max(1, Number(actor?.fetchMaxMp?.() || mp || 1));
     return canCast(actor, action?.skill) &&
+        actor?.canUseSkill?.(action?.skill) !== false &&
         mp / maxMp >= MIN_SUPPORT_MP_RATIO &&
         !EffectStore.impairments(actor).silenced &&
         !isBusy(actor);
@@ -183,10 +288,11 @@ function actionCompare(a, b) {
 }
 
 function allActions(members, providers, respectReservations = true) {
+    const context = encounterContext(members);
     return members
         .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
         .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)
-            .filter((skill) => isUsefulForTarget(member.actor, skill) && canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
+            .filter((skill) => isUsefulForTarget(member.actor, skill, provider, context) && canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
             .map((skill) => ({
                 provider,
                 target: member.actor,
@@ -242,21 +348,39 @@ function beginSupportCast(session, provider, target, skill) {
     session.pendingSupportCast = undefined;
     session.activeSupportCast = {
         targetId: actorOrder(supportTarget),
-        skillId: Number(skill.fetchSelfId())
+        skillId: Number(skill.fetchSelfId()),
+        effect: normalizedEffect(skill.fetchSemantic?.().effect),
+        startedAt: Date.now()
     };
     return true;
 }
 
-function cancelPendingSupportCast(session, provider, target, skill) {
+function cancelPendingSupportCast(session, provider, target, skill, reason = 'rejected') {
     const pending = session?.pendingSupportCast;
+    const partyAura = skill?.fetchTargetKind?.() === 'party' && Number(skill?.fetchDistance?.()) < 0;
+    const targetMatches = Number(pending?.targetId) === actorOrder(target);
     if (!pending ||
         Number(pending.providerId) !== actorOrder(provider) ||
-        Number(pending.targetId) !== actorOrder(target) ||
+        (!targetMatches && !partyAura) ||
         Number(pending.skillId) !== Number(skill?.fetchSelfId?.() || 0)) {
         return false;
     }
 
     session.pendingSupportCast = undefined;
+    session.lastSupportOutcome = {
+        outcome: 'failed',
+        reason,
+        targetId: pending.targetId,
+        skillId: pending.skillId,
+        at: Date.now()
+    };
+    console.info(
+        'PartySupport :: provider=%s target=%s skill=%s outcome=failed reason=%s',
+        provider?.fetchName?.() || actorOrder(provider),
+        pending.targetId,
+        pending.skillId,
+        reason
+    );
     return true;
 }
 
@@ -264,6 +388,40 @@ function finishSupportCast(session, provider, skill) {
     const active = session?.activeSupportCast;
     if (!active || Number(active.skillId) !== Number(skill?.fetchSelfId?.() || 0)) return false;
     session.activeSupportCast = undefined;
+    const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+    const leaderSession = session?.partyCompanion === true && session.followPlayerSession
+        ? session.followPlayerSession
+        : session;
+    const supportTarget = PartyAwareness.partyActors(leaderSession)
+        .find((actor) => actorOrder(actor) === Number(active.targetId));
+    const landed = !!supportTarget && !needsSkill(supportTarget, skill);
+    session.lastSupportOutcome = {
+        outcome: landed ? 'landed' : 'missed',
+        targetId: active.targetId,
+        skillId: active.skillId,
+        effect: active.effect,
+        at: Date.now()
+    };
+    if (landed) {
+        session.roleDecision = {
+            role: BotRoles.inferRole(provider),
+            action: 'buff_party',
+            reason: active.effect || normalizedEffect(skill?.fetchName?.()),
+            targetId: active.targetId,
+            skillId: active.skillId,
+            outcome: 'landed',
+            at: Date.now()
+        };
+    }
+    console.info(
+        'PartySupport :: provider=%s target=%s skill=%s effect=%s outcome=%s durationMs=%s',
+        provider?.fetchName?.() || actorOrder(provider),
+        active.targetId,
+        active.skillId,
+        active.effect || 'unknown',
+        landed ? 'landed' : 'missed',
+        Math.max(0, Date.now() - Number(active.startedAt || Date.now()))
+    );
     if (Number(session.currentTargetId) === Number(active.targetId)) {
         session.currentTargetId = undefined;
         provider?.unselect?.();
@@ -320,6 +478,8 @@ module.exports = {
     MIN_SUPPORT_MP_RATIO,
     supportSkills,
     isUsefulForTarget,
+    situationalBuffUseful,
+    partyAuraCanReach,
     needsSkill,
     actionCompare,
     hasPendingAction,

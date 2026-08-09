@@ -1,5 +1,6 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const GRADE_BANDS = [
     { rank: 'none', min: 1, max: 19 },
@@ -47,7 +48,7 @@ const HINTS = {
     },
     mage: {
         armor: 'robe',
-        weapon: 'caster_blunt_or_sword',
+        weapon: 'caster_weapon',
         statPriority: ['mAtk', 'cast_speed', 'maxMp', 'spiritshot_efficiency'],
         specialAbilities: {
             c: ['empower', 'acumen'],
@@ -64,7 +65,7 @@ const HINTS = {
     },
     healer: {
         armor: 'robe',
-        weapon: 'caster_blunt_or_sword',
+        weapon: 'caster_weapon',
         statPriority: ['maxMp', 'cast_speed', 'mAtk', 'mp_conservation'],
         specialAbilities: {
             c: ['acumen', 'conversion'],
@@ -82,7 +83,7 @@ const HINTS = {
     },
     buffer: {
         armor: 'robe',
-        weapon: 'caster_blunt_or_sword',
+        weapon: 'caster_weapon',
         statPriority: ['maxMp', 'cast_speed', 'buff_uptime', 'mp_conservation'],
         specialAbilities: {
             c: ['acumen', 'conversion'],
@@ -381,7 +382,9 @@ function forCharacter(character = {}, options = {}) {
         tier: tier.label,
         classFamily: family?.family || null,
         armor: base.armor,
-        weapon: base.weapon,
+        weapon: role === 'buffer' && !BotWeaponCompatibility.isCasterRole(role, state.classId)
+            ? 'melee_sword_or_blunt'
+            : base.weapon,
         statPriority: [...base.statPriority],
         specialAbilities: [...specialAbilities],
         skills: skillHints,

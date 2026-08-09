@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const MAX_RESOLVED_SOURCE_CACHE = 512;
@@ -45,6 +46,10 @@ function roleFor(state = {}) {
     }) || 'dps';
 }
 
+function classIdFor(state = {}) {
+    return Number(state.stats?.classId ?? state.classId ?? 0);
+}
+
 function isCraftService(state = {}) {
     return state.activity === 'crafting'
         && !!state.stats?.craftShop
@@ -55,14 +60,6 @@ function armorKindFor(role) {
     if (['mage', 'healer', 'buffer'].includes(role)) return 'Armor.Fabric';
     if (['archer', 'dagger'].includes(role)) return 'Armor.Leather';
     return 'Armor.Chain';
-}
-
-function weaponKindsFor(role, classId) {
-    if (role === 'archer') return ['Weapon.Bow'];
-    if (role === 'dagger') return ['Weapon.Knife'];
-    if (['mage', 'healer', 'buffer'].includes(role)) return ['Weapon.Sword', 'Weapon.Blunt'];
-    if ([44, 45, 47, 49, 50, 51, 53, 54, 56].includes(Number(classId))) return ['Weapon.Blunt'];
-    return ['Weapon.Sword', 'Weapon.Blunt'];
 }
 
 function inventoryMap(inventory = {}) {
@@ -89,10 +86,10 @@ function equippedInventoryItems(inventory = {}) {
     });
 }
 
-function itemScore(item, role) {
+function itemScore(item, role, classId) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
-    if (WEAPON_SLOTS.has(slot)) return (['mage', 'healer', 'buffer'].includes(role) ? 3 * Number(stats.mAtk || 0) + Number(stats.pAtk || 0) : 2 * Number(stats.pAtk || 0) + Number(stats.mAtk || 0));
+    if (WEAPON_SLOTS.has(slot)) return BotWeaponCompatibility.scoreWeapon(stats.pAtk, stats.mAtk, role, classId);
     if (JEWEL_SLOTS.has(slot)) return Number(stats.mDef || 0);
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
 }
@@ -136,17 +133,24 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     if (rank !== requiredRank) return false;
     const kind = item.template?.kind || '';
     const slot = Number(item.etc?.slot || 0);
-    if (WEAPON_SLOTS.has(slot)) return weaponKindsFor(role, state.stats?.classId || state.classId).includes(kind);
+    if (WEAPON_SLOTS.has(slot)) return BotWeaponCompatibility.isSuitableWeapon(
+        kind,
+        item.template?.name,
+        item.stats?.pAtk,
+        item.stats?.mAtk,
+        role,
+        classIdFor(state)
+    );
     if (slot === 8) return !['mage', 'healer', 'buffer', 'archer', 'dagger'].includes(role) && kind === 'Armor.Shield';
     if ([10, 11, 15].includes(slot)) return kind === armorKindFor(role);
     if ([6, 9, 12].includes(slot)) return kind === 'Armor.Wear';
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
 
-function isSlotUpgrade(item, ownedItems, role) {
+function isSlotUpgrade(item, ownedItems, role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
     const rank = String(item.etc?.rank || 'none').toLowerCase();
-    const score = itemScore(item, role);
+    const score = itemScore(item, role, classId);
     const price = Number(item.template?.price || 0);
     // One item per paperdoll slot is enough. Keep a same-grade replacement
     // only when it is genuinely stronger, or equally strong but from a more
@@ -154,8 +158,8 @@ function isSlotUpgrade(item, ownedItems, role) {
     return !ownedItems.some((owned) => (
         (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         && String(owned.etc?.rank || 'none').toLowerCase() === rank
-        && (itemScore(owned, role) > score
-            || (itemScore(owned, role) === score && Number(owned.template?.price || 0) >= price))
+        && (itemScore(owned, role, classId) > score
+            || (itemScore(owned, role, classId) === score && Number(owned.template?.price || 0) >= price))
     ));
 }
 
@@ -166,13 +170,13 @@ function slotPriority(item) {
     return JEWEL_SLOTS.has(slot) ? 1 : 0;
 }
 
-function currentSlotScore(item, ownedItems = [], role) {
+function currentSlotScore(item, ownedItems = [], role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item?.etc?.slot || 0)) ? 'weapon' : Number(item?.etc?.slot || 0);
     return ownedItems
         .filter((owned) => (
             (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         ))
-        .reduce((best, owned) => Math.max(best, itemScore(owned, role)), 0);
+        .reduce((best, owned) => Math.max(best, itemScore(owned, role, classId)), 0);
 }
 
 function candidateEffort(candidate, state, options = {}) {
@@ -240,8 +244,9 @@ function progressionPriceCap(rank, level) {
 
 function opportunityScore(candidate, state, options = {}) {
     const role = roleFor(state);
+    const classId = classIdFor(state);
     const ownedItems = inventoryItems(state.inventory);
-    const improvement = Math.max(1, itemScore(candidate.item, role) - currentSlotScore(candidate.item, ownedItems, role) + 2);
+    const improvement = Math.max(1, itemScore(candidate.item, role, classId) - currentSlotScore(candidate.item, ownedItems, role, classId) + 2);
     const effort = candidateEffort(candidate, state, options);
     // The fallback makes an unobservable route deterministic, while real
     // market/drop/craft effort always wins over template price.
@@ -254,6 +259,7 @@ function opportunityScore(candidate, state, options = {}) {
 
 function equipInventoryUpgrades(state = {}, inventory = {}) {
     const role = roleFor(state);
+    const classId = classIdFor(state);
     const allowedRank = rankIndex(gradeForLevel(state.level));
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
@@ -265,8 +271,8 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const best = candidates.reduce((selected, candidate) => {
         const key = slotKey(candidate.item);
         const current = selected.get(key);
-        if (!current || itemScore(candidate.item, role) > itemScore(current.item, role)
-            || itemScore(candidate.item, role) === itemScore(current.item, role)
+        if (!current || itemScore(candidate.item, role, classId) > itemScore(current.item, role, classId)
+            || itemScore(candidate.item, role, classId) === itemScore(current.item, role, classId)
                 && Number(candidate.item.template?.price || 0) < Number(current.item.template?.price || 0)) {
             selected.set(key, candidate);
         }
@@ -281,8 +287,8 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     if (fullBody && (chest || legs)) {
         const separatesScore = [chest, legs]
             .filter(Boolean)
-            .reduce((sum, candidate) => sum + itemScore(candidate.item, role), 0);
-        if (separatesScore >= itemScore(fullBody.item, role)) {
+            .reduce((sum, candidate) => sum + itemScore(candidate.item, role, classId), 0);
+        if (separatesScore >= itemScore(fullBody.item, role, classId)) {
             best.delete('15');
         } else {
             best.delete('10');
@@ -324,6 +330,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
 
 function preferredTarget(state = {}, options = {}) {
     const role = roleFor(state);
+    const classId = classIdFor(state);
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
     const stationService = { level: 70, stats: { classId: 57 } };
@@ -343,7 +350,7 @@ function preferredTarget(state = {}, options = {}) {
         .map((item) => ({ item, recipe: recipesByProduct.get(Number(item.selfId)) || null }))
         .filter(({ recipe }) => !options.recipeId || Number(recipe?.recipeId) === Number(options.recipeId))
         .filter(({ item }) => Number(owned.get(Number(item.selfId)) || 0) < 1)
-        .filter(({ item }) => isSlotUpgrade(item, ownedItems, role));
+        .filter(({ item }) => isSlotUpgrade(item, ownedItems, role, classId));
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
         WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
@@ -381,11 +388,12 @@ function preferredTarget(state = {}, options = {}) {
 
 function preferredDropTarget(state = {}) {
     const role = roleFor(state);
+    const classId = classIdFor(state);
     const owned = inventoryMap(state.inventory);
     return (DataCache.items || [])
         .filter((item) => suitable(item, state, role, 'none'))
         .filter((item) => Number(owned.get(Number(item.selfId)) || 0) < 1)
-        .sort((a, b) => itemScore(b, role) - itemScore(a, role) || Number(b.template?.price || 0) - Number(a.template?.price || 0))[0] || null;
+        .sort((a, b) => itemScore(b, role, classId) - itemScore(a, role, classId) || Number(b.template?.price || 0) - Number(a.template?.price || 0))[0] || null;
 }
 
 function preferredNoGradeTarget(state = {}) {
@@ -401,7 +409,7 @@ function preferredNoGradeTarget(state = {}) {
         .filter((item) => {
             if (uniqueItems.has(Number(item.selfId))) return false;
             uniqueItems.add(Number(item.selfId));
-            return isSlotUpgrade(item, ownedItems, role);
+            return isSlotUpgrade(item, ownedItems, role, classId);
         })
         .sort((a, b) => GearLifecycle.slotPriority(b.etc?.slot) - GearLifecycle.slotPriority(a.etc?.slot)
             || Number(a.template?.price || 0) - Number(b.template?.price || 0))[0] || null;

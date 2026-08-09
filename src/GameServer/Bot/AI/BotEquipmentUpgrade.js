@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 const ARMOR_SLOTS = {
@@ -53,18 +54,6 @@ function armorStyleFor(role) {
     return 'heavy';
 }
 
-function weaponKindsFor(role, classId) {
-    if (role === 'archer') return ['Weapon.Bow'];
-    if (role === 'dagger') return ['Weapon.Knife'];
-    if (role === 'mage' || role === 'healer' || role === 'buffer') {
-        return ['Weapon.Sword', 'Weapon.Blunt'];
-    }
-    if ([44, 45, 47, 49, 50, 51, 53, 54, 56].includes(Number(classId))) {
-        return ['Weapon.Blunt'];
-    }
-    return ['Weapon.Sword', 'Weapon.Blunt'];
-}
-
 function armorKindsFor(role, slot) {
     const style = armorStyleFor(role);
     if ([ARMOR_SLOTS.chest, ARMOR_SLOTS.pants, ARMOR_SLOTS.fullArmor].includes(Number(slot))) {
@@ -99,8 +88,14 @@ function isSuitableItem(actor, item) {
     const slot = Number(item.fetchSlot());
 
     if (item.isWeapon()) {
-        const kinds = weaponKindsFor(role, actor.fetchClassId());
-        if (!kinds.includes(kind)) return false;
+        if (!BotWeaponCompatibility.isSuitableWeapon(
+            kind,
+            item.fetchName(),
+            item.fetchPAtk(),
+            item.fetchMAtk(),
+            role,
+            actor.fetchClassId()
+        )) return false;
         if (!['mage', 'healer', 'buffer', 'archer'].includes(role) && slot !== ARMOR_SLOTS.weapon) return false;
         return true;
     }
@@ -120,10 +115,12 @@ function scoreItem(actor, item) {
     const slot = Number(item.fetchSlot());
 
     if (item.isWeapon()) {
-        if (role === 'mage' || role === 'healer' || role === 'buffer') {
-            return item.fetchMAtk() * 3 + item.fetchPAtk();
-        }
-        return item.fetchPAtk() * 2 + item.fetchMAtk();
+        return BotWeaponCompatibility.scoreWeapon(
+            item.fetchPAtk(),
+            item.fetchMAtk(),
+            role,
+            actor.fetchClassId()
+        );
     }
 
     if (kind === 'Armor.Jewel') return item.fetchMDef();
@@ -211,7 +208,7 @@ function canApplyNow(session, options = {}) {
     if (!options.force && !isBotSession(session)) return false;
     const actor = session?.actor;
     if (!actor?.backpack || actor.isDead?.()) return false;
-    if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.() || actor.state?.fetchTowards?.()) return false;
+    if (actor.state?.fetchHits?.() || actor.state?.fetchCasts?.()) return false;
     if (!options.force && session.lastEquipmentUpgradeCheckAt && Date.now() - session.lastEquipmentUpgradeCheckAt < UPGRADE_COOLDOWN_MS) return false;
     return true;
 }
