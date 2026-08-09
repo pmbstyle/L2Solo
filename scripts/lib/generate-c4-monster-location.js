@@ -103,6 +103,9 @@ module.exports = function generateC4MonsterLocation(config) {
     const filename = `${config.slug}.json`;
     const mobIds = [...config.mobIds].sort((a, b) => a - b);
     const mobIdSet = new Set(mobIds);
+    const reusedMobIdSet = new Set(config.reusedMobIds || []);
+    const newMobIds = mobIds.filter((id) => !reusedMobIdSet.has(id));
+    const newMobIdSet = new Set(newMobIds);
     const npcRowsById = new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
     const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
         row[1] === config.sourceLabel
@@ -119,8 +122,17 @@ module.exports = function generateC4MonsterLocation(config) {
     }
     assertExact([...new Set(spawnRows.map((row) => Number(row[3])))].sort((a, b) => a - b), mobIds, 'monster ids');
 
+    const existingNpcIds = new Set(fs.readdirSync(path.join(root, 'data', 'Npcs'))
+        .filter((name) => name.endsWith('.json') && name !== filename)
+        .flatMap((name) => require(path.join(root, 'data', 'Npcs', name)))
+        .map((npc) => Number(npc.selfId)));
+    const missingReusedIds = [...reusedMobIdSet].filter((id) => !existingNpcIds.has(id));
+    if (missingReusedIds.length > 0) {
+        throw new Error(`Reused monster templates are not loaded: ${missingReusedIds.join(', ')}`);
+    }
+
     const skillRows = tuples('sql/npcskills.sql')
-        .filter((row) => mobIdSet.has(Number(row[0])))
+        .filter((row) => newMobIdSet.has(Number(row[0])))
         .map((row) => ({ npcId: Number(row[0]), skillId: Number(row[1]), level: Number(row[2]) }));
     if (skillRows.length !== config.skillRows) {
         throw new Error(`Expected ${config.skillRows} NPC skill rows, found ${skillRows.length}`);
@@ -139,7 +151,7 @@ module.exports = function generateC4MonsterLocation(config) {
     const existingItems = loadedItems(filename);
     const existingItemsById = new Map(existingItems.map((item) => [Number(item.selfId), item]));
     const sourceItemsById = vendorItems();
-    const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
+    const npcs = newMobIds.map((id) => npcRowsById.get(id)).map((row) => {
         const [
             id, , name, , title, , , collisionRadius, collisionHeight, level, , type,
             attackRange, hp, mp, hpRegen, mpRegen, str, con, dex, int, wit, men,
@@ -167,7 +179,7 @@ module.exports = function generateC4MonsterLocation(config) {
         };
     });
 
-    const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
+    const npcNameById = new Map(mobIds.map((id) => [id, npcRowsById.get(id)[2]]));
     const spawnDefinitions = mobIds.map((npcId) => ({
         selfId: npcId,
         name: npcNameById.get(npcId),
@@ -179,7 +191,7 @@ module.exports = function generateC4MonsterLocation(config) {
     }));
     const spawns = [{ selfId: config.areaId, bounds: [], spawns: spawnDefinitions }];
 
-    const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
+    const dropRows = tuples('sql/droplist.sql').filter((row) => newMobIdSet.has(Number(row[0])));
     if (dropRows.length !== config.dropRows) {
         throw new Error(`Expected ${config.dropRows} monster drops, found ${dropRows.length}`);
     }
@@ -191,7 +203,7 @@ module.exports = function generateC4MonsterLocation(config) {
         return source.name;
     }
 
-    const rewards = mobIds.map((mobId) => {
+    const rewards = newMobIds.map((mobId) => {
         const rows = dropRows.filter((row) => Number(row[0]) === mobId);
         const categories = new Map();
         rows.filter((row) => Number(row[4]) >= 0).forEach((row) => {
