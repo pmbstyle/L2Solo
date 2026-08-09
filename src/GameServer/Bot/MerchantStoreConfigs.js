@@ -412,7 +412,7 @@ module.exports = {
         title: "Shots: B Grade",
         town: "Hunter's Village",
         storeType: 1,
-        locX: 117129, locY: 77137, locZ: -2688,
+        locX: 117129, locY: 77137, locZ: -2696,
         items: shotsForGrade(3)
     },
     "Lina": {
