@@ -1,0 +1,152 @@
+[
+  {
+    "npcId": 1646,
+    "skillId": 4301,
+    "level": 1
+  },
+  {
+    "npcId": 1646,
+    "skillId": 4789,
+    "level": 3
+  },
+  {
+    "npcId": 1646,
+    "skillId": 4575,
+    "level": 2
+  },
+  {
+    "npcId": 1647,
+    "skillId": 4301,
+    "level": 1
+  },
+  {
+    "npcId": 1647,
+    "skillId": 4789,
+    "level": 3
+  },
+  {
+    "npcId": 1647,
+    "skillId": 4001,
+    "level": 7
+  },
+  {
+    "npcId": 1647,
+    "skillId": 4002,
+    "level": 7
+  },
+  {
+    "npcId": 1647,
+    "skillId": 4035,
+    "level": 7
+  },
+  {
+    "npcId": 1648,
+    "skillId": 4301,
+    "level": 1
+  },
+  {
+    "npcId": 1648,
+    "skillId": 4789,
+    "level": 3
+  },
+  {
+    "npcId": 1648,
+    "skillId": 4067,
+    "level": 7
+  },
+  {
+    "npcId": 1649,
+    "skillId": 4301,
+    "level": 1
+  },
+  {
+    "npcId": 1649,
+    "skillId": 4789,
+    "level": 3
+  },
+  {
+    "npcId": 1649,
+    "skillId": 4232,
+    "level": 7
+  },
+  {
+    "npcId": 1649,
+    "skillId": 4091,
+    "level": 1
+  },
+  {
+    "npcId": 1649,
+    "skillId": 4067,
+    "level": 7
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4789,
+    "level": 4
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4630,
+    "level": 8
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4160,
+    "level": 8
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4571,
+    "level": 8
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4635,
+    "level": 3
+  },
+  {
+    "npcId": 1650,
+    "skillId": 4035,
+    "level": 8
+  },
+  {
+    "npcId": 1651,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 1651,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 1651,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 1651,
+    "skillId": 4789,
+    "level": 4
+  },
+  {
+    "npcId": 1651,
+    "skillId": 4033,
+    "level": 8
+  }
+]

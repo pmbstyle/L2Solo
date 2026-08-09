@@ -60,13 +60,14 @@ module.exports = function assertC4MonsterLocation(config) {
     assert.deepStrictEqual(spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]), config.spawnCounts,
         'every family must retain its exact local population');
 
-    const expectedRegionKey = config.region.join('_');
+    const regions = config.regions || [config.region];
+    const expectedRegionKeys = regions.map((region) => region.join('_')).sort();
     assert.deepStrictEqual(
-        [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-        [expectedRegionKey],
-        'the source rows must stay in the expected geodata region'
+        [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))].sort(),
+        expectedRegionKeys,
+        'the source rows must stay in the expected geodata regions'
     );
-    verifyGeodataWhenAvailable(GeodataEngine, [config.region], config.displayName, () => {
+    verifyGeodataWhenAvailable(GeodataEngine, regions, config.displayName, () => {
         const heightDeltas = spawnCoords.map((coord) => Math.abs(
             GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
         ));

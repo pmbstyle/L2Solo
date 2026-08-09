@@ -7,7 +7,7 @@ require('../../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const root = path.resolve(__dirname, '..', '..');
 
-module.exports = function assertMonsterEmptyBeforeSlice({ slug, displayName, box, padding = 300, zPadding = 256 }) {
+module.exports = function assertMonsterEmptyBeforeSlice({ slug, displayName, box, ignoreSlugs = [], padding = 300, zPadding = 256 }) {
     const locationBox = {
         minX: box.minX - padding, maxX: box.maxX + padding,
         minY: box.minY - padding, maxY: box.maxY + padding,
@@ -22,7 +22,9 @@ module.exports = function assertMonsterEmptyBeforeSlice({ slug, displayName, box
         .map((npc) => Number(npc.selfId)));
     const spawnDirectory = path.join(root, 'data', 'Npcs', 'Spawns');
     const preexistingPresence = fs.readdirSync(spawnDirectory)
-        .filter((filename) => filename.endsWith('.json') && filename !== `${slug}.json`)
+        .filter((filename) => filename.endsWith('.json')
+            && filename !== `${slug}.json`
+            && !ignoreSlugs.includes(path.basename(filename, '.json')))
         .flatMap((filename) => require(path.join(spawnDirectory, filename)))
         .filter((area) => Array.isArray(area?.spawns)
             && area.spawns.some((spawn) => monsterIds.has(Number(spawn.selfId))))

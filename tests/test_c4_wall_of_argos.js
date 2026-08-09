@@ -56,6 +56,7 @@ assertC4MonsterLocation({
 assertMonsterEmptyBeforeSlice({
     slug: 'c4_wall_of_argos',
     displayName: 'Wall of Argos',
+    ignoreSlugs: ['c4_shrine_of_loyalty'],
     box: { minX: 166355, maxX: 194636, minY: -63702, maxY: -35114, minZ: -3904, maxZ: -2720 }
 });
 
