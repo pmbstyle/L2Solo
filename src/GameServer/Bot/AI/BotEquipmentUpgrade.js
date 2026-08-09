@@ -136,6 +136,11 @@ function currentItemForSlot(backpack, slot) {
     return backpack.fetchItemRaw(backpack.fetchPaperdollId(slot));
 }
 
+function currentItemForExactSlot(backpack, slot) {
+    const item = currentItemForSlot(backpack, slot);
+    return Number(item?.fetchSlot()) === Number(slot) ? item : null;
+}
+
 function currentScoreForSlot(actor, slot) {
     const backpack = actor.backpack;
     if (!backpack) return 0;
@@ -178,9 +183,11 @@ function findTorsoUpgrades(actor, suitableItems) {
     if (!backpack) return [];
 
     const candidates = suitableItems.filter((item) => isTorsoSlot(item.fetchSlot()));
-    const currentFull = currentItemForSlot(backpack, ARMOR_SLOTS.fullArmor);
-    const currentChest = currentItemForSlot(backpack, ARMOR_SLOTS.chest);
-    const currentPants = currentItemForSlot(backpack, ARMOR_SLOTS.pants);
+    // Full-body armor is mirrored into paperdoll chest slot 10 for the client.
+    // Match the item's real slot so that alias is not counted as a separate chest.
+    const currentFull = currentItemForExactSlot(backpack, ARMOR_SLOTS.fullArmor);
+    const currentChest = currentItemForExactSlot(backpack, ARMOR_SLOTS.chest);
+    const currentPants = currentItemForExactSlot(backpack, ARMOR_SLOTS.pants);
     const bestFull = bestItemForSlot(actor, currentFull, candidates, ARMOR_SLOTS.fullArmor);
     const bestChest = bestItemForSlot(actor, currentChest, candidates, ARMOR_SLOTS.chest);
     const bestPants = bestItemForSlot(actor, currentPants, candidates, ARMOR_SLOTS.pants);

@@ -189,10 +189,10 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     classId: 5,
     level: 50,
     items: [fullPlate, brigandineTunic, brigandineGaiters],
-    paperdoll: { 15: { id: 1130 } }
+    paperdoll: { 10: { id: 1130 }, 15: { id: 1130 } }
 }));
 assert.strictEqual(upgrades.length, 0,
-    'a tank must keep Full Plate instead of repeatedly swapping to weaker Brigandine gaiters');
+    'a tank must ignore the Full Plate chest alias and keep it over weaker Brigandine gaiters');
 
 const weakFullBody = wearable(1140, { kind: 'Armor.Chain', slot: 15, pDef: 100, rank: 'd', equipped: true });
 const strongerChest = wearable(1141, { kind: 'Armor.Chain', slot: 10, pDef: 80, rank: 'c' });
@@ -201,12 +201,12 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     classId: 5,
     level: 50,
     items: [weakFullBody, strongerChest, strongerPants],
-    paperdoll: { 15: { id: 1140 } }
+    paperdoll: { 10: { id: 1140 }, 15: { id: 1140 } }
 }));
 assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1141, 1142],
     'a complete stronger chest and pants layout should replace weaker full-body armor together');
 
-const pairedPaperdoll = { 15: { id: 1140 } };
+const pairedPaperdoll = { 10: { id: 1140 }, 15: { id: 1140 } };
 const pairedApplySession = upgradeSession({
     classId: 5,
     level: 50,
@@ -217,6 +217,7 @@ pairedApplySession.actor.fetchName = () => 'TorsoUpgradeTank';
 pairedApplySession.actor.state = { fetchHits: () => null, fetchCasts: () => null };
 pairedApplySession.actor.backpack.equipGear = (_session, item) => {
     weakFullBody.setEquipped(false);
+    delete pairedPaperdoll[10];
     delete pairedPaperdoll[15];
     item.setEquipped(true);
     pairedPaperdoll[item.fetchSlot()] = { id: item.fetchId() };
