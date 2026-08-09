@@ -12,6 +12,14 @@ function npcTalk(session, npc) {
         title
     };
 
+    const SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
+    const dungeonTeleportHtml = SevenSignsDungeonTeleports.html(npc.fetchSelfId());
+    if (dungeonTeleportHtml) {
+        session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), dungeonTeleportHtml));
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
     const C4GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
     if (C4GatekeeperTeleports.html(npc.fetchSelfId())) {
         // A gatekeeper can simultaneously be a quest NPC.  Do not let quest

@@ -14,6 +14,7 @@ const DataCache = {
         DataCache.revitalize      = validateModel(path + 'Templates/Revitalize/revitalize');
         DataCache.skillTree       = validateModel(path + 'Skills/Tree/tree');
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
+        const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
         DataCache.npcs            = [
             ...validateModel(path + 'Npcs/npcs'),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
@@ -36,7 +37,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_heretics'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_forbidden_path'),
-            ...C4LateTownGatekeepers.npcs
+            ...C4LateTownGatekeepers.npcs,
+            ...C4SevenSignsDungeonTeleports.npcs
         ];
         DataCache.npcSpawns       = [
             ...validateModel(path + 'Npcs/Spawns/spawns'),
@@ -60,7 +62,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_heretics'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_forbidden_path'),
-            ...C4LateTownGatekeepers.spawns
+            ...C4LateTownGatekeepers.spawns,
+            ...C4SevenSignsDungeonTeleports.spawns
         ];
         DataCache.npcRewards      = [
             ...validateModel(path + 'Npcs/Rewards/rewards'),
