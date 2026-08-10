@@ -1,5 +1,554 @@
 [
   {
+    "selfId": 783,
+    "template": {
+      "kind": "Monster",
+      "name": "Dread Wolf",
+      "title": "",
+      "level": 35,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 256,
+      "pAtkRnd": 30,
+      "pDef": 127,
+      "mAtk": 89,
+      "mDef": 137,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 26,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1220,
+      "maxMp": 446,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 11
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.334693877551,
+      "sp": 96
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 784,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman",
+      "title": "",
+      "level": 36,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 505,
+      "pAtkRnd": 5,
+      "pDef": 159,
+      "mAtk": 96,
+      "mDef": 142,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1279,
+      "maxMp": 463,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 2507,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.429012345679,
+      "sp": 112
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 785,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman Shaman",
+      "title": "",
+      "level": 37,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 244,
+      "pAtkRnd": 20,
+      "pDef": 140,
+      "mAtk": 104,
+      "mDef": 147,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1338,
+      "maxMp": 480,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 7,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308254200146,
+      "sp": 110
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 786,
+    "template": {
+      "kind": "Monster",
+      "name": "Lienrik",
+      "title": "",
+      "level": 39,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 297,
+      "pAtkRnd": 30,
+      "pDef": 146,
+      "mAtk": 121,
+      "mDef": 158,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 1462,
+      "maxMp": 514,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lienrik_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308349769888,
+      "sp": 126
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 787,
+    "template": {
+      "kind": "Monster",
+      "name": "Lienrik Lad",
+      "title": "",
+      "level": 40,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 317,
+      "pAtkRnd": 30,
+      "pDef": 151,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lienrik_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.513125,
+      "sp": 156
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 788,
+    "template": {
+      "kind": "Monster",
+      "name": "Rakul",
+      "title": "",
+      "level": 35,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 192,
+      "pAtkRnd": 10,
+      "pDef": 169,
+      "mAtk": 89,
+      "mDef": 137,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1220,
+      "maxMp": 446,
+      "revHp": 7.11,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 3,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.730612244898,
+      "sp": 125
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 789,
+    "template": {
+      "kind": "Monster",
+      "name": "Crokian",
+      "title": "",
+      "level": 36,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 187,
+      "pAtkRnd": 30,
+      "pDef": 193,
+      "mAtk": 96,
+      "mDef": 142,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1279,
+      "maxMp": 463,
+      "revHp": 7.11,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 5128,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.542438271605,
+      "sp": 121
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 790,
+    "template": {
+      "kind": "Monster",
+      "name": "Dailaon",
+      "title": "",
+      "level": 37,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 448,
+      "pAtkRnd": 30,
+      "pDef": 200,
+      "mAtk": 104,
+      "mDef": 147,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1338,
+      "maxMp": 480,
+      "revHp": 7.11,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 5127,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.875091307524,
+      "sp": 158
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 793,
+    "template": {
+      "kind": "Monster",
+      "name": "Nos",
+      "title": "",
+      "level": 40,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 30,
+      "pDef": 183,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 14.22,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 26,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 5130,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.406875,
+      "sp": 145
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
     "selfId": 804,
     "template": {
       "kind": "Monster",
@@ -305,6 +854,67 @@
     }
   },
   {
+    "selfId": 989,
+    "template": {
+      "kind": "Monster",
+      "name": "Lageos",
+      "title": "",
+      "level": 38,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 238,
+      "pAtkRnd": 20,
+      "pDef": 188,
+      "mAtk": 112,
+      "mDef": 153,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1400,
+      "maxMp": 497,
+      "revHp": 7.11,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37
+    },
+    "equipment": {
+      "weapon": 182,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.903739612188,
+      "sp": 171
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
     "selfId": 991,
     "template": {
       "kind": "Monster",
@@ -359,6 +969,555 @@
     "rewards": {
       "exp": 2.537777777778,
       "sp": 357
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1034,
+    "template": {
+      "kind": "Monster",
+      "name": "Ogre",
+      "title": "",
+      "level": 38,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 440,
+      "pAtkRnd": 10,
+      "pDef": 141,
+      "mAtk": 112,
+      "mDef": 153,
+      "accur": -3.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1400,
+      "maxMp": 497,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 98,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan1",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.48891966759,
+      "sp": 224
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1638,
+    "template": {
+      "kind": "Monster",
+      "name": "Dread Wolf",
+      "title": "",
+      "level": 35,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 211,
+      "pAtkRnd": 30,
+      "pDef": 154,
+      "mAtk": 89,
+      "mDef": 137,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 26,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1220,
+      "maxMp": 446,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 11
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.88,
+      "sp": 136
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1639,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman",
+      "title": "",
+      "level": 36,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 417,
+      "pAtkRnd": 5,
+      "pDef": 193,
+      "mAtk": 96,
+      "mDef": 142,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1279,
+      "maxMp": 463,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 2507,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.10262345679,
+      "sp": 164
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1640,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman Shaman",
+      "title": "",
+      "level": 37,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 295,
+      "pAtkRnd": 20,
+      "pDef": 116,
+      "mAtk": 104,
+      "mDef": 147,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1338,
+      "maxMp": 480,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 7,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.463111760409,
+      "sp": 124
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1641,
+    "template": {
+      "kind": "Monster",
+      "name": "Ogre",
+      "title": "",
+      "level": 38,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 10,
+      "pDef": 207,
+      "mAtk": 112,
+      "mDef": 153,
+      "accur": -3.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1400,
+      "maxMp": 497,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 98,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.461911357341,
+      "sp": 222
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1642,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman Sniper",
+      "title": "",
+      "level": 39,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 566,
+      "pAtkRnd": 5,
+      "pDef": 165,
+      "mAtk": 121,
+      "mDef": 158,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1462,
+      "maxMp": 514,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 2507,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.145299145299,
+      "sp": 208
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1643,
+    "template": {
+      "kind": "Monster",
+      "name": "Tasaba Lizardman Sniper",
+      "title": "",
+      "level": 39,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 685,
+      "pAtkRnd": 5,
+      "pDef": 137,
+      "mAtk": 121,
+      "mDef": 158,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 47,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 1462,
+      "maxMp": 514,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 2507,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.7258382643,
+      "sp": 264
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1644,
+    "template": {
+      "kind": "Monster",
+      "name": "Lienlik",
+      "title": "",
+      "level": 39,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 297,
+      "pAtkRnd": 30,
+      "pDef": 146,
+      "mAtk": 121,
+      "mDef": 158,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 1462,
+      "maxMp": 514,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lienrik_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308349769888,
+      "sp": 126
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1645,
+    "template": {
+      "kind": "Monster",
+      "name": "Lienlik Ladd",
+      "title": "",
+      "level": 40,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 317,
+      "pAtkRnd": 30,
+      "pDef": 151,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lienrik_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.3975,
+      "sp": 248
     },
     "traits": {
       "race": "beast",
