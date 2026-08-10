@@ -5,6 +5,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 DataCache.init();
 
@@ -41,6 +42,26 @@ function saleItem(item, count = 1, price = 1000) {
 
 const seller = { characterId: 10, name: 'Seller' };
 const now = 100000;
+
+const pricedItem = { price: BotEconomyPricing.scalePrice(800), basePrice: 1000 };
+const priceFloor = BotEconomyPricing.scalePrice(600);
+assert.strictEqual(MarketListingPolicy.listingFloor(pricedItem), priceFloor, 'the listing floor must track the active Adena rate');
+assert.strictEqual(
+    MarketListingPolicy.listingPrice(pricedItem, { market: { supply: { minimumPrice: BotEconomyPricing.scalePrice(750) } } }),
+    Math.floor(BotEconomyPricing.scalePrice(750) * 0.98),
+    'healthy competition should still be undercut by two percent'
+);
+assert.strictEqual(
+    MarketListingPolicy.listingPrice(pricedItem, { market: { supply: { minimumPrice: 1 } } }),
+    priceFloor,
+    'a collapsed competitor price must not pull a new listing below sixty percent of scaled base value'
+);
+let repeatedPrice = pricedItem.price;
+for (let index = 0; index < 500; index++) {
+    repeatedPrice = MarketListingPolicy.listingPrice(pricedItem, { market: { supply: { minimumPrice: repeatedPrice } } });
+}
+assert.strictEqual(repeatedPrice, priceFloor, 'repeated undercutting must converge on the floor instead of one Adena');
+
 const starterDecision = MarketListingPolicy.classify(seller, saleItem(starterWeapon), { states: [], now });
 assert.strictEqual(starterDecision.action, 'npc', 'free starter gear must never enter a private store');
 assert.strictEqual(starterDecision.reason, 'starter_kit');

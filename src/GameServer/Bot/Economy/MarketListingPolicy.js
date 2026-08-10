@@ -1,10 +1,12 @@
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
 const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
 const SPECULATIVE_SUPPLY_LIMIT = 1;
+const MIN_LISTING_BASE_PERCENT = 60;
 
 let newbieItemSource = null;
 let newbieItemIds = new Set();
@@ -73,10 +75,18 @@ function classify(state, item, options = {}) {
     return { action: 'warehouse', reason: 'latent_demand', market };
 }
 
+function listingFloor(item) {
+    const basePrice = Math.max(0, Number(item?.basePrice || 0));
+    if (basePrice <= 0) return 1;
+    return BotEconomyPricing.scalePrice(basePrice * MIN_LISTING_BASE_PERCENT / 100);
+}
+
 function listingPrice(item, decision) {
+    const preferred = Math.max(1, Math.floor(Number(item.price || 0)));
+    const minimum = listingFloor(item);
     const competition = Number(decision?.market?.supply?.minimumPrice || Infinity);
-    if (!Number.isFinite(competition) || competition <= 0) return Number(item.price);
-    return Math.max(1, Math.min(Number(item.price), Math.floor(competition * 0.98)));
+    if (!Number.isFinite(competition) || competition <= 0) return Math.max(minimum, preferred);
+    return Math.max(minimum, Math.min(preferred, Math.floor(competition * 0.98)));
 }
 
 function evaluate(state, options = {}) {
@@ -107,11 +117,13 @@ function evaluate(state, options = {}) {
 
 module.exports = {
     MARKET_GEAR_MIN_BASE_PRICE,
+    MIN_LISTING_BASE_PERCENT,
     SPECULATIVE_GEAR_MIN_BASE_PRICE,
     SPECULATIVE_SUPPLY_LIMIT,
     classify,
     evaluate,
     isGear,
+    listingFloor,
     listingPrice,
     starterItemIds
 };
