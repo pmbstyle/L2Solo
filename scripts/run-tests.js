@@ -169,6 +169,7 @@ const tests = [
     'tests/test_c4_elmore_northeast_coast.js',
     'tests/test_c4_devastated_castle.js',
     'tests/test_c4_ketra_orc_outpost.js',
+    'tests/test_c4_varka_silenos_stronghold.js',
     'tests/test_c4_hot_springs.js',
     'tests/test_c4_wall_of_argos.js',
     'tests/test_c4_shrine_of_loyalty.js',

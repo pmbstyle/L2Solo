@@ -12,6 +12,7 @@ const c4DevilsIsleSkills = require('../../../data/Npcs/Skills/c4_devils_isle_tem
 const c4NecropolisSacrificeSkills = require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice_templates.json');
 const c4DevastatedCastleSkills = require('../../../data/Npcs/Skills/c4_devastated_castle_templates.json');
 const c4KetraOrcOutpostSkills = require('../../../data/Npcs/Skills/c4_ketra_orc_outpost_templates.json');
+const c4VarkaSilenosStrongholdSkills = require('../../../data/Npcs/Skills/c4_varka_silenos_stronghold_templates.json');
 const c4HotSpringsSkills = require('../../../data/Npcs/Skills/c4_hot_springs_templates.json');
 const c4WallOfArgosSkills = require('../../../data/Npcs/Skills/c4_wall_of_argos_templates.json');
 const c4ForgeOfTheGodsSkills = require('../../../data/Npcs/Skills/c4_forge_of_the_gods_templates.json');
@@ -28,6 +29,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
     ...require('../../../data/Npcs/Skills/c4_devastated_castle.json'),
     ...require('../../../data/Npcs/Skills/c4_ketra_orc_outpost.json'),
+    ...require('../../../data/Npcs/Skills/c4_varka_silenos_stronghold.json'),
     ...require('../../../data/Npcs/Skills/c4_hot_springs.json'),
     ...require('../../../data/Npcs/Skills/c4_wall_of_argos.json'),
     ...require('../../../data/Npcs/Skills/c4_shrine_of_loyalty.json'),
@@ -75,7 +77,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 

@@ -714,6 +714,7 @@ const RULES = {
     4665: { skillType: DRAIN, trait: 'magic', target: 'enemy', ssBoost: 1, absorbPart: 1, castRange: 600, effectRange: 1100 },
     4579: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     4561: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, castRange: 150, effectRange: 650 },
+    4562: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     4563: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     4566: { skillType: DAMAGE, trait: 'fire', target: 'enemy', sourceTarget: 'area', radius: 205, ssBoost: 1, castRange: 500, effectRange: 1000 },
     4569: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },

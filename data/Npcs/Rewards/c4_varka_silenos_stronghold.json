@@ -1,0 +1,2961 @@
+[
+  {
+    "selfId": 1350,
+    "template": {
+      "name": "Varka Silenos Recruit"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2758,
+            "max": 5635,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 288,
+            "name": "Carnage Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.317369
+          },
+          {
+            "selfId": 5535,
+            "name": "Carnage Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.682631
+          }
+        ],
+        "overall": 0.3466
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 3,
+            "chance": 45.99387
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 3,
+            "chance": 30.662489
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 6.13228
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 15.331108
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.839657
+          },
+          {
+            "selfId": 5157,
+            "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.040597
+          }
+        ],
+        "overall": 36.7025
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 3957,
+            "name": "Recipe: Blessed Spiritshot S",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3048
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5157,
+            "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3048
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5522,
+            "name": "Sealed Armor of Nightmare Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3355
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1351,
+    "template": {
+      "name": "Varka Silenos Footman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2376,
+            "max": 4855,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 235,
+            "name": "Bloody Orchid",
+            "min": 1,
+            "max": 1,
+            "chance": 0.302216
+          },
+          {
+            "selfId": 5536,
+            "name": "Bloody Orchid Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.697784
+          }
+        ],
+        "overall": 0.2978
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 35.562594
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 37.933419
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 3,
+            "chance": 18.966595
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 4.741649
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.494749
+          },
+          {
+            "selfId": 5162,
+            "name": "Recipe: Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.025103
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 2.275891
+          }
+        ],
+        "overall": 43.8202
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 5.1381
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 23.6352
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5523,
+            "name": "Sealed Majestic Plate Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0123
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1352,
+    "template": {
+      "name": "Grazing Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2524,
+            "max": 5157,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 67.547685
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 3,
+            "chance": 22.515822
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 6.75455
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 2.251517
+          },
+          {
+            "selfId": 5167,
+            "name": "Recipe: Blessed Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.02995
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.900475
+          }
+        ],
+        "overall": 45.7425
+      },
+      {
+        "items": [
+          {
+            "selfId": 5297,
+            "name": "Sealed Dark Crystal Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.198621
+          },
+          {
+            "selfId": 5298,
+            "name": "Sealed Dark Crystal Leggings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.327141
+          },
+          {
+            "selfId": 5301,
+            "name": "Sealed Tallum Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.140203
+          },
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.34233
+          },
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.357635
+          },
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 47.634069
+          }
+        ],
+        "overall": 0.8559
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5162,
+            "name": "Recipe: Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2789
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5527,
+            "name": "Sealed Helm of Nightmare Design",
+            "min": 1,
+            "max": 1,
+            "chance": 7.5038
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5528,
+            "name": "Sealed Majestic Circlet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 7.5038
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1353,
+    "template": {
+      "name": "Varka Silenos Scout"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2782,
+            "max": 5677,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 269,
+            "name": "Blood Tornado",
+            "min": 1,
+            "max": 1,
+            "chance": 0.318564
+          },
+          {
+            "selfId": 5539,
+            "name": "Blood Tornado Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.681436
+          }
+        ],
+        "overall": 0.3453
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 33.649443
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 50.474387
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 5.047372
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 10.094744
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.658401
+          },
+          {
+            "selfId": 6901,
+            "name": "Recipe: Shining Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.075653
+          }
+        ],
+        "overall": 44.9422
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 46.0775
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 6.0101
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5538,
+            "name": "Dragon Grinder Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 1.8958
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1354,
+    "template": {
+      "name": "Varka Silenos Hunter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2756,
+            "max": 5626,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 288,
+            "name": "Carnage Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.317827
+          },
+          {
+            "selfId": 5535,
+            "name": "Carnage Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.682173
+          }
+        ],
+        "overall": 0.3461
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 30.232451
+          },
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.032133
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 18.139356
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 29.023142
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 4.836951
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.418619
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 7.25557
+          },
+          {
+            "selfId": 6671,
+            "name": "Deluxe Chest Key - Grade 7",
+            "min": 1,
+            "max": 1,
+            "chance": 8.061777
+          }
+        ],
+        "overall": 34.8546
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5282,
+            "name": "Recipe: Greater Blessed Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3044
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5541,
+            "name": "Tallum Glaive Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 1.8784
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6901,
+            "name": "Recipe: Shining Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.6849
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1355,
+    "template": {
+      "name": "Varka Silenos Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2672,
+            "max": 5453,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 270,
+            "name": "Dragon Grinder",
+            "min": 1,
+            "max": 1,
+            "chance": 0.259548
+          },
+          {
+            "selfId": 5538,
+            "name": "Dragon Grinder Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.740452
+          }
+        ],
+        "overall": 0.2697
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.002687
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 67.565959
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 3,
+            "chance": 22.521917
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 6.756472
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 2.252088
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.900877
+          }
+        ],
+        "overall": 48.3862
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5272,
+            "name": "Recipe: Greater Soulshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2951
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5495,
+            "name": "Sealed Shield of Nightmare Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 10.0838
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5502,
+            "name": "Sealed Boots of Nightmare Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 11.2155
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1356,
+    "template": {
+      "name": "Grazing Nepenthes"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2671,
+            "max": 5451,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 289,
+            "name": "Soul Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.259451
+          },
+          {
+            "selfId": 5534,
+            "name": "Soul Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.740549
+          }
+        ],
+        "overall": 0.2698
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.023546
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 40,
+            "max": 120,
+            "chance": 18.404112
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 39.262288
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 26.174789
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 13.087289
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 2.066392
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.981583
+          }
+        ],
+        "overall": 47.566
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 11.0642
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5277,
+            "name": "Recipe: Greater Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2949
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5503,
+            "name": "Sealed Majestic Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 11.2119
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1357,
+    "template": {
+      "name": "Varka Silenos Priest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2899,
+            "max": 5918,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 289,
+            "name": "Soul Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.239071
+          },
+          {
+            "selfId": 5534,
+            "name": "Soul Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.760929
+          }
+        ],
+        "overall": 0.2928
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003632
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 3,
+            "chance": 46.010766
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 3,
+            "chance": 30.673844
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 6.134509
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 15.336922
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.840327
+          }
+        ],
+        "overall": 38.5475
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1808,
+            "name": "Recipe: Soulshot: S Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3202
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 14.4105
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.2332
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1358,
+    "template": {
+      "name": "Varka Silenos Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3038,
+            "max": 6202,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 236,
+            "name": "Soul Separator",
+            "min": 1,
+            "max": 1,
+            "chance": 0.260841
+          },
+          {
+            "selfId": 5537,
+            "name": "Soul Separator Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.739159
+          }
+        ],
+        "overall": 0.3067
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.031694
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 49.705142
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 2,
+            "max": 6,
+            "chance": 13.254521
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 3,
+            "chance": 26.509292
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 6.627136
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.691289
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 3.180925
+          }
+        ],
+        "overall": 40.0701
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 3036,
+            "name": "Recipe: Spiritshot S",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3356
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3887
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5487,
+            "name": "Sealed Robe of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.4007
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1359,
+    "template": {
+      "name": "Grazing Bandersnatch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2813,
+            "max": 5760,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 236,
+            "name": "Soul Separator",
+            "min": 1,
+            "max": 1,
+            "chance": 0.246046
+          },
+          {
+            "selfId": 5537,
+            "name": "Soul Separator Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.753954
+          }
+        ],
+        "overall": 0.2845
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.02543
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 26.548653
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 15.929192
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 25.486837
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 12.743311
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 18.20476
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.061817
+          }
+        ],
+        "overall": 46.4016
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 11.6775
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5157,
+            "name": "Recipe: Soulshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3114
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5523,
+            "name": "Sealed Majestic Plate Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3861
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1360,
+    "template": {
+      "name": "Varka Silenos Medium"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 4077,
+            "max": 8348,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 236,
+            "name": "Soul Separator",
+            "min": 1,
+            "max": 1,
+            "chance": 0.266731
+          },
+          {
+            "selfId": 5537,
+            "name": "Soul Separator Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.733269
+          }
+        ],
+        "overall": 0.4124
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.00488
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 54.210823
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 4,
+            "max": 12,
+            "chance": 20.329028
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 8.131514
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 16.263271
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.060484
+          }
+        ],
+        "overall": 40.9813
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 67.6905
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5162,
+            "name": "Recipe: Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4513
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5527,
+            "name": "Sealed Helm of Nightmare Design",
+            "min": 1,
+            "max": 1,
+            "chance": 12.1396
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1361,
+    "template": {
+      "name": "Varka Silenos Magus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2718,
+            "max": 5566,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003106
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 35.850554
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 2,
+            "max": 6,
+            "chance": 20.165813
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 2,
+            "max": 6,
+            "chance": 16.132594
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 3,
+            "max": 9,
+            "chance": 13.443781
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 7,
+            "max": 21,
+            "chance": 7.68212
+          },
+          {
+            "selfId": 6672,
+            "name": "Deluxe Chest Key - Grade 8",
+            "min": 1,
+            "max": 1,
+            "chance": 6.722032
+          }
+        ],
+        "overall": 35.4134
+      },
+      {
+        "items": [
+          {
+            "selfId": 5311,
+            "name": "Sealed Armor of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.263004
+          },
+          {
+            "selfId": 5316,
+            "name": "Sealed Majestic Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.263004
+          },
+          {
+            "selfId": 5522,
+            "name": "Sealed Armor of Nightmare Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 49.736996
+          },
+          {
+            "selfId": 5523,
+            "name": "Sealed Majestic Plate Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 49.736996
+          }
+        ],
+        "overall": 0.3422
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0376
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5514,
+            "name": "Sealed Gauntlets of Nightmare Design",
+            "min": 1,
+            "max": 1,
+            "chance": 11.4331
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6901,
+            "name": "Recipe: Shining Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.677
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1362,
+    "template": {
+      "name": "Varka Silenos Officer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3195,
+            "max": 6545,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.054105
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 84.936305
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 4.768164
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529895
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.181636
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529895
+          }
+        ],
+        "overall": 28.8329
+      },
+      {
+        "items": [
+          {
+            "selfId": 5326,
+            "name": "Sealed Nightmare Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.281743
+          },
+          {
+            "selfId": 5329,
+            "name": "Sealed Majestic Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.281743
+          },
+          {
+            "selfId": 5487,
+            "name": "Sealed Robe of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.718257
+          },
+          {
+            "selfId": 5488,
+            "name": "Sealed Majestic Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.718257
+          }
+        ],
+        "overall": 0.5324
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5282,
+            "name": "Recipe: Greater Blessed Spiritshot (S) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3537
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5515,
+            "name": "Sealed Majestic Gauntlets Design",
+            "min": 1,
+            "max": 1,
+            "chance": 13.4421
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6901,
+            "name": "Recipe: Shining Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7959
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1363,
+    "template": {
+      "name": "Grazing Flava"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 2968,
+            "max": 6057,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004357
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 4,
+            "max": 12,
+            "chance": 18.829706
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 3,
+            "chance": 50.21286
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 25.106274
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 3.96405
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.882753
+          }
+        ],
+        "overall": 32.1338
+      },
+      {
+        "items": [
+          {
+            "selfId": 5313,
+            "name": "Sealed Gauntlets of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.162057
+          },
+          {
+            "selfId": 5314,
+            "name": "Sealed Boots of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.162057
+          },
+          {
+            "selfId": 5318,
+            "name": "Sealed Majestic Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 0.162057
+          },
+          {
+            "selfId": 5319,
+            "name": "Sealed Majestic Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.162057
+          },
+          {
+            "selfId": 5502,
+            "name": "Sealed Boots of Nightmare Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.837943
+          },
+          {
+            "selfId": 5503,
+            "name": "Sealed Majestic Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.837943
+          },
+          {
+            "selfId": 5514,
+            "name": "Sealed Gauntlets of Nightmare Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.837943
+          },
+          {
+            "selfId": 5515,
+            "name": "Sealed Majestic Gauntlets Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.837943
+          }
+        ],
+        "overall": 1.8512
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2949
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 25.875
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 12.2906
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1364,
+    "template": {
+      "name": "Varka Silenos Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3760,
+            "max": 7675,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.031426
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 32.884628
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 19.730737
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 31.569139
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 5.261356
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 2.630578
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 7.892135
+          }
+        ],
+        "overall": 49.9586
+      },
+      {
+        "items": [
+          {
+            "selfId": 5312,
+            "name": "Sealed Helm of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.187856
+          },
+          {
+            "selfId": 5315,
+            "name": "Sealed Shield of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.270733
+          },
+          {
+            "selfId": 5317,
+            "name": "Sealed Majestic Circlet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.187856
+          },
+          {
+            "selfId": 5495,
+            "name": "Sealed Shield of Nightmare Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 38.587767
+          },
+          {
+            "selfId": 5527,
+            "name": "Sealed Helm of Nightmare Design",
+            "min": 1,
+            "max": 1,
+            "chance": 30.382894
+          },
+          {
+            "selfId": 5528,
+            "name": "Sealed Majestic Circlet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 30.382894
+          }
+        ],
+        "overall": 1.8099
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 6691,
+            "name": "Angel Slayer Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0197
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6693,
+            "name": "Dragon Hunter Axe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0563
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6694,
+            "name": "Saint Spear Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0563
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1365,
+    "template": {
+      "name": "Varka Silenos Great Magus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3267,
+            "max": 6667,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003462
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 38.43393
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 2,
+            "max": 6,
+            "chance": 21.619031
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 2,
+            "max": 6,
+            "chance": 17.295182
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 3,
+            "max": 9,
+            "chance": 14.412615
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 7,
+            "max": 21,
+            "chance": 8.23578
+          }
+        ],
+        "overall": 46.2227
+      },
+      {
+        "items": [
+          {
+            "selfId": 5320,
+            "name": "Sealed Leather Armor of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.277264
+          },
+          {
+            "selfId": 5323,
+            "name": "Sealed Majestic Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.277264
+          },
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.722736
+          },
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.722736
+          }
+        ],
+        "overall": 0.541
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0325
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6688,
+            "name": "Forgotten Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 1.755
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6689,
+            "name": "Basalt Battlehammer Head",
+            "min": 1,
+            "max": 1,
+            "chance": 1.7219
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1366,
+    "template": {
+      "name": "Varka Silenos General"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3605,
+            "max": 7357,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.054223
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 84.936411
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 4.768257
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529798
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.181512
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529798
+          }
+        ],
+        "overall": 32.4584
+      },
+      {
+        "items": [
+          {
+            "selfId": 5311,
+            "name": "Sealed Armor of Nightmare",
+            "min": 1,
+            "max": 1,
+            "chance": 0.264901
+          },
+          {
+            "selfId": 5316,
+            "name": "Sealed Majestic Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.264901
+          },
+          {
+            "selfId": 5522,
+            "name": "Sealed Armor of Nightmare Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 49.735099
+          },
+          {
+            "selfId": 5523,
+            "name": "Sealed Majestic Plate Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 49.735099
+          }
+        ],
+        "overall": 0.453
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 6698,
+            "name": "Sealed Tateossian Earring Part",
+            "min": 1,
+            "max": 1,
+            "chance": 17.5995
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6699,
+            "name": "Sealed Tateossian Ring Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 19.529
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6700,
+            "name": "Sealed Tateossian Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 10.7266
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1367,
+    "template": {
+      "name": "Grazing Elder Antelope"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3115,
+            "max": 6359,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 289,
+            "name": "Soul Bow",
+            "min": 1,
+            "max": 1,
+            "chance": 0.25421
+          },
+          {
+            "selfId": 5534,
+            "name": "Soul Bow Stave",
+            "min": 1,
+            "max": 1,
+            "chance": 99.74579
+          }
+        ],
+        "overall": 0.3147
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.040646
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 63.703313
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 29.12153
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 2.03847
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.698591
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 3.397449
+          }
+        ],
+        "overall": 37.3957
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 6710,
+            "name": "Sealed Draconic Leather Helmet Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 12.5593
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6711,
+            "name": "Sealed Major Arcana Robe Part",
+            "min": 1,
+            "max": 1,
+            "chance": 3.8361
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6712,
+            "name": "Sealed Major Arcana Gloves fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 11.0234
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1368,
+    "template": {
+      "name": "Varka Silenos Great Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 4362,
+            "max": 8904,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 236,
+            "name": "Soul Separator",
+            "min": 1,
+            "max": 1,
+            "chance": 0.249773
+          },
+          {
+            "selfId": 5537,
+            "name": "Soul Separator Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.750227
+          }
+        ],
+        "overall": 0.4404
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003861
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 3,
+            "max": 9,
+            "chance": 32.709128
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 2,
+            "max": 6,
+            "chance": 9.812631
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 19.625477
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 28.036273
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.635403
+          },
+          {
+            "selfId": 6672,
+            "name": "Deluxe Chest Key - Grade 8",
+            "min": 1,
+            "max": 1,
+            "chance": 8.177228
+          }
+        ],
+        "overall": 46.6246
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4337
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 7,
+            "chance": 77.4442
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 18.0702
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1369,
+    "template": {
+      "name": "Varka's Commander"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 4498,
+            "max": 9212,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 305,
+            "name": "Tallum Glaive",
+            "min": 1,
+            "max": 1,
+            "chance": 0.263794
+          },
+          {
+            "selfId": 5541,
+            "name": "Tallum Glaive Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 99.736206
+          }
+        ],
+        "overall": 0.4549
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.042586
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 150,
+            "max": 450,
+            "chance": 8.92487
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 4,
+            "max": 12,
+            "chance": 26.774384
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 42.839151
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 7.13967
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 3.569722
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 10.709618
+          }
+        ],
+        "overall": 44.1463
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5167,
+            "name": "Recipe: Blessed Spiritshot (S) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.498
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5528,
+            "name": "Sealed Majestic Circlet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 13.3959
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5529,
+            "name": "Dragon Slayer Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0739
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1371,
+    "template": {
+      "name": "Varka's Head Magus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 3504,
+            "max": 7154,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 236,
+            "name": "Soul Separator",
+            "min": 1,
+            "max": 1,
+            "chance": 0.254381
+          },
+          {
+            "selfId": 5537,
+            "name": "Soul Separator Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.745619
+          }
+        ],
+        "overall": 0.3538
+      },
+      {
+        "items": [
+          {
+            "selfId": 960,
+            "name": "Scroll: Enchant Armor (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.054191
+          },
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 84.936603
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 4.768137
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529825
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.181418
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 4.529825
+          }
+        ],
+        "overall": 31.5553
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 6713,
+            "name": "Sealed Major Arcana Boots Design",
+            "min": 1,
+            "max": 1,
+            "chance": 12.4021
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 6714,
+            "name": "Sealed Major Arcana Circlet Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 14.1303
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 7579,
+            "name": "Draconic Bow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 1.9046
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1373,
+    "template": {
+      "name": "Varka's Prophet"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 5113,
+            "max": 10480,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.010829
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 80.313067
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 5.621691
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 4.684804
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 9.369609
+          }
+        ],
+        "overall": 26.7802
+      },
+      {
+        "items": [
+          {
+            "selfId": 5326,
+            "name": "Sealed Nightmare Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.281558
+          },
+          {
+            "selfId": 5329,
+            "name": "Sealed Majestic Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.281558
+          },
+          {
+            "selfId": 5487,
+            "name": "Sealed Robe of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.718442
+          },
+          {
+            "selfId": 5488,
+            "name": "Sealed Majestic Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 49.718442
+          }
+        ],
+        "overall": 0.8524
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 959,
+            "name": "Scroll: Enchant Weapon (Grade S)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.051
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 7,
+            "chance": 91.0171
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 25.4848
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
