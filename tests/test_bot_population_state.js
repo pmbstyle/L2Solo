@@ -89,6 +89,28 @@ try {
         assert(fulfilledPlanMigration, 'startup must discard equipment plans whose exact target slot is already equipped');
         assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');
         assert(fulfilledPlanMigration.sql.includes("'$.partyRequest'"), 'finishing a persisted gear target must clear its obsolete party request');
+        const reconciledPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: { target: { selfId: 878, slot: 5 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                878: { selfId: 878, amount: 2, equipped: true, equippedSlots: [4, 5], slot: 4 }
+            }
+        });
+        assert.strictEqual(reconciledPlan.stats.equipmentPlan, undefined,
+            'every runtime persistence path must discard a plan already fulfilled by a paired paperdoll slot');
+        assert.strictEqual(reconciledPlan.stats.partyRequest, undefined,
+            'runtime plan reconciliation must clear the obsolete party request too');
+        const reconciledDagger = BotLifeState.reconcileEquipmentInventory({
+            level: 20,
+            stats: { classId: 7, role: 'dagger' },
+            inventory: {
+                625: { selfId: 625, name: 'Bone Shield', amount: 1, equipped: true, equippedSlots: [8], slot: 8 }
+            }
+        });
+        assert.strictEqual(reconciledDagger.inventory['625'].equipped, false,
+            'class-aware lifecycle reconciliation must remove a shield after a class transition');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },

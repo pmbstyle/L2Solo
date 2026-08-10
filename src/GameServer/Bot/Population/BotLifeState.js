@@ -9,6 +9,7 @@ const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
@@ -143,6 +144,46 @@ function equipmentSummaryFromInventory(inventory = {}) {
             kind: item.kind || ''
         })))
         .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
+}
+
+function equipmentTargetFulfilled(stats = {}, inventory = {}) {
+    const target = stats.equipmentPlan?.target;
+    const selfId = Number(target?.selfId || 0);
+    const slot = Number(target?.slot || 0);
+    if (selfId <= 0 || slot <= 0) return false;
+    const item = inventory[String(selfId)];
+    return !!item?.equipped
+        && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(slot);
+}
+
+function reconcileFulfilledEquipmentPlan(state = {}) {
+    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
+    const stats = { ...(state.stats || {}) };
+    delete stats.equipmentPlan;
+    delete stats.partyRequest;
+    return { ...state, stats };
+}
+
+function reconcileEquipmentInventory(state = {}) {
+    const inventory = GearAcquisitionPlanner.equipInventoryUpgrades(state, state.inventory || {});
+    return reconcileFulfilledEquipmentPlan({
+        ...state,
+        inventory,
+        stats: {
+            ...(state.stats || {}),
+            equipment: equipmentSummaryFromInventory(inventory)
+        }
+    });
+}
+
+function hasIncompatibleShield(state = {}) {
+    const classId = Number(state.stats?.classId || 0);
+    const role = state.stats?.role || BotRoles.inferRole(classId);
+    if (BotEquipmentCompatibility.usesShield(role, classId)) return false;
+    return Object.values(state.inventory || {}).some((item) => (
+        Number(itemTemplate(item?.selfId)?.etc?.slot || item?.slot || 0) === 8
+        && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(8)
+    ));
 }
 
 function inventoryAdena(inventory) {
@@ -332,35 +373,36 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
+    const persistedState = reconcileFulfilledEquipmentPlan(state);
     return {
-        characterId: state.characterId,
-        accountName: state.accountName || '',
-        characterName: state.name || '',
-        level: Number(state.level || 1),
-        exp: Number(state.exp || 0),
-        sp: Number(state.sp || 0),
-        adena: Number(state.adena || 0),
-        homeRegion: state.homeRegion || null,
-        currentRegion: state.currentRegion || null,
-        spotId: state.spotId || null,
-        activity: state.activity || 'hunting',
-        phase: state.phase || 'cold',
-        activityStartedAt: state.timing?.activityStartedAt || null,
-        nextResolveAt: state.timing?.nextResolveAt || null,
-        lastResolvedAt: state.timing?.lastResolvedAt || null,
-        lastHotAt: state.timing?.lastHotAt || null,
-        locX: state.loc?.locX || 0,
-        locY: state.loc?.locY || 0,
-        locZ: state.loc?.locZ || 0,
-        hp: state.vitals?.hp || 0,
-        maxHp: state.vitals?.maxHp || 0,
-        mp: state.vitals?.mp || 0,
-        maxMp: state.vitals?.maxMp || 0,
-        targetLevelBand: state.levelBand || levelBand(state.level),
-        deathCount: state.stats?.deaths || 0,
-        partyId: state.party?.partyId || null,
-        inventorySummary: safeJson(state.inventory || {}),
-        statsJson: safeJson(state.stats || {}),
+        characterId: persistedState.characterId,
+        accountName: persistedState.accountName || '',
+        characterName: persistedState.name || '',
+        level: Number(persistedState.level || 1),
+        exp: Number(persistedState.exp || 0),
+        sp: Number(persistedState.sp || 0),
+        adena: Number(persistedState.adena || 0),
+        homeRegion: persistedState.homeRegion || null,
+        currentRegion: persistedState.currentRegion || null,
+        spotId: persistedState.spotId || null,
+        activity: persistedState.activity || 'hunting',
+        phase: persistedState.phase || 'cold',
+        activityStartedAt: persistedState.timing?.activityStartedAt || null,
+        nextResolveAt: persistedState.timing?.nextResolveAt || null,
+        lastResolvedAt: persistedState.timing?.lastResolvedAt || null,
+        lastHotAt: persistedState.timing?.lastHotAt || null,
+        locX: persistedState.loc?.locX || 0,
+        locY: persistedState.loc?.locY || 0,
+        locZ: persistedState.loc?.locZ || 0,
+        hp: persistedState.vitals?.hp || 0,
+        maxHp: persistedState.vitals?.maxHp || 0,
+        mp: persistedState.vitals?.mp || 0,
+        maxMp: persistedState.vitals?.maxMp || 0,
+        targetLevelBand: persistedState.levelBand || levelBand(persistedState.level),
+        deathCount: persistedState.stats?.deaths || 0,
+        partyId: persistedState.party?.partyId || null,
+        inventorySummary: safeJson(persistedState.inventory || {}),
+        statsJson: safeJson(persistedState.stats || {}),
         updatedAt: now()
     };
 }
@@ -514,7 +556,7 @@ function applyClassProgression(state, profile = {}) {
             }
         };
         if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-        return refreshColdCombatProfile(progressedState);
+        return refreshColdCombatProfile(reconcileEquipmentInventory(progressedState));
     });
 }
 
@@ -949,6 +991,22 @@ function discardFulfilledEquipmentPlans() {
     });
 }
 
+function reconcileIncompatibleShields() {
+    const affected = [...cache.values()].filter(hasIncompatibleShield);
+    return affected.reduce((chain, state) => chain.then(() => {
+        const reconciled = reconcileEquipmentInventory(state);
+        const row = rowFromState(reconciled);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, reconciled.inventory))
+            .then(() => cache.set(row.characterId, normalize(row)));
+    }), Promise.resolve()).then(() => {
+        if (affected.length > 0) {
+            utils.infoWarn('BotLife', 'unequipped %d incompatible persisted shields on startup', affected.length);
+        }
+        return affected.length;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
@@ -974,7 +1032,9 @@ const BotLifeState = {
                     .then(() => {
                         cache.set(state.characterId, state);
                     });
-            }), Promise.resolve()).then(() => count);
+            }), Promise.resolve())
+                .then(() => reconcileIncompatibleShields())
+                .then(() => count);
         }).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
@@ -1837,9 +1897,10 @@ const BotLifeState = {
                 }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+            const equippedProgressedState = reconcileEquipmentInventory(progressedState);
             const profileReady = needsClassProgression
-                ? refreshColdCombatProfile(progressedState)
-                : Promise.resolve(progressedState);
+                ? refreshColdCombatProfile(equippedProgressedState)
+                : Promise.resolve(equippedProgressedState);
 
             return profileReady.then((profiledState) => {
                 const row = rowFromState(profiledState);
@@ -2421,5 +2482,7 @@ const BotLifeState = {
 BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
 BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
+BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
+BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
 
 module.exports = BotLifeState;

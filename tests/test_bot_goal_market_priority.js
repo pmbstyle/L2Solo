@@ -64,6 +64,12 @@ async function run() {
     assert.strictEqual(reviewedSpot, persistedSpot,
         'a transit goal review must retain its persisted return spot instead of reporting missing_spot');
 
+    const plannedSpot = { id: 'planned_spot' };
+    SpotProfiles.findById = (spotId) => spotId === plannedSpot.id ? plannedSpot : null;
+    assert.strictEqual(GoalService.reviewSpot({ activity: 'merchant' }, null, {
+        plan: { spotId: plannedSpot.id }
+    }), plannedSpot, 'a blocked goal must retain its own planned spot when lifecycle routing has no active spot');
+
     const waitingForMarket = NeedsEvaluator.evaluate({
         characterId: 10,
         level: 30,
