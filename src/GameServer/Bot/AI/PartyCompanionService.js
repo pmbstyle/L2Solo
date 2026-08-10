@@ -768,6 +768,8 @@ function detachState(companionSession, plan = 'hunting') {
     companionSession.botStay = false;
     companionSession.stayLocation = null;
     companionSession.currentTargetId = undefined;
+    companionSession.incomingThreatId = undefined;
+    companionSession.incomingThreatAt = undefined;
     companionSession.partyPuller = false;
     companionSession.roleDecision = null;
     companionSession.actor?.unselect?.();
