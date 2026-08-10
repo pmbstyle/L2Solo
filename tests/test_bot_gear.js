@@ -117,8 +117,8 @@ assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKin
     'Sword Singer must not inherit caster weapon compatibility from the shared buffer role');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 34), false,
     'Bladedancer must not inherit caster weapon compatibility from the shared buffer role');
-assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.Blunt'],
-    'Titan must inherit the Destroyer blunt preference through its normalized parent class');
+assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],
+    'Titan must inherit the full Destroyer weapon profile through its normalized parent class');
 assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
     'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
@@ -194,6 +194,28 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 }));
 assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchSelfId()), [262],
     'an Orc Monk must recognize traded Scallop Jamadhr as a safe replacement for an equipped Bone Staff');
+
+const singerRobe = wearable(1125, { kind: 'Armor.Fabric', slot: 10, pDef: 80, maxMp: 100, rank: 'c' });
+const singerHeavy = wearable(1126, { kind: 'Armor.Chain', slot: 10, pDef: 60, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 21,
+    level: 44,
+    items: [singerRobe, singerHeavy],
+    paperdoll: {}
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1126],
+    'a Sword Singer must accept heavy armor and reject robes during live upgrades');
+
+const monkHeavy = wearable(1127, { kind: 'Armor.Chain', slot: 10, pDef: 80, rank: 'c' });
+const monkLight = wearable(1128, { kind: 'Armor.Leather', slot: 10, pDef: 60, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 47,
+    level: 44,
+    items: [monkHeavy, monkLight],
+    paperdoll: {}
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1128],
+    'an Orc Monk must accept light armor and reject heavy armor during live upgrades');
 
 const movingTradeSession = upgradeSession({
     classId: 29,

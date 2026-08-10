@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
@@ -48,14 +49,8 @@ function rankAllowed(item, actor) {
     return itemIndex <= actorIndex;
 }
 
-function armorStyleFor(role) {
-    if (role === 'mage' || role === 'healer' || role === 'buffer') return 'robe';
-    if (role === 'archer' || role === 'dagger') return 'light';
-    return 'heavy';
-}
-
-function armorKindsFor(role, slot) {
-    const style = armorStyleFor(role);
+function armorKindsFor(role, classId, slot) {
+    const style = BotEquipmentCompatibility.armorStyleFor(role, classId);
     if ([ARMOR_SLOTS.chest, ARMOR_SLOTS.pants, ARMOR_SLOTS.fullArmor].includes(Number(slot))) {
         if (style === 'robe') return ['Armor.Fabric'];
         if (style === 'light') return ['Armor.Leather'];
@@ -71,8 +66,8 @@ function armorKindsFor(role, slot) {
     return [];
 }
 
-function isUnsafeFullBodyRobe(role, item, slot) {
-    return ['mage', 'healer', 'buffer'].includes(role) &&
+function isUnsafeFullBodyRobe(role, classId, item, slot) {
+    return BotEquipmentCompatibility.armorStyleFor(role, classId) === 'robe' &&
         Number(slot) === ARMOR_SLOTS.fullArmor &&
         item.fetchKind() === 'Armor.Fabric' &&
         item.fetchRank?.() === 'none';
@@ -84,6 +79,7 @@ function isSuitableItem(actor, item) {
     if (item.fetchPrice?.() <= 0) return false;
 
     const role = BotRoles.inferRole(actor);
+    const classId = actor.fetchClassId();
     const kind = item.fetchKind();
     const slot = Number(item.fetchSlot());
 
@@ -94,18 +90,17 @@ function isSuitableItem(actor, item) {
             item.fetchPAtk(),
             item.fetchMAtk(),
             role,
-            actor.fetchClassId()
+            classId
         )) return false;
-        if (!['mage', 'healer', 'buffer', 'archer'].includes(role)
-            && !BotWeaponCompatibility.isFistClass(actor.fetchClassId())
-            && slot !== ARMOR_SLOTS.weapon) return false;
+        if (slot === ARMOR_SLOTS.dual
+            && !BotEquipmentCompatibility.allowsTwoHandedWeapon(kind, role, classId)) return false;
         return true;
     }
 
     if (item.isArmor()) {
-        if (slot === ARMOR_SLOTS.shield && ['mage', 'healer', 'buffer', 'archer', 'dagger'].includes(role)) return false;
-        if (isUnsafeFullBodyRobe(role, item, slot)) return false;
-        return armorKindsFor(role, slot).includes(kind);
+        if (slot === ARMOR_SLOTS.shield && !BotEquipmentCompatibility.usesShield(role, classId)) return false;
+        if (isUnsafeFullBodyRobe(role, classId, item, slot)) return false;
+        return armorKindsFor(role, classId, slot).includes(kind);
     }
 
     return false;

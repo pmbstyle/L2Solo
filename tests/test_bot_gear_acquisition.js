@@ -318,7 +318,7 @@ assert(malformedCatalogWeapon, 'the malformed legacy catalog row must remain cov
 assert.strictEqual(GearAcquisitionPlanner.isRealCatalogItem(malformedCatalogWeapon), false, 'an anonymous catalog row must never count as a real item');
 assert.strictEqual(GearAcquisitionPlanner.suitable(malformedCatalogWeapon, { level: 20, stats: { classId: 0, role: 'dps' } }, 'dps'), false, 'an anonymous catalog row must never enter bot equipment selection');
 assert.notStrictEqual(Number(entryDTarget.item.selfId), 749, 'a bot must not set an anonymous catalog row as its D-grade goal');
-const entryDArcherTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 3, role: 'archer' }, inventory: {} });
+const entryDArcherTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 9, role: 'archer' }, inventory: {} });
 assert(entryDArcherTarget, 'an archer must retain a D-grade target when every entry bow is above the early cap');
 assert.strictEqual(entryDArcherTarget.item.template.kind, 'Weapon.Bow', 'an archer must keep weapon-first progression even when its entry bow exceeds the cap');
 assert(Number.isFinite(GearAcquisitionPlanner.progressionPriceCap('d', 39)), 'D-grade planning must retain an adequate-kit ceiling through the whole grade band');

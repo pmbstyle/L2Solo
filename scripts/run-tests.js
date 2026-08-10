@@ -62,6 +62,7 @@ const tests = [
     'tests/test_bot_ambient_director.js',
     'tests/test_bot_death_respawn.js',
     'tests/test_bot_gear.js',
+    'tests/test_bot_equipment_compatibility.js',
     'tests/test_bot_economy_pricing.js',
     'tests/test_bot_gear_acquisition.js',
     'tests/test_bot_gear_skill_hints.js',

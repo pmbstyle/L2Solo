@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
@@ -94,12 +95,6 @@ function isCraftService(state = {}) {
         && (Boolean(state.stats?.craftStationId) || Number(state.stats?.generatedIndex || 0) >= 10000);
 }
 
-function armorKindFor(role) {
-    if (['mage', 'healer', 'buffer'].includes(role)) return 'Armor.Fabric';
-    if (['archer', 'dagger'].includes(role)) return 'Armor.Leather';
-    return 'Armor.Chain';
-}
-
 function inventoryMap(inventory = {}) {
     return Array.isArray(inventory)
         ? new Map(inventory.map((item) => [Number(item.selfId), Number(item.amount || 0)]))
@@ -175,16 +170,20 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     if (rank !== requiredRank) return false;
     const kind = item.template?.kind || '';
     const slot = Number(item.etc?.slot || 0);
+    const classId = classIdFor(state);
     if (WEAPON_SLOTS.has(slot)) return BotWeaponCompatibility.isSuitableWeapon(
         kind,
         item.template?.name,
         item.stats?.pAtk,
         item.stats?.mAtk,
         role,
-        classIdFor(state)
+        classId
+    ) && (
+        slot === 7
+        || BotEquipmentCompatibility.allowsTwoHandedWeapon(kind, role, classId)
     );
-    if (slot === 8) return !['mage', 'healer', 'buffer', 'archer', 'dagger'].includes(role) && kind === 'Armor.Shield';
-    if ([10, 11, 15].includes(slot)) return kind === armorKindFor(role);
+    if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId) && kind === 'Armor.Shield';
+    if ([10, 11, 15].includes(slot)) return kind === BotEquipmentCompatibility.armorKindFor(role, classId);
     if ([6, 9, 12].includes(slot)) return kind === 'Armor.Wear';
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
