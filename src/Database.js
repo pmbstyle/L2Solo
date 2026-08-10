@@ -512,6 +512,73 @@ const Database = {
         }, 'inventory:sync-summary'));
     },
 
+    compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {
+        const ids = [...new Set((selfIds || []).map(Number).filter((selfId) => selfId > 0))];
+        if (!ids.length) return Promise.resolve({ skipped: true, reason: 'no_stackable_items', rowsRemoved: 0, groups: 0 });
+        return inTransaction(() => {
+            const completed = one('SELECT completedAt FROM maintenance_tasks WHERE name = ?', [taskName]);
+            if (completed) return { skipped: true, reason: 'already_completed', completedAt: Number(completed.completedAt), rowsRemoved: 0, groups: 0 };
+
+            connection.exec(`
+                DROP TABLE IF EXISTS temp.stackable_item_ids;
+                DROP TABLE IF EXISTS temp.stackable_inventory_compaction;
+                CREATE TEMP TABLE stackable_item_ids (selfId INTEGER PRIMARY KEY);
+            `);
+            const insertId = connection.prepare('INSERT OR IGNORE INTO stackable_item_ids(selfId) VALUES (?)');
+            ids.forEach((selfId) => insertId.run(selfId));
+            connection.exec(`
+                CREATE TEMP TABLE stackable_inventory_compaction AS
+                SELECT items.characterId,
+                       items.selfId,
+                       MIN(items.id) AS keeperId,
+                       SUM(items.amount) AS totalAmount,
+                       COUNT(*) AS rowCount
+                FROM items
+                INNER JOIN stackable_item_ids ON stackable_item_ids.selfId = items.selfId
+                WHERE items.equipped = 0
+                  AND items.slot = 0
+                  AND items.petData IS NULL
+                  AND items.amount > 0
+                GROUP BY items.characterId, items.selfId
+                HAVING COUNT(*) > 1;
+            `);
+            const summary = one(`SELECT COUNT(*) AS groups,
+                COALESCE(SUM(rowCount - 1), 0) AS duplicateRows
+                FROM stackable_inventory_compaction`);
+            write(`UPDATE items
+                SET amount = (
+                    SELECT totalAmount
+                    FROM stackable_inventory_compaction compact
+                    WHERE compact.keeperId = items.id
+                )
+                WHERE id IN (SELECT keeperId FROM stackable_inventory_compaction)`);
+            const removed = write(`DELETE FROM items
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM stackable_inventory_compaction compact
+                    WHERE compact.characterId = items.characterId
+                      AND compact.selfId = items.selfId
+                      AND items.id <> compact.keeperId
+                      AND items.equipped = 0
+                      AND items.slot = 0
+                      AND items.petData IS NULL
+                )`);
+            const completedAt = now();
+            write('INSERT INTO maintenance_tasks(name, completedAt) VALUES (?, ?)', [taskName, completedAt]);
+            connection.exec(`
+                DROP TABLE stackable_inventory_compaction;
+                DROP TABLE stackable_item_ids;
+            `);
+            return {
+                skipped: false,
+                completedAt,
+                rowsRemoved: Number(removed.affectedRows || 0),
+                groups: Number(summary?.groups || 0),
+                expectedRowsRemoved: Number(summary?.duplicateRows || 0)
+            };
+        }, 'maintenance:compact-stackable-inventory');
+    },
+
     transferInventoryBetweenCharacters(transfers = []) {
         const entries = (transfers || []).map((transfer) => ({
             fromCharacterId: Number(transfer.fromCharacterId),

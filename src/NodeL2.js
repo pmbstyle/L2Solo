@@ -56,7 +56,16 @@ console.info(
 // Startup procedure, init `World` & `Data`, then `AuthServer`, finally `GameServer`
 Database.init(() => {
     DataCache.init();
-    ClanService.init().then(() => {
+    const stackableItemIds = (DataCache.items || [])
+        .filter((item) => item.etc?.stackable === true)
+        .map((item) => Number(item.selfId));
+    Database.compactStackableInventory(stackableItemIds).then((result) => {
+        if (!result.skipped && result.rowsRemoved > 0) {
+            utils.infoSuccess('DB', 'compacted stackable inventory groups=%d rows=%d', result.groups, result.rowsRemoved);
+        }
+    }).catch((error) => {
+        utils.infoWarn('DB', 'failed to compact stackable inventory: %s', error.message);
+    }).then(() => ClanService.init()).then(() => {
         GeodataEngine.init();
         World.init();
 

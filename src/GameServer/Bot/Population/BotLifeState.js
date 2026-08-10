@@ -83,11 +83,25 @@ function levelForExp(exp, fallback = 1) {
 }
 
 function itemTemplate(selfId) {
-    return DataCache.items.find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
 }
 
 function itemName(selfId, fallback = '') {
     return itemTemplate(selfId)?.template?.name || fallback || `Item ${selfId}`;
+}
+
+function itemStackable(selfId, item = {}) {
+    const template = itemTemplate(selfId);
+    if (template) return template.etc?.stackable === true;
+    if (typeof item.fetchStackable === 'function') return !!item.fetchStackable();
+    return item.stackable === true;
+}
+
+function normalizeInventoryStackability(inventory = {}) {
+    return Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
+        const selfId = Number(item?.selfId || key);
+        return [key, { ...(item || {}), stackable: itemStackable(selfId, item) }];
+    }));
 }
 
 function inventorySummaryFromItems(items = []) {
@@ -110,7 +124,7 @@ function inventorySummaryFromItems(items = []) {
             equipped: equippedSlots.length > 0,
             equippedCount: equippedSlots.length,
             equippedSlots,
-            stackable: !!(item.fetchStackable ? item.fetchStackable() : item.stackable),
+            stackable: itemStackable(selfId, item),
             slot: Number(summary[key]?.slot || slot),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
             kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
@@ -200,7 +214,7 @@ function compactResolveDebug(debug = {}) {
 
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
-    const inventory = parseJson(row.inventorySummary, {});
+    const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
     return {
         characterId: Number(row.characterId),
@@ -2361,5 +2375,7 @@ const BotLifeState = {
 };
 
 BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
+BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
+BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
 
 module.exports = BotLifeState;

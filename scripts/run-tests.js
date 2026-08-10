@@ -144,6 +144,7 @@ const tests = [
     'tests/test_cast_interrupt.js',
     'tests/test_character_write_queue.js',
     'tests/test_hot_bot_load_test.js',
+    'tests/test_stackable_inventory_persistence.js',
     'tests/test_sqlite_bot_conversation_migration.js',
     'tests/test_sqlite_account_casefold.js',
     'tests/test_character_status_persistence.js',
