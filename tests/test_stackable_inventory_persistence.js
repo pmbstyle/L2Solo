@@ -54,6 +54,9 @@ DataCache.init();
 
     const repeated = await Database.compactStackableInventory([1835], 'test-stackable-compaction-v1');
     assert.strictEqual(repeated.skipped, true, 'completed maintenance must not rescan the live inventory every startup');
+    const reclaimed = await Database.reclaimUnusedSpace({ minFreePages: 0, minFreeRatio: 0 });
+    assert.strictEqual(reclaimed.reclaimed, true, 'startup maintenance must be able to reclaim pages after compaction');
+    assert.strictEqual(reclaimed.nextFreePages, 0, 'VACUUM must leave no unused pages in the compacted test database');
     console.log('stackable inventory persistence ok');
 })().catch((error) => {
     console.error(error);

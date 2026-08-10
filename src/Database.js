@@ -579,6 +579,32 @@ const Database = {
         }, 'maintenance:compact-stackable-inventory');
     },
 
+    reclaimUnusedSpace({ minFreePages = 1000, minFreeRatio = 0.25 } = {}) {
+        return enqueue(() => {
+            const pageCount = Number(one('PRAGMA page_count')?.page_count || 0);
+            const freePages = Number(one('PRAGMA freelist_count')?.freelist_count || 0);
+            const pageSize = Number(one('PRAGMA page_size')?.page_size || 0);
+            const freeRatio = pageCount > 0 ? freePages / pageCount : 0;
+            if (freePages < Math.max(0, Number(minFreePages) || 0)
+                || freeRatio < Math.max(0, Number(minFreeRatio) || 0)) {
+                return { reclaimed: false, pageCount, freePages, pageSize, freeRatio };
+            }
+            connection.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM;');
+            const nextPageCount = Number(one('PRAGMA page_count')?.page_count || 0);
+            const nextFreePages = Number(one('PRAGMA freelist_count')?.freelist_count || 0);
+            return {
+                reclaimed: true,
+                pageCount,
+                freePages,
+                pageSize,
+                freeRatio,
+                nextPageCount,
+                nextFreePages,
+                reclaimedBytes: Math.max(0, (pageCount - nextPageCount) * pageSize)
+            };
+        }, { operation: 'maintenance:reclaim-unused-space', read: false });
+    },
+
     transferInventoryBetweenCharacters(transfers = []) {
         const entries = (transfers || []).map((transfer) => ({
             fromCharacterId: Number(transfer.fromCharacterId),

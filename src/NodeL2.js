@@ -65,6 +65,12 @@ Database.init(() => {
         }
     }).catch((error) => {
         utils.infoWarn('DB', 'failed to compact stackable inventory: %s', error.message);
+    }).then(() => Database.reclaimUnusedSpace()).then((result) => {
+        if (result.reclaimed) {
+            utils.infoSuccess('DB', 'reclaimed unused SQLite space pages=%d bytes=%d', result.freePages, result.reclaimedBytes);
+        }
+    }).catch((error) => {
+        utils.infoWarn('DB', 'failed to reclaim unused SQLite space: %s', error.message);
     }).then(() => ClanService.init()).then(() => {
         GeodataEngine.init();
         World.init();
