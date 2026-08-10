@@ -13,6 +13,19 @@ assert.strictEqual(Filters.isEligible({ kind: 'player', role: 'crafter', staticS
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'dps', staticService: true }), false, 'static bot services must stay out of the map and roster');
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'crafter', staticService: false }), false, 'adventuring crafters must stay out of the map and roster too');
 assert.strictEqual(Filters.isEligible({ kind: 'bot', role: 'tank', staticService: false }), true);
+assert.strictEqual(Filters.isSurfaceActor({ area: { mapLayer: 'dungeon' } }), false,
+    'a dungeon without a known entrance must not use its interior coordinates on the surface atlas');
+const projectedDungeon = {
+    loc: { locX: 45596, locY: 247589, locZ: -6518 },
+    area: { mapLayer: 'dungeon', mapAnchor: { locX: -113329, locY: 235327, locZ: -3653 } }
+};
+assert.strictEqual(Filters.isSurfaceActor(projectedDungeon), true,
+    'a dungeon with a known entrance must be represented on the surface atlas');
+assert.deepStrictEqual(Filters.mapLocation(projectedDungeon), projectedDungeon.area.mapAnchor,
+    'dungeon actors must project to the authoritative entrance instead of their virtual interior coordinates');
+assert.deepStrictEqual(Filters.mapLocation({ loc: { locX: 1, locY: 2, locZ: 3 } }), { locX: 1, locY: 2, locZ: 3 });
+assert.strictEqual(Filters.isSurfaceActor({ area: { mapLayer: 'surface' } }), true);
+assert.strictEqual(Filters.isSurfaceActor({}), true, 'legacy actors without area metadata remain on the surface atlas');
 assert.strictEqual(Filters.actorKind(2, null, { players: [{ id: 2 }] }), 'player', 'party links must resolve real-player leaders from the snapshot');
 assert.strictEqual(Filters.actorKind(2, 'bot', { players: [{ id: 2 }] }), 'bot', 'an explicit leader kind must remain authoritative');
 assert.strictEqual(Filters.actorKind(3, null, { players: [{ id: 2 }] }), 'bot', 'unknown party leaders default to bots');

@@ -8,6 +8,7 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const DataCache = invoke('GameServer/DataCache');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -131,13 +132,16 @@ function realPlayerSessions() {
 function compactPlayer(session) {
     const actor = session.actor;
     const classId = normalizedClassId(actor.fetchClassId?.());
+    const loc = actorLoc(actor);
+    const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
     return {
         id: actor.fetchId(),
         name: actor.fetchName(),
         level: actor.fetchLevel(),
         classId,
         className: className(classId),
-        loc: actorLoc(actor),
+        loc,
+        area,
         vitals: actorVitals(actor),
         online: !!actor.fetchIsOnline(),
         isPk: isPkActor(actor)
@@ -150,6 +154,7 @@ function isStaticServiceSession(session) {
 
 function compactHotBot(status, pkIds = new Set(), session = null) {
     const classId = normalizedClassId(status.classId);
+    const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(status.loc));
     return {
         id: status.id,
         name: status.name,
@@ -161,6 +166,8 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
         intent: status.intent,
         role: status.role,
         home: status.home,
+        region: area?.name || status.region || status.home?.region || null,
+        area,
         loc: status.loc,
         vitals: {
             hpPct: safePercent(status.vitals?.hpPct),
@@ -179,7 +186,7 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
         } : null,
         spot: status.spot ? {
             id: status.spot.id,
-            name: status.spot.name,
+            name: area?.name || status.spot.name,
             minLevel: status.spot.minLevel,
             maxLevel: status.spot.maxLevel,
             density: status.spot.density
@@ -200,6 +207,8 @@ function compactStateBot(state, hotIds, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
     const leaderId = Number(state.party?.leaderId || stats.leaderId || 0) || null;
+    const loc = state.loc || { locX: 0, locY: 0, locZ: 0 };
+    const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
     return {
         id: Number(state.characterId),
         name: state.name || 'Bot',
@@ -210,11 +219,13 @@ function compactStateBot(state, hotIds, leaderState = null) {
         mode: state.activity || 'hunting',
         intent: state.phase === 'warm' ? 'background_active' : 'background_resolve',
         role: state.party?.role || stats.role || 'dps',
+        region: area?.name || state.currentRegion || state.homeRegion || null,
+        area,
         home: {
-            region: state.currentRegion || state.homeRegion || null,
+            region: state.homeRegion || null,
             visitor: false
         },
-        loc: state.loc || { locX: 0, locY: 0, locZ: 0 },
+        loc,
         vitals: {
             hpPct: safePercent(Number(state.vitals?.hp || 0) / Math.max(1, Number(state.vitals?.maxHp || 1))),
             mpPct: safePercent(Number(state.vitals?.mp || 0) / Math.max(1, Number(state.vitals?.maxMp || 1)))
@@ -226,7 +237,7 @@ function compactStateBot(state, hotIds, leaderState = null) {
             leaderId,
             leader: coldPartyLeader(state, leaderState)
         } : null,
-        spot: state.spotId ? { id: state.spotId, name: state.spotId } : null,
+        spot: state.spotId ? { id: state.spotId, name: area?.name || state.spotId } : null,
         movement: { moving: false, towards: false, stuckTicks: 0 },
         nearby: null,
         trade: null,
@@ -511,19 +522,17 @@ function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
     const lastResolve = stats.lastResolveDebug || null;
+    const compact = compactStateBot(state, new Set(), leaderState);
     return {
-        ...compactStateBot(state, new Set(), leaderState),
+        ...compact,
         kind: 'bot',
         classId,
         className: className(classId),
         phase: state.phase || 'cold',
         mode: state.activity || 'hunting',
         intent: coldIntent(state),
-        region: state.currentRegion || state.homeRegion || null,
-        home: {
-            region: state.homeRegion || state.currentRegion || null,
-            visitor: false
-        },
+        region: compact.region,
+        home: compact.home,
         vitals: fullVitals(state.vitals),
         party: state.party?.partyId ? {
             id: state.party.partyId,

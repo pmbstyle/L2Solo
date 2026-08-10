@@ -7,6 +7,14 @@ const ECONOMIC_ROLES = {
     57: 'crafter'
 };
 
+const STARTER_REGIONS = Object.freeze([
+    { id: 'human', locX: -80000, locY: 250000, radius: 42000 },
+    { id: 'elf', locX: 46000, locY: 40000, radius: 42000 },
+    { id: 'dark_elf', locX: 27000, locY: 11000, radius: 42000 },
+    { id: 'orc', locX: -57000, locY: -113000, radius: 42000 },
+    { id: 'dwarf', locX: 108000, locY: -175000, radius: 42000 }
+]);
+
 const ROUTES = [
     {
         id: 'starter_local',
@@ -208,6 +216,8 @@ function textForSpot(spot = {}) {
 }
 
 function tagsForSpot(spot = {}) {
+    if (spot.tagsAuthoritative === true) return uniq(spot.tags || []);
+
     const text = textForSpot(spot);
     const tags = TAG_PATTERNS
         .filter(([, pattern]) => pattern.test(text))
@@ -217,6 +227,62 @@ function tagsForSpot(spot = {}) {
     if (Number(spot.maxLevel || 0) - Number(spot.minLevel || 0) <= 5) tags.push('normal_hp');
 
     return uniq(tags);
+}
+
+function occupancyForSpot(occupancy, spotId) {
+    const entry = occupancy instanceof Map ? occupancy.get(spotId) : occupancy?.[spotId];
+    if (entry && typeof entry === 'object') return Math.max(0, Number(entry.count || 0));
+    return Math.max(0, Number(entry || 0));
+}
+
+function capacityForSpot(spot = {}) {
+    const explicit = Number(spot.capacity || 0);
+    if (explicit > 0) return explicit;
+    return Math.max(24, Math.round(Number(spot.density || 1) * 2));
+}
+
+function crowdPenaltyForSpot(spot, occupancy) {
+    const count = occupancyForSpot(occupancy, spot.id);
+    const capacity = capacityForSpot(spot);
+    if (!count || !capacity) return 0;
+    const ratio = count / capacity;
+    if (ratio <= 1) return ratio * ratio * 60;
+    return 60 + Math.pow(ratio - 1, 2) * 120;
+}
+
+function nearestStarterRegion(spot = {}) {
+    const x = Number(spot.center?.locX);
+    const y = Number(spot.center?.locY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return STARTER_REGIONS
+        .map((region) => ({
+            ...region,
+            distanceSquared: Math.pow(x - region.locX, 2) + Math.pow(y - region.locY, 2)
+        }))
+        .filter((region) => region.distanceSquared <= region.radius * region.radius)
+        .sort((left, right) => left.distanceSquared - right.distanceSquared)[0]?.id || null;
+}
+
+function localityPenaltyForSpot(spot, state, context, tags) {
+    const starterRegion = String(state?.stats?.starterRegion || '');
+    if (!starterRegion || context.level > Number(spot.localUntilLevel || 20)) return 0;
+
+    const explicitRegions = spot.localStarterRegions || [];
+    if (explicitRegions.length) return explicitRegions.includes(starterRegion) ? 0 : 10000;
+
+    if (!tags.includes('starter')) return 0;
+    const localRegion = nearestStarterRegion(spot);
+    return localRegion && localRegion !== starterRegion ? 10000 : 0;
+}
+
+function stableVariation(spot, state) {
+    const seed = `${spot.id || ''}:${state.characterId || state.stats?.generatedIndex || state.name || ''}`;
+    let hash = 2166136261;
+    for (let index = 0; index < seed.length; index++) {
+        hash ^= seed.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) % 25;
 }
 
 function hasAll(tags, required = []) {
@@ -273,7 +339,13 @@ function scoreSpot(spot, state = {}, options = {}) {
         .sort((a, b) => b.score - a.score);
 
     const routeMatch = matchingRoutes[0] || null;
-    const score = baseScore(spot, context) + (routeMatch ? routeMatch.score : 0);
+    const occupancy = occupancyForSpot(options.occupancy, spot.id);
+    const capacity = capacityForSpot(spot);
+    const crowdPenalty = crowdPenaltyForSpot(spot, options.occupancy);
+    const localityPenalty = localityPenaltyForSpot(spot, state, context, tags);
+    const variation = stableVariation(spot, state);
+    const score = baseScore(spot, context) + (routeMatch ? routeMatch.score : 0)
+        + variation - crowdPenalty - localityPenalty;
 
     return {
         score,
@@ -283,7 +355,12 @@ function scoreSpot(spot, state = {}, options = {}) {
         role: context.role,
         mode: context.mode,
         level: context.level,
-        levelGap: Math.abs(Number(spot.avgLevel || spot.minLevel || 1) - context.level)
+        levelGap: Math.abs(Number(spot.avgLevel || spot.minLevel || 1) - context.level),
+        capacity,
+        occupancy,
+        crowdPenalty,
+        localityPenalty,
+        variation
     };
 }
 
@@ -318,7 +395,11 @@ function rankedSpots(spots, state = {}, options = {}) {
                 routeScore: match.routeScore,
                 route: routeSummary(match),
                 tags: match.tags,
-                levelGap: match.levelGap
+                levelGap: match.levelGap,
+                capacity: match.capacity,
+                occupancy: match.occupancy,
+                crowdPenalty: match.crowdPenalty,
+                localityPenalty: match.localityPenalty
             };
         })
         .sort((a, b) => b.score - a.score);
@@ -335,6 +416,10 @@ module.exports = {
     modeForState,
     targetLevelForState,
     tagsForSpot,
+    capacityForSpot,
+    occupancyForSpot,
+    crowdPenaltyForSpot,
+    localityPenaltyForSpot,
     scoreSpot,
     rankedSpots,
     bestSpot,

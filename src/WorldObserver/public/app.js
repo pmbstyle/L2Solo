@@ -262,7 +262,7 @@ function setSvgViewBox() {
         return;
     }
 
-    const locs = filteredActors().map((item) => item.loc).filter(Boolean);
+    const locs = filteredActors().filter(isSurfaceActor).map(mapLocation).filter(Boolean);
     if (locs.length < 2) {
         state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
         setViewBox();
@@ -358,6 +358,9 @@ function actorSearchText(actor) {
         actor.className,
         actor.build?.className,
         actor.build?.classFamily,
+        actor.region,
+        actor.area?.name,
+        actor.area?.parentRegion,
         actor.home?.region,
         actor.spot?.name,
         actor.classId
@@ -378,6 +381,14 @@ function filteredActors() {
 
 function actorKey(actor) {
     return `${actor.kind || 'bot'}:${actor.id}`;
+}
+
+function isSurfaceActor(actor) {
+    return ActorFilters.isSurfaceActor(actor);
+}
+
+function mapLocation(actor) {
+    return ActorFilters.mapLocation(actor);
 }
 
 function renderGrid() {
@@ -467,8 +478,9 @@ function clusterActors(items) {
     const groups = [];
 
     items.forEach((actor) => {
-        if (!actor.loc) return;
-        const point = project(actor.loc);
+        const loc = mapLocation(actor);
+        if (!loc) return;
+        const point = project(loc);
         let group = groups.find((candidate) => Math.hypot(point.x - candidate.x, point.y - candidate.y) <= mergeDistance);
         if (!group) {
             group = { members: [], x: point.x, y: point.y };
@@ -618,7 +630,7 @@ function renderPoints() {
     els.pointsLayer.innerHTML = '';
     if (!state.snapshot) return;
 
-    const visible = filteredActors();
+    const visible = filteredActors().filter(isSurfaceActor);
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
 }
@@ -1248,9 +1260,10 @@ function selectActor(id, kind = 'bot', focus = false) {
     state.detailLoading = false;
     if (focus) {
         const actor = actorById(id, kind);
-        if (actor?.loc) {
+        const loc = actor ? mapLocation(actor) : null;
+        if (loc && isSurfaceActor(actor)) {
             const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
-            const point = worldToMap(actor.loc);
+            const point = worldToMap(loc);
             applyViewport({
                 x: point.x - viewport.width * 0.5,
                 y: point.y - viewport.height * 0.5,
@@ -1301,7 +1314,7 @@ function focusCluster(cluster) {
 
 function clusterLocation(cluster) {
     const labels = cluster.members
-        .map(({ actor }) => actor.home?.region || actor.region || actor.spot?.name)
+        .map(({ actor }) => actor.area?.name || actor.region || actor.home?.region || actor.spot?.name)
         .filter((label) => label && !/^-?\d+_-?\d+$/.test(label));
     if (!labels.length) return 'this area';
     const counts = labels.reduce((result, label) => result.set(label, (result.get(label) || 0) + 1), new Map());

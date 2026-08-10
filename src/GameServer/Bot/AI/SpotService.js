@@ -3,6 +3,7 @@ const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 
 function distance2d(a, b) {
     if (!a || !b) return 0;
@@ -32,6 +33,16 @@ function levelCount(spot, level) {
 function finiteNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stableHash(value) {
+    const text = String(value || '');
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index++) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
 }
 
 function huntBand(targetLevel, options = {}) {
@@ -116,7 +127,8 @@ const SpotService = {
                     levels: {},
                     names: {},
                     selfIds: {},
-                    npcs: {}
+                    npcs: {},
+                    arrivalPoints: []
                 };
             }
 
@@ -137,6 +149,11 @@ const SpotService = {
             const npcKey = selfId ? `id:${selfId}` : `name:${name}`;
             sector.npcs[npcKey] = sector.npcs[npcKey] || { selfId, name, level, count: 0 };
             sector.npcs[npcKey].count++;
+            sector.arrivalPoints.push({
+                locX: npc.fetchLocX(),
+                locY: npc.fetchLocY(),
+                locZ: npc.fetchLocZ()
+            });
         });
 
         this.spots = Object.values(sectors).map((sector) => {
@@ -168,12 +185,13 @@ const SpotService = {
                 npcEntries: Object.values(sector.npcs)
                     .sort((a, b) => b.count - a.count)
                     .map((entry) => ({ ...entry })),
+                arrivalPoints: sector.arrivalPoints.map((point) => ({ ...point })),
                 levelCounts: { ...sector.levels },
                 dominantLevels: levelEntries.slice(0, 3)
             };
 
             spot.name = spotName(spot);
-            return spot;
+            return WorldAreaCatalog.decorateSpot(spot);
         });
 
         return this.spots;
@@ -279,6 +297,23 @@ const SpotService = {
             locX,
             locY,
             locZ: GeodataEngine.getHeight(locX, locY, spot.center.locZ)
+        };
+    },
+
+    arrivalPointForState(state, spot) {
+        if (!spot?.center) return null;
+        const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+        const points = spot.arrivalPoints?.length ? spot.arrivalPoints : [spot.center];
+        const hash = stableHash(state?.characterId || state?.name || state?.stats?.generatedIndex);
+        const anchor = points[hash % points.length] || spot.center;
+        const angle = ((hash % 360) * Math.PI) / 180;
+        const radius = 96 + (hash % 161);
+        const locX = Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius);
+        const locY = Math.round(Number(anchor.locY || 0) + Math.sin(angle) * radius);
+        return {
+            locX,
+            locY,
+            locZ: GeodataEngine.getHeight(locX, locY, Number(anchor.locZ || spot.center.locZ || 0))
         };
     },
 

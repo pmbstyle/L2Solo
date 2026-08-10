@@ -8,6 +8,64 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const originalUpsertState = LifeState.upsertState;
 const originalFindById = SpotService.findById;
 const originalRandomPointNear = SpotService.randomPointNear;
+const originalArrivalPointForState = SpotService.arrivalPointForState;
+
+const canonicalDungeonState = LifeState.canonicalizeAreaState({
+    characterId: 273,
+    activity: 'hunting',
+    currentRegion: 'Skeleton fields',
+    loc: { locX: 45596, locY: 247589, locZ: -6518 },
+    timing: { nextResolveAt: Date.now() + 60 * 60 * 1000 },
+    party: {},
+    stats: {}
+});
+assert.strictEqual(canonicalDungeonState.currentRegion, 'Elven Ruins',
+    'startup migration must replace persisted synthetic area labels');
+assert.strictEqual(canonicalDungeonState.stats.canonicalAreaId, 'elven_ruins');
+assert.ok(canonicalDungeonState.timing.nextResolveAt < Date.now() + 3 * 60 * 1000,
+    'legacy solo hunters must be scheduled for a bounded capacity-aware replan');
+
+const mithrilSpot = {
+    id: '29_-30',
+    name: 'Mithril Mines',
+    center: { locX: 176673, locY: -177656, locZ: 801 }
+};
+SpotService.findById = (id) => id === mithrilSpot.id ? mithrilSpot : originalFindById.call(SpotService, id);
+SpotService.arrivalPointForState = () => ({ locX: 176812, locY: -177503, locZ: 792 });
+const canonicalMithrilState = LifeState.canonicalizeAreaState({
+    characterId: 271,
+    activity: 'hunting',
+    currentRegion: 'Akaste Bone Soldier fields',
+    spotId: mithrilSpot.id,
+    loc: { ...mithrilSpot.center },
+    timing: { nextResolveAt: Date.now() + 60 * 60 * 1000 },
+    party: {},
+    stats: {}
+});
+assert.strictEqual(canonicalMithrilState.currentRegion, 'Mithril Mines', 'persisted Akaste field labels must migrate to Mithril Mines');
+assert.strictEqual(canonicalMithrilState.stats.canonicalAreaId, 'mithril_mines');
+assert.deepStrictEqual(canonicalMithrilState.loc, { locX: 176812, locY: -177503, locZ: 792 },
+    'persisted bots stacked on the sector center must be redistributed among real spawn anchors');
+
+const canonicalMarketReturn = LifeState.canonicalizeAreaState({
+    characterId: 272,
+    activity: 'shopping',
+    currentRegion: 'Giran',
+    loc: { locX: 83446, locY: 147904, locZ: -3400 },
+    stats: {
+        marketReturn: {
+            spotId: mithrilSpot.id,
+            regionName: 'Akaste Bone Soldier fields',
+            loc: { ...mithrilSpot.center }
+        }
+    }
+});
+assert.strictEqual(canonicalMarketReturn.stats.marketReturn.regionName, 'Mithril Mines',
+    'startup migration must repair dungeon destinations even while the bot is currently in town');
+assert.deepStrictEqual(canonicalMarketReturn.stats.marketReturn.loc, { locX: 176812, locY: -177503, locZ: 792 },
+    'legacy market returns must not recreate the exact-center stack');
+SpotService.findById = originalFindById;
+SpotService.arrivalPointForState = originalArrivalPointForState;
 
 async function run() {
     let saved = null;
@@ -101,4 +159,5 @@ run()
         LifeState.upsertState = originalUpsertState;
         SpotService.findById = originalFindById;
         SpotService.randomPointNear = originalRandomPointNear;
+        SpotService.arrivalPointForState = originalArrivalPointForState;
     });

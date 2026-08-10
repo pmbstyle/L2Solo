@@ -113,14 +113,21 @@ function targetSpot(level, index, base = {}) {
         levelBand: `${Math.max(1, level - 2)}-${level + 2}`,
         stats: {
             role: base.role || 'dps',
-            classId: base.classId || null
+            classId: base.classId || null,
+            generatedIndex: index,
+            starterRegion: base.starterRegion || null
         }
     };
     const profiles = SpotProfiles.ensure()
         .filter((spot) => spot.minLevel <= level + 3 && spot.maxLevel >= level - 3);
-    const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo' });
+    const occupancy = SpotProfiles.currentOccupancy(SpotProfiles.ensure());
+    const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo', occupancy });
     if (guided.length > 0) {
-        return guided[index % Math.min(4, guided.length)].spot;
+        const bestScore = guided[0].score;
+        const shortlist = guided
+            .filter((candidate) => candidate.localityPenalty <= 0 && candidate.score >= bestScore - 90)
+            .slice(0, 12);
+        return (shortlist.length ? shortlist : guided)[index % Math.max(1, shortlist.length || guided.length)].spot;
     }
 
     return profiles

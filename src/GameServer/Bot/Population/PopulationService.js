@@ -44,6 +44,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     const physical = SpotService.findCurrentSpot(from);
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
     if (currentId === spot.id) return null;
+    const destination = SpotService.arrivalPointForState(state, spot);
 
     return {
         ...state,
@@ -57,7 +58,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
             ...(state.stats || {}),
             travel: {
                 from,
-                to: { ...spot.center },
+                to: destination,
                 startedAt: timestamp,
                 arrivalAt: timestamp + HUNTING_TRAVEL_MS,
                 regionName: spot.name || state.currentRegion || 'Hunting Ground',
@@ -69,6 +70,55 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
                     ? 'equipment_source_replan'
                     : 'level_replan'
             }
+        }
+    };
+}
+
+function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
+    const travelling = beginHuntingTravel(state, spot, timestamp);
+    if (!travelling) return null;
+    return {
+        ...travelling,
+        stats: {
+            ...(travelling.stats || {}),
+            travel: {
+                ...(travelling.stats?.travel || {}),
+                reason: 'party_spot_replan',
+                arrivalActivity: 'grouped',
+                arrivalEvent: 'party_arrived_hunting_ground'
+            }
+        }
+    };
+}
+
+function finishPartySpotTravel(state, timestamp = Date.now()) {
+    const travel = state?.stats?.travel;
+    if (state?.activity !== 'traveling'
+        || travel?.reason !== 'party_spot_replan'
+        || Number(travel.arrivalAt || 0) > timestamp) return state;
+    return {
+        ...state,
+        activity: travel.arrivalActivity || 'grouped',
+        currentRegion: travel.regionName || state.currentRegion,
+        spotId: travel.spotId || state.spotId,
+        loc: { ...(travel.to || state.loc) },
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + 1000
+        },
+        stats: { ...(state.stats || {}), travel: null }
+    };
+}
+
+function finishPartyTravelRecord(party, timestamp = Date.now()) {
+    return {
+        ...party,
+        nextResolveAt: timestamp + 1000,
+        stats: {
+            ...(party.stats || {}),
+            lastResolveAt: timestamp,
+            travel: null
         }
     };
 }
@@ -1500,6 +1550,26 @@ const PopulationService = {
                 return dissolveBackgroundParty(party, reason, members.length);
             }
 
+            if (party.stats?.travel?.reason === 'party_spot_replan') {
+                const arrivalAt = Number(party.stats.travel.arrivalAt || 0);
+                if (arrivalAt > startedAt) {
+                    return BackgroundPartyState.createOrUpdate({ ...party, nextResolveAt: arrivalAt })
+                        .then((updatedParty) => ({ ok: true, party: updatedParty || party, debug: { activity: 'party_travel' } }));
+                }
+                const arrivedMembers = members.map((member) => finishPartySpotTravel(member, startedAt));
+                return arrivedMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.upsertState(member, 'party_spot_arrival'))
+                ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate(
+                    finishPartyTravelRecord(party, startedAt)
+                )).then((updatedParty) => LifeEvents.record(
+                    party.leaderId,
+                    'party_travel',
+                    `Party ${party.partyId} arrived near ${party.stats.travel.regionName || party.spotId}`,
+                    { partyId: party.partyId, spotId: party.spotId },
+                    1
+                ).then(() => ({ ok: true, party: updatedParty || party, debug: { activity: 'party_arrival' } })));
+            }
+
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
             const objectiveSpotId = party.stats?.objective?.spotId || null;
             const objectiveSpot = objectiveSpotId ? SpotProfiles.findById(objectiveSpotId) : null;
@@ -1519,6 +1589,35 @@ const PopulationService = {
             if (!spot) {
                 Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
+            }
+
+
+            const leaderPhysicalSpot = SpotService.findCurrentSpot(leader.loc);
+            const physicalSpotId = leaderPhysicalSpot?.id || leader.spotId || party.spotId;
+            if (physicalSpotId && physicalSpotId !== spot.id) {
+                const travellingMembers = members.map((member) => beginPartySpotTravel(member, spot, startedAt) || member);
+                const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
+                return travellingMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))
+                ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({
+                    ...party,
+                    spotId: spot.id,
+                    nextResolveAt: arrivalAt,
+                    stats: {
+                        ...(party.stats || {}),
+                        travel: {
+                            reason: 'party_spot_replan',
+                            regionName: spot.name,
+                            spotId: spot.id,
+                            startedAt,
+                            arrivalAt
+                        }
+                    }
+                })).then((updatedParty) => ({
+                    ok: true,
+                    party: updatedParty || party,
+                    debug: { activity: 'party_travel', spotId: spot.id }
+                }));
             }
 
             const elapsedMs = party.stats?.lastResolveAt ? Math.max(1000, Date.now() - party.stats.lastResolveAt) : 60000;
@@ -1907,5 +2006,10 @@ const PopulationService = {
         return summary;
     }
 };
+
+PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPointForState(state, spot);
+PopulationService.beginPartySpotTravel = beginPartySpotTravel;
+PopulationService.finishPartySpotTravel = finishPartySpotTravel;
+PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
 
 module.exports = PopulationService;

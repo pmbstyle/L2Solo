@@ -114,6 +114,49 @@ const coldPk = Observer.compactStateBot({
 }, new Set());
 assert.strictEqual(coldPk.isPk, true, 'stored PK encounters must remain marked between activations');
 
+const elvenRuinsBot = Observer.compactStateBot({
+    characterId: 273,
+    name: 'Underground Hunter',
+    level: 13,
+    phase: 'cold',
+    activity: 'hunting',
+    homeRegion: 'Elven Village',
+    currentRegion: 'Skeleton fields',
+    spotId: '7_41',
+    loc: { locX: 45596, locY: 247589, locZ: -6518 },
+    vitals: {},
+    party: {},
+    stats: {}
+}, new Set());
+assert.strictEqual(elvenRuinsBot.area.name, 'Elven Ruins', 'observer snapshots must expose the canonical dungeon name');
+assert.strictEqual(elvenRuinsBot.area.mapLayer, 'dungeon', 'observer snapshots must preserve the physical dungeon layer');
+assert.deepStrictEqual(elvenRuinsBot.area.mapAnchor, { locX: -113329, locY: 235327, locZ: -3653 },
+    'Elven Ruins actors must carry the authoritative surface entrance for map projection');
+assert.strictEqual(elvenRuinsBot.region, 'Elven Ruins', 'synthetic Skeleton fields labels must not leak into the observer');
+assert.strictEqual(elvenRuinsBot.home.region, 'Elven Village', 'current hunting area must not overwrite a bot home region');
+assert.strictEqual(elvenRuinsBot.spot.name, 'Elven Ruins', 'the observer spot label must use the canonical game area');
+
+const mithrilMinesBot = Observer.compactStateBot({
+    characterId: 271,
+    name: 'Mine Hunter',
+    level: 13,
+    phase: 'cold',
+    activity: 'hunting',
+    homeRegion: 'Dwarven Village',
+    currentRegion: 'Akaste Bone Soldier fields',
+    spotId: '29_-30',
+    loc: { locX: 176673, locY: -177656, locZ: 801 },
+    vitals: {},
+    party: {},
+    stats: {}
+}, new Set());
+assert.strictEqual(mithrilMinesBot.area.name, 'Mithril Mines', 'observer snapshots must expose the canonical Mithril Mines name');
+assert.strictEqual(mithrilMinesBot.area.mapLayer, 'dungeon', 'Mithril Mines snapshots must preserve the physical dungeon layer');
+assert.deepStrictEqual(mithrilMinesBot.area.mapAnchor, { locX: 179039, locY: -184080, locZ: -319 },
+    'Mithril Mines actors must carry the authoritative surface entrance for map projection');
+assert.strictEqual(mithrilMinesBot.region, 'Mithril Mines', 'Akaste field labels must not leak into the observer');
+assert.strictEqual(mithrilMinesBot.spot.name, 'Mithril Mines', 'the observer spot label must use the canonical mine area');
+
 const craftService = Observer.compactStateBot({
     characterId: 48,
     name: 'Craft Station',

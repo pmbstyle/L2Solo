@@ -11,6 +11,7 @@ const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -629,6 +630,93 @@ function recoverOrphanedGiranState(state = {}) {
     };
 }
 
+function sameLocation(left, right, tolerance = 8) {
+    if (!left || !right) return false;
+    return ['locX', 'locY', 'locZ'].every((key) => {
+        const a = Number(left[key]);
+        const b = Number(right[key]);
+        return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tolerance;
+    });
+}
+
+function canonicalizeAreaState(state = {}) {
+    const previousRegion = state.currentRegion;
+    const previousStats = state.stats || {};
+    const currentSpot = state.spotId ? SpotService.findById(state.spotId) : null;
+    const area = WorldAreaCatalog.resolve(state.loc);
+    const returnSpot = previousStats.marketReturn?.spotId
+        ? SpotService.findById(previousStats.marketReturn.spotId)
+        : null;
+    const returnArea = WorldAreaCatalog.resolve(returnSpot?.center || previousStats.marketReturn?.loc);
+    const travelSpot = previousStats.travel?.spotId
+        ? SpotService.findById(previousStats.travel.spotId)
+        : null;
+    const travelArea = WorldAreaCatalog.resolve(travelSpot?.center || previousStats.travel?.to);
+    if (!area && !returnArea && !travelArea) return state;
+
+    const regionChanged = Boolean(area && previousRegion !== area.name);
+    const areaIdChanged = Boolean(area && previousStats.canonicalAreaId !== area.id);
+    const returnChanged = Boolean(previousStats.marketReturn && returnArea
+        && previousStats.marketReturn.regionName !== returnArea.name);
+    const travelChanged = Boolean(previousStats.travel && travelArea
+        && previousStats.travel.regionName !== travelArea.name);
+    const currentAtCenter = Boolean(area && currentSpot?.center
+        && ['hunting', 'resting'].includes(state.activity)
+        && sameLocation(state.loc, currentSpot.center));
+    const returnAtCenter = Boolean(returnArea && returnSpot?.center
+        && sameLocation(previousStats.marketReturn?.loc, returnSpot.center));
+    const travelAtCenter = Boolean(travelArea && travelSpot?.center
+        && sameLocation(previousStats.travel?.to, travelSpot.center));
+    if (!regionChanged && !areaIdChanged && !returnChanged && !travelChanged
+        && !currentAtCenter && !returnAtCenter && !travelAtCenter) return state;
+
+    const stats = { ...previousStats };
+    if (area) stats.canonicalAreaId = area.id;
+    if (returnChanged || returnAtCenter) {
+        stats.marketReturn = {
+            ...previousStats.marketReturn,
+            regionName: returnArea.name,
+            loc: returnAtCenter
+                ? SpotService.arrivalPointForState(state, returnSpot)
+                : previousStats.marketReturn.loc
+        };
+    }
+    if (travelChanged || travelAtCenter) {
+        stats.travel = {
+            ...previousStats.travel,
+            regionName: travelArea.name,
+            to: travelAtCenter
+                ? SpotService.arrivalPointForState(state, travelSpot)
+                : previousStats.travel.to
+        };
+    }
+
+    const migratedLoc = currentAtCenter
+        ? SpotService.arrivalPointForState(state, currentSpot)
+        : state.loc;
+    if (currentAtCenter && stats.travel?.from && sameLocation(stats.travel.from, state.loc)) {
+        stats.travel = { ...stats.travel, from: migratedLoc };
+    }
+
+    const promptSoloReplan = (regionChanged || currentAtCenter)
+        && !state.party?.partyId
+        && ['hunting', 'resting'].includes(state.activity);
+    const timestamp = now();
+    return {
+        ...state,
+        currentRegion: area?.name || previousRegion,
+        loc: migratedLoc,
+        stats,
+        timing: promptSoloReplan ? {
+            ...(state.timing || {}),
+            nextResolveAt: Math.min(
+                Number(state.timing?.nextResolveAt || timestamp + 120000),
+                timestamp + 5000 + (Number(state.characterId || 0) % 115000)
+            )
+        } : state.timing
+    };
+}
+
 function recoverStaleCraftWaits() {
     const timestamp = now();
     return Database.execute([
@@ -816,6 +904,7 @@ const BotLifeState = {
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
+                .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
             return repairs.reduce((chain, state) => chain.then(() => {
@@ -2270,5 +2359,7 @@ const BotLifeState = {
         });
     }
 };
+
+BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 
 module.exports = BotLifeState;
