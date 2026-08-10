@@ -96,13 +96,21 @@ function inventorySummaryFromItems(items = []) {
         if (!selfId || amount <= 0) return summary;
 
         const key = String(selfId);
+        const equipped = !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped);
+        const slot = Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0);
+        const equippedSlots = [...new Set([
+            ...(summary[key]?.equippedSlots || []),
+            ...(equipped && slot > 0 ? [slot] : [])
+        ])].sort((a, b) => a - b);
         summary[key] = {
             selfId,
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
             amount: Number(summary[key]?.amount || 0) + amount,
-            equipped: !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped),
+            equipped: equippedSlots.length > 0,
+            equippedCount: equippedSlots.length,
+            equippedSlots,
             stackable: !!(item.fetchStackable ? item.fetchStackable() : item.stackable),
-            slot: Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0),
+            slot: Number(summary[key]?.slot || slot),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
             kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
         };
@@ -112,14 +120,13 @@ function inventorySummaryFromItems(items = []) {
 
 function equipmentSummaryFromInventory(inventory = {}) {
     return Object.values(inventory)
-        .filter((item) => item.equipped)
-        .map((item) => ({
+        .flatMap((item) => GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).map((slot) => ({
             selfId: Number(item.selfId),
             name: item.name || itemName(item.selfId),
-            slot: Number(item.slot || 0),
+            slot,
             rank: item.rank || 'none',
             kind: item.kind || ''
-        }))
+        })))
         .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
 }
 
@@ -1744,11 +1751,17 @@ const BotLifeState = {
             const inventory = { ...(state.inventory || {}) };
             Object.entries(physicalInventory).forEach(([key, item]) => {
                 const previous = inventory[key] || {};
+                const equippedSlots = [...new Set([
+                    ...GearAcquisitionPlanner.equippedSlotsFor(previous, previous.slot),
+                    ...GearAcquisitionPlanner.equippedSlotsFor(item, item.slot)
+                ])].sort((a, b) => a - b);
                 inventory[key] = {
                     ...previous,
                     ...item,
                     amount: Math.max(Number(previous.amount || 0), Number(item.amount || 0)),
-                    equipped: !!previous.equipped || !!item.equipped,
+                    equipped: equippedSlots.length > 0,
+                    equippedCount: equippedSlots.length,
+                    equippedSlots,
                     slot: Number(item.slot || previous.slot || 0)
                 };
             });
@@ -1856,11 +1869,41 @@ const BotLifeState = {
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
         const slot = Number(template.etc?.slot || 0);
-        if (slot > 0 && count > 1) return Promise.resolve(null);
-        const inventory = { ...(state.inventory || {}) };
-        if (slot) {
+        const pairSlots = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [];
+        if (slot > 0 && count > 1 && (!pairSlots.length || count > 2)) return Promise.resolve(null);
+        const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, item]) => [key, {
+            ...item,
+            ...(Array.isArray(item?.equippedSlots) ? { equippedSlots: [...item.equippedSlots] } : {})
+        }]));
+        let purchaseSlots = [];
+        if (pairSlots.length) {
+            const requestedSlot = Number(offer?.equipSlot || 0);
+            const existingSlots = GearAcquisitionPlanner.equippedSlotsFor(inventory[String(selfId)] || {}, slot);
+            const occupied = new Set(Object.values(inventory).flatMap((item) => GearAcquisitionPlanner.equippedSlotsFor(item, item.slot)));
+            for (let index = 0; index < count; index += 1) {
+                const desired = pairSlots.includes(requestedSlot) && !purchaseSlots.includes(requestedSlot)
+                    ? requestedSlot
+                    : pairSlots.find((candidate) => !occupied.has(candidate) && !purchaseSlots.includes(candidate))
+                        || pairSlots.find((candidate) => !existingSlots.includes(candidate) && !purchaseSlots.includes(candidate));
+                if (desired) purchaseSlots.push(desired);
+            }
+            purchaseSlots.forEach((desiredSlot) => Object.keys(inventory).forEach((key) => {
+                if (Number(key) === selfId) return;
+                const owned = inventory[key];
+                const remaining = GearAcquisitionPlanner.equippedSlotsFor(owned, owned.slot).filter((value) => value !== desiredSlot);
+                inventory[key] = {
+                    ...owned,
+                    equipped: remaining.length > 0,
+                    equippedCount: remaining.length,
+                    equippedSlots: remaining
+                };
+            }));
+            purchaseSlots = [...new Set([...existingSlots, ...purchaseSlots])].slice(0, pairSlots.length).sort((a, b) => a - b);
+        } else if (slot) {
             Object.keys(inventory).forEach((key) => {
-                if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
+                if (GearAcquisitionPlanner.equippedSlotsFor(inventory[key], inventory[key]?.slot).includes(slot)) {
+                    inventory[key] = { ...inventory[key], equipped: false, equippedCount: 0, equippedSlots: [] };
+                }
             });
         }
         inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - totalPrice };
@@ -1869,7 +1912,9 @@ const BotLifeState = {
             selfId,
             name: template.template?.name || offer.itemName || itemName(selfId),
             amount: Number(inventory[String(selfId)]?.amount || 0) + count,
-            equipped: slot > 0,
+            equipped: pairSlots.length ? purchaseSlots.length > 0 : slot > 0,
+            equippedCount: pairSlots.length ? purchaseSlots.length : slot > 0 ? 1 : 0,
+            equippedSlots: pairSlots.length ? purchaseSlots : slot > 0 ? [slot] : [],
             stackable: slot === 0 || !!inventory[String(selfId)]?.stackable,
             slot,
             rank: template.etc?.rank || 'none',
@@ -1932,6 +1977,8 @@ const BotLifeState = {
         const price = Number(offer?.price || 0);
         const currentItem = state?.inventory?.[String(selfId)];
         if (!state || !selfId || price <= 0) return Promise.resolve(null);
+        const equippedCount = Math.max(0, Number(currentItem?.equippedCount ?? (currentItem?.equipped ? 1 : 0)));
+        if (currentItem && Number(currentItem.amount || 0) - equippedCount < count) return Promise.resolve(null);
 
         const inventory = { ...(state.inventory || {}) };
         // A hot private store can sell before an older cold snapshot has been
@@ -1997,9 +2044,13 @@ const BotLifeState = {
         candidates.forEach((candidate) => {
             const selfId = Number(candidate.selfId || 0);
             const existing = inventory[String(selfId)];
-            const amount = Math.min(Number(existing?.amount || 0), Math.max(0, Number(candidate.count || 0)));
+            const equippedCount = Math.max(0, Number(existing?.equippedCount ?? (existing?.equipped ? 1 : 0)));
+            const amount = Math.min(
+                Math.max(0, Number(existing?.amount || 0) - equippedCount),
+                Math.max(0, Number(candidate.count || 0))
+            );
             const price = Math.max(0, Number(candidate.npcPrice || 0));
-            if (!selfId || amount <= 0 || price <= 0 || existing?.equipped) return;
+            if (!selfId || amount <= 0 || price <= 0) return;
             inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
             payout += amount * price;
             sold.push({ selfId, amount, price });

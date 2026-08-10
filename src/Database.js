@@ -461,26 +461,52 @@ const Database = {
             const bySelfId = new Map();
             existing.forEach((row) => {
                 const key = Number(row.selfId);
-                if (!bySelfId.has(key)) bySelfId.set(key, row);
+                if (!bySelfId.has(key)) bySelfId.set(key, []);
+                bySelfId.get(key).push(row);
             });
             Object.values(inventory).forEach((item) => {
                 const selfId = Number(item.selfId || 0);
                 const amount = Number(item.amount || 0);
                 if (!selfId) return;
-                const current = bySelfId.get(selfId);
+                const rows = bySelfId.get(selfId) || [];
                 if (amount <= 0) {
-                    if (current) write('DELETE FROM items WHERE id = ? AND characterId = ?', [current.id, characterId]);
+                    rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
                     return;
                 }
-                const equipped = item.equipped ? 1 : 0;
-                const slot = Number(item.slot || current?.slot || 0);
-                if (current) {
-                    if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== slot) {
-                        write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, slot, current.id, characterId]);
+                const baseSlot = Number(item.slot || rows[0]?.slot || 0);
+                const nonStackable = baseSlot > 0 || item.stackable === false;
+                if (!nonStackable) {
+                    const current = rows[0];
+                    const equipped = item.equipped ? 1 : 0;
+                    if (current) {
+                        if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== baseSlot) {
+                            write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, baseSlot, current.id, characterId]);
+                        }
+                    } else {
+                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, baseSlot, characterId]);
                     }
-                } else {
-                    write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, slot, characterId]);
+                    rows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+                    return;
                 }
+
+                const equippedSlots = Array.isArray(item.equippedSlots)
+                    ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
+                    : item.equipped ? [baseSlot] : [];
+                const desired = [
+                    ...equippedSlots.map((slot) => ({ equipped: 1, slot })),
+                    ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: baseSlot }))
+                ];
+                desired.forEach((entry, index) => {
+                    const current = rows[index];
+                    if (current) {
+                        if (Number(current.amount) !== 1 || Number(current.equipped) !== entry.equipped || Number(current.slot) !== entry.slot) {
+                            write('UPDATE items SET amount = 1, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [entry.equipped, entry.slot, current.id, characterId]);
+                        }
+                    } else {
+                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, entry.equipped, entry.slot, characterId]);
+                    }
+                });
+                rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
             });
             return { characterId, entries: Object.keys(inventory).length };
         }, 'inventory:sync-summary'));

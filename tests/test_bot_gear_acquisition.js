@@ -88,6 +88,100 @@ const marketNoGradePlan = GearAcquisitionPlanner.planFor({ level: 5, stats: { cl
 assert.strictEqual(marketNoGradePlan.strategy, 'market', 'an affordable no-grade market offer must beat an unavailable drop route');
 assert.strictEqual(marketNoGradePlan.recipeId, null, 'no-grade market purchases must never request crafting');
 
+const failedDropState = {
+    level: 10,
+    stats: {
+        classId: 0,
+        role: 'dps',
+        targetCombat: {
+            populationTargets: {
+                450: { resolves: GearAcquisitionPlanner.DIRECT_FAILURE_RESOLVE_LIMIT, targetKills: 0 }
+            }
+        }
+    },
+    inventory: {}
+};
+const failedTarget = GearAcquisitionPlanner.preferredNoGradeTarget(failedDropState);
+const failedDropPlan = {
+    status: 'active',
+    grade: 'none',
+    strategy: 'direct_drop',
+    plannedForLevel: 10,
+    startedAt: 1000,
+    expectedKills: 19,
+    target: { selfId: failedTarget.selfId, name: failedTarget.template.name },
+    next: { npcId: 450, spotId: 'starter-field', itemId: failedTarget.selfId },
+    targetProgress: { npcId: 450, resolves: 0, targetKills: 0 }
+};
+const failedContext = GearAcquisitionPlanner.replanContextFor(failedDropState, failedDropPlan, 20 * 60 * 1000);
+assert.strictEqual(failedContext.failure.reason, 'combat_unviable', 'a cold drop route with repeated resolves and no target kills must expire');
+assert.strictEqual(failedContext.planCurrent, true, 'failure detection must work even when the persisted plan still matches the current level');
+const npcFallbackPlan = GearAcquisitionPlanner.planFor(failedDropState, {
+    spots: [],
+    ...failedContext,
+    findMarketOffer: (item) => Number(item.selfId) === Number(failedTarget.selfId)
+        ? { selfId: item.selfId, price: 999999, town: 'Gludio', sourceType: 'npc' }
+        : null
+});
+assert.strictEqual(npcFallbackPlan.strategy, 'market', 'a failed direct-drop target must switch to an NPC offer even when its nominal kill effort looked cheaper');
+assert.strictEqual(npcFallbackPlan.target.selfId, failedTarget.selfId, 'market recovery should preserve the desired upgrade instead of silently changing slots');
+assert.strictEqual(npcFallbackPlan.market.sourceType, 'npc', 'the recovery route must retain the concrete NPC-shop source');
+const persistedFallback = GearAcquisitionPlanner.finalizePlan(failedDropState, failedDropPlan, npcFallbackPlan, failedContext, 20 * 60 * 1000);
+assert.strictEqual(persistedFallback.recoveryTargets[0].targetId, failedTarget.selfId, 'a failed drop target must remain remembered across subsequent resolver ticks');
+const continuedFallback = GearAcquisitionPlanner.replanContextFor(failedDropState, persistedFallback, 21 * 60 * 1000);
+assert.strictEqual(continuedFallback.forceMarketTargetId, failedTarget.selfId, 'an in-progress market fallback must not jump straight back to the failed drop route');
+
+const sameSlotAlternative = DataCache.items.find((item) => (
+    Number(item.selfId) !== Number(failedTarget.selfId)
+    && Number(item.etc?.slot) === Number(failedTarget.etc?.slot)
+    && GearAcquisitionPlanner.suitable(item, failedDropState, 'dps', 'none')
+));
+const equivalentNpcFallback = GearAcquisitionPlanner.planFor(failedDropState, {
+    spots: [],
+    ...failedContext,
+    findMarketOffer: (item) => Number(item.selfId) === Number(sameSlotAlternative.selfId)
+        ? { selfId: item.selfId, price: 100, town: 'Talking Island', sourceType: 'npc' }
+        : null
+});
+assert.strictEqual(equivalentNpcFallback.strategy, 'market', 'an NPC-sold equivalent in the same slot must be considered when the exact failed drop is not sold');
+assert.strictEqual(equivalentNpcFallback.target.selfId, sameSlotAlternative.selfId, 'the fallback must stay in the failed equipment slot instead of abandoning the upgrade class');
+const completedRecovery = GearAcquisitionPlanner.marketRecoveryPlanForTarget({
+    ...failedDropState,
+    inventory: { [failedTarget.selfId]: { selfId: failedTarget.selfId, amount: 1, equipped: true } }
+}, failedTarget.selfId, {
+    excludedTargetIds: [failedTarget.selfId],
+    findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Talking Island', sourceType: 'npc' })
+});
+assert.strictEqual(completedRecovery, null, 'buying the recovery target must finish that fallback instead of chaining same-slot purchases');
+assert.strictEqual(GearAcquisitionPlanner.directPlanFailure({
+    ...failedDropState,
+    inventory: { [failedTarget.selfId]: { selfId: failedTarget.selfId, amount: 1, equipped: true } }
+}, failedDropPlan, 20 * 60 * 1000), null, 'an acquired drop target must complete normally even when its old combat counters look unsuccessful');
+
+const alternativeContext = { ...failedContext, forceMarketTargetId: null };
+const alternativePlan = GearAcquisitionPlanner.planFor(failedDropState, {
+    spots: [],
+    ...alternativeContext,
+    findMarketOffer: () => null
+});
+assert.notStrictEqual(Number(alternativePlan.target?.selfId || 0), Number(failedTarget.selfId), 'without a market offer the planner must move to another attainable target');
+
+const gradeChangedContext = GearAcquisitionPlanner.replanContextFor({ ...failedDropState, level: 20 }, failedDropPlan, 21 * 60 * 1000);
+assert.strictEqual(gradeChangedContext.planCurrent, false, 'a level-up into a new grade must invalidate an open no-grade plan and party request');
+assert.deepStrictEqual(gradeChangedContext.excludedTargetIds, [], 'old no-grade failures must not contaminate the new grade target list');
+assert.strictEqual(
+    GearAcquisitionPlanner.replanContextFor({ ...failedDropState, level: 11 }, failedDropPlan, 21 * 60 * 1000).planCurrent,
+    false,
+    'a same-grade level-up must still refresh the target instead of reusing an open party request'
+);
+const gradeChangedPlan = GearAcquisitionPlanner.planFor({ ...failedDropState, level: 20 }, {
+    spots: [],
+    ...gradeChangedContext,
+    findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' })
+});
+assert.strictEqual(gradeChangedPlan.grade, 'd', 'a level-20 bot must immediately receive a D-grade objective');
+assert.strictEqual(gradeChangedPlan.strategy, 'market', 'the refreshed D-grade objective may use the available NPC shop');
+
 const serviceCrafter = {
     level: 70,
     activity: 'crafting',
@@ -123,9 +217,60 @@ const dMarketPlan = GearAcquisitionPlanner.planFor({ ...mage, level: 20 }, {
     findMarketOffer: (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' })
 });
 assert.strictEqual(dMarketPlan.strategy, 'market', 'D-grade bots must compare a ready market offer with crafting and drops');
+const liveNpcFirstPlan = GearAcquisitionPlanner.planFor({
+    level: 20,
+    adena: 1000000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: { 57: { selfId: 57, amount: 1000000 } }
+}, { spots: [stoneGolemSpot] });
+assert.strictEqual(liveNpcFirstPlan.strategy, 'market', 'an ordinary D NPC upgrade must outrank deliberate equipment farming');
+assert.strictEqual(liveNpcFirstPlan.market.sourceType, 'npc');
+assert.strictEqual(liveNpcFirstPlan.partyNeedReason, 'npc_progression');
+assert(liveNpcFirstPlan.market.price + liveNpcFirstPlan.market.reserve <= 1000000, 'an affordable D purchase must preserve its operational reserve');
 const atubaMace = DataCache.items.find((item) => item.template?.name === 'Atuba Mace');
 const entryDSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd' && item.template?.kind === 'Weapon.Sword');
 const noGradeSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'none' && item.template?.kind === 'Weapon.Sword');
+const overleveledNoGradePlan = GearAcquisitionPlanner.planFor({
+    level: 40,
+    adena: 1000000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: {
+        57: { selfId: 57, amount: 1000000 },
+        [noGradeSword.selfId]: { selfId: noGradeSword.selfId, amount: 1, equipped: true, slot: 7 }
+    }
+}, { spots: [stoneGolemSpot] });
+assert.strictEqual(overleveledNoGradePlan.strategy, 'market', 'a level-40 bot in no-grade must buy an adequate D bridge before chasing C gear');
+assert.strictEqual(String(DataCache.items.find((item) => Number(item.selfId) === overleveledNoGradePlan.target.selfId)?.etc?.rank), 'd');
+const adequateDInventory = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 0, level: 20 }).items.reduce((inventory, item) => {
+    const current = inventory[item.selfId];
+    if (current) {
+        current.amount += 1;
+        current.equippedCount += 1;
+        current.equippedSlots.push(item.slot);
+    } else {
+        inventory[item.selfId] = {
+            selfId: item.selfId,
+            name: item.name,
+            amount: 1,
+            equipped: true,
+            equippedCount: 1,
+            equippedSlots: [item.slot],
+            slot: item.slot
+        };
+    }
+    return inventory;
+}, { 57: { selfId: 57, name: 'Adena', amount: 5000000 } });
+const cGradeWithAdequateD = {
+    level: 40,
+    adena: 5000000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: adequateDInventory
+};
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan(cGradeWithAdequateD, { spots: [stoneGolemSpot] }),
+    null,
+    'a level-40 bot with an adequate D kit must not invent an ordinary NPC C-grade upgrade'
+);
 const equippedUpgrade = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20, stats: { role: 'tank' } }, {
     [noGradeSword.selfId]: { selfId: noGradeSword.selfId, amount: 1, equipped: true, slot: 7 },
     [entryDSword.selfId]: { selfId: entryDSword.selfId, amount: 1, equipped: false, slot: 7 }
@@ -140,6 +285,18 @@ const bowAndShieldInventory = GearAcquisitionPlanner.equipInventoryUpgrades({ le
 });
 assert.strictEqual(bowAndShieldInventory[starterBow.selfId].equipped, true, 'the cold inventory should retain its two-handed bow');
 assert.strictEqual(bowAndShieldInventory[starterShield.selfId].equipped, false, 'the cold inventory must unequip a shield when a two-handed bow is equipped');
+const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
+    && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
+const dRing = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
+    && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 4);
+const pairedJewelry = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20, stats: { role: 'dps' } }, {
+    [dEarring.selfId]: { selfId: dEarring.selfId, amount: 2, equipped: false, slot: 1 },
+    [dRing.selfId]: { selfId: dRing.selfId, amount: 2, equipped: false, slot: 4 }
+});
+assert.deepStrictEqual(pairedJewelry[dEarring.selfId].equippedSlots, [1, 2], 'two identical cold earrings must occupy both paperdoll sides');
+assert.deepStrictEqual(pairedJewelry[dRing.selfId].equippedSlots, [4, 5], 'two identical cold rings must occupy both paperdoll sides');
+assert.strictEqual(pairedJewelry[dEarring.selfId].equippedCount, 2);
+assert.strictEqual(pairedJewelry[dRing.selfId].equippedCount, 2);
 const entryDTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} });
 assert(entryDTarget, 'a new D-grade bot must receive an attainable equipment target');
 assert(Number(entryDTarget.item.template.price) < Number(atubaMace.template.price), 'a fresh D-grade bot must not begin by chasing the top D weapon');
@@ -370,6 +527,16 @@ const routed = SpotProfiles.findForState({
     stats: { equipmentPlan: { status: 'active', next: { spotId: stoneGolemSpot.id } } }
 });
 assert.strictEqual(routed.id, stoneGolemSpot.id, 'an active equipment plan must override the previous farming spot');
+SpotProfiles.cache = [
+    { id: 'starter-mixed', avgLevel: 13, minLevel: 9, maxLevel: 22, density: 78, center: {}, npcEntries: [] },
+    { id: 'd-grade-field', avgLevel: 30, minLevel: 27, maxLevel: 33, density: 12, center: {}, npcEntries: [] }
+];
+const outleveledRoute = SpotProfiles.findForState({
+    level: 30,
+    spotId: 'starter-mixed',
+    stats: { equipmentPlan: { status: 'no_grade_drop_only', grade: 'none', strategy: 'direct_drop', next: null } }
+});
+assert.strictEqual(outleveledRoute.id, 'd-grade-field', 'a completed no-grade plan must not keep a level-30 cold bot in a mixed starter sector');
 SpotProfiles.reset();
 
 console.log('Bot gear acquisition checks passed');

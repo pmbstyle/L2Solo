@@ -34,8 +34,24 @@ function itemTemplate(selfId) {
 
 function equippedTemplates(state = {}) {
     return Object.values(state.inventory || {})
-        .filter((item) => item?.equipped)
-        .map((item) => itemTemplate(item.selfId))
+        .flatMap((item) => {
+            const template = itemTemplate(item?.selfId);
+            if (!template) return [];
+            const amount = Math.max(0, number(item.amount, item?.equipped ? 1 : 0));
+            const explicitSlots = Array.isArray(item.equippedSlots)
+                ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
+                : [];
+            const slots = explicitSlots.length
+                ? explicitSlots
+                : item?.equipped && amount > 0
+                    ? (() => {
+                        const slot = number(item.slot, number(template.etc?.slot));
+                        const pair = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [slot];
+                        return pair.slice(0, Math.min(amount, pair.length));
+                    })()
+                    : [];
+            return slots.map((slot) => ({ ...template, etc: { ...(template.etc || {}), slot } }));
+        })
         .filter(Boolean);
 }
 

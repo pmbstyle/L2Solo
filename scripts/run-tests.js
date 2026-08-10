@@ -92,6 +92,7 @@ const tests = [
     'tests/test_bot_craft_wait_recovery.js',
     'tests/test_bot_craft_telemetry.js',
     'tests/test_bot_cold_market_purchase.js',
+    'tests/test_cold_inventory_jewelry.js',
     'tests/test_bot_cold_market_listing.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',

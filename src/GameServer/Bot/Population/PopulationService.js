@@ -1663,27 +1663,30 @@ const PopulationService = {
         // gear plan still needs the complete atlas.  Passing [] here turned every
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
+        const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
         const reusablePartyRequest = !state.party?.partyId
             && previousPlan?.next
+            && replanContext.planCurrent
+            && !replanContext.failure
             && state.stats?.partyRequest?.status === 'open'
             && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
         const upgradedPlan = reusablePartyRequest
             ? previousPlan
-            : GearAcquisitionPlanner.planFor(state, { spots });
+            : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
         const previousRefresh = previousPlan?.recipeId
             && !reusablePartyRequest
-            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId })
+            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
             : null;
         const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
             ? { ...previousRefresh, finishBeforeUpgrade: true }
             : upgradedPlan;
-        const sameTarget = Number(previousPlan?.target?.selfId || 0) === Number(rawAcquisitionPlan.target?.selfId || 0);
-        const planStartedAt = sameTarget ? Number(previousPlan?.startedAt || startedAt) : startedAt;
+        const finalizedPlan = reusablePartyRequest
+            ? previousPlan
+            : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
         const acquisitionPlan = {
-            ...rawAcquisitionPlan,
-            startedAt: planStartedAt,
-            marketFallback: rawAcquisitionPlan.status === 'active' && rawAcquisitionPlan.strategy === 'craft'
-                && planStartedAt + 20 * 60 * 1000 <= Date.now()
+            ...finalizedPlan,
+            marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
+                && Number(finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
         };
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
@@ -1694,6 +1697,21 @@ const PopulationService = {
             stats: plannedStats
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
+        if (replanContext.failure) {
+            planEvents.push({
+                type: 'gear_acquisition_fallback',
+                summary: `${state.name} abandoned an unproductive ${previousPlan.target?.name || `item ${replanContext.failure.targetId}`} drop route`,
+                weight: 3,
+                meta: {
+                    reason: replanContext.failure.reason,
+                    targetId: replanContext.failure.targetId,
+                    npcId: replanContext.failure.npcId,
+                    resolves: replanContext.failure.resolves,
+                    targetKills: replanContext.failure.targetKills,
+                    nextStrategy: acquisitionPlan.strategy
+                }
+            });
+        }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
                 const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
@@ -1813,11 +1831,33 @@ const PopulationService = {
                         : Promise.resolve(null);
                     return goalReady.then(() => marketLifecycle);
                 }).then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
+                    .then((goalSnapshot) => {
+                        if (goalSnapshot?.current?.status === 'active') return goalSnapshot;
+                        const returnSpot = SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId);
+                        return GoalService.review(marketLifecycle.state, { spot: returnSpot || spot });
+                    })
                     .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycle.state, goalSnapshot?.current)
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
-                    const shouldOpenListing = marketResult.purchased || (!marketLifecycle.closed && goal?.type === 'sell_inventory');
+                    if (marketResult.purchased) {
+                        const batchState = {
+                            ...purchasedState,
+                            activity: 'shopping',
+                            timing: {
+                                ...(purchasedState.timing || {}),
+                                activityStartedAt: Number(purchasedState.timing?.activityStartedAt || Date.now()),
+                                nextResolveAt: Date.now() + 1000
+                            }
+                        };
+                        // Keep the bot in town for one prompt follow-up pass.
+                        // The next scheduler tick replans from the purchased
+                        // inventory and can buy another item in this same town
+                        // without returning to the hunting ground in between.
+                        return LifeState.upsertState(batchState, 'market_batch_continue')
+                            .then((saved) => saved || batchState);
+                    }
+                    const shouldOpenListing = !marketLifecycle.closed && goal?.type === 'sell_inventory';
                     const listingPromise = shouldOpenListing
                         ? ColdMarketListingService.open(purchasedState)
                         : Promise.resolve({ state: purchasedState, listed: false });
