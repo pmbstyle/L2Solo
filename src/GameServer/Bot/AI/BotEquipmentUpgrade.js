@@ -96,7 +96,9 @@ function isSuitableItem(actor, item) {
             role,
             actor.fetchClassId()
         )) return false;
-        if (!['mage', 'healer', 'buffer', 'archer'].includes(role) && slot !== ARMOR_SLOTS.weapon) return false;
+        if (!['mage', 'healer', 'buffer', 'archer'].includes(role)
+            && !BotWeaponCompatibility.isFistClass(actor.fetchClassId())
+            && slot !== ARMOR_SLOTS.weapon) return false;
         return true;
     }
 

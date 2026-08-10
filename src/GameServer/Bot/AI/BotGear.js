@@ -139,7 +139,13 @@ function armorStyleFor(role) {
 
 function chooseWeapon(rank, level, role, classId) {
     const kinds = BotWeaponCompatibility.weaponKindsFor(role, classId);
-    const prefersOneHander = !(role === 'mage' || role === 'healer' || role === 'buffer' || role === 'archer');
+    const prefersOneHander = !(
+        role === 'mage'
+        || role === 'healer'
+        || role === 'buffer'
+        || role === 'archer'
+        || BotWeaponCompatibility.isFistClass(classId)
+    );
     const weapon = choose(
         rank,
         level,
@@ -155,8 +161,7 @@ function chooseWeapon(rank, level, role, classId) {
         rank,
         level,
         (item) => item.kind.startsWith('Weapon.') && (
-            role !== 'buffer'
-            || BotWeaponCompatibility.isCasterRole(role, classId)
+            BotWeaponCompatibility.isCasterRole(role, classId)
             || !BotWeaponCompatibility.isCasterWeapon(item.kind, item.name, item.pAtk, item.mAtk)
         ),
         (item) => item.pAtk + item.mAtk

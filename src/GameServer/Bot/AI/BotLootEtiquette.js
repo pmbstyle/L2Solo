@@ -110,6 +110,14 @@ function itemDemand(botSession, info) {
     const armorType = info.kind.replace('Armor.', '');
     const casterRole = BotWeaponCompatibility.isCasterRole(role, classId);
     const casterWeapon = BotWeaponCompatibility.isCasterWeapon(info.kind, info.name, info.pAtk, info.mAtk);
+    const suitableWeapon = BotWeaponCompatibility.isSuitableWeapon(
+        info.kind,
+        info.name,
+        info.pAtk,
+        info.mAtk,
+        role,
+        classId
+    );
     const currentWeapon = botSession.actor.backpack?.fetchEquippedWeapon?.();
     const candidateWeaponScore = BotWeaponCompatibility.scoreWeapon(info.pAtk, info.mAtk, role, classId);
     const currentWeaponScore = currentWeapon
@@ -117,11 +125,12 @@ function itemDemand(botSession, info) {
         : 0;
 
     if (info.weapon) {
-        if (role === 'archer' && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
-        else if (role === 'dagger' && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
+        if (role === 'archer' && suitableWeapon && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
+        else if (role === 'dagger' && suitableWeapon && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
+        else if (BotWeaponCompatibility.isFistClass(classId) && suitableWeapon && ['Fist', 'DualFist'].includes(weaponType)) addDemand(result, 6, 'fist weapon');
         else if (casterRole && casterWeapon && candidateWeaponScore > currentWeaponScore) addDemand(result, 6, 'caster weapon');
-        else if (role === 'tank' && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
-        else if ((role === 'dps' || role === 'dagger') && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
+        else if (role === 'tank' && suitableWeapon && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
+        else if ((role === 'dps' || role === 'dagger') && suitableWeapon && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
 
     if (info.armor) {

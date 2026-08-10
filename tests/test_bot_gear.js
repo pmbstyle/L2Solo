@@ -119,10 +119,14 @@ assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKin
     'Bladedancer must not inherit caster weapon compatibility from the shared buffer role');
 assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.Blunt'],
     'Titan must inherit the Destroyer blunt preference through its normalized parent class');
+assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
+    'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
     'Dominator must inherit Overlord caster compatibility through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
     'Sword Singer must reject caster staves stored under the shared blunt family');
+assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Bone Staff', 39, 35, 'dps', 47), false,
+    'Orc Monk melee damage dealers must reject caster staves stored under the blunt family');
 assert.strictEqual(BotWeaponCompatibility.isCasterWeapon('Weapon.Sword', 'Broadsword', 11, 9), false,
     'close starter stats must not turn an ordinary physical sword into caster gear');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Sword', 'Broadsword', 11, 9, 'buffer', 21), true,
@@ -137,6 +141,10 @@ assert(singerWeapon && !BotWeaponCompatibility.isCasterWeapon(
     singerWeapon.stats.pAtk,
     singerWeapon.stats.mAtk
 ), 'Sword Singer generated gear must retain a real melee weapon');
+const monkPlan = BotGear.planFor({ classId: 47, level: 24 });
+const monkWeapon = itemTemplate(bySlot(monkPlan, 7)?.selfId || bySlot(monkPlan, 14)?.selfId);
+assert.strictEqual(monkWeapon.template.kind, 'Weapon.DualFist',
+    'Orc Monk generated gear must use combat fists instead of blunt weapons');
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     classId: 29,
     level: 33,
@@ -154,6 +162,38 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     paperdoll: { 7: { id: 1122 } }
 }));
 assert.strictEqual(upgrades.length, 0, 'a Sword Singer must keep its melee weapon instead of equipping traded caster gear');
+
+const boneStaffTemplate = itemTemplate(178);
+const scallopJamadhrTemplate = itemTemplate(262);
+const equippedBoneStaff = wearable(1123, {
+    selfId: boneStaffTemplate.selfId,
+    name: boneStaffTemplate.template.name,
+    kind: boneStaffTemplate.template.kind,
+    price: boneStaffTemplate.template.price,
+    rank: boneStaffTemplate.etc.rank,
+    slot: boneStaffTemplate.etc.slot,
+    pAtk: boneStaffTemplate.stats.pAtk,
+    mAtk: boneStaffTemplate.stats.mAtk,
+    equipped: true
+});
+const tradedScallopJamadhr = wearable(1124, {
+    selfId: scallopJamadhrTemplate.selfId,
+    name: scallopJamadhrTemplate.template.name,
+    kind: scallopJamadhrTemplate.template.kind,
+    price: scallopJamadhrTemplate.template.price,
+    rank: scallopJamadhrTemplate.etc.rank,
+    slot: scallopJamadhrTemplate.etc.slot,
+    pAtk: scallopJamadhrTemplate.stats.pAtk,
+    mAtk: scallopJamadhrTemplate.stats.mAtk
+});
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 47,
+    level: 24,
+    items: [equippedBoneStaff, tradedScallopJamadhr],
+    paperdoll: { 14: { id: 1123 } }
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchSelfId()), [262],
+    'an Orc Monk must recognize traded Scallop Jamadhr as a safe replacement for an equipped Bone Staff');
 
 const movingTradeSession = upgradeSession({
     classId: 29,

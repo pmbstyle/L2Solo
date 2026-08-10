@@ -382,9 +382,11 @@ function forCharacter(character = {}, options = {}) {
         tier: tier.label,
         classFamily: family?.family || null,
         armor: base.armor,
-        weapon: role === 'buffer' && state.classId !== null && !BotWeaponCompatibility.isCasterRole(role, state.classId)
-            ? 'melee_sword_or_blunt'
-            : base.weapon,
+        weapon: state.classId !== null && BotWeaponCompatibility.isFistClass(state.classId)
+            ? 'dual_fist'
+            : role === 'buffer' && state.classId !== null && !BotWeaponCompatibility.isCasterRole(role, state.classId)
+                ? 'melee_sword_or_blunt'
+                : base.weapon,
         statPriority: [...base.statPriority],
         specialAbilities: [...specialAbilities],
         skills: skillHints,

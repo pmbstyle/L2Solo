@@ -56,6 +56,8 @@ assert.ok(hint.warnings.some((warning) => warning.includes('not a Bishop')), 'Pr
 hint = GearSkillHints.forCharacter({ classId: 21, level: 48 });
 assert.strictEqual(hint.role, 'buffer');
 assert.strictEqual(hint.weapon, 'melee_sword_or_blunt', 'Sword Singer hints must not advertise caster weapons');
+hint = GearSkillHints.forCharacter({ classId: 47, level: 24 });
+assert.strictEqual(hint.weapon, 'dual_fist', 'Orc Monk hints must advertise its real combat-fist progression');
 
 hint = GearSkillHints.forCharacter({ level: 48 }, { role: 'buffer' });
 assert.strictEqual(hint.weapon, 'caster_weapon', 'a buffer with unknown class data must keep the safe caster weapon hint');

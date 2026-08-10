@@ -23,6 +23,19 @@ assert(ironSources.length > 0, 'known material drops must resolve to their real 
 assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
 assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
 const handAxe = DataCache.items.find((item) => item.template?.name === 'Hand Axe');
+const boneStaff = DataCache.items.find((item) => item.template?.name === 'Bone Staff');
+const scallopJamadhr = DataCache.items.find((item) => item.template?.name === 'Scallop Jamadhr');
+const lyraState = { level: 24, stats: { classId: 47, role: 'dps' } };
+assert.strictEqual(GearAcquisitionPlanner.suitable(boneStaff, lyraState, 'dps', 'd'), false,
+    'an Orc Monk must not treat the D-grade Bone Staff as a suitable melee weapon');
+const lyraInventory = GearAcquisitionPlanner.equipInventoryUpgrades(lyraState, {
+    [boneStaff.selfId]: { selfId: boneStaff.selfId, amount: 1, equipped: true, slot: boneStaff.etc.slot },
+    [scallopJamadhr.selfId]: { selfId: scallopJamadhr.selfId, amount: 1, equipped: false, slot: scallopJamadhr.etc.slot }
+});
+assert.strictEqual(lyraInventory[boneStaff.selfId].equipped, false,
+    'cold equipment refresh must remove an already equipped caster staff from an Orc Monk');
+assert.strictEqual(lyraInventory[scallopJamadhr.selfId].equipped, true,
+    'cold equipment refresh must replace the caster staff with the Orc Monk combat fists');
 const wereratChiefSpot = {
     id: 'wererat-chief-field',
     avgLevel: 19,
@@ -403,7 +416,7 @@ const atubaWithCokesIngredients = atubaMaceRecipe.materials.reduce((inventory, m
 });
 const componentPlan = GearAcquisitionPlanner.planFor({
     level: 20,
-    stats: { classId: 0, role: 'dps' },
+    stats: { classId: 10, role: 'mage' },
     inventory: atubaWithCokesIngredients
 }, { spots: [], recipeId: atubaMaceRecipe.recipeId });
 assert.strictEqual(componentPlan.status, 'component_ready', 'a ready Cokes batch must be distinguished from final Atuba Mace readiness');
