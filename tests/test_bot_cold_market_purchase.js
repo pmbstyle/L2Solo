@@ -89,6 +89,8 @@ async function run() {
         },
         stats: {
             equipment: [{ selfId: 1, slot: 7, rank: 'none', kind: 'Weapon.Sword' }],
+            equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 2, name: 'Long Sword', slot: 7 } },
+            partyRequest: { status: 'open', priority: 'required' },
             marketWanted: { itemId: 2, itemName: 'Long Sword', lastMissingAt: Date.now() }
         },
         loc: {},
@@ -104,6 +106,8 @@ async function run() {
     assert.strictEqual(result.state.inventory['1'].equipped, false);
     assert.strictEqual(result.state.inventory['2'].equipped, true);
     assert.strictEqual(result.state.stats.equipment[0].selfId, 2);
+    assert.strictEqual(result.state.stats.equipmentPlan, undefined, 'a purchased equipped target must immediately finish its stale acquisition plan');
+    assert.strictEqual(result.state.stats.partyRequest, undefined, 'fulfilling a gear target must clear its obsolete party request');
     assert.strictEqual(result.state.stats.marketWanted, null, 'fulfilled demand must leave the market index immediately');
     assert.strictEqual(playerStore.items[0].count, 0, 'private offer should be consumed');
     const weaponSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 77);

@@ -349,6 +349,15 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         owned.equippedCount = 0;
         owned.equippedSlots = [];
     };
+    if (!BotEquipmentCompatibility.usesShield(role, classId)) {
+        Object.values(next).forEach((owned) => {
+            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            if (Number(template?.etc?.slot || 0) === 8
+                && equippedSlotsFor(owned, owned.slot).includes(8)) {
+                setUnequipped(owned);
+            }
+        });
+    }
     best.forEach(({ entry, item }, key) => {
         const slot = Number(item.etc?.slot || 0);
         Object.values(next).forEach((owned) => {

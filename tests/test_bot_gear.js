@@ -7,6 +7,7 @@ DataCache.init();
 
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Item = invoke('GameServer/Item/Item');
@@ -33,6 +34,35 @@ assert.ok(!bySlot(lowMage, 8), 'low mage should not auto-equip a shield');
 const lowFighter = BotGear.planFor({ classId: 0, level: 2 });
 assert.strictEqual(itemTemplate(bySlot(lowFighter, 10).selfId).template.kind, 'Armor.Leather');
 assert.strictEqual(itemTemplate(bySlot(lowFighter, 11).selfId).template.kind, 'Armor.Leather');
+
+const noGradeShield = DataCache.items.find((item) => item.template?.kind === 'Armor.Shield'
+    && Number(item.etc?.slot) === 8 && String(item.etc?.rank || 'none') === 'none');
+assert(noGradeShield, 'the datapack must contain a no-grade shield fixture');
+const shieldInventory = {
+    [noGradeShield.selfId]: {
+        selfId: noGradeShield.selfId,
+        name: noGradeShield.template.name,
+        amount: 1,
+        equipped: true,
+        equippedCount: 1,
+        equippedSlots: [8],
+        slot: 8,
+        rank: 'none',
+        kind: 'Armor.Shield'
+    }
+};
+const mageInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+    level: 10,
+    stats: { classId: 10, role: 'mage' }
+}, shieldInventory);
+assert.strictEqual(mageInventory[String(noGradeShield.selfId)].equipped, false,
+    'cold equipment reconciliation must remove shields from classes that cannot use them');
+const fighterInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+    level: 10,
+    stats: { classId: 0, role: 'dps' }
+}, shieldInventory);
+assert.strictEqual(fighterInventory[String(noGradeShield.selfId)].equipped, true,
+    'shield-compatible fighters must retain an equipped shield');
 
 const noviceDagger = BotGear.planFor({ classId: 7, level: 16 });
 const weapon = itemTemplate(bySlot(noviceDagger, 7).selfId);

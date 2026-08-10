@@ -910,13 +910,52 @@ function discardInvalidEquipmentPlans() {
     });
 }
 
+function discardFulfilledEquipmentPlans() {
+    const timestamp = now();
+    return Database.execute([
+        `WITH plan_targets AS (
+            SELECT characterId,
+                CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) AS targetId,
+                CAST(json_extract(statsJson, '$.equipmentPlan.target.slot') AS INTEGER) AS targetSlot,
+                '$."' || CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) || '"' AS inventoryPath
+            FROM ${TABLE}
+            WHERE CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) > 0
+              AND CAST(json_extract(statsJson, '$.equipmentPlan.target.slot') AS INTEGER) > 0
+        ), fulfilled_equipment_plans AS (
+            SELECT targets.characterId
+            FROM plan_targets targets
+            INNER JOIN ${TABLE} states ON states.characterId = targets.characterId
+            WHERE CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.equipped') AS INTEGER) = 1
+              AND (
+                CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.slot') AS INTEGER) = targets.targetSlot
+                OR EXISTS (
+                    SELECT 1
+                    FROM json_each(COALESCE(json_extract(states.inventorySummary, targets.inventoryPath || '.equippedSlots'), '[]')) slots
+                    WHERE CAST(slots.value AS INTEGER) = targets.targetSlot
+                )
+              )
+        )
+        UPDATE ${TABLE}
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest'),
+            updatedAt = ?
+        WHERE characterId IN (SELECT characterId FROM fulfilled_equipment_plans)`,
+        [timestamp]
+    ]).then((result) => {
+        const discarded = Number(result?.affectedRows || 0);
+        if (discarded > 0) {
+            utils.infoWarn('BotLife', 'discarded %d fulfilled equipment plans on startup', discarded);
+        }
+        return discarded;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
@@ -2024,13 +2063,18 @@ const BotLifeState = {
             kind: template.template?.kind || ''
         };
         const equipment = equipmentSummaryFromInventory(inventory);
+        const purchaseStats = { ...(state.stats || {}) };
+        if (Number(purchaseStats.equipmentPlan?.target?.selfId || 0) === selfId && slot > 0) {
+            delete purchaseStats.equipmentPlan;
+            delete purchaseStats.partyRequest;
+        }
         const nextState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
             activity: 'shopping',
             inventory,
             stats: {
-                ...(state.stats || {}),
+                ...purchaseStats,
                 equipment,
                 marketRetryAfter: null,
                 marketWanted: null,
