@@ -2,6 +2,17 @@ const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalPlanner = invoke('GameServer/Bot/Goals/GoalPlanner');
 
+function reviewSpot(state, explicitSpot = null) {
+    if (explicitSpot) return explicitSpot;
+    const spotId = state?.stats?.travel?.spotId
+        || state?.stats?.marketReturn?.spotId
+        || state?.spotId
+        || null;
+    return spotId
+        ? invoke('GameServer/Bot/Population/SpotProfiles').findById(spotId)
+        : null;
+}
+
 const GoalService = {
     initialized: false,
 
@@ -33,7 +44,7 @@ const GoalService = {
         const cached = GoalState.snapshot(state.characterId);
 
         const choose = (existing) => {
-            const candidates = NeedsEvaluator.evaluate(state, { spot: options.spot, now: timestamp });
+            const candidates = NeedsEvaluator.evaluate(state, { spot: reviewSpot(state, options.spot), now: timestamp });
             const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory' || candidate?.type === 'buy_craft_material'
                 || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
             const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
@@ -52,5 +63,7 @@ const GoalService = {
         return (cached ? Promise.resolve(cached) : GoalState.load(state.characterId)).then(choose);
     }
 };
+
+GoalService.reviewSpot = reviewSpot;
 
 module.exports = GoalService;
