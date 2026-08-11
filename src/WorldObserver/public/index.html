@@ -19,6 +19,10 @@
                     </div>
                 </div>
                 <div class="topbar-actions">
+                    <button class="rankings-button" id="openRankings" type="button" aria-haspopup="dialog" aria-controls="rankingsModal">
+                        <span aria-hidden="true">♛</span>
+                        Rankings
+                    </button>
                     <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
                         <span>⌖</span>
                     </button>
@@ -160,7 +164,50 @@
         </aside>
     </main>
 
+    <div class="rankings-backdrop" id="rankingsModal" role="dialog" aria-modal="true" aria-labelledby="rankingsTitle" hidden>
+        <section class="rankings-modal">
+            <header class="rankings-header">
+                <div>
+                    <span class="section-kicker">World standings</span>
+                    <h2 id="rankingsTitle">Hall of Fame</h2>
+                    <p>Bots and online players ranked from the current world snapshot.</p>
+                </div>
+                <button class="rankings-close" id="closeRankings" type="button" aria-label="Close rankings">×</button>
+            </header>
+
+            <div class="rankings-controls">
+                <div class="ranking-tabs" id="rankingTabs" role="tablist" aria-label="Ranking metric">
+                    <button class="ranking-tab is-active" type="button" role="tab" aria-selected="true" data-ranking-metric="level">Progress</button>
+                    <button class="ranking-tab" type="button" role="tab" aria-selected="false" data-ranking-metric="adena">Wealth</button>
+                    <button class="ranking-tab" type="button" role="tab" aria-selected="false" data-ranking-metric="equipmentValue">Gear value</button>
+                </div>
+                <div class="ranking-filters" aria-label="Ranking filters">
+                    <label>
+                        <span>Race</span>
+                        <select id="rankingRace" aria-label="Ranking race">
+                            <option value="all">All races</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Class</span>
+                        <select id="rankingClass" aria-label="Ranking class">
+                            <option value="all">All classes</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div class="ranking-podium" id="rankingPodium" aria-label="Top three characters"></div>
+            <div class="ranking-list-head">
+                <span id="rankingScope">0 characters</span>
+                <span>Open a character for full details</span>
+            </div>
+            <div class="ranking-list" id="rankingList" role="list"></div>
+        </section>
+    </div>
+
     <script src="/observer/actorFilters.js"></script>
+    <script src="/observer/leaderboards.js"></script>
     <script src="/observer/app.js"></script>
 </body>
 </html>

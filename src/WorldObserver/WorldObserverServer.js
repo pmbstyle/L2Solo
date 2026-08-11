@@ -116,6 +116,32 @@ function className(value) {
         ?.template?.class || null;
 }
 
+const RACE_NAMES = Object.freeze({
+    0: 'Human',
+    1: 'Elf',
+    2: 'Dark Elf',
+    3: 'Orc',
+    4: 'Dwarf'
+});
+
+function normalizedRaceId(value, classId = null) {
+    if (value !== null && value !== undefined && value !== '') {
+        const raceId = Number(value);
+        if (Number.isInteger(raceId) && RACE_NAMES[raceId]) return raceId;
+    }
+    const normalized = normalizedClassId(classId);
+    if (normalized === null) return null;
+    const raceId = Number((DataCache.classTemplates || [])
+        .find((template) => Number(template.classId) === normalized)
+        ?.template?.race);
+    return Number.isInteger(raceId) && RACE_NAMES[raceId] ? raceId : null;
+}
+
+function raceMetadata(value, classId = null) {
+    const raceId = normalizedRaceId(value, classId);
+    return { raceId, raceName: raceId === null ? null : RACE_NAMES[raceId] };
+}
+
 function isPkActor(actor) {
     return Number(actor?.fetchKarma?.() || 0) > 0;
 }
@@ -132,6 +158,7 @@ function realPlayerSessions() {
 function compactPlayer(session) {
     const actor = session.actor;
     const classId = normalizedClassId(actor.fetchClassId?.());
+    const race = raceMetadata(actor.fetchRace?.(), classId);
     const loc = actorLoc(actor);
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
     return {
@@ -140,6 +167,10 @@ function compactPlayer(session) {
         level: actor.fetchLevel(),
         classId,
         className: className(classId),
+        ...race,
+        exp: Number(actor.fetchExp?.() || 0),
+        adena: liveAdena(actor),
+        equipmentValue: liveEquipmentValue(actor),
         loc,
         area,
         vitals: actorVitals(actor),
@@ -154,6 +185,7 @@ function isStaticServiceSession(session) {
 
 function compactHotBot(status, pkIds = new Set(), session = null) {
     const classId = normalizedClassId(status.classId);
+    const race = raceMetadata(session?.actor?.fetchRace?.(), classId);
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(status.loc));
     return {
         id: status.id,
@@ -162,6 +194,10 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
         level: status.level,
         classId,
         className: className(classId),
+        ...race,
+        exp: Number(session?.actor?.fetchExp?.() || 0),
+        adena: liveAdena(session?.actor),
+        equipmentValue: liveEquipmentValue(session?.actor),
         mode: status.mode,
         intent: status.intent,
         role: status.role,
@@ -206,6 +242,7 @@ function compactStateBot(state, hotIds, leaderState = null) {
     if (hotIds.has(Number(state.characterId))) return null;
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
+    const race = raceMetadata(stats.race ?? state.race, classId);
     const leaderId = Number(state.party?.leaderId || stats.leaderId || 0) || null;
     const loc = state.loc || { locX: 0, locY: 0, locZ: 0 };
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
@@ -216,6 +253,10 @@ function compactStateBot(state, hotIds, leaderState = null) {
         level: Number(state.level || 1),
         classId,
         className: className(classId),
+        ...race,
+        exp: Number(state.exp || 0),
+        adena: Number(state.adena || 0),
+        equipmentValue: coldEquipmentValue(state),
         mode: state.activity || 'hunting',
         intent: state.phase === 'warm' ? 'background_active' : 'background_resolve',
         role: state.party?.role || stats.role || 'dps',
@@ -270,8 +311,53 @@ function equipmentSlot(slot) {
     return EQUIPMENT_SLOTS[Number(slot)] || (slot ? `slot ${slot}` : 'other');
 }
 
+let itemTemplateIndex = null;
+let itemTemplateSource = null;
+
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    const items = DataCache.items || [];
+    if (!itemTemplateIndex || itemTemplateSource !== items) {
+        itemTemplateSource = items;
+        itemTemplateIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return itemTemplateIndex.get(Number(selfId)) || null;
+}
+
+function itemSelfId(item) {
+    return Number(item?.fetchSelfId?.() ?? item?.selfId ?? item?.objectId ?? 0) || null;
+}
+
+function itemBaseValue(item) {
+    const selfId = itemSelfId(item);
+    const template = itemTemplate(selfId);
+    return Math.max(0, Number(template?.template?.price ?? item?.fetchPrice?.() ?? item?.price ?? 0));
+}
+
+function equipmentValue(items = []) {
+    return Math.round(items.reduce((total, item) => total + itemBaseValue(item), 0));
+}
+
+function liveEquippedItems(actor) {
+    return (actor?.backpack?.fetchItems?.() || [])
+        .filter((item) => item?.fetchEquipped?.());
+}
+
+function liveAdena(actor) {
+    return Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0));
+}
+
+function liveEquipmentValue(actor) {
+    return equipmentValue(liveEquippedItems(actor));
+}
+
+function coldEquippedItems(state) {
+    const items = Array.isArray(state?.stats?.equipment) ? state.stats.equipment : [];
+    if (items.length > 0) return items;
+    return Object.values(state?.inventory || {}).filter((item) => item?.equipped);
+}
+
+function coldEquipmentValue(state) {
+    return equipmentValue(coldEquippedItems(state));
 }
 
 function equipmentRank(value) {
@@ -299,6 +385,45 @@ function compactItem(item) {
             accuracy: Number(stats.accuracy || stats.accur || 0),
             bonusMp: Number(stats.bonusMp || stats.maxMp || 0)
         } : null
+    };
+}
+
+function liveItem(item) {
+    if (!item) return null;
+    return compactItem({
+        selfId: item.fetchSelfId?.(),
+        name: item.fetchName?.(),
+        slot: item.fetchSlot?.(),
+        rank: item.fetchRank?.(),
+        kind: item.fetchKind?.(),
+        stats: item.isWeapon?.() ? {
+            pAtk: item.fetchPAtk?.(),
+            mAtk: item.fetchMAtk?.(),
+            critical: item.fetchCritical?.(),
+            accuracy: item.fetchAccur?.()
+        } : {
+            pDef: item.fetchPDef?.(),
+            mDef: item.fetchMDef?.(),
+            evasion: item.fetchEvasion?.(),
+            bonusMp: item.fetchBonusMp?.()
+        }
+    });
+}
+
+function liveEquipment(actor) {
+    const backpack = actor?.backpack;
+    if (!backpack) return null;
+    const equipped = liveEquippedItems(actor).map(liveItem).filter(Boolean);
+    return {
+        weapon: liveItem(backpack.fetchEquippedWeapon?.()),
+        equipped,
+        totals: {
+            pAtk: Number(backpack.fetchTotalWeaponPAtk?.() ?? actor.fetchPAtk?.() ?? 0),
+            mAtk: Number(backpack.fetchTotalWeaponMAtk?.() ?? actor.fetchMAtk?.() ?? 0),
+            pDef: Number(backpack.fetchTotalArmorPDef?.(actor.isSpellcaster?.()) ?? actor.fetchPDef?.() ?? 0),
+            mDef: Number(backpack.fetchTotalArmorMDef?.() ?? actor.fetchMDef?.() ?? 0),
+            load: Number(backpack.fetchTotalLoad?.() ?? 0)
+        }
     };
 }
 
@@ -518,6 +643,44 @@ function compactHotDetail(status, session) {
     };
 }
 
+function compactPlayerDetail(session) {
+    const actor = session?.actor;
+    if (!actor) return null;
+    const compact = compactPlayer(session);
+    return {
+        ...compact,
+        kind: 'player',
+        phase: 'player',
+        mode: compact.online ? 'online' : 'offline',
+        intent: compact.online ? 'online' : 'offline',
+        role: 'player',
+        region: compact.area?.name || null,
+        vitals: {
+            ...actorVitals(actor),
+            cp: Number(actor.fetchCp?.() || 0),
+            maxCp: Number(actor.fetchMaxCp?.() || 0)
+        },
+        equipment: liveEquipment(actor),
+        combat: {
+            pAtk: Number(actor.fetchCollectivePAtk?.() ?? actor.fetchPAtk?.() ?? 0),
+            mAtk: Number(actor.fetchCollectiveMAtk?.() ?? actor.fetchMAtk?.() ?? 0),
+            pDef: Number(actor.fetchCollectivePDef?.() ?? actor.fetchPDef?.() ?? 0),
+            mDef: Number(actor.fetchCollectiveMDef?.() ?? actor.fetchMDef?.() ?? 0),
+            critical: Number(actor.fetchCollectiveCritical?.() ?? actor.fetchCritical?.() ?? 0),
+            accuracy: Number(actor.fetchCollectiveAccur?.() ?? actor.fetchAccur?.() ?? 0),
+            evasion: Number(actor.fetchCollectiveEvasion?.() ?? actor.fetchEvasion?.() ?? 0),
+            atkSpd: Number(actor.fetchAtkSpd?.() || 0),
+            castSpd: Number(actor.fetchCastSpd?.() || 0)
+        },
+        exp: Number(actor.fetchExp?.() || 0),
+        sp: Number(actor.fetchSp?.() || 0),
+        pvp: Number(actor.fetchPvp?.() || 0),
+        pk: Number(actor.fetchPk?.() || 0),
+        karma: Number(actor.fetchKarma?.() || 0),
+        updatedAt: Date.now()
+    };
+}
+
 function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
@@ -688,6 +851,18 @@ async function botDetail(characterId) {
     return compactColdDetail(state, leaderState);
 }
 
+async function actorDetail(kind, characterId) {
+    const id = Number(characterId);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    if (kind === 'player') {
+        const playerSession = realPlayerSessions()
+            .find((session) => Number(session.actor?.fetchId?.()) === id);
+        return compactPlayerDetail(playerSession);
+    }
+    if (kind !== 'bot') return null;
+    return botDetail(id);
+}
+
 function sendJson(response, data, statusCode = 200) {
     response.writeHead(statusCode, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -737,6 +912,16 @@ function route(request, response) {
         return;
     }
 
+    const actorMatch = url.pathname.match(/^\/observer\/api\/actor\/(bot|player)\/(\d+)$/);
+    if (actorMatch) {
+        actorDetail(actorMatch[1], actorMatch[2])
+            .then((data) => data
+                ? sendJson(response, data)
+                : sendJson(response, { error: 'Actor not found' }, 404))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
     if (url.pathname.startsWith('/observer/')) {
         const relative = url.pathname.replace(/^\/observer\/?/, '') || 'index.html';
         const safeRelative = path.normalize(relative).replace(/^(\.\.[/\\])+/, '');
@@ -757,10 +942,13 @@ function route(request, response) {
 const WorldObserverServer = {
     server: null,
     compactPlayer,
+    compactPlayerDetail,
     compactHotBot,
     compactStateBot,
     compactColdDetail,
     compactHotDetail,
+    actorDetail,
+    equipmentValue,
 
     init() {
         if (!isEnabled() || this.server) return;

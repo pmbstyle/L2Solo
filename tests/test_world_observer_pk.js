@@ -28,6 +28,8 @@ function actor(karma = 0) {
 const player = Observer.compactPlayer({ actor: actor(720) });
 assert.strictEqual(player.isPk, true, 'red-name players must be marked for the observer map');
 assert.strictEqual(player.className, 'Orc Raider', 'player snapshots must expose the profession name instead of only its numeric id');
+assert.strictEqual(player.raceName, 'Orc', 'player race metadata must be derived from the authoritative class template when needed');
+assert.strictEqual(player.equipmentValue, 0, 'actors without an inventory snapshot must have a stable zero gear estimate');
 
 const hotBot = Observer.compactHotBot({
     id: 42,
@@ -44,6 +46,7 @@ const hotBot = Observer.compactHotBot({
 }, new Set([42]));
 assert.strictEqual(hotBot.isPk, true, 'hot PK bots must be marked for red rendering');
 assert.strictEqual(hotBot.className, 'Orc Fighter', 'hot bot snapshots must expose a player-facing profession name');
+assert.strictEqual(hotBot.raceName, 'Orc', 'hot bot snapshots must expose a filterable race');
 
 const fixedMerchant = Observer.compactHotBot({
     id: 50,
@@ -224,6 +227,7 @@ const coldDetail = Observer.compactColdDetail(coldState);
 const authoritativeCombat = ColdCombatProfile.profileFor(coldState);
 assert.strictEqual(coldDetail.classId, 15, 'cold bot detail must preserve class metadata');
 assert.strictEqual(coldDetail.className, 'Cleric', 'cold bot detail must expose the profession name');
+assert.strictEqual(coldDetail.raceName, 'Human', 'cold bot detail must derive race from its current profession');
 assert.strictEqual(coldDetail.build.className, 'Cleric', 'build metadata must use the same authoritative profession name');
 assert.strictEqual(coldDetail.equipment.equipped[0].slot, 'weapon', 'cold outfit slots must be human-readable');
 assert.strictEqual(coldDetail.combat.pDef, authoritativeCombat.pDef, 'cold bot detail must use authoritative combat formulas');
@@ -255,6 +259,48 @@ assert(legacyColdDetail.equipment.totals.pDef > 0, 'legacy cold gear must expose
 assert(legacyColdDetail.equipment.equipped[0].stats.pAtk > 0, 'cold gear rows must include datapack item stats');
 assert.strictEqual(legacyColdDetail.equipment.equipped[0].rank, 'no-grade', 'observer must expose a player-facing no-grade label instead of internal none');
 assert.strictEqual(legacyColdDetail.equipment.equipped.find((item) => item.selfId === 178).slot, 'two-handed weapon', 'two-handed paperdoll items must not be mislabeled as dual weapons');
+assert(legacyColdDetail.equipmentValue >= 409000, 'cold ranking metadata must estimate equipped gear from datapack prices');
+
+const liveWeapon = {
+    fetchSelfId: () => 178,
+    fetchName: () => 'Bone Staff',
+    fetchSlot: () => 14,
+    fetchRank: () => 'd',
+    fetchKind: () => 'Weapon.Blunt',
+    fetchPrice: () => 409000,
+    fetchEquipped: () => true,
+    isWeapon: () => true,
+    isArmor: () => false,
+    fetchPAtk: () => 39,
+    fetchMAtk: () => 35,
+    fetchCritical: () => 40,
+    fetchAccur: () => 4.75
+};
+const liveAdena = { fetchAmount: () => 123456 };
+const playerDetail = Observer.compactPlayerDetail({ actor: {
+    ...actor(),
+    fetchRace: () => 3,
+    fetchExp: () => 98765,
+    fetchSp: () => 4321,
+    fetchCp: () => 25,
+    fetchMaxCp: () => 50,
+    fetchPvp: () => 7,
+    fetchPk: () => 2,
+    backpack: {
+        fetchItems: () => [liveWeapon],
+        fetchItemFromSelfId: (selfId) => Number(selfId) === 57 ? liveAdena : null,
+        fetchEquippedWeapon: () => liveWeapon,
+        fetchTotalWeaponPAtk: () => 39,
+        fetchTotalWeaponMAtk: () => 35,
+        fetchTotalArmorPDef: () => 80,
+        fetchTotalArmorMDef: () => 41,
+        fetchTotalLoad: () => 1060
+    }
+} });
+assert.strictEqual(playerDetail.kind, 'player', 'online players must have the same detailed inspection contract as bots');
+assert.strictEqual(playerDetail.adena, 123456, 'player detail must expose live Adena for wealth ranking and inspection');
+assert.strictEqual(playerDetail.equipmentValue, 409000, 'player detail must estimate live equipped gear from datapack prices');
+assert.strictEqual(playerDetail.equipment.equipped[0].name, 'Bone Staff', 'player detail must expose full equipped item rows');
 
 const leaderDetail = Observer.compactColdDetail({
     ...coldState,
