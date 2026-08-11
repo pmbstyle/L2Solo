@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const spots = [
     {
@@ -196,5 +197,32 @@ assert.strictEqual(
     'dwarven starters may use their native mine route'
 );
 assert.strictEqual(LevelingRoutes.capacityForSpot(mithrilMines), 48, 'the explicit mine capacity must override density-derived defaults');
+
+const originalEnsureIndexed = SpotService.ensureIndexed;
+SpotService.ensureIndexed = () => [
+    {
+        id: 'local_starter', name: 'Local Starter Field', minLevel: 1, maxLevel: 10, avgLevel: 5, density: 8,
+        center: { locX: 2500, locY: 0, locZ: 0 }, npcNames: ['Keltir'], localStarterRegions: ['elf'], localUntilLevel: 20
+    },
+    {
+        id: 'remote_starter', name: 'Remote Starter Field', minLevel: 1, maxLevel: 10, avgLevel: 5, density: 10,
+        center: { locX: 2600, locY: 0, locZ: 0 }, npcNames: ['Keltir'], localStarterRegions: ['orc'], localUntilLevel: 20
+    }
+];
+try {
+    const routed = SpotService.findBestSpot({
+        characterId: 77,
+        level: 5,
+        role: 'dps',
+        classId: 19,
+        starterRegion: 'elf',
+        loc: { locX: 0, locY: 0, locZ: 0 }
+    }, { minDensity: 1, minDistance: 1, maxDistance: 10000, occupancy: { local_starter: 1, remote_starter: 0 } });
+    assert.strictEqual(routed.spot.id, 'local_starter',
+        'SpotService ranking must retain LevelingRoutes locality and occupancy adjustments');
+    assert.strictEqual(routed.localityPenalty, 0);
+} finally {
+    SpotService.ensureIndexed = originalEnsureIndexed;
+}
 
 console.log('Bot leveling route checks passed');

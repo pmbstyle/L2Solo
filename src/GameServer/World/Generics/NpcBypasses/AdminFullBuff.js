@@ -97,7 +97,10 @@ function applyProfile(session, actor, profile, options = {}) {
 
     const applied = entries.map(([selfId, level]) => {
         const skill = skillData(selfId, level);
-        if (!skill) return null;
+        if (!skill) {
+            utils.infoWarn('Admin', 'full buff skill %s level %s is missing from active skills', selfId, level);
+            return null;
+        }
 
         const effect = EffectStore.apply(actor, effectFromSkill(skill, expiresAt));
         if (!effect) return null;

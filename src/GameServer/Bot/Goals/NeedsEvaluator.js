@@ -32,6 +32,18 @@ const EQUIPMENT_SLOT_NAMES = {
     15: 'full_armor'
 };
 
+let itemIndexSource = null;
+let itemIndex = new Map();
+
+function itemBySelfId(selfId) {
+    const items = DataCache.items || [];
+    if (itemIndexSource !== items) {
+        itemIndexSource = items;
+        itemIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return itemIndex.get(Number(selfId)) || null;
+}
+
 function percentage(value, maximum) {
     const max = Math.max(1, Number(maximum) || 0);
     return Math.max(0, Math.min(1, Number(value) / max));
@@ -76,7 +88,7 @@ function equipmentNeed(state) {
     if (['direct_drop', 'craft'].includes(acquisitionPlan?.strategy)
         || acquisitionPlan?.status === 'blocked') return null;
     const plannedTarget = acquisitionPlan?.strategy === 'market' && acquisitionPlan?.target
-        ? (DataCache.items || []).find((item) => Number(item.selfId) === Number(acquisitionPlan.target.selfId))
+        ? itemBySelfId(acquisitionPlan.target.selfId)
         : null;
     const plannedSlot = Number(acquisitionPlan?.target?.slot || plannedTarget?.etc?.slot || 0);
     const plannedAlreadyEquipped = plannedTarget && plannedSlot > 0 && equipment.some((item) => (
@@ -93,7 +105,7 @@ function equipmentNeed(state) {
     // a different next slot; do not send that new purchase to the old offer's
     // town or fund it with the old price.
     const usingPlannedTarget = Number(selectedItem.selfId) === Number(plannedTarget?.selfId);
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(selectedItem.selfId));
+    const template = itemBySelfId(selectedItem.selfId);
     const plannedMarket = usingPlannedTarget ? acquisitionPlan?.market : null;
     const price = Math.max(1, Number(plannedMarket?.price || template?.template?.price || 0));
     return {

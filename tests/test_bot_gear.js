@@ -175,6 +175,12 @@ const monkPlan = BotGear.planFor({ classId: 47, level: 24 });
 const monkWeapon = itemTemplate(bySlot(monkPlan, 7)?.selfId || bySlot(monkPlan, 14)?.selfId);
 assert.strictEqual(monkWeapon.template.kind, 'Weapon.DualFist',
     'Orc Monk generated gear must use combat fists instead of blunt weapons');
+for (const [classId, level] of [[34, 61], [107, 76]]) {
+    const dancerPlan = BotGear.planFor({ classId, level });
+    const dancerWeapon = itemTemplate(bySlot(dancerPlan, 14)?.selfId || bySlot(dancerPlan, 7)?.selfId);
+    assert.strictEqual(dancerWeapon?.template?.kind, 'Weapon.Dual',
+        `class ${classId} must retain a compatible dual weapon when the catalog has no ${dancerPlan.rank.toUpperCase()}-grade dual`);
+}
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     classId: 29,
     level: 33,

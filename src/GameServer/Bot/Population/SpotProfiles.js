@@ -2,6 +2,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 
 let occupancyCache = null;
 let occupancyCachedAt = 0;
@@ -84,7 +85,7 @@ function occupiedSpotId(state = {}) {
     return state.spotId || null;
 }
 
-function occupancySnapshot(profiles, states = BotLifeState.allStates(2000)) {
+function occupancySnapshot(profiles, states = BotLifeState.allStates(PopulationConfig.maxPlayingPopulation)) {
     const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
     const members = (states || []).reduce((entries, state) => {
         const spotId = occupiedSpotId(state);

@@ -1568,7 +1568,12 @@ class Backpack extends BackpackModel {
         // visit a warehouse. A delayed timer leaves a window where the DB
         // still says that a freshly equipped item is unequipped.
         return Promise.all(changedItems.map((item) => (
-            Database.updateItemEquipState(characterId, item.fetchId(), item.fetchEquipped(), item.fetchSlot())
+            Database.updateItemEquipState(
+                characterId,
+                item.fetchId(),
+                item.fetchEquipped(),
+                item.fetchEquipped() ? item.fetchSlot() : 0
+            )
                 .catch((error) => utils.infoWarn('Backpack', 'failed to persist equipment for %s: %s', characterId, error.message))
         )));
     }

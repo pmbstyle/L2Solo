@@ -26,6 +26,8 @@ assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop ch
 const handAxe = DataCache.items.find((item) => item.template?.name === 'Hand Axe');
 const boneStaff = DataCache.items.find((item) => item.template?.name === 'Bone Staff');
 const scallopJamadhr = DataCache.items.find((item) => item.template?.name === 'Scallop Jamadhr');
+assert(handAxe && boneStaff && scallopJamadhr,
+    'the datapack must expose the Hand Axe, Bone Staff, and Scallop Jamadhr fixtures');
 const lyraState = { level: 24, stats: { classId: 47, role: 'dps' } };
 assert.strictEqual(GearAcquisitionPlanner.suitable(boneStaff, lyraState, 'dps', 'd'), false,
     'an Orc Monk must not treat the D-grade Bone Staff as a suitable melee weapon');
@@ -180,6 +182,7 @@ const sameSlotAlternative = DataCache.items.find((item) => (
     && Number(item.etc?.slot) === Number(failedTarget.etc?.slot)
     && GearAcquisitionPlanner.suitable(item, failedDropState, 'dps', 'none')
 ));
+assert(sameSlotAlternative, 'the datapack must expose a same-slot fallback fixture');
 const equivalentNpcFallback = GearAcquisitionPlanner.planFor(failedDropState, {
     spots: [],
     ...failedContext,
@@ -274,6 +277,8 @@ assert(liveNpcFirstPlan.market.price + liveNpcFirstPlan.market.reserve <= 100000
 const atubaMace = DataCache.items.find((item) => item.template?.name === 'Atuba Mace');
 const entryDSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd' && item.template?.kind === 'Weapon.Sword');
 const noGradeSword = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'none' && item.template?.kind === 'Weapon.Sword');
+assert(atubaMace && entryDSword && noGradeSword,
+    'the datapack must expose the Atuba Mace and sword progression fixtures');
 const overleveledNoGradePlan = GearAcquisitionPlanner.planFor({
     level: 40,
     adena: 1000000,
@@ -333,6 +338,7 @@ const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCa
     && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
 const dRing = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
     && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 4);
+assert(dEarring && dRing, 'the datapack must expose paired D-grade jewelry fixtures');
 const pairedJewelry = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20, stats: { role: 'dps' } }, {
     [dEarring.selfId]: { selfId: dEarring.selfId, amount: 2, equipped: false, slot: 1 },
     [dRing.selfId]: { selfId: dRing.selfId, amount: 2, equipped: false, slot: 4 }

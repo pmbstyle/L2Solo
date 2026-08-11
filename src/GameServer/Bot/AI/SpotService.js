@@ -5,6 +5,9 @@ const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 
+const anonymousStateIds = new WeakMap();
+let nextAnonymousStateId = 1;
+
 function distance2d(a, b) {
     if (!a || !b) return 0;
     const dx = a.locX - b.locX;
@@ -36,13 +39,22 @@ function finiteNumber(value, fallback) {
 }
 
 function stableHash(value) {
-    const text = String(value || '');
+    const text = String(value ?? '');
     let hash = 2166136261;
     for (let index = 0; index < text.length; index++) {
         hash ^= text.charCodeAt(index);
         hash = Math.imul(hash, 16777619);
     }
     return hash >>> 0;
+}
+
+function identitySeedForState(state) {
+    for (const value of [state?.characterId, state?.name, state?.stats?.generatedIndex]) {
+        if (value !== null && value !== undefined && value !== '') return String(value);
+    }
+    if (!state || typeof state !== 'object') return 'anonymous:primitive';
+    if (!anonymousStateIds.has(state)) anonymousStateIds.set(state, nextAnonymousStateId++);
+    return `anonymous:${anonymousStateIds.get(state)}`;
 }
 
 function constrainToSpotGrid(spot, locX, locY) {
@@ -258,22 +270,31 @@ const SpotService = {
             })
             .map((candidate) => {
                 const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, {
+                    characterId: status.characterId,
+                    name: status.name,
                     level: targetLevel,
                     stats: {
+                        ...(status.stats || {}),
                         role: status.role,
-                        classId: status.classId
+                        classId: status.classId,
+                        starterRegion: status.starterRegion || status.stats?.starterRegion
                     }
                 }, {
                     mode: options.mode || 'solo',
-                    role: options.role || status.role
+                    role: options.role || status.role,
+                    occupancy: options.occupancy
                 });
                 const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
                 return {
                     ...candidate,
                     spot: decoratedSpot,
-                    score: candidate.score + routeMatch.routeScore,
+                    score: candidate.score + routeMatch.routeScore + routeMatch.variation
+                        - routeMatch.crowdPenalty - routeMatch.localityPenalty,
                     route: decoratedSpot.route || null,
-                    routeScore: routeMatch.routeScore
+                    routeScore: routeMatch.routeScore,
+                    crowdPenalty: routeMatch.crowdPenalty,
+                    localityPenalty: routeMatch.localityPenalty,
+                    variation: routeMatch.variation
                 };
             })
             .sort((a, b) => b.score - a.score);
@@ -315,10 +336,13 @@ const SpotService = {
         if (!spot?.center) return null;
         const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
         const points = spot.arrivalPoints?.length ? spot.arrivalPoints : [spot.center];
-        const hash = stableHash(state?.characterId || state?.name || state?.stats?.generatedIndex);
-        const anchor = points[hash % points.length] || spot.center;
-        const angle = ((hash % 360) * Math.PI) / 180;
-        const radius = 96 + (hash % 161);
+        const seed = identitySeedForState(state);
+        const anchorHash = stableHash(`${seed}:anchor`);
+        const angleHash = stableHash(`${seed}:angle`);
+        const radiusHash = stableHash(`${seed}:radius`);
+        const anchor = points[anchorHash % points.length] || spot.center;
+        const angle = ((angleHash % 360) * Math.PI) / 180;
+        const radius = 96 + (radiusHash % 161);
         const point = constrainToSpotGrid(
             spot,
             Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius),

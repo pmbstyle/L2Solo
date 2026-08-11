@@ -123,6 +123,7 @@ function matchesZone(zone = {}, loc = {}) {
 }
 
 function matches(area, loc = {}) {
+    if (!area.cell && !area.zones?.length && area.belowZ === undefined) return false;
     const z = finite(loc.locZ);
     if (area.cell && mapCell(loc.locX, loc.locY) !== area.cell) return false;
     if (area.zones?.length && !area.zones.some((zone) => matchesZone(zone, loc))) return false;
@@ -172,6 +173,7 @@ function isLocalForState(spot = {}, state = {}) {
 module.exports = {
     AREAS,
     mapCell,
+    matches,
     resolve,
     publicArea,
     decorateSpot,

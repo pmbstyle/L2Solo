@@ -52,6 +52,8 @@ Database.init();
     assert.strictEqual(surplus.length, 3, 'unequipped duplicate jewellery must remain a separate physical row');
     assert.strictEqual(surplus.filter((item) => Number(item.equipped) === 1).length, 2);
     assert.strictEqual(surplus.filter((item) => Number(item.equipped) === 0).length, 1);
+    assert.strictEqual(Number(surplus.find((item) => Number(item.equipped) === 0).slot), 0,
+        'unequipped physical rows must persist with an empty paperdoll slot');
 
     await Database.syncInventorySummary(character.id, {
         114: {

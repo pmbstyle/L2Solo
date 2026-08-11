@@ -70,6 +70,7 @@ async function run() {
         plan: { spotId: plannedSpot.id }
     }), plannedSpot, 'a blocked goal must retain its own planned spot when lifecycle routing has no active spot');
 
+    NeedsEvaluator.evaluate = originals.evaluate;
     const waitingForMarket = NeedsEvaluator.evaluate({
         characterId: 10,
         level: 30,

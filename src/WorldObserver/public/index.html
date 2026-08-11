@@ -176,12 +176,12 @@
             </header>
 
             <div class="rankings-controls">
-                <div class="ranking-tabs" id="rankingTabs" role="tablist" aria-label="Ranking metric">
-                    <button class="ranking-tab is-active" type="button" role="tab" aria-selected="true" data-ranking-metric="level">Progress</button>
-                    <button class="ranking-tab" type="button" role="tab" aria-selected="false" data-ranking-metric="adena">Wealth</button>
-                    <button class="ranking-tab" type="button" role="tab" aria-selected="false" data-ranking-metric="equipmentValue">Gear value</button>
+                <div class="ranking-tabs" id="rankingTabs" role="group" aria-label="Ranking metric">
+                    <button class="ranking-tab is-active" type="button" aria-pressed="true" data-ranking-metric="level">Progress</button>
+                    <button class="ranking-tab" type="button" aria-pressed="false" data-ranking-metric="adena">Wealth</button>
+                    <button class="ranking-tab" type="button" aria-pressed="false" data-ranking-metric="equipmentValue">Gear value</button>
                 </div>
-                <div class="ranking-filters" aria-label="Ranking filters">
+                <div class="ranking-filters" role="group" aria-label="Ranking filters">
                     <label>
                         <span>Race</span>
                         <select id="rankingRace" aria-label="Ranking race">

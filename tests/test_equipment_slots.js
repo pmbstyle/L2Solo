@@ -5,8 +5,10 @@ require('../src/Global');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const ActorGenerics = invoke(path.actor);
+const Database = invoke('Database');
 
 const originalCalculateStats = ActorGenerics.calculateStats;
+const originalUpdateItemEquipState = Database.updateItemEquipState;
 ActorGenerics.calculateStats = () => {};
 
 function item(id, selfId, kind, slot) {
@@ -113,7 +115,20 @@ try {
     assert.deepStrictEqual(persistedSnapshots, [[{ id: 11, equipped: true, slot: 7 }]],
         'equipping into an empty weapon slot must immediately schedule durable equipped state');
 
+    const persistedSlots = [];
+    Database.updateItemEquipState = (...args) => {
+        persistedSlots.push(args);
+        return Promise.resolve();
+    };
+    const unequippedWeapon = item(12, 5, 'Weapon.Blunt', 7);
+    Backpack.prototype.updateDatabaseTimer.call({ dbTimer: null }, 2000001, [unequippedWeapon]);
+    assert.strictEqual(unequippedWeapon.fetchSlot(), 7,
+        'runtime gear must retain its body-part slot so it can be equipped again');
+    assert.deepStrictEqual(persistedSlots[0], [2000001, 12, false, 0],
+        'unequipped gear must persist with an empty paperdoll slot');
+
     console.log('Equipment slot checks passed');
 } finally {
     ActorGenerics.calculateStats = originalCalculateStats;
+    Database.updateItemEquipState = originalUpdateItemEquipState;
 }

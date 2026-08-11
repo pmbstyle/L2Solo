@@ -220,5 +220,17 @@ assert(boundaryArrival.locX >= 0 && boundaryArrival.locX < 6000,
     'spawn-aware arrival offsets must remain inside the destination X grid');
 assert(boundaryArrival.locY >= 0 && boundaryArrival.locY < 6000,
     'spawn-aware arrival offsets must remain inside the destination Y grid');
+const anonymousSpot = {
+    id: '1_1',
+    center: { locX: 9000, locY: 9000, locZ: 0 },
+    arrivalPoints: [{ locX: 8500, locY: 8500, locZ: 0 }, { locX: 9500, locY: 9500, locZ: 0 }]
+};
+const anonymousA = {};
+const anonymousB = {};
+const anonymousArrivalA = SpotService.arrivalPointForState(anonymousA, anonymousSpot);
+assert.deepStrictEqual(SpotService.arrivalPointForState(anonymousA, anonymousSpot), anonymousArrivalA,
+    'an anonymous state object must retain a deterministic arrival point during the process lifetime');
+assert.notDeepStrictEqual(SpotService.arrivalPointForState(anonymousB, anonymousSpot), anonymousArrivalA,
+    'distinct anonymous state objects must not collapse onto one shared arrival point');
 
 console.log('Bot cold travel checks passed');

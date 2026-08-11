@@ -24,6 +24,11 @@ function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
 }
 
+function listOrWarehouse(item, decision) {
+    if (listingPrice(item, decision) !== null) return decision;
+    return { action: 'warehouse', reason: 'non_competitive_floor', market: decision.market };
+}
+
 function classify(state, item, options = {}) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
@@ -47,12 +52,12 @@ function classify(state, item, options = {}) {
     if (actionableUnits > 0) {
         const availableUnits = Math.max(0, actionableUnits - market.supply.units);
         if (availableUnits <= 0) return { action: 'warehouse', reason: 'saturated', market };
-        return {
+        return listOrWarehouse(item, {
             action: 'list',
             reason: 'active_demand',
             listCount: Math.min(Number(item.count), availableUnits),
             market
-        };
+        });
     }
 
     if (market.demand.readyBots > 0) {
@@ -62,12 +67,12 @@ function classify(state, item, options = {}) {
         && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
         && market.supply.units < SPECULATIVE_SUPPLY_LIMIT;
     if (speculative) {
-        return {
+        return listOrWarehouse(item, {
             action: 'list',
             reason: 'speculative_demand',
             listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units),
             market
-        };
+        });
     }
     if (market.supply.units >= SPECULATIVE_SUPPLY_LIMIT) {
         return { action: 'warehouse', reason: 'saturated', market };
@@ -86,7 +91,9 @@ function listingPrice(item, decision) {
     const minimum = listingFloor(item);
     const competition = Number(decision?.market?.supply?.minimumPrice || Infinity);
     if (!Number.isFinite(competition) || competition <= 0) return Math.max(minimum, preferred);
-    return Math.max(minimum, Math.min(preferred, Math.floor(competition * 0.98)));
+    const competitivePrice = Math.floor(competition * 0.98);
+    if (minimum > competitivePrice) return null;
+    return Math.max(minimum, Math.min(preferred, competitivePrice));
 }
 
 function evaluate(state, options = {}) {

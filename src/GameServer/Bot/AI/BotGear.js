@@ -135,8 +135,8 @@ function choose(rank, level, predicate, score) {
 function chooseWeapon(rank, level, role, classId) {
     const allowedKinds = BotEquipmentCompatibility.weaponKindsFor(role, classId);
     const preferredKinds = BotEquipmentCompatibility.preferredWeaponKindsFor(role, classId);
-    const chooseKinds = (kinds) => choose(
-        rank,
+    const chooseKinds = (kinds, candidateRank = rank) => choose(
+        candidateRank,
         level,
         (item) => kinds.includes(item.kind)
             && BotWeaponCompatibility.isSuitableWeapon(item.kind, item.name, item.pAtk, item.mAtk, role, classId)
@@ -148,7 +148,17 @@ function chooseWeapon(rank, level, role, classId) {
         (item) => BotWeaponCompatibility.scoreWeapon(item.pAtk, item.mAtk, role, classId)
     );
 
-    return chooseKinds(preferredKinds) || chooseKinds(allowedKinds);
+    const exact = chooseKinds(preferredKinds) || chooseKinds(allowedKinds);
+    if (exact || !allowedKinds.includes('Weapon.Dual')) return exact;
+
+    // The current C4 item catalog ends its dual-sword combinations at B grade.
+    // Bladedancers must keep that compatible weapon until higher-grade duals
+    // are added instead of generating an empty weapon slot at level 61+.
+    for (let index = RANK_ORDER.indexOf(rank) - 1; index >= 0; index--) {
+        const fallback = chooseKinds(preferredKinds, RANK_ORDER[index]) || chooseKinds(allowedKinds, RANK_ORDER[index]);
+        if (fallback) return fallback;
+    }
+    return null;
 }
 
 function chooseArmorPiece(rank, level, style, slot) {

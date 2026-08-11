@@ -53,14 +53,14 @@ assert.strictEqual(
 );
 assert.strictEqual(
     MarketListingPolicy.listingPrice(pricedItem, { market: { supply: { minimumPrice: 1 } } }),
-    priceFloor,
-    'a collapsed competitor price must not pull a new listing below sixty percent of scaled base value'
+    null,
+    'a collapsed competitor price must route the item away from an uncompetitive private listing'
 );
 let repeatedPrice = pricedItem.price;
-for (let index = 0; index < 500; index++) {
+for (let index = 0; index < 500 && repeatedPrice !== null; index++) {
     repeatedPrice = MarketListingPolicy.listingPrice(pricedItem, { market: { supply: { minimumPrice: repeatedPrice } } });
 }
-assert.strictEqual(repeatedPrice, priceFloor, 'repeated undercutting must converge on the floor instead of one Adena');
+assert.strictEqual(repeatedPrice, null, 'repeated undercutting must stop listing once the price floor is no longer competitive');
 
 const starterDecision = MarketListingPolicy.classify(seller, saleItem(starterWeapon), { states: [], now });
 assert.strictEqual(starterDecision.action, 'npc', 'free starter gear must never enter a private store');

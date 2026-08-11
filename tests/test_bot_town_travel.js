@@ -114,8 +114,10 @@ try {
     kickedSession.incomingThreatAt = Date.now() - 6000;
     kickedSession.dataSendToMeAndOthers = () => {};
     const remoteSpot = { id: 'remote_field', name: 'Remote Field', center: { locX: 30000, locY: 0, locZ: -100 } };
+    const kickedTimerBase = timers.length;
     assert.strictEqual(BotSpotTravel.start(kickedSession, kickedBot, remoteSpot), true, 'dismissed bot should start its hunting-ground SoE');
-    const kickedCastTimer = timers[timers.length - 1];
+    assert.strictEqual(timers.length - kickedTimerBase, 1, 'starting hunting-ground travel must schedule exactly one cast timer');
+    const kickedCastTimer = timers[kickedTimerBase];
     kickedCastTimer.fn();
     assert.strictEqual(kickedSession.spotRelocation?.arrivalPending, true, 'stale party combat memory must not cancel a completed SoE cast');
     assert.strictEqual(kickedSession.currentSpot?.id, remoteSpot.id, 'completed SoE must commit the requested hunting ground');
@@ -124,16 +126,21 @@ try {
     const threatenedSession = session(threatenedBot);
     threatenedSession.incomingThreatId = 9003;
     threatenedSession.incomingThreatAt = Date.now();
+    const threatenedTimerBase = timers.length;
     BotSpotTravel.start(threatenedSession, threatenedBot, remoteSpot);
-    timers[timers.length - 1].fn();
+    assert.strictEqual(timers.length - threatenedTimerBase, 1, 'threatened travel must bind its own cast timer');
+    timers[threatenedTimerBase].fn();
     assert.strictEqual(threatenedSession.spotRelocation, undefined, 'a live combat threat should still interrupt hunting-ground SoE');
     assert.strictEqual(threatenedSession.lastSpotRelocation?.reason, 'combat_interrupt', 'live-threat cancellation should remain observable');
 
     const cancelledBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const cancelledSession = session(cancelledBot);
+    const cancelledTimerBase = timers.length;
     BotSpotTravel.start(cancelledSession, cancelledBot, remoteSpot);
+    assert.strictEqual(timers.length - cancelledTimerBase, 1, 'cancelled travel must bind its own cast timer');
+    assert.strictEqual(cancelledBot.state.fetchCasts(), true, 'travel must start the SoE cast before cancellation is exercised');
     cancelledBot.state.setCasts(false);
-    timers[timers.length - 1].fn();
+    timers[cancelledTimerBase].fn();
     assert.strictEqual(cancelledSession.spotRelocation, undefined, 'an externally cancelled cast must not teleport later from its stale timer');
     assert.strictEqual(cancelledSession.lastSpotRelocation?.reason, 'cast_interrupted', 'cancelled-cast cleanup should remain observable');
 

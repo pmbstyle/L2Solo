@@ -24,6 +24,17 @@ const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 let staticNpcItemIdsCache = null;
+let itemCatalogSource = null;
+let itemCatalogById = new Map();
+
+function catalogItem(selfId) {
+    const items = DataCache.items || [];
+    if (itemCatalogSource !== items) {
+        itemCatalogSource = items;
+        itemCatalogById = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return itemCatalogById.get(Number(selfId)) || null;
+}
 
 function isRealCatalogItem(item = {}) {
     const selfId = Number(item.selfId || 0);
@@ -105,7 +116,7 @@ function inventoryItems(inventory = {}) {
     const rows = Array.isArray(inventory) ? inventory : Object.values(inventory);
     return rows.flatMap((row) => {
         if (Number(row?.amount || 0) < 1) return [];
-        const item = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(row.selfId));
+        const item = catalogItem(row.selfId);
         return item ? [item] : [];
     });
 }
@@ -114,7 +125,7 @@ function equippedInventoryItems(inventory = {}) {
     const rows = Array.isArray(inventory) ? inventory : Object.values(inventory);
     return rows.flatMap((row) => {
         if (Number(row?.amount || 0) < 1) return [];
-        const item = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(row.selfId));
+        const item = catalogItem(row.selfId);
         if (!item) return [];
         return equippedSlotsFor(row, item.etc?.slot).map((slot) => ({
             ...item,
@@ -647,7 +658,7 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 
 function staticNpcUpgradePlan(state = {}, options = {}) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
-    const targetRank = rankIndex(gradeForLevel(state.level)) >= rankIndex('d') ? NPC_GEAR_MAX_RANK : 'none';
+    const targetRank = npcTargetRank(state);
     const reserve = operationalAdenaReserve(state);
     const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve);
     const slots = desiredNpcSlots(state);
@@ -671,17 +682,21 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     // At C+ an adequate D kit is only a bridge; crafting/drop/exchange
     // progression must take over instead of polishing D indefinitely.
     if (rankIndex(gradeForLevel(state.level)) > rankIndex('d')) return null;
-    const improvements = slots.flatMap((slot) => npcCandidatesForSlot(state, slot, targetRank, options)
-        .filter(({ offer }) => Number(offer.price) <= spendable)
-        .map((candidate) => ({ ...candidate, slot })))
+    const role = roleFor(state);
+    const classId = classIdFor(state);
+    const improvements = slots.flatMap((slot) => {
+        const current = equippedItemAtSlot(state, slot);
+        const currentScore = current ? itemScore(current, role, classId) : 0;
+        return npcCandidatesForSlot(state, slot, targetRank, options)
+            .filter(({ offer }) => Number(offer.price) <= spendable)
+            .map((candidate) => ({
+                ...candidate,
+                slot,
+                gain: itemScore(candidate.item, role, classId) - currentScore
+            }));
+    })
         .sort((left, right) => {
-            const leftCurrent = equippedItemAtSlot(state, left.slot);
-            const rightCurrent = equippedItemAtSlot(state, right.slot);
-            const leftGain = itemScore(left.item, roleFor(state), classIdFor(state))
-                - (leftCurrent ? itemScore(leftCurrent, roleFor(state), classIdFor(state)) : 0);
-            const rightGain = itemScore(right.item, roleFor(state), classIdFor(state))
-                - (rightCurrent ? itemScore(rightCurrent, roleFor(state), classIdFor(state)) : 0);
-            return (rightGain / Math.max(1, Number(right.offer.price))) - (leftGain / Math.max(1, Number(left.offer.price)))
+            return (right.gain / Math.max(1, Number(right.offer.price))) - (left.gain / Math.max(1, Number(left.offer.price)))
                 || slotPriority(right.item) - slotPriority(left.item)
                 || Number(left.offer.price) - Number(right.offer.price);
         });
@@ -693,8 +708,12 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     }) : null;
 }
 
+function npcTargetRank(state = {}) {
+    return rankIndex(gradeForLevel(state.level)) >= rankIndex('d') ? NPC_GEAR_MAX_RANK : 'none';
+}
+
 function staticNpcKitAdequate(state = {}) {
-    const targetRank = rankIndex(gradeForLevel(state.level)) >= rankIndex('d') ? NPC_GEAR_MAX_RANK : 'none';
+    const targetRank = npcTargetRank(state);
     return desiredNpcSlots(state).every((slot) => {
         const current = equippedItemAtSlot(state, slot);
         return current && rankIndex(current.etc?.rank) >= rankIndex(targetRank);
@@ -1075,16 +1094,18 @@ function planFor(state = {}, options = {}) {
     const forcedMarketPlan = marketRecoveryPlanForTarget(state, options.forceMarketTargetId, options);
     if (forcedMarketPlan) return forcedMarketPlan;
     if (!options.recipeId && !preparedCraftReady) {
-        const npcPlan = staticNpcUpgradePlan(state, options);
+        const npcPlan = staticNpcUpgradePlan(state, planningOptions);
         if (npcPlan) return npcPlan;
         if (rankIndex(gradeForLevel(state.level)) <= rankIndex('d') && staticNpcKitAdequate(state)) {
             return { status: 'complete', reason: 'npc_adequate_kit', strategy: 'none', recipeId: null, materials: [], next: null };
         }
     }
     if (!GearLifecycle.allowsCrafting(state) || gradeForLevel(state.level) === 'none') {
-        const target = preferredNoGradeTarget(state, options) || preferredDropTarget(state, options);
-        const source = target ? bestSourceForState(sourceForItem(target.selfId, options.spots || [], state), state) : null;
-        const offer = marketOfferForTarget(target, state, options);
+        const target = preferredNoGradeTarget(state, planningOptions) || preferredDropTarget(state, planningOptions);
+        const source = target
+            ? bestSourceForState(sourceForItem(target.selfId, planningOptions.spots || [], state, planningOptions), state)
+            : null;
+        const offer = marketOfferForTarget(target, state, planningOptions);
         const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
         const buy = offer && marketEffort(offer, state) <= directKills;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;

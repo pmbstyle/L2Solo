@@ -413,7 +413,7 @@ function renderRankings() {
         : `${number(ranked.length)} character${ranked.length === 1 ? '' : 's'}`;
     els.rankingPodium.innerHTML = ranked.slice(0, 3).map((actor, index) => {
         const value = rankingValue(actor);
-        return `<button class="podium-entry" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${actor.kind}">
+        return `<button class="podium-entry" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${escapeHtml(actor.kind)}">
             <span class="podium-rank">#${index + 1}</span>
             <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
             <span>${text(value.primary)} · ${text(actorClassName(actor))}</span>
@@ -421,11 +421,11 @@ function renderRankings() {
     }).join('');
     els.rankingList.innerHTML = displayed.length ? displayed.map((actor, index) => {
         const value = rankingValue(actor);
-        return `<div role="listitem"><button class="ranking-row" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${actor.kind}">
+        return `<div role="listitem"><button class="ranking-row" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${escapeHtml(actor.kind)}">
             <span class="ranking-position">#${number(index + 1)}</span>
             <span class="ranking-identity"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>${text(rankingActorMeta(actor))}</span></span>
             <span class="ranking-class"><strong>${text(actorClassName(actor))}</strong><span>Level ${number(actor.level, '?')}</span></span>
-            <span class="ranking-kind ${actor.kind}">${text(actor.kind === 'player' ? 'Player' : phaseLabel(actor.phase || 'bot'))}</span>
+            <span class="ranking-kind ${escapeHtml(actor.kind)}">${text(actor.kind === 'player' ? 'Player' : phaseLabel(actor.phase || 'bot'))}</span>
             <span class="ranking-value">${text(value.primary)}<small>${text(value.secondary)}</small></span>
         </button></div>`;
     }).join('') : '<div class="list-empty">No characters match these filters.</div>';
@@ -1085,9 +1085,9 @@ function renderProgress(actor) {
         actor.sp !== undefined ? ['SP', actor.sp] : null,
         actor.adena !== undefined ? ['Adena', actor.adena] : null,
         actor.equipmentValue !== undefined ? ['Gear value', actor.equipmentValue] : null,
-        actor.counters ? ['Wins', actor.counters.fightsWon] : null,
-        actor.counters ? ['Resolves', actor.counters.fightsResolved] : null,
-        actor.counters ? ['Deaths', actor.counters.deaths] : null,
+        actor.counters ? ['Wins', actor.counters.fightsWon ?? 0] : null,
+        actor.counters ? ['Resolves', actor.counters.fightsResolved ?? 0] : null,
+        actor.counters ? ['Deaths', actor.counters.deaths ?? 0] : null,
         actor.pvp !== undefined ? ['PvP', actor.pvp] : null,
         actor.pk !== undefined ? ['PK', actor.pk] : null,
         actor.karma !== undefined ? ['Karma', actor.karma] : null
@@ -1485,10 +1485,10 @@ async function refresh() {
     }
 }
 
-els.openRankings.addEventListener('click', openRankings);
-els.closeRankings.addEventListener('click', closeRankings);
+els.openRankings?.addEventListener('click', openRankings);
+els.closeRankings?.addEventListener('click', closeRankings);
 
-els.rankingsModal.addEventListener('click', (event) => {
+els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
     if (actor) {
         selectActor(actor.dataset.rankingId, actor.dataset.rankingKind, true);
@@ -1498,27 +1498,27 @@ els.rankingsModal.addEventListener('click', (event) => {
     if (event.target === els.rankingsModal) closeRankings();
 });
 
-els.rankingTabs.addEventListener('click', (event) => {
+els.rankingTabs?.addEventListener('click', (event) => {
     const tab = event.target.closest('[data-ranking-metric]');
     if (!tab) return;
     state.rankingMetric = tab.dataset.rankingMetric;
     els.rankingTabs.querySelectorAll('[data-ranking-metric]').forEach((item) => {
         const active = item === tab;
         item.classList.toggle('is-active', active);
-        item.setAttribute('aria-selected', String(active));
+        item.setAttribute('aria-pressed', String(active));
     });
     els.rankingList.scrollTop = 0;
     renderRankings();
 });
 
-els.rankingRace.addEventListener('change', (event) => {
+els.rankingRace?.addEventListener('change', (event) => {
     state.rankingRaceKey = String(event.target.value || 'all');
     state.rankingClassKey = 'all';
     els.rankingList.scrollTop = 0;
     renderRankings();
 });
 
-els.rankingClass.addEventListener('change', (event) => {
+els.rankingClass?.addEventListener('change', (event) => {
     state.rankingClassKey = String(event.target.value || 'all');
     els.rankingList.scrollTop = 0;
     renderRankings();

@@ -404,6 +404,17 @@ const Database = {
 
     isReady() { return !!connection; },
 
+    close() {
+        return queryTail.then(() => {
+            if (!connection) return false;
+            const openConnection = connection;
+            connection = null;
+            openConnection.close();
+            queryTail = Promise.resolve();
+            return true;
+        });
+    },
+
     registerCharacterWriteFlush(flush) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
     },
@@ -494,7 +505,7 @@ const Database = {
                     : item.equipped ? [baseSlot] : [];
                 const desired = [
                     ...equippedSlots.map((slot) => ({ equipped: 1, slot })),
-                    ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: baseSlot }))
+                    ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: 0 }))
                 ];
                 desired.forEach((entry, index) => {
                     const current = rows[index];

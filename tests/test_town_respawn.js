@@ -7,6 +7,12 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
 
+assert.strictEqual(
+    WorldAreaCatalog.matches({ id: 'unconstrained_regression', name: 'Invalid catch-all' }, { locX: 0, locY: 0, locZ: 0 }),
+    false,
+    'an area without spatial constraints must not capture every world coordinate'
+);
+
 assert.deepStrictEqual(
     TownRespawn.getRespawnCoords(76000, 144000),
     { locX: 83446, locY: 147904, locZ: -3400 },

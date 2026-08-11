@@ -38,7 +38,7 @@ function equippedTemplates(state = {}) {
             const template = itemTemplate(item?.selfId);
             if (!template) return [];
             const amount = Math.max(0, number(item.amount, item?.equipped ? 1 : 0));
-            const explicitSlots = Array.isArray(item.equippedSlots)
+            const explicitSlots = item?.equipped && Array.isArray(item.equippedSlots)
                 ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
                 : [];
             const slots = explicitSlots.length

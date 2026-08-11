@@ -9,7 +9,7 @@ const DataCache = invoke('GameServer/DataCache');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-stackable-inventory-persistence.sqlite');
 
-fs.rmSync(databasePath, { force: true });
+[databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
 options.default.Database.path = path.relative(process.cwd(), databasePath);
 Database.init();
 DataCache.init();
@@ -61,4 +61,7 @@ DataCache.init();
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
+}).finally(async () => {
+    await Database.close();
+    [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
 });

@@ -62,6 +62,13 @@ const changedGear = ColdCombatProfile.profileFor({
     stats: { ...fighter.stats, coldCombat: { ...fighter.stats.coldCombat, equipment: { ...fighter.stats.coldCombat.equipment, pAtk: 1 } } }
 }, timestamp);
 assert.strictEqual(changedGear.equipment.pAtk, 8, 'cold inventory equipment must override a stale hot snapshot after a market or craft upgrade');
+const staleUnequippedSlots = ColdCombatProfile.profileFor({
+    ...fighter,
+    inventory: { '1': { selfId: 1, amount: 1, equipped: false, equippedSlots: [7] } },
+    stats: { ...fighter.stats, coldCombat: { ...fighter.stats.coldCombat, equipment: { ...fighter.stats.coldCombat.equipment, pAtk: 777 } } }
+}, timestamp);
+assert.strictEqual(staleUnequippedSlots.equipment.pAtk, 777,
+    'stale equippedSlots on an unequipped row must not override the authoritative combat snapshot');
 
 const spot = {
     id: 'gremlin_field',

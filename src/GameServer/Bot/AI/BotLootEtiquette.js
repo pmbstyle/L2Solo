@@ -125,14 +125,15 @@ function itemDemand(botSession, info) {
     const currentWeaponScore = currentWeapon
         ? BotWeaponCompatibility.scoreWeapon(currentWeapon.fetchPAtk?.(), currentWeapon.fetchMAtk?.(), role, classId)
         : 0;
+    const weaponUpgrade = candidateWeaponScore > currentWeaponScore;
 
     if (info.weapon) {
-        if (role === 'archer' && suitableWeapon && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
-        else if (role === 'dagger' && suitableWeapon && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
-        else if (BotWeaponCompatibility.isFistClass(classId) && suitableWeapon && ['Fist', 'DualFist'].includes(weaponType)) addDemand(result, 6, 'fist weapon');
-        else if (casterRole && casterWeapon && candidateWeaponScore > currentWeaponScore) addDemand(result, 6, 'caster weapon');
-        else if (role === 'tank' && suitableWeapon && ['Sword', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
-        else if (!casterRole && suitableWeapon && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt', 'Dual'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
+        if (role === 'archer' && suitableWeapon && weaponUpgrade && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
+        else if (role === 'dagger' && suitableWeapon && weaponUpgrade && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
+        else if (BotWeaponCompatibility.isFistClass(classId) && suitableWeapon && weaponUpgrade && ['Fist', 'DualFist'].includes(weaponType)) addDemand(result, 6, 'fist weapon');
+        else if (casterRole && casterWeapon && weaponUpgrade) addDemand(result, 6, 'caster weapon');
+        else if (role === 'tank' && suitableWeapon && weaponUpgrade && ['Sword', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
+        else if (!casterRole && suitableWeapon && weaponUpgrade && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt', 'Dual'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
 
     if (info.armor) {

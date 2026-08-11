@@ -476,6 +476,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
     place-items: center;
     padding: 24px;
     background: rgba(3, 8, 9, 0.78);
+    -webkit-backdrop-filter: blur(9px) saturate(0.72);
     backdrop-filter: blur(9px) saturate(0.72);
     animation: rankings-fade-in 170ms ease-out both;
 }
@@ -629,7 +630,8 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
     cursor: pointer;
     transition: color 140ms ease, background 140ms ease, transform 140ms ease;
 }
-.ranking-row:hover, .ranking-row:focus-visible { color: #fff; background: rgba(216, 185, 109, 0.065); transform: translateX(3px); outline: 0; }
+.ranking-row:hover { color: #fff; background: rgba(216, 185, 109, 0.065); transform: translateX(3px); }
+.ranking-row:focus-visible { color: #fff; background: rgba(216, 185, 109, 0.065); transform: translateX(3px); outline: 2px solid var(--gold); outline-offset: -2px; }
 .ranking-position { color: var(--faint); font-size: 11px; font-weight: 850; font-variant-numeric: tabular-nums; }
 .ranking-identity, .ranking-class { min-width: 0; }
 .ranking-identity strong, .ranking-identity span, .ranking-class strong, .ranking-class span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -644,6 +646,11 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 
 @keyframes rankings-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rankings-rise { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .rankings-backdrop, .rankings-modal { animation: none; }
+    .ranking-row, .rankings-close, .ranking-tab, .ranking-tab::after { transition: none; }
+}
 
 @media (min-width: 1121px) and (max-height: 820px) {
     .side-panel {

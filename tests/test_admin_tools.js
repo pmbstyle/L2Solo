@@ -10,11 +10,26 @@ const AdminShop = invoke('GameServer/World/Generics/NpcBypasses/AdminShop');
 const AdminSetLevel = invoke('GameServer/World/Generics/NpcBypasses/AdminSetLevel');
 const AdminFullBuff = invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 const armors = require('../data/Items/Armors/armors.json');
 const weapons = require('../data/Items/Weapons/weapons.json');
 const others = require('../data/Items/Others/others.json');
 const adminShop = require('../data/Admin/Shop/shop.json');
+
+const originalSetTimeout = global.setTimeout;
+const originalSetInterval = global.setInterval;
+const testTimers = [];
+global.setTimeout = (...args) => {
+    const timer = originalSetTimeout(...args);
+    testTimers.push(timer);
+    return timer;
+};
+global.setInterval = (...args) => {
+    const timer = originalSetInterval(...args);
+    testTimers.push(timer);
+    return timer;
+};
 
 DataCache.items = [...armors, ...weapons, ...others];
 DataCache.adminShop = adminShop;
@@ -44,7 +59,7 @@ const teleportPages = [
 teleportPages.forEach((page) => {
     assert.ok(teleportHubHtml.includes(`html Admin/teleport-${page}`), `teleport hub should link to ${page}`);
     const html = utils.parseRawFile(`data/Html/Admin/teleport-${page}.html`);
-    const destinations = [...html.matchAll(/admin-teleport\s+([^\"]+)/g)].map((match) => match[1].trim());
+    const destinations = [...html.matchAll(/admin-teleport\s+([^"]+)/g)].map((match) => match[1].trim());
     assert.ok(destinations.length >= 5, `${page} teleport page should contain a useful destination list`);
     destinations.forEach((destination) => {
         const coords = destination.split(/\s+/);
@@ -55,6 +70,10 @@ teleportPages.forEach((page) => {
 assert.ok(teleportHubHtml.includes('teleport-starter'), 'teleport hub should preserve access to starter areas');
 assert.ok(utils.parseRawFile('data/Html/Admin/teleport-goddard.html').includes('Goddard Castle Town'), 'Goddard should have its own city page');
 assert.ok(utils.parseRawFile('data/Html/Admin/teleport-rune.html').includes('Rune Castle Town'), 'Rune should have its own city page');
+assert.ok(!utils.parseRawFile('data/Html/Admin/teleport-rune.html').includes('Catacomb of the Apostate'),
+    'the Oren catacomb must not be duplicated on the Rune territory page');
+assert.ok(utils.parseRawFile('data/Html/Admin/teleport-oren.html').includes('Catacomb of the Apostate'),
+    'Catacomb of the Apostate must remain on its Oren territory page');
 assert.ok(utils.parseRawFile('data/Html/Admin/teleport-dungeons.html').includes('Necropolis of the Disciples'), 'dungeon page should include late-game Seven Signs destinations');
 
 Object.entries(AdminFullBuff.PROFILES).forEach(([profile, entries]) => {
@@ -270,6 +289,7 @@ async function assertSetOwnLevelUpdatesRuntimeActor() {
     assert.ok(EffectStore.list(actor).some((effect) => effect.key === 'might'), 'admin full buff bypass should update authoritative actor effects');
     assert.ok(session.packets.some((packet) => packet[0] === 0x04), 'admin full buff bypass should refresh UserInfo immediately');
     assert.ok(session.packets.some((packet) => packet[0] === 0x7f), 'admin full buff bypass should refresh visible effect icons immediately');
+    EffectTicker.clearAll(actor);
 }
 
 assertSetOwnLevelUpdatesRuntimeActor()
@@ -279,4 +299,12 @@ assertSetOwnLevelUpdatesRuntimeActor()
     .catch((err) => {
         console.error(err);
         process.exit(1);
+    })
+    .finally(() => {
+        global.setTimeout = originalSetTimeout;
+        global.setInterval = originalSetInterval;
+        testTimers.forEach((timer) => {
+            clearTimeout(timer);
+            clearInterval(timer);
+        });
     });

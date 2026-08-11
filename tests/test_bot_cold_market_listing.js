@@ -87,6 +87,15 @@ async function run() {
 
     const candidates = ItemDisposition.saleCandidates(state);
     assert.deepStrictEqual(candidates.map((item) => item.selfId), [marketItem.selfId], 'equipped gear must never be listed');
+    const malformedEquippedCount = ItemDisposition.saleCandidates({
+        ...state,
+        inventory: {
+            57: state.inventory[57],
+            [marketItem.selfId]: { ...state.inventory[marketItem.selfId], amount: 2, equippedCount: 'broken' }
+        }
+    });
+    assert.strictEqual(malformedEquippedCount[0].count, 2,
+        'invalid persisted equipped counts must not produce NaN sale quantities');
 
     const preTradeState = {
         ...state,
