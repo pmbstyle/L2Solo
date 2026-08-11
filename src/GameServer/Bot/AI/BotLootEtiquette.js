@@ -3,6 +3,7 @@ const SpeckMath = invoke('GameServer/SpeckMath');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const ADENA_ID = 57;
@@ -110,29 +111,42 @@ function itemDemand(botSession, info) {
     const armorType = info.kind.replace('Armor.', '');
     const casterRole = BotWeaponCompatibility.isCasterRole(role, classId);
     const casterWeapon = BotWeaponCompatibility.isCasterWeapon(info.kind, info.name, info.pAtk, info.mAtk);
+    const armorKind = BotEquipmentCompatibility.armorKindFor(role, classId).replace('Armor.', '');
+    const suitableWeapon = BotWeaponCompatibility.isSuitableWeapon(
+        info.kind,
+        info.name,
+        info.pAtk,
+        info.mAtk,
+        role,
+        classId
+    );
     const currentWeapon = botSession.actor.backpack?.fetchEquippedWeapon?.();
     const candidateWeaponScore = BotWeaponCompatibility.scoreWeapon(info.pAtk, info.mAtk, role, classId);
     const currentWeaponScore = currentWeapon
         ? BotWeaponCompatibility.scoreWeapon(currentWeapon.fetchPAtk?.(), currentWeapon.fetchMAtk?.(), role, classId)
         : 0;
+    const weaponUpgrade = candidateWeaponScore > currentWeaponScore;
 
     if (info.weapon) {
-        if (role === 'archer' && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
-        else if (role === 'dagger' && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
-        else if (casterRole && casterWeapon && candidateWeaponScore > currentWeaponScore) addDemand(result, 6, 'caster weapon');
-        else if (role === 'tank' && ['Sword', 'Blunt', 'Pole'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
-        else if ((role === 'dps' || role === 'dagger') && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
+        if (role === 'archer' && suitableWeapon && weaponUpgrade && weaponType === 'Bow') addDemand(result, 6, 'archer weapon');
+        else if (role === 'dagger' && suitableWeapon && weaponUpgrade && weaponType === 'Knife') addDemand(result, 6, 'dagger weapon');
+        else if (BotWeaponCompatibility.isFistClass(classId) && suitableWeapon && weaponUpgrade && ['Fist', 'DualFist'].includes(weaponType)) addDemand(result, 6, 'fist weapon');
+        else if (casterRole && casterWeapon && weaponUpgrade) addDemand(result, 6, 'caster weapon');
+        else if (role === 'tank' && suitableWeapon && weaponUpgrade && ['Sword', 'Blunt'].includes(weaponType)) addDemand(result, 4, 'frontline weapon');
+        else if (!casterRole && suitableWeapon && weaponUpgrade && ['Knife', 'Sword', 'GreatSword', 'Pole', 'Blunt', 'Dual'].includes(weaponType)) addDemand(result, 4, 'damage weapon');
     }
 
     if (info.armor) {
-        if (role === 'tank' && ['Shield', 'Chain'].includes(armorType)) addDemand(result, 6, 'tank gear');
-        else if ((role === 'mage' || role === 'healer' || role === 'buffer') && ['Fabric', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'caster gear');
-        else if ((role === 'archer' || role === 'dagger' || role === 'dps') && ['Leather', 'Wear', 'Jewel'].includes(armorType)) addDemand(result, 4, 'combat gear');
+        if (armorType === 'Shield' && BotEquipmentCompatibility.usesShield(role, classId)) {
+            addDemand(result, role === 'tank' ? 6 : 4, role === 'tank' ? 'tank gear' : 'combat gear');
+        } else if ([armorKind, 'Wear', 'Jewel'].includes(armorType)) {
+            addDemand(result, role === 'tank' ? 6 : 4, casterRole ? 'caster gear' : 'combat gear');
+        }
     }
 
     if (info.shot) {
-        if (name.includes('spiritshot') && (role === 'mage' || role === 'healer' || role === 'buffer')) addDemand(result, 5, 'caster shots');
-        else if (name.includes('soulshot') && ['archer', 'dagger', 'tank', 'dps'].includes(role)) addDemand(result, 4, 'weapon shots');
+        if (name.includes('spiritshot') && casterRole) addDemand(result, 5, 'caster shots');
+        else if (name.includes('soulshot') && !casterRole) addDemand(result, 4, 'weapon shots');
     }
 
     if (info.potion && (role === 'healer' || role === 'buffer' || role === 'tank')) {

@@ -5,6 +5,7 @@ require('../src/Global');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 
 DataCache.init();
 
@@ -85,6 +86,32 @@ try {
         const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
+        const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));
+        assert(fulfilledPlanMigration, 'startup must discard equipment plans whose exact target slot is already equipped');
+        assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');
+        assert(fulfilledPlanMigration.sql.includes("'$.partyRequest'"), 'finishing a persisted gear target must clear its obsolete party request');
+        const reconciledPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: { target: { selfId: 878, slot: 5 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                878: { selfId: 878, amount: 2, equipped: true, equippedSlots: [4, 5], slot: 4 }
+            }
+        });
+        assert.strictEqual(reconciledPlan.stats.equipmentPlan, undefined,
+            'every runtime persistence path must discard a plan already fulfilled by a paired paperdoll slot');
+        assert.strictEqual(reconciledPlan.stats.partyRequest, undefined,
+            'runtime plan reconciliation must clear the obsolete party request too');
+        const reconciledDagger = BotLifeState.reconcileEquipmentInventory({
+            level: 20,
+            stats: { classId: 7, role: 'dagger' },
+            inventory: {
+                625: { selfId: 625, name: 'Bone Shield', amount: 1, equipped: true, equippedSlots: [8], slot: 8 }
+            }
+        });
+        assert.strictEqual(reconciledDagger.inventory['625'].equipped, false,
+            'class-aware lifecycle reconciliation must remove a shield after a class transition');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
@@ -202,6 +229,15 @@ try {
                         timing: { nextResolveAt: 9000 },
                         vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
                         stats: {
+                            classId: 0,
+                            classProgressionLevel: 20,
+                            classProgressionClassId: 0,
+                            fightsWon: 4,
+                            fightsResolved: 6,
+                            deaths: 2,
+                            expEarned: 1000,
+                            spEarned: 100,
+                            adenaEarned: 500,
                             lastResolveDebug: { targetNpcId: null },
                             targetCombat: { targets: {}, populationTargets: {} }
                         },
@@ -215,15 +251,26 @@ try {
                             // resolver returns after a fight.
                             stats: { ...member.stats, coldCombat: { cooldowns: {} } }
                         },
-                        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                        materialize: { exp: 120, sp: 13, adena: 80, items: [] },
                         nextResolveAt: 10000,
                         debug: {
                             partyId: 'bgp_probe',
+                            fights: 3,
+                            wins: 2,
                             aggregate: true,
                             populationTelemetryOwner: true,
                             targetNpcId: 93,
                             defeatedNpcIds: [93]
                         }
+                    }).then((resolvedMember) => {
+                        assert.strictEqual(resolvedMember.stats.fightsWon, 6, 'a projected party stats snapshot must not erase newly won fights');
+                        assert.strictEqual(resolvedMember.stats.fightsResolved, 9, 'a projected party stats snapshot must not erase newly resolved fights');
+                        assert.strictEqual(resolvedMember.stats.deaths, 2, 'a non-lethal party resolve must preserve the cumulative death count');
+                        assert.strictEqual(resolvedMember.stats.expEarned, 1120, 'a projected party stats snapshot must not erase earned EXP telemetry');
+                        assert.strictEqual(resolvedMember.stats.spEarned, 113, 'a projected party stats snapshot must not erase earned SP telemetry');
+                        assert.strictEqual(resolvedMember.stats.adenaEarned, 580, 'a projected party stats snapshot must not erase earned Adena telemetry');
+                        assert.deepStrictEqual(resolvedMember.stats.coldCombat, { cooldowns: {} }, 'resolver-specific patch stats must still survive the authoritative counter merge');
+                        return resolvedMember;
                     });
                 });
                 }).then(() => {
@@ -231,22 +278,57 @@ try {
                     const persistedStats = JSON.parse(partySave.params[27]);
                     assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
                     assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
-                    return BotLifeState.applyResolve({
+                    const deadProbe = {
                         characterId: 45,
                         name: 'DeadPartyRequestProbe',
+                        level: 20,
                         phase: 'cold',
                         activity: 'hunting',
-                        stats: { partyRequest: { status: 'open', priority: 'required' } },
+                        exp: 500,
+                        sp: 50,
+                        adena: 100,
+                        stats: {
+                            classId: 0,
+                            classProgressionLevel: 20,
+                            classProgressionClassId: 0,
+                            fightsWon: 10,
+                            fightsResolved: 12,
+                            deaths: 2,
+                            expEarned: 100,
+                            spEarned: 20,
+                            adenaEarned: 50,
+                            partyRequest: { status: 'open', priority: 'required' }
+                        },
                         timing: {},
-                        vitals: {},
+                        vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 },
                         inventory: {}
-                    }, {
-                        patch: { activity: 'dead', vitals: {} },
-                        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                    };
+                    return BotLifeState.applyResolve(deadProbe, {
+                        patch: {
+                            activity: 'dead',
+                            deathCount: 3,
+                            vitals: { hp: 0, maxHp: 100, mp: 0, maxMp: 50 },
+                            stats: { ...deadProbe.stats, coldCombat: { cooldowns: { 3: 9000 } } }
+                        },
+                        materialize: { exp: 40, sp: 5, adena: 30, items: [] },
                         nextResolveAt: 10000,
-                        debug: { fights: 1, deaths: 1 }
+                        debug: { fights: 2, wins: 1, deaths: 1 }
                     }).then((deadState) => {
                         assert.strictEqual(deadState.stats.partyRequest, null, 'dead bots must not retain open party requests');
+                        assert.strictEqual(deadState.stats.fightsWon, 11, 'a lethal resolve must retain wins completed before death');
+                        assert.strictEqual(deadState.stats.fightsResolved, 14, 'a lethal resolve must retain all attempted fights');
+                        assert.strictEqual(deadState.stats.deaths, 3, 'a stale patch stats snapshot must not reset the new death count');
+                        assert.strictEqual(deadState.stats.expEarned, 140, 'a lethal resolve must retain earned EXP telemetry');
+                        assert.strictEqual(deadState.stats.spEarned, 25, 'a lethal resolve must retain earned SP telemetry');
+                        assert.strictEqual(deadState.stats.adenaEarned, 80, 'a lethal resolve must retain earned Adena telemetry');
+                        const respawnAt = Date.now() + 1000;
+                        const recovery = BackgroundResolver.resolveSolo({ state: deadState, timestamp: respawnAt });
+                        return BotLifeState.applyResolve(deadState, recovery).then((recoveredState) => {
+                            assert.strictEqual(recoveredState.stats.deaths, 3, 'death recovery must preserve the cumulative death count');
+                            assert.strictEqual(recoveredState.stats.fightsWon, 11, 'death recovery must preserve cumulative wins');
+                            assert.strictEqual(recoveredState.stats.fightsResolved, 14, 'death recovery must preserve cumulative fights');
+                            assert.strictEqual(recoveredState.stats.lastRespawnAt, respawnAt, 'resolver-specific respawn telemetry must survive the counter merge');
+                        });
                     });
                 });
         }).then(() => BotLifeState.upsertState({

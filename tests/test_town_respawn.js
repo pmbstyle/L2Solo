@@ -4,6 +4,14 @@ require('../src/Global');
 
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const BotAI = invoke('GameServer/Bot/BotAI');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
+const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
+
+assert.strictEqual(
+    WorldAreaCatalog.matches({ id: 'unconstrained_regression', name: 'Invalid catch-all' }, { locX: 0, locY: 0, locZ: 0 }),
+    false,
+    'an area without spatial constraints must not capture every world coordinate'
+);
 
 assert.deepStrictEqual(
     TownRespawn.getRespawnCoords(76000, 144000),
@@ -16,6 +24,62 @@ assert.strictEqual(
     'ti_village',
     'the underground layer of cell 21_25 should resolve Elven Ruins to Talking Island'
 );
+
+const elvenRuins = WorldAreaCatalog.resolve({ locX: 45596, locY: 247589, locZ: -6518 });
+assert.strictEqual(elvenRuins?.name, 'Elven Ruins', 'underground Elven Ruins coordinates must have a canonical game-area name');
+assert.strictEqual(elvenRuins?.mapLayer, 'dungeon', 'Elven Ruins must not be projected onto the surface world map');
+const decoratedElvenSpot = WorldAreaCatalog.decorateSpot({
+    id: '7_41',
+    name: 'Skeleton fields',
+    center: { locX: 45596, locY: 247589, locZ: -6518 }
+});
+assert.strictEqual(decoratedElvenSpot.name, 'Elven Ruins', 'canonical area metadata must replace generated mob-field labels');
+assert.strictEqual(decoratedElvenSpot.capacity, 64, 'Elven Ruins must carry its explicit population capacity');
+assert.strictEqual(decoratedElvenSpot.tagsAuthoritative, true, 'area tags must override incidental mob-name tags');
+assert.strictEqual(
+    WorldAreaCatalog.resolve({ locX: 45596, locY: 247589, locZ: -3400 }),
+    null,
+    'the surface layer above Elven Ruins must not inherit the dungeon identity'
+);
+
+const mithrilMines = WorldAreaCatalog.resolve({ locX: 176673, locY: -177656, locZ: 801 });
+assert.strictEqual(mithrilMines?.name, 'Mithril Mines', 'the detached mine spawn cell must have its canonical game-area name');
+assert.strictEqual(mithrilMines?.mapLayer, 'dungeon', 'Mithril Mines must not be projected into the sea on the surface atlas');
+const decoratedMithrilSpot = WorldAreaCatalog.decorateSpot({
+    id: '29_-30',
+    name: 'Akaste Bone Soldier fields',
+    center: { locX: 176673, locY: -177656, locZ: 801 }
+});
+assert.strictEqual(decoratedMithrilSpot.name, 'Mithril Mines', 'mob-derived Akaste labels must be replaced by the canonical mine name');
+assert.strictEqual(decoratedMithrilSpot.capacity, 48, 'Mithril Mines must carry a bounded per-sector population capacity');
+assert.deepStrictEqual(decoratedMithrilSpot.localStarterRegions, ['dwarf'], 'the low-level mine route must remain local to dwarven starters');
+assert.strictEqual(decoratedMithrilSpot.tagsAuthoritative, true, 'canonical mine tags must override incidental mob-name tags');
+assert.strictEqual(
+    WorldAreaCatalog.resolve({ locX: 175301, locY: -186816, locZ: -1360 }),
+    null,
+    'the northeast coast surface overlapping cell 25_12 must not inherit the Mithril Mines identity'
+);
+
+C4SevenSignsDungeonTeleports.DUNGEONS.forEach((dungeon) => {
+    const [insideX, insideY, insideZ] = dungeon.outside.destination;
+    const [outsideX, outsideY, outsideZ] = dungeon.outside.spawn;
+    const area = WorldAreaCatalog.resolve({ locX: insideX, locY: insideY, locZ: insideZ });
+    assert.strictEqual(area?.name, dungeon.name, `${dungeon.name} interior must resolve to its canonical area`);
+    assert.ok(area?.tags.includes('catacomb'),
+        `${dungeon.name} must retain the shared Seven Signs routing tag`);
+    assert.strictEqual(area?.tags.includes('necropolis'), dungeon.name.startsWith('Necropolis'),
+        `${dungeon.name} must retain the precise dungeon subtype`);
+    assert.deepStrictEqual(
+        WorldAreaCatalog.publicArea(area).mapAnchor,
+        { locX: outsideX, locY: outsideY, locZ: outsideZ },
+        `${dungeon.name} must project to its authoritative outside Gatekeeper Ziggurat`
+    );
+    assert.strictEqual(
+        WorldAreaCatalog.resolve({ locX: outsideX, locY: outsideY, locZ: outsideZ }),
+        null,
+        `${dungeon.name} outside entrance must remain on the surface layer`
+    );
+});
 
 assert.deepStrictEqual(
     TownRespawn.getRespawnCoords(49315, 248452, -5960),

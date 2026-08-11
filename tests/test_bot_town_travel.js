@@ -3,6 +3,9 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+const BotSpotTravel = invoke('GameServer/Bot/AI/BotSpotTravel');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const Response = invoke('GameServer/Network/Response');
 
 function botAt(loc) {
@@ -18,7 +21,10 @@ function botAt(loc) {
         fetchMaxHp: () => 100,
         fetchMp: () => 100,
         fetchMaxMp: () => 100,
+        fetchName: () => 'Travel Bot',
         isDead: () => false,
+        clearDestId() {},
+        automation: { abortAll() {} },
         moveTo(data) { this.moves.push(data); },
         state: {
             fetchHits: () => false,
@@ -39,6 +45,9 @@ function session(actor) {
 const originalSetTimeout = global.setTimeout;
 const originalCharInfo = Response.charInfo;
 const originalRelationChanged = Response.relationChanged;
+const originalFindById = SpotService.findById;
+const originalAssignSpot = SpotService.assignSpot;
+const originalRecord = BotEventJournal.record;
 
 try {
     const timers = [];
@@ -48,6 +57,12 @@ try {
     };
     Response.charInfo = () => Buffer.from('char-info');
     Response.relationChanged = () => Buffer.from('relation');
+    SpotService.findById = (id) => ({ id, name: 'Remote Field', center: { locX: 30000, locY: 0, locZ: -100 } });
+    SpotService.assignSpot = (targetSession, spot) => {
+        targetSession.currentSpot = spot;
+        return spot;
+    };
+    BotEventJournal.record = () => Promise.resolve();
 
     const farBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const farSession = session(farBot);
@@ -93,9 +108,48 @@ try {
     assert.strictEqual(interruptedSession.supplyErrandHidden, false, 'terminal supply workflow must reveal the bot');
     assert.strictEqual(visiblePackets.length, 2, 'reveal must broadcast both character and relation packets');
 
+    const kickedBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const kickedSession = session(kickedBot);
+    kickedSession.incomingThreatId = 9002;
+    kickedSession.incomingThreatAt = Date.now() - 6000;
+    kickedSession.dataSendToMeAndOthers = () => {};
+    const remoteSpot = { id: 'remote_field', name: 'Remote Field', center: { locX: 30000, locY: 0, locZ: -100 } };
+    const kickedTimerBase = timers.length;
+    assert.strictEqual(BotSpotTravel.start(kickedSession, kickedBot, remoteSpot), true, 'dismissed bot should start its hunting-ground SoE');
+    assert.strictEqual(timers.length - kickedTimerBase, 1, 'starting hunting-ground travel must schedule exactly one cast timer');
+    const kickedCastTimer = timers[kickedTimerBase];
+    kickedCastTimer.fn();
+    assert.strictEqual(kickedSession.spotRelocation?.arrivalPending, true, 'stale party combat memory must not cancel a completed SoE cast');
+    assert.strictEqual(kickedSession.currentSpot?.id, remoteSpot.id, 'completed SoE must commit the requested hunting ground');
+
+    const threatenedBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const threatenedSession = session(threatenedBot);
+    threatenedSession.incomingThreatId = 9003;
+    threatenedSession.incomingThreatAt = Date.now();
+    const threatenedTimerBase = timers.length;
+    BotSpotTravel.start(threatenedSession, threatenedBot, remoteSpot);
+    assert.strictEqual(timers.length - threatenedTimerBase, 1, 'threatened travel must bind its own cast timer');
+    timers[threatenedTimerBase].fn();
+    assert.strictEqual(threatenedSession.spotRelocation, undefined, 'a live combat threat should still interrupt hunting-ground SoE');
+    assert.strictEqual(threatenedSession.lastSpotRelocation?.reason, 'combat_interrupt', 'live-threat cancellation should remain observable');
+
+    const cancelledBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const cancelledSession = session(cancelledBot);
+    const cancelledTimerBase = timers.length;
+    BotSpotTravel.start(cancelledSession, cancelledBot, remoteSpot);
+    assert.strictEqual(timers.length - cancelledTimerBase, 1, 'cancelled travel must bind its own cast timer');
+    assert.strictEqual(cancelledBot.state.fetchCasts(), true, 'travel must start the SoE cast before cancellation is exercised');
+    cancelledBot.state.setCasts(false);
+    timers[cancelledTimerBase].fn();
+    assert.strictEqual(cancelledSession.spotRelocation, undefined, 'an externally cancelled cast must not teleport later from its stale timer');
+    assert.strictEqual(cancelledSession.lastSpotRelocation?.reason, 'cast_interrupted', 'cancelled-cast cleanup should remain observable');
+
     console.log('Bot town travel checks passed');
 } finally {
     global.setTimeout = originalSetTimeout;
     Response.charInfo = originalCharInfo;
     Response.relationChanged = originalRelationChanged;
+    SpotService.findById = originalFindById;
+    SpotService.assignSpot = originalAssignSpot;
+    BotEventJournal.record = originalRecord;
 }

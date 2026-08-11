@@ -15,6 +15,8 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
 const NAME_GENERATOR_VERSION = 2;
+const TARGET_SPOT_SCORE_BAND = 90;
+const TARGET_SPOT_SHORTLIST_LIMIT = 12;
 
 const CLASS_POOL = [
     { race: 0, classId: 0, sex: 0, role: 'dps' },
@@ -113,14 +115,22 @@ function targetSpot(level, index, base = {}) {
         levelBand: `${Math.max(1, level - 2)}-${level + 2}`,
         stats: {
             role: base.role || 'dps',
-            classId: base.classId || null
+            classId: base.classId || null,
+            generatedIndex: index,
+            starterRegion: base.starterRegion || null
         }
     };
-    const profiles = SpotProfiles.ensure()
+    const allSpots = SpotProfiles.ensure();
+    const profiles = allSpots
         .filter((spot) => spot.minLevel <= level + 3 && spot.maxLevel >= level - 3);
-    const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo' });
+    const occupancy = SpotProfiles.currentOccupancy(allSpots);
+    const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo', occupancy });
     if (guided.length > 0) {
-        return guided[index % Math.min(4, guided.length)].spot;
+        const bestScore = guided[0].score;
+        const shortlist = guided
+            .filter((candidate) => candidate.localityPenalty <= 0 && candidate.score >= bestScore - TARGET_SPOT_SCORE_BAND)
+            .slice(0, TARGET_SPOT_SHORTLIST_LIMIT);
+        return (shortlist.length ? shortlist : guided)[index % Math.max(1, shortlist.length || guided.length)].spot;
     }
 
     return profiles
@@ -129,7 +139,7 @@ function targetSpot(level, index, base = {}) {
             const bGap = Math.abs(b.avgLevel - level);
             if (aGap !== bGap) return aGap - bGap;
             return b.density - a.density;
-        })[index % Math.max(1, profiles.length)] || SpotProfiles.ensure()[0] || null;
+        })[index % Math.max(1, profiles.length)] || allSpots[0] || null;
 }
 
 function usernameFor(index) {

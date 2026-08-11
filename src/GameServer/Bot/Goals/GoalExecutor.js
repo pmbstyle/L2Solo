@@ -1,6 +1,7 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const MARKET_TRAVEL_MS = 25 * 1000;
 const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
@@ -66,7 +67,21 @@ function finishMarketVisit(state, timestamp = Date.now()) {
     if (!destination?.loc) return null;
 
     const from = { ...state.loc };
-    const to = { ...destination.loc };
+    const savedSpot = destination.spotId ? SpotService.findById(destination.spotId) : null;
+    const selectedSpot = savedSpot
+        ? invoke('GameServer/Bot/Population/SpotProfiles').findForState({
+            ...state,
+            activity: 'hunting',
+            currentRegion: destination.regionName || state.currentRegion,
+            loc: { ...destination.loc },
+            spotId: destination.spotId
+        }) || savedSpot
+        : null;
+    const to = selectedSpot
+        ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
+        : { ...destination.loc };
+    const regionName = selectedSpot?.name || destination.regionName;
+    const spotId = selectedSpot?.id || destination.spotId;
     const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY, to.locZ);
     return {
         ...state,
@@ -77,9 +92,9 @@ function finishMarketVisit(state, timestamp = Date.now()) {
                 reason: 'return_after_market',
                 from,
                 to,
-                regionName: destination.regionName,
-                spotId: destination.spotId,
-                townName: destinationTown?.name || destination.regionName || 'Hunting Ground',
+                regionName,
+                spotId,
+                townName: destinationTown?.name || regionName || 'Hunting Ground',
                 viaTown: destinationTown?.name || null,
                 method: 'gatekeeper_spot',
                 arrivalActivity: 'hunting',

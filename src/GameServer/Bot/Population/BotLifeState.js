@@ -9,8 +9,10 @@ const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
 let initialized = false;
@@ -82,11 +84,25 @@ function levelForExp(exp, fallback = 1) {
 }
 
 function itemTemplate(selfId) {
-    return DataCache.items.find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
 }
 
 function itemName(selfId, fallback = '') {
     return itemTemplate(selfId)?.template?.name || fallback || `Item ${selfId}`;
+}
+
+function itemStackable(selfId, item = {}) {
+    const template = itemTemplate(selfId);
+    if (template) return template.etc?.stackable === true;
+    if (typeof item.fetchStackable === 'function') return !!item.fetchStackable();
+    return item.stackable === true;
+}
+
+function normalizeInventoryStackability(inventory = {}) {
+    return Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
+        const selfId = Number(item?.selfId || key);
+        return [key, { ...(item || {}), stackable: itemStackable(selfId, item) }];
+    }));
 }
 
 function inventorySummaryFromItems(items = []) {
@@ -96,13 +112,21 @@ function inventorySummaryFromItems(items = []) {
         if (!selfId || amount <= 0) return summary;
 
         const key = String(selfId);
+        const equipped = !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped);
+        const slot = Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0);
+        const equippedSlots = [...new Set([
+            ...(summary[key]?.equippedSlots || []),
+            ...(equipped && slot > 0 ? [slot] : [])
+        ])].sort((a, b) => a - b);
         summary[key] = {
             selfId,
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
             amount: Number(summary[key]?.amount || 0) + amount,
-            equipped: !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped),
-            stackable: !!(item.fetchStackable ? item.fetchStackable() : item.stackable),
-            slot: Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0),
+            equipped: equippedSlots.length > 0,
+            equippedCount: equippedSlots.length,
+            equippedSlots,
+            stackable: itemStackable(selfId, item),
+            slot: Number(summary[key]?.slot || slot),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
             kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
         };
@@ -112,15 +136,54 @@ function inventorySummaryFromItems(items = []) {
 
 function equipmentSummaryFromInventory(inventory = {}) {
     return Object.values(inventory)
-        .filter((item) => item.equipped)
-        .map((item) => ({
+        .flatMap((item) => GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).map((slot) => ({
             selfId: Number(item.selfId),
             name: item.name || itemName(item.selfId),
-            slot: Number(item.slot || 0),
+            slot,
             rank: item.rank || 'none',
             kind: item.kind || ''
-        }))
+        })))
         .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
+}
+
+function equipmentTargetFulfilled(stats = {}, inventory = {}) {
+    const target = stats.equipmentPlan?.target;
+    const selfId = Number(target?.selfId || 0);
+    const slot = Number(target?.slot || 0);
+    if (selfId <= 0 || slot <= 0) return false;
+    const item = inventory[String(selfId)];
+    return !!item?.equipped
+        && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(slot);
+}
+
+function reconcileFulfilledEquipmentPlan(state = {}) {
+    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
+    const stats = { ...(state.stats || {}) };
+    delete stats.equipmentPlan;
+    delete stats.partyRequest;
+    return { ...state, stats };
+}
+
+function reconcileEquipmentInventory(state = {}) {
+    const inventory = GearAcquisitionPlanner.equipInventoryUpgrades(state, state.inventory || {});
+    return reconcileFulfilledEquipmentPlan({
+        ...state,
+        inventory,
+        stats: {
+            ...(state.stats || {}),
+            equipment: equipmentSummaryFromInventory(inventory)
+        }
+    });
+}
+
+function hasIncompatibleShield(state = {}) {
+    const classId = Number(state.stats?.classId || 0);
+    const role = state.stats?.role || BotRoles.inferRole(classId);
+    if (BotEquipmentCompatibility.usesShield(role, classId)) return false;
+    return Object.values(state.inventory || {}).some((item) => (
+        Number(itemTemplate(item?.selfId)?.etc?.slot || item?.slot || 0) === 8
+        && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(8)
+    ));
 }
 
 function inventoryAdena(inventory) {
@@ -192,7 +255,7 @@ function compactResolveDebug(debug = {}) {
 
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
-    const inventory = parseJson(row.inventorySummary, {});
+    const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
     return {
         characterId: Number(row.characterId),
@@ -310,35 +373,36 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
+    const persistedState = reconcileFulfilledEquipmentPlan(state);
     return {
-        characterId: state.characterId,
-        accountName: state.accountName || '',
-        characterName: state.name || '',
-        level: Number(state.level || 1),
-        exp: Number(state.exp || 0),
-        sp: Number(state.sp || 0),
-        adena: Number(state.adena || 0),
-        homeRegion: state.homeRegion || null,
-        currentRegion: state.currentRegion || null,
-        spotId: state.spotId || null,
-        activity: state.activity || 'hunting',
-        phase: state.phase || 'cold',
-        activityStartedAt: state.timing?.activityStartedAt || null,
-        nextResolveAt: state.timing?.nextResolveAt || null,
-        lastResolvedAt: state.timing?.lastResolvedAt || null,
-        lastHotAt: state.timing?.lastHotAt || null,
-        locX: state.loc?.locX || 0,
-        locY: state.loc?.locY || 0,
-        locZ: state.loc?.locZ || 0,
-        hp: state.vitals?.hp || 0,
-        maxHp: state.vitals?.maxHp || 0,
-        mp: state.vitals?.mp || 0,
-        maxMp: state.vitals?.maxMp || 0,
-        targetLevelBand: state.levelBand || levelBand(state.level),
-        deathCount: state.stats?.deaths || 0,
-        partyId: state.party?.partyId || null,
-        inventorySummary: safeJson(state.inventory || {}),
-        statsJson: safeJson(state.stats || {}),
+        characterId: persistedState.characterId,
+        accountName: persistedState.accountName || '',
+        characterName: persistedState.name || '',
+        level: Number(persistedState.level || 1),
+        exp: Number(persistedState.exp || 0),
+        sp: Number(persistedState.sp || 0),
+        adena: Number(persistedState.adena || 0),
+        homeRegion: persistedState.homeRegion || null,
+        currentRegion: persistedState.currentRegion || null,
+        spotId: persistedState.spotId || null,
+        activity: persistedState.activity || 'hunting',
+        phase: persistedState.phase || 'cold',
+        activityStartedAt: persistedState.timing?.activityStartedAt || null,
+        nextResolveAt: persistedState.timing?.nextResolveAt || null,
+        lastResolvedAt: persistedState.timing?.lastResolvedAt || null,
+        lastHotAt: persistedState.timing?.lastHotAt || null,
+        locX: persistedState.loc?.locX || 0,
+        locY: persistedState.loc?.locY || 0,
+        locZ: persistedState.loc?.locZ || 0,
+        hp: persistedState.vitals?.hp || 0,
+        maxHp: persistedState.vitals?.maxHp || 0,
+        mp: persistedState.vitals?.mp || 0,
+        maxMp: persistedState.vitals?.maxMp || 0,
+        targetLevelBand: persistedState.levelBand || levelBand(persistedState.level),
+        deathCount: persistedState.stats?.deaths || 0,
+        partyId: persistedState.party?.partyId || null,
+        inventorySummary: safeJson(persistedState.inventory || {}),
+        statsJson: safeJson(persistedState.stats || {}),
         updatedAt: now()
     };
 }
@@ -492,7 +556,7 @@ function applyClassProgression(state, profile = {}) {
             }
         };
         if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-        return refreshColdCombatProfile(progressedState);
+        return refreshColdCombatProfile(reconcileEquipmentInventory(progressedState));
     });
 }
 
@@ -619,6 +683,93 @@ function recoverOrphanedGiranState(state = {}) {
         currentRegion: state.homeRegion || state.currentRegion,
         loc: SpotService.randomPointNear(spot, 400),
         timing: { ...(state.timing || {}), nextResolveAt: now() + 30000 }
+    };
+}
+
+function sameLocation(left, right, tolerance = 8) {
+    if (!left || !right) return false;
+    return ['locX', 'locY', 'locZ'].every((key) => {
+        const a = Number(left[key]);
+        const b = Number(right[key]);
+        return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tolerance;
+    });
+}
+
+function canonicalizeAreaState(state = {}) {
+    const previousRegion = state.currentRegion;
+    const previousStats = state.stats || {};
+    const currentSpot = state.spotId ? SpotService.findById(state.spotId) : null;
+    const area = WorldAreaCatalog.resolve(state.loc);
+    const returnSpot = previousStats.marketReturn?.spotId
+        ? SpotService.findById(previousStats.marketReturn.spotId)
+        : null;
+    const returnArea = WorldAreaCatalog.resolve(returnSpot?.center || previousStats.marketReturn?.loc);
+    const travelSpot = previousStats.travel?.spotId
+        ? SpotService.findById(previousStats.travel.spotId)
+        : null;
+    const travelArea = WorldAreaCatalog.resolve(travelSpot?.center || previousStats.travel?.to);
+    if (!area && !returnArea && !travelArea) return state;
+
+    const regionChanged = Boolean(area && previousRegion !== area.name);
+    const areaIdChanged = Boolean(area && previousStats.canonicalAreaId !== area.id);
+    const returnChanged = Boolean(previousStats.marketReturn && returnArea
+        && previousStats.marketReturn.regionName !== returnArea.name);
+    const travelChanged = Boolean(previousStats.travel && travelArea
+        && previousStats.travel.regionName !== travelArea.name);
+    const currentAtCenter = Boolean(area && currentSpot?.center
+        && ['hunting', 'resting'].includes(state.activity)
+        && sameLocation(state.loc, currentSpot.center));
+    const returnAtCenter = Boolean(returnArea && returnSpot?.center
+        && sameLocation(previousStats.marketReturn?.loc, returnSpot.center));
+    const travelAtCenter = Boolean(travelArea && travelSpot?.center
+        && sameLocation(previousStats.travel?.to, travelSpot.center));
+    if (!regionChanged && !areaIdChanged && !returnChanged && !travelChanged
+        && !currentAtCenter && !returnAtCenter && !travelAtCenter) return state;
+
+    const stats = { ...previousStats };
+    if (area) stats.canonicalAreaId = area.id;
+    if (returnChanged || returnAtCenter) {
+        stats.marketReturn = {
+            ...previousStats.marketReturn,
+            regionName: returnArea.name,
+            loc: returnAtCenter
+                ? SpotService.arrivalPointForState(state, returnSpot)
+                : previousStats.marketReturn.loc
+        };
+    }
+    if (travelChanged || travelAtCenter) {
+        stats.travel = {
+            ...previousStats.travel,
+            regionName: travelArea.name,
+            to: travelAtCenter
+                ? SpotService.arrivalPointForState(state, travelSpot)
+                : previousStats.travel.to
+        };
+    }
+
+    const migratedLoc = currentAtCenter
+        ? SpotService.arrivalPointForState(state, currentSpot)
+        : state.loc;
+    if (currentAtCenter && stats.travel?.from && sameLocation(stats.travel.from, state.loc)) {
+        stats.travel = { ...stats.travel, from: migratedLoc };
+    }
+
+    const promptSoloReplan = (regionChanged || currentAtCenter)
+        && !state.party?.partyId
+        && ['hunting', 'resting'].includes(state.activity);
+    const timestamp = now();
+    return {
+        ...state,
+        currentRegion: area?.name || previousRegion,
+        loc: migratedLoc,
+        stats,
+        timing: promptSoloReplan ? {
+            ...(state.timing || {}),
+            nextResolveAt: Math.min(
+                Number(state.timing?.nextResolveAt || timestamp + 120000),
+                timestamp + 5000 + (Number(state.characterId || 0) % 115000)
+            )
+        } : state.timing
     };
 }
 
@@ -801,14 +952,77 @@ function discardInvalidEquipmentPlans() {
     });
 }
 
+function discardFulfilledEquipmentPlans() {
+    const timestamp = now();
+    return Database.execute([
+        `WITH plan_targets AS (
+            SELECT characterId,
+                CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) AS targetId,
+                CAST(json_extract(statsJson, '$.equipmentPlan.target.slot') AS INTEGER) AS targetSlot,
+                '$."' || CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) || '"' AS inventoryPath
+            FROM ${TABLE}
+            WHERE CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) > 0
+              AND CAST(json_extract(statsJson, '$.equipmentPlan.target.slot') AS INTEGER) > 0
+        ), fulfilled_equipment_plans AS (
+            SELECT targets.characterId
+            FROM plan_targets targets
+            INNER JOIN ${TABLE} states ON states.characterId = targets.characterId
+            WHERE CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.equipped') AS INTEGER) = 1
+              AND (
+                CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.slot') AS INTEGER) = targets.targetSlot
+                OR EXISTS (
+                    SELECT 1
+                    FROM json_each(COALESCE(json_extract(states.inventorySummary, targets.inventoryPath || '.equippedSlots'), '[]')) slots
+                    WHERE CAST(slots.value AS INTEGER) = targets.targetSlot
+                )
+              )
+        )
+        UPDATE ${TABLE}
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest'),
+            updatedAt = ?
+        WHERE characterId IN (SELECT characterId FROM fulfilled_equipment_plans)`,
+        [timestamp]
+    ]).then((result) => {
+        const discarded = Number(result?.affectedRows || 0);
+        if (discarded > 0) {
+            utils.infoWarn('BotLife', 'discarded %d fulfilled equipment plans on startup', discarded);
+        }
+        return discarded;
+    });
+}
+
+function reconcileIncompatibleShields() {
+    const affected = [...cache.values()].filter(hasIncompatibleShield);
+    let reconciledCount = 0;
+    return affected.reduce((chain, state) => chain.then(() => {
+        const reconciled = reconcileEquipmentInventory(state);
+        const row = rowFromState(reconciled);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, reconciled.inventory))
+            .then(() => {
+                cache.set(row.characterId, normalize(row));
+                reconciledCount += 1;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotLife', 'failed shield reconciliation for %d: %s', row.characterId, err.message);
+            });
+    }), Promise.resolve()).then(() => {
+        if (reconciledCount > 0) {
+            utils.infoWarn('BotLife', 'unequipped %d incompatible persisted shields on startup', reconciledCount);
+        }
+        return reconciledCount;
+    });
+}
+
 const BotLifeState = {
     init() {
         if (initialized) return Promise.resolve(true);
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
+                .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
                 .filter((state) => state !== cache.get(state.characterId));
             return repairs.reduce((chain, state) => chain.then(() => {
@@ -825,7 +1039,9 @@ const BotLifeState = {
                     .then(() => {
                         cache.set(state.characterId, state);
                     });
-            }), Promise.resolve()).then(() => count);
+            }), Promise.resolve())
+                .then(() => reconcileIncompatibleShields())
+                .then(() => count);
         }).then((count) => {
             initialized = true;
             utils.infoSuccess('BotLife', 'state table ready states=%d', count);
@@ -1563,11 +1779,21 @@ const BotLifeState = {
                 deathsAtEntry: Number(state.stats?.deaths || 0),
                 fightsAtEntry: Number(state.stats?.fightsResolved || 0)
             };
-        const stats = {
+        // Resolver patches often carry a projected copy of the previous
+        // stats so they can add lifecycle-specific fields such as cooldowns,
+        // rest deadlines, travel state, or party affinity.  Merge that copy
+        // first, then stamp the counters owned by this resolve.  Reversing
+        // this order silently restores the previous counters after every
+        // solo/party fight (including deaths).
+        const patchedStats = {
             ...(state.stats || {}),
+            ...(result.patch?.stats || {})
+        };
+        const stats = {
+            ...patchedStats,
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
             fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
-            deaths: Number(result.patch?.deathCount || state.stats?.deaths || 0),
+            deaths: Number(result.patch?.deathCount ?? state.stats?.deaths ?? 0),
             expEarned: Number(state.stats?.expEarned || 0) + Number(result.materialize?.exp || 0),
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
@@ -1641,7 +1867,6 @@ const BotLifeState = {
             },
             stats: {
                 ...stats,
-                ...(result.patch?.stats || {}),
                 // Resolver patches commonly start from the prior state. Keep
                 // the baseline stamped for this resolve's actual destination.
                 spotRisk,
@@ -1688,9 +1913,10 @@ const BotLifeState = {
                 }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
+            const equippedProgressedState = reconcileEquipmentInventory(progressedState);
             const profileReady = needsClassProgression
-                ? refreshColdCombatProfile(progressedState)
-                : Promise.resolve(progressedState);
+                ? refreshColdCombatProfile(equippedProgressedState)
+                : Promise.resolve(equippedProgressedState);
 
             return profileReady.then((profiledState) => {
                 const row = rowFromState(profiledState);
@@ -1744,11 +1970,17 @@ const BotLifeState = {
             const inventory = { ...(state.inventory || {}) };
             Object.entries(physicalInventory).forEach(([key, item]) => {
                 const previous = inventory[key] || {};
+                // A present physical row is authoritative for paperdoll state.
+                // Persisted slots are only retained for items absent from the
+                // physical snapshot, so unequipping can shrink the slot set.
+                const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item, item.slot);
                 inventory[key] = {
                     ...previous,
                     ...item,
                     amount: Math.max(Number(previous.amount || 0), Number(item.amount || 0)),
-                    equipped: !!previous.equipped || !!item.equipped,
+                    equipped: equippedSlots.length > 0,
+                    equippedCount: equippedSlots.length,
+                    equippedSlots,
                     slot: Number(item.slot || previous.slot || 0)
                 };
             });
@@ -1856,11 +2088,41 @@ const BotLifeState = {
         const template = itemTemplate(selfId);
         if (!template) return Promise.resolve(null);
         const slot = Number(template.etc?.slot || 0);
-        if (slot > 0 && count > 1) return Promise.resolve(null);
-        const inventory = { ...(state.inventory || {}) };
-        if (slot) {
+        const pairSlots = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [];
+        if (slot > 0 && count > 1 && (!pairSlots.length || count > 2)) return Promise.resolve(null);
+        const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, item]) => [key, {
+            ...item,
+            ...(Array.isArray(item?.equippedSlots) ? { equippedSlots: [...item.equippedSlots] } : {})
+        }]));
+        let purchaseSlots = [];
+        if (pairSlots.length) {
+            const requestedSlot = Number(offer?.equipSlot || 0);
+            const existingSlots = GearAcquisitionPlanner.equippedSlotsFor(inventory[String(selfId)] || {}, slot);
+            const occupied = new Set(Object.values(inventory).flatMap((item) => GearAcquisitionPlanner.equippedSlotsFor(item, item.slot)));
+            for (let index = 0; index < count; index += 1) {
+                const desired = pairSlots.includes(requestedSlot) && !purchaseSlots.includes(requestedSlot)
+                    ? requestedSlot
+                    : pairSlots.find((candidate) => !occupied.has(candidate) && !purchaseSlots.includes(candidate))
+                        || pairSlots.find((candidate) => !existingSlots.includes(candidate) && !purchaseSlots.includes(candidate));
+                if (desired) purchaseSlots.push(desired);
+            }
+            purchaseSlots.forEach((desiredSlot) => Object.keys(inventory).forEach((key) => {
+                if (Number(key) === selfId) return;
+                const owned = inventory[key];
+                const remaining = GearAcquisitionPlanner.equippedSlotsFor(owned, owned.slot).filter((value) => value !== desiredSlot);
+                inventory[key] = {
+                    ...owned,
+                    equipped: remaining.length > 0,
+                    equippedCount: remaining.length,
+                    equippedSlots: remaining
+                };
+            }));
+            purchaseSlots = [...new Set([...existingSlots, ...purchaseSlots])].slice(0, pairSlots.length).sort((a, b) => a - b);
+        } else if (slot) {
             Object.keys(inventory).forEach((key) => {
-                if (Number(inventory[key]?.slot || 0) === slot) inventory[key] = { ...inventory[key], equipped: false };
+                if (GearAcquisitionPlanner.equippedSlotsFor(inventory[key], inventory[key]?.slot).includes(slot)) {
+                    inventory[key] = { ...inventory[key], equipped: false, equippedCount: 0, equippedSlots: [] };
+                }
             });
         }
         inventory['57'] = { ...(inventory['57'] || {}), selfId: 57, name: 'Adena', amount: Number(state.adena) - totalPrice };
@@ -1869,20 +2131,27 @@ const BotLifeState = {
             selfId,
             name: template.template?.name || offer.itemName || itemName(selfId),
             amount: Number(inventory[String(selfId)]?.amount || 0) + count,
-            equipped: slot > 0,
+            equipped: pairSlots.length ? purchaseSlots.length > 0 : slot > 0,
+            equippedCount: pairSlots.length ? purchaseSlots.length : slot > 0 ? 1 : 0,
+            equippedSlots: pairSlots.length ? purchaseSlots : slot > 0 ? [slot] : [],
             stackable: slot === 0 || !!inventory[String(selfId)]?.stackable,
             slot,
             rank: template.etc?.rank || 'none',
             kind: template.template?.kind || ''
         };
         const equipment = equipmentSummaryFromInventory(inventory);
+        const purchaseStats = { ...(state.stats || {}) };
+        if (Number(purchaseStats.equipmentPlan?.target?.selfId || 0) === selfId && slot > 0) {
+            delete purchaseStats.equipmentPlan;
+            delete purchaseStats.partyRequest;
+        }
         const nextState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
             activity: 'shopping',
             inventory,
             stats: {
-                ...(state.stats || {}),
+                ...purchaseStats,
                 equipment,
                 marketRetryAfter: null,
                 marketWanted: null,
@@ -1932,6 +2201,8 @@ const BotLifeState = {
         const price = Number(offer?.price || 0);
         const currentItem = state?.inventory?.[String(selfId)];
         if (!state || !selfId || price <= 0) return Promise.resolve(null);
+        const equippedCount = Math.max(0, Number(currentItem?.equippedCount ?? (currentItem?.equipped ? 1 : 0)));
+        if (currentItem && Number(currentItem.amount || 0) - equippedCount < count) return Promise.resolve(null);
 
         const inventory = { ...(state.inventory || {}) };
         // A hot private store can sell before an older cold snapshot has been
@@ -1997,9 +2268,13 @@ const BotLifeState = {
         candidates.forEach((candidate) => {
             const selfId = Number(candidate.selfId || 0);
             const existing = inventory[String(selfId)];
-            const amount = Math.min(Number(existing?.amount || 0), Math.max(0, Number(candidate.count || 0)));
+            const equippedCount = Math.max(0, Number(existing?.equippedCount ?? (existing?.equipped ? 1 : 0)));
+            const amount = Math.min(
+                Math.max(0, Number(existing?.amount || 0) - equippedCount),
+                Math.max(0, Number(candidate.count || 0))
+            );
             const price = Math.max(0, Number(candidate.npcPrice || 0));
-            if (!selfId || amount <= 0 || price <= 0 || existing?.equipped) return;
+            if (!selfId || amount <= 0 || price <= 0) return;
             inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
             payout += amount * price;
             sold.push({ selfId, amount, price });
@@ -2219,5 +2494,11 @@ const BotLifeState = {
         });
     }
 };
+
+BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
+BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
+BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
+BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
+BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
 
 module.exports = BotLifeState;

@@ -89,6 +89,8 @@ async function run() {
         },
         stats: {
             equipment: [{ selfId: 1, slot: 7, rank: 'none', kind: 'Weapon.Sword' }],
+            equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 2, name: 'Long Sword', slot: 7 } },
+            partyRequest: { status: 'open', priority: 'required' },
             marketWanted: { itemId: 2, itemName: 'Long Sword', lastMissingAt: Date.now() }
         },
         loc: {},
@@ -104,6 +106,8 @@ async function run() {
     assert.strictEqual(result.state.inventory['1'].equipped, false);
     assert.strictEqual(result.state.inventory['2'].equipped, true);
     assert.strictEqual(result.state.stats.equipment[0].selfId, 2);
+    assert.strictEqual(result.state.stats.equipmentPlan, undefined, 'a purchased equipped target must immediately finish its stale acquisition plan');
+    assert.strictEqual(result.state.stats.partyRequest, undefined, 'fulfilling a gear target must clear its obsolete party request');
     assert.strictEqual(result.state.stats.marketWanted, null, 'fulfilled demand must leave the market index immediately');
     assert.strictEqual(playerStore.items[0].count, 0, 'private offer should be consumed');
     const weaponSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 77);
@@ -120,6 +124,19 @@ async function run() {
     assert.strictEqual(purchaseTrade.town, 'Giran');
     assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a real player WTS must not inflate bot-to-bot telemetry');
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 0);
+
+    const completedGoal = await ColdMarketService.tryPurchase(state, {
+        ...goal,
+        status: 'completed',
+        plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
+    });
+    assert.strictEqual(completedGoal.reason, 'no_purchase_goal', 'a completed market goal must not buy its item again during a batch visit');
+    const otherTownGoal = await ColdMarketService.tryPurchase(state, {
+        ...goal,
+        status: 'active',
+        plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Dion' }
+    });
+    assert.strictEqual(otherTownGoal.reason, 'different_market_town', 'a batch visit must not substitute an offer from the wrong town');
 
     const noOffer = await ColdMarketService.tryPurchase({
         ...state,
@@ -162,6 +179,24 @@ async function run() {
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 1010000 } }
     }, { selfId: 354, price: 505000, sourceType: 'cold_store' }, 2);
     assert.strictEqual(duplicateArmorPurchase, null, 'slotted non-stackable equipment must never be stored as one inventory row with quantity greater than one');
+
+    const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
+        && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
+    const pairedPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 85,
+        adena: 1000,
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 1000 } }
+    }, { selfId: dEarring.selfId, price: 100, sourceType: 'npc', equipSlot: 1 }, 2);
+    assert(pairedPurchase, 'paired non-stackable jewellery must support buying two physical copies');
+    assert.strictEqual(pairedPurchase.inventory[String(dEarring.selfId)].amount, 2);
+    assert.strictEqual(pairedPurchase.inventory[String(dEarring.selfId)].equippedCount, 2);
+    assert.deepStrictEqual(pairedPurchase.inventory[String(dEarring.selfId)].equippedSlots, [1, 2]);
+    assert.deepStrictEqual(
+        pairedPurchase.stats.equipment.filter((item) => Number(item.selfId) === Number(dEarring.selfId)).map((item) => item.slot),
+        [1, 2],
+        'cold equipment summary must retain both identical earring instances'
+    );
 
     const workingInventorySync = Database.syncInventorySummary;
     let rejectFirstPurchaseSync = true;

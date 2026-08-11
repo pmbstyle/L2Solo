@@ -7,6 +7,7 @@ DataCache.init();
 
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Item = invoke('GameServer/Item/Item');
@@ -33,6 +34,35 @@ assert.ok(!bySlot(lowMage, 8), 'low mage should not auto-equip a shield');
 const lowFighter = BotGear.planFor({ classId: 0, level: 2 });
 assert.strictEqual(itemTemplate(bySlot(lowFighter, 10).selfId).template.kind, 'Armor.Leather');
 assert.strictEqual(itemTemplate(bySlot(lowFighter, 11).selfId).template.kind, 'Armor.Leather');
+
+const noGradeShield = DataCache.items.find((item) => item.template?.kind === 'Armor.Shield'
+    && Number(item.etc?.slot) === 8 && String(item.etc?.rank || 'none') === 'none');
+assert(noGradeShield, 'the datapack must contain a no-grade shield fixture');
+const shieldInventory = {
+    [noGradeShield.selfId]: {
+        selfId: noGradeShield.selfId,
+        name: noGradeShield.template.name,
+        amount: 1,
+        equipped: true,
+        equippedCount: 1,
+        equippedSlots: [8],
+        slot: 8,
+        rank: 'none',
+        kind: 'Armor.Shield'
+    }
+};
+const mageInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+    level: 10,
+    stats: { classId: 10, role: 'mage' }
+}, shieldInventory);
+assert.strictEqual(mageInventory[String(noGradeShield.selfId)].equipped, false,
+    'cold equipment reconciliation must remove shields from classes that cannot use them');
+const fighterInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
+    level: 10,
+    stats: { classId: 0, role: 'dps' }
+}, shieldInventory);
+assert.strictEqual(fighterInventory[String(noGradeShield.selfId)].equipped, true,
+    'shield-compatible fighters must retain an equipped shield');
 
 const noviceDagger = BotGear.planFor({ classId: 7, level: 16 });
 const weapon = itemTemplate(bySlot(noviceDagger, 7).selfId);
@@ -117,12 +147,16 @@ assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKin
     'Sword Singer must not inherit caster weapon compatibility from the shared buffer role');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 34), false,
     'Bladedancer must not inherit caster weapon compatibility from the shared buffer role');
-assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.Blunt'],
-    'Titan must inherit the Destroyer blunt preference through its normalized parent class');
+assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole'],
+    'Titan must inherit the full Destroyer weapon profile through its normalized parent class');
+assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
+    'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
     'Dominator must inherit Overlord caster compatibility through its normalized parent class');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
     'Sword Singer must reject caster staves stored under the shared blunt family');
+assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Bone Staff', 39, 35, 'dps', 47), false,
+    'Orc Monk melee damage dealers must reject caster staves stored under the blunt family');
 assert.strictEqual(BotWeaponCompatibility.isCasterWeapon('Weapon.Sword', 'Broadsword', 11, 9), false,
     'close starter stats must not turn an ordinary physical sword into caster gear');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Sword', 'Broadsword', 11, 9, 'buffer', 21), true,
@@ -137,6 +171,16 @@ assert(singerWeapon && !BotWeaponCompatibility.isCasterWeapon(
     singerWeapon.stats.pAtk,
     singerWeapon.stats.mAtk
 ), 'Sword Singer generated gear must retain a real melee weapon');
+const monkPlan = BotGear.planFor({ classId: 47, level: 24 });
+const monkWeapon = itemTemplate(bySlot(monkPlan, 7)?.selfId || bySlot(monkPlan, 14)?.selfId);
+assert.strictEqual(monkWeapon.template.kind, 'Weapon.DualFist',
+    'Orc Monk generated gear must use combat fists instead of blunt weapons');
+for (const [classId, level] of [[34, 61], [107, 76]]) {
+    const dancerPlan = BotGear.planFor({ classId, level });
+    const dancerWeapon = itemTemplate(bySlot(dancerPlan, 14)?.selfId || bySlot(dancerPlan, 7)?.selfId);
+    assert.strictEqual(dancerWeapon?.template?.kind, 'Weapon.Dual',
+        `class ${classId} must retain a compatible dual weapon when the catalog has no ${dancerPlan.rank.toUpperCase()}-grade dual`);
+}
 upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     classId: 29,
     level: 33,
@@ -154,6 +198,60 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
     paperdoll: { 7: { id: 1122 } }
 }));
 assert.strictEqual(upgrades.length, 0, 'a Sword Singer must keep its melee weapon instead of equipping traded caster gear');
+
+const boneStaffTemplate = itemTemplate(178);
+const scallopJamadhrTemplate = itemTemplate(262);
+const equippedBoneStaff = wearable(1123, {
+    selfId: boneStaffTemplate.selfId,
+    name: boneStaffTemplate.template.name,
+    kind: boneStaffTemplate.template.kind,
+    price: boneStaffTemplate.template.price,
+    rank: boneStaffTemplate.etc.rank,
+    slot: boneStaffTemplate.etc.slot,
+    pAtk: boneStaffTemplate.stats.pAtk,
+    mAtk: boneStaffTemplate.stats.mAtk,
+    equipped: true
+});
+const tradedScallopJamadhr = wearable(1124, {
+    selfId: scallopJamadhrTemplate.selfId,
+    name: scallopJamadhrTemplate.template.name,
+    kind: scallopJamadhrTemplate.template.kind,
+    price: scallopJamadhrTemplate.template.price,
+    rank: scallopJamadhrTemplate.etc.rank,
+    slot: scallopJamadhrTemplate.etc.slot,
+    pAtk: scallopJamadhrTemplate.stats.pAtk,
+    mAtk: scallopJamadhrTemplate.stats.mAtk
+});
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 47,
+    level: 24,
+    items: [equippedBoneStaff, tradedScallopJamadhr],
+    paperdoll: { 14: { id: 1123 } }
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchSelfId()), [262],
+    'an Orc Monk must recognize traded Scallop Jamadhr as a safe replacement for an equipped Bone Staff');
+
+const singerRobe = wearable(1125, { kind: 'Armor.Fabric', slot: 10, pDef: 80, maxMp: 100, rank: 'c' });
+const singerHeavy = wearable(1126, { kind: 'Armor.Chain', slot: 10, pDef: 60, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 21,
+    level: 44,
+    items: [singerRobe, singerHeavy],
+    paperdoll: {}
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1126],
+    'a Sword Singer must accept heavy armor and reject robes during live upgrades');
+
+const monkHeavy = wearable(1127, { kind: 'Armor.Chain', slot: 10, pDef: 80, rank: 'c' });
+const monkLight = wearable(1128, { kind: 'Armor.Leather', slot: 10, pDef: 60, rank: 'c' });
+upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
+    classId: 47,
+    level: 44,
+    items: [monkHeavy, monkLight],
+    paperdoll: {}
+}));
+assert.deepStrictEqual(upgrades.map(({ item }) => item.fetchId()), [1128],
+    'an Orc Monk must accept light armor and reject heavy armor during live upgrades');
 
 const movingTradeSession = upgradeSession({
     classId: 29,

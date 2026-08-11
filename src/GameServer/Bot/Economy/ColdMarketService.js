@@ -42,7 +42,17 @@ function retryAfterFailedPurchase(state, goal, reason) {
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
-        if (!['upgrade_gear', 'buy_craft_material'].includes(goal?.type) || !goal.target?.itemId) return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
+        const expectedBenefit = goal?.plan?.expectedBenefit;
+        const activeGearPurchase = goal?.type === 'upgrade_gear'
+            && (!expectedBenefit || ['market_search_for_weapon', 'market_search_for_gear'].includes(expectedBenefit));
+        const activeMaterialPurchase = goal?.type === 'buy_craft_material'
+            && (!expectedBenefit || expectedBenefit === 'market_buy_craft_material');
+        if ((goal?.status && goal.status !== 'active') || (!activeGearPurchase && !activeMaterialPurchase) || !goal.target?.itemId) {
+            return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
+        }
+        if (goal.plan?.marketTown && String(goal.plan.marketTown) !== String(state.currentRegion)) {
+            return Promise.resolve({ state, purchased: false, reason: 'different_market_town' });
+        }
 
         const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
@@ -68,6 +78,7 @@ const ColdMarketService = {
         }
         if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
         offer.buyerCharacterId = Number(state.characterId);
+        offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
 
         return LifeState.applyMarketPurchase(state, offer).then((updated) => {
             if (!updated) {

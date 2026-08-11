@@ -30,6 +30,14 @@
         return String(actor?.role || '').trim().toLowerCase() !== 'crafter';
     }
 
+    function isSurfaceActor(actor) {
+        return actor?.area?.mapLayer !== 'dungeon' || Boolean(actor?.area?.mapAnchor);
+    }
+
+    function mapLocation(actor) {
+        return actor?.area?.mapAnchor || actor?.loc || null;
+    }
+
     function actorKind(actorId, hintedKind, snapshot = {}) {
         if (hintedKind === 'player' || hintedKind === 'bot') return hintedKind;
         if ((snapshot?.players || []).some((actor) => Number(actor.id) === Number(actorId))) return 'player';
@@ -60,5 +68,5 @@
             .sort((left, right) => left.label.localeCompare(right.label, 'en', { sensitivity: 'base' }));
     }
 
-    return { actorKind, classKey, className, classOptions, isEligible, matches, normalizeLevel };
+    return { actorKind, classKey, className, classOptions, isEligible, isSurfaceActor, mapLocation, matches, normalizeLevel };
 }));

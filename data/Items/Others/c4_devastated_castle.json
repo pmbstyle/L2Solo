@@ -1,0 +1,47 @@
+[
+  {
+    "selfId": 4911,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook: Curse Disease",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4925,
+    "template": {
+      "kind": "Other",
+      "name": "Amulet: Pa'agrio's Haste",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4951,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Robe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 45600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

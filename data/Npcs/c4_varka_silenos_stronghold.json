@@ -1,0 +1,1344 @@
+[
+  {
+    "selfId": 1350,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Recruit",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1664,
+      "pAtkRnd": 20,
+      "pDef": 544,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 48,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 2504,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.661494349806,
+      "sp": 1066
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1351,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Footman",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1831,
+      "pAtkRnd": 20,
+      "pDef": 495,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 41
+    },
+    "equipment": {
+      "weapon": 2504,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.431438691179,
+      "sp": 918
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1352,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Antelope",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1375,
+      "pAtkRnd": 30,
+      "pDef": 560,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520492494518,
+      "sp": 975
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1353,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Scout",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2075,
+      "pAtkRnd": 10,
+      "pDef": 459,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 48,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 142,
+      "shield": 6918,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.628205128205,
+      "sp": 1084
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1354,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Hunter",
+      "title": "",
+      "level": 78,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3464,
+      "pAtkRnd": 30,
+      "pDef": 611,
+      "mAtk": 1069,
+      "mDef": 451,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 33,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4428,
+      "maxMp": 1784,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 6917,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.613412228797,
+      "sp": 1074
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1355,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Shaman",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2451,
+      "pAtkRnd": 30,
+      "pDef": 481,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 39.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.520910110559,
+      "sp": 1052
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1356,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Nepenthes",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2026,
+      "pAtkRnd": 30,
+      "pDef": 685,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 52,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520429418362,
+      "sp": 1051
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1357,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Priest",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1996,
+      "pAtkRnd": 30,
+      "pDef": 524,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 41.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.60578125,
+      "sp": 1153
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1358,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Warrior",
+      "title": "",
+      "level": 80,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1649,
+      "pAtkRnd": 10,
+      "pDef": 634,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 41
+    },
+    "equipment": {
+      "weapon": 142,
+      "shield": 6918,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.68296875,
+      "sp": 1209
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1359,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Bandersnatch",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2139,
+      "pAtkRnd": 30,
+      "pDef": 710,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520499923792,
+      "sp": 1133
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1360,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Medium",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2588,
+      "pAtkRnd": 30,
+      "pDef": 499,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 39.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.422191739064,
+      "sp": 1804
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1361,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Magus",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1912,
+      "pAtkRnd": 30,
+      "pDef": 598,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 55.2
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.431439619274,
+      "sp": 1106
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1362,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Officer",
+      "title": "",
+      "level": 82,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2414,
+      "pAtkRnd": 20,
+      "pDef": 657,
+      "mAtk": 1220,
+      "mDef": 485,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4663,
+      "maxMp": 1934,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 42.5
+    },
+    "equipment": {
+      "weapon": 2504,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.683075550268,
+      "sp": 1300
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1363,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Flava",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1619,
+      "pAtkRnd": 30,
+      "pDef": 736,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.52053999129,
+      "sp": 1217
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1364,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Seer",
+      "title": "",
+      "level": 83,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2994,
+      "pAtkRnd": 30,
+      "pDef": 470,
+      "mAtk": 1258,
+      "mDef": 494,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4716,
+      "maxMp": 1972,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 39.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.926549571781,
+      "sp": 1543
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1365,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Great Magus",
+      "title": "",
+      "level": 84,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2428,
+      "pAtkRnd": 10,
+      "pDef": 511,
+      "mAtk": 1296,
+      "mDef": 502,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4766,
+      "maxMp": 2011,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 49.2
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.633361678005,
+      "sp": 1355
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1366,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos General",
+      "title": "",
+      "level": 84,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2787,
+      "pAtkRnd": 10,
+      "pDef": 619,
+      "mAtk": 1296,
+      "mDef": 502,
+      "accur": 0,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4766,
+      "maxMp": 2011,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 42.5
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.802437641723,
+      "sp": 1496
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1367,
+    "template": {
+      "kind": "Monster",
+      "name": "Grazing Elder Antelope",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1696,
+      "pAtkRnd": 30,
+      "pDef": 647,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 34
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.520553633218,
+      "sp": 1307
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1368,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka Silenos Great Seer",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2851,
+      "pAtkRnd": 30,
+      "pDef": 629,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 39.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.347958477509,
+      "sp": 2019
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1369,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka's Commander",
+      "title": "",
+      "level": 81,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2588,
+      "pAtkRnd": 10,
+      "pDef": 587,
+      "mAtk": 1182,
+      "mDef": 477,
+      "accur": 0,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4608,
+      "maxMp": 1896,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.431489102271,
+      "sp": 1811
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1371,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka's Head Magus",
+      "title": "",
+      "level": 85,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3136,
+      "pAtkRnd": 30,
+      "pDef": 572,
+      "mAtk": 1333,
+      "mDef": 511,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4813,
+      "maxMp": 2049,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 39.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.710726643599,
+      "sp": 1471
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1373,
+    "template": {
+      "kind": "Monster",
+      "name": "Varka's Prophet",
+      "title": "",
+      "level": 87,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2973,
+      "pAtkRnd": 30,
+      "pDef": 650,
+      "mAtk": 1406,
+      "mDef": 528,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4899,
+      "maxMp": 2127,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 47.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "varka_silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.388954947813,
+      "sp": 2204
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  }
+]

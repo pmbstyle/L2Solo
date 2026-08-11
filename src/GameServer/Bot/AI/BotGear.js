@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const ARMOR_SLOTS = {
@@ -131,36 +132,33 @@ function choose(rank, level, predicate, score) {
     }, null);
 }
 
-function armorStyleFor(role) {
-    if (role === 'mage' || role === 'healer' || role === 'buffer') return 'robe';
-    if (role === 'archer' || role === 'dagger') return 'light';
-    return 'heavy';
-}
-
 function chooseWeapon(rank, level, role, classId) {
-    const kinds = BotWeaponCompatibility.weaponKindsFor(role, classId);
-    const prefersOneHander = !(role === 'mage' || role === 'healer' || role === 'buffer' || role === 'archer');
-    const weapon = choose(
-        rank,
+    const allowedKinds = BotEquipmentCompatibility.weaponKindsFor(role, classId);
+    const preferredKinds = BotEquipmentCompatibility.preferredWeaponKindsFor(role, classId);
+    const chooseKinds = (kinds, candidateRank = rank) => choose(
+        candidateRank,
         level,
         (item) => kinds.includes(item.kind)
             && BotWeaponCompatibility.isSuitableWeapon(item.kind, item.name, item.pAtk, item.mAtk, role, classId)
-            && (!prefersOneHander || item.slot === ARMOR_SLOTS.weapon),
+            && (
+                item.slot === ARMOR_SLOTS.weapon
+                || item.slot === ARMOR_SLOTS.dual
+                    && BotEquipmentCompatibility.allowsTwoHandedWeapon(item.kind, role, classId)
+            ),
         (item) => BotWeaponCompatibility.scoreWeapon(item.pAtk, item.mAtk, role, classId)
     );
 
-    if (weapon) return weapon;
+    const exact = chooseKinds(preferredKinds) || chooseKinds(allowedKinds);
+    if (exact || !allowedKinds.includes('Weapon.Dual')) return exact;
 
-    return choose(
-        rank,
-        level,
-        (item) => item.kind.startsWith('Weapon.') && (
-            role !== 'buffer'
-            || BotWeaponCompatibility.isCasterRole(role, classId)
-            || !BotWeaponCompatibility.isCasterWeapon(item.kind, item.name, item.pAtk, item.mAtk)
-        ),
-        (item) => item.pAtk + item.mAtk
-    );
+    // The current C4 item catalog ends its dual-sword combinations at B grade.
+    // Bladedancers must keep that compatible weapon until higher-grade duals
+    // are added instead of generating an empty weapon slot at level 61+.
+    for (let index = RANK_ORDER.indexOf(rank) - 1; index >= 0; index--) {
+        const fallback = chooseKinds(preferredKinds, RANK_ORDER[index]) || chooseKinds(allowedKinds, RANK_ORDER[index]);
+        if (fallback) return fallback;
+    }
+    return null;
 }
 
 function chooseArmorPiece(rank, level, style, slot) {
@@ -279,13 +277,13 @@ function planFor(character) {
     const role = BotRoles.inferRole(classId);
     const band = gradeForLevel(level);
     const rank = band.rank;
-    const style = armorStyleFor(role);
+    const style = BotEquipmentCompatibility.armorStyleFor(role, classId);
     const weapon = chooseWeapon(rank, level, role, classId);
     const plan = [];
 
     if (weapon) {
         plan.push(itemEntry(weapon, weapon.slot));
-        if (weapon.slot === ARMOR_SLOTS.weapon && !['dagger', 'archer', 'mage', 'healer', 'buffer'].includes(role)) {
+        if (weapon.slot === ARMOR_SLOTS.weapon && BotEquipmentCompatibility.usesShield(role, classId)) {
             plan.push(itemEntry(chooseShield(rank, level), ARMOR_SLOTS.shield));
         }
     }

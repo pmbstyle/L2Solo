@@ -8,11 +8,28 @@ const Database = invoke('Database');
 const Actor = invoke('GameServer/Actor/Actor');
 const AdminShop = invoke('GameServer/World/Generics/NpcBypasses/AdminShop');
 const AdminSetLevel = invoke('GameServer/World/Generics/NpcBypasses/AdminSetLevel');
+const AdminFullBuff = invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 const armors = require('../data/Items/Armors/armors.json');
 const weapons = require('../data/Items/Weapons/weapons.json');
 const others = require('../data/Items/Others/others.json');
 const adminShop = require('../data/Admin/Shop/shop.json');
+
+const originalSetTimeout = global.setTimeout;
+const originalSetInterval = global.setInterval;
+const testTimers = [];
+global.setTimeout = (...args) => {
+    const timer = originalSetTimeout(...args);
+    testTimers.push(timer);
+    return timer;
+};
+global.setInterval = (...args) => {
+    const timer = originalSetInterval(...args);
+    testTimers.push(timer);
+    return timer;
+};
 
 DataCache.items = [...armors, ...weapons, ...others];
 DataCache.adminShop = adminShop;
@@ -21,6 +38,9 @@ DataCache.experience = require('../data/Templates/Experience/experience.json');
 const adminHtml = utils.parseRawFile('data/Html/Admin/main.html');
 const adminShopHtml = utils.parseRawFile('data/Html/Admin/shop.html');
 assert.ok(adminHtml.includes('html Admin/shop'), 'admin panel should link to the paged equipment shop');
+assert.ok(adminHtml.includes('html Admin/teleport'), 'admin panel should link to the paged teleport directory');
+assert.ok(adminHtml.includes('admin-full-buff'), 'admin panel should expose the automatic class full buff');
+assert.ok(adminHtml.includes('action="bypass admin-full-buff"'), 'admin full buff should keep the menu visible while the bypass runs');
 assert.ok(!adminHtml.includes('admin-shop armor-all'), 'admin panel should not expose crash-prone full armor lists');
 assert.ok(!adminHtml.includes('admin-shop weapon-all'), 'admin panel should not expose crash-prone full weapon lists');
 assert.ok(adminShopHtml.includes('admin-shop armor-s'), 'equipment shop should expose armor grade links');
@@ -31,6 +51,61 @@ assert.ok(adminShopHtml.includes('admin-shop supply-spiritshots'), 'equipment sh
 assert.ok(adminShopHtml.includes('admin-shop supply-blessed-spiritshots'), 'equipment shop should expose blessed spiritshot supplies');
 assert.ok(adminShopHtml.includes('admin-shop supply-arrows'), 'equipment shop should expose arrow supplies');
 assert.ok(adminHtml.includes('admin-set-level $admin_level'), 'admin panel should submit own level edits');
+
+const teleportHubHtml = utils.parseRawFile('data/Html/Admin/teleport.html');
+const teleportPages = [
+    'gludin', 'gludio', 'dion', 'giran', 'heine', 'oren', 'hunters', 'aden', 'goddard', 'rune', 'dungeons'
+];
+teleportPages.forEach((page) => {
+    assert.ok(teleportHubHtml.includes(`html Admin/teleport-${page}`), `teleport hub should link to ${page}`);
+    const html = utils.parseRawFile(`data/Html/Admin/teleport-${page}.html`);
+    const destinations = [...html.matchAll(/admin-teleport\s+([^"]+)/g)].map((match) => match[1].trim());
+    assert.ok(destinations.length >= 5, `${page} teleport page should contain a useful destination list`);
+    destinations.forEach((destination) => {
+        const coords = destination.split(/\s+/);
+        assert.strictEqual(coords.length, 3, `${page} teleport destination should contain exactly three coordinates`);
+        assert.ok(coords.every((value) => /^-?\d+$/.test(value)), `${page} teleport coordinates should be integers`);
+    });
+});
+assert.ok(teleportHubHtml.includes('teleport-starter'), 'teleport hub should preserve access to starter areas');
+assert.ok(utils.parseRawFile('data/Html/Admin/teleport-goddard.html').includes('Goddard Castle Town'), 'Goddard should have its own city page');
+assert.ok(utils.parseRawFile('data/Html/Admin/teleport-rune.html').includes('Rune Castle Town'), 'Rune should have its own city page');
+assert.ok(!utils.parseRawFile('data/Html/Admin/teleport-rune.html').includes('Catacomb of the Apostate'),
+    'the Oren catacomb must not be duplicated on the Rune territory page');
+assert.ok(utils.parseRawFile('data/Html/Admin/teleport-oren.html').includes('Catacomb of the Apostate'),
+    'Catacomb of the Apostate must remain on its Oren territory page');
+assert.ok(utils.parseRawFile('data/Html/Admin/teleport-dungeons.html').includes('Necropolis of the Disciples'), 'dungeon page should include late-game Seven Signs destinations');
+
+Object.entries(AdminFullBuff.PROFILES).forEach(([profile, entries]) => {
+    entries.forEach(([selfId, level]) => {
+        assert.ok(AdminFullBuff.skillData(selfId, level), `${profile} full buff should reference sourced skill ${selfId} level ${level}`);
+    });
+});
+assert.strictEqual(AdminFullBuff.profileForActor({ isSpellcaster: () => 0 }), 'melee', 'fighter classes should receive the melee profile');
+assert.strictEqual(AdminFullBuff.profileForActor({ isSpellcaster: () => 1 }), 'mage', 'spellcaster classes should receive the mage profile');
+
+const fixedExpiry = Date.now() + AdminFullBuff.ADMIN_BUFF_DURATION_MS;
+const meleeBuffTarget = { isSpellcaster: () => 0, effects: {}, activeBuffs: {} };
+const meleeEffects = AdminFullBuff.applyProfile({}, meleeBuffTarget, 'melee', {
+    expiresAt: fixedExpiry,
+    refresh: false,
+    scheduleExpiry: false
+});
+assert.strictEqual(meleeEffects.length, AdminFullBuff.PROFILES.melee.length, 'melee full buff should apply every profile effect');
+assert.strictEqual(EffectStore.list(meleeBuffTarget).find((effect) => effect.key === 'might').stats.pAtkMul, 1.15, 'melee profile should apply sourced Might level 3 stats');
+assert.strictEqual(EffectStore.list(meleeBuffTarget).find((effect) => effect.key === 'vampiric_rage').stats.absorbDam, 9, 'melee profile should apply sourced Vampiric Rage level 4 stats');
+assert.ok(meleeEffects.every((effect) => effect.expiresAt === fixedExpiry), 'melee profile effects should share one 20-minute expiry');
+
+const mageBuffTarget = { isSpellcaster: () => 1, effects: {}, activeBuffs: {} };
+const mageEffects = AdminFullBuff.applyProfile({}, mageBuffTarget, 'mage', {
+    expiresAt: fixedExpiry,
+    refresh: false,
+    scheduleExpiry: false
+});
+assert.strictEqual(mageEffects.length, AdminFullBuff.PROFILES.mage.length, 'mage full buff should apply every profile effect');
+assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'empower').stats.mAtkMul, 1.75, 'mage profile should apply sourced Empower level 3 stats');
+assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'acumen').stats.castSpdMul, 1.3, 'mage profile should apply sourced Acumen level 3 stats');
+assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'wild_magic').stats.mCritRateMul, 4, 'mage profile should apply sourced Wild Magic level 2 stats');
 
 for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
     assert.strictEqual(adminShop[`armor-${rank}`], `armor:${rank}`, `armor-${rank} should resolve from the live armor datapack`);
@@ -188,7 +263,7 @@ async function assertSetOwnLevelUpdatesRuntimeActor() {
         pvp: 0,
         evalScore: 0,
         recRemain: 0,
-        isGM: 1,
+        isGM: 0,
         isActive: 1,
         ...utils.crushOb(classInfo),
         items: [],
@@ -206,6 +281,15 @@ async function assertSetOwnLevelUpdatesRuntimeActor() {
     assert.ok(session.packets.some((packet) => packet[0] === 0x58), 'admin level should send a SkillsList packet');
     assert.ok(session.packets.some((packet) => packet[0] === 0x0e), 'admin level should send a StatusUpdate packet');
     assert.ok(session.packets.some((packet) => packet[0] === 0x04), 'admin level should send a UserInfo packet');
+
+    session.packets = [];
+    const appliedAdminBuffs = AdminFullBuff(session);
+    assert.strictEqual(actor.fetchIsGM(), 0, 'runtime regression fixture should match the non-GM dagger character that can open the dev admin menu');
+    assert.strictEqual(appliedAdminBuffs.length, AdminFullBuff.PROFILES.melee.length, 'admin full buff bypass should apply the detected fighter profile from the dev admin menu');
+    assert.ok(EffectStore.list(actor).some((effect) => effect.key === 'might'), 'admin full buff bypass should update authoritative actor effects');
+    assert.ok(session.packets.some((packet) => packet[0] === 0x04), 'admin full buff bypass should refresh UserInfo immediately');
+    assert.ok(session.packets.some((packet) => packet[0] === 0x7f), 'admin full buff bypass should refresh visible effect icons immediately');
+    EffectTicker.clearAll(actor);
 }
 
 assertSetOwnLevelUpdatesRuntimeActor()
@@ -215,4 +299,12 @@ assertSetOwnLevelUpdatesRuntimeActor()
     .catch((err) => {
         console.error(err);
         process.exit(1);
+    })
+    .finally(() => {
+        global.setTimeout = originalSetTimeout;
+        global.setInterval = originalSetInterval;
+        testTimers.forEach((timer) => {
+            clearTimeout(timer);
+            clearInterval(timer);
+        });
     });

@@ -85,6 +85,111 @@ assert.strictEqual(armorGoal.target.equipmentSlot, 'chest');
 assert.strictEqual(armorGoal.target.itemId, expectedChest.selfId);
 assert.strictEqual(armorGoal.plan.expectedBenefit, 'market_search_for_gear');
 
+const npcProgressionItem = (kindPrefix, slot) => (DataCache.items || []).find((item) => (
+    String(item.etc?.rank || '').toLowerCase() === 'd'
+    && String(item.template?.kind || '').startsWith(kindPrefix)
+    && Number(item.etc?.slot) === Number(slot)
+    && Number(item.template?.price || 0) > 0
+));
+const dWeapon = npcProgressionItem('Weapon.', 7);
+const dChest = (DataCache.items || []).find((item) => (
+    String(item.etc?.rank || '').toLowerCase() === 'd'
+    && String(item.template?.kind || '').startsWith('Armor.')
+    && item.template?.kind !== 'Armor.Jewel'
+    && Number(item.etc?.slot) === 10
+    && Number(item.template?.price || 0) > 0
+));
+const dEarring = npcProgressionItem('Armor.Jewel', 1);
+assert(dWeapon && dChest && dEarring, 'the datapack must expose D-grade NPC progression fixtures');
+
+function affordableNpcProgressionGoal(item, slot, equipment) {
+    const price = Number(item.template.price);
+    return GoalPlanner.plan(NeedsEvaluator.evaluate({
+        ...base,
+        level: 20,
+        adena: price + 1000000,
+        inventory: {
+            1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' }
+        },
+        stats: {
+            classId: 0,
+            build: { grade: 'd', classId: 0, level: 20 },
+            equipment,
+            equipmentPlan: {
+                status: 'active',
+                strategy: 'market',
+                partyNeedReason: 'npc_progression',
+                target: { selfId: item.selfId, slot },
+                market: { town: 'Giran', price, reserve: 50000, sourceType: 'npc' }
+            }
+        }
+    }, { spot, now: timestamp }), timestamp);
+}
+
+const affordableNpcWeaponGoal = affordableNpcProgressionGoal(dWeapon, 7, [
+    { selfId: 1, slot: 7, rank: 'none', name: 'Short Sword' }
+]);
+assert.strictEqual(affordableNpcWeaponGoal.type, 'upgrade_gear', 'an affordable NPC weapon must outrank selling surplus inventory');
+assert.strictEqual(affordableNpcWeaponGoal.priority, 88);
+assert.strictEqual(affordableNpcWeaponGoal.plan.requiredAdena, 0);
+
+const affordableNpcArmorGoal = affordableNpcProgressionGoal(dChest, 10, [
+    { selfId: dWeapon.selfId, slot: 7, rank: 'd', name: dWeapon.template.name }
+]);
+assert.strictEqual(affordableNpcArmorGoal.type, 'upgrade_gear', 'affordable NPC armour must outrank selling surplus inventory');
+assert.strictEqual(affordableNpcArmorGoal.priority, 87);
+
+const affordableNpcJewelryGoal = affordableNpcProgressionGoal(dEarring, 1, [
+    { selfId: dWeapon.selfId, slot: 7, rank: 'd', name: dWeapon.template.name },
+    { selfId: dChest.selfId, slot: 10, rank: 'd', name: dChest.template.name }
+]);
+assert.strictEqual(affordableNpcJewelryGoal.type, 'upgrade_gear', 'affordable NPC jewellery must still beat an ordinary sale after weapon and armour');
+assert.strictEqual(affordableNpcJewelryGoal.priority, 78);
+
+const recoveringNpcBuyer = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    level: 20,
+    adena: Number(dWeapon.template.price) + 1000000,
+    vitals: { hp: 200, maxHp: 1000, mp: 400, maxMp: 500 },
+    inventory: { 1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' } },
+    stats: {
+        classId: 0,
+        build: { grade: 'd', classId: 0, level: 20 },
+        equipment: [{ selfId: 1, slot: 7, rank: 'none', name: 'Short Sword' }],
+        equipmentPlan: {
+            status: 'active', strategy: 'market', partyNeedReason: 'npc_progression',
+            target: { selfId: dWeapon.selfId, slot: 7 },
+            market: { town: 'Giran', price: Number(dWeapon.template.price), reserve: 50000, sourceType: 'npc' }
+        }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(recoveringNpcBuyer.type, 'recover', 'unsafe vitals must still outrank an affordable NPC purchase');
+
+for (const status of ['active', 'ready_to_craft', 'blocked']) {
+    const cCraftCandidates = NeedsEvaluator.evaluate({
+        ...base,
+        level: 40,
+        adena: 1000000000,
+        stats: {
+            classId: 0,
+            build: { grade: 'c', classId: 0, level: 40 },
+            equipment: [{ selfId: dWeapon.selfId, slot: 7, rank: 'd', name: dWeapon.template.name }],
+            equipmentPlan: {
+                status,
+                strategy: 'craft',
+                target: { selfId: expectedWeapon.selfId, slot: 7 },
+                recipeId: 191,
+                materials: [{ selfId: 1458, amount: 700, missing: 700 }],
+                next: null
+            }
+        }
+    }, { spot, now: timestamp });
+    assert(!cCraftCandidates.some((candidate) => candidate.type === 'upgrade_gear'),
+        `${status} C-grade crafting must not turn into an unavailable NPC shopping goal`);
+    assert.strictEqual(GoalPlanner.plan(cCraftCandidates, timestamp).type, 'progress_level',
+        `${status} C-grade crafting must leave ordinary leveling available while no material route is executable`);
+}
+
 const staleMarketPlanGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,
     adena: 1000000,

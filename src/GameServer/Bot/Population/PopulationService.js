@@ -44,6 +44,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     const physical = SpotService.findCurrentSpot(from);
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
     if (currentId === spot.id) return null;
+    const destination = SpotService.arrivalPointForState(state, spot);
 
     return {
         ...state,
@@ -57,7 +58,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
             ...(state.stats || {}),
             travel: {
                 from,
-                to: { ...spot.center },
+                to: destination,
                 startedAt: timestamp,
                 arrivalAt: timestamp + HUNTING_TRAVEL_MS,
                 regionName: spot.name || state.currentRegion || 'Hunting Ground',
@@ -69,6 +70,67 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
                     ? 'equipment_source_replan'
                     : 'level_replan'
             }
+        }
+    };
+}
+
+function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
+    const travelling = beginHuntingTravel(state, spot, timestamp);
+    if (!travelling) return null;
+    return {
+        ...travelling,
+        stats: {
+            ...(travelling.stats || {}),
+            travel: {
+                ...(travelling.stats?.travel || {}),
+                reason: 'party_spot_replan',
+                arrivalActivity: 'grouped',
+                arrivalEvent: 'party_arrived_hunting_ground'
+            }
+        }
+    };
+}
+
+function finishPartySpotTravel(state, timestamp = Date.now(), destinationSpot = null, partyTravel = null) {
+    const travel = state?.stats?.travel;
+    const ownTravelReady = state?.activity === 'traveling'
+        && travel?.reason === 'party_spot_replan'
+        && Number(travel.arrivalAt || 0) <= timestamp;
+    const partyFallbackReady = !ownTravelReady
+        && destinationSpot
+        && partyTravel?.reason === 'party_spot_replan'
+        && Number(partyTravel.arrivalAt || 0) <= timestamp;
+    if (!ownTravelReady && !partyFallbackReady) return state;
+    const arrival = ownTravelReady
+        ? travel
+        : {
+            ...partyTravel,
+            arrivalActivity: 'grouped',
+            to: SpotService.arrivalPointForState(state, destinationSpot) || destinationSpot.center || state.loc
+        };
+    return {
+        ...state,
+        activity: arrival.arrivalActivity || 'grouped',
+        currentRegion: arrival.regionName || destinationSpot?.name || state.currentRegion,
+        spotId: arrival.spotId || destinationSpot?.id || state.spotId,
+        loc: { ...(arrival.to || state.loc) },
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + 1000
+        },
+        stats: { ...(state.stats || {}), travel: null }
+    };
+}
+
+function finishPartyTravelRecord(party, timestamp = Date.now()) {
+    return {
+        ...party,
+        nextResolveAt: timestamp + 1000,
+        stats: {
+            ...(party.stats || {}),
+            lastResolveAt: timestamp,
+            travel: null
         }
     };
 }
@@ -1500,6 +1562,41 @@ const PopulationService = {
                 return dissolveBackgroundParty(party, reason, members.length);
             }
 
+            if (party.stats?.travel?.reason === 'party_spot_replan') {
+                const arrivalAt = Number(party.stats.travel.arrivalAt || 0);
+                if (arrivalAt > startedAt) {
+                    return BackgroundPartyState.createOrUpdate({ ...party, nextResolveAt: arrivalAt })
+                        .then((updatedParty) => ({ ok: true, party: updatedParty || party, debug: { activity: 'party_travel' } }));
+                }
+                const destinationSpotId = party.stats.travel.spotId || party.spotId;
+                const recordedArrival = members.find((member) => member.stats?.travel?.reason === 'party_spot_replan')
+                    ?.stats?.travel?.to;
+                const destinationSpot = SpotProfiles.findById(destinationSpotId)
+                    || SpotService.findById(destinationSpotId)
+                    || {
+                        id: destinationSpotId,
+                        name: party.stats.travel.regionName,
+                        center: recordedArrival || null
+                    };
+                const arrivedMembers = members.map((member) => finishPartySpotTravel(
+                    member,
+                    startedAt,
+                    destinationSpot,
+                    party.stats.travel
+                ));
+                return arrivedMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.upsertState(member, 'party_spot_arrival'))
+                ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate(
+                    finishPartyTravelRecord(party, startedAt)
+                )).then((updatedParty) => LifeEvents.record(
+                    party.leaderId,
+                    'party_travel',
+                    `Party ${party.partyId} arrived near ${party.stats.travel.regionName || party.spotId}`,
+                    { partyId: party.partyId, spotId: party.spotId },
+                    1
+                ).then(() => ({ ok: true, party: updatedParty || party, debug: { activity: 'party_arrival' } })));
+            }
+
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
             const objectiveSpotId = party.stats?.objective?.spotId || null;
             const objectiveSpot = objectiveSpotId ? SpotProfiles.findById(objectiveSpotId) : null;
@@ -1519,6 +1616,35 @@ const PopulationService = {
             if (!spot) {
                 Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
+            }
+
+
+            const leaderPhysicalSpot = SpotService.findCurrentSpot(leader.loc);
+            const physicalSpotId = leaderPhysicalSpot?.id || leader.spotId || party.spotId;
+            if (physicalSpotId && physicalSpotId !== spot.id) {
+                const travellingMembers = members.map((member) => beginPartySpotTravel(member, spot, startedAt) || member);
+                const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
+                return travellingMembers.reduce((chain, member) => (
+                    chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))
+                ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({
+                    ...party,
+                    spotId: spot.id,
+                    nextResolveAt: arrivalAt,
+                    stats: {
+                        ...(party.stats || {}),
+                        travel: {
+                            reason: 'party_spot_replan',
+                            regionName: spot.name,
+                            spotId: spot.id,
+                            startedAt,
+                            arrivalAt
+                        }
+                    }
+                })).then((updatedParty) => ({
+                    ok: true,
+                    party: updatedParty || party,
+                    debug: { activity: 'party_travel', spotId: spot.id }
+                }));
             }
 
             const elapsedMs = party.stats?.lastResolveAt ? Math.max(1000, Date.now() - party.stats.lastResolveAt) : 60000;
@@ -1663,27 +1789,30 @@ const PopulationService = {
         // gear plan still needs the complete atlas.  Passing [] here turned every
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
+        const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
         const reusablePartyRequest = !state.party?.partyId
             && previousPlan?.next
+            && replanContext.planCurrent
+            && !replanContext.failure
             && state.stats?.partyRequest?.status === 'open'
             && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
         const upgradedPlan = reusablePartyRequest
             ? previousPlan
-            : GearAcquisitionPlanner.planFor(state, { spots });
+            : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
         const previousRefresh = previousPlan?.recipeId
             && !reusablePartyRequest
-            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId })
+            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
             : null;
         const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
             ? { ...previousRefresh, finishBeforeUpgrade: true }
             : upgradedPlan;
-        const sameTarget = Number(previousPlan?.target?.selfId || 0) === Number(rawAcquisitionPlan.target?.selfId || 0);
-        const planStartedAt = sameTarget ? Number(previousPlan?.startedAt || startedAt) : startedAt;
+        const finalizedPlan = reusablePartyRequest
+            ? previousPlan
+            : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
         const acquisitionPlan = {
-            ...rawAcquisitionPlan,
-            startedAt: planStartedAt,
-            marketFallback: rawAcquisitionPlan.status === 'active' && rawAcquisitionPlan.strategy === 'craft'
-                && planStartedAt + 20 * 60 * 1000 <= Date.now()
+            ...finalizedPlan,
+            marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
+                && Number(finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
         };
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
@@ -1694,6 +1823,21 @@ const PopulationService = {
             stats: plannedStats
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
+        if (replanContext.failure) {
+            planEvents.push({
+                type: 'gear_acquisition_fallback',
+                summary: `${state.name} abandoned an unproductive ${previousPlan.target?.name || `item ${replanContext.failure.targetId}`} drop route`,
+                weight: 3,
+                meta: {
+                    reason: replanContext.failure.reason,
+                    targetId: replanContext.failure.targetId,
+                    npcId: replanContext.failure.npcId,
+                    resolves: replanContext.failure.resolves,
+                    targetKills: replanContext.failure.targetKills,
+                    nextStrategy: acquisitionPlan.strategy
+                }
+            });
+        }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
                 const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
@@ -1813,11 +1957,33 @@ const PopulationService = {
                         : Promise.resolve(null);
                     return goalReady.then(() => marketLifecycle);
                 }).then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
+                    .then((goalSnapshot) => {
+                        if (goalSnapshot?.current?.status === 'active') return goalSnapshot;
+                        const returnSpot = SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId);
+                        return GoalService.review(marketLifecycle.state, { spot: returnSpot || spot });
+                    })
                     .then((goalSnapshot) => ColdMarketService.tryPurchase(marketLifecycle.state, goalSnapshot?.current)
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
-                    const shouldOpenListing = marketResult.purchased || (!marketLifecycle.closed && goal?.type === 'sell_inventory');
+                    if (marketResult.purchased) {
+                        const batchState = {
+                            ...purchasedState,
+                            activity: 'shopping',
+                            timing: {
+                                ...(purchasedState.timing || {}),
+                                activityStartedAt: Number(purchasedState.timing?.activityStartedAt || Date.now()),
+                                nextResolveAt: Date.now() + 1000
+                            }
+                        };
+                        // Keep the bot in town for one prompt follow-up pass.
+                        // The next scheduler tick replans from the purchased
+                        // inventory and can buy another item in this same town
+                        // without returning to the hunting ground in between.
+                        return LifeState.upsertState(batchState, 'market_batch_continue')
+                            .then((saved) => saved || batchState);
+                    }
+                    const shouldOpenListing = !marketLifecycle.closed && goal?.type === 'sell_inventory';
                     const listingPromise = shouldOpenListing
                         ? ColdMarketListingService.open(purchasedState)
                         : Promise.resolve({ state: purchasedState, listed: false });
@@ -1867,5 +2033,10 @@ const PopulationService = {
         return summary;
     }
 };
+
+PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPointForState(state, spot);
+PopulationService.beginPartySpotTravel = beginPartySpotTravel;
+PopulationService.finishPartySpotTravel = finishPartySpotTravel;
+PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
 
 module.exports = PopulationService;

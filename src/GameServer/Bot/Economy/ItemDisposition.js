@@ -59,8 +59,10 @@ function saleCandidates(state, options = {}) {
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const selfId = Number(item?.selfId || 0);
         const amount = Number(item?.amount || 0);
-        const sellableAmount = Math.max(0, amount - Number(reserved[selfId] || 0));
-        if (!selfId || selfId === 57 || sellableAmount <= 0 || item.equipped) return [];
+        const rawEquippedCount = Number(item?.equippedCount ?? (item?.equipped ? 1 : 0));
+        const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
+        const sellableAmount = Math.max(0, amount - equippedCount - Number(reserved[selfId] || 0));
+        if (!selfId || selfId === 57 || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
         const kind = item.kind || template?.template?.kind || '';

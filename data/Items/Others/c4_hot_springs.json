@@ -1,0 +1,77 @@
+[
+  {
+    "selfId": 7649,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Fire Vortex",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7650,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Ice Vortex",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7651,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Wind Vortex",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7652,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Light Vortex",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7653,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Dark Vortex",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

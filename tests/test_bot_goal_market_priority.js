@@ -6,13 +6,15 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalPlanner = invoke('GameServer/Bot/Goals/GoalPlanner');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 
 const originals = {
     snapshot: GoalState.snapshot,
     load: GoalState.load,
     set: GoalState.set,
     evaluate: NeedsEvaluator.evaluate,
-    plan: GoalPlanner.plan
+    plan: GoalPlanner.plan,
+    findById: SpotProfiles.findById
 };
 
 const now = 1000;
@@ -45,6 +47,30 @@ async function run() {
     const cleared = await GoalService.review({ characterId: 9, phase: 'cold' }, { now });
     assert.strictEqual(cleared.current.type, 'progress_level', 'an empty stale market goal must be replaced immediately');
 
+    let reviewedSpot = null;
+    const persistedSpot = { id: 'persisted_spot' };
+    SpotProfiles.findById = (spotId) => spotId === persistedSpot.id ? persistedSpot : null;
+    NeedsEvaluator.evaluate = (_state, options) => {
+        reviewedSpot = options.spot;
+        return [{ type: 'progress_level', status: 'active', priority: 35, plan: { expectedBenefit: 'experience_and_sp' }, blockers: [] }];
+    };
+    await GoalService.review({
+        characterId: 9,
+        phase: 'cold',
+        activity: 'traveling',
+        spotId: 'old_spot',
+        stats: { marketReturn: { spotId: persistedSpot.id } }
+    }, { now });
+    assert.strictEqual(reviewedSpot, persistedSpot,
+        'a transit goal review must retain its persisted return spot instead of reporting missing_spot');
+
+    const plannedSpot = { id: 'planned_spot' };
+    SpotProfiles.findById = (spotId) => spotId === plannedSpot.id ? plannedSpot : null;
+    assert.strictEqual(GoalService.reviewSpot({ activity: 'merchant' }, null, {
+        plan: { spotId: plannedSpot.id }
+    }), plannedSpot, 'a blocked goal must retain its own planned spot when lifecycle routing has no active spot');
+
+    NeedsEvaluator.evaluate = originals.evaluate;
     const waitingForMarket = NeedsEvaluator.evaluate({
         characterId: 10,
         level: 30,
@@ -72,4 +98,5 @@ run().catch((err) => {
     Object.assign(GoalState, { snapshot: originals.snapshot, load: originals.load, set: originals.set });
     NeedsEvaluator.evaluate = originals.evaluate;
     GoalPlanner.plan = originals.plan;
+    SpotProfiles.findById = originals.findById;
 });

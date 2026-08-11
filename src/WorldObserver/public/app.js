@@ -1,4 +1,5 @@
 const ActorFilters = window.WorldObserverActorFilters;
+const Leaderboards = window.WorldObserverLeaderboards;
 
 const state = {
     snapshot: null,
@@ -18,7 +19,12 @@ const state = {
     detailLoading: false,
     detailError: null,
     detailRequest: 0,
-    clusterScope: null
+    clusterScope: null,
+    rankingOpen: false,
+    rankingMetric: 'level',
+    rankingRaceKey: 'all',
+    rankingClassKey: 'all',
+    rankingFocusReturn: null
 };
 
 const COLORS = {
@@ -82,6 +88,8 @@ const ACTIVITY_LABELS = Object.freeze({
     traveling: 'Traveling'
 });
 
+const RANKING_DISPLAY_LIMIT = 250;
+
 const els = {
     serverLine: document.querySelector('#serverLine'),
     liveToggle: document.querySelector('#liveToggle'),
@@ -116,7 +124,16 @@ const els = {
     actorList: document.querySelector('#actorList'),
     lastRefresh: document.querySelector('#lastRefresh'),
     visibleCount: document.querySelector('#visibleCount'),
-    inspectorFreshness: document.querySelector('#inspectorFreshness')
+    inspectorFreshness: document.querySelector('#inspectorFreshness'),
+    openRankings: document.querySelector('#openRankings'),
+    rankingsModal: document.querySelector('#rankingsModal'),
+    closeRankings: document.querySelector('#closeRankings'),
+    rankingTabs: document.querySelector('#rankingTabs'),
+    rankingRace: document.querySelector('#rankingRace'),
+    rankingClass: document.querySelector('#rankingClass'),
+    rankingPodium: document.querySelector('#rankingPodium'),
+    rankingScope: document.querySelector('#rankingScope'),
+    rankingList: document.querySelector('#rankingList')
 };
 
 const DEFAULT_TILES = {
@@ -262,7 +279,7 @@ function setSvgViewBox() {
         return;
     }
 
-    const locs = filteredActors().map((item) => item.loc).filter(Boolean);
+    const locs = filteredActors().filter(isSurfaceActor).map(mapLocation).filter(Boolean);
     if (locs.length < 2) {
         state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
         setViewBox();
@@ -341,6 +358,98 @@ function actors() {
     ];
 }
 
+function rankingValue(actor, metric = state.rankingMetric) {
+    const value = Leaderboards.metricValue(actor, metric);
+    if (metric === 'level') return { primary: `Lv ${number(value, 1)}`, secondary: `${number(actor.exp || 0)} EXP` };
+    if (metric === 'adena') return { primary: `${compactNumber(value)} A`, secondary: `${number(value)} Adena` };
+    return { primary: `${compactNumber(value)} A`, secondary: 'estimated value' };
+}
+
+function rankingActorMeta(actor) {
+    const phase = actor.kind === 'player' ? 'Online player' : phaseLabel(actor.phase || 'cold');
+    return `${Leaderboards.raceName(actor) || 'Unknown race'} · ${phase}`;
+}
+
+function setRankingSelect(select, firstLabel, options, selected) {
+    const html = [
+        `<option value="all">${firstLabel}</option>`,
+        ...options.map((option) => `<option value="${escapeHtml(option.key)}">${text(option.label)}</option>`)
+    ].join('');
+    if (select.innerHTML !== html) select.innerHTML = html;
+    select.value = selected;
+}
+
+function renderRankingFilters(items) {
+    const races = Leaderboards.raceOptions(items);
+    if (state.rankingRaceKey !== 'all' && !races.some((option) => option.key === state.rankingRaceKey)) {
+        state.rankingRaceKey = 'all';
+    }
+    const classes = Leaderboards.classOptions(items, state.rankingRaceKey);
+    if (state.rankingClassKey !== 'all' && !classes.some((option) => option.key === state.rankingClassKey)) {
+        state.rankingClassKey = 'all';
+    }
+    setRankingSelect(els.rankingRace, 'All races', races, state.rankingRaceKey);
+    setRankingSelect(els.rankingClass, 'All classes', classes, state.rankingClassKey);
+}
+
+function renderRankings() {
+    if (!state.snapshot) {
+        els.rankingPodium.innerHTML = '';
+        els.rankingList.innerHTML = '<div class="list-empty">Waiting for the world snapshot.</div>';
+        els.rankingScope.textContent = '0 characters';
+        return;
+    }
+
+    const items = actors();
+    renderRankingFilters(items);
+    const ranked = Leaderboards.rankActors(items, state.rankingMetric, {
+        raceKey: state.rankingRaceKey,
+        classKey: state.rankingClassKey
+    });
+    const scrollTop = els.rankingList.scrollTop;
+    const displayed = ranked.slice(0, RANKING_DISPLAY_LIMIT);
+    els.rankingScope.textContent = ranked.length > displayed.length
+        ? `Top ${number(displayed.length)} of ${number(ranked.length)} characters`
+        : `${number(ranked.length)} character${ranked.length === 1 ? '' : 's'}`;
+    els.rankingPodium.innerHTML = ranked.slice(0, 3).map((actor, index) => {
+        const value = rankingValue(actor);
+        return `<button class="podium-entry" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${escapeHtml(actor.kind)}">
+            <span class="podium-rank">#${index + 1}</span>
+            <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
+            <span>${text(value.primary)} · ${text(actorClassName(actor))}</span>
+        </button>`;
+    }).join('');
+    els.rankingList.innerHTML = displayed.length ? displayed.map((actor, index) => {
+        const value = rankingValue(actor);
+        return `<div role="listitem"><button class="ranking-row" type="button" data-ranking-id="${escapeHtml(actor.id)}" data-ranking-kind="${escapeHtml(actor.kind)}">
+            <span class="ranking-position">#${number(index + 1)}</span>
+            <span class="ranking-identity"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>${text(rankingActorMeta(actor))}</span></span>
+            <span class="ranking-class"><strong>${text(actorClassName(actor))}</strong><span>Level ${number(actor.level, '?')}</span></span>
+            <span class="ranking-kind ${escapeHtml(actor.kind)}">${text(actor.kind === 'player' ? 'Player' : phaseLabel(actor.phase || 'bot'))}</span>
+            <span class="ranking-value">${text(value.primary)}<small>${text(value.secondary)}</small></span>
+        </button></div>`;
+    }).join('') : '<div class="list-empty">No characters match these filters.</div>';
+    els.rankingList.scrollTop = scrollTop;
+}
+
+function openRankings() {
+    state.rankingOpen = true;
+    state.rankingFocusReturn = document.activeElement;
+    renderRankings();
+    els.rankingsModal.hidden = false;
+    document.body.classList.add('rankings-open');
+    requestAnimationFrame(() => els.closeRankings.focus());
+}
+
+function closeRankings() {
+    if (!state.rankingOpen) return;
+    state.rankingOpen = false;
+    els.rankingsModal.hidden = true;
+    document.body.classList.remove('rankings-open');
+    state.rankingFocusReturn?.focus?.();
+    state.rankingFocusReturn = null;
+}
+
 function eligibleActors() {
     return actors().filter(ActorFilters.isEligible);
 }
@@ -358,6 +467,9 @@ function actorSearchText(actor) {
         actor.className,
         actor.build?.className,
         actor.build?.classFamily,
+        actor.region,
+        actor.area?.name,
+        actor.area?.parentRegion,
         actor.home?.region,
         actor.spot?.name,
         actor.classId
@@ -378,6 +490,14 @@ function filteredActors() {
 
 function actorKey(actor) {
     return `${actor.kind || 'bot'}:${actor.id}`;
+}
+
+function isSurfaceActor(actor) {
+    return ActorFilters.isSurfaceActor(actor);
+}
+
+function mapLocation(actor) {
+    return ActorFilters.mapLocation(actor);
 }
 
 function renderGrid() {
@@ -467,8 +587,9 @@ function clusterActors(items) {
     const groups = [];
 
     items.forEach((actor) => {
-        if (!actor.loc) return;
-        const point = project(actor.loc);
+        const loc = mapLocation(actor);
+        if (!loc) return;
+        const point = project(loc);
         let group = groups.find((candidate) => Math.hypot(point.x - candidate.x, point.y - candidate.y) <= mergeDistance);
         if (!group) {
             group = { members: [], x: point.x, y: point.y };
@@ -618,7 +739,7 @@ function renderPoints() {
     els.pointsLayer.innerHTML = '';
     if (!state.snapshot) return;
 
-    const visible = filteredActors();
+    const visible = filteredActors().filter(isSurfaceActor);
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
 }
@@ -958,6 +1079,26 @@ function statCell(label, value) {
     return `<div class="stat-cell"><span>${text(label)}</span><strong>${number(value)}</strong></div>`;
 }
 
+function renderProgress(actor) {
+    const stats = [
+        actor.exp !== undefined ? ['EXP', actor.exp] : null,
+        actor.sp !== undefined ? ['SP', actor.sp] : null,
+        actor.adena !== undefined ? ['Adena', actor.adena] : null,
+        actor.equipmentValue !== undefined ? ['Gear value', actor.equipmentValue] : null,
+        actor.counters ? ['Wins', actor.counters.fightsWon ?? 0] : null,
+        actor.counters ? ['Resolves', actor.counters.fightsResolved ?? 0] : null,
+        actor.counters ? ['Deaths', actor.counters.deaths ?? 0] : null,
+        actor.pvp !== undefined ? ['PvP', actor.pvp] : null,
+        actor.pk !== undefined ? ['PK', actor.pk] : null,
+        actor.karma !== undefined ? ['Karma', actor.karma] : null
+    ].filter(Boolean);
+    if (!stats.length) return '';
+    return `<section class="inspector-block compact-block">
+        <div class="inspector-block-title"><h3>Progress & wealth</h3><span>${text(Leaderboards.raceName(actor) || formatRelative(actor.updatedAt))}</span></div>
+        <div class="combat-stats">${stats.map(([label, value]) => statCell(label, value)).join('')}</div>
+    </section>`;
+}
+
 function vitalBar(label, vital, color) {
     const pct = clamp(Number(vital?.[`${label.toLowerCase()}Pct`] || 0), 0, 100);
     return `<div class="vital-row"><span>${label}</span><div class="vital-track"><div class="vital-fill" style="width:${pct}%;background:${color}"></div></div><strong>${pct}%</strong></div>`;
@@ -1150,7 +1291,7 @@ function renderInspector() {
         els.inspectorFreshness.textContent = 'error';
         els.selectedInspector.innerHTML = `<div class="inspector-empty detail-failure">
             <span class="empty-glyph">!</span>
-            <strong>Bot info unavailable</strong>
+            <strong>Actor info unavailable</strong>
             <p>${text(state.detailError)} · the compact map snapshot may be incomplete.</p>
             <button class="selection-clear" type="button" data-retry-detail>Retry</button>
         </div>`;
@@ -1181,6 +1322,7 @@ function renderInspector() {
         ${renderAction(actor)}
         <div class="detail-grid">
             <div><span>Activity</span><strong>${text(activityLabel(actor.mode))}</strong></div>
+            <div><span>Race</span><strong>${text(Leaderboards.raceName(actor))}</strong></div>
             <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
             <div><span>Spot</span><strong>${text(readablePlace(actor.spot?.name || actor.spot?.id))}</strong></div>
             <div><span>Party</span><strong>${party}</strong></div>
@@ -1191,7 +1333,7 @@ function renderInspector() {
         ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
         ${renderBuild(build)}
         ${renderDecisions(actor)}
-        ${actor.counters ? `<section class="inspector-block compact-block"><div class="inspector-block-title"><h3>Progress</h3><span>${formatRelative(actor.updatedAt)}</span></div><div class="combat-stats">${statCell('Wins', actor.counters.fightsWon)}${statCell('Resolves', actor.counters.fightsResolved)}${statCell('Deaths', actor.counters.deaths)}${statCell('Adena', actor.adena)}</div></section>` : ''}
+        ${renderProgress(actor)}
     `;
 }
 
@@ -1219,17 +1361,23 @@ function renderSnapshot() {
     renderSelected();
 }
 
-async function loadBotDetail(id, showLoading = true) {
+async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showLoading = true) {
     if (!id || state.detailLoading) return;
     const requestId = ++state.detailRequest;
     state.detailLoading = showLoading;
     state.detailError = null;
     if (showLoading) renderSelected();
     try {
-        const response = await fetch(`/observer/api/bot/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        let response = await fetch(`/observer/api/actor/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        // Keep bot inspection usable during a rolling server/UI restart where
+        // the new static assets may be served before the process exposes the
+        // unified actor endpoint.
+        if (response.status === 404 && kind === 'bot') {
+            response = await fetch(`/observer/api/bot/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const detail = await response.json();
-        if (requestId !== state.detailRequest || String(state.selectedId?.id) !== String(id)) return;
+        if (requestId !== state.detailRequest || String(state.selectedId?.id) !== String(id) || state.selectedId?.kind !== kind) return;
         state.detail = detail;
     } catch (error) {
         if (requestId === state.detailRequest) state.detailError = error.message;
@@ -1248,9 +1396,10 @@ function selectActor(id, kind = 'bot', focus = false) {
     state.detailLoading = false;
     if (focus) {
         const actor = actorById(id, kind);
-        if (actor?.loc) {
+        const loc = actor ? mapLocation(actor) : null;
+        if (loc && isSurfaceActor(actor)) {
             const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
-            const point = worldToMap(actor.loc);
+            const point = worldToMap(loc);
             applyViewport({
                 x: point.x - viewport.width * 0.5,
                 y: point.y - viewport.height * 0.5,
@@ -1262,7 +1411,7 @@ function selectActor(id, kind = 'bot', focus = false) {
     renderPoints();
     renderRoster();
     renderSelected();
-    if (kind === 'bot') loadBotDetail(id);
+    loadActorDetail(id, kind);
 }
 
 function focusCluster(cluster) {
@@ -1301,7 +1450,7 @@ function focusCluster(cluster) {
 
 function clusterLocation(cluster) {
     const labels = cluster.members
-        .map(({ actor }) => actor.home?.region || actor.region || actor.spot?.name)
+        .map(({ actor }) => actor.area?.name || actor.region || actor.home?.region || actor.spot?.name)
         .filter((label) => label && !/^-?\d+_-?\d+$/.test(label));
     if (!labels.length) return 'this area';
     const counts = labels.reduce((result, label) => result.set(label, (result.get(label) || 0) + 1), new Map());
@@ -1329,11 +1478,51 @@ async function refresh() {
         state.snapshot = await response.json();
         reconcileSelectedActor();
         renderSnapshot();
-        if (state.selectedId?.kind === 'bot' && !state.detailLoading) loadBotDetail(state.selectedId.id, false);
+        if (state.selectedId && !state.detailLoading) loadActorDetail(state.selectedId.id, state.selectedId.kind, false);
+        if (state.rankingOpen) renderRankings();
     } catch (error) {
         els.serverLine.textContent = `Observer snapshot failed: ${error.message}`;
     }
 }
+
+els.openRankings?.addEventListener('click', openRankings);
+els.closeRankings?.addEventListener('click', closeRankings);
+
+els.rankingsModal?.addEventListener('click', (event) => {
+    const actor = event.target.closest('[data-ranking-id]');
+    if (actor) {
+        selectActor(actor.dataset.rankingId, actor.dataset.rankingKind, true);
+        closeRankings();
+        return;
+    }
+    if (event.target === els.rankingsModal) closeRankings();
+});
+
+els.rankingTabs?.addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-ranking-metric]');
+    if (!tab) return;
+    state.rankingMetric = tab.dataset.rankingMetric;
+    els.rankingTabs.querySelectorAll('[data-ranking-metric]').forEach((item) => {
+        const active = item === tab;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', String(active));
+    });
+    els.rankingList.scrollTop = 0;
+    renderRankings();
+});
+
+els.rankingRace?.addEventListener('change', (event) => {
+    state.rankingRaceKey = String(event.target.value || 'all');
+    state.rankingClassKey = 'all';
+    els.rankingList.scrollTop = 0;
+    renderRankings();
+});
+
+els.rankingClass?.addEventListener('change', (event) => {
+    state.rankingClassKey = String(event.target.value || 'all');
+    els.rankingList.scrollTop = 0;
+    renderRankings();
+});
 
 els.liveToggle.addEventListener('click', () => {
     state.live = !state.live;
@@ -1362,7 +1551,7 @@ document.addEventListener('click', (event) => {
         return;
     }
     if (event.target.closest('[data-retry-detail]')) {
-        if (state.selectedId?.kind === 'bot') loadBotDetail(state.selectedId.id);
+        if (state.selectedId) loadActorDetail(state.selectedId.id, state.selectedId.kind);
         return;
     }
     if (!event.target.closest('[data-clear-cluster]')) return;
@@ -1453,6 +1642,27 @@ els.worldMap.addEventListener('pointerup', finishDrag);
 els.worldMap.addEventListener('pointercancel', finishDrag);
 
 document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.rankingOpen) {
+        event.preventDefault();
+        closeRankings();
+        return;
+    }
+    if (state.rankingOpen) {
+        if (event.key === 'Tab') {
+            const focusable = [...els.rankingsModal.querySelectorAll('button:not([disabled]), select:not([disabled])')]
+                .filter((element) => !element.hidden && element.offsetParent !== null);
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+            }
+        }
+        return;
+    }
     if (event.key === '/' && document.activeElement !== els.actorSearch) {
         event.preventDefault();
         els.actorSearch.focus();

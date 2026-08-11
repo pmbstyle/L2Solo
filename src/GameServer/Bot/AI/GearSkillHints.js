@@ -1,6 +1,6 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
-const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 
 const GRADE_BANDS = [
     { rank: 'none', min: 1, max: 19 },
@@ -381,10 +381,8 @@ function forCharacter(character = {}, options = {}) {
         grade: grade.rank,
         tier: tier.label,
         classFamily: family?.family || null,
-        armor: base.armor,
-        weapon: role === 'buffer' && state.classId !== null && !BotWeaponCompatibility.isCasterRole(role, state.classId)
-            ? 'melee_sword_or_blunt'
-            : base.weapon,
+        armor: BotEquipmentCompatibility.armorStyleFor(role, state.classId),
+        weapon: BotEquipmentCompatibility.weaponHintFor(role, state.classId),
         statPriority: [...base.statPriority],
         specialAbilities: [...specialAbilities],
         skills: skillHints,

@@ -1,0 +1,17 @@
+[
+  {
+    "selfId": 6667,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 3",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 320
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

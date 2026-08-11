@@ -1,0 +1,2076 @@
+[
+  {
+    "selfId": 812,
+    "template": {
+      "kind": "Monster",
+      "name": "Archer of Despair",
+      "title": "",
+      "level": 61,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2204,
+      "pAtkRnd": 5,
+      "pDef": 292,
+      "mAtk": 505,
+      "mDef": 307,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 44,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3137,
+      "maxMp": 1184,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 284,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.265251276539,
+      "sp": 414
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 813,
+    "template": {
+      "kind": "Monster",
+      "name": "Crendion",
+      "title": "",
+      "level": 62,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 944,
+      "pAtkRnd": 30,
+      "pDef": 388,
+      "mAtk": 532,
+      "mDef": 315,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3219,
+      "maxMp": 1217,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.112382934443,
+      "sp": 381
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 815,
+    "template": {
+      "kind": "Monster",
+      "name": "Hound Dog of Hallate",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 897,
+      "pAtkRnd": 30,
+      "pDef": 438,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 26,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 11
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.154698916604,
+      "sp": 413
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 816,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Royal Guard",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 785,
+      "pAtkRnd": 5,
+      "pDef": 438,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 180
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.28445452255,
+      "sp": 460
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 817,
+    "template": {
+      "kind": "Monster",
+      "name": "Corrupt Sage",
+      "title": "",
+      "level": 64,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1135,
+      "pAtkRnd": 20,
+      "pDef": 315,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 210,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.297607421875,
+      "sp": 486
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 818,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Warrior",
+      "title": "",
+      "level": 64,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1135,
+      "pAtkRnd": 10,
+      "pDef": 371,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.20263671875,
+      "sp": 451
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 819,
+    "template": {
+      "kind": "Monster",
+      "name": "Archer of Abyss",
+      "title": "",
+      "level": 65,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2632,
+      "pAtkRnd": 30,
+      "pDef": 380,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 77,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.157159763314,
+      "sp": 454
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 820,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Knight",
+      "title": "",
+      "level": 65,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 979,
+      "pAtkRnd": 10,
+      "pDef": 460,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.730177514793,
+      "sp": 679
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 821,
+    "template": {
+      "kind": "Monster",
+      "name": "Erin Ediunce",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1020,
+      "pAtkRnd": 10,
+      "pDef": 401,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.224747474747,
+      "sp": 502
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 822,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Maid",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 893,
+      "pAtkRnd": 30,
+      "pDef": 471,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.139577594123,
+      "sp": 467
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 823,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Tribe Soldier",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1126,
+      "pAtkRnd": 5,
+      "pDef": 399,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 242,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.284027623079,
+      "sp": 549
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 824,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Commander",
+      "title": "",
+      "level": 67,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1286,
+      "pAtkRnd": 10,
+      "pDef": 399,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.154822900423,
+      "sp": 493
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 825,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Inspector",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1339,
+      "pAtkRnd": 30,
+      "pDef": 408,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 31,
+      "size": 110
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.170847750865,
+      "sp": 523
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 826,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Tribe Archer",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2975,
+      "pAtkRnd": 5,
+      "pDef": 347,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 288,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.654411764706,
+      "sp": 739
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 827,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Tribe Warrior",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1150,
+      "pAtkRnd": 10,
+      "pDef": 506,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.258349086326,
+      "sp": 586
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 828,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Tribe Shaman",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1445,
+      "pAtkRnd": 20,
+      "pDef": 427,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 59.25,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 202,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.200204081633,
+      "sp": 583
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 829,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Tribe Overlord",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1239,
+      "pAtkRnd": 10,
+      "pDef": 529,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 147,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.676056338028,
+      "sp": 847
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 830,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian Angel",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1710,
+      "pAtkRnd": 10,
+      "pDef": 406,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 831,
+    "template": {
+      "kind": "Monster",
+      "name": "Seal Angel",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1770,
+      "pAtkRnd": 10,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 977,
+    "template": {
+      "kind": "Monster",
+      "name": "Elmo-Aden's Lady",
+      "title": "",
+      "level": 65,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 979,
+      "pAtkRnd": 10,
+      "pDef": 460,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 23.7,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.778224852071,
+      "sp": 698
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 980,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Follower Mul",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1339,
+      "pAtkRnd": 20,
+      "pDef": 408,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 23.7,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 210,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.644896193772,
+      "sp": 735
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 983,
+    "template": {
+      "kind": "Monster",
+      "name": "Binder",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1609,
+      "pAtkRnd": 10,
+      "pDef": 456,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 147,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.940701820229,
+      "sp": 1064
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1061,
+    "template": {
+      "kind": "Monster",
+      "name": "Hallate's Guardian",
+      "title": "",
+      "level": 69,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1392,
+      "pAtkRnd": 30,
+      "pDef": 418,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.343415248897,
+      "sp": 625
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1062,
+    "template": {
+      "kind": "Monster",
+      "name": "Messenger Angel",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1590,
+      "pAtkRnd": 10,
+      "pDef": 388,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 47.4,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1064,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Guardian Archer",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3332,
+      "pAtkRnd": 5,
+      "pDef": 371,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 53.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 288,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.588772069034,
+      "sp": 803
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1065,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Guardian Warrior",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1284,
+      "pAtkRnd": 10,
+      "pDef": 540,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.164351851852,
+      "sp": 613
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1066,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Guardian Shaman",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1609,
+      "pAtkRnd": 20,
+      "pDef": 456,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 202,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.225182961156,
+      "sp": 672
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1067,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian Archangel",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1831,
+      "pAtkRnd": 10,
+      "pDef": 423,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1069,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Guardian Prefect",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1831,
+      "pAtkRnd": 10,
+      "pDef": 423,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 147,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.626917457999,
+      "sp": 928
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1070,
+    "template": {
+      "kind": "Monster",
+      "name": "Seal Archangel",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1892,
+      "pAtkRnd": 10,
+      "pDef": 432,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 148,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 0,
+      "sp": 0
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1072,
+    "template": {
+      "kind": "Monster",
+      "name": "Platinum Guardian Chief",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 20,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 202,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.200355555556,
+      "sp": 712
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1075,
+    "template": {
+      "kind": "Monster",
+      "name": "Slaughter Bathin",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1086,
+      "pAtkRnd": 10,
+      "pDef": 362,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 23.7,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 84,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 200
+    },
+    "rewards": {
+      "exp": 1.762408667171,
+      "sp": 631
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1078,
+    "template": {
+      "kind": "Monster",
+      "name": "Magus Valac",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1445,
+      "pAtkRnd": 20,
+      "pDef": 427,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 23.7,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 198,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 200
+    },
+    "rewards": {
+      "exp": 1.730816326531,
+      "sp": 841
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1081,
+    "template": {
+      "kind": "Monster",
+      "name": "Power Angel Amon",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 30,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 26.86,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 4700,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_guard_clan",
+      "helpRadius": 200
+    },
+    "rewards": {
+      "exp": 1.579911111111,
+      "sp": 937
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  }
+]

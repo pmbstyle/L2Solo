@@ -46,28 +46,34 @@ module.exports = function assertC4MonsterLocation(config) {
         'the additive import must remain limited to monster families absent from the old datapack');
 
     const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
+    const respawnByMob = new Map(Object.entries(config.respawnByMob || {})
+        .map(([npcId, respawn]) => [Number(npcId), Number(respawn)]));
     const expectedSpawnRows = config.spawnCounts.reduce((sum, [, count]) => sum + count, 0);
     assert.strictEqual(spawnArea.spawns.length, config.mobIds.length,
         'spawn definitions must cover every source monster family');
     assert.strictEqual(spawnCoords.length, expectedSpawnRows,
         `the import must retain all ${expectedSpawnRows} Lisvus monster spawn rows`);
     assert.ok(spawnArea.spawns.every((spawn) =>
-        spawn.total === 1 && spawn.respawn === config.respawn && spawn.bias === 0));
+        spawn.total === 1
+        && spawn.respawn === (respawnByMob.get(Number(spawn.selfId)) ?? config.respawn)
+        && spawn.bias === 0
+        && (!config.period || spawn.period === config.period)));
     assert.deepStrictEqual(spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]), config.spawnCounts,
         'every family must retain its exact local population');
 
-    const expectedRegionKey = config.region.join('_');
+    const regions = config.regions || [config.region];
+    const expectedRegionKeys = regions.map((region) => region.join('_')).sort();
     assert.deepStrictEqual(
-        [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-        [expectedRegionKey],
-        'the source rows must stay in the expected underground geodata region'
+        [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))].sort(),
+        expectedRegionKeys,
+        'the source rows must stay in the expected geodata regions'
     );
-    verifyGeodataWhenAvailable(GeodataEngine, [config.region], config.displayName, () => {
+    verifyGeodataWhenAvailable(GeodataEngine, regions, config.displayName, () => {
         const heightDeltas = spawnCoords.map((coord) => Math.abs(
             GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
         ));
         assert.ok(heightDeltas.every((delta) => delta <= (config.maxHeightDelta || 0)),
-            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of underground geodata`);
+            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of geodata`);
     });
 
     const sample = npcs.find((npc) => npc.selfId === config.sample.id);

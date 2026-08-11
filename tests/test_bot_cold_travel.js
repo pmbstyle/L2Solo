@@ -4,6 +4,9 @@ require('../src/Global');
 
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const state = {
     characterId: 7,
@@ -95,5 +98,139 @@ assert.strictEqual(returned.patch.activity, 'hunting');
 assert.strictEqual(returned.patch.currentRegion, 'Dion');
 assert.strictEqual(returned.patch.stats.marketReturn, null);
 assert.strictEqual(returned.events[0].type, 'returned_to_spot');
+
+const originalFindById = SpotService.findById;
+const originalArrivalPointForState = SpotService.arrivalPointForState;
+const originalFindForState = SpotProfiles.findForState;
+const legacyMineSpot = {
+    id: '29_-30',
+    name: 'Mithril Mines',
+    center: { locX: 176673, locY: -177656, locZ: 801 }
+};
+const availableSpot = {
+    id: '19_-19',
+    name: 'Dwarven Village hunting grounds',
+    center: { locX: 116000, locY: -180000, locZ: -900 }
+};
+try {
+    SpotService.findById = (id) => id === legacyMineSpot.id ? legacyMineSpot : null;
+    SpotProfiles.findForState = () => availableSpot;
+    SpotService.arrivalPointForState = (bot, spot) => ({
+        locX: spot.center.locX + 137,
+        locY: spot.center.locY - 91,
+        locZ: spot.center.locZ
+    });
+    const rerouted = GoalExecutor.finishMarketVisit({
+        ...shoppingState,
+        stats: {
+            ...shoppingState.stats,
+            marketReturn: {
+                spotId: legacyMineSpot.id,
+                regionName: 'Akaste Bone Soldier fields',
+                loc: { ...legacyMineSpot.center }
+            }
+        }
+    }, Date.now());
+    assert.strictEqual(rerouted.stats.travel.spotId, availableSpot.id,
+        'a market return must honor the current capacity-aware route instead of feeding an old overloaded spot');
+    assert.strictEqual(rerouted.stats.travel.regionName, availableSpot.name);
+    assert.deepStrictEqual(rerouted.stats.travel.to, {
+        locX: availableSpot.center.locX + 137,
+        locY: availableSpot.center.locY - 91,
+        locZ: availableSpot.center.locZ
+    }, 'market returns must use a distributed spawn-aware arrival point');
+} finally {
+    SpotService.findById = originalFindById;
+    SpotService.arrivalPointForState = originalArrivalPointForState;
+    SpotProfiles.findForState = originalFindForState;
+}
+
+const originalFindCurrentSpot = SpotService.findCurrentSpot;
+const originalPartyArrivalPoint = SpotService.arrivalPointForState;
+try {
+    SpotService.findCurrentSpot = () => legacyMineSpot;
+    SpotService.arrivalPointForState = () => ({ locX: 116137, locY: -180091, locZ: -900 });
+    const partyTravel = PopulationService.beginPartySpotTravel({
+        ...state,
+        activity: 'grouped',
+        spotId: legacyMineSpot.id,
+        party: { partyId: 'party-route' }
+    }, availableSpot, 1000);
+    assert.strictEqual(partyTravel.activity, 'traveling');
+    assert.strictEqual(partyTravel.stats.travel.reason, 'party_spot_replan');
+    assert.strictEqual(partyTravel.stats.travel.arrivalActivity, 'grouped');
+    assert.strictEqual(partyTravel.stats.travel.arrivalAt, 1000 + 25000);
+    const partyArrived = PopulationService.finishPartySpotTravel(partyTravel, 26000);
+    assert.strictEqual(partyArrived.activity, 'grouped');
+    assert.strictEqual(partyArrived.spotId, availableSpot.id);
+    assert.strictEqual(partyArrived.currentRegion, availableSpot.name);
+    assert.deepStrictEqual(partyArrived.loc, { locX: 116137, locY: -180091, locZ: -900 });
+    assert.strictEqual(partyArrived.stats.travel, null,
+        'a background party arrival must clear its transition instead of remaining visually at the old spot');
+    const interruptedMember = {
+        ...state,
+        activity: 'traveling',
+        spotId: legacyMineSpot.id,
+        stats: {
+            ...(state.stats || {}),
+            travel: { reason: 'market_visit', arrivalAt: 90000 }
+        }
+    };
+    const alignedMember = PopulationService.finishPartySpotTravel(
+        interruptedMember,
+        26000,
+        availableSpot,
+        {
+            reason: 'party_spot_replan',
+            regionName: availableSpot.name,
+            spotId: availableSpot.id,
+            arrivalAt: 26000
+        }
+    );
+    assert.strictEqual(alignedMember.activity, 'grouped',
+        'a member that could not start party travel must still join the party at arrival');
+    assert.strictEqual(alignedMember.spotId, availableSpot.id,
+        'fallback party arrival must align the member with the party spot');
+    assert.deepStrictEqual(alignedMember.loc, { locX: 116137, locY: -180091, locZ: -900 });
+    assert.strictEqual(alignedMember.stats.travel, null,
+        'fallback party arrival must clear the unrelated stale travel transition');
+    const arrivedPartyRecord = PopulationService.finishPartyTravelRecord({
+        partyId: 'party-route',
+        nextResolveAt: 25000,
+        stats: {
+            lastResolveAt: 1000,
+            travel: { reason: 'party_spot_replan', arrivalAt: 26000 }
+        }
+    }, 26000);
+    assert.strictEqual(arrivedPartyRecord.stats.lastResolveAt, 26000,
+        'party combat time must restart at arrival instead of including the travel interval');
+    assert.strictEqual(arrivedPartyRecord.nextResolveAt, 27000);
+    assert.strictEqual(arrivedPartyRecord.stats.travel, null);
+} finally {
+    SpotService.findCurrentSpot = originalFindCurrentSpot;
+    SpotService.arrivalPointForState = originalPartyArrivalPoint;
+}
+
+const boundaryArrival = SpotService.arrivalPointForState({ characterId: 2 }, {
+    id: '0_0',
+    center: { locX: 1, locY: 1, locZ: 0 },
+    arrivalPoints: [{ locX: 1, locY: 1, locZ: 0 }]
+});
+assert(boundaryArrival.locX >= 0 && boundaryArrival.locX < 6000,
+    'spawn-aware arrival offsets must remain inside the destination X grid');
+assert(boundaryArrival.locY >= 0 && boundaryArrival.locY < 6000,
+    'spawn-aware arrival offsets must remain inside the destination Y grid');
+const anonymousSpot = {
+    id: '1_1',
+    center: { locX: 9000, locY: 9000, locZ: 0 },
+    arrivalPoints: [{ locX: 8500, locY: 8500, locZ: 0 }, { locX: 9500, locY: 9500, locZ: 0 }]
+};
+const anonymousA = {};
+const anonymousB = {};
+const anonymousArrivalA = SpotService.arrivalPointForState(anonymousA, anonymousSpot);
+assert.deepStrictEqual(SpotService.arrivalPointForState(anonymousA, anonymousSpot), anonymousArrivalA,
+    'an anonymous state object must retain a deterministic arrival point during the process lifetime');
+assert.notDeepStrictEqual(SpotService.arrivalPointForState(anonymousB, anonymousSpot), anonymousArrivalA,
+    'distinct anonymous state objects must not collapse onto one shared arrival point');
 
 console.log('Bot cold travel checks passed');

@@ -5,6 +5,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     appliedAt INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS maintenance_tasks (
+    name TEXT PRIMARY KEY,
+    completedAt INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     username TEXT PRIMARY KEY COLLATE NOCASE,
     password TEXT NOT NULL

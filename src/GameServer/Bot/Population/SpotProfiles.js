@@ -1,6 +1,11 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+
+let occupancyCache = null;
+let occupancyCachedAt = 0;
 
 function rewardForLevel(level) {
     const value = Math.max(1, Number(level || 1));
@@ -35,8 +40,15 @@ function profileFromSpot(spot) {
         npcNames: [...(spot.npcNames || [])],
         npcSelfIds: [...(spot.npcSelfIds || [])],
         npcEntries: (spot.npcEntries || []).map((entry) => ({ ...entry })),
+        arrivalPoints: (spot.arrivalPoints || []).map((point) => ({ ...point })),
         levelCounts: { ...(spot.levelCounts || {}) },
         dominantLevels: (spot.dominantLevels || []).map((entry) => ({ ...entry })),
+        area: spot.area ? { ...spot.area } : null,
+        tags: [...(spot.tags || [])],
+        tagsAuthoritative: spot.tagsAuthoritative === true,
+        capacity: Number(spot.capacity || 0) || null,
+        localStarterRegions: [...(spot.localStarterRegions || [])],
+        localUntilLevel: Number(spot.localUntilLevel || 0) || null,
         route: spot.route || null,
         rewards: rewardForLevel(avgLevel),
         mob: combatForLevel(avgLevel),
@@ -59,6 +71,72 @@ function physicalSpotForState(state, profiles) {
     return state?.spotId ? profiles.find((profile) => profile.id === state.spotId) || null : null;
 }
 
+function stateKey(state = {}) {
+    return String(state.characterId || state.name || state.stats?.generatedIndex || '');
+}
+
+function partyIdForState(state = {}) {
+    return state.party?.partyId || state.partyId || null;
+}
+
+function occupiedSpotId(state = {}) {
+    if (state.activity === 'traveling' && state.stats?.travel?.spotId) return state.stats.travel.spotId;
+    if (['merchant', 'shopping', 'crafting', 'traveling'].includes(state.activity)) return null;
+    return state.spotId || null;
+}
+
+function occupancySnapshot(profiles, states = BotLifeState.allStates(PopulationConfig.maxPlayingPopulation)) {
+    const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    const members = (states || []).reduce((entries, state) => {
+        const spotId = occupiedSpotId(state);
+        if (!spotId || !byId.has(spotId)) return entries;
+        if (!entries[spotId]) entries[spotId] = [];
+        entries[spotId].push(state);
+        return entries;
+    }, {});
+
+    return Object.fromEntries(Object.entries(members).map(([spotId, spotMembers]) => {
+        const capacity = LevelingRoutes.capacityForSpot(byId.get(spotId));
+        const grouped = spotMembers.filter((state) => partyIdForState(state));
+        const solo = spotMembers
+            .filter((state) => !partyIdForState(state))
+            .sort((left, right) => stateKey(left).localeCompare(stateKey(right)));
+        const parties = [...grouped.reduce((byParty, state) => {
+            const partyId = String(partyIdForState(state));
+            if (!byParty.has(partyId)) byParty.set(partyId, []);
+            byParty.get(partyId).push(state);
+            return byParty;
+        }, new Map()).entries()]
+            .sort(([leftId], [rightId]) => leftId.localeCompare(rightId));
+        const retained = new Set();
+        let remaining = capacity;
+        parties.forEach(([, partyMembers]) => {
+            if (partyMembers.length > remaining) return;
+            partyMembers.forEach((state) => retained.add(stateKey(state)));
+            remaining -= partyMembers.length;
+        });
+        solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
+        return [spotId, { count: spotMembers.length, capacity, retained }];
+    }));
+}
+
+function currentOccupancy(profiles, maxAgeMs = 1000) {
+    const timestamp = Date.now();
+    if (occupancyCache && timestamp - occupancyCachedAt < maxAgeMs) return occupancyCache;
+    occupancyCache = occupancySnapshot(profiles);
+    occupancyCachedAt = timestamp;
+    return occupancyCache;
+}
+
+function shouldLeaveOverCapacity(state, spot, occupancy) {
+    const entry = occupancy?.[spot?.id];
+    const count = LevelingRoutes.occupancyForSpot(occupancy, spot?.id);
+    const capacity = Number(entry?.capacity || LevelingRoutes.capacityForSpot(spot));
+    if (!spot || count <= capacity) return false;
+    if (entry?.retained instanceof Set) return !entry.retained.has(stateKey(state));
+    return true;
+}
+
 const SpotProfiles = {
     cache: null,
 
@@ -66,6 +144,8 @@ const SpotProfiles = {
 
     reset() {
         this.cache = null;
+        occupancyCache = null;
+        occupancyCachedAt = 0;
     },
 
     ensure() {
@@ -86,15 +166,20 @@ const SpotProfiles = {
         const savedSpot = state?.spotId ? this.findById(state.spotId) : null;
         const currentSpot = physicalSpot || savedSpot;
         const targetLevel = LevelingRoutes.targetLevelForState(state);
+        const occupancy = options.occupancy || currentOccupancy(profiles);
+        const routeOptions = { ...options, occupancy };
+        const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
+        const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+            || shouldLeaveOverCapacity(state, currentSpot, occupancy));
         const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
+            && !mustRelocate
             && (protectedStarterCohort || SpotService.isSuitable(currentSpot, targetLevel, options));
 
         // Fresh racial cohorts stay at their physical level-one spot until
         // they advance. A gear plan otherwise remains the normal route choice
         // for established bots.
         if (keepCurrentSpot) {
-            const match = LevelingRoutes.scoreSpot(currentSpot, state, options);
-            return LevelingRoutes.decorateSpot(currentSpot, match);
+            return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
         if (acquisitionPlan?.status === 'active') {
@@ -105,19 +190,22 @@ const SpotProfiles = {
             if (planned) return planned.spot;
         }
 
-        if (currentSpot && SpotService.isSuitable(currentSpot, targetLevel, options)) {
-            const match = LevelingRoutes.scoreSpot(currentSpot, state, options);
-            return LevelingRoutes.decorateSpot(currentSpot, match);
+        if (currentSpot && !mustRelocate && SpotService.isSuitable(currentSpot, targetLevel, options)) {
+            return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
         const candidates = profiles
             .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
-        const suitable = candidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
-        const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : candidates, state, options);
+        const relocationCandidates = mustRelocate
+            ? candidates.filter((profile) => profile.id !== currentSpot.id)
+            : candidates;
+        const routeCandidates = relocationCandidates.length ? relocationCandidates : candidates;
+        const suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
+        const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : routeCandidates, state, routeOptions);
 
         if (guided?.spot) return guided.spot;
 
-        return (suitable.length ? suitable : candidates).sort((a, b) => {
+        return (suitable.length ? suitable : routeCandidates).sort((a, b) => {
             const aGap = Math.abs(a.avgLevel - targetLevel);
             const bGap = Math.abs(b.avgLevel - targetLevel);
             if (aGap !== bGap) return aGap - bGap;
@@ -125,5 +213,9 @@ const SpotProfiles = {
         })[0] || null;
     }
 };
+
+SpotProfiles.occupancySnapshot = occupancySnapshot;
+SpotProfiles.currentOccupancy = currentOccupancy;
+SpotProfiles.shouldLeaveOverCapacity = shouldLeaveOverCapacity;
 
 module.exports = SpotProfiles;

@@ -4,6 +4,8 @@ const { DatabaseSync } = require('node:sqlite');
 
 let connection;
 let queryTail = Promise.resolve();
+let shuttingDown = false;
+let closePromise = null;
 let databasePath;
 let flushPendingCharacterWrites = null;
 const cooperative = {
@@ -85,6 +87,9 @@ function record(operation, wait, run, read, failed = false) {
 }
 
 function enqueue(work, { operation = 'raw', read = false } = {}) {
+    if (shuttingDown) {
+        return Promise.reject(new Error(`SQLite shutdown is in progress (${operation})`));
+    }
     const queuedAt = now();
     metrics.pending += 1;
     metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
@@ -384,6 +389,8 @@ const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, ac
 const Database = {
     init(callback = () => {}) {
         try {
+            shuttingDown = false;
+            closePromise = null;
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
@@ -403,6 +410,21 @@ const Database = {
     },
 
     isReady() { return !!connection; },
+
+    close() {
+        if (closePromise) return closePromise;
+        shuttingDown = true;
+        const pending = queryTail;
+        closePromise = pending.then(() => {
+            if (!connection) return false;
+            const openConnection = connection;
+            connection = null;
+            openConnection.close();
+            queryTail = Promise.resolve();
+            return true;
+        });
+        return closePromise;
+    },
 
     registerCharacterWriteFlush(flush) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
@@ -461,29 +483,148 @@ const Database = {
             const bySelfId = new Map();
             existing.forEach((row) => {
                 const key = Number(row.selfId);
-                if (!bySelfId.has(key)) bySelfId.set(key, row);
+                if (!bySelfId.has(key)) bySelfId.set(key, []);
+                bySelfId.get(key).push(row);
             });
             Object.values(inventory).forEach((item) => {
                 const selfId = Number(item.selfId || 0);
                 const amount = Number(item.amount || 0);
                 if (!selfId) return;
-                const current = bySelfId.get(selfId);
+                const rows = bySelfId.get(selfId) || [];
                 if (amount <= 0) {
-                    if (current) write('DELETE FROM items WHERE id = ? AND characterId = ?', [current.id, characterId]);
+                    rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
                     return;
                 }
-                const equipped = item.equipped ? 1 : 0;
-                const slot = Number(item.slot || current?.slot || 0);
-                if (current) {
-                    if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== slot) {
-                        write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, slot, current.id, characterId]);
+                const baseSlot = Number(item.slot || rows[0]?.slot || 0);
+                const nonStackable = baseSlot > 0 || item.stackable === false;
+                if (!nonStackable) {
+                    const current = rows[0];
+                    const equipped = item.equipped ? 1 : 0;
+                    if (current) {
+                        if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== baseSlot) {
+                            write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, baseSlot, current.id, characterId]);
+                        }
+                    } else {
+                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, baseSlot, characterId]);
                     }
-                } else {
-                    write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, slot, characterId]);
+                    rows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+                    return;
                 }
+
+                const equippedSlots = Array.isArray(item.equippedSlots)
+                    ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
+                    : item.equipped ? [baseSlot] : [];
+                const desired = [
+                    ...equippedSlots.map((slot) => ({ equipped: 1, slot })),
+                    ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: 0 }))
+                ];
+                desired.forEach((entry, index) => {
+                    const current = rows[index];
+                    if (current) {
+                        if (Number(current.amount) !== 1 || Number(current.equipped) !== entry.equipped || Number(current.slot) !== entry.slot) {
+                            write('UPDATE items SET amount = 1, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [entry.equipped, entry.slot, current.id, characterId]);
+                        }
+                    } else {
+                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, entry.equipped, entry.slot, characterId]);
+                    }
+                });
+                rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
             });
             return { characterId, entries: Object.keys(inventory).length };
         }, 'inventory:sync-summary'));
+    },
+
+    compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {
+        const ids = [...new Set((selfIds || []).map(Number).filter((selfId) => selfId > 0))];
+        if (!ids.length) return Promise.resolve({ skipped: true, reason: 'no_stackable_items', rowsRemoved: 0, groups: 0 });
+        return inTransaction(() => {
+            const completed = one('SELECT completedAt FROM maintenance_tasks WHERE name = ?', [taskName]);
+            if (completed) return { skipped: true, reason: 'already_completed', completedAt: Number(completed.completedAt), rowsRemoved: 0, groups: 0 };
+
+            connection.exec(`
+                DROP TABLE IF EXISTS temp.stackable_item_ids;
+                DROP TABLE IF EXISTS temp.stackable_inventory_compaction;
+                CREATE TEMP TABLE stackable_item_ids (selfId INTEGER PRIMARY KEY);
+            `);
+            const insertId = connection.prepare('INSERT OR IGNORE INTO stackable_item_ids(selfId) VALUES (?)');
+            ids.forEach((selfId) => insertId.run(selfId));
+            connection.exec(`
+                CREATE TEMP TABLE stackable_inventory_compaction AS
+                SELECT items.characterId,
+                       items.selfId,
+                       MIN(items.id) AS keeperId,
+                       SUM(items.amount) AS totalAmount,
+                       COUNT(*) AS rowCount
+                FROM items
+                INNER JOIN stackable_item_ids ON stackable_item_ids.selfId = items.selfId
+                WHERE items.equipped = 0
+                  AND items.slot = 0
+                  AND items.petData IS NULL
+                  AND items.amount > 0
+                GROUP BY items.characterId, items.selfId
+                HAVING COUNT(*) > 1;
+            `);
+            const summary = one(`SELECT COUNT(*) AS groups,
+                COALESCE(SUM(rowCount - 1), 0) AS duplicateRows
+                FROM stackable_inventory_compaction`);
+            write(`UPDATE items
+                SET amount = (
+                    SELECT totalAmount
+                    FROM stackable_inventory_compaction compact
+                    WHERE compact.keeperId = items.id
+                )
+                WHERE id IN (SELECT keeperId FROM stackable_inventory_compaction)`);
+            const removed = write(`DELETE FROM items
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM stackable_inventory_compaction compact
+                    WHERE compact.characterId = items.characterId
+                      AND compact.selfId = items.selfId
+                      AND items.id <> compact.keeperId
+                      AND items.equipped = 0
+                      AND items.slot = 0
+                      AND items.petData IS NULL
+                )`);
+            const completedAt = now();
+            write('INSERT INTO maintenance_tasks(name, completedAt) VALUES (?, ?)', [taskName, completedAt]);
+            connection.exec(`
+                DROP TABLE stackable_inventory_compaction;
+                DROP TABLE stackable_item_ids;
+            `);
+            return {
+                skipped: false,
+                completedAt,
+                rowsRemoved: Number(removed.affectedRows || 0),
+                groups: Number(summary?.groups || 0),
+                expectedRowsRemoved: Number(summary?.duplicateRows || 0)
+            };
+        }, 'maintenance:compact-stackable-inventory');
+    },
+
+    reclaimUnusedSpace({ minFreePages = 1000, minFreeRatio = 0.25 } = {}) {
+        return enqueue(() => {
+            const pageCount = Number(one('PRAGMA page_count')?.page_count || 0);
+            const freePages = Number(one('PRAGMA freelist_count')?.freelist_count || 0);
+            const pageSize = Number(one('PRAGMA page_size')?.page_size || 0);
+            const freeRatio = pageCount > 0 ? freePages / pageCount : 0;
+            if (freePages < Math.max(0, Number(minFreePages) || 0)
+                || freeRatio < Math.max(0, Number(minFreeRatio) || 0)) {
+                return { reclaimed: false, pageCount, freePages, pageSize, freeRatio };
+            }
+            connection.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM;');
+            const nextPageCount = Number(one('PRAGMA page_count')?.page_count || 0);
+            const nextFreePages = Number(one('PRAGMA freelist_count')?.freelist_count || 0);
+            return {
+                reclaimed: true,
+                pageCount,
+                freePages,
+                pageSize,
+                freeRatio,
+                nextPageCount,
+                nextFreePages,
+                reclaimedBytes: Math.max(0, (pageCount - nextPageCount) * pageSize)
+            };
+        }, { operation: 'maintenance:reclaim-unused-space', read: false });
     },
 
     transferInventoryBetweenCharacters(transfers = []) {

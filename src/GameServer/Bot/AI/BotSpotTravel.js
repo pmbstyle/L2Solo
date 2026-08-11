@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
 
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
@@ -55,7 +56,15 @@ function start(session, bot, spot, targetLoc = null) {
     setTimeout(() => {
         const relocation = session.spotRelocation;
         if (!relocation || relocation.token !== token) return;
-        if (bot.isDead?.() || session.currentTargetId || session.incomingThreatId) {
+        if (bot.isDead?.()) {
+            cancel(session, bot, 'death');
+            return;
+        }
+        if (!bot.state.fetchCasts?.()) {
+            cancel(session, bot, 'cast_interrupted');
+            return;
+        }
+        if (BotTownTravel.hasCombatThreat(session, bot)) {
             cancel(session, bot, 'combat_interrupt');
             return;
         }

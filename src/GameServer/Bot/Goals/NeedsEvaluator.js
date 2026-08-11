@@ -6,13 +6,22 @@ const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPoli
 const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
-// Weapons make the largest immediate difference, then core armour.  The two
-// ring/earring slots deliberately stay out of the first pass: the compact
-// inventory snapshot identifies equipment by item id, so duplicate jewellery
-// cannot yet be distinguished reliably.
-const EQUIPMENT_PRIORITY = [7, 10, 15, 11, 8, 6, 9, 12, 3];
+const NPC_GEAR_PRIORITY = {
+    weapon: 88,
+    armor: 87,
+    jewelry: 78,
+    other: 76
+};
+// Weapons make the largest immediate difference, then core armour. Paired
+// jewellery is represented by its concrete paperdoll sides in cold inventory,
+// so both copies participate in ordinary progression.
+const EQUIPMENT_PRIORITY = [7, 10, 15, 11, 8, 6, 9, 12, 3, 1, 2, 4, 5];
 const EQUIPMENT_SLOT_NAMES = {
+    1: 'right_earring',
+    2: 'left_earring',
     3: 'necklace',
+    4: 'right_ring',
+    5: 'left_ring',
     6: 'head',
     7: 'weapon',
     8: 'shield',
@@ -23,6 +32,18 @@ const EQUIPMENT_SLOT_NAMES = {
     15: 'full_armor'
 };
 
+let itemIndexSource = null;
+let itemIndex = new Map();
+
+function itemBySelfId(selfId) {
+    const items = DataCache.items || [];
+    if (itemIndexSource !== items) {
+        itemIndexSource = items;
+        itemIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return itemIndex.get(Number(selfId)) || null;
+}
+
 function percentage(value, maximum) {
     const max = Math.max(1, Number(maximum) || 0);
     return Math.max(0, Math.min(1, Number(value) / max));
@@ -31,6 +52,15 @@ function percentage(value, maximum) {
 function rankIndex(rank) {
     const index = RANK_ORDER.indexOf(String(rank || 'none').toLowerCase());
     return index >= 0 ? index : 0;
+}
+
+function affordableNpcGearPriority(gear = {}) {
+    if (!gear.npcProgression) return null;
+    const slotPriority = GearLifecycle.slotPriority(gear.slot);
+    if (slotPriority === 3) return NPC_GEAR_PRIORITY.weapon;
+    if (slotPriority === 2) return NPC_GEAR_PRIORITY.armor;
+    if (slotPriority === 1) return NPC_GEAR_PRIORITY.jewelry;
+    return NPC_GEAR_PRIORITY.other;
 }
 
 function equipmentNeed(state) {
@@ -50,12 +80,18 @@ function equipmentNeed(state) {
             return !currentItem || rankIndex(currentItem.rank) < rankIndex(desiredRank);
         }) || null;
     const acquisitionPlan = state.stats?.equipmentPlan;
-    if (['direct_drop', 'craft'].includes(acquisitionPlan?.strategy) && acquisitionPlan?.status === 'active') return null;
+    // Drop/craft acquisition is executed by the cold resolver itself, not by
+    // a market goal. This also covers ready/blocked craft states: turning a
+    // temporarily blocked C-grade recipe into a generic Giran shopping trip
+    // would make an unavailable NPC item stall normal leveling. A later plan
+    // refresh can still switch to a concrete market offer when one exists.
+    if (['direct_drop', 'craft'].includes(acquisitionPlan?.strategy)
+        || acquisitionPlan?.status === 'blocked') return null;
     const plannedTarget = acquisitionPlan?.strategy === 'market' && acquisitionPlan?.target
-        ? (DataCache.items || []).find((item) => Number(item.selfId) === Number(acquisitionPlan.target.selfId))
+        ? itemBySelfId(acquisitionPlan.target.selfId)
         : null;
-    const plannedSlot = Number(plannedTarget?.etc?.slot || 0);
-    const plannedAlreadyEquipped = plannedSlot > 0 && equipment.some((item) => (
+    const plannedSlot = Number(acquisitionPlan?.target?.slot || plannedTarget?.etc?.slot || 0);
+    const plannedAlreadyEquipped = plannedTarget && plannedSlot > 0 && equipment.some((item) => (
         Number(item.slot) === plannedSlot && Number(item.selfId) === Number(plannedTarget.selfId)
     ));
     const selectedItem = plannedTarget && !plannedAlreadyEquipped ? plannedTarget : desiredItem;
@@ -69,7 +105,7 @@ function equipmentNeed(state) {
     // a different next slot; do not send that new purchase to the old offer's
     // town or fund it with the old price.
     const usingPlannedTarget = Number(selectedItem.selfId) === Number(plannedTarget?.selfId);
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(selectedItem.selfId));
+    const template = itemBySelfId(selectedItem.selfId);
     const plannedMarket = usingPlannedTarget ? acquisitionPlan?.market : null;
     const price = Math.max(1, Number(plannedMarket?.price || template?.template?.price || 0));
     return {
@@ -82,7 +118,10 @@ function equipmentNeed(state) {
             name: selectedItem.name || selectedItem.template?.name || template?.template?.name || `Item ${selectedItem.selfId}`,
             price
         },
-        marketTown: plannedMarket?.town || null
+        marketTown: plannedMarket?.town || null,
+        reserve: Number(plannedMarket?.reserve || 0),
+        npcProgression: plannedMarket?.sourceType === 'npc'
+            || acquisitionPlan?.partyNeedReason === 'npc_progression'
     };
 }
 
@@ -118,18 +157,26 @@ function evaluate(state = {}, options = {}) {
 
     const gear = equipmentNeed(state);
     if (gear) {
-        const requiredAdena = Math.max(0, gear.desiredItem.price - Number(state.adena || 0));
+        const requiredAdena = Math.max(0, gear.desiredItem.price + gear.reserve - Number(state.adena || 0));
         const weaponUpgrade = gear.slot === 7;
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
+        const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
         candidates.push({
             type: 'upgrade_gear',
-            priority: wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58,
+            // An affordable static-shop upgrade must outrank inventory sales,
+            // otherwise the bot can keep opening sell stores while carrying
+            // enough Adena for the weapon or armour that unlocks progression.
+            // Recovery remains higher at 90, and jewellery stays below the
+            // weapon/core-armour priorities while still beating a normal sale.
+            priority: npcPurchasePriority
+                || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58),
             target: {
                 equipmentSlot: gear.slotName,
                 requiredRank: gear.desiredRank,
                 currentItemId: gear.currentItem?.selfId || null,
                 itemId: gear.desiredItem.selfId,
                 itemName: gear.desiredItem.name,
+                itemSlot: gear.slot,
                 adena: gear.desiredItem.price
             },
             plan: {
@@ -138,6 +185,7 @@ function evaluate(state = {}, options = {}) {
                     ? weaponUpgrade ? 'adena_for_weapon_upgrade' : 'adena_for_gear_upgrade'
                     : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
                 estimatedCost: gear.desiredItem.price,
+                reserve: gear.reserve,
                 requiredAdena,
                 marketTown: gear.marketTown,
                 ...(wealthInvestment ? {

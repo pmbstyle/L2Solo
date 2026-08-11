@@ -1,0 +1,152 @@
+[
+  {
+    "selfId": 5167,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blessed Spiritshot (S) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 290000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5533,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Elysian Head",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 72914
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5545,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Dark Legion's Edge Blade",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 72900
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6672,
+    "template": {
+      "kind": "Other",
+      "name": "Deluxe Chest Key - Grade 8",
+      "class1": 4,
+      "class2": 0,
+      "mass": 10,
+      "price": 2400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6689,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Basalt Battlehammer Head",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 94306
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6693,
+    "template": {
+      "kind": "Other.Material",
+      "name": "Dragon Hunter Axe Blade",
+      "class1": 4,
+      "class2": 0,
+      "mass": 60,
+      "price": 90882
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7668,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Block Shield",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7669,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Block Wind Walk",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7670,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Block Shield",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7671,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Mass Block Wind Walk",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

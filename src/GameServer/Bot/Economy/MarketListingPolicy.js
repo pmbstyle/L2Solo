@@ -1,10 +1,12 @@
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
+const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
 const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
 const SPECULATIVE_SUPPLY_LIMIT = 1;
+const MIN_LISTING_BASE_PERCENT = 60;
 
 let newbieItemSource = null;
 let newbieItemIds = new Set();
@@ -20,6 +22,11 @@ function starterItemIds() {
 
 function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
+}
+
+function listOrWarehouse(item, decision) {
+    if (listingPrice(item, decision) !== null) return decision;
+    return { action: 'warehouse', reason: 'non_competitive_floor', market: decision.market };
 }
 
 function classify(state, item, options = {}) {
@@ -45,12 +52,12 @@ function classify(state, item, options = {}) {
     if (actionableUnits > 0) {
         const availableUnits = Math.max(0, actionableUnits - market.supply.units);
         if (availableUnits <= 0) return { action: 'warehouse', reason: 'saturated', market };
-        return {
+        return listOrWarehouse(item, {
             action: 'list',
             reason: 'active_demand',
             listCount: Math.min(Number(item.count), availableUnits),
             market
-        };
+        });
     }
 
     if (market.demand.readyBots > 0) {
@@ -60,12 +67,12 @@ function classify(state, item, options = {}) {
         && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
         && market.supply.units < SPECULATIVE_SUPPLY_LIMIT;
     if (speculative) {
-        return {
+        return listOrWarehouse(item, {
             action: 'list',
             reason: 'speculative_demand',
             listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units),
             market
-        };
+        });
     }
     if (market.supply.units >= SPECULATIVE_SUPPLY_LIMIT) {
         return { action: 'warehouse', reason: 'saturated', market };
@@ -73,10 +80,20 @@ function classify(state, item, options = {}) {
     return { action: 'warehouse', reason: 'latent_demand', market };
 }
 
+function listingFloor(item) {
+    const basePrice = Math.max(0, Number(item?.basePrice || 0));
+    if (basePrice <= 0) return 1;
+    return BotEconomyPricing.scalePrice(basePrice * MIN_LISTING_BASE_PERCENT / 100);
+}
+
 function listingPrice(item, decision) {
+    const preferred = Math.max(1, Math.floor(Number(item.price || 0)));
+    const minimum = listingFloor(item);
     const competition = Number(decision?.market?.supply?.minimumPrice || Infinity);
-    if (!Number.isFinite(competition) || competition <= 0) return Number(item.price);
-    return Math.max(1, Math.min(Number(item.price), Math.floor(competition * 0.98)));
+    if (!Number.isFinite(competition) || competition <= 0) return Math.max(minimum, preferred);
+    const competitivePrice = Math.floor(competition * 0.98);
+    if (minimum > competitivePrice) return null;
+    return Math.max(minimum, Math.min(preferred, competitivePrice));
 }
 
 function evaluate(state, options = {}) {
@@ -107,11 +124,13 @@ function evaluate(state, options = {}) {
 
 module.exports = {
     MARKET_GEAR_MIN_BASE_PRICE,
+    MIN_LISTING_BASE_PERCENT,
     SPECULATIVE_GEAR_MIN_BASE_PRICE,
     SPECULATIVE_SUPPLY_LIMIT,
     classify,
     evaluate,
     isGear,
+    listingFloor,
     listingPrice,
     starterItemIds
 };

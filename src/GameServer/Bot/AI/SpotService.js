@@ -3,6 +3,10 @@ const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
+
+const anonymousStateIds = new WeakMap();
+let nextAnonymousStateId = 1;
 
 function distance2d(a, b) {
     if (!a || !b) return 0;
@@ -32,6 +36,36 @@ function levelCount(spot, level) {
 function finiteNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stableHash(value) {
+    const text = String(value ?? '');
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index++) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function identitySeedForState(state) {
+    for (const value of [state?.characterId, state?.name, state?.stats?.generatedIndex]) {
+        if (value !== null && value !== undefined && value !== '') return String(value);
+    }
+    if (!state || typeof state !== 'object') return 'anonymous:primitive';
+    if (!anonymousStateIds.has(state)) anonymousStateIds.set(state, nextAnonymousStateId++);
+    return `anonymous:${anonymousStateIds.get(state)}`;
+}
+
+function constrainToSpotGrid(spot, locX, locY) {
+    const match = /^(-?\d+)_(-?\d+)$/.exec(String(spot?.id || ''));
+    if (!match) return { locX, locY };
+    const gridX = Number(match[1]);
+    const gridY = Number(match[2]);
+    return {
+        locX: Math.max(gridX * GRID_SIZE, Math.min((gridX + 1) * GRID_SIZE - 1, locX)),
+        locY: Math.max(gridY * GRID_SIZE, Math.min((gridY + 1) * GRID_SIZE - 1, locY))
+    };
 }
 
 function huntBand(targetLevel, options = {}) {
@@ -116,7 +150,8 @@ const SpotService = {
                     levels: {},
                     names: {},
                     selfIds: {},
-                    npcs: {}
+                    npcs: {},
+                    arrivalPoints: []
                 };
             }
 
@@ -137,6 +172,11 @@ const SpotService = {
             const npcKey = selfId ? `id:${selfId}` : `name:${name}`;
             sector.npcs[npcKey] = sector.npcs[npcKey] || { selfId, name, level, count: 0 };
             sector.npcs[npcKey].count++;
+            sector.arrivalPoints.push({
+                locX: npc.fetchLocX(),
+                locY: npc.fetchLocY(),
+                locZ: npc.fetchLocZ()
+            });
         });
 
         this.spots = Object.values(sectors).map((sector) => {
@@ -168,12 +208,13 @@ const SpotService = {
                 npcEntries: Object.values(sector.npcs)
                     .sort((a, b) => b.count - a.count)
                     .map((entry) => ({ ...entry })),
+                arrivalPoints: sector.arrivalPoints.map((point) => ({ ...point })),
                 levelCounts: { ...sector.levels },
                 dominantLevels: levelEntries.slice(0, 3)
             };
 
             spot.name = spotName(spot);
-            return spot;
+            return WorldAreaCatalog.decorateSpot(spot);
         });
 
         return this.spots;
@@ -229,22 +270,31 @@ const SpotService = {
             })
             .map((candidate) => {
                 const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, {
+                    characterId: status.characterId,
+                    name: status.name,
                     level: targetLevel,
                     stats: {
-                        role: status.role,
-                        classId: status.classId
+                        ...(status.stats || {}),
+                        role: status.role ?? status.stats?.role,
+                        classId: status.classId ?? status.stats?.classId,
+                        starterRegion: status.starterRegion || status.stats?.starterRegion
                     }
                 }, {
                     mode: options.mode || 'solo',
-                    role: options.role || status.role
+                    role: options.role || status.role,
+                    occupancy: options.occupancy
                 });
                 const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
                 return {
                     ...candidate,
                     spot: decoratedSpot,
-                    score: candidate.score + routeMatch.routeScore,
+                    score: candidate.score + routeMatch.routeScore + routeMatch.variation
+                        - routeMatch.crowdPenalty - routeMatch.localityPenalty,
                     route: decoratedSpot.route || null,
-                    routeScore: routeMatch.routeScore
+                    routeScore: routeMatch.routeScore,
+                    crowdPenalty: routeMatch.crowdPenalty,
+                    localityPenalty: routeMatch.localityPenalty,
+                    variation: routeMatch.variation
                 };
             })
             .sort((a, b) => b.score - a.score);
@@ -279,6 +329,29 @@ const SpotService = {
             locX,
             locY,
             locZ: GeodataEngine.getHeight(locX, locY, spot.center.locZ)
+        };
+    },
+
+    arrivalPointForState(state, spot) {
+        if (!spot?.center) return null;
+        const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+        const points = spot.arrivalPoints?.length ? spot.arrivalPoints : [spot.center];
+        const seed = identitySeedForState(state);
+        const anchorHash = stableHash(`${seed}:anchor`);
+        const angleHash = stableHash(`${seed}:angle`);
+        const radiusHash = stableHash(`${seed}:radius`);
+        const anchor = points[anchorHash % points.length] || spot.center;
+        const angle = ((angleHash % 360) * Math.PI) / 180;
+        const radius = 96 + (radiusHash % 161);
+        const point = constrainToSpotGrid(
+            spot,
+            Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius),
+            Math.round(Number(anchor.locY || 0) + Math.sin(angle) * radius)
+        );
+        return {
+            locX: point.locX,
+            locY: point.locY,
+            locZ: GeodataEngine.getHeight(point.locX, point.locY, Number(anchor.locZ || spot.center.locZ || 0))
         };
     },
 

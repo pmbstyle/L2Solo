@@ -1,20 +1,13 @@
-const ClassProgression = invoke('GameServer/ClassProgression');
+const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 
-const CASTER_ROLES = new Set(['mage', 'healer']);
-const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
-const ORC_BLUNT_CLASSES = new Set([44, 45, 46, 47, 49, 50, 51, 52, 53, 54, 55, 56, 57]);
 const CASTER_WEAPON_NAME = /\b(staff|wand|rod|spellbook|voodoo|scroll)\b/i;
 
-function baseClassId(classId) {
-    const value = Number(classId);
-    if (!Number.isInteger(value) || value < 0) return null;
-    return Number(ClassProgression.getThirdClass(value)?.parentClassId || value);
+function isCasterRole(role, classId) {
+    return BotEquipmentCompatibility.isCasterRole(role, classId);
 }
 
-function isCasterRole(role, classId) {
-    return CASTER_ROLES.has(role) || (
-        role === 'buffer' && CASTER_BUFFER_CLASSES.has(baseClassId(classId))
-    );
+function isFistClass(classId) {
+    return [47, 48].includes(BotEquipmentCompatibility.baseClassId(classId));
 }
 
 function isCasterWeapon(kind, name = '', pAtk = 0, mAtk = 0) {
@@ -44,11 +37,7 @@ function scoreWeapon(pAtk, mAtk, role, classId) {
 }
 
 function weaponKindsFor(role, classId) {
-    if (role === 'archer') return ['Weapon.Bow'];
-    if (role === 'dagger') return ['Weapon.Knife'];
-    if (isCasterRole(role, classId)) return ['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'];
-    if (ORC_BLUNT_CLASSES.has(baseClassId(classId))) return ['Weapon.Blunt'];
-    return ['Weapon.Sword', 'Weapon.Blunt'];
+    return BotEquipmentCompatibility.weaponKindsFor(role, classId);
 }
 
 function isCompatibleWeapon(kind, role, classId) {
@@ -57,13 +46,14 @@ function isCompatibleWeapon(kind, role, classId) {
 
 function isSuitableWeapon(kind, name, pAtk, mAtk, role, classId) {
     if (!isCompatibleWeapon(kind, role, classId)) return false;
-    if (role !== 'buffer' || isCasterRole(role, classId)) return true;
+    if (isCasterRole(role, classId)) return true;
     return !isCasterWeapon(kind, name, pAtk, mAtk);
 }
 
 module.exports = {
     isCasterRole,
     isCasterWeapon,
+    isFistClass,
     isCompatibleWeapon,
     isSuitableWeapon,
     scoreWeapon,

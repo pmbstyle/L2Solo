@@ -2331,6 +2331,8 @@ try {
     assert.strictEqual(cancelledPullCast, 1, 'turning pull off should cancel an in-flight pull cast');
     assert.strictEqual(clearedPullTimers, 1, 'turning pull off should cancel scheduled pull attacks');
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    partyHudBotASession.incomingThreatId = activeAdd.fetchId();
+    partyHudBotASession.incomingThreatAt = Date.now();
     assert.strictEqual(PartyCompanionService.detach(partyHudLeaderSession, partyHudBotASession), true, 'dismiss should detach a companion');
     assert.strictEqual(clearedPullTimers, 2, 'dismissing the selected puller should also cancel its scheduled pull action');
     assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).pullMode, 'auto', 'dismissing the selected puller should clear party pull instead of silently assigning another bot');
@@ -2340,6 +2342,8 @@ try {
     assert.strictEqual(oneMemberPacket.readInt32LE(9), 1, 'party window should keep the remaining companion');
     assert.strictEqual(partyHudBotASession.partyCompanion, false, 'dismissed companion should clear party flag');
     assert.strictEqual(partyHudBotASession.followPlayerSession, null, 'dismissed companion should clear leader link');
+    assert.strictEqual(partyHudBotASession.incomingThreatId, undefined, 'dismissed companion should discard the old party threat target');
+    assert.strictEqual(partyHudBotASession.incomingThreatAt, undefined, 'dismissed companion should discard the old party threat timestamp');
     assert.strictEqual(partyHudBotBSession.partyCompanion, true, 'remaining companion should stay in party');
 
     const packetsBeforeDisconnectCleanup = partyHudLeaderSession.packets.length;

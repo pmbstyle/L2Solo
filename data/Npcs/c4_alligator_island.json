@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 135,
+    "template": {
+      "kind": "Monster",
+      "name": "Alligator",
+      "title": "",
+      "level": 40,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 30,
+      "pDef": 183,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 7.11,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 11.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan2",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.483125,
+      "sp": 153
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 791,
+    "template": {
+      "kind": "Monster",
+      "name": "Crokian Warrior",
+      "title": "",
+      "level": 38,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 261,
+      "pAtkRnd": 30,
+      "pDef": 171,
+      "mAtk": 112,
+      "mDef": 153,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1400,
+      "maxMp": 497,
+      "revHp": 14.22,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 5128,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.531163434903,
+      "sp": 138
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 792,
+    "template": {
+      "kind": "Monster",
+      "name": "Farhite",
+      "title": "",
+      "level": 39,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 280,
+      "pAtkRnd": 30,
+      "pDef": 150,
+      "mAtk": 121,
+      "mDef": 158,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1462,
+      "maxMp": 514,
+      "revHp": 14.22,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 5131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "croc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.352399737015,
+      "sp": 131
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  }
+]

@@ -60,6 +60,49 @@ const fighterSwordDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: 
 assert(!healerSwordDemand.reasons.includes('caster weapon'), 'a healer must not claim an ordinary physical sword as caster gear');
 assert(fighterSwordDemand.score > healerSwordDemand.score, 'a physical sword must retain higher demand for a melee damage dealer');
 
+const meleeStaffDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: () => 47 } }, {
+    selfId: 178,
+    name: 'Bone Staff',
+    kind: 'Weapon.Blunt',
+    weapon: true,
+    armor: false,
+    shot: false,
+    potion: false,
+    scroll: false,
+    pAtk: 39,
+    mAtk: 35,
+    price: 409000
+});
+assert(!meleeStaffDemand.reasons.includes('damage weapon'),
+    'an Orc Monk must not request a Bone Staff as a melee damage upgrade');
+assert(meleeStaffDemand.reasons.includes('valuable drop'),
+    'the negative weapon assertion must remain bound to a non-empty demand result');
+
+const monkFistDemand = BotLootEtiquette.itemDemand({ actor: { fetchClassId: () => 47 } }, {
+    selfId: 262,
+    name: 'Scallop Jamadhr',
+    kind: 'Weapon.DualFist',
+    weapon: true,
+    armor: false,
+    shot: false,
+    potion: false,
+    scroll: false,
+    pAtk: 112,
+    mAtk: 54,
+    price: 1800000
+});
+assert(monkFistDemand.reasons.includes('fist weapon'),
+    'an Orc Monk must recognize Scallop Jamadhr as a class weapon');
+
+const worseSwordDemand = BotLootEtiquette.itemDemand({
+    actor: {
+        fetchClassId: () => 0,
+        backpack: { fetchEquippedWeapon: () => ({ fetchPAtk: () => 250, fetchMAtk: () => 100 }) }
+    }
+}, physicalSword);
+assert(!worseSwordDemand.reasons.includes('damage weapon'),
+    'a fighter must not claim a strictly worse sword as an equipment upgrade');
+
 assert.strictEqual(
     BotLootEtiquette.shouldRecordIgnoredRequest({ playerSession, botSession: liveBotSession }),
     true,

@@ -10,6 +10,15 @@ const c4ValleySkills = require('../../../data/Npcs/Skills/c4_valley_of_saints_te
 const c4ForestSkills = require('../../../data/Npcs/Skills/c4_forest_of_the_dead_templates.json');
 const c4DevilsIsleSkills = require('../../../data/Npcs/Skills/c4_devils_isle_templates.json');
 const c4NecropolisSacrificeSkills = require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice_templates.json');
+const c4DevastatedCastleSkills = require('../../../data/Npcs/Skills/c4_devastated_castle_templates.json');
+const c4KetraOrcOutpostSkills = require('../../../data/Npcs/Skills/c4_ketra_orc_outpost_templates.json');
+const c4VarkaSilenosStrongholdSkills = require('../../../data/Npcs/Skills/c4_varka_silenos_stronghold_templates.json');
+const c4HotSpringsSkills = require('../../../data/Npcs/Skills/c4_hot_springs_templates.json');
+const c4WallOfArgosSkills = require('../../../data/Npcs/Skills/c4_wall_of_argos_templates.json');
+const c4ForgeOfTheGodsSkills = require('../../../data/Npcs/Skills/c4_forge_of_the_gods_templates.json');
+const c4FieldsSkills = require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers_templates.json');
+const c4HeathenCampSkills = require('../../../data/Npcs/Skills/c4_heathen_camp_templates.json');
+const c4ImperialTombSkills = require('../../../data/Npcs/Skills/c4_imperial_tomb_templates.json');
 const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/skills.json'),
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -18,6 +27,18 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_forest_of_the_dead.json'),
     ...require('../../../data/Npcs/Skills/c4_devils_isle.json'),
     ...require('../../../data/Npcs/Skills/c4_elmore_northeast_coast.json'),
+    ...require('../../../data/Npcs/Skills/c4_devastated_castle.json'),
+    ...require('../../../data/Npcs/Skills/c4_ketra_orc_outpost.json'),
+    ...require('../../../data/Npcs/Skills/c4_varka_silenos_stronghold.json'),
+    ...require('../../../data/Npcs/Skills/c4_hot_springs.json'),
+    ...require('../../../data/Npcs/Skills/c4_wall_of_argos.json'),
+    ...require('../../../data/Npcs/Skills/c4_shrine_of_loyalty.json'),
+    ...require('../../../data/Npcs/Skills/c4_forge_of_the_gods.json'),
+    ...require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers.json'),
+    ...require('../../../data/Npcs/Skills/c4_alligator_island.json'),
+    ...require('../../../data/Npcs/Skills/c4_heathen_camp.json'),
+    ...require('../../../data/Npcs/Skills/c4_imperial_tomb.json'),
+    ...require('../../../data/Npcs/Skills/c4_tower_of_insolence.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),
@@ -56,7 +77,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 
