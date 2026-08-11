@@ -1,0 +1,10790 @@
+[
+  {
+    "selfId": 10001,
+    "template": {
+      "kind": "Boss",
+      "name": "Greyclaw Kutus",
+      "title": "Raid Boss",
+      "level": 23,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 61,
+      "pAtkRnd": 10,
+      "pDef": 857,
+      "mAtk": 6,
+      "mDef": 348,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 23712,
+      "maxMp": 545,
+      "revHp": 117.62,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 67,
+      "shield": 633,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1351.306238185255,
+      "sp": 67170
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10004,
+    "template": {
+      "kind": "Boss",
+      "name": "Turek Mercenary Captain",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 226,
+      "pAtkRnd": 10,
+      "pDef": 1127,
+      "mAtk": 70,
+      "mDef": 458,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 66433,
+      "maxMp": 763,
+      "revHp": 310.14,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 124,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1582.4,
+      "sp": 129276
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10007,
+    "template": {
+      "kind": "Boss",
+      "name": "Retreat Spider Cletu",
+      "title": "Raid Boss",
+      "level": 42,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 746,
+      "pAtkRnd": 30,
+      "pDef": 1728,
+      "mAtk": 324,
+      "mDef": 701,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 100965,
+      "maxMp": 1062,
+      "revHp": 428.19,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 27,
+      "size": 25.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1303.826530612245,
+      "sp": 251972
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10010,
+    "template": {
+      "kind": "Boss",
+      "name": "Furious Thieles",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2471,
+      "pAtkRnd": 30,
+      "pDef": 2576,
+      "mAtk": 1817,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 81
+    },
+    "vitals": {
+      "maxHp": 153521,
+      "maxMp": 2039,
+      "revHp": 592.29,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 23,
+      "size": 90
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 988.018181818182,
+      "sp": 448385
+    },
+    "traits": {
+      "race": "spirit",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10013,
+    "template": {
+      "kind": "Boss",
+      "name": "Ghost of Peasant Leader",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1510,
+      "pAtkRnd": 10,
+      "pDef": 2226,
+      "mAtk": 862,
+      "mDef": 904,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 132487,
+      "maxMp": 1722,
+      "revHp": 529.53,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 145,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 997.6888,
+      "sp": 346727
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10016,
+    "template": {
+      "kind": "Boss",
+      "name": "The 3rd Underwater Guardian",
+      "title": "Raid Boss",
+      "level": 60,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 3860,
+      "pAtkRnd": 30,
+      "pDef": 2951,
+      "mAtk": 3932,
+      "mDef": 1198,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 243
+    },
+    "vitals": {
+      "maxHp": 188376,
+      "maxMp": 2368,
+      "revHp": 702.39,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 40,
+      "size": 73
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 929.47,
+      "sp": 522780
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10020,
+    "template": {
+      "kind": "Boss",
+      "name": "Breka Warlock Pastu",
+      "title": "Raid Boss",
+      "level": 34,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 280,
+      "pAtkRnd": 20,
+      "pDef": 1308,
+      "mAtk": 55,
+      "mDef": 531,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 39603,
+      "maxMp": 893,
+      "revHp": 178.88,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 8,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1015.72491349481,
+      "sp": 135023
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10023,
+    "template": {
+      "kind": "Boss",
+      "name": "Stakato Queen Zyrnna",
+      "title": "Raid Boss",
+      "level": 34,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 340,
+      "pAtkRnd": 10,
+      "pDef": 1308,
+      "mAtk": 110,
+      "mDef": 531,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 73549,
+      "maxMp": 1415,
+      "revHp": 332.2,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 76
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1516.829584775086,
+      "sp": 156895
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10026,
+    "template": {
+      "kind": "Boss",
+      "name": "Katu Van Leader Atui",
+      "title": "Raid Boss",
+      "level": 49,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1147,
+      "pAtkRnd": 10,
+      "pDef": 2160,
+      "mAtk": 383,
+      "mDef": 877,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 53,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 69124,
+      "maxMp": 1660,
+      "revHp": 278.27,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 24
+    },
+    "equipment": {
+      "weapon": 84,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 689.349854227405,
+      "sp": 248433
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10029,
+    "template": {
+      "kind": "Boss",
+      "name": "Atraiban",
+      "title": "Raid Boss",
+      "level": 53,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2344,
+      "pAtkRnd": 30,
+      "pDef": 2433,
+      "mAtk": 1974,
+      "mDef": 988,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 156190,
+      "maxMp": 1911,
+      "revHp": 611.07,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 96
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1119.789960840157,
+      "sp": 461913
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10032,
+    "template": {
+      "kind": "Boss",
+      "name": "Eva's Guardian Millenu",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 5880,
+      "pAtkRnd": 10,
+      "pDef": 3349,
+      "mAtk": 7541,
+      "mDef": 1360,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 229722,
+      "maxMp": 2707,
+      "revHp": 828.24,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 431,
+      "sp": 806823
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10035,
+    "template": {
+      "kind": "Boss",
+      "name": "Shilen's Messenger Cabrio",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6981,
+      "pAtkRnd": 20,
+      "pDef": 3764,
+      "mAtk": 8986,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 241630,
+      "maxMp": 3058,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 189,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 391,
+      "sp": 918808
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10038,
+    "template": {
+      "kind": "Boss",
+      "name": "Tirak",
+      "title": "Raid Boss",
+      "level": 28,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 96,
+      "pAtkRnd": 30,
+      "pDef": 1044,
+      "mAtk": 10,
+      "mDef": 424,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 30283,
+      "maxMp": 699,
+      "revHp": 143.8,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 75
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 957.047193877551,
+      "sp": 74683
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10041,
+    "template": {
+      "kind": "Boss",
+      "name": "Remmel",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 200,
+      "pAtkRnd": 5,
+      "pDef": 1356,
+      "mAtk": 28,
+      "mDef": 550,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 41308,
+      "maxMp": 927,
+      "revHp": 185.07,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 76
+    },
+    "equipment": {
+      "weapon": 221,
+      "shield": 109,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 831.515918367347,
+      "sp": 103175
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10044,
+    "template": {
+      "kind": "Boss",
+      "name": "Barion",
+      "title": "Raid Boss",
+      "level": 47,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 956,
+      "pAtkRnd": 10,
+      "pDef": 2030,
+      "mAtk": 296,
+      "mDef": 824,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 64765,
+      "maxMp": 1296,
+      "revHp": 264.56,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 70,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 735.237211407877,
+      "sp": 238098
+    },
+    "traits": {
+      "race": "undead",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10047,
+    "template": {
+      "kind": "Boss",
+      "name": "Karte",
+      "title": "Raid Boss",
+      "level": 49,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 769,
+      "pAtkRnd": 10,
+      "pDef": 2160,
+      "mAtk": 184,
+      "mDef": 877,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 69124,
+      "maxMp": 1660,
+      "revHp": 278.27,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 47.5
+    },
+    "equipment": {
+      "weapon": 131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 588.239900041649,
+      "sp": 185123
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10050,
+    "template": {
+      "kind": "Boss",
+      "name": "Verfa",
+      "title": "Raid Boss",
+      "level": 51,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1700,
+      "pAtkRnd": 10,
+      "pDef": 2294,
+      "mAtk": 879,
+      "mDef": 931,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 126124,
+      "maxMp": 2039,
+      "revHp": 250.26,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 141
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 531.0123029604,
+      "sp": 185853
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10051,
+    "template": {
+      "kind": "Boss",
+      "name": "Rahha",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 4656,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 4297,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 186648,
+      "maxMp": 2707,
+      "revHp": 673.33,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 85
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 869.704378698225,
+      "sp": 679343
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10054,
+    "template": {
+      "kind": "Boss",
+      "name": "Kernon",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8986,
+      "pAtkRnd": 30,
+      "pDef": 4188,
+      "mAtk": 12912,
+      "mDef": 1701,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 59,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 250509,
+      "maxMp": 3420,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 1054472
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10057,
+    "template": {
+      "kind": "Boss",
+      "name": "Biconne of Blue Sky",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 538,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 112,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 60514,
+      "maxMp": 2235,
+      "revHp": 250.9,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 670.811851851852,
+      "sp": 171282
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10060,
+    "template": {
+      "kind": "Boss",
+      "name": "Unrequited Kael",
+      "title": "Raid Boss",
+      "level": 24,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 57,
+      "pAtkRnd": 30,
+      "pDef": 892,
+      "mAtk": 5,
+      "mDef": 362,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 21374,
+      "maxMp": 575,
+      "revHp": 105.08,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 75
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1053.675347222222,
+      "sp": 51383
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10063,
+    "template": {
+      "kind": "Boss",
+      "name": "Chertuba of Great Soul",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 401,
+      "pAtkRnd": 10,
+      "pDef": 1356,
+      "mAtk": 113,
+      "mDef": 550,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82617,
+      "maxMp": 927,
+      "revHp": 185.07,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 831.515918367347,
+      "sp": 103175
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10064,
+    "template": {
+      "kind": "Boss",
+      "name": "Wizard of Storm Teruk",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 287,
+      "pAtkRnd": 20,
+      "pDef": 1615,
+      "mAtk": 42,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 69,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 50445,
+      "maxMp": 1120,
+      "revHp": 217.25,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 90,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 682.28375,
+      "sp": 139773
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10067,
+    "template": {
+      "kind": "Boss",
+      "name": "Captain of Red Flag Shaka",
+      "title": "Raid Boss",
+      "level": 52,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1951,
+      "pAtkRnd": 10,
+      "pDef": 2363,
+      "mAtk": 1304,
+      "mDef": 959,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 140823,
+      "maxMp": 1598,
+      "revHp": 554.85,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 60
+    },
+    "equipment": {
+      "weapon": 71,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1075.882396449704,
+      "sp": 424683
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10070,
+    "template": {
+      "kind": "Boss",
+      "name": "Enchanted Forest Watcher Ruell",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1364,
+      "pAtkRnd": 30,
+      "pDef": 2576,
+      "mAtk": 435,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 19,
+      "run": 81
+    },
+    "vitals": {
+      "maxHp": 82665,
+      "maxMp": 2039,
+      "revHp": 318.92,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 23,
+      "size": 90
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 564.575867768595,
+      "sp": 285150
+    },
+    "traits": {
+      "race": "spirit",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10073,
+    "template": {
+      "kind": "Boss",
+      "name": "Bloody Priest Rudelto",
+      "title": "Raid Boss",
+      "level": 69,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6751,
+      "pAtkRnd": 30,
+      "pDef": 3680,
+      "mAtk": 8676,
+      "mDef": 1494,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 59,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 239476,
+      "maxMp": 2987,
+      "revHp": 842.52,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 50,
+      "size": 180
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 895518
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10076,
+    "template": {
+      "kind": "Boss",
+      "name": "Princess Molrang",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 73,
+      "pAtkRnd": 30,
+      "pDef": 928,
+      "mAtk": 7,
+      "mDef": 377,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 26207,
+      "maxMp": 606,
+      "revHp": 127.71,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 40,
+      "size": 20
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1168.752,
+      "sp": 69595
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10079,
+    "template": {
+      "kind": "Boss",
+      "name": "Cat's Eye Bandit",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 206,
+      "pAtkRnd": 5,
+      "pDef": 1127,
+      "mAtk": 53,
+      "mDef": 458,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 61688,
+      "maxMp": 763,
+      "revHp": 288,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 216,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1476.908888888889,
+      "sp": 122342
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10082,
+    "template": {
+      "kind": "Boss",
+      "name": "Leader of Cat Gang",
+      "title": "Raid Boss",
+      "level": 39,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 268,
+      "pAtkRnd": 30,
+      "pDef": 1561,
+      "mAtk": 39,
+      "mDef": 634,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 48537,
+      "maxMp": 1062,
+      "revHp": 210.68,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 708.911900065746,
+      "sp": 134578
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10085,
+    "template": {
+      "kind": "Boss",
+      "name": "Timak Orc Chief Ranger",
+      "title": "Raid Boss",
+      "level": 44,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 893,
+      "pAtkRnd": 20,
+      "pDef": 1845,
+      "mAtk": 414,
+      "mDef": 749,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 108514,
+      "maxMp": 1355,
+      "revHp": 453.27,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 157,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1214.965392561983,
+      "sp": 262175
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10088,
+    "template": {
+      "kind": "Boss",
+      "name": "Crazy Mechanic Golem",
+      "title": "Raid Boss",
+      "level": 43,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1794,
+      "pAtkRnd": 30,
+      "pDef": 1785,
+      "mAtk": 1948,
+      "mDef": 725,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 48,
+      "run": 243
+    },
+    "vitals": {
+      "maxHp": 225544,
+      "maxMp": 2039,
+      "revHp": 474.62,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1348.099513250406,
+      "sp": 273103
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10089,
+    "template": {
+      "kind": "Boss",
+      "name": "Soulless Wild Boar",
+      "title": "Raid Boss",
+      "level": 59,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2664,
+      "pAtkRnd": 30,
+      "pDef": 2875,
+      "mAtk": 1302,
+      "mDef": 1167,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 56,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 91885,
+      "maxMp": 2301,
+      "revHp": 344.91,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 595.512496409078,
+      "sp": 415763
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10092,
+    "template": {
+      "kind": "Boss",
+      "name": "Korim",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 5659,
+      "pAtkRnd": 20,
+      "pDef": 3764,
+      "mAtk": 5371,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 46,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 196324,
+      "maxMp": 3058,
+      "revHp": 685.96,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19.5,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 201,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 787.720408163265,
+      "sp": 738431
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10095,
+    "template": {
+      "kind": "Boss",
+      "name": "Elf Renoa",
+      "title": "Raid Boss",
+      "level": 29,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 104,
+      "pAtkRnd": 30,
+      "pDef": 1085,
+      "mAtk": 11,
+      "mDef": 440,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 31723,
+      "maxMp": 731,
+      "revHp": 149.37,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 898.523186682521,
+      "sp": 76955
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10098,
+    "template": {
+      "kind": "Boss",
+      "name": "Sejarr's Servitor",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 401,
+      "pAtkRnd": 30,
+      "pDef": 1356,
+      "mAtk": 113,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82617,
+      "maxMp": 927,
+      "revHp": 185.07,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 43
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 831.515918367347,
+      "sp": 103175
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10099,
+    "template": {
+      "kind": "Boss",
+      "name": "Rotten Tree Repiro",
+      "title": "Raid Boss",
+      "level": 44,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 493,
+      "pAtkRnd": 30,
+      "pDef": 1845,
+      "mAtk": 99,
+      "mDef": 749,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 89,
+      "run": 89
+    },
+    "vitals": {
+      "maxHp": 58430,
+      "maxMp": 1355,
+      "revHp": 244.07,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 80
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 694.271694214876,
+      "sp": 167614
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10102,
+    "template": {
+      "kind": "Boss",
+      "name": "Shacram",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1603,
+      "pAtkRnd": 10,
+      "pDef": 1905,
+      "mAtk": 927,
+      "mDef": 774,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 121028,
+      "maxMp": 1722,
+      "revHp": 250.9,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42,
+      "size": 94
+    },
+    "equipment": {
+      "weapon": 300,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 786.112098765432,
+      "sp": 230991
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10103,
+    "template": {
+      "kind": "Boss",
+      "name": "Sorcerer Isirr",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1364,
+      "pAtkRnd": 20,
+      "pDef": 2576,
+      "mAtk": 435,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 85,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82665,
+      "maxMp": 2039,
+      "revHp": 318.92,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 195,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 564.575867768595,
+      "sp": 285150
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10106,
+    "template": {
+      "kind": "Boss",
+      "name": "Ghost of the Well Lidia",
+      "title": "Raid Boss",
+      "level": 63,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 3581,
+      "pAtkRnd": 30,
+      "pDef": 3188,
+      "mAtk": 2006,
+      "mDef": 1294,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 98098,
+      "maxMp": 2570,
+      "revHp": 358.55,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 85
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 608.424792139078,
+      "sp": 561233
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10109,
+    "template": {
+      "kind": "Boss",
+      "name": "Antharas Priest Cloe",
+      "title": "Raid Boss",
+      "level": 74,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8715,
+      "pAtkRnd": 30,
+      "pDef": 4103,
+      "mAtk": 12471,
+      "mDef": 1666,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 248996,
+      "maxMp": 3347,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 75
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 404,
+      "sp": 1028870
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10112,
+    "template": {
+      "kind": "Boss",
+      "name": "Agent of Beres, Meana",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 169,
+      "pAtkRnd": 30,
+      "pDef": 1127,
+      "mAtk": 26,
+      "mDef": 458,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 33216,
+      "maxMp": 763,
+      "revHp": 155.08,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 53
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 989,
+      "sp": 105037
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10115,
+    "template": {
+      "kind": "Boss",
+      "name": "Icarus Sample 1",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 520,
+      "pAtkRnd": 30,
+      "pDef": 1615,
+      "mAtk": 177,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 145,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 93684,
+      "maxMp": 1120,
+      "revHp": 403.46,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 33,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1194.0075,
+      "sp": 217891
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10118,
+    "template": {
+      "kind": "Boss",
+      "name": "Warden of the Execution Ground, Guilotine",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 601,
+      "pAtkRnd": 10,
+      "pDef": 1356,
+      "mAtk": 236,
+      "mDef": 550,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82617,
+      "maxMp": 1415,
+      "revHp": 185.07,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 58
+    },
+    "equipment": {
+      "weapon": 96,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 974.436734693877,
+      "sp": 138419
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10119,
+    "template": {
+      "kind": "Boss",
+      "name": "Messenger of Fairy Queen Berun",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1918,
+      "pAtkRnd": 20,
+      "pDef": 2226,
+      "mAtk": 1530,
+      "mDef": 904,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 163059,
+      "maxMp": 1722,
+      "revHp": 652.12,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42,
+      "size": 73
+    },
+    "equipment": {
+      "weapon": 213,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 495,
+      "sp": 455390
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10122,
+    "template": {
+      "kind": "Boss",
+      "name": "Refugee Hopeful Leo",
+      "title": "Raid Boss",
+      "level": 56,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1459,
+      "pAtkRnd": 20,
+      "pDef": 2649,
+      "mAtk": 476,
+      "mDef": 1075,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 84968,
+      "maxMp": 2235,
+      "revHp": 325.56,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22.5,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 201,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 549.419961734694,
+      "sp": 291015
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10125,
+    "template": {
+      "kind": "Boss",
+      "name": "Fierce Tiger King Angel",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 11761,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 30166,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 459444,
+      "maxMp": 2707,
+      "revHp": 828.24,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 72,
+      "size": 87
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 431,
+      "sp": 806823
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10126,
+    "template": {
+      "kind": "Boss",
+      "name": "Longhorn Golkonda",
+      "title": "Raid Boss",
+      "level": 79,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 20224,
+      "pAtkRnd": 20,
+      "pDef": 4530,
+      "mAtk": 59372,
+      "mDef": 1839,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 510317,
+      "maxMp": 3718,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42,
+      "size": 94
+    },
+    "equipment": {
+      "weapon": 91,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 376,
+      "sp": 1166150
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10128,
+    "template": {
+      "kind": "Boss",
+      "name": "Vuku Grand Seer Gharmash",
+      "title": "Raid Boss",
+      "level": 33,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 174,
+      "pAtkRnd": 20,
+      "pDef": 1261,
+      "mAtk": 24,
+      "mDef": 512,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 37942,
+      "maxMp": 860,
+      "revHp": 172.79,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 195,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 904.091827364555,
+      "sp": 97626
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10131,
+    "template": {
+      "kind": "Boss",
+      "name": "Carnage Lord Gato",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1243,
+      "pAtkRnd": 10,
+      "pDef": 2226,
+      "mAtk": 429,
+      "mDef": 904,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 71339,
+      "maxMp": 1415,
+      "revHp": 285.12,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 57
+    },
+    "equipment": {
+      "weapon": 71,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 668.1,
+      "sp": 297042
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10134,
+    "template": {
+      "kind": "Boss",
+      "name": "Leto Chief Talkin",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 427,
+      "pAtkRnd": 5,
+      "pDef": 1615,
+      "mAtk": 87,
+      "mDef": 656,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 85,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 50445,
+      "maxMp": 1722,
+      "revHp": 217.25,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 221,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 799.55,
+      "sp": 187517
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10137,
+    "template": {
+      "kind": "Boss",
+      "name": "Beleth's Seer Sephia",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2034,
+      "pAtkRnd": 30,
+      "pDef": 2576,
+      "mAtk": 903,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82665,
+      "maxMp": 2039,
+      "revHp": 318.92,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 85
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 661.612231404959,
+      "sp": 387789
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10140,
+    "template": {
+      "kind": "Boss",
+      "name": "Hekaton Prime",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 4656,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 4297,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 186648,
+      "maxMp": 2707,
+      "revHp": 673.33,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 869.704378698225,
+      "sp": 679343
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10143,
+    "template": {
+      "kind": "Boss",
+      "name": "Fire of Wrath Shuriel",
+      "title": "Raid Boss",
+      "level": 78,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 10051,
+      "pAtkRnd": 10,
+      "pDef": 4503,
+      "mAtk": 14666,
+      "mDef": 1828,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 48,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 255158,
+      "maxMp": 3718,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 36.5
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 376,
+      "sp": 1166150
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10146,
+    "template": {
+      "kind": "Boss",
+      "name": "Serpent Demon Bifrons",
+      "title": "Raid Boss",
+      "level": 21,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 42,
+      "pAtkRnd": 10,
+      "pDef": 789,
+      "mAtk": 3,
+      "mDef": 320,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 18330,
+      "maxMp": 485,
+      "revHp": 92.58,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 72
+    },
+    "equipment": {
+      "weapon": 73,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1311.678004535147,
+      "sp": 45688
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10149,
+    "template": {
+      "kind": "Boss",
+      "name": "Zombie Lord Crowl",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 110,
+      "pAtkRnd": 30,
+      "pDef": 928,
+      "mAtk": 15,
+      "mDef": 377,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 24
+    },
+    "vitals": {
+      "maxHp": 26207,
+      "maxMp": 606,
+      "revHp": 127.71,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 26,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1369.6368,
+      "sp": 92883
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10152,
+    "template": {
+      "kind": "Boss",
+      "name": "Flame Lord Shadar",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 30,
+      "pDef": 1356,
+      "mAtk": 59,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 41308,
+      "maxMp": 927,
+      "revHp": 185.07,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 75
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 974.436734693877,
+      "sp": 138419
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10155,
+    "template": {
+      "kind": "Boss",
+      "name": "Shaman King Selu",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 570,
+      "pAtkRnd": 10,
+      "pDef": 1615,
+      "mAtk": 234,
+      "mDef": 656,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 100890,
+      "maxMp": 1120,
+      "revHp": 434.49,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 52
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1279.29,
+      "sp": 230791
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10158,
+    "template": {
+      "kind": "Boss",
+      "name": "King Tarlk",
+      "title": "Raid Boss",
+      "level": 48,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2574,
+      "pAtkRnd": 20,
+      "pDef": 2094,
+      "mAtk": 2776,
+      "mDef": 850,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 89,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 248599,
+      "maxMp": 1722,
+      "revHp": 504.06,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 126
+    },
+    "equipment": {
+      "weapon": 160,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1062.799479166667,
+      "sp": 283783
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10159,
+    "template": {
+      "kind": "Boss",
+      "name": "Unicorn Paniel",
+      "title": "Raid Boss",
+      "level": 54,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1898,
+      "pAtkRnd": 30,
+      "pDef": 2504,
+      "mAtk": 823,
+      "mDef": 1017,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 74,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 80375,
+      "maxMp": 1975,
+      "revHp": 312.26,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 680.262345679012,
+      "sp": 381736
+    },
+    "traits": {
+      "race": "spirit",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10162,
+    "template": {
+      "kind": "Boss",
+      "name": "Giant Marpanak",
+      "title": "Raid Boss",
+      "level": 60,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7025,
+      "pAtkRnd": 10,
+      "pDef": 2951,
+      "mAtk": 11841,
+      "mDef": 1198,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 349842,
+      "maxMp": 2368,
+      "revHp": 652.22,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42,
+      "size": 91
+    },
+    "equipment": {
+      "weapon": 3937,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 867.51,
+      "sp": 491139
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10163,
+    "template": {
+      "kind": "Boss",
+      "name": "Roaring Skylancer",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6981,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 8986,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 241630,
+      "maxMp": 3058,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 100
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 391,
+      "sp": 918808
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10166,
+    "template": {
+      "kind": "Boss",
+      "name": "Ikuntai",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 133,
+      "pAtkRnd": 10,
+      "pDef": 928,
+      "mAtk": 31,
+      "mDef": 377,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 48671,
+      "maxMp": 606,
+      "revHp": 237.19,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 2045.3152,
+      "sp": 108133
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10169,
+    "template": {
+      "kind": "Boss",
+      "name": "Ragraman",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 412,
+      "pAtkRnd": 10,
+      "pDef": 1127,
+      "mAtk": 212,
+      "mDef": 458,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 123377,
+      "maxMp": 763,
+      "revHp": 288,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 52
+    },
+    "equipment": {
+      "weapon": 72,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1476.908888888889,
+      "sp": 122342
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10170,
+    "template": {
+      "kind": "Boss",
+      "name": "Lizardmen Leader Hellion",
+      "title": "Raid Boss",
+      "level": 38,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 251,
+      "pAtkRnd": 5,
+      "pDef": 1508,
+      "mAtk": 36,
+      "mDef": 612,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 85,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 46672,
+      "maxMp": 1028,
+      "revHp": 204.16,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 223,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 737.039473684211,
+      "sp": 131051
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10173,
+    "template": {
+      "kind": "Boss",
+      "name": "Tiger King Karuta",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 801,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 231,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 60514,
+      "maxMp": 1415,
+      "revHp": 250.9,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 72,
+      "size": 87
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 786.112098765432,
+      "sp": 230991
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10176,
+    "template": {
+      "kind": "Boss",
+      "name": "Witch Wimere",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1364,
+      "pAtkRnd": 30,
+      "pDef": 2576,
+      "mAtk": 435,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 82665,
+      "maxMp": 2039,
+      "revHp": 318.92,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 85
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 564.575867768595,
+      "sp": 285150
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10179,
+    "template": {
+      "kind": "Boss",
+      "name": "Hatos",
+      "title": "Raid Boss",
+      "level": 60,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2895,
+      "pAtkRnd": 10,
+      "pDef": 2951,
+      "mAtk": 1474,
+      "mDef": 1198,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 94188,
+      "maxMp": 2368,
+      "revHp": 351.19,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 31.5,
+      "size": 69
+    },
+    "equipment": {
+      "weapon": 3937,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 580.925,
+      "sp": 424759
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10182,
+    "template": {
+      "kind": "Boss",
+      "name": "Demon Kurikups",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 3838,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 2140,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 59,
+      "run": 324
+    },
+    "vitals": {
+      "maxHp": 100502,
+      "maxMp": 2707,
+      "revHp": 362.57,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 50,
+      "size": 180
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 582.4,
+      "sp": 581209
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10185,
+    "template": {
+      "kind": "Boss",
+      "name": "Tasaba Patriarch Hellena",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 5,
+      "pDef": 1356,
+      "mAtk": 59,
+      "mDef": 550,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 85,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 41308,
+      "maxMp": 927,
+      "revHp": 185.07,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 225,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 974.436734693877,
+      "sp": 138419
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10188,
+    "template": {
+      "kind": "Boss",
+      "name": "Apepi",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 227,
+      "pAtkRnd": 30,
+      "pDef": 1127,
+      "mAtk": 50,
+      "mDef": 458,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 66433,
+      "maxMp": 763,
+      "revHp": 155.08,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 843.947777777778,
+      "sp": 78807
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10189,
+    "template": {
+      "kind": "Boss",
+      "name": "Cronos's Servitor Mumu",
+      "title": "Raid Boss",
+      "level": 34,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 187,
+      "pAtkRnd": 30,
+      "pDef": 1308,
+      "mAtk": 26,
+      "mDef": 531,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 39603,
+      "maxMp": 893,
+      "revHp": 178.88,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 15
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 866.759515570934,
+      "sp": 100648
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10192,
+    "template": {
+      "kind": "Boss",
+      "name": "Earth Protector Panathen",
+      "title": "Raid Boss",
+      "level": 43,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 673,
+      "pAtkRnd": 20,
+      "pDef": 1785,
+      "mAtk": 182,
+      "mDef": 725,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 56386,
+      "maxMp": 1296,
+      "revHp": 237.31,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 183,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 842.562466197945,
+      "sp": 221896
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10198,
+    "template": {
+      "kind": "Boss",
+      "name": "Fafurion's Herald Lokness",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 13963,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 35947,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 483261,
+      "maxMp": 2639,
+      "revHp": 844.9,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 150
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 391,
+      "sp": 918808
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10199,
+    "template": {
+      "kind": "Boss",
+      "name": "Water Dragon Seer Sheshark",
+      "title": "Raid Boss",
+      "level": 72,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7164,
+      "pAtkRnd": 20,
+      "pDef": 3933,
+      "mAtk": 8915,
+      "mDef": 1597,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 69,
+      "run": 324
+    },
+    "vitals": {
+      "maxHp": 214875,
+      "maxMp": 2707,
+      "revHp": 741.47,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 181,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 901.679976851852,
+      "sp": 805512
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10202,
+    "template": {
+      "kind": "Boss",
+      "name": "Krokian Padisha Sobekk",
+      "title": "Raid Boss",
+      "level": 74,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8715,
+      "pAtkRnd": 30,
+      "pDef": 4103,
+      "mAtk": 12471,
+      "mDef": 1666,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 248996,
+      "maxMp": 2777,
+      "revHp": 849.66,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 52,
+      "size": 86
+    },
+    "equipment": {
+      "weapon": 5130,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 404,
+      "sp": 1028870
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10205,
+    "template": {
+      "kind": "Boss",
+      "name": "Ocean Flame Ashakiel",
+      "title": "Raid Boss",
+      "level": 76,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8153,
+      "pAtkRnd": 10,
+      "pDef": 4273,
+      "mAtk": 10359,
+      "mDef": 1735,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 220403,
+      "maxMp": 3274,
+      "revHp": 742.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 120
+    },
+    "equipment": {
+      "weapon": 98,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 846.269909972299,
+      "sp": 961047
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10208,
+    "template": {
+      "kind": "Boss",
+      "name": "Water Couatle Ateka",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 427,
+      "pAtkRnd": 30,
+      "pDef": 1615,
+      "mAtk": 87,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 50445,
+      "maxMp": 1722,
+      "revHp": 217.25,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 799.55,
+      "sp": 187517
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10211,
+    "template": {
+      "kind": "Boss",
+      "name": "Sebek",
+      "title": "Raid Boss",
+      "level": 36,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 326,
+      "pAtkRnd": 30,
+      "pDef": 1405,
+      "mAtk": 65,
+      "mDef": 570,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 43053,
+      "maxMp": 1975,
+      "revHp": 191.35,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 26,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 5130,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 935.424382716049,
+      "sp": 142855
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10214,
+    "template": {
+      "kind": "Boss",
+      "name": "Fafurion's Page Sika",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 287,
+      "pAtkRnd": 30,
+      "pDef": 1615,
+      "mAtk": 42,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 80
+    },
+    "speed": {
+      "walk": 56,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 50445,
+      "maxMp": 2368,
+      "revHp": 217.25,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 5132,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 682.28375,
+      "sp": 139773
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10217,
+    "template": {
+      "kind": "Boss",
+      "name": "Cursed Clara",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 833,
+      "pAtkRnd": 30,
+      "pDef": 2226,
+      "mAtk": 206,
+      "mDef": 904,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 71339,
+      "maxMp": 1722,
+      "revHp": 285.12,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 570.108,
+      "sp": 224177
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10220,
+    "template": {
+      "kind": "Boss",
+      "name": "Death Lord Hallate",
+      "title": "Raid Boss",
+      "level": 73,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8449,
+      "pAtkRnd": 10,
+      "pDef": 4017,
+      "mAtk": 12049,
+      "mDef": 1631,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 247349,
+      "maxMp": 3274,
+      "revHp": 847.28,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 411,
+      "sp": 1002134
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10223,
+    "template": {
+      "kind": "Boss",
+      "name": "Soul Collector Acheron",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 200,
+      "pAtkRnd": 20,
+      "pDef": 1356,
+      "mAtk": 28,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 259
+    },
+    "vitals": {
+      "maxHp": 41308,
+      "maxMp": 1237,
+      "revHp": 185.07,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 192,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 831.515918367347,
+      "sp": 103175
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10226,
+    "template": {
+      "kind": "Boss",
+      "name": "Roaring Lord Kastor",
+      "title": "Raid Boss",
+      "level": 62,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 4510,
+      "pAtkRnd": 20,
+      "pDef": 3108,
+      "mAtk": 4959,
+      "mDef": 1262,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 193664,
+      "maxMp": 2502,
+      "revHp": 712.52,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22.5,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 186,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 995.859781477628,
+      "sp": 679088
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10229,
+    "template": {
+      "kind": "Boss",
+      "name": "Storm Winged Naga",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 17973,
+      "pAtkRnd": 30,
+      "pDef": 4188,
+      "mAtk": 51648,
+      "mDef": 1701,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 324
+    },
+    "vitals": {
+      "maxHp": 501018,
+      "maxMp": 3420,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 58,
+      "size": 108
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 1054472
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10230,
+    "template": {
+      "kind": "Boss",
+      "name": "Timak Seer Ragoth",
+      "title": "Raid Boss",
+      "level": 57,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2325,
+      "pAtkRnd": 20,
+      "pDef": 2723,
+      "mAtk": 1079,
+      "mDef": 1106,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 259
+    },
+    "vitals": {
+      "maxHp": 87272,
+      "maxMp": 2169,
+      "revHp": 332.08,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 201,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 626.949830717144,
+      "sp": 401639
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10233,
+    "template": {
+      "kind": "Boss",
+      "name": "Spirit of Andras, the Betrayer",
+      "title": "Raid Boss",
+      "level": 69,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8956,
+      "pAtkRnd": 10,
+      "pDef": 3680,
+      "mAtk": 10177,
+      "mDef": 1494,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 209541,
+      "maxMp": 3643,
+      "revHp": 368.4,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 46.5
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 537.412308338584,
+      "sp": 621496
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10234,
+    "template": {
+      "kind": "Boss",
+      "name": "Ancient Weird Drake",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7676,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 8563,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 201006,
+      "maxMp": 2707,
+      "revHp": 362.57,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 150
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 582.4,
+      "sp": 581209
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10235,
+    "template": {
+      "kind": "Boss",
+      "name": "Vanor Chief Kandra",
+      "title": "Raid Boss",
+      "level": 72,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8186,
+      "pAtkRnd": 10,
+      "pDef": 3933,
+      "mAtk": 11639,
+      "mDef": 1597,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 245570,
+      "maxMp": 3202,
+      "revHp": 847.28,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 135,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 417,
+      "sp": 977072
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10238,
+    "template": {
+      "kind": "Boss",
+      "name": "Nightmare Drake",
+      "title": "Raid Boss",
+      "level": 67,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 4130,
+      "pAtkRnd": 30,
+      "pDef": 3513,
+      "mAtk": 2312,
+      "mDef": 1427,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 299
+    },
+    "vitals": {
+      "maxHp": 102733,
+      "maxMp": 2846,
+      "revHp": 365.85,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 150
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 558.787480507908,
+      "sp": 600107
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10241,
+    "template": {
+      "kind": "Boss",
+      "name": "Harit Hero Tamash",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2471,
+      "pAtkRnd": 10,
+      "pDef": 2576,
+      "mAtk": 1817,
+      "mDef": 1046,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 283
+    },
+    "vitals": {
+      "maxHp": 153521,
+      "maxMp": 2639,
+      "revHp": 592.29,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 53
+    },
+    "equipment": {
+      "weapon": 298,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 988.018181818182,
+      "sp": 448385
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10244,
+    "template": {
+      "kind": "Boss",
+      "name": "Last Lesser Giant Olkuth",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 15764,
+      "pAtkRnd": 10,
+      "pDef": 4188,
+      "mAtk": 39730,
+      "mDef": 1701,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 226
+    },
+    "vitals": {
+      "maxHp": 438385,
+      "maxMp": 3420,
+      "revHp": 742.51,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 31.5,
+      "size": 69
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 859.049955555556,
+      "sp": 847950
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10245,
+    "template": {
+      "kind": "Boss",
+      "name": "Last Lesser Giant Glaki",
+      "title": "Raid Boss",
+      "level": 78,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7940,
+      "pAtkRnd": 20,
+      "pDef": 4444,
+      "mAtk": 8508,
+      "mDef": 1805,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 153
+    },
+    "vitals": {
+      "maxHp": 206546,
+      "maxMp": 3643,
+      "revHp": 687.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 66
+    },
+    "equipment": {
+      "weapon": 179,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 767.843852728468,
+      "sp": 943547
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10248,
+    "template": {
+      "kind": "Boss",
+      "name": "Doom Blade Tanatos",
+      "title": "Raid Boss",
+      "level": 72,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 13026,
+      "pAtkRnd": 10,
+      "pDef": 3933,
+      "mAtk": 26791,
+      "mDef": 1597,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 399054,
+      "maxMp": 3274,
+      "revHp": 688.51,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 67
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 841.564429012346,
+      "sp": 764172
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10249,
+    "template": {
+      "kind": "Boss",
+      "name": "Vermilion, Blood Tree",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7882,
+      "pAtkRnd": 30,
+      "pDef": 4188,
+      "mAtk": 9932,
+      "mDef": 1701,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 89,
+      "run": 267
+    },
+    "vitals": {
+      "maxHp": 219192,
+      "maxMp": 3420,
+      "revHp": 742.51,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 52,
+      "size": 121
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 859.049955555556,
+      "sp": 847950
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10252,
+    "template": {
+      "kind": "Boss",
+      "name": "Palibati Queen Themis",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6222,
+      "pAtkRnd": 5,
+      "pDef": 3764,
+      "mAtk": 7141,
+      "mDef": 1528,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 259
+    },
+    "vitals": {
+      "maxHp": 211425,
+      "maxMp": 3058,
+      "revHp": 738.73,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 37,
+      "size": 98
+    },
+    "equipment": {
+      "weapon": 234,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 843.99,
+      "sp": 777993
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10255,
+    "template": {
+      "kind": "Boss",
+      "name": "Gargoyle Lord Tiphon",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 9313,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 17189,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 373296,
+      "maxMp": 2707,
+      "revHp": 673.33,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 37,
+      "size": 98
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 869.704378698225,
+      "sp": 679343
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10256,
+    "template": {
+      "kind": "Boss",
+      "name": "Taik High Prefect Arak",
+      "title": "Raid Boss",
+      "level": 60,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2895,
+      "pAtkRnd": 10,
+      "pDef": 2951,
+      "mAtk": 1474,
+      "mDef": 1198,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 283
+    },
+    "vitals": {
+      "maxHp": 94188,
+      "maxMp": 2368,
+      "revHp": 351.19,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 37
+    },
+    "equipment": {
+      "weapon": 71,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 580.925,
+      "sp": 424759
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10259,
+    "template": {
+      "kind": "Boss",
+      "name": "Zaken's Butcher Krantz",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 4942,
+      "pAtkRnd": 10,
+      "pDef": 2576,
+      "mAtk": 7268,
+      "mDef": 1046,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 35,
+      "run": 259
+    },
+    "vitals": {
+      "maxHp": 307043,
+      "maxMp": 2039,
+      "revHp": 592.29,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 66
+    },
+    "equipment": {
+      "weapon": 297,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 988.018181818182,
+      "sp": 448385
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10260,
+    "template": {
+      "kind": "Boss",
+      "name": "Iron Giant Totem",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 974,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 466,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 32,
+      "run": 81
+    },
+    "vitals": {
+      "maxHp": 112383,
+      "maxMp": 1722,
+      "revHp": 465.93,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 27,
+      "size": 52
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1173.920987654321,
+      "sp": 267898
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10263,
+    "template": {
+      "kind": "Boss",
+      "name": "Malruk's Witch Sekina",
+      "title": "Raid Boss",
+      "level": 67,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 5015,
+      "pAtkRnd": 5,
+      "pDef": 3513,
+      "mAtk": 4648,
+      "mDef": 1427,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 267
+    },
+    "vitals": {
+      "maxHp": 190791,
+      "maxMp": 2846,
+      "revHp": 679.47,
+      "revMp": 8.75,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 37,
+      "size": 98
+    },
+    "equipment": {
+      "weapon": 225,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 834.466473602139,
+      "sp": 701317
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10266,
+    "template": {
+      "kind": "Boss",
+      "name": "Bloody Empress Decarbia",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 8986,
+      "pAtkRnd": 30,
+      "pDef": 4188,
+      "mAtk": 12912,
+      "mDef": 1701,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 250509,
+      "maxMp": 3420,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 64
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 1054472
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10269,
+    "template": {
+      "kind": "Boss",
+      "name": "Beast Lord Behemoth",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6222,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 7141,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 89,
+      "run": 291
+    },
+    "vitals": {
+      "maxHp": 211425,
+      "maxMp": 3058,
+      "revHp": 738.73,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 52.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 843.99,
+      "sp": 777993
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10276,
+    "template": {
+      "kind": "Boss",
+      "name": "Death Lord Ipos",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 17973,
+      "pAtkRnd": 10,
+      "pDef": 4188,
+      "mAtk": 51648,
+      "mDef": 1701,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 501018,
+      "maxMp": 3420,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 31,
+      "size": 61.5
+    },
+    "equipment": {
+      "weapon": 78,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 1054472
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10277,
+    "template": {
+      "kind": "Boss",
+      "name": "Lilith's Witch Marilion",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1658,
+      "pAtkRnd": 30,
+      "pDef": 2226,
+      "mAtk": 1143,
+      "mDef": 904,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 142678,
+      "maxMp": 1722,
+      "revHp": 570.25,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 64
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1068.95,
+      "sp": 365590
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10280,
+    "template": {
+      "kind": "Boss",
+      "name": "Pagan Watcher Cerberon",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 5426,
+      "pAtkRnd": 10,
+      "pDef": 2576,
+      "mAtk": 9639,
+      "mDef": 1046,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 340
+    },
+    "vitals": {
+      "maxHp": 330662,
+      "maxMp": 2039,
+      "revHp": 637.86,
+      "revMp": 7.7,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1058.589752066116,
+      "sp": 477279
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10281,
+    "template": {
+      "kind": "Boss",
+      "name": "Anakim's Nemesis Zakaron",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 12444,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 28565,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 59,
+      "run": 348
+    },
+    "vitals": {
+      "maxHp": 422851,
+      "maxMp": 3058,
+      "revHp": 738.73,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 37,
+      "size": 136.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 843.99,
+      "sp": 777993
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10282,
+    "template": {
+      "kind": "Boss",
+      "name": "Death Lord Shax",
+      "title": "Raid Boss",
+      "level": 75,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 17973,
+      "pAtkRnd": 10,
+      "pDef": 4188,
+      "mAtk": 51648,
+      "mDef": 1701,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 340
+    },
+    "vitals": {
+      "maxHp": 501018,
+      "maxMp": 3420,
+      "revHp": 849.66,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 31,
+      "size": 61.5
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 398,
+      "sp": 1054472
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10283,
+    "template": {
+      "kind": "Boss",
+      "name": "Lilith",
+      "title": "Raid Boss",
+      "level": 80,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 10404,
+      "pAtkRnd": 30,
+      "pDef": 4615,
+      "mAtk": 15367,
+      "mDef": 1874,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 324
+    },
+    "vitals": {
+      "maxHp": 255960,
+      "maxMp": 3793,
+      "revHp": 842.52,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42.5,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 371,
+      "sp": 1196456
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10286,
+    "template": {
+      "kind": "Boss",
+      "name": "Anakim",
+      "title": "Raid Boss",
+      "level": 80,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 10404,
+      "pAtkRnd": 30,
+      "pDef": 4615,
+      "mAtk": 15367,
+      "mDef": 1874,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 324
+    },
+    "vitals": {
+      "maxHp": 255960,
+      "maxMp": 3793,
+      "revHp": 842.52,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15.5,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 371,
+      "sp": 1196456
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10293,
+    "template": {
+      "kind": "Boss",
+      "name": "Guardian Deity of Hot Springs Hestia",
+      "title": "Raid Boss",
+      "level": 78,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7940,
+      "pAtkRnd": 30,
+      "pDef": 4444,
+      "mAtk": 8508,
+      "mDef": 1805,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 206546,
+      "maxMp": 3718,
+      "revHp": 687.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 767.843852728468,
+      "sp": 943547
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10299,
+    "template": {
+      "kind": "Boss",
+      "name": "Ketra's Hero Hekaton",
+      "title": "Raid Boss",
+      "level": 80,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6959,
+      "pAtkRnd": 30,
+      "pDef": 4615,
+      "mAtk": 4585,
+      "mDef": 1874,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 38,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 111981,
+      "maxMp": 3718,
+      "revHp": 368.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 46.2
+    },
+    "equipment": {
+      "weapon": 6719,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 501.0125,
+      "sp": 835990
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10302,
+    "template": {
+      "kind": "Boss",
+      "name": "Ketra's Commander Tayr",
+      "title": "Raid Boss",
+      "level": 84,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7856,
+      "pAtkRnd": 10,
+      "pDef": 4952,
+      "mAtk": 5408,
+      "mDef": 2011,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 112730,
+      "maxMp": 3718,
+      "revHp": 362.02,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 36
+    },
+    "equipment": {
+      "weapon": 80,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 478.962443310658,
+      "sp": 898478
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10305,
+    "template": {
+      "kind": "Boss",
+      "name": "Ketra's Chief Brakki",
+      "title": "Raid Boss",
+      "level": 87,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 17006,
+      "pAtkRnd": 30,
+      "pDef": 5200,
+      "mAtk": 24162,
+      "mDef": 2112,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 225198,
+      "maxMp": 3718,
+      "revHp": 355.43,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 33.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 465.849914123398,
+      "sp": 952059
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10309,
+    "template": {
+      "kind": "Boss",
+      "name": "Varka's Hero Shadith",
+      "title": "Raid Boss",
+      "level": 80,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6959,
+      "pAtkRnd": 30,
+      "pDef": 4615,
+      "mAtk": 4585,
+      "mDef": 1874,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 58,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 111981,
+      "maxMp": 3718,
+      "revHp": 368.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 47.5
+    },
+    "equipment": {
+      "weapon": 6716,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 501.0125,
+      "sp": 835990
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10312,
+    "template": {
+      "kind": "Boss",
+      "name": "Varka's Commander Mos",
+      "title": "Raid Boss",
+      "level": 84,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7856,
+      "pAtkRnd": 10,
+      "pDef": 4952,
+      "mAtk": 5408,
+      "mDef": 2011,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 112730,
+      "maxMp": 3718,
+      "revHp": 362.02,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 478.962443310658,
+      "sp": 898478
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10315,
+    "template": {
+      "kind": "Boss",
+      "name": "Varka's Chief Horus",
+      "title": "Raid Boss",
+      "level": 87,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 17006,
+      "pAtkRnd": 10,
+      "pDef": 5200,
+      "mAtk": 24162,
+      "mDef": 2112,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 225198,
+      "maxMp": 3718,
+      "revHp": 355.43,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 51
+    },
+    "equipment": {
+      "weapon": 2500,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 465.849914123398,
+      "sp": 952059
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10319,
+    "template": {
+      "kind": "Boss",
+      "name": "Ember",
+      "title": "Raid Boss",
+      "level": 85,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 11906,
+      "pAtkRnd": 30,
+      "pDef": 5036,
+      "mAtk": 18324,
+      "mDef": 2045,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 92,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 257725,
+      "maxMp": 3718,
+      "revHp": 823.48,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 48,
+      "size": 73
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 351,
+      "sp": 1356048
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10322,
+    "template": {
+      "kind": "Boss",
+      "name": "Demon's Agent Falston",
+      "title": "Raid Boss",
+      "level": 66,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6092,
+      "pAtkRnd": 30,
+      "pDef": 3431,
+      "mAtk": 7808,
+      "mDef": 1393,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 69,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 232323,
+      "maxMp": 3718,
+      "revHp": 833,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 31.5
+    },
+    "equipment": {
+      "weapon": 6723,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 422,
+      "sp": 828036
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10325,
+    "template": {
+      "kind": "Boss",
+      "name": "Flame of Splendor Barakiel",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 6222,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 7141,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 211425,
+      "maxMp": 3718,
+      "revHp": 738.73,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 6717,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 843.99,
+      "sp": 777993
+    },
+    "traits": {
+      "race": "divine",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10328,
+    "template": {
+      "kind": "Boss",
+      "name": "Eilhalder von Hellmann",
+      "title": "Raid Boss",
+      "level": 71,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 7927,
+      "pAtkRnd": 30,
+      "pDef": 3848,
+      "mAtk": 11244,
+      "mDef": 1562,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 243663,
+      "maxMp": 3718,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7.5,
+      "size": 25.8
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 425,
+      "sp": 952990
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10352,
+    "template": {
+      "kind": "Boss",
+      "name": "Giant Wasteland Basilisk",
+      "title": "Raid Boss",
+      "level": 30,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 96,
+      "pAtkRnd": 30,
+      "pDef": 1127,
+      "mAtk": 9,
+      "mDef": 458,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 56,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 28471,
+      "maxMp": 3718,
+      "revHp": 132.92,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 34,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 707.686666666667,
+      "sp": 59660
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10354,
+    "template": {
+      "kind": "Boss",
+      "name": "Gargoyle Lord Sirocco",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 300,
+      "pAtkRnd": 30,
+      "pDef": 1356,
+      "mAtk": 59,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 226,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 41308,
+      "maxMp": 3718,
+      "revHp": 185.07,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 65
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 974.436734693877,
+      "sp": 138419
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10357,
+    "template": {
+      "kind": "Boss",
+      "name": "Sukar Wererat Chief",
+      "title": "Raid Boss",
+      "level": 21,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 42,
+      "pAtkRnd": 5,
+      "pDef": 789,
+      "mAtk": 3,
+      "mDef": 320,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 18330,
+      "maxMp": 3718,
+      "revHp": 92.58,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 216,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1311.678004535147,
+      "sp": 45688
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10360,
+    "template": {
+      "kind": "Boss",
+      "name": "Tiger Hornet",
+      "title": "Raid Boss",
+      "level": 26,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 67,
+      "pAtkRnd": 30,
+      "pDef": 966,
+      "mAtk": 6,
+      "mDef": 392,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 145,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 23592,
+      "maxMp": 3718,
+      "revHp": 113.98,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 32
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 918.894970414201,
+      "sp": 53601
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10362,
+    "template": {
+      "kind": "Boss",
+      "name": "Tracker Leader Sharuk",
+      "title": "Raid Boss",
+      "level": 23,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 52,
+      "pAtkRnd": 10,
+      "pDef": 857,
+      "mAtk": 4,
+      "mDef": 348,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 84,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 20324,
+      "maxMp": 3718,
+      "revHp": 100.82,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 291,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1133.12854442344,
+      "sp": 50860
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10366,
+    "template": {
+      "kind": "Boss",
+      "name": "Kuroboros' Priest",
+      "title": "Raid Boss",
+      "level": 23,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 52,
+      "pAtkRnd": 10,
+      "pDef": 857,
+      "mAtk": 4,
+      "mDef": 348,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 90,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 20324,
+      "maxMp": 3718,
+      "revHp": 100.82,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37
+    },
+    "equipment": {
+      "weapon": 2,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1133.12854442344,
+      "sp": 50860
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10369,
+    "template": {
+      "kind": "Boss",
+      "name": "Soul Scavenger",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 62,
+      "pAtkRnd": 30,
+      "pDef": 928,
+      "mAtk": 5,
+      "mDef": 377,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 22463,
+      "maxMp": 3718,
+      "revHp": 109.48,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 980.0528,
+      "sp": 52699
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10373,
+    "template": {
+      "kind": "Boss",
+      "name": "Malex Herald of Dagoniel",
+      "title": "Raid Boss",
+      "level": 21,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 42,
+      "pAtkRnd": 30,
+      "pDef": 789,
+      "mAtk": 3,
+      "mDef": 320,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 18330,
+      "maxMp": 3718,
+      "revHp": 92.58,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1311.678004535147,
+      "sp": 45688
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10375,
+    "template": {
+      "kind": "Boss",
+      "name": "Zombie Lord Farakelsus",
+      "title": "Raid Boss",
+      "level": 20,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 30,
+      "pAtkRnd": 30,
+      "pDef": 757,
+      "mAtk": 2,
+      "mDef": 307,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 17383,
+      "maxMp": 3718,
+      "revHp": 88.61,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 27.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1091.58,
+      "sp": 37265
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10378,
+    "template": {
+      "kind": "Boss",
+      "name": "Madness Beast",
+      "title": "Raid Boss",
+      "level": 20,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 30,
+      "pAtkRnd": 30,
+      "pDef": 757,
+      "mAtk": 2,
+      "mDef": 307,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 48,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 17383,
+      "maxMp": 3718,
+      "revHp": 88.61,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 18.7
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1091.58,
+      "sp": 37265
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10380,
+    "template": {
+      "kind": "Boss",
+      "name": "Kaysha Herald of Icarus",
+      "title": "Raid Boss",
+      "level": 21,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 42,
+      "pAtkRnd": 30,
+      "pDef": 789,
+      "mAtk": 3,
+      "mDef": 320,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 18330,
+      "maxMp": 3718,
+      "revHp": 92.58,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 43.2
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1311.678004535147,
+      "sp": 45688
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10383,
+    "template": {
+      "kind": "Boss",
+      "name": "Revenant of Sir Calibus",
+      "title": "Raid Boss",
+      "level": 34,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 158,
+      "pAtkRnd": 10,
+      "pDef": 1308,
+      "mAtk": 20,
+      "mDef": 531,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 33945,
+      "maxMp": 3718,
+      "revHp": 153.32,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 726.811418685121,
+      "sp": 76283
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10385,
+    "template": {
+      "kind": "Boss",
+      "name": "Evil Spirit Tempest",
+      "title": "Raid Boss",
+      "level": 36,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 185,
+      "pAtkRnd": 30,
+      "pDef": 1405,
+      "mAtk": 24,
+      "mDef": 570,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 36903,
+      "maxMp": 3718,
+      "revHp": 164.01,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 669.345679012346,
+      "sp": 80701
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10388,
+    "template": {
+      "kind": "Boss",
+      "name": "Red Eye Captain Trakia",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 170,
+      "pAtkRnd": 10,
+      "pDef": 1356,
+      "mAtk": 21,
+      "mDef": 550,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 35407,
+      "maxMp": 3718,
+      "revHp": 158.63,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 70,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 697.267755102041,
+      "sp": 78199
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10391,
+    "template": {
+      "kind": "Boss",
+      "name": "Nurka's Messenger",
+      "title": "Raid Boss",
+      "level": 33,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 295,
+      "pAtkRnd": 10,
+      "pDef": 1261,
+      "mAtk": 75,
+      "mDef": 512,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 65044,
+      "maxMp": 3718,
+      "revHp": 148.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 40.5
+    },
+    "equipment": {
+      "weapon": 127,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 758.113865932048,
+      "sp": 73993
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10392,
+    "template": {
+      "kind": "Boss",
+      "name": "Captain of Queen's Royal Guards",
+      "title": "Raid Boss",
+      "level": 32,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 137,
+      "pAtkRnd": 10,
+      "pDef": 1215,
+      "mAtk": 17,
+      "mDef": 493,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 210,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 31134,
+      "maxMp": 3718,
+      "revHp": 142.94,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 37
+    },
+    "equipment": {
+      "weapon": 129,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 791.2802734375,
+      "sp": 71493
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10394,
+    "template": {
+      "kind": "Boss",
+      "name": "Premo Prime",
+      "title": "Raid Boss",
+      "level": 38,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 425,
+      "pAtkRnd": 20,
+      "pDef": 1508,
+      "mAtk": 113,
+      "mDef": 612,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 80010,
+      "maxMp": 3718,
+      "revHp": 175,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 88,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 618.032548476454,
+      "sp": 99116
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10395,
+    "template": {
+      "kind": "Boss",
+      "name": "Archon Suscepter",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 456,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 86,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 126,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 51869,
+      "maxMp": 3718,
+      "revHp": 215.06,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 72
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 562.510617283951,
+      "sp": 129941
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10398,
+    "template": {
+      "kind": "Boss",
+      "name": "Eye of Beleth",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 170,
+      "pAtkRnd": 30,
+      "pDef": 1356,
+      "mAtk": 21,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 145,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 35407,
+      "maxMp": 3718,
+      "revHp": 158.63,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 43
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 697.267755102041,
+      "sp": 78199
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10401,
+    "template": {
+      "kind": "Boss",
+      "name": "Skyla",
+      "title": "Raid Boss",
+      "level": 32,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 137,
+      "pAtkRnd": 5,
+      "pDef": 1215,
+      "mAtk": 17,
+      "mDef": 493,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 85,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 31134,
+      "maxMp": 3718,
+      "revHp": 142.94,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 215,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 791.2802734375,
+      "sp": 71493
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10404,
+    "template": {
+      "kind": "Boss",
+      "name": "Corsair Captain Kylon",
+      "title": "Raid Boss",
+      "level": 33,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 147,
+      "pAtkRnd": 5,
+      "pDef": 1261,
+      "mAtk": 18,
+      "mDef": 512,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 22,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 32522,
+      "maxMp": 3718,
+      "revHp": 148.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 231,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 758.113865932048,
+      "sp": 73993
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10407,
+    "template": {
+      "kind": "Boss",
+      "name": "Lord Ishka",
+      "title": "Raid Boss",
+      "level": 60,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1642,
+      "pAtkRnd": 10,
+      "pDef": 2951,
+      "mAtk": 547,
+      "mDef": 1198,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 80732,
+      "maxMp": 3718,
+      "revHp": 301.02,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 67
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 415.678888888889,
+      "sp": 237315
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10410,
+    "template": {
+      "kind": "Boss",
+      "name": "Road Scavenger Leader",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 427,
+      "pAtkRnd": 20,
+      "pDef": 1615,
+      "mAtk": 87,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 50445,
+      "maxMp": 3718,
+      "revHp": 217.25,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 88,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 799.55,
+      "sp": 187517
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10412,
+    "template": {
+      "kind": "Boss",
+      "name": "Necrosentinel Royal Guard",
+      "title": "Raid Boss",
+      "level": 47,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 546,
+      "pAtkRnd": 5,
+      "pDef": 2030,
+      "mAtk": 111,
+      "mDef": 824,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 55512,
+      "maxMp": 3718,
+      "revHp": 226.77,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 946,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 526.101856043459,
+      "sp": 134535
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10415,
+    "template": {
+      "kind": "Boss",
+      "name": "Nakondas",
+      "title": "Raid Boss",
+      "level": 35,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 170,
+      "pAtkRnd": 30,
+      "pDef": 1356,
+      "mAtk": 21,
+      "mDef": 550,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 35407,
+      "maxMp": 3718,
+      "revHp": 158.63,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 37,
+      "size": 125
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 697.267755102041,
+      "sp": 78199
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10418,
+    "template": {
+      "kind": "Boss",
+      "name": "Dread Avenger Kraven",
+      "title": "Raid Boss",
+      "level": 44,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 418,
+      "pAtkRnd": 10,
+      "pDef": 1845,
+      "mAtk": 77,
+      "mDef": 749,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 43,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 50083,
+      "maxMp": 3718,
+      "revHp": 209.2,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 582.175619834711,
+      "sp": 127160
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10420,
+    "template": {
+      "kind": "Boss",
+      "name": "Orfen's Handmaiden",
+      "title": "Raid Boss",
+      "level": 48,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1060,
+      "pAtkRnd": 30,
+      "pDef": 2094,
+      "mAtk": 345,
+      "mDef": 850,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 66930,
+      "maxMp": 3718,
+      "revHp": 271.42,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 72
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 711.699652777778,
+      "sp": 244248
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10423,
+    "template": {
+      "kind": "Boss",
+      "name": "Fairy Queen Timiniel",
+      "title": "Raid Boss",
+      "level": 56,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1459,
+      "pAtkRnd": 30,
+      "pDef": 2649,
+      "mAtk": 476,
+      "mDef": 1075,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 84968,
+      "maxMp": 3718,
+      "revHp": 325.56,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 549.419961734694,
+      "sp": 291015
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10426,
+    "template": {
+      "kind": "Boss",
+      "name": "Betrayer of Urutu Freki",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 62,
+      "pAtkRnd": 30,
+      "pDef": 928,
+      "mAtk": 5,
+      "mDef": 377,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 22463,
+      "maxMp": 3718,
+      "revHp": 109.48,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 29.7
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 980.0528,
+      "sp": 52699
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10429,
+    "template": {
+      "kind": "Boss",
+      "name": "Mammon Collector Talos",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 62,
+      "pAtkRnd": 30,
+      "pDef": 928,
+      "mAtk": 5,
+      "mDef": 377,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 22463,
+      "maxMp": 3718,
+      "revHp": 109.48,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 980.0528,
+      "sp": 52699
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10431,
+    "template": {
+      "kind": "Boss",
+      "name": "Flamestone Golem",
+      "title": "Raid Boss",
+      "level": 44,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 418,
+      "pAtkRnd": 30,
+      "pDef": 1845,
+      "mAtk": 77,
+      "mDef": 749,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 21,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 50083,
+      "maxMp": 3718,
+      "revHp": 209.2,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 582.175619834711,
+      "sp": 127160
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10434,
+    "template": {
+      "kind": "Boss",
+      "name": "Bandit Leader Barda",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1156,
+      "pAtkRnd": 10,
+      "pDef": 2576,
+      "mAtk": 336,
+      "mDef": 1046,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 70856,
+      "maxMp": 3718,
+      "revHp": 273.37,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 60
+    },
+    "equipment": {
+      "weapon": 121,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 473.420495867769,
+      "sp": 216652
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10437,
+    "template": {
+      "kind": "Boss",
+      "name": "Timak Orc Gosmos",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 912,
+      "pAtkRnd": 10,
+      "pDef": 1905,
+      "mAtk": 346,
+      "mDef": 774,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 103738,
+      "maxMp": 3718,
+      "revHp": 215.06,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 52
+    },
+    "equipment": {
+      "weapon": 145,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 562.510617283951,
+      "sp": 129941
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10438,
+    "template": {
+      "kind": "Boss",
+      "name": "Thief Kelbar",
+      "title": "Raid Boss",
+      "level": 44,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 418,
+      "pAtkRnd": 5,
+      "pDef": 1845,
+      "mAtk": 77,
+      "mDef": 749,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 50083,
+      "maxMp": 3718,
+      "revHp": 209.2,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 50
+    },
+    "equipment": {
+      "weapon": 239,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 582.175619834711,
+      "sp": 127160
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10441,
+    "template": {
+      "kind": "Boss",
+      "name": "Evil Spirit Cyrion",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 456,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 86,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 51869,
+      "maxMp": 3718,
+      "revHp": 215.06,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 150
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 562.510617283951,
+      "sp": 129941
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10444,
+    "template": {
+      "kind": "Boss",
+      "name": "Enmity Ghost Ramdal",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2176,
+      "pAtkRnd": 30,
+      "pDef": 3349,
+      "mAtk": 794,
+      "mDef": 1360,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 86145,
+      "maxMp": 3718,
+      "revHp": 310.78,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 40,
+      "size": 70
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 416.736804733728,
+      "sp": 332726
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10447,
+    "template": {
+      "kind": "Boss",
+      "name": "Immortal Savior Mardil",
+      "title": "Raid Boss",
+      "level": 71,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2947,
+      "pAtkRnd": 10,
+      "pDef": 3848,
+      "mAtk": 1195,
+      "mDef": 1562,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 91375,
+      "maxMp": 3718,
+      "revHp": 317.28,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 410.285459234279,
+      "sp": 367642
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10450,
+    "template": {
+      "kind": "Boss",
+      "name": "Cherub Galaxia",
+      "title": "Raid Boss",
+      "level": 79,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 9883,
+      "pAtkRnd": 10,
+      "pDef": 4471,
+      "mAtk": 14504,
+      "mDef": 1816,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 254211,
+      "maxMp": 3718,
+      "revHp": 844.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 22,
+      "size": 120
+    },
+    "equipment": {
+      "weapon": 97,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 381,
+      "sp": 1136977
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10453,
+    "template": {
+      "kind": "Boss",
+      "name": "Meanas Anor",
+      "title": "Raid Boss",
+      "level": 70,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 5659,
+      "pAtkRnd": 30,
+      "pDef": 3764,
+      "mAtk": 5371,
+      "mDef": 1528,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 196324,
+      "maxMp": 3718,
+      "revHp": 685.96,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 58,
+      "size": 108
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 787.720408163265,
+      "sp": 738431
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10456,
+    "template": {
+      "kind": "Boss",
+      "name": "Mirror of Oblivion",
+      "title": "Raid Boss",
+      "level": 49,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 652,
+      "pAtkRnd": 30,
+      "pDef": 2160,
+      "mAtk": 143,
+      "mDef": 877,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 59249,
+      "maxMp": 3718,
+      "revHp": 238.52,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 78
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 493.269471053728,
+      "sp": 140317
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10460,
+    "template": {
+      "kind": "Boss",
+      "name": "Deadman Ereve",
+      "title": "Raid Boss",
+      "level": 51,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 850,
+      "pAtkRnd": 20,
+      "pDef": 2294,
+      "mAtk": 219,
+      "mDef": 931,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 162,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 63062,
+      "maxMp": 3718,
+      "revHp": 250.26,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 141
+    },
+    "equipment": {
+      "weapon": 194,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 531.0123029604,
+      "sp": 185853
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10463,
+    "template": {
+      "kind": "Boss",
+      "name": "Harit Guardian Garangky",
+      "title": "Raid Boss",
+      "level": 56,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1237,
+      "pAtkRnd": 30,
+      "pDef": 2649,
+      "mAtk": 368,
+      "mDef": 1075,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 72830,
+      "maxMp": 3718,
+      "revHp": 279.06,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 34,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 460.712691326531,
+      "sp": 221098
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10467,
+    "template": {
+      "kind": "Boss",
+      "name": "Gorgolos",
+      "title": "Raid Boss",
+      "level": 64,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2103,
+      "pAtkRnd": 30,
+      "pDef": 3268,
+      "mAtk": 769,
+      "mDef": 1327,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 85133,
+      "maxMp": 3718,
+      "revHp": 309.11,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 45,
+      "size": 96
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 425.82177734375,
+      "sp": 326947
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10470,
+    "template": {
+      "kind": "Boss",
+      "name": "Last Titan Utenus",
+      "title": "Raid Boss",
+      "level": 66,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2252,
+      "pAtkRnd": 10,
+      "pDef": 3431,
+      "mAtk": 821,
+      "mDef": 1393,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 87120,
+      "maxMp": 3718,
+      "revHp": 312.26,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 3938,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 408.088842975207,
+      "sp": 338244
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10473,
+    "template": {
+      "kind": "Boss",
+      "name": "Grave Robber Kim",
+      "title": "Raid Boss",
+      "level": 52,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 914,
+      "pAtkRnd": 20,
+      "pDef": 2363,
+      "mAtk": 242,
+      "mDef": 959,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 64995,
+      "maxMp": 3718,
+      "revHp": 256.09,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 160,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 515.521819526627,
+      "sp": 205212
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10475,
+    "template": {
+      "kind": "Boss",
+      "name": "Ghost Knight Kabed",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1156,
+      "pAtkRnd": 10,
+      "pDef": 2576,
+      "mAtk": 336,
+      "mDef": 1046,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 70856,
+      "maxMp": 3718,
+      "revHp": 273.37,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 46.5
+    },
+    "equipment": {
+      "weapon": 145,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 460.712727272727,
+      "sp": 221098
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10478,
+    "template": {
+      "kind": "Boss",
+      "name": "Shilen's Priest Hisilrome",
+      "title": "Raid Boss",
+      "level": 65,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 2176,
+      "pAtkRnd": 5,
+      "pDef": 3349,
+      "mAtk": 794,
+      "mDef": 1360,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 86145,
+      "maxMp": 3718,
+      "revHp": 310.78,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 65
+    },
+    "equipment": {
+      "weapon": 230,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 416.736804733728,
+      "sp": 332726
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10481,
+    "template": {
+      "kind": "Boss",
+      "name": "Magus Kenishee",
+      "title": "Raid Boss",
+      "level": 53,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 996,
+      "pAtkRnd": 10,
+      "pDef": 2433,
+      "mAtk": 274,
+      "mDef": 988,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 66938,
+      "maxMp": 3718,
+      "revHp": 261.9,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 38
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 500.790316838733,
+      "sp": 209570
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10484,
+    "template": {
+      "kind": "Boss",
+      "name": "Zaken's Chief Mate Tillion",
+      "title": "Raid Boss",
+      "level": 50,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 706,
+      "pAtkRnd": 20,
+      "pDef": 2226,
+      "mAtk": 159,
+      "mDef": 904,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 64,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 61148,
+      "maxMp": 3718,
+      "revHp": 244.4,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 160,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 478.0548,
+      "sp": 169534
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 10487,
+    "template": {
+      "kind": "Boss",
+      "name": "Water Spirit Lian",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 243,
+      "pAtkRnd": 30,
+      "pDef": 1615,
+      "mAtk": 32,
+      "mDef": 656,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 129,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 43238,
+      "maxMp": 3718,
+      "revHp": 186.21,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 54
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 572.125,
+      "sp": 105938
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10490,
+    "template": {
+      "kind": "Boss",
+      "name": "Gwindorr",
+      "title": "Raid Boss",
+      "level": 40,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 243,
+      "pAtkRnd": 10,
+      "pDef": 1615,
+      "mAtk": 32,
+      "mDef": 656,
+      "accur": 0,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 113,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 43238,
+      "maxMp": 3718,
+      "revHp": 186.21,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 46
+    },
+    "equipment": {
+      "weapon": 129,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 572.125,
+      "sp": 105938
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10493,
+    "template": {
+      "kind": "Boss",
+      "name": "Eva's Spirit Niniel",
+      "title": "Raid Boss",
+      "level": 55,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 1156,
+      "pAtkRnd": 30,
+      "pDef": 2576,
+      "mAtk": 336,
+      "mDef": 1046,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 70856,
+      "maxMp": 3718,
+      "revHp": 273.37,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 15
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 473.420495867769,
+      "sp": 216652
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10496,
+    "template": {
+      "kind": "Boss",
+      "name": "Fafurion's Envoy Pingolpin",
+      "title": "Raid Boss",
+      "level": 52,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 914,
+      "pAtkRnd": 30,
+      "pDef": 2363,
+      "mAtk": 242,
+      "mDef": 959,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 97,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 64995,
+      "maxMp": 3718,
+      "revHp": 256.09,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 72
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 515.521819526627,
+      "sp": 205212
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10498,
+    "template": {
+      "kind": "Boss",
+      "name": "Fafurion's Henchman Istary",
+      "title": "Raid Boss",
+      "level": 45,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 456,
+      "pAtkRnd": 30,
+      "pDef": 1905,
+      "mAtk": 86,
+      "mDef": 774,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 51869,
+      "maxMp": 3718,
+      "revHp": 215.06,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 24,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 5131,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 562.510617283951,
+      "sp": 129941
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  }
+]

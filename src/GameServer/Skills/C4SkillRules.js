@@ -52,6 +52,11 @@ const TAKE_CASTLE = 'takeCastle';
 const SIEGE_FLAG = 'siegeFlag';
 
 const RULES = {
+    // Native C4 raid-boss guards. These are applied by RaidCurse at the
+    // combat boundary, but keeping the sourced skill semantics here preserves
+    // the canonical skill ids for packets/effect tooling.
+    4215: { skillType: EFFECT, trait: 'silence', effect: 'silence', effectType: 'debuff', target: 'enemy', baseLandRate: 100, dispellable: false, stats: { physicalMute: true, magicMute: true } },
+    4515: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', baseLandRate: 100, dispellable: false },
     1001: {
         skillType: EFFECT,
         trait: 'buff',
@@ -648,6 +653,7 @@ const RULES = {
     3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
     4035: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
     4036: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
+    4045: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { rootVuln: 0.1, sleepVuln: 0.1, stunVuln: 0.1, confusionVuln: 0, paralyzeVuln: 0.1, derangementVuln: 0 } },
     4049: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 0, absorbPart: 0.2, levelDepend: 1, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74] },
     4071: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { bowWpnVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4084: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { pDefMul: [1.05, 1.11, 1.17, 1.25, 1.33, 1.43, 1.67, 2, 3.33, 10] } },
@@ -660,6 +666,10 @@ const RULES = {
     4157: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4158: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4160: { skillType: DAMAGE, trait: 'magic', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 150, effectRange: 650 },
+    4172: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, ssBoost: 0, baseLandRate: 50, levelDepend: 1, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99] },
+    4173: { skillType: EFFECT, trait: 'buff', effect: 'boss_might', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, aggroPoints: 100, stats: { pAtkMul: 1.5 } },
+    4174: { skillType: EFFECT, trait: 'buff', effect: 'boss_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, aggroPoints: 100, stats: { pDefMul: 1.5 } },
+    4175: { skillType: EFFECT, trait: 'buff', effect: 'boss_haste', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, aggroPoints: 100, stats: { pAtkSpdMul: 1.5 } },
     4232: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 20, ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 40, effectRange: 200 },
     4244: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 150, ssBoost: 1, overHit: true, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 40, effectRange: 200 },
     4254: { skillType: DAMAGE, trait: 'magic', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 1000, effectRange: 1500 },
@@ -817,6 +827,11 @@ const RULES = {
     4259: { skillType: EFFECT, trait: 'poison', effect: 'toxic_smoke', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 1, baseLandRate: 80, castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damage: 12 } },
     4378: { skillType: EFFECT, trait: 'buff', effect: 'self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { reflectDam: 20 } },
     4711: { skillType: EFFECT, trait: 'buff', effect: 'wild_defense', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { pDefMul: 5, mDefMul: 5, pAtkSpdMul: 0.3, runSpdMul: 0.1 } },
+    4721: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 40, effectRange: 200 },
+    4723: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 40, effectRange: 200 },
+    4732: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, castRange: 40, effectRange: 200 },
+    4733: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, castRange: 40, effectRange: 200 },
+    4738: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 40, effectRange: 200 },
     4100: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4101: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95] },
     4102: { skillType: EFFECT, trait: 'fire', effect: 'npc_fire_weakness', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 100, levelDepend: 1, magicLevelByLevel: [20, 70], castRange: 600, effectRange: 1100, statsByLevel: { fireVuln: [1.15, 1.20] } },

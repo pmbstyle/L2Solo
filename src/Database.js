@@ -336,7 +336,17 @@ function applySchemaMigrations() {
                 CREATE INDEX IF NOT EXISTS bot_conversation_messages_order
                     ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
             `);
-        }]
+        }],
+        [9, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS raid_boss_state (
+                npcId INTEGER PRIMARY KEY,
+                respawnTime INTEGER NOT NULL DEFAULT 0,
+                hp REAL,
+                mp REAL,
+                updatedAt INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
+        `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -407,6 +417,23 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation);
+    },
+
+    fetchRaidBossStates() {
+        return select('raid_boss_state', ['npcId', 'respawnTime', 'hp', 'mp', 'updatedAt'], '', [], 'raid-boss:states');
+    },
+
+    upsertRaidBossState(npcId, respawnTime, hp = null, mp = null) {
+        return run(`INSERT INTO raid_boss_state (npcId, respawnTime, hp, mp, updatedAt)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(npcId) DO UPDATE SET respawnTime = excluded.respawnTime,
+                hp = excluded.hp, mp = excluded.mp, updatedAt = excluded.updatedAt`,
+        [Number(npcId), Number(respawnTime), hp === null ? null : Number(hp), mp === null ? null : Number(mp), now()],
+        'raid-boss:upsert');
+    },
+
+    clearRaidBossState(npcId) {
+        return remove('raid_boss_state', 'npcId = ?', [Number(npcId)], 'raid-boss:clear');
     },
 
     isReady() { return !!connection; },

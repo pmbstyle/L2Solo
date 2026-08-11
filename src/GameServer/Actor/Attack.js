@@ -6,6 +6,7 @@ const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 
 // L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
 const WEAPON_MASK_BY_KIND = Object.freeze({
@@ -149,6 +150,13 @@ class Attack {
                 return;
             }
 
+            if (RaidCurse.normalAttackBlocked(session, actor, creature)) {
+                if (usedSoulshot) {
+                    actor.soulshotLoaded = false;
+                }
+                return;
+            }
+
             if (hitLanded) {
                 if (usedSoulshot) {
                     actor.soulshotLoaded = false;
@@ -258,6 +266,23 @@ class Attack {
             actor.statusUpdateVitals(actor);
 
             const shotState = this.captureShotState(actor);
+            if (RaidCurse.skillBlocked(session, actor, targets, skill)) {
+                this.clearLoadedShot(actor, magicSkill);
+                actor.state.setCasts(false);
+                invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+
+                actor.automation.replenishVitals(actor);
+                if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+                    return;
+                }
+                if (this.queue.name) {
+                    this.dequeueEvent(session);
+                    return;
+                }
+                return;
+            }
+
             targets.forEach((target) => {
                 this.restoreShotState(actor, shotState);
                 const outcome = SkillEffects.execute(session, actor, target, skill, {

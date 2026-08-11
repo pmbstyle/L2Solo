@@ -4,6 +4,8 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const NpcDecay       = invoke('GameServer/World/Generics/NpcDecay');
 const GameTime       = invoke('GameServer/World/GameTime');
 const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
+const RaidBossState = invoke('GameServer/World/RaidBossState');
+const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
 function actorLoc(actor) {
     return {
@@ -101,22 +103,27 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 const World = {
     waitForBotSession,
 
-    init() {
+    async init() {
         NpcDecay.stop(this);
+        RaidBossMinionManager.stop(this);
         DayNightSpawnManager.stop(this);
         this.user  = { sessions : [], revision: 0 };
         this.gameTime = GameTime;
         this.npc   = {
             spawns: [], grid: {}, nextId: 1000000,
-            periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: []
+            periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: [],
+            raidBossRespawnTimers: new Map(), raidBossState: new Map()
         };
+        this.npc.raidBossState = await RaidBossState.load();
         this.items = { spawns   : [], nextId: 5000000 };
 
         World.spawnNpcs();
+        RaidBossMinionManager.start(this);
         this.indexSpawnsInGrid();
         NpcDecay.start(this);
         DayNightSpawnManager.start(this);
         invoke('GameServer/Npc/NpcAggro').startAggroTicker(this);
+        return this;
     },
 
     insertUser(session) {

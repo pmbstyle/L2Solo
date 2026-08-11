@@ -1,0 +1,47 @@
+[
+  {
+    "selfId": 6387,
+    "template": {
+      "kind": "Other",
+      "name": "Blessed Scroll of Resurrection for Pets",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6575,
+    "template": {
+      "kind": "Other",
+      "name": "Blessed Scroll: Enchant Weapon (D)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 150000
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6576,
+    "template": {
+      "kind": "Other",
+      "name": "Blessed Scroll: Enchant Armor (D)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 50000
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

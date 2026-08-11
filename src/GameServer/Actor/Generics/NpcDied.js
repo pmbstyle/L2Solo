@@ -1,5 +1,6 @@
 const World = invoke('GameServer/World/World');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
 const PARTY_REWARD_RADIUS = 2500;
 // C4/L2J party reward curve. The total reward grows with the eligible party,
@@ -118,6 +119,10 @@ function partyRewardShares(participants, exp, sp) {
 
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
+
+    if (npc.minionBossObjectId) {
+        RaidBossMinionManager.onMinionDeath(World, npc);
+    }
 
     if (npc.fetchIsSummon?.() === true) {
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());

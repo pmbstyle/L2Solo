@@ -11,12 +11,13 @@ function canMove(actor) {
 }
 
 function canAttack(actor) {
-    return !EffectStore.impairments(actor).disabled;
+    const impairments = EffectStore.impairments(actor);
+    return !(impairments.disabled || impairments.physicalMuted);
 }
 
 function canCast(actor) {
     const impairments = EffectStore.impairments(actor);
-    return !(impairments.disabled || impairments.silenced);
+    return !(impairments.disabled || impairments.silenced || impairments.magicMuted);
 }
 
 function canUseBasicAction(actor) {

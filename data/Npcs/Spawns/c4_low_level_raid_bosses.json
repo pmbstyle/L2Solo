@@ -1,0 +1,83 @@
+[
+  {
+    "selfId": "c4-low-level-raid-bosses",
+    "bounds": [],
+    "spawns": [
+      {
+        "selfId": 10019,
+        "name": "Pan Dryad",
+        "coords": [
+          {
+            "locX": 7352,
+            "locY": 169433,
+            "locZ": -3172,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10127,
+        "name": "Langk Matriarch Rashkos",
+        "coords": [
+          {
+            "locX": -47634,
+            "locY": 219274,
+            "locZ": -1936,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10272,
+        "name": "Partisan Leader Talakin",
+        "coords": [
+          {
+            "locX": 49194,
+            "locY": 127999,
+            "locZ": -3161,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10365,
+        "name": "Patriarch Kuroboros",
+        "coords": [
+          {
+            "locX": -62171,
+            "locY": 190489,
+            "locZ": -3160,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10372,
+        "name": "Discarded Guardian",
+        "coords": [
+          {
+            "locX": 48000,
+            "locY": 243376,
+            "locZ": -6611,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      }
+    ]
+  }
+]

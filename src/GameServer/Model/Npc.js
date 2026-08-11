@@ -31,6 +31,10 @@ class NpcModel extends CreatureModel {
         return this.model.kind;
     }
 
+    fetchIsRaidBoss() {
+        return this.model.raidBoss === true;
+    }
+
     fetchHostile() {
         return this.model.hostile;
     }

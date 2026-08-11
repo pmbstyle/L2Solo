@@ -158,13 +158,16 @@ function hasDebuff(actor, keys) {
 }
 
 function impairments(actor) {
+    const debuffs = activeDebuffs(actor);
     return {
-        disabled: hasDebuff(actor, ['stun', 'sleep', 'paralyze', 'fear']),
-        afraid: hasDebuff(actor, ['fear']),
-        confused: hasDebuff(actor, ['confusion']),
-        rooted: hasDebuff(actor, ['root']),
-        silenced: hasDebuff(actor, ['silence']),
-        slowed: hasDebuff(actor, ['slow'])
+        disabled: debuffs.some((effect) => ['stun', 'sleep', 'paralyze', 'fear'].includes(effect.key) || ['stun', 'sleep', 'paralyze', 'fear'].includes(effect.category)),
+        afraid: debuffs.some((effect) => effect.key === 'fear' || effect.category === 'fear'),
+        confused: debuffs.some((effect) => effect.key === 'confusion' || effect.category === 'confusion'),
+        rooted: debuffs.some((effect) => effect.key === 'root' || effect.category === 'root'),
+        silenced: debuffs.some((effect) => effect.key === 'silence' || effect.category === 'silence'),
+        physicalMuted: debuffs.some((effect) => effect.stats?.physicalMute === true),
+        magicMuted: debuffs.some((effect) => effect.stats?.magicMute === true),
+        slowed: debuffs.some((effect) => effect.key === 'slow' || effect.category === 'slow')
     };
 }
 

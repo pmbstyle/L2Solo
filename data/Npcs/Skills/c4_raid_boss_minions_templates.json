@@ -1,0 +1,4146 @@
+[
+  {
+    "selfId": 4198,
+    "template": {
+      "name": "Poison",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 3000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 2,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 3,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 9,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 10,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 10,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4727,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 24,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 64,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 176,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 461,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1189,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2326,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3598,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 4245,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 4928,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 5682,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6461,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 7215,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4754,
+    "template": {
+      "name": "BOSS Power Shot",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 327,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 882,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2435,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 6357,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 16445,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 32150,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 49783,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 58763,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 67888,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 77001,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 86359,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 95790,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4780,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1382,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 2381,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 3802,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5590,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 7881,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 9832,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 10862,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 11314,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11553,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11661,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 11640,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 11578,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4214,
+    "template": {
+      "name": "BOSS Reflect Damage",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 1500,
+      "reuse": 0,
+      "buff": 60000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 6,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 10,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 13,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 23,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 28,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 33,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4760,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 138,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 372,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1029,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2687,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6943,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 13568,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 21015,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 24795,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 28785,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 33149,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 37783,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 42148,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4784,
+    "template": {
+      "name": "BOSS Chant of Life",
+      "passive": false,
+      "spell": true,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 1000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1,
+        "mp": 43,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1,
+        "mp": 99,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1,
+        "mp": 134,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1,
+        "mp": 173,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 1,
+        "mp": 207,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 1,
+        "mp": 239,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 1,
+        "mp": 250,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 1,
+        "mp": 258,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 1,
+        "mp": 263,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4213,
+    "template": {
+      "name": "BOSS Haste",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 1500,
+      "reuse": 0,
+      "buff": 60000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 6,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 10,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 13,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 23,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 28,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 33,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4786,
+    "template": {
+      "name": "BOSS Chant of Life",
+      "passive": false,
+      "spell": true,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 1000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1,
+        "mp": 43,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1,
+        "mp": 99,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1,
+        "mp": 134,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1,
+        "mp": 173,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 1,
+        "mp": 207,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 1,
+        "mp": 239,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 1,
+        "mp": 250,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 1,
+        "mp": 258,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 1,
+        "mp": 263,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4211,
+    "template": {
+      "name": "BOSS Might",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 1500,
+      "reuse": 0,
+      "buff": 60000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 6,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 10,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 13,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 23,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 28,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 33,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4761,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 74,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 198,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 548,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1434,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 3704,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7241,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 11196,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 13197,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 15309,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 17634,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 20122,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 22415,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4212,
+    "template": {
+      "name": "BOSS Shield",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 1500,
+      "reuse": 0,
+      "buff": 60000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 6,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 10,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 13,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 23,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 28,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 33,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4199,
+    "template": {
+      "name": "Decrease P. Atk.",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 90000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 90,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 90,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 90,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 90,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 90,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 90,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 90,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 90,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 90,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 90,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 90,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 90,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4208,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 176,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 475,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1304,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 3414,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 8592,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 16607,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 25504,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 29589,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 33944,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 38501,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 43180,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 47895,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4757,
+    "template": {
+      "name": "BOSS Power Shot",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 138,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 372,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1027,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2691,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6943,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 13584,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 21015,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 24795,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 28785,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 33188,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 37739,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 42148,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4781,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 736,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1267,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2024,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2983,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 4204,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5247,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 5787,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 6022,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 6144,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 6203,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6199,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 6158,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4785,
+    "template": {
+      "name": "BOSS Chant of Life",
+      "passive": false,
+      "spell": true,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 1000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1,
+        "mp": 43,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1,
+        "mp": 99,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1,
+        "mp": 134,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1,
+        "mp": 173,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 1,
+        "mp": 207,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 1,
+        "mp": 239,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 1,
+        "mp": 250,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 1,
+        "mp": 258,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 1,
+        "mp": 263,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4755,
+    "template": {
+      "name": "BOSS Power Shot",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 275,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 744,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2057,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5374,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 13885,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 27135,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 42030,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 49590,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 57569,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 66298,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 75565,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 84295,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4200,
+    "template": {
+      "name": "Decrease Atk. Spd.",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 15000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 90,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 90,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 90,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 90,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 90,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 90,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 90,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 90,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 90,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 90,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 90,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 90,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4209,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1768,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 3037,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4819,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 7103,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 9754,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 12035,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 13182,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 13501,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 13624,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13544,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 13303,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 13157,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4205,
+    "template": {
+      "name": "Paralysis",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 120000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 30,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 30,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 30,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 30,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 30,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 30,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 30,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 30,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 30,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 30,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 30,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 30,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4782,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 691,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1191,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1899,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2799,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 3941,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4922,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 5431,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 5657,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 5777,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 5838,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 5813,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 5789,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4203,
+    "template": {
+      "name": "Decrease Speed",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 120000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 50,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 50,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 50,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 50,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 50,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 50,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 50,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 50,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 50,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 50,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 50,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 50,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4210,
+    "template": {
+      "name": "Life Chant",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 1000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1,
+        "mp": 43,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 2,
+        "mp": 49,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 3,
+        "mp": 99,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 4,
+        "mp": 134,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5,
+        "mp": 173,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 6,
+        "mp": 207,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7,
+        "mp": 139,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8,
+        "mp": 250,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9,
+        "mp": 258,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 10,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 11,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 12,
+        "mp": 263,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4778,
+    "template": {
+      "name": "BOSS Spear Attack",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 352,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 949,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2607,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 6828,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 17184,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 33213,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 51007,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 59177,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 67888,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 77001,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 86359,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 95790,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4756,
+    "template": {
+      "name": "BOSS Power Shot",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 147,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 396,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1095,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2868,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 7407,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 14481,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 22392,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 26393,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 30618,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 35267,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 40244,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 44830,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4202,
+    "template": {
+      "name": "Hold",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 70,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 70,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 70,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 70,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 70,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 70,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 70,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 70,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 70,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 70,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 70,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 70,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4729,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 168,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 453,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1251,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 3265,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 7446,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 16511,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 25566,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 30178,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 34864,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 39544,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 44350,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 49193,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4204,
+    "template": {
+      "name": "Bleed",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 2000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 2,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 3,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 9,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 10,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 10,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4777,
+    "template": {
+      "name": "BOSS Spear Attack",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 352,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 949,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2607,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 6828,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 17184,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 33213,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 51007,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 59177,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 67888,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 77001,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 86359,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 95790,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4779,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1640,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 2824,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4501,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 6612,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 9334,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11649,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 12865,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 13406,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 13624,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13544,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 13303,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 13157,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4774,
+    "template": {
+      "name": "BOSS Spear Attack",
+      "passive": false,
+      "spell": false,
+      "distance": 900
+    },
+    "time": {
+      "hitTime": 4500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 352,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 949,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2607,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 6828,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 17184,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 33213,
+        "mp": 143,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 51007,
+        "mp": 166,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 59177,
+        "mp": 175,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 67888,
+        "mp": 182,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 77001,
+        "mp": 186,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 86359,
+        "mp": 189,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 95790,
+        "mp": 192,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4316,
+    "template": {
+      "name": "Boss Lilim Drain",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 6,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 8,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 11,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 15,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 19,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 23,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 27,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 29,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 31,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 32,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 33,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 33,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4206,
+    "template": {
+      "name": "Decrease MP",
+      "passive": false,
+      "spell": false,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4181,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 301,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 812,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 2231,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5844,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 14708,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 28428,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 43658,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 50651,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 58107,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 65907,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 73917,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 81989,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4783,
+    "template": {
+      "name": "BOSS Heal",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 647,
+        "mp": 21,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1115,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1778,
+        "mp": 50,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2607,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 3677,
+        "mp": 86,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4597,
+        "mp": 104,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 5075,
+        "mp": 119,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 5293,
+        "mp": 125,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 5409,
+        "mp": 129,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 5458,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 5441,
+        "mp": 131,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 5421,
+        "mp": 132,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4788,
+    "template": {
+      "name": "BOSS Chant of Life",
+      "passive": false,
+      "spell": true,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 1000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 1,
+        "mp": 43,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 1,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1,
+        "mp": 99,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1,
+        "mp": 134,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1,
+        "mp": 173,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 1,
+        "mp": 207,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 1,
+        "mp": 239,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 1,
+        "mp": 250,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 1,
+        "mp": 258,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 1,
+        "mp": 262,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 1,
+        "mp": 263,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  }
+]

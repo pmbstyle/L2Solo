@@ -2,6 +2,8 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const SocialAggro = invoke('GameServer/Npc/SocialAggro');
+    const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
+    const World = invoke('GameServer/World/World');
 
     BotSocialMemory.recordCombatHelp(session, npc, `hit ${npc.fetchName()} for ${hit}`);
 
@@ -9,8 +11,17 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     const actingPlayerLevel = Number(session?.actor?.fetchLevel?.());
     const levels = [attackerLevel, actingPlayerLevel]
         .filter((level) => Number.isFinite(level) && level > 0);
+    const dropState = npc.model ?? npc;
+    if (npc.fetchIsRaidBoss?.() === true) {
+        if (!(dropState.raidAttackers instanceof Set)) dropState.raidAttackers = new Set();
+        const actorId = Number(actor?.fetchId?.() || 0);
+        const playerId = Number(session?.actor?.fetchId?.() || 0);
+        if (actorId) dropState.raidAttackers.add(actorId);
+        if (playerId) dropState.raidAttackers.add(playerId);
+        if (actor?.model) actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
+        if (session?.actor?.model) session.actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
+    }
     if (levels.length > 0) {
-        const dropState = npc.model ?? npc;
         dropState.dropAttackerLevels ??= [];
         levels.forEach((level) => {
             if (!dropState.dropAttackerLevels.includes(level)) {
@@ -34,6 +45,9 @@ function receivedHit(session, actor, npc, hit, options = {}) {
 
     npc.automation.replenishVitals(npc);
     npc.enterCombatState(session, actor);
+    if (npc.fetchIsRaidBoss?.() === true) {
+        MinionManager.onBossAttacked(World, npc, actor, session);
+    }
     SocialAggro.notifyClan(session, npc, actor);
 }
 

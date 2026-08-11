@@ -3,6 +3,8 @@ const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const NpcAggro = invoke('GameServer/Npc/NpcAggro');
+const RaidBossState = invoke('GameServer/World/RaidBossState');
+const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
 const VISIBILITY_RADIUS = 6000;
 
@@ -37,6 +39,15 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     return instance;
 }
 
+function spawnChildNpc(world, npc, coords, metadata = {}) {
+    if (!world?.npc?.spawns || !npc) return null;
+    const instance = createNpc(world, npc, coords, null);
+    Object.assign(instance, metadata);
+    world.indexSpawnsInGrid?.();
+    notifyNearby(world, instance);
+    return instance;
+}
+
 function normalizePeriod(spawn) {
     return ['day', 'night'].includes(spawn?.period) ? spawn.period : 'always';
 }
@@ -67,10 +78,83 @@ function randomCoords(definition) {
     return { locX: pos[0], locY: pos[1], locZ: bounds[0].maxZ, head: utils.randomNumber(65536) };
 }
 
-function spawnNpc(world, definition) {
+function isRaidBossDefinition(definition) {
+    return definition?.npc?.template?.raidBoss === true;
+}
+
+function raidBossId(definition) {
+    return Number(definition?.spawn?.selfId || definition?.npc?.selfId || 0);
+}
+
+function raidBossRespawnAt(definition) {
+    const id = raidBossId(definition);
+    const state = RaidBossState.get(id);
+    return state?.respawnTime > 0 ? Number(state.respawnTime) : 0;
+}
+
+function scheduleRaidBossRespawn(world, definition, respawnAt) {
+    if (!world?.npc || !isRaidBossDefinition(definition)) return null;
+    const id = raidBossId(definition);
+    if (!id) return null;
+
+    const timers = world.npc.raidBossRespawnTimers || (world.npc.raidBossRespawnTimers = new Map());
+    const current = timers.get(id);
+    if (current?.timer) clearTimeout(current.timer);
+
+    const at = Number(respawnAt);
+    const delay = Math.max(0, Number.isFinite(at) ? at - Date.now() : 0);
+    const timer = setTimeout(() => {
+        timers.delete(id);
+        if (!isPeriodActive(definition.spawn, world.npc.periodMode)) return;
+
+        let spawned = null;
+        try {
+            spawned = spawnNpc(world, definition, { ignoreRaidBossState: true });
+        } catch (error) {
+            // A malformed coordinate, template, or minion attachment must not
+            // kill the timer callback and strand the persisted raid boss.
+            utils.infoWarn('RaidBoss', 'respawn failed for %d; retrying: %s', id, error?.message || error);
+        }
+        if (spawned) {
+            RaidBossState.markSpawned(id);
+            world.indexSpawnsInGrid?.();
+            return;
+        }
+
+        // A transient spawn failure must not permanently lose a persisted
+        // raid boss. Retry shortly while keeping the DB respawn deadline.
+        scheduleRaidBossRespawn(world, definition, Date.now() + 1000);
+    }, delay);
+    timer.unref?.();
+    timers.set(id, { timer, respawnAt: at });
+    return timer;
+}
+
+function spawnDefinition(world, definition, coords, { ignoreRaidBossState = false } = {}) {
+    if (!isPeriodActive(definition?.spawn, world?.npc?.periodMode)) return null;
+    if (isRaidBossDefinition(definition) && !ignoreRaidBossState) {
+        const respawnAt = raidBossRespawnAt(definition);
+        if (respawnAt > Date.now()) {
+            scheduleRaidBossRespawn(world, definition, respawnAt);
+            return null;
+        }
+    }
+
+    const npc = createNpc(world, definition.npc, coords, definition);
+    if (isRaidBossDefinition(definition)) {
+        MinionManager.attachBoss(world, npc);
+    }
+    if (isRaidBossDefinition(definition) && RaidBossState.get(raidBossId(definition))) {
+        RaidBossState.markSpawned(raidBossId(definition));
+    }
+    return npc;
+}
+
+function spawnNpc(world, definition, options = {}) {
     if (!isPeriodActive(definition?.spawn, world?.npc?.periodMode)) return null;
     const coords = randomCoords(definition);
-    const npc = createNpc(world, definition.npc, coords, definition);
+    const npc = spawnDefinition(world, definition, coords, options);
+    if (!npc) return null;
     // Respawns happen independently of player movement.  Announce the new
     // object immediately, otherwise it can aggro a nearby player before that
     // player next crosses UpdateEnvironment's movement refresh threshold.
@@ -153,10 +237,10 @@ function spawnNpcs() {
                             };
                             if (isPeriodic(fixedDefinition.spawn)) this.npc.periodDefinitions.push(fixedDefinition);
                             if (isPeriodActive(fixedDefinition.spawn, this.npc.periodMode)) {
-                                createNpc(this, npc, {
+                                spawnDefinition(this, fixedDefinition, {
                                     locX: info.locX, locY: info.locY, locZ: info.locZ,
                                     head: npc.template.kind === 'Monster' && info.head === 0 ? utils.randomNumber(65536) : info.head,
-                                }, fixedDefinition);
+                                });
                             }
                         });
                     }
@@ -180,9 +264,13 @@ function spawnNpcs() {
 module.exports = spawnNpcs;
 module.exports.spawnNpc = spawnNpc;
 module.exports.spawnQuestNpc = spawnQuestNpc;
+module.exports.spawnChildNpc = spawnChildNpc;
 module.exports.despawnQuestNpc = despawnQuestNpc;
 module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
+module.exports.isRaidBossDefinition = isRaidBossDefinition;
+module.exports.raidBossRespawnAt = raidBossRespawnAt;
+module.exports.scheduleRaidBossRespawn = scheduleRaidBossRespawn;
 module.exports.isPeriodic = isPeriodic;
 module.exports.isPeriodActive = isPeriodActive;
 module.exports.shouldRespawn = function shouldRespawn(spawn) {

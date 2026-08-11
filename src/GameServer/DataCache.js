@@ -49,6 +49,9 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_heretics'),
             ...validateModel(path + 'Npcs/c4_catacomb_of_the_forbidden_path'),
+            ...validateModel(path + 'Npcs/c4_low_level_raid_bosses'),
+            ...validateModel(path + 'Npcs/c4_raid_bosses'),
+            ...validateModel(path + 'Npcs/c4_raid_boss_minions'),
             ...C4LateTownGatekeepers.npcs,
             ...C4SevenSignsDungeonTeleports.npcs
         ];
@@ -86,6 +89,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_heretics'),
             ...validateModel(path + 'Npcs/Spawns/c4_catacomb_of_the_forbidden_path'),
+            ...validateModel(path + 'Npcs/Spawns/c4_low_level_raid_bosses'),
+            ...validateModel(path + 'Npcs/Spawns/c4_raid_bosses'),
             ...C4LateTownGatekeepers.spawns,
             ...C4SevenSignsDungeonTeleports.spawns
         ];
@@ -122,7 +127,10 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_dark_omen'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_heretics'),
-            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_forbidden_path')
+            ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_forbidden_path'),
+            ...validateModel(path + 'Npcs/Rewards/c4_low_level_raid_bosses'),
+            ...validateModel(path + 'Npcs/Rewards/c4_raid_bosses'),
+            ...validateModel(path + 'Npcs/Rewards/c4_raid_boss_minions')
         ];
         DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
@@ -135,6 +143,7 @@ const DataCache = {
             ...validateModel(path + 'Items/Weapons/weapons'),
             ...validateModel(path + 'Items/Weapons/c4_s_grade'),
             ...validateModel(path + 'Items/Weapons/c4_necropolis_of_sacrifice'),
+            ...validateModel(path + 'Items/Weapons/c4_raid_bosses'),
             ...validateModel(path + 'Items/Others/others'),
             ...validateModel(path + 'Items/Others/c4_a_grade'),
             ...validateModel(path + 'Items/Others/c4_sealed_a_grade'),
@@ -170,7 +179,9 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_catacomb_of_dark_omen'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_apostate'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_heretics'),
-            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_forbidden_path')
+            ...validateModel(path + 'Items/Others/c4_catacomb_of_the_forbidden_path'),
+            ...validateModel(path + 'Items/Others/c4_low_level_raid_bosses'),
+            ...validateModel(path + 'Items/Others/c4_raid_bosses')
         ];
 
         DataCache.skills = [

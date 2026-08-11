@@ -24,6 +24,9 @@
                     },
                     "hostile": {
                         "type": "boolean"
+                    },
+                    "raidBoss": {
+                        "type": "boolean"
                     }
                 },
                 "required": [

@@ -1,0 +1,83 @@
+[
+  {
+    "selfId": 5286,
+    "template": {
+      "name": "Berserker Blade",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000,
+      "kind": "Weapon.GreatSword"
+    },
+    "stats": {
+      "pAtk": 190,
+      "pAtkRnd": 10,
+      "mAtk": 83,
+      "atkSpd": 325,
+      "crit": 8,
+      "accur": 0
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 6365,
+    "template": {
+      "name": "Basalt Battlehammer",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 48800000,
+      "kind": "Weapon.Blunt"
+    },
+    "stats": {
+      "pAtk": 281,
+      "pAtkRnd": 20,
+      "mAtk": 132,
+      "atkSpd": 379,
+      "crit": 4,
+      "accur": 4
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6369,
+    "template": {
+      "name": "Dragon Hunter Axe",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1820,
+      "price": 48800000,
+      "kind": "Weapon.Blunt"
+    },
+    "stats": {
+      "pAtk": 342,
+      "pAtkRnd": 20,
+      "mAtk": 132,
+      "atkSpd": 325,
+      "crit": 4,
+      "accur": 4
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  }
+]
