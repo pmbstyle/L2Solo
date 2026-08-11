@@ -168,6 +168,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .filter.is-active { color: #101712; background: var(--gold); border-color: transparent; }
 .filter-count { margin-left: 4px; opacity: 0.68; font-variant-numeric: tabular-nums; }
 .filter.is-active .filter-count { opacity: 0.8; }
+.raid-boss-filter .legend-dot { margin-right: 2px; }
 
 .actor-filter-controls { gap: 7px; margin-left: auto; }
 .level-filter,

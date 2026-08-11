@@ -48,7 +48,8 @@ const PHASE_LABELS = Object.freeze({
     warm: 'Background',
     cold: 'Simulated',
     player: 'Player',
-    players: 'Players'
+    players: 'Players',
+    raidbosses: 'Raid bosses'
 });
 
 const ROLE_LABELS = Object.freeze({
@@ -854,6 +855,7 @@ function renderPoints() {
 function renderRaidBossPoints() {
     if (!els.raidBossLayer) return;
     els.raidBossLayer.innerHTML = '';
+    if (state.phase !== 'all' && state.phase !== 'raidbosses') return;
     const viewportWidth = state.viewport?.width || 99999;
     raidBossItems()
         .filter((boss) => boss.status === 'alive' && boss.loc)
@@ -922,7 +924,8 @@ function renderFilterCounts() {
         hot: items.filter((actor) => actor.phase === 'hot').length,
         warm: items.filter((actor) => actor.phase === 'warm').length,
         cold: items.filter((actor) => actor.phase === 'cold').length,
-        players: items.filter((actor) => actor.kind === 'player').length
+        players: items.filter((actor) => actor.kind === 'player').length,
+        raidbosses: Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
     Object.entries(counts).forEach(([key, value]) => {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
@@ -1067,6 +1070,12 @@ function displayActivity(actor) {
 }
 
 function renderRoster() {
+    if (state.phase === 'raidbosses') {
+        const alive = Number(state.snapshot?.raidBosses?.counts?.alive || 0);
+        els.visibleCount.textContent = `${number(alive)} shown`;
+        els.actorList.innerHTML = '<div class="list-empty">Raid bosses are shown on the map. Open the Raid bosses panel for full status.</div>';
+        return;
+    }
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
     const roster = filteredActors()
         .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
@@ -1772,8 +1781,19 @@ els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');
     if (!button) return;
     state.phase = button.dataset.phase;
+    if (state.phase === 'raidbosses') {
+        state.selectedId = null;
+        state.detail = null;
+        state.detailError = null;
+        state.detailLoading = false;
+        state.clusterScope = null;
+        state.detailRequest += 1;
+    } else if (state.phase !== 'all') {
+        state.selectedRaidBossId = null;
+    }
     els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
     renderFilteredActorViews({ counts: false });
+    renderSelected();
 });
 
 els.actorSearch.addEventListener('input', (event) => {

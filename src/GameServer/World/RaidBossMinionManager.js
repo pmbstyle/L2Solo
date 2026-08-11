@@ -110,6 +110,39 @@ function onBossAttacked(world, boss, attacker, sourceSession) {
     return alerted;
 }
 
+function bossForMinion(world, minion) {
+    const bossObjectId = Number(minion?.minionBossObjectId || 0);
+    if (!bossObjectId) return null;
+    return (world?.npc?.spawns || []).find((candidate) => (
+        candidate?.fetchIsRaidBoss?.() === true &&
+        Number(candidate.fetchId?.() || 0) === bossObjectId
+    )) || null;
+}
+
+// C4/Lisvus treats a minion hit as an attack on the raid group. The leader
+// joins the fight first, then calls every other idle minion to the attacker.
+// Keep the native guard: an already engaged leader does not retarget its
+// existing encounter just because a second minion was hit.
+function onMinionAttacked(world, minion, attacker, sourceSession) {
+    if (!minion || !attacker || minion.state?.fetchDead?.() === true || attacker.isDead?.() === true) return 0;
+
+    const boss = bossForMinion(world, minion);
+    if (
+        !boss ||
+        boss.state?.fetchDead?.() === true ||
+        boss.isDead?.() === true ||
+        boss.state?.fetchCombats?.() === true
+    ) return 0;
+
+    const session = sourceSession || {
+        dataSendToMeAndOthers() {},
+        dataSendToMe() {}
+    };
+    boss.enterCombatState?.(session, attacker);
+    if (boss.state?.fetchCombats?.() !== true) return 0;
+    return onBossAttacked(world, boss, attacker, session);
+}
+
 function onMinionDeath(world, minion) {
     const boss = (world?.npc?.spawns || []).find((candidate) => (
         candidate.fetchIsRaidBoss?.() === true &&
@@ -189,6 +222,7 @@ module.exports = {
     MINION_RESPAWN_DELAY_MS,
     attachBoss,
     onBossAttacked,
+    onMinionAttacked,
     onMinionDeath,
     onBossDeath,
     maintain,
