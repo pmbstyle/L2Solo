@@ -7,6 +7,9 @@ const ECONOMIC_ROLES = {
     57: 'crafter'
 };
 
+// Cohort centers mirror PopulationSeedPlanner.STARTER_REGIONS. Route
+// eligibility deliberately uses a wider radius than initial seeding, so
+// adjacent Elf and Dark Elf starter areas overlap.
 const STARTER_REGIONS = Object.freeze([
     { id: 'human', locX: -80000, locY: 250000, radius: 42000 },
     { id: 'elf', locX: 46000, locY: 40000, radius: 42000 },
@@ -250,17 +253,18 @@ function crowdPenaltyForSpot(spot, occupancy) {
     return 60 + Math.pow(ratio - 1, 2) * 120;
 }
 
-function nearestStarterRegion(spot = {}) {
+function starterRegionsFor(spot = {}) {
     const x = Number(spot.center?.locX);
     const y = Number(spot.center?.locY);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
     return STARTER_REGIONS
         .map((region) => ({
             ...region,
             distanceSquared: Math.pow(x - region.locX, 2) + Math.pow(y - region.locY, 2)
         }))
         .filter((region) => region.distanceSquared <= region.radius * region.radius)
-        .sort((left, right) => left.distanceSquared - right.distanceSquared)[0]?.id || null;
+        .sort((left, right) => left.distanceSquared - right.distanceSquared)
+        .map((region) => region.id);
 }
 
 function localityPenaltyForSpot(spot, state, context, tags) {
@@ -271,8 +275,8 @@ function localityPenaltyForSpot(spot, state, context, tags) {
     if (explicitRegions.length) return explicitRegions.includes(starterRegion) ? 0 : 10000;
 
     if (!tags.includes('starter')) return 0;
-    const localRegion = nearestStarterRegion(spot);
-    return localRegion && localRegion !== starterRegion ? 10000 : 0;
+    const localRegions = starterRegionsFor(spot);
+    return localRegions.length > 0 && !localRegions.includes(starterRegion) ? 10000 : 0;
 }
 
 function stableVariation(spot, state) {

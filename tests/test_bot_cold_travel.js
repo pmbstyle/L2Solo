@@ -167,6 +167,33 @@ try {
     assert.deepStrictEqual(partyArrived.loc, { locX: 116137, locY: -180091, locZ: -900 });
     assert.strictEqual(partyArrived.stats.travel, null,
         'a background party arrival must clear its transition instead of remaining visually at the old spot');
+    const interruptedMember = {
+        ...state,
+        activity: 'traveling',
+        spotId: legacyMineSpot.id,
+        stats: {
+            ...(state.stats || {}),
+            travel: { reason: 'market_visit', arrivalAt: 90000 }
+        }
+    };
+    const alignedMember = PopulationService.finishPartySpotTravel(
+        interruptedMember,
+        26000,
+        availableSpot,
+        {
+            reason: 'party_spot_replan',
+            regionName: availableSpot.name,
+            spotId: availableSpot.id,
+            arrivalAt: 26000
+        }
+    );
+    assert.strictEqual(alignedMember.activity, 'grouped',
+        'a member that could not start party travel must still join the party at arrival');
+    assert.strictEqual(alignedMember.spotId, availableSpot.id,
+        'fallback party arrival must align the member with the party spot');
+    assert.deepStrictEqual(alignedMember.loc, { locX: 116137, locY: -180091, locZ: -900 });
+    assert.strictEqual(alignedMember.stats.travel, null,
+        'fallback party arrival must clear the unrelated stale travel transition');
     const arrivedPartyRecord = PopulationService.finishPartyTravelRecord({
         partyId: 'party-route',
         nextResolveAt: 25000,
@@ -183,5 +210,15 @@ try {
     SpotService.findCurrentSpot = originalFindCurrentSpot;
     SpotService.arrivalPointForState = originalPartyArrivalPoint;
 }
+
+const boundaryArrival = SpotService.arrivalPointForState({ characterId: 2 }, {
+    id: '0_0',
+    center: { locX: 1, locY: 1, locZ: 0 },
+    arrivalPoints: [{ locX: 1, locY: 1, locZ: 0 }]
+});
+assert(boundaryArrival.locX >= 0 && boundaryArrival.locX < 6000,
+    'spawn-aware arrival offsets must remain inside the destination X grid');
+assert(boundaryArrival.locY >= 0 && boundaryArrival.locY < 6000,
+    'spawn-aware arrival offsets must remain inside the destination Y grid');
 
 console.log('Bot cold travel checks passed');

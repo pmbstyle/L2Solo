@@ -91,17 +91,29 @@ function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
     };
 }
 
-function finishPartySpotTravel(state, timestamp = Date.now()) {
+function finishPartySpotTravel(state, timestamp = Date.now(), destinationSpot = null, partyTravel = null) {
     const travel = state?.stats?.travel;
-    if (state?.activity !== 'traveling'
-        || travel?.reason !== 'party_spot_replan'
-        || Number(travel.arrivalAt || 0) > timestamp) return state;
+    const ownTravelReady = state?.activity === 'traveling'
+        && travel?.reason === 'party_spot_replan'
+        && Number(travel.arrivalAt || 0) <= timestamp;
+    const partyFallbackReady = !ownTravelReady
+        && destinationSpot
+        && partyTravel?.reason === 'party_spot_replan'
+        && Number(partyTravel.arrivalAt || 0) <= timestamp;
+    if (!ownTravelReady && !partyFallbackReady) return state;
+    const arrival = ownTravelReady
+        ? travel
+        : {
+            ...partyTravel,
+            arrivalActivity: 'grouped',
+            to: SpotService.arrivalPointForState(state, destinationSpot) || destinationSpot.center || state.loc
+        };
     return {
         ...state,
-        activity: travel.arrivalActivity || 'grouped',
-        currentRegion: travel.regionName || state.currentRegion,
-        spotId: travel.spotId || state.spotId,
-        loc: { ...(travel.to || state.loc) },
+        activity: arrival.arrivalActivity || 'grouped',
+        currentRegion: arrival.regionName || destinationSpot?.name || state.currentRegion,
+        spotId: arrival.spotId || destinationSpot?.id || state.spotId,
+        loc: { ...(arrival.to || state.loc) },
         timing: {
             ...(state.timing || {}),
             activityStartedAt: timestamp,
@@ -1556,7 +1568,22 @@ const PopulationService = {
                     return BackgroundPartyState.createOrUpdate({ ...party, nextResolveAt: arrivalAt })
                         .then((updatedParty) => ({ ok: true, party: updatedParty || party, debug: { activity: 'party_travel' } }));
                 }
-                const arrivedMembers = members.map((member) => finishPartySpotTravel(member, startedAt));
+                const destinationSpotId = party.stats.travel.spotId || party.spotId;
+                const recordedArrival = members.find((member) => member.stats?.travel?.reason === 'party_spot_replan')
+                    ?.stats?.travel?.to;
+                const destinationSpot = SpotProfiles.findById(destinationSpotId)
+                    || SpotService.findById(destinationSpotId)
+                    || {
+                        id: destinationSpotId,
+                        name: party.stats.travel.regionName,
+                        center: recordedArrival || null
+                    };
+                const arrivedMembers = members.map((member) => finishPartySpotTravel(
+                    member,
+                    startedAt,
+                    destinationSpot,
+                    party.stats.travel
+                ));
                 return arrivedMembers.reduce((chain, member) => (
                     chain.then(() => LifeState.upsertState(member, 'party_spot_arrival'))
                 ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate(

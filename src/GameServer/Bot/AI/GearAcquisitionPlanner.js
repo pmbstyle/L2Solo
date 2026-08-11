@@ -19,7 +19,6 @@ const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
 const RATE_MODEL_VERSION = 5;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
-const DIRECT_FAILURE_MIN_LEGACY_AGE_MS = 15 * 60 * 1000;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
@@ -79,6 +78,7 @@ function equippedSlotsFor(entry = {}, fallbackSlot = 0) {
     // Legacy cold snapshots only had one boolean for a selfId. If two copies
     // of paired jewellery are present, both paperdoll sides are the useful and
     // native interpretation; the next physical sync persists them separately.
+    if (amount === 1) return [slot];
     const slots = pairedSlots(slot);
     return slots.slice(0, Math.min(amount, slots.length));
 }
@@ -589,8 +589,10 @@ function npcOfferForTarget(target, state = {}, options = {}) {
 
 function staticNpcItems(options = {}) {
     if (typeof options.findMarketOffer === 'function') return DataCache.items || [];
-    if (!staticNpcItemIdsCache) {
-        staticNpcItemIdsCache = new Set((NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)).filter(Boolean));
+    if (!staticNpcItemIdsCache?.size) {
+        const itemIds = new Set((NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)).filter(Boolean));
+        if (!itemIds.size) return [];
+        staticNpcItemIdsCache = itemIds;
     }
     return (DataCache.items || []).filter((item) => staticNpcItemIdsCache.has(Number(item.selfId)));
 }
@@ -761,14 +763,15 @@ function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     const target = (DataCache.items || []).find((item) => Number(item.selfId) === targetId);
     if (!target || !isSlotUpgrade(target, inventoryItems(state.inventory), roleFor(state), classIdFor(state))) return null;
     const current = targetCombatCounter(state, npcId);
-    const baseline = Number(plan.targetProgress?.npcId || 0) === npcId
-        ? plan.targetProgress
-        : { resolves: 0, targetKills: 0 };
+    const hasBaseline = Number(plan.targetProgress?.npcId || 0) === npcId;
+    // Legacy plans have lifetime counters but no plan-local baseline. Let the
+    // next finalize pass stamp the current values before judging this route.
+    if (!hasBaseline) return null;
+    const baseline = plan.targetProgress;
     const resolves = Math.max(0, current.resolves - Number(baseline.resolves || 0));
     const targetKills = Math.max(0, current.targetKills - Number(baseline.targetKills || 0));
     const ageMs = Math.max(0, Number(timestamp) - Number(plan.startedAt || timestamp));
-    const hasBaseline = Number(plan.targetProgress?.npcId || 0) === npcId;
-    if ((!hasBaseline && ageMs < DIRECT_FAILURE_MIN_LEGACY_AGE_MS) || resolves < DIRECT_FAILURE_RESOLVE_LIMIT) return null;
+    if (resolves < DIRECT_FAILURE_RESOLVE_LIMIT) return null;
     if (targetKills === 0) {
         return { reason: 'combat_unviable', targetId, npcId, resolves, targetKills, ageMs };
     }

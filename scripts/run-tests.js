@@ -122,6 +122,7 @@ const tests = [
     'tests/test_bot_dynamic_buy_store.js',
     'tests/test_bot_merchant_coverage.js',
     'tests/test_bot_population_state.js',
+    'tests/test_bot_shield_reconciliation.js',
     'tests/test_bot_population_policy.js',
     'tests/test_bot_population_scheduler_slices.js',
     'tests/test_bot_population_cooldown_cleanup.js',

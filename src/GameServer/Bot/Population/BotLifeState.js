@@ -993,17 +993,24 @@ function discardFulfilledEquipmentPlans() {
 
 function reconcileIncompatibleShields() {
     const affected = [...cache.values()].filter(hasIncompatibleShield);
+    let reconciledCount = 0;
     return affected.reduce((chain, state) => chain.then(() => {
         const reconciled = reconcileEquipmentInventory(state);
         const row = rowFromState(reconciled);
         return save(row)
             .then(() => syncInventorySummary(row.characterId, reconciled.inventory))
-            .then(() => cache.set(row.characterId, normalize(row)));
+            .then(() => {
+                cache.set(row.characterId, normalize(row));
+                reconciledCount += 1;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotLife', 'failed shield reconciliation for %d: %s', row.characterId, err.message);
+            });
     }), Promise.resolve()).then(() => {
-        if (affected.length > 0) {
-            utils.infoWarn('BotLife', 'unequipped %d incompatible persisted shields on startup', affected.length);
+        if (reconciledCount > 0) {
+            utils.infoWarn('BotLife', 'unequipped %d incompatible persisted shields on startup', reconciledCount);
         }
-        return affected.length;
+        return reconciledCount;
     });
 }
 
@@ -1963,10 +1970,10 @@ const BotLifeState = {
             const inventory = { ...(state.inventory || {}) };
             Object.entries(physicalInventory).forEach(([key, item]) => {
                 const previous = inventory[key] || {};
-                const equippedSlots = [...new Set([
-                    ...GearAcquisitionPlanner.equippedSlotsFor(previous, previous.slot),
-                    ...GearAcquisitionPlanner.equippedSlotsFor(item, item.slot)
-                ])].sort((a, b) => a - b);
+                // A present physical row is authoritative for paperdoll state.
+                // Persisted slots are only retained for items absent from the
+                // physical snapshot, so unequipping can shrink the slot set.
+                const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item, item.slot);
                 inventory[key] = {
                     ...previous,
                     ...item,

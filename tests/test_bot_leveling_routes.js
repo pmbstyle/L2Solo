@@ -105,6 +105,33 @@ assert.strictEqual(best.route.reason, 'mage_party_damage');
 assert.ok(LevelingRoutes.tagsForSpot(spots[0]).includes('undead'), 'undead tag should be inferred from mob names');
 assert.ok(LevelingRoutes.tagsForSpot(spots[2]).includes('catacomb'), 'catacomb tag should be inferred from zone and mob names');
 
+const sharedElvenStarter = {
+    id: 'elf-dark-elf-overlap',
+    name: 'Shared Elven Starter Field',
+    minLevel: 1,
+    maxLevel: 12,
+    avgLevel: 6,
+    density: 10,
+    center: { locX: 46000, locY: 40000, locZ: 0 },
+    npcNames: ['Young Brown Keltir'],
+    tags: ['starter'],
+    tagsAuthoritative: true
+};
+assert.strictEqual(
+    LevelingRoutes.scoreSpot(sharedElvenStarter, { level: 6, stats: { starterRegion: 'elf' } }).localityPenalty,
+    0,
+    'an Elf starter spot must remain local to the Elf cohort'
+);
+assert.strictEqual(
+    LevelingRoutes.scoreSpot(sharedElvenStarter, { level: 6, stats: { starterRegion: 'dark_elf' } }).localityPenalty,
+    0,
+    'overlapping starter radii must not exclude the adjacent Dark Elf cohort'
+);
+assert.ok(
+    LevelingRoutes.scoreSpot(sharedElvenStarter, { level: 6, stats: { starterRegion: 'orc' } }).localityPenalty >= 10000,
+    'a genuinely remote starter cohort must still receive the locality penalty'
+);
+
 const elvenRuins = {
     id: '7_41',
     name: 'Elven Ruins',

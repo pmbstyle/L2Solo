@@ -324,7 +324,7 @@ function itemTemplate(selfId) {
 }
 
 function itemSelfId(item) {
-    return Number(item?.fetchSelfId?.() ?? item?.selfId ?? item?.objectId ?? 0) || null;
+    return Number(item?.fetchSelfId?.() ?? item?.selfId ?? 0) || null;
 }
 
 function itemBaseValue(item) {

@@ -9,6 +9,7 @@ const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService')
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 
 DataCache.init();
 
@@ -82,6 +83,19 @@ assert(steelSourceAtX50.expectedYield > steelSourceAtX1.expectedYield, 'source c
 if (previousProgressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
 else process.env.L2NODE_PROGRESSION_RATE = previousProgressionRate;
 
+const originalNpcEntries = NpcShopBuyLists.allEntries;
+try {
+    NpcShopBuyLists.allEntries = () => [];
+    assert.strictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan({
+        level: 20,
+        adena: 1000000,
+        stats: { classId: 0, role: 'dps' },
+        inventory: { 57: { selfId: 57, amount: 1000000 } }
+    }), null, 'an uninitialized NPC catalog must not produce a shop plan');
+} finally {
+    NpcShopBuyLists.allEntries = originalNpcEntries;
+}
+
 const noGradePlan = GearAcquisitionPlanner.planFor({ level: 10, stats: { classId: 0, role: 'dps' }, inventory: {} }, { spots: [stoneGolemSpot] });
 assert(['direct_drop', 'market'].includes(noGradePlan.strategy), 'no-grade bots must choose a drop or market route, never recipes');
 assert.strictEqual(noGradePlan.recipeId, null, 'no-grade bots must never receive a crafting recipe');
@@ -129,6 +143,23 @@ const failedDropPlan = {
 const failedContext = GearAcquisitionPlanner.replanContextFor(failedDropState, failedDropPlan, 20 * 60 * 1000);
 assert.strictEqual(failedContext.failure.reason, 'combat_unviable', 'a cold drop route with repeated resolves and no target kills must expire');
 assert.strictEqual(failedContext.planCurrent, true, 'failure detection must work even when the persisted plan still matches the current level');
+const legacyDropPlan = { ...failedDropPlan };
+delete legacyDropPlan.targetProgress;
+const legacyContext = GearAcquisitionPlanner.replanContextFor(failedDropState, legacyDropPlan, 20 * 60 * 1000);
+assert.strictEqual(legacyContext.failure, null,
+    'legacy lifetime counters must not classify a direct-drop plan before a plan-local baseline exists');
+const stampedLegacyPlan = GearAcquisitionPlanner.finalizePlan(
+    failedDropState,
+    legacyDropPlan,
+    legacyDropPlan,
+    legacyContext,
+    20 * 60 * 1000
+);
+assert.deepStrictEqual(stampedLegacyPlan.targetProgress, {
+    npcId: 450,
+    resolves: GearAcquisitionPlanner.DIRECT_FAILURE_RESOLVE_LIMIT,
+    targetKills: 0
+}, 'the next finalize pass must stamp legacy plans with the current combat counters');
 const npcFallbackPlan = GearAcquisitionPlanner.planFor(failedDropState, {
     spots: [],
     ...failedContext,
@@ -308,6 +339,11 @@ const pairedJewelry = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20,
 });
 assert.deepStrictEqual(pairedJewelry[dEarring.selfId].equippedSlots, [1, 2], 'two identical cold earrings must occupy both paperdoll sides');
 assert.deepStrictEqual(pairedJewelry[dRing.selfId].equippedSlots, [4, 5], 'two identical cold rings must occupy both paperdoll sides');
+assert.deepStrictEqual(
+    GearAcquisitionPlanner.equippedSlotsFor({ selfId: dRing.selfId, amount: 1, equipped: true, slot: 5 }),
+    [5],
+    'a single legacy paired item must retain its recorded physical side'
+);
 assert.strictEqual(pairedJewelry[dEarring.selfId].equippedCount, 2);
 assert.strictEqual(pairedJewelry[dRing.selfId].equippedCount, 2);
 const entryDTarget = GearAcquisitionPlanner.preferredTarget({ level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} });

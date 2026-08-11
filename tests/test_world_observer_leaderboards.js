@@ -37,5 +37,11 @@ assert.deepStrictEqual(Leaderboards.classOptions(actors, 'id:0'), [
     { key: 'id:1', label: 'Warrior' }
 ], 'class choices must scope to the selected race');
 assert.strictEqual(Leaderboards.raceName({ classId: 106 }), 'Dark Elf', 'legacy snapshots must still derive race from a third-class id');
+assert.strictEqual(Leaderboards.raceName({ raceId: null, classId: 106 }), 'Dark Elf',
+    'an unresolved explicit race must fall back to the authoritative class lineage');
+assert.strictEqual(Leaderboards.raceName({ raceId: '', classId: 44 }), 'Orc',
+    'an empty explicit race must not be coerced into Human');
+assert.strictEqual(Leaderboards.raceKey({ raceId: null, classId: null }), null,
+    'a fully unresolved race must stay unclassified instead of joining the Human filter');
 
 console.log('World Observer leaderboard checks passed');

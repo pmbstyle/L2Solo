@@ -45,6 +45,17 @@ function stableHash(value) {
     return hash >>> 0;
 }
 
+function constrainToSpotGrid(spot, locX, locY) {
+    const match = /^(-?\d+)_(-?\d+)$/.exec(String(spot?.id || ''));
+    if (!match) return { locX, locY };
+    const gridX = Number(match[1]);
+    const gridY = Number(match[2]);
+    return {
+        locX: Math.max(gridX * GRID_SIZE, Math.min((gridX + 1) * GRID_SIZE - 1, locX)),
+        locY: Math.max(gridY * GRID_SIZE, Math.min((gridY + 1) * GRID_SIZE - 1, locY))
+    };
+}
+
 function huntBand(targetLevel, options = {}) {
     const level = Math.max(1, finiteNumber(targetLevel, 1));
     return {
@@ -308,12 +319,15 @@ const SpotService = {
         const anchor = points[hash % points.length] || spot.center;
         const angle = ((hash % 360) * Math.PI) / 180;
         const radius = 96 + (hash % 161);
-        const locX = Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius);
-        const locY = Math.round(Number(anchor.locY || 0) + Math.sin(angle) * radius);
+        const point = constrainToSpotGrid(
+            spot,
+            Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius),
+            Math.round(Number(anchor.locY || 0) + Math.sin(angle) * radius)
+        );
         return {
-            locX,
-            locY,
-            locZ: GeodataEngine.getHeight(locX, locY, Number(anchor.locZ || spot.center.locZ || 0))
+            locX: point.locX,
+            locY: point.locY,
+            locZ: GeodataEngine.getHeight(point.locX, point.locY, Number(anchor.locZ || spot.center.locZ || 0))
         };
     },
 

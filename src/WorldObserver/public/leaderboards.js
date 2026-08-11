@@ -29,8 +29,11 @@
     }
 
     function actorRaceId(actor) {
-        const explicit = Number(actor?.raceId);
-        if (Number.isInteger(explicit) && explicit >= 0) return explicit;
+        const rawRaceId = actor?.raceId;
+        if (rawRaceId !== null && rawRaceId !== undefined && rawRaceId !== '') {
+            const explicit = Number(rawRaceId);
+            if (Number.isInteger(explicit) && explicit >= 0) return explicit;
+        }
         return derivedRaceId(actor?.classId ?? actor?.build?.classId);
     }
 

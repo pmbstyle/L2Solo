@@ -301,6 +301,8 @@ assert.strictEqual(playerDetail.kind, 'player', 'online players must have the sa
 assert.strictEqual(playerDetail.adena, 123456, 'player detail must expose live Adena for wealth ranking and inspection');
 assert.strictEqual(playerDetail.equipmentValue, 409000, 'player detail must estimate live equipped gear from datapack prices');
 assert.strictEqual(playerDetail.equipment.equipped[0].name, 'Bone Staff', 'player detail must expose full equipped item rows');
+assert.strictEqual(Observer.equipmentValue([{ objectId: 178, price: 321 }]), 321,
+    'instance object IDs must not be mistaken for unrelated item template IDs during valuation');
 
 const leaderDetail = Observer.compactColdDetail({
     ...coldState,
