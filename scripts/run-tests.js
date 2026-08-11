@@ -52,6 +52,7 @@ const tests = [
     'tests/test_bot_trade_atomicity.js',
     'tests/test_bot_trade_database.js',
     'tests/test_bot_availability.js',
+    'tests/test_bot_party_menu.js',
     'tests/test_bot_chat_commands.js',
     'tests/test_bot_chat_text.js',
     'tests/test_bot_name_suggestion.js',
