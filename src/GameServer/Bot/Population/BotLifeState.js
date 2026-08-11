@@ -1772,11 +1772,21 @@ const BotLifeState = {
                 deathsAtEntry: Number(state.stats?.deaths || 0),
                 fightsAtEntry: Number(state.stats?.fightsResolved || 0)
             };
-        const stats = {
+        // Resolver patches often carry a projected copy of the previous
+        // stats so they can add lifecycle-specific fields such as cooldowns,
+        // rest deadlines, travel state, or party affinity.  Merge that copy
+        // first, then stamp the counters owned by this resolve.  Reversing
+        // this order silently restores the previous counters after every
+        // solo/party fight (including deaths).
+        const patchedStats = {
             ...(state.stats || {}),
+            ...(result.patch?.stats || {})
+        };
+        const stats = {
+            ...patchedStats,
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
             fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
-            deaths: Number(result.patch?.deathCount || state.stats?.deaths || 0),
+            deaths: Number(result.patch?.deathCount ?? state.stats?.deaths ?? 0),
             expEarned: Number(state.stats?.expEarned || 0) + Number(result.materialize?.exp || 0),
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
@@ -1850,7 +1860,6 @@ const BotLifeState = {
             },
             stats: {
                 ...stats,
-                ...(result.patch?.stats || {}),
                 // Resolver patches commonly start from the prior state. Keep
                 // the baseline stamped for this resolve's actual destination.
                 spotRisk,
