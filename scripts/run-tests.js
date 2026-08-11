@@ -259,6 +259,7 @@ const tests = [
     'tests/test_world_observer_pk.js',
     'tests/test_world_observer_filters.js',
     'tests/test_world_observer_leaderboards.js',
+    'tests/test_world_observer_raid_bosses.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
 ];
