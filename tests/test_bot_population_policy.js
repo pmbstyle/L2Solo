@@ -5,8 +5,14 @@ require('../src/Global');
 const World = invoke('GameServer/World/World');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const previousMaxPlayingPopulation = process.env.BOT_POPULATION_MAX_PLAYING;
+process.env.BOT_POPULATION_MAX_PLAYING = '1700.75';
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+if (previousMaxPlayingPopulation === undefined) delete process.env.BOT_POPULATION_MAX_PLAYING;
+else process.env.BOT_POPULATION_MAX_PLAYING = previousMaxPlayingPopulation;
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+
+assert.strictEqual(Config.maxPlayingPopulation, 1700, 'population cap must be normalized to a whole character count');
 
 function actor(id, x, level = 10, karma = 0) {
     return {

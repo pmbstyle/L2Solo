@@ -199,6 +199,6 @@ const PopulationConfig = applyOverrides(
     applyOverrides({ ...DEFAULTS }, fileOverrides),
     envOverrides()
 );
-PopulationConfig.maxPlayingPopulation = Math.max(0, Math.min(2000, Number(PopulationConfig.maxPlayingPopulation) || 0));
+PopulationConfig.maxPlayingPopulation = Math.max(0, Math.min(2000, Math.floor(Number(PopulationConfig.maxPlayingPopulation) || 0)));
 
 module.exports = PopulationConfig;

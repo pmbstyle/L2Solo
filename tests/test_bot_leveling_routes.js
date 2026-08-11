@@ -221,6 +221,15 @@ try {
     assert.strictEqual(routed.spot.id, 'local_starter',
         'SpotService ranking must retain LevelingRoutes locality and occupancy adjustments');
     assert.strictEqual(routed.localityPenalty, 0);
+
+    const nestedRoleRoute = SpotService.findBestSpot({
+        characterId: 78,
+        level: 5,
+        stats: { role: 'spoiler', classId: 55, starterRegion: 'elf' },
+        loc: { locX: 0, locY: 0, locZ: 0 }
+    }, { minDensity: 1, minDistance: 1, maxDistance: 10000 });
+    assert.strictEqual(nestedRoleRoute.route.role, 'spoiler',
+        'SpotService must preserve nested role and class metadata for route scoring');
 } finally {
     SpotService.ensureIndexed = originalEnsureIndexed;
 }

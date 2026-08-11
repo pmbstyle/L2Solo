@@ -275,8 +275,8 @@ const SpotService = {
                     level: targetLevel,
                     stats: {
                         ...(status.stats || {}),
-                        role: status.role,
-                        classId: status.classId,
+                        role: status.role ?? status.stats?.role,
+                        classId: status.classId ?? status.stats?.classId,
                         starterRegion: status.starterRegion || status.stats?.starterRegion
                     }
                 }, {

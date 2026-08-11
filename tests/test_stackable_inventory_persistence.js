@@ -57,6 +57,13 @@ DataCache.init();
     const reclaimed = await Database.reclaimUnusedSpace({ minFreePages: 0, minFreeRatio: 0 });
     assert.strictEqual(reclaimed.reclaimed, true, 'startup maintenance must be able to reclaim pages after compaction');
     assert.strictEqual(reclaimed.nextFreePages, 0, 'VACUUM must leave no unused pages in the compacted test database');
+
+    const queuedRead = Database.execute(['SELECT 1 AS value'], 'test:queued-before-close');
+    const closing = Database.close();
+    await assert.rejects(Database.checkpoint(), /shutdown is in progress/,
+        'database work queued after shutdown begins must be rejected');
+    assert.deepStrictEqual(await queuedRead, [{ value: 1 }], 'work queued before shutdown must finish');
+    assert.strictEqual(await closing, true, 'shutdown must close the initialized database');
     console.log('stackable inventory persistence ok');
 })().catch((error) => {
     console.error(error);

@@ -4,6 +4,8 @@ const { DatabaseSync } = require('node:sqlite');
 
 let connection;
 let queryTail = Promise.resolve();
+let shuttingDown = false;
+let closePromise = null;
 let databasePath;
 let flushPendingCharacterWrites = null;
 const cooperative = {
@@ -85,6 +87,9 @@ function record(operation, wait, run, read, failed = false) {
 }
 
 function enqueue(work, { operation = 'raw', read = false } = {}) {
+    if (shuttingDown) {
+        return Promise.reject(new Error(`SQLite shutdown is in progress (${operation})`));
+    }
     const queuedAt = now();
     metrics.pending += 1;
     metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
@@ -384,6 +389,8 @@ const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, ac
 const Database = {
     init(callback = () => {}) {
         try {
+            shuttingDown = false;
+            closePromise = null;
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
@@ -405,7 +412,10 @@ const Database = {
     isReady() { return !!connection; },
 
     close() {
-        return queryTail.then(() => {
+        if (closePromise) return closePromise;
+        shuttingDown = true;
+        const pending = queryTail;
+        closePromise = pending.then(() => {
             if (!connection) return false;
             const openConnection = connection;
             connection = null;
@@ -413,6 +423,7 @@ const Database = {
             queryTail = Promise.resolve();
             return true;
         });
+        return closePromise;
     },
 
     registerCharacterWriteFlush(flush) {
