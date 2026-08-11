@@ -3,6 +3,7 @@ const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const PROFILE_VERSION = 3;
 
@@ -310,7 +311,12 @@ function offensiveSkills(profile) {
 }
 
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
-    const entries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    const entries = rawEntries.filter((entry) => {
+        const npc = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(entry.selfId));
+        return npc && !BotRaidSafety.isProtectedRaidEntity(npc);
+    });
+    if (entries.length === 0) return null;
     const pickEntry = (candidates) => {
         const total = candidates.reduce((sum, entry) => sum + Math.max(1, number(entry.count, 1)), 0);
         let needle = rng() * total;

@@ -5,6 +5,7 @@ const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
@@ -114,7 +115,7 @@ function clearFinishedTarget(leaderSession) {
     // The leader can relocate (teleport, town respawn, zone transfer) while a
     // pull target remains alive in the old region. Do not let that orphaned
     // id keep the party in combat or make a bot attack a despawned entity.
-    if (!npc || npc.isDead?.() || distance(point(leaderSession.actor), point(npc)) > PULL_ABANDON_DISTANCE) {
+    if (!npc || npc.isDead?.() || BotRaidSafety.isProtectedRaidEntity(npc) || distance(point(leaderSession.actor), point(npc)) > PULL_ABANDON_DISTANCE) {
         leaderSession.partyPullState = {};
         return null;
     }
@@ -148,7 +149,7 @@ function observeLeaderTarget(leaderSession, settings, targetId) {
     const puller = resolvePuller(leaderSession, settings);
     if (!puller || puller.kind !== 'leader' || !targetId) return null;
     const target = npcById(targetId);
-    if (!target || !target.fetchAttackable?.() || target.isDead?.()) return null;
+    if (!target || BotRaidSafety.isProtectedRaidEntity(target) || !target.fetchAttackable?.() || target.isDead?.()) return null;
     beginTarget(leaderSession, puller, target, 'leader');
     return target;
 }
@@ -209,10 +210,14 @@ function pauseReason(leaderSession, puller) {
     return null;
 }
 
-function cancelForRevival(leaderSession) {
+function cancel(leaderSession) {
     if (!leaderSession?.partyPullState || Object.keys(leaderSession.partyPullState).length === 0) return false;
     leaderSession.partyPullState = {};
     return true;
+}
+
+function cancelForRevival(leaderSession) {
+    return cancel(leaderSession);
 }
 
 function attackRange(actor, target) {
@@ -233,7 +238,8 @@ function actorCanEngage(actor, target) {
     // Combat ranges are horizontal.  World/map Z may temporarily differ while
     // a mob is traversing a slope, and treating that as distance made a mob at
     // the camp remain permanently "not delivered".
-    return !!actor && !!target && distance2d(point(actor), point(target)) <= attackRange(actor, target);
+    return !!actor && !!target && !BotRaidSafety.isProtectedRaidEntity(target)
+        && distance2d(point(actor), point(target)) <= attackRange(actor, target);
 }
 
 function canDeliverPull(actor, target) {
@@ -301,7 +307,7 @@ function socialRisk(target) {
     const helpRadius = Math.max(0, Number(target.fetchClanHelpRadius?.()) || 0);
     const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius);
     const nearby = World.fetchNpcsInRadius(target.fetchLocX(), target.fetchLocY(), radius)
-        .filter((npc) => npc !== target && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
+        .filter((npc) => npc !== target && !BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
     const socialAllies = clan && helpRadius > 0
         ? nearby.filter((npc) => (
             String(npc.fetchClanName?.() || '').trim() === clan &&
@@ -331,6 +337,7 @@ function scorePullTarget(bot, leaderSession, npc) {
 
 function freeMonsters(bot) {
     return World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), PULL_SEARCH_RADIUS)
+        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
         .filter((npc) => !npc.fetchDestId?.())
         .sort((a, b) => distance(point(bot), point(a)) - distance(point(bot), point(b)));
@@ -346,6 +353,7 @@ function nearestFreeMonster(bot, leaderSession) {
 
 function incomingMobOnPuller(bot) {
     return (World.npc?.spawns || [])
+        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.())
         .filter((npc) => Number(npc.fetchDestId?.()) === Number(bot.fetchId()))
         .filter((npc) => distance(point(bot), point(npc)) <= PULL_ABANDON_DISTANCE)
@@ -667,5 +675,6 @@ module.exports = {
     attackRange,
     scorePullTarget,
     cancelForRevival,
+    cancel,
     PULL_AGGRO_TIMEOUT_MS
 };

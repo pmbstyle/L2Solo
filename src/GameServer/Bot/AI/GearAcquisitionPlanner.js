@@ -12,6 +12,7 @@ const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -945,6 +946,7 @@ function sourceIndexFor(spots = []) {
         return sourceIndexCache.byItemId;
     }
 
+    const npcById = new Map((DataCache.npcs || []).map((npc) => [Number(npc.selfId), npc]));
     const npcLevels = new Map((DataCache.npcs || []).map((npc) => [
         Number(npc.selfId),
         Number(npc.template?.level || 0)
@@ -964,6 +966,7 @@ function sourceIndexFor(spots = []) {
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
+        if (BotRaidSafety.isProtectedRaidEntity(npcById.get(Number(reward.selfId)))) return;
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])

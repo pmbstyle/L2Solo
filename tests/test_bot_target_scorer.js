@@ -85,6 +85,17 @@ const cooled = BotTargetScorer.score({
 });
 assert.strictEqual(cooled.eligible, false, 'retry cooldown should exclude a recently abandoned target');
 
+const raidEntity = BotTargetScorer.score({
+    attackable: true,
+    dead: false,
+    raidEntity: true,
+    botLevel: 20,
+    npcLevel: 20,
+    distance: 10
+});
+assert.strictEqual(raidEntity.eligible, false, 'raid entities must never enter ordinary bot target ranking');
+assert.strictEqual(raidEntity.reason, 'raid_entity_protected');
+
 const badCandidate = {
     evaluation: BotTargetScorer.score({
         attackable: true,

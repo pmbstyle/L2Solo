@@ -1,4 +1,6 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
 // NPC combat remains active until the target is 1500 units away.  Threat
@@ -92,9 +94,12 @@ function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
     for (const memberSession of memberSessions) {
         const npc = recentIncomingNpc(memberSession, npcRadius);
         if (!npc) continue;
+        if (isControlledRaidMinion(leaderSession, npc)) continue;
 
         return {
-            type: 'npc',
+            type: BotRaidSafety.isProtectedRaidEntity(npc) && !BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc)
+                ? 'raid'
+                : 'npc',
             actor: npc,
             targetId: actorId(memberSession.actor),
             source: 'recent_incoming_hit'
@@ -118,6 +123,22 @@ function npcThreatPriority(leaderSession, memberSessions, npc) {
     return 4;
 }
 
+function combatTargetPriority(leaderSession, memberSessions, npc) {
+    const raidEntity = BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc);
+    const impairments = EffectStore.impairments(npc);
+    const controlled = impairments.disabled;
+    const raidPriority = raidEntity
+        ? (BotRaidSafety.isRaidBoss(npc) ? 0 : (controlled ? 200 : 100))
+        : 50;
+    return raidPriority + npcThreatPriority(leaderSession, memberSessions, npc);
+}
+
+function isControlledRaidMinion(leaderSession, npc) {
+    if (BotRaidSafety.isRaidBoss(npc) || !BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc)) return false;
+    const impairments = EffectStore.impairments(npc);
+    return impairments.disabled;
+}
+
 function findThreatTargetingParty(leaderSession, options = {}) {
     const memberSessions = partySessions(leaderSession);
     const members = memberSessions.map((session) => session.actor);
@@ -127,18 +148,40 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     const npcRadius = options.npcRadius || NPC_THREAT_RADIUS;
     const playerRadius = options.playerRadius || 1800;
 
+    const nearbyNpcs = uniqueNpcsAround(members, npcRadius);
+    BotRaidSafety.syncPlayerPartyRaid(leaderSession);
+    const raidThreat = nearbyNpcs
+        .filter((npc) => (
+            BotRaidSafety.isProtectedRaidEntity(npc) &&
+            !BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc) &&
+            npc.fetchAttackable?.() === true &&
+            !npc.isDead?.() &&
+            memberIds.has(Number(npc.fetchDestId?.()))
+        ))
+        .sort((a, b) => actorId(a) - actorId(b))[0];
+    if (raidThreat) {
+        return {
+            type: 'raid',
+            actor: raidThreat,
+            targetId: raidThreat.fetchDestId?.(),
+            source: 'raid_entity_targeting_party'
+        };
+    }
+
     const recentThreat = recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius);
     if (recentThreat) return recentThreat;
 
-    const npcThreat = uniqueNpcsAround(members, npcRadius)
+    const npcThreat = nearbyNpcs
         .filter((npc) => (
+            (!BotRaidSafety.isProtectedRaidEntity(npc) || BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc)) &&
+            !isControlledRaidMinion(leaderSession, npc) &&
             npc.fetchAttackable &&
             npc.fetchAttackable() &&
             !npc.isDead() &&
             memberIds.has(npc.fetchDestId && npc.fetchDestId())
         ))
         .sort((a, b) => (
-            npcThreatPriority(leaderSession, memberSessions, a) - npcThreatPriority(leaderSession, memberSessions, b) ||
+            combatTargetPriority(leaderSession, memberSessions, a) - combatTargetPriority(leaderSession, memberSessions, b) ||
             actorId(a) - actorId(b)
         ))[0];
     if (npcThreat) {
@@ -173,7 +216,7 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     return null;
 }
 
-function leaderCombatTargetId(leaderSession) {
+function leaderCombatTargetId(leaderSession, options = {}) {
     const leader = leaderSession?.actor;
     if (!isOnlineActor(leader)) return null;
 
@@ -183,7 +226,12 @@ function leaderCombatTargetId(leaderSession) {
 
     const npc = (world().npc?.spawns || []).find((spawn) => actorId(spawn) === targetId);
     if (npc) {
-        return npc.fetchAttackable?.() && !npc.isDead?.() ? targetId : null;
+        const protectedRaidTarget = BotRaidSafety.isProtectedRaidEntity(npc);
+        const allowedRaidTarget = options.allowPlayerRaid === true &&
+            BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc);
+        return (!protectedRaidTarget || allowedRaidTarget) && npc.fetchAttackable?.() && !npc.isDead?.()
+            ? targetId
+            : null;
     }
 
     const targetSession = (world().user?.sessions || []).find((session) => actorId(session?.actor) === targetId);

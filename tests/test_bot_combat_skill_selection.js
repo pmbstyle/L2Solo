@@ -130,6 +130,19 @@ try {
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
 
+    const raidSafeMage = bot(10, [
+        skill(1235, { name: 'Area Nuke', mp: 5, power: 200, spell: true, semantic: { sourceTarget: 'area', radius: 200 } }),
+        skill(1236, { name: 'Single Nuke', mp: 5, power: 20, spell: true })
+    ], 100);
+    const raidSafeDecision = invoke('GameServer/Bot/AI/BotCombatUtility').select(
+        raidSafeMage,
+        npc(11041),
+        'mage',
+        { avoidAreaDamage: true }
+    );
+    assert.strictEqual(raidSafeDecision.skill.fetchSelfId(), 1236,
+        'raid combat must prefer single-target damage so controlled minions are not woken by AoE');
+
     const lowManaMage = bot(10, [
         skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
     ], 10);
@@ -187,6 +200,21 @@ try {
     const daggerGenerics = generics();
     BotAI.executeCombat({}, dagger, npc(1106), daggerGenerics);
     assert.strictEqual(daggerGenerics.skills[0].selfId, 1401, 'dagger should prefer a learned blow over generic damage');
+
+    const protectedBoss = { ...npc(1199), fetchIsRaidBoss: () => true };
+    const protectedSession = { currentTargetId: protectedBoss.fetchId() };
+    const protectedGenerics = generics();
+    const protectedResult = BotAI.executeCombat(protectedSession, dagger, protectedBoss, protectedGenerics);
+    assert.strictEqual(protectedResult, false, 'the final combat boundary must reject a raid boss');
+    assert.strictEqual(protectedSession.currentTargetId, undefined, 'rejecting a raid boss must clear a stale bot target');
+    assert.strictEqual(protectedGenerics.skills.length, 0, 'a bot must not cast an offensive skill on a raid boss');
+    assert.strictEqual(protectedGenerics.attacks.length, 0, 'a bot must not basic-attack a raid boss');
+
+    const protectedMinion = { ...npc(1200), selfId: 10002 };
+    const protectedMinionGenerics = generics();
+    assert.strictEqual(BotAI.executeCombat({}, dagger, protectedMinion, protectedMinionGenerics), false,
+        'the final combat boundary must reject raid minion templates even without a live boss link');
+    assert.strictEqual(protectedMinionGenerics.attacks.length, 0, 'a bot must not basic-attack a raid minion');
 
     console.log('Bot combat skill selection checks passed');
 } finally {

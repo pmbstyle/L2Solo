@@ -86,6 +86,25 @@ const mixedSpot = {
     npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
     npcSelfIds: [1, 12]
 };
+const raidMixedSpot = {
+    ...spot,
+    npcEntries: [
+        { selfId: 10001, count: 100 },
+        { selfId: 10002, count: 100 },
+        { selfId: 1, count: 1 }
+    ],
+    npcSelfIds: [10001, 10002, 1]
+};
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot(raidMixedSpot, () => 0).selfId,
+    1,
+    'cold combat must exclude both raid bosses and their minion templates from encounters'
+);
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot({ ...spot, npcEntries: [{ selfId: 10001, count: 1 }, { selfId: 10002, count: 1 }] }),
+    null,
+    'a raid-only cold spot must not produce a simulated fight'
+);
 assert.strictEqual(
     ColdCombatProfile.npcForSpot(mixedSpot, () => 0.9, { preferredNpcId: 1 }).selfId,
     1,

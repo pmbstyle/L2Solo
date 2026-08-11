@@ -18,6 +18,9 @@ function score(context = {}) {
     if (context.dead || !context.attackable) {
         return { eligible: false, score: -Infinity, reason: 'not_attackable', reasons: ['not_attackable'] };
     }
+    if (context.raidEntity) {
+        return { eligible: false, score: -Infinity, reason: 'raid_entity_protected', reasons: ['raid_entity_protected'] };
+    }
     if (context.retryCooldown) {
         return { eligible: false, score: -Infinity, reason: 'retry_cooldown', reasons: ['retry_cooldown'] };
     }

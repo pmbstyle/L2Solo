@@ -5,6 +5,7 @@ const MIN_RETREAT_MS = 1000;
 const RETREAT_REPATH_COOLDOWN_MS = 750;
 const MAX_RETREAT_MS = 30000;
 const NPC_CHASE_BREAK_DISTANCE = 1500;
+const RAID_PARTY_HOLD_DISTANCE = 1800;
 
 function stillMoving(session, bot) {
     return !!session.moveTimer || !!bot.state?.fetchTowards?.();
@@ -40,6 +41,20 @@ module.exports = {
 
         const now = Date.now();
         const moving = stillMoving(session, bot);
+        const partyRaidThreat = session.raidSafetyResumePlan === 'following' && session.followPlayerSession
+            ? PartyAwareness.findThreatTargetingParty(session.followPlayerSession)
+            : null;
+        if (partyRaidThreat?.type === 'raid') {
+            const threatChanged = Number(partyRaidThreat.actor.fetchId?.()) !== Number(session.lastRetreatPlan?.threatId);
+            const canRepath = now - Number(session.lastRetreatRepathAt || 0) >= RETREAT_REPATH_COOLDOWN_MS;
+            if (distance2d(partyRaidThreat.actor, bot) < RAID_PARTY_HOLD_DISTANCE && canRepath && (!moving || threatChanged)) {
+                session.lastRetreatRepathAt = now;
+                BotRetreatPlanner.retreat(session, bot, partyRaidThreat.actor);
+            }
+            // A companion must not run back to a leader who is still tanking a
+            // raid entity. Hold outside the danger area until that threat ends.
+            return;
+        }
         const incomingThreat = PartyAwareness.recentIncomingNpc(session);
         const retreatThreat = incomingThreat || activePursuer(session, bot);
         const threatChanged = retreatThreat &&
@@ -72,7 +87,11 @@ module.exports = {
             return;
         }
 
-        session.plan = needsRecovery(bot) ? 'resting' : 'hunting';
+        const raidSafetyResumePlan = session.raidSafetyResumePlan;
+        session.plan = raidSafetyResumePlan === 'following' && session.partyCompanion === true && session.followPlayerSession
+            ? 'following'
+            : (needsRecovery(bot) || raidSafetyResumePlan === 'resting' ? 'resting' : 'hunting');
+        session.raidSafetyResumePlan = undefined;
         session.fleeStart = undefined;
         session.lastRetreatRepathAt = undefined;
         session.incomingThreatId = undefined;

@@ -11,6 +11,7 @@ const OFFENSIVE_TYPES = new Set([
 ]);
 const BOW_WEAPON_MASK = 32;
 const MIN_BOW_SKILL_RANGE = 400;
+const AREA_SOURCE_TARGETS = new Set(['area', 'front_area', 'aura']);
 
 function distance2d(a, b) {
     if (!a?.fetchLocX || !b?.fetchLocX) return 0;
@@ -58,6 +59,7 @@ function evaluate(bot, target, skill, role, policy = {}) {
     if (bot.canUseSkill?.(skill) === false) return null;
     const semantic = skill.fetchSemantic?.() || {};
     if (semantic.notUsedInC4) return null;
+    if (policy.avoidAreaDamage === true && AREA_SOURCE_TARGETS.has(String(semantic.sourceTarget || '').toLowerCase())) return null;
     const allowedWeapons = Number(semantic.requires?.weaponsAllowed) || 0;
     if (allowedWeapons && (allowedWeapons & Attack.weaponMaskFor(bot)) === 0) return null;
     if (!OFFENSIVE_TYPES.has(skill.fetchSkillType?.())) return null;

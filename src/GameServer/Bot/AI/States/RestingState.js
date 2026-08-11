@@ -6,6 +6,7 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const RECOVERY_HP_RATIO = 0.35;
@@ -136,7 +137,25 @@ module.exports = {
             }
 
             const distance = point(bot).distance(point(player));
+            const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
+            if (partyRaid?.phase === 'opening') {
+                delete session.explicitRestOrder;
+                session.plan = 'following';
+                session.currentTargetId = undefined;
+                standUp(session, bot);
+                recordWakeDecision(session, bot, 'prepare_raid', 'player_designated_raid_target', {
+                    targetId: partyRaid.bossId,
+                    openerId: partyRaid.openerId || null
+                });
+                return;
+            }
             const threat = PartyAwareness.findThreatTargetingParty(playerSession);
+            if (threat?.type === 'raid' && BotRaidSafety.retreat(session, bot, threat.actor, { distance: EMERGENCY_RETREAT_DISTANCE })) {
+                recordWakeDecision(session, bot, 'retreat', 'raid_entity_protected', {
+                    targetId: threat.actor.fetchId?.() || null
+                });
+                return;
+            }
             const partySettings = PartyCompanionService.getSettings(playerSession);
             const leaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
             PartyPulling.observeLeaderTarget(playerSession, partySettings, leaderTargetId);
@@ -203,6 +222,12 @@ module.exports = {
         if (!session.followPlayerSession && session.partyCompanion !== true) {
             const threat = PartyAwareness.recentIncomingNpc(session);
             if (threat) {
+                if (BotRaidSafety.retreat(session, bot, threat, { distance: EMERGENCY_RETREAT_DISTANCE })) {
+                    recordWakeDecision(session, bot, 'retreat', 'raid_entity_protected', {
+                        targetId: threat.fetchId?.() || null
+                    });
+                    return;
+                }
                 if (needsRecovery(bot)) {
                     retreatFromThreat(session, bot, threat);
                     return;
