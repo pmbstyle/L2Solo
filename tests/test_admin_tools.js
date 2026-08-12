@@ -77,14 +77,39 @@ assert.ok(utils.parseRawFile('data/Html/Admin/teleport-oren.html').includes('Cat
 assert.ok(utils.parseRawFile('data/Html/Admin/teleport-dungeons.html').includes('Necropolis of the Disciples'), 'dungeon page should include late-game Seven Signs destinations');
 
 Object.entries(AdminFullBuff.PROFILES).forEach(([profile, entries]) => {
+    assert.strictEqual(entries.length, 20, `${profile} full buff should fill exactly the sourced C4 buff capacity`);
+    assert.strictEqual(new Set(entries.map(([selfId]) => selfId)).size, 20, `${profile} full buff should not waste slots on duplicate skills`);
     entries.forEach(([selfId, level]) => {
         assert.ok(AdminFullBuff.skillData(selfId, level), `${profile} full buff should reference sourced skill ${selfId} level ${level}`);
     });
 });
 assert.strictEqual(AdminFullBuff.profileForActor({ isSpellcaster: () => 0 }), 'melee', 'fighter classes should receive the melee profile');
 assert.strictEqual(AdminFullBuff.profileForActor({ isSpellcaster: () => 1 }), 'mage', 'spellcaster classes should receive the mage profile');
+[
+    [5, 'tank'], [8, 'dagger'], [9, 'archer'], [12, 'mage'], [14, 'summoner'], [16, 'support'],
+    [21, 'melee'], [34, 'melee'], [90, 'tank'], [93, 'dagger'], [96, 'summoner'], [107, 'melee']
+].forEach(([classId, profile]) => {
+    assert.strictEqual(
+        AdminFullBuff.profileForActor({ fetchClassId: () => classId, isSpellcaster: () => 0 }),
+        profile,
+        `class ${classId} should resolve to the ${profile} full-buff profile`
+    );
+});
+assert.strictEqual(AdminFullBuff.skillData(1045, 6).level, 6, 'admin full buff should materialize sourced Bless the Body level 6');
+assert.strictEqual(AdminFullBuff.skillData(1048, 6).level, 6, 'admin full buff should materialize sourced Bless the Soul level 6');
 
 const fixedExpiry = Date.now() + AdminFullBuff.ADMIN_BUFF_DURATION_MS;
+Object.keys(AdminFullBuff.PROFILES).forEach((profile) => {
+    const target = { effects: {}, activeBuffs: {} };
+    const applied = AdminFullBuff.applyProfile({}, target, profile, {
+        expiresAt: fixedExpiry,
+        refresh: false,
+        scheduleExpiry: false
+    });
+    assert.strictEqual(applied.length, 20, `${profile} full buff should apply all 20 configured effects`);
+    assert.strictEqual(EffectStore.list(target).length, 20, `${profile} full buff should not lose effects to stack-family collisions`);
+});
+
 const meleeBuffTarget = { isSpellcaster: () => 0, effects: {}, activeBuffs: {} };
 const meleeEffects = AdminFullBuff.applyProfile({}, meleeBuffTarget, 'melee', {
     expiresAt: fixedExpiry,
@@ -94,6 +119,9 @@ const meleeEffects = AdminFullBuff.applyProfile({}, meleeBuffTarget, 'melee', {
 assert.strictEqual(meleeEffects.length, AdminFullBuff.PROFILES.melee.length, 'melee full buff should apply every profile effect');
 assert.strictEqual(EffectStore.list(meleeBuffTarget).find((effect) => effect.key === 'might').stats.pAtkMul, 1.15, 'melee profile should apply sourced Might level 3 stats');
 assert.strictEqual(EffectStore.list(meleeBuffTarget).find((effect) => effect.key === 'vampiric_rage').stats.absorbDam, 9, 'melee profile should apply sourced Vampiric Rage level 4 stats');
+assert.ok(EffectStore.list(meleeBuffTarget).some((effect) => effect.key === 'song_of_hunter'), 'melee profile should include class-relevant songs');
+assert.ok(EffectStore.list(meleeBuffTarget).some((effect) => effect.key === 'dance_of_warrior'), 'melee profile should include class-relevant dances');
+assert.ok(EffectStore.list(meleeBuffTarget).some((effect) => effect.key === 'prophecy_of_fire'), 'melee profile should include Prophecy of Fire');
 assert.ok(meleeEffects.every((effect) => effect.expiresAt === fixedExpiry), 'melee profile effects should share one 20-minute expiry');
 
 const mageBuffTarget = { isSpellcaster: () => 1, effects: {}, activeBuffs: {} };
@@ -106,6 +134,31 @@ assert.strictEqual(mageEffects.length, AdminFullBuff.PROFILES.mage.length, 'mage
 assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'empower').stats.mAtkMul, 1.75, 'mage profile should apply sourced Empower level 3 stats');
 assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'acumen').stats.castSpdMul, 1.3, 'mage profile should apply sourced Acumen level 3 stats');
 assert.strictEqual(EffectStore.list(mageBuffTarget).find((effect) => effect.key === 'wild_magic').stats.mCritRateMul, 4, 'mage profile should apply sourced Wild Magic level 2 stats');
+assert.ok(EffectStore.list(mageBuffTarget).some((effect) => effect.key === 'song_of_meditation'), 'mage profile should include mana-oriented songs');
+assert.ok(EffectStore.list(mageBuffTarget).some((effect) => effect.key === 'dance_of_siren'), 'mage profile should include magic-oriented dances');
+assert.ok(EffectStore.list(mageBuffTarget).some((effect) => effect.key === 'prophecy_of_water'), 'mage profile should include Prophecy of Water');
+
+const summonBuffTarget = {
+    fetchClassId: () => 14,
+    isSpellcaster: () => 1,
+    effects: {},
+    activeBuffs: {},
+    summon: {
+        effects: {},
+        activeBuffs: {},
+        state: { fetchDead: () => false }
+    }
+};
+const summonFullBuff = AdminFullBuff.applyFullBuff({}, summonBuffTarget, {
+    expiresAt: fixedExpiry,
+    refresh: false,
+    scheduleExpiry: false
+});
+assert.strictEqual(summonFullBuff.profile, 'summoner', 'summoner classes should receive the caster-side summoner profile');
+assert.strictEqual(summonFullBuff.applied.length, 20, 'summoner owner should receive a complete player profile');
+assert.strictEqual(summonFullBuff.summonApplied.length, 20, 'an active servitor should receive its own hybrid profile');
+assert.ok(EffectStore.list(summonBuffTarget.summon).some((effect) => effect.key === 'dance_of_warrior'), 'servitor profile should include physical music');
+assert.ok(EffectStore.list(summonBuffTarget.summon).some((effect) => effect.key === 'empower'), 'servitor profile should support magic-oriented summons too');
 
 for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
     assert.strictEqual(adminShop[`armor-${rank}`], `armor:${rank}`, `armor-${rank} should resolve from the live armor datapack`);

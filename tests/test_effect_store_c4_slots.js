@@ -93,6 +93,26 @@ assert.deepStrictEqual(
 assert.deepStrictEqual(EffectStore.list(physicalBuffs).map((entry) => entry.key), ['chant_of_battle'], 'the latest equal P.Atk buff should replace the previous source');
 assert.strictEqual(EffectStats.multiplier(physicalBuffs, 'pAtkMul'), 1.15, 'equivalent P.Atk buffs must not multiply together');
 
+const prophecyStack = {};
+const prophecyOfFire = C4SkillRules.resolve({ selfId: 1356, level: 1, name: 'Prophecy of Fire' });
+const chantOfVictory = C4SkillRules.resolve({ selfId: 1363, level: 1, name: 'Chant of Victory' });
+EffectStore.apply(prophecyStack, effect('prophecy_of_fire', 1356, 'buff', {
+    stackFamily: prophecyOfFire.stackFamily,
+    stackOrder: prophecyOfFire.stackOrder,
+    stats: prophecyOfFire.stats
+}));
+EffectStore.apply(prophecyStack, effect('chant_of_victory', 1363, 'buff', {
+    stackFamily: chantOfVictory.stackFamily,
+    stackOrder: chantOfVictory.stackOrder,
+    stats: chantOfVictory.stats
+}));
+assert.deepStrictEqual(
+    [prophecyOfFire.stackFamily, prophecyOfFire.stackOrder, chantOfVictory.stackFamily, chantOfVictory.stackOrder],
+    ['CoV', 1, 'CoV', 1],
+    'Prophecies and Chant of Victory should preserve their shared sourced stack'
+);
+assert.deepStrictEqual(EffectStore.list(prophecyStack).map((entry) => entry.key), ['chant_of_victory'], 'only the latest equal CoV-family buff should remain active');
+
 const stacked = { activeBuffs: { sprint: Date.now() + 60000 } };
 EffectStore.apply(stacked, effect('sprint', 230, 'buff', {
     level: 2,
