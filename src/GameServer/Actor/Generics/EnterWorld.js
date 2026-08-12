@@ -26,6 +26,7 @@ function enterWorld(session, actor) {
         session.dataSendToMe?.(ServerResponse.skillsList(actor.skillset.fetchSkills()));
         session.dataSendToMe?.(ServerResponse.userInfo(actor));
         session.dataSendToMe?.(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+        session.dataSendToMe?.(ServerResponse.shortBuffStatusUpdate.fromActor(actor));
     });
 
     // Start vitals replenish

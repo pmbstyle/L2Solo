@@ -50,8 +50,10 @@ function refreshEffects(session, target) {
     const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
     if (target?.session?.dataSendToMe) {
         target.session.dataSendToMe(packet);
+        target.session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     } else if (target === session?.actor && session?.dataSendToMe) {
         session.dataSendToMe(packet);
+        session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     }
 
     if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {

@@ -68,6 +68,7 @@ module.exports = {
                    speak: require('./Speak'),
               ssqStatus: require('./SSQStatus'),
            statusUpdate: require('./StatusUpdate'),
+   shortBuffStatusUpdate: require('./ShortBuffStatusUpdate'),
                stopMove: require('./StopMove'),
                 sunrise: require('./Sunrise'),
                  sunset: require('./Sunset'),

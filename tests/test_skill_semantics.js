@@ -5346,8 +5346,10 @@ EffectStore.remove(manaDrugTarget, manaDrugOutcome.effect.key);
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;
+const chantLifeSession = session();
+chantLifeTarget.session = chantLifeSession;
 const chantLife = skill({ selfId: 1229, name: 'Chant of Life', spell: true, power: 1, level: 9, buff: 15000 });
-const chantLifeOutcome = SkillEffects.execute(session(), caster, chantLifeTarget, chantLife, {
+const chantLifeOutcome = SkillEffects.execute(chantLifeSession, caster, chantLifeTarget, chantLife, {
     magicSkill: true,
     rng: () => 0,
     attack: { clearLoadedShot() {} }
@@ -5358,6 +5360,9 @@ assert.strictEqual(chantLifeOutcome.effect.hot.heal, 43, 'Chant of Life level 9 
 assert.strictEqual(chantLifeOutcome.effect.hot.count, 15, 'Chant of Life should use sourced 15 heal ticks');
 assert.strictEqual(chantLifeOutcome.effect.hot.intervalMs, 1000, 'Chant of Life should tick every sourced second');
 assert(chantLifeTarget.effectTimers.chant_of_life, 'Chant of Life should start a runtime heal-over-time ticker');
+const chantLifeShortPacket = chantLifeSession.packets.find((packet) => packet[0] === 0xf4);
+assert(chantLifeShortPacket, 'Chant of Life should refresh the dedicated C4 short-buff slot');
+assert.strictEqual(chantLifeShortPacket.readInt32LE(1), 1229, 'the short-buff refresh should carry Chant of Life');
 EffectStore.remove(chantLifeTarget, 'chant_of_life');
 
 const heartTarget = statActor();

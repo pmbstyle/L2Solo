@@ -1,4 +1,10 @@
 const DEFAULT_EFFECT_LEVEL = 1;
+const BUFF_LIMIT = 20;
+const DEBUFF_RESERVED_SLOTS = 10;
+const SELF_PACKET_LIMIT = 30;
+const PARTY_PACKET_LIMIT = 20;
+
+let effectSequence = 0;
 
 // C4 abnormal-effect bits used by CharInfo/NpcInfo. MagicEffectIcons is only
 // sent to the affected player, so nearby clients need this mask to render
@@ -42,6 +48,7 @@ function normalize(effect = {}) {
         name: effect.name || key,
         category: effect.category || null,
         stackFamily: effect.stackFamily || null,
+        stackOrder: resolveStackOrder(effect),
         dispellable: effect.dispellable !== false,
         toggle: effect.toggle === true,
         requires: effect.requires || null,
@@ -53,8 +60,53 @@ function normalize(effect = {}) {
         manaHot: effect.manaHot || null,
         hot: effect.hot || null,
         confusionMobOnly: effect.confusionMobOnly === true,
-        expiresAt
+        expiresAt,
+        sequence: claimSequence(effect.sequence)
     };
+}
+
+function claimSequence(value) {
+    const restored = Number(value);
+    if (Number.isFinite(restored) && restored > 0) {
+        effectSequence = Math.max(effectSequence, restored);
+        return restored;
+    }
+    effectSequence += 1;
+    return effectSequence;
+}
+
+function resolveStackOrder(effect) {
+    const explicit = Number(effect.stackOrder);
+    if (Number.isFinite(explicit)) return explicit;
+
+    const stats = effect.stats || {};
+    switch (effect.stackFamily) {
+        case 'SpeedUp': return Number(stats.runSpdAdd) || 0;
+        case 'pAtk': return Number(stats.pAtkMul) || 0;
+        case 'pDef': return Number(stats.pDefMul) || 0;
+        case 'pAtkSpeedUp': return Number(stats.pAtkSpdMul) || 0;
+        case 'mAtkSpeedUp': return Number(stats.castSpdMul) || 0;
+        case 'mAtk': return Number(stats.mAtkMul) || 0;
+        default: return Number(effect.level || DEFAULT_EFFECT_LEVEL);
+    }
+}
+
+function clearLegacyMarker(actor, key) {
+    if (actor?.activeBuffs?.[key] !== undefined) {
+        delete actor.activeBuffs[key];
+    }
+}
+
+function removeStored(actor, key, clearTimer = true) {
+    if (!actor?.effects?.[key]) return false;
+    if (clearTimer) {
+        try {
+            invoke('GameServer/Effects/EffectTicker').clear(actor, key);
+        } catch (_) {}
+    }
+    delete actor.effects[key];
+    clearLegacyMarker(actor, key);
+    return true;
 }
 
 function prune(actor) {
@@ -65,6 +117,7 @@ function prune(actor) {
         const effect = store[key];
         if (effect?.expiresAt && effect.expiresAt <= current) {
             delete store[key];
+            clearLegacyMarker(actor, key);
         }
     });
     return store;
@@ -74,27 +127,76 @@ function apply(actor, effect) {
     if (!actor) return null;
     const normalized = normalize(effect);
     if (!normalized.key || !normalized.id) return null;
-    const store = ensure(actor);
+    const store = prune(actor);
     const existing = store[normalized.key];
+    const removedEffects = [];
 
-    // A key represents one C4 effect/stack slot. Refreshing an equal or higher
-    // level is valid, but a lower-level cast must never downgrade it.
-    if (existing && Number(existing.level || 0) > normalized.level) {
-        return null;
+    if (normalized.stackFamily) {
+        const stacked = Object.values(store).filter((entry) => (
+            entry.stackFamily === normalized.stackFamily
+        ));
+        const stronger = stacked.find((entry) => Number(entry.stackOrder || 0) > normalized.stackOrder);
+        if (stronger) return null;
+
+        const equalDebuff = normalized.type === 'debuff' && stacked.find((entry) => (
+            entry.type === 'debuff' && Number(entry.stackOrder || 0) === normalized.stackOrder
+        ));
+        if (equalDebuff) return null;
+
+        // Lisvus runs with CancelLesserEffect enabled: once a stronger or equal
+        // member wins the stack, the displaced effect is removed rather than kept
+        // as an inactive stat/icon source.
+        stacked.forEach((entry) => {
+            if (removeStored(actor, entry.key)) removedEffects.push(entry);
+        });
+    } else if (existing) {
+        const existingLevel = Number(existing.level || 0);
+        // Lisvus does not restart an equal offensive effect. Repeated NPC casts
+        // therefore keep the original expiry instead of extending a debuff forever.
+        if (normalized.type === 'debuff' && existingLevel >= normalized.level) return null;
+        if (normalized.type !== 'debuff' && existingLevel > normalized.level) return null;
+        if (removeStored(actor, existing.key)) removedEffects.push(existing);
     }
 
     store[normalized.key] = normalized;
+    removedEffects.push(...enforceSlotLimits(actor));
+    Object.defineProperty(normalized, 'removedEffects', {
+        value: removedEffects,
+        enumerable: false
+    });
     return normalized;
 }
 
+function includedInBuffCount(effect) {
+    return effect.type !== 'debuff'
+        && effect.toggle !== true
+        && !['hp_recover', 'life_force_orc'].includes(effect.stackFamily);
+}
+
+function orderedEffects(actor) {
+    const effects = Object.values(prune(actor));
+    const bySequence = (a, b) => Number(a.sequence || 0) - Number(b.sequence || 0);
+    const commonBuffs = effects.filter((effect) => (
+        effect.type !== 'debuff' && effect.toggle !== true && !(effect.id > 4360 && effect.id < 4367)
+    )).sort(bySequence);
+    const specialBuffs = effects.filter((effect) => (
+        effect.type !== 'debuff' && (effect.toggle === true || (effect.id > 4360 && effect.id < 4367))
+    )).sort(bySequence);
+    const debuffs = effects.filter((effect) => effect.type === 'debuff').sort(bySequence);
+    return [...commonBuffs, ...specialBuffs, ...debuffs];
+}
+
+function enforceSlotLimits(actor) {
+    const effects = orderedEffects(actor);
+    const debuffCount = effects.filter((effect) => effect.type === 'debuff').length;
+    const allowedBuffs = Math.max(0, BUFF_LIMIT - Math.max(0, debuffCount - DEBUFF_RESERVED_SLOTS));
+    const countedBuffs = effects.filter(includedInBuffCount);
+    const excess = Math.max(0, countedBuffs.length - allowedBuffs);
+    return countedBuffs.slice(0, excess).filter((effect) => removeStored(actor, effect.key));
+}
+
 function remove(actor, key) {
-    if (!actor?.effects) return false;
-    if (!actor.effects[key]) return false;
-    try {
-        invoke('GameServer/Effects/EffectTicker').clear(actor, key);
-    } catch (_) {}
-    delete actor.effects[key];
-    return true;
+    return removeStored(actor, key);
 }
 
 function removeByCategory(actor, category, maxLevel = Infinity) {
@@ -132,7 +234,7 @@ function remainingMs(actor, key) {
 function list(actor, options = {}) {
     const includeBuffs = options.includeBuffs !== false;
     const includeDebuffs = options.includeDebuffs !== false;
-    return Object.values(prune(actor))
+    return orderedEffects(actor)
         .filter((effect) => (
             (effect.type === 'debuff' && includeDebuffs) ||
             (effect.type !== 'debuff' && includeBuffs)
@@ -141,7 +243,14 @@ function list(actor, options = {}) {
 }
 
 function packetEffects(actor, options = {}) {
-    return list(actor, options)
+    const includeBuffs = options.includeBuffs !== false;
+    const includeDebuffs = options.includeDebuffs !== false;
+    const effects = orderedEffects(actor)
+        .filter((effect) => (
+            (effect.type === 'debuff' && includeDebuffs) ||
+            (effect.type !== 'debuff' && includeBuffs)
+        ))
+        .filter((effect) => options.includeShortBuffs !== false || effect.stackFamily !== 'life_force_orc')
         .map((effect) => ({
             id: effect.id,
             level: effect.level || DEFAULT_EFFECT_LEVEL,
@@ -152,6 +261,26 @@ function packetEffects(actor, options = {}) {
             key: effect.key
         }))
         .filter((effect) => effect.duration > 0);
+    return limitPacketEffects(effects, options.limit);
+}
+
+function shortBuff(actor) {
+    return orderedEffects(actor).find((effect) => (
+        effect.type !== 'debuff' && effect.stackFamily === 'life_force_orc'
+    )) || null;
+}
+
+function limitPacketEffects(effects = [], limit = Infinity) {
+    const capacity = Number(limit);
+    if (!Number.isFinite(capacity) || capacity <= 0 || effects.length <= capacity) {
+        return capacity <= 0 ? [] : [...effects];
+    }
+
+    const visible = effects.slice(0, capacity);
+    effects.slice(capacity).forEach((effect, index) => {
+        visible[index % capacity] = effect;
+    });
+    return visible;
 }
 
 function activeDebuffs(actor) {
@@ -186,6 +315,10 @@ function abnormalMask(actor) {
 }
 
 module.exports = {
+    BUFF_LIMIT,
+    DEBUFF_RESERVED_SLOTS,
+    SELF_PACKET_LIMIT,
+    PARTY_PACKET_LIMIT,
     apply,
     remove,
     removeByCategory,
@@ -193,6 +326,8 @@ module.exports = {
     remainingMs,
     list,
     packetEffects,
+    shortBuff,
+    limitPacketEffects,
     activeDebuffs,
     hasDebuff,
     impairments,

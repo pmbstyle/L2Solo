@@ -30,6 +30,7 @@ function enterWorld(session, buffer) {
         sendClanWindow(session);
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
         session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(session.actor));
+        session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(session.actor));
         session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
         session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
     };

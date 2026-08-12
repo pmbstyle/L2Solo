@@ -59,21 +59,53 @@ const DUAL_SWORD_DANCE = Object.freeze({
     requires: { weaponsAllowed: 512, itemKind: 'Dual Sword' }
 });
 
-// Lisvus stack families used by Mage/Warrior Bane. Keeping the source family
-// separate from the local effect key prevents unrelated multi-stat buffs such
-// as Prophecies and Chant of Victory from being treated as Haste or Empower.
+// Lisvus stack families used by the local effect rules. Keeping the source family
+// separate from the local effect key preserves source stack families without
+// collapsing unrelated multi-stat buffs such as Prophecies and Chant of Victory.
 const STACK_FAMILY_BY_SKILL_ID = Object.freeze({
+    77: 'pAtk', 91: 'pDef',
     230: 'SpeedUp',
-    1002: 'mAtkSpeedUp', 1004: 'mAtkSpeedUp', 1059: 'mAtk', 1085: 'mAtkSpeedUp',
-    1086: 'pAtkSpeedUp', 1141: 'pAtkSpeedUp', 1144: 'SpeedUp', 1145: 'mAtk',
-    1204: 'SpeedUp', 1251: 'pAtkSpeedUp', 1282: 'SpeedUp', 1359: 'SpeedUp',
-    1361: 'SpeedUp', 1365: 'mAtk', 2011: 'SpeedUp', 2012: 'pAtkSpeedUp',
-    2033: 'SpeedUp', 2034: 'SpeedUp', 2035: 'pAtkSpeedUp', 2053: 'mAtkSpeedUp',
-    2054: 'pAtkSpeedUp', 2056: 'mAtk', 2058: 'SpeedUp', 2169: 'mAtkSpeedUp',
-    4074: 'pAtkSpeedUp', 4175: 'pAtkSpeedUp', 4213: 'pAtkSpeedUp', 4322: 'SpeedUp',
+    1002: 'mAtkSpeedUp', 1003: 'pAtk', 1004: 'mAtkSpeedUp', 1005: 'pDef',
+    1007: 'pAtk', 1009: 'pDef', 1010: 'pDef', 1040: 'pDef', 1059: 'mAtk',
+    1068: 'pAtk', 1085: 'mAtkSpeedUp', 1086: 'pAtkSpeedUp', 1140: 'pDef',
+    1141: 'pAtkSpeedUp', 1144: 'SpeedUp', 1145: 'mAtk', 1146: 'pAtk',
+    1204: 'SpeedUp', 1229: 'life_force_orc', 1251: 'pAtkSpeedUp', 1256: 'life_force_orc',
+    1282: 'SpeedUp', 1359: 'SpeedUp',
+    1358: 'pDef', 1360: 'pDef', 1361: 'SpeedUp', 1365: 'mAtk',
+    2011: 'SpeedUp', 2012: 'pAtkSpeedUp',
+    2001: 'hp_recover', 2002: 'hp_recover', 2031: 'hp_recover', 2032: 'hp_recover',
+    2033: 'SpeedUp', 2034: 'SpeedUp', 2035: 'pAtkSpeedUp', 2037: 'hp_recover', 2053: 'mAtkSpeedUp',
+    2054: 'pAtkSpeedUp', 2056: 'mAtk', 2057: 'pAtk', 2058: 'SpeedUp', 2059: 'pDef',
+    2169: 'mAtkSpeedUp', 4074: 'pAtkSpeedUp', 4173: 'pAtk', 4174: 'pDef',
+    4175: 'pAtkSpeedUp', 4213: 'pAtkSpeedUp', 4317: 'pAtk', 4322: 'SpeedUp',
     4327: 'pAtkSpeedUp', 4329: 'mAtkSpeedUp', 4331: 'mAtk', 4342: 'SpeedUp',
     4355: 'mAtkSpeedUp', 4356: 'mAtk', 4357: 'pAtkSpeedUp', 4391: 'SpeedUp',
     4400: 'mAtkSpeedUp', 4401: 'mAtk', 4402: 'pAtkSpeedUp', 4644: 'pAtkSpeedUp'
+});
+
+const STACK_ORDER_BY_SKILL_ID = Object.freeze({
+    361: 2,
+    362: 2,
+    1358: 10,
+    1359: 99,
+    1360: 10,
+    1361: 99,
+    2001: 2,
+    2002: 1.5,
+    2031: 1,
+    2032: 2,
+    2037: 3,
+    4173: 99,
+    4174: 99,
+    4175: 99,
+    4213: 99
+});
+
+const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
+    stun: 'Stun',
+    root: 'Root',
+    silence: 'silence',
+    paralyze: 'paralyze'
 });
 
 const RULES = {
@@ -972,7 +1004,7 @@ const RULES = {
     7030: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7031: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
     7032: { skillType: SUMMON, trait: 'summon', target: 'self', ssBoost: 0 },
-    1229: { skillType: HOT, trait: 'buff', effect: 'chant_of_life', effectType: 'buff', target: 'party', radius: 1000, maxLevel: 18, baseLandRate: 100, hot: { count: 15, intervalMs: 1000, healByLevel: [12, 15, 18, 23, 27, 31, 35, 39, 43, 45, 46, 58, 50, 52, 53, 55, 56, 58] } },
+    1229: { skillType: HOT, trait: 'buff', effect: 'chant_of_life', effectType: 'buff', target: 'party', radius: 1000, maxLevel: 18, baseLandRate: 100, stackOrderByLevel: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], hot: { count: 15, intervalMs: 1000, healByLevel: [12, 15, 18, 23, 27, 31, 35, 39, 43, 45, 46, 58, 50, 52, 53, 55, 56, 58] } },
     1240: { skillType: EFFECT, trait: 'buff', effect: 'guidance', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1242: { skillType: EFFECT, trait: 'buff', effect: 'death_whisper', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.25, 1.3, 1.35] } },
     1243: { skillType: EFFECT, trait: 'buff', effect: 'bless_shield', effectType: 'buff', target: 'friendly', maxLevel: 6, baseLandRate: 100, statsByLevel: { rShldMul: [1.05, 1.1, 1.15, 1.2, 1.25, 1.3] } },
@@ -984,7 +1016,7 @@ const RULES = {
     1251: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_fury', effectType: 'buff', target: 'party', radius: 1000, baseLandRate: 100, statsByLevel: { pAtkSpdMul: [1.15, 1.33] } },
     1252: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_evasion', effectType: 'buff', target: 'party', radius: 1000, baseLandRate: 100, statsByLevel: { pEvasionRateAdd: [2, 3, 4] } },
     1253: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_rage', effectType: 'buff', target: 'party', radius: 1000, baseLandRate: 100, statsByLevel: { pCritDamageMul: [1.3, 1.4, 1.5] } },
-    1256: { skillType: HOT, trait: 'buff', effect: 'heart_of_paagrio', effectType: 'buff', target: 'ally', radius: 400, maxLevel: 13, ssBoost: 0, hot: { count: 15, intervalMs: 1000, healByLevel: [31, 35, 39, 43, 45, 46, 48, 50, 52, 53, 55, 56, 58] } },
+    1256: { skillType: HOT, trait: 'buff', effect: 'heart_of_paagrio', effectType: 'buff', target: 'ally', radius: 400, maxLevel: 13, ssBoost: 0, stackOrderByLevel: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], hot: { count: 15, intervalMs: 1000, healByLevel: [31, 35, 39, 43, 45, 46, 48, 50, 52, 53, 55, 56, 58] } },
     1257: { skillType: EFFECT, trait: 'buff', effect: 'decrease_weight', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { maxLoad: [3000, 6000, 9000] } },
     1258: { skillType: HEAL_PERCENT, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [15, 20, 25, 30] },
     1259: { skillType: EFFECT, trait: 'buff', effect: 'resist_shock', effectType: 'buff', target: 'friendly', maxLevel: 4, baseLandRate: 100, statsByLevel: { stunResist: [15, 20, 30, 40] } },
@@ -1065,6 +1097,10 @@ function resolve(skill = {}) {
     const name = String(skill.name || '');
     const rule = RULES[Number(skill.selfId)] || {};
     const inferred = infer(skill, name);
+    const effect = rule.effect || inferred.effect;
+    const sourcedStackFamily = STACK_FAMILY_BY_SKILL_ID[Number(skill.selfId)]
+        || CONTROL_STACK_FAMILY_BY_EFFECT[effect]
+        || null;
     const target = rule.target || inferred.target;
 
     const semantic = {
@@ -1074,7 +1110,7 @@ function resolve(skill = {}) {
         // L2Skill's C4 default is 80. Party skills with a wider native area
         // carry their source-backed radius explicitly in RULES above.
         radius: resolveByLevel(rule.radiusByLevel, skill.level) ?? rule.radius ?? inferred.radius ?? (target === 'party' ? 80 : 0),
-        effect: rule.effect || inferred.effect,
+        effect,
         effectType: rule.effectType || inferred.effectType,
         effectTargetKind: rule.effectTargetKind || inferred.effectTargetKind || null,
         selfEffect: rule.selfEffect || inferred.selfEffect || null,
@@ -1152,13 +1188,31 @@ function resolve(skill = {}) {
         confusionMobOnly: rule.confusionMobOnly || false,
         undeadOnly: rule.undeadOnly || inferred.undeadOnly || false,
         maxCancelled: rule.maxCancelled ?? inferred.maxCancelled,
-        stackFamily: rule.stackFamily || STACK_FAMILY_BY_SKILL_ID[Number(skill.selfId)] || null,
+        stackFamily: rule.stackFamily || sourcedStackFamily,
+        stackOrder: resolveByLevel(rule.stackOrderByLevel, skill.level)
+            ?? rule.stackOrder
+            ?? STACK_ORDER_BY_SKILL_ID[Number(skill.selfId)]
+            ?? (CONTROL_STACK_FAMILY_BY_EFFECT[effect] ? 1 : null)
+            ?? null,
         baneStackFamilies: rule.baneStackFamilies || null
     };
     semantic.stats = resolveStats(rule, inferred, skill.level);
+    semantic.stackOrder = semantic.stackOrder ?? stackOrderFromStats(semantic.stackFamily, semantic.stats, skill.level);
     semantic.conditionalStats = resolveConditionalStats(rule, skill.level);
     semantic.situationalStats = resolveSituationalStats(rule, skill.level);
     return semantic;
+}
+
+function stackOrderFromStats(stackFamily, stats = {}, level = 1) {
+    switch (stackFamily) {
+        case 'SpeedUp': return Number(stats.runSpdAdd) || Number(level) || 1;
+        case 'pAtk': return Number(stats.pAtkMul) || Number(level) || 1;
+        case 'pDef': return Number(stats.pDefMul) || Number(level) || 1;
+        case 'pAtkSpeedUp': return Number(stats.pAtkSpdMul) || Number(level) || 1;
+        case 'mAtkSpeedUp': return Number(stats.castSpdMul) || Number(level) || 1;
+        case 'mAtk': return Number(stats.mAtkMul) || Number(level) || 1;
+        default: return null;
+    }
 }
 
 function resolveCleanse(rule, inferred, level) {

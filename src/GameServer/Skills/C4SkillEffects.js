@@ -749,6 +749,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         magicLevel: semantic.magicLevel,
         category: semantic.effectTrait || semantic.trait || semantic.effect,
         stackFamily: semantic.stackFamily,
+        stackOrder: semantic.stackOrder,
         dispellable: semantic.dispellable,
         stats: semantic.stats || {},
         situationalStats: semantic.situationalStats || [],
@@ -793,7 +794,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         target.automation?.abortAll?.(target, { notifyClient: false });
         EffectRestrictions.stopMovement(target?.session || session, target);
     }
-    if (hasStats(effect)) {
+    if (hasStats(effect) || effect.removedEffects.some(hasStats)) {
         refreshStats(target?.session || session, target);
     }
     refreshEffects(session, target);
@@ -1206,8 +1207,10 @@ function refreshEffects(session, target) {
     const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
     if (target?.session?.dataSendToMe) {
         target.session.dataSendToMe(packet);
+        target.session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     } else if (target === session?.actor && session?.dataSendToMe) {
         session.dataSendToMe(packet);
+        session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     }
 
     if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {

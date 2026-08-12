@@ -2,6 +2,7 @@ const SendPacket = invoke('Packet/Send');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function partySpelled(objectId, effects = [], summon = 0) {
+    effects = EffectStore.limitPacketEffects(effects, EffectStore.PARTY_PACKET_LIMIT);
     const packet = new SendPacket(0xee);
 
     packet

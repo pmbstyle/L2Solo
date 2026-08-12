@@ -14,6 +14,7 @@ function clearEffectsOnDeath(session, actor) {
     actor.supportReservations = {};
     EffectStore.prune(actor);
     calculateStats(session, actor);
+    EffectTicker.refreshEffects(session, actor);
 }
 
 function die(session, actor) {

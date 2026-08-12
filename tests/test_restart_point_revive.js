@@ -75,6 +75,10 @@ const dyingActor = {
     isDead() { return this.state.fetchDead(); },
     destructor() {}
 };
+const deathPackets = [];
+dyingActor.session = {
+    dataSendToMe(packet) { deathPackets.push(packet); }
+};
 dyingActor.state.setHits(true);
 dyingActor.state.setCasts(true);
 dyingActor.state.setSeated(true);
@@ -98,6 +102,16 @@ assert.deepStrictEqual(dyingActor.supportReservations, {}, 'death should clear s
 assert.ok(dyingActor.collectivePDef < buffedPDef, 'death should recalculate stats without removed buff bonuses');
 assert.strictEqual(dyingActor.fetchCharges(), 0, 'death should clear all force and sonic charges');
 assert.strictEqual(dyingActor.chargeExpiryTimer, undefined, 'death should cancel the charge expiry timer');
+const clearedAbnormalPacket = deathPackets.find((packet) => packet[0] === 0x7f);
+const clearedShortBuffPacket = deathPackets.find((packet) => packet[0] === 0xf4);
+assert(clearedAbnormalPacket, 'death should refresh the player effect bar after clearing effects');
+assert.strictEqual(clearedAbnormalPacket.readInt16LE(1), 0, 'death should remove every regular effect icon from the client');
+assert(clearedShortBuffPacket, 'death should also clear the dedicated short-buff slot');
+assert.deepStrictEqual(
+    [clearedShortBuffPacket.readInt32LE(1), clearedShortBuffPacket.readInt32LE(5), clearedShortBuffPacket.readInt32LE(9)],
+    [0, 0, 0],
+    'death should send the native empty short-buff payload'
+);
 
 const packets = [];
 const actor = {

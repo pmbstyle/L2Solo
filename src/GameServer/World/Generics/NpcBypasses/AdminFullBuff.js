@@ -69,6 +69,8 @@ function effectFromSkill(skill, expiresAt) {
         name: skill.name,
         type: semantic.effectType || 'buff',
         category: semantic.effectTrait || semantic.trait || semantic.effect || 'buff',
+        stackFamily: semantic.stackFamily,
+        stackOrder: semantic.stackOrder,
         stats: semantic.stats || {},
         dispellable: semantic.dispellable !== false,
         expiresAt
@@ -80,6 +82,7 @@ function refreshActor(session, actor, Generics = invoke(path.actor)) {
     actor.statusUpdateVitals(actor);
     session.dataSendToMe(ServerResponse.userInfo(actor));
     session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+    session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(actor));
 
     try {
         invoke('GameServer/Bot/AI/PartyCompanionService').updateActorEffects(session);

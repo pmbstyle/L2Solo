@@ -92,12 +92,12 @@ function applyEffect(session, target, effect) {
 
     EffectTicker.scheduleExpiry(session, target, applied);
     EffectRestrictions.interruptOnApply(target?.session || session, target, applied, effect.source);
-    EffectTicker.refreshEffects(session, target);
-    if (Object.keys(applied.stats || {}).length > 0) {
+    if (Object.keys(applied.stats || {}).length > 0 || applied.removedEffects.some((removed) => Object.keys(removed.stats || {}).length > 0)) {
         try {
             invoke('GameServer/Actor/Generics/CalculateStats')(target?.session || session, target);
         } catch (_) {}
     }
+    EffectTicker.refreshEffects(session, target);
     return applied;
 }
 
