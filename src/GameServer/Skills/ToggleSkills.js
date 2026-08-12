@@ -41,6 +41,10 @@ function activate(session, actor, skill, key) {
         session.dataSendToMe?.(ServerResponse.actionFailed());
         return false;
     }
+    if (semantic.stopAtFullHp && Number(actor.fetchHp?.()) >= Number(actor.fetchMaxHp?.())) {
+        session.dataSendToMe?.(ServerResponse.actionFailed());
+        return false;
+    }
     const initialMp = Math.max(0, Number(semantic.mpInitialConsume) || 0);
 
     if (initialMp > 0 && (Number(actor.fetchMp?.()) || 0) < initialMp) {
@@ -54,8 +58,8 @@ function activate(session, actor, skill, key) {
     }
 
     const toggleMpConsume = Math.max(0, Number(semantic.toggleMpConsume) || 0);
+    const toggleHpConsume = Math.max(0, Number(semantic.toggleHpConsume) || 0);
     if (semantic.stats?.relaxing) {
-        actor.silentMoving = true;
         if (!actor.state?.fetchSeated?.()) {
             actor.state?.setSeated?.(true);
             session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
@@ -72,17 +76,27 @@ function activate(session, actor, skill, key) {
         category: semantic.trait || key,
         dispellable: semantic.dispellable,
         toggle: true,
+        requires: semantic.requires || null,
         stats: semantic.stats || {},
         manaDot: toggleMpConsume > 0 ? {
             toggle: true,
             damage: toggleMpConsume,
             intervalMs: Math.max(1, Number(semantic.toggleIntervalMs) || 3000),
-            requiresSeated: semantic.stats?.relaxing === true
+            requiresSeated: semantic.stats?.relaxing === true,
+            stopAtFullHp: semantic.stopAtFullHp === true
+        } : null,
+        healthDot: toggleHpConsume > 0 ? {
+            toggle: true,
+            damage: toggleHpConsume,
+            intervalMs: Math.max(1, Number(semantic.toggleIntervalMs) || 3000)
         } : null
     });
 
     if (effect?.manaDot) {
         EffectTicker.applyManaDot(session, actor, actor, effect);
+    }
+    if (effect?.healthDot) {
+        EffectTicker.applyHealthDot(session, actor, actor, effect);
     }
 
     refreshActor(session, actor);
@@ -91,6 +105,10 @@ function activate(session, actor, skill, key) {
 
 function matchesRequirements(actor, requires = {}) {
     if (!requires) return true;
+    if (requires.weaponsAllowed) {
+        const weaponMask = invoke('GameServer/Actor/Attack').weaponMaskFor(actor);
+        if ((Number(requires.weaponsAllowed) & weaponMask) === 0) return false;
+    }
     if (requires.shield && !(Number(actor?.backpack?.fetchTotalShieldPDef?.()) > 0)) return false;
     return true;
 }
@@ -104,9 +122,21 @@ function deactivate(session, actor, key) {
     return true;
 }
 
+function syncEquipment(session, actor) {
+    const invalid = EffectStore.list(actor).filter((effect) => (
+        effect.toggle && effect.requires && !matchesRequirements(actor, effect.requires)
+    ));
+    invalid.forEach((effect) => {
+        EffectStore.remove(actor, effect.key);
+        cleanupState(session, actor, effect);
+    });
+    if (invalid.length > 0) refreshActor(session, actor);
+    return invalid;
+}
+
 function cleanupState(session, actor, effect) {
     if (!effect) return;
-    if (effect.stats?.relaxing || effect.stats?.silentMoving) {
+    if (effect.stats?.silentMoving) {
         actor.silentMoving = EffectStore.list(actor).some((entry) => entry.stats?.silentMoving === true);
     }
     if (effect.stats?.fakeDeath) stopFakeDeath(session, actor);
@@ -151,5 +181,6 @@ module.exports = {
     handleRequest,
     activate,
     deactivate,
+    syncEquipment,
     cleanupState
 };

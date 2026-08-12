@@ -4,6 +4,7 @@ const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const Formulas = invoke('GameServer/Formulas');
 const ServerResponse = invoke('GameServer/Network/Response');
 
@@ -302,6 +303,14 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK || semantic.skillType === C4SkillRules.FATAL) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
+        const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+        if (requiredCharges > 0) {
+            const chargeCount = Math.max(requiredCharges, Number(context.chargeCount) || requiredCharges);
+            result.damage = Math.round(result.damage * (0.8 + (0.201 * chargeCount)));
+        }
+        if (Number(semantic.chargeOnUse) > 0) {
+            result.charges = increaseCharges(session, actor, semantic.chargeOnUse, semantic.maxCharges);
+        }
         if (semantic.lethal) result.lethal = applyLethal(actor, target, skill, semantic, rng, result);
         if (result.damage > 0 && semantic.skillType === C4SkillRules.DAMAGE && semantic.removeTarget === true) {
             clearTargetState(target?.session || session, target);
@@ -494,16 +503,13 @@ function applyGiveSp(session, actor, target, skill, semantic, magicSkill, attack
 
 function applyCharge(session, actor, skill, semantic, magicSkill, attack) {
     const maxCharges = Math.max(0, Number(semantic.maxCharges ?? skill.fetchPower?.()) || 0);
-    const current = Math.max(0, Number(actor.fetchCharges?.() ?? actor.charges ?? 0) || 0);
-    const next = maxCharges > 0 ? Math.min(maxCharges, current + 1) : current + 1;
-    if (typeof actor.setCharges === 'function') {
-        actor.setCharges(next);
-    } else {
-        actor.charges = next;
-    }
-    refreshEtcStatus(session, actor);
+    const next = increaseCharges(session, actor, 1, maxCharges);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return next;
+}
+
+function increaseCharges(session, actor, amount, maxCharges) {
+    return ChargeLifecycle.increase(session, actor, amount, maxCharges);
 }
 
 function applyDrainSoul(actor, target) {

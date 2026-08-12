@@ -190,6 +190,16 @@ function applyManaDot(session, source, target, effect) {
             return;
         }
 
+        if (manaDot.stopAtFullHp && Number(target.fetchHp?.()) >= Number(target.fetchMaxHp?.())) {
+            clearRuntime(target, effect.key);
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            EffectStore.remove(target, effect.key);
+            invoke('GameServer/Skills/ToggleSkills').cleanupState(session, target, effect);
+            refreshStats(target.session || session, target);
+            refreshEffects(session, target);
+            return;
+        }
+
         if (manaDot.toggle && damage > (Number(target.fetchMp?.()) || 0)) {
             clearRuntime(target, effect.key);
             const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -214,6 +224,36 @@ function applyManaDot(session, source, target, effect) {
     if (typeof timers[effect.key].unref === 'function') {
         timers[effect.key].unref();
     }
+    return true;
+}
+
+function applyHealthDot(session, source, target, effect) {
+    const healthDot = effect?.healthDot;
+    if (!target || !effect?.key || !healthDot) return false;
+
+    const damage = Math.max(0, Number(healthDot.damage) || 0);
+    const intervalMs = Math.max(1, Number(healthDot.intervalMs) || 1000);
+    if (!damage) return false;
+
+    const timers = ensureTimers(target);
+    clear(target, effect.key);
+    timers[effect.key] = setInterval(() => {
+        const currentHp = Math.max(0, Number(target.fetchHp?.()) || 0);
+        if (target.state?.fetchDead?.() || damage >= currentHp - 1) {
+            clearRuntime(target, effect.key);
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            EffectStore.remove(target, effect.key);
+            invoke('GameServer/Skills/ToggleSkills').cleanupState(session, target, effect);
+            refreshStats(target.session || session, target);
+            refreshEffects(session, target);
+            return;
+        }
+
+        target.setHp(Math.max(1, currentHp - damage));
+        if (target.statusUpdateVitals) target.statusUpdateVitals(target);
+        else if (target.broadcastVitals) target.broadcastVitals();
+    }, intervalMs);
+    if (typeof timers[effect.key].unref === 'function') timers[effect.key].unref();
     return true;
 }
 
@@ -304,6 +344,7 @@ function applyHeal(target, heal) {
 
 module.exports = {
     applyDot,
+    applyHealthDot,
     applyManaDot,
     applyManaHot,
     applyHot,

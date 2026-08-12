@@ -64,6 +64,9 @@ function evaluate(bot, target, skill, role, policy = {}) {
     if (policy.avoidAreaDamage === true && AREA_SOURCE_TARGETS.has(String(semantic.sourceTarget || '').toLowerCase())) return null;
     const allowedWeapons = Number(semantic.requires?.weaponsAllowed) || 0;
     if (allowedWeapons && (allowedWeapons & Attack.weaponMaskFor(bot)) === 0) return null;
+    const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+    const currentCharges = Math.max(0, Number(bot.fetchCharges?.() ?? bot.charges ?? 0) || 0);
+    if (requiredCharges > currentCharges) return null;
     if (!OFFENSIVE_TYPES.has(skill.fetchSkillType?.())) return null;
     if (skill.fetchTargetKind?.() !== 'enemy') return null;
 
@@ -88,9 +91,10 @@ function evaluate(bot, target, skill, role, policy = {}) {
 
     const type = skill.fetchSkillType();
     const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
-    const power = type === C4SkillRules.FATAL
+    let power = type === C4SkillRules.FATAL
         ? Formulas.calcFatalPower(basePower, bot.fetchHp?.(), bot.fetchMaxHp?.())
         : basePower;
+    if (requiredCharges > 0) power *= 0.8 + (0.201 * currentCharges);
     const distance = distance2d(bot, target);
     const reasons = [];
     let score = 100 + Math.log2(power + 1) * 35 - cost * 1.5;
@@ -140,4 +144,32 @@ function select(bot, target, role, policy = {}) {
         .sort((a, b) => b.score - a.score)[0] || null;
 }
 
-module.exports = { OFFENSIVE_TYPES, evaluate, select, policyAdjustment };
+function selectChargeSkill(bot, role) {
+    const skills = bot?.skillset?.skills || [];
+    const current = Math.max(0, Number(bot.fetchCharges?.() ?? bot.charges ?? 0) || 0);
+    const weaponMask = Attack.weaponMaskFor(bot);
+    const needed = skills.reduce((maximum, skill) => {
+        const semantic = skill?.fetchSemantic?.() || {};
+        const allowed = Number(semantic.requires?.weaponsAllowed) || 0;
+        if (allowed && (allowed & weaponMask) === 0) return maximum;
+        return Math.max(maximum, Number(semantic.requires?.charges) || 0);
+    }, 0);
+    if (needed <= current) return null;
+
+    const mp = Math.max(0, Number(bot.fetchMp?.()) || 0);
+    const maxMp = Math.max(1, Number(bot.fetchMaxMp?.()) || mp || 1);
+    return skills
+        .filter((skill) => {
+            if (!skill || skill.fetchPassive?.() || bot.canUseSkill?.(skill) === false) return false;
+            const semantic = skill.fetchSemantic?.() || {};
+            const allowed = Number(semantic.requires?.weaponsAllowed) || 0;
+            const cost = Math.max(0, Number(skill.fetchConsumedMp?.()) || 0);
+            return semantic.skillType === C4SkillRules.CHARGE
+                && (!allowed || (allowed & weaponMask) !== 0)
+                && cost <= mp
+                && (role === 'mage' || (mp - cost) / maxMp >= reserveRatio(role));
+        })
+        .sort((a, b) => Number(b.fetchLevel?.()) - Number(a.fetchLevel?.()))[0] || null;
+}
+
+module.exports = { OFFENSIVE_TYPES, evaluate, select, selectChargeSkill, policyAdjustment };

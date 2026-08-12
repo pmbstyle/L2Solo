@@ -8,6 +8,7 @@ const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 // L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
 const WEAPON_MASK_BY_KIND = Object.freeze({
@@ -324,12 +325,24 @@ class Attack {
                 return;
             }
 
+            // A sonic/force charge belongs to the cast, not to each target of
+            // an area skill. Consume it once after the cast has survived all
+            // cancellation gates and immediately before authoritative effects.
+            if (!this.consumeSkillCharges(session, actor, skill)) {
+                actor.state.setCasts(false);
+                this.rejectSkillUseCondition(session, actor, 'Not enough charges.');
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+                return;
+            }
+
             executionTargets.forEach((target) => {
                 this.restoreShotState(actor, shotState);
                 const outcome = SkillEffects.execute(session, actor, target, skill, {
                     attack: this,
                     magicSkill,
-                    selfEffectOnly
+                    selfEffectOnly,
+                    chargeCount: actor.activeSkillChargeCount
                 });
                 // Chat confirmations are emitted only after the authoritative
                 // skill result exists. A queued, interrupted, resisted, or
@@ -372,6 +385,7 @@ class Attack {
                     outcome.spoiled = invoke('GameServer/Npc/SpoilSweep').trySpoilCrush(session, actor, target, skill);
                 }
             });
+            delete actor.activeSkillChargeCount;
             this.clearLoadedShot(actor, magicSkill);
             actor.state.setCasts(false);
             invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
@@ -641,6 +655,10 @@ class Attack {
         }
 
         const requires = semantic.requires || {};
+        const requiredCharges = Math.max(0, Number(requires.charges) || 0);
+        const charges = Math.max(0, Number(actor.fetchCharges?.() ?? actor.charges ?? 0) || 0);
+        if (requiredCharges > charges) return 'Not enough charges.';
+
         if (requires.weaponsAllowed) {
             const mask = weaponMaskFor(actor);
             if ((Number(requires.weaponsAllowed) & mask) === 0) {
@@ -698,6 +716,15 @@ class Attack {
         }
 
         return null;
+    }
+
+    consumeSkillCharges(session, actor, skill) {
+        const required = Math.max(0, Number(skill.fetchSemantic?.().requires?.charges) || 0);
+        if (!required) return true;
+        const result = ChargeLifecycle.consume(session, actor, required);
+        if (!result.ok) return false;
+        actor.activeSkillChargeCount = result.previous;
+        return true;
     }
 
     shouldConsumeSkillItems(skill) {
@@ -823,7 +850,7 @@ class Attack {
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
                 rng
             }
-        ) * weaponModifier * physicalUndeadModifier(actor, creature));
+        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
         if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
         this.clearLoadedShot(actor, magicSkill);
         return damage;
@@ -881,7 +908,7 @@ class Attack {
                 criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
                     * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
-            }) * weaponModifier * physicalUndeadModifier(actor, creature));
+            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -921,7 +948,7 @@ class Attack {
                 critical,
                 criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
                 criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
-            }) * weaponModifier * physicalUndeadModifier(src, dst));
+            }) * weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst));
         let flags = 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -1159,5 +1186,22 @@ function physicalUndeadModifier(attacker, target) {
     return undead ? EffectStats.multiplier(attacker, 'pAtkUndeadMul') : 1;
 }
 
+const PHYSICAL_RACE_STATS = Object.freeze({
+    animal: 'pAtk-animals',
+    beast: 'pAtk-monsters',
+    construct: 'pAtk-mcreatures',
+    dragon: 'pAtk-dragons',
+    giant: 'pAtk-giants',
+    insect: 'pAtk-insects',
+    plant: 'pAtk-plants'
+});
+
+function physicalRaceModifier(attacker, target) {
+    const race = String(target?.fetchRace?.() ?? target?.model?.race ?? target?.race ?? '').toLowerCase();
+    const stat = PHYSICAL_RACE_STATS[race];
+    return stat ? EffectStats.multiplier(attacker, stat) : 1;
+}
+
 module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
+module.exports.physicalRaceModifier = physicalRaceModifier;

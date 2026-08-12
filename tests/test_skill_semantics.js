@@ -1786,7 +1786,7 @@ assert.strictEqual(doubleSonicSlash.fetchSkillType(), C4SkillRules.DAMAGE, 'Doub
 assert.strictEqual(doubleSonicSlash.fetchTargetKind(), 'enemy', 'Double Sonic Slash should preserve sourced TARGET_ONE offensive semantics');
 assert.strictEqual(doubleSonicSlash.fetchSsBoost(), 1, 'Double Sonic Slash should preserve sourced physical shot boost semantics');
 assert.deepStrictEqual(doubleSonicSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 }, 'Double Sonic Slash should preserve sourced dual sword and charge requirements');
-assert.strictEqual(doubleSonicSlashOutcome.damage, 156, 'Double Sonic Slash should keep its physical damage component');
+assert.strictEqual(doubleSonicSlashOutcome.damage, 188, 'Double Sonic Slash should apply the sourced two-charge damage multiplier');
 assert.strictEqual(doubleSonicSlashOutcome.effect, null, 'Double Sonic Slash should remain a pure damage skill without a debuff');
 
 const sonicBlasterData = activeSkills.find((entry) => entry.selfId === 6);
@@ -2502,7 +2502,7 @@ assert.strictEqual(tripleSonicSlash.fetchSsBoost(), 1, 'Triple Sonic Slash shoul
 assert.deepStrictEqual(tripleSonicSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 3, condition: 128, conditionValue: 3 }, 'Triple Sonic Slash should preserve sourced dual sword and charge requirements');
 assert.strictEqual(tripleSonicSlash.fetchSemantic().castRange, 40, 'Triple Sonic Slash should preserve sourced castRange metadata');
 assert.strictEqual(tripleSonicSlash.fetchSemantic().effectRange, 400, 'Triple Sonic Slash should preserve sourced effectRange metadata');
-assert.strictEqual(tripleSonicSlashOutcome.damage, 333, 'Triple Sonic Slash should keep its physical damage component');
+assert.strictEqual(tripleSonicSlashOutcome.damage, 467, 'Triple Sonic Slash should apply the sourced three-charge damage multiplier');
 assert.strictEqual(tripleSonicSlashOutcome.effect, null, 'Triple Sonic Slash should remain a pure damage skill without a debuff');
 
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
@@ -2712,7 +2712,7 @@ assert.strictEqual(hurricaneAssault.fetchTargetKind(), 'enemy', 'Hurricane Assau
 assert.strictEqual(hurricaneAssault.fetchSsBoost(), 1, 'Hurricane Assault should preserve sourced physical shot boost semantics');
 assert.strictEqual(hurricaneAssault.fetchSemantic().trait, 'wind', 'Hurricane Assault should preserve sourced wind element semantics');
 assert.deepStrictEqual(hurricaneAssault.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 2, condition: 128, conditionValue: 2 }, 'Hurricane Assault should preserve sourced fist and charge requirements');
-assert.strictEqual(hurricaneAssaultOutcome.damage, 134, 'Hurricane Assault should keep its physical damage component');
+assert.strictEqual(hurricaneAssaultOutcome.damage, 161, 'Hurricane Assault should apply the sourced two-charge damage multiplier');
 assert.strictEqual(hurricaneAssaultOutcome.effect, null, 'Hurricane Assault should remain a pure damage skill without a debuff');
 
 const soulBreakerData = activeSkills.find((entry) => entry.selfId === 281);

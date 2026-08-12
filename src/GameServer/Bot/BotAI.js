@@ -588,6 +588,23 @@ const BotAI = {
                 allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
             )
         };
+        const chargeSkill = options.basicAttackOnly ? null : BotCombatUtility.selectChargeSkill(bot, role);
+        if (chargeSkill) {
+            session.lastCombatDecision = {
+                action: 'charge_skill',
+                role,
+                skillId: chargeSkill.fetchSelfId(),
+                skillName: chargeSkill.fetchName?.() || null,
+                charges: Number(bot.fetchCharges?.() ?? bot.charges ?? 0) || 0,
+                at: Date.now()
+            };
+            Generics.skillExec(session, bot, {
+                id: bot.fetchId(),
+                selfId: chargeSkill.fetchSelfId(),
+                ctrl: true
+            });
+            return true;
+        }
         const decision = options.basicAttackOnly
             ? null
             : BotCombatUtility.select(bot, npc, role, combatPolicy);

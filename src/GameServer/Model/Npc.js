@@ -79,6 +79,10 @@ class NpcModel extends CreatureModel {
         return this.model.undead === true;
     }
 
+    fetchRace() {
+        return this.model.race || '';
+    }
+
     fetchOwnerId() {
         return this.model.ownerId ?? 0;
     }
