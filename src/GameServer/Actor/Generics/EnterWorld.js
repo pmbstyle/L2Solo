@@ -17,12 +17,13 @@ function enterWorld(session, actor) {
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
     CharacterStatus.restoreVitals(actor, vitals);
-    actor.skillset.populate(actor.fetchId(), () => {
+    actor.skillset.populateForActor(actor, () => {
         // Skill loading is asynchronous.  The first calculation above runs
         // before Expertise is available and can temporarily apply the C4
         // grade penalty to correctly equipped characters.  Recalculate and
         // refresh the client once the real skillset is present.
         Generics.calculateStats(session, actor);
+        session.dataSendToMe?.(ServerResponse.skillsList(actor.skillset.fetchSkills()));
         session.dataSendToMe?.(ServerResponse.userInfo(actor));
         session.dataSendToMe?.(ServerResponse.abnormalStatusUpdate.fromActor(actor));
     });

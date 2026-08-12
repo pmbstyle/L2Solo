@@ -54,4 +54,15 @@ skillUse(dwarvenSkill, skillPacket);
 assert.strictEqual(dwarvenSkill.packets[0][0], 0xd6, 'Using C4 Dwarven Craft must open the dwarven recipe book');
 assert.strictEqual(dwarvenSkill.packets[0].readInt32LE(1), 0, 'Dwarven Craft must select the dwarven recipe book');
 
+const commonSkill = session();
+commonSkill.actor.skillset = {
+    fetchSkill: (selfId) => Number(selfId) === 1322 ? { fetchPassive: () => false } : null
+};
+const commonSkillPacket = Buffer.alloc(10);
+commonSkillPacket[0] = 0x2f;
+commonSkillPacket.writeInt32LE(1322, 1);
+skillUse(commonSkill, commonSkillPacket);
+assert.strictEqual(commonSkill.packets[0][0], 0xd6, 'Using C4 Common Craft must open the common recipe book');
+assert.strictEqual(commonSkill.packets[0].readInt32LE(1), 1, 'Common Craft must select the common recipe book');
+
 console.log('Recipe book checks passed');
