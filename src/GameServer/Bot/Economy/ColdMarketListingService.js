@@ -510,10 +510,19 @@ function open(state, options = {}) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
         return Promise.resolve({ state, listed: false, reason: 'not_shopping' });
     }
-    const initialItems = ItemDisposition.saleCandidates(state, options);
-    if (!initialItems.length) return Promise.resolve({ state, listed: false, reason: 'nothing_to_sell' });
-
     const timestamp = Number(options.now) || Date.now();
+    const deferSellRetry = (nextState) => ({
+        ...nextState,
+        stats: {
+            ...(nextState?.stats || {}),
+            marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
+        }
+    });
+    const initialItems = ItemDisposition.saleCandidates(state, options);
+    if (!initialItems.length) {
+        return Promise.resolve({ state: deferSellRetry(state), listed: false, reason: 'nothing_to_sell' });
+    }
+
     // GoalExecutor chooses the best buyer town before travel. At this stage
     // the bot must trade only with the city it has actually reached.
     const town = marketTown(options.town || state.currentRegion || targetMarketTownName(state, initialItems));
@@ -535,7 +544,7 @@ function open(state, options = {}) {
     }));
     if (!items.length) {
         return BotWarehouse.depositCold(marketState).then((warehouse) => ({
-            state: warehouse.state || marketState,
+            state: deferSellRetry(warehouse.state || marketState),
             listed: false,
             reason: buyerSale.sold
                 ? 'sold_to_static_buyer'
@@ -558,7 +567,7 @@ function open(state, options = {}) {
         .filter((item) => item.marketReason === 'speculative_demand')
         .reduce((earliest, item) => Math.min(earliest, Number(item.marketExpiresAt || Infinity)), Infinity);
     const storeLoc = marketLocation(town, { ...options, state });
-    if (!storeLoc) return { state: marketState, listed: false, reason: 'giran_plaza_full', buyerSale, market };
+    if (!storeLoc) return { state: deferSellRetry(marketState), listed: false, reason: 'giran_plaza_full', buyerSale, market };
     const nextState = {
         ...marketState,
         activity: 'merchant',

@@ -1937,7 +1937,7 @@ const BotLifeState = {
         });
     },
 
-    marketGoalCandidates(limit = 8) {
+    marketGoalCandidates(limit = 8, timestamp = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
         return Database.execute([
@@ -1946,10 +1946,11 @@ const BotLifeState = {
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
+            AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
             AND goals.goalJson LIKE '%"type":"sell_inventory"%'
             ORDER BY states.updatedAt ASC
             LIMIT ${safeLimit}`,
-            []
+            [Number(timestamp) || now()]
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);

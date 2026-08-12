@@ -8,6 +8,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
 DataCache.init();
 
@@ -105,6 +106,11 @@ async function run() {
     assert.deepStrictEqual(ItemDisposition.saleCandidates(preTradeState), [], 'generated bots must not sell before level ten');
     const preTradeListing = await ListingService.open(preTradeState, { now: 1000 });
     assert.strictEqual(preTradeListing.reason, 'nothing_to_sell', 'pre-ten generated bots must never open a private store');
+    assert.strictEqual(
+        preTradeListing.state.stats.marketSellRetryAfter,
+        1000 + ListingService.SELL_RETRY_DELAY_MS,
+        'a market visit with nothing sellable must not immediately repeat'
+    );
 
     const starterMobLootState = {
         ...state,
@@ -171,6 +177,18 @@ async function run() {
     assert.strictEqual(buyerRouted.listed, false, 'materials accepted by a static buyer must not create a dead private store');
     assert.strictEqual(buyerRouted.reason, 'sold_to_static_buyer');
     assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.source, 'static_buyer');
+    assert.strictEqual(
+        buyerRouted.state.stats.marketSellRetryAfter,
+        1000 + ListingService.SELL_RETRY_DELAY_MS,
+        'a completed buyer sale without a private listing must defer the next market trip'
+    );
+    assert.strictEqual(GoalExecutor.beginMarketTravel({
+        ...buyerRouted.state,
+        activity: 'hunting'
+    }, {
+        type: 'sell_inventory',
+        plan: { expectedBenefit: 'market_sale_inventory' }
+    }, 1001), null, 'the deferred seller must resume hunting instead of starting another market loop');
 
     const remoteBuyerState = { ...buyerRoutedState, characterId: 86, currentRegion: 'Giran' };
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });

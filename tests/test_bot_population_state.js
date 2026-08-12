@@ -154,7 +154,8 @@ try {
                 const classUpdate = classUpdates.at(-1);
                 assert(classUpdate, 'migration must persist the profession on the physical character');
                 assert.ok([36, 37].includes(classUpdate.classId), 'migration must use the physical character class as its source of truth');
-                return BotLifeState.dueCold(5, 1000);
+                return BotLifeState.dueCold(5, 1000)
+                    .then(() => BotLifeState.marketGoalCandidates(5, 123456));
             }))
         .then(() => {
             const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
@@ -167,6 +168,10 @@ try {
             assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
+            const marketCandidates = statements.find((entry) => entry.sql.includes("goals.goalJson LIKE '%\"type\":\"sell_inventory\"%'"));
+            assert(marketCandidates, 'market reconciliation must query persisted sell goals');
+            assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
+            assert.deepStrictEqual(marketCandidates.params, [123456], 'market reconciliation must bind the current retry cutoff');
             return BotLifeState.assignParty({
                 characterId: 43,
                 name: 'PartyWaitAssignmentProbe',
