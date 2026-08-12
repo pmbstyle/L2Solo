@@ -34,7 +34,9 @@ function execute(session, actor, target, skill, context = {}) {
         aggroReduction: 0,
         aggroRemoved: false,
         selfEffect: null,
-        cancelled: []
+        cancelled: [],
+        spoiled: false,
+        spoilOnHit: false
     };
 
     if (context.selfEffectOnly === true && semantic.selfEffect) {
@@ -283,6 +285,10 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
+        if (result.damage > 0 && semantic.skillType === C4SkillRules.DAMAGE && semantic.removeTarget === true) {
+            clearTargetState(target?.session || session, target);
+        }
+        result.spoilOnHit = semantic.spoilOnHit === true;
     }
 
     if (semantic.skillType === C4SkillRules.EFFECT || semantic.skillType === C4SkillRules.DAMAGE_EFFECT) {

@@ -384,6 +384,15 @@ const Formulas = {
         return Math.max(1, Math.min(99, 100 - (failRate / 100)));
     },
 
+    // Lisvus calcMagicSuccess: this older C4 failure roll is separate from
+    // effect land-rate/resistance calculations and is used by Spoil handlers.
+    calcMagicSuccess({ attackerLevel = 1, targetLevel = 1, magicLevel = 0 } = {}, rng = Math.random) {
+        const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
+        const levelDifference = (Number(targetLevel) || 1) - effectiveMagicLevel;
+        const failureThreshold = Math.round(Math.pow(1.3, levelDifference) * 100);
+        return Math.floor(rng() * 10000) > failureThreshold;
+    },
+
     // Lisvus C4 Formulas.calcSkillSuccess. C4SkillEffects supplies the
     // sourced trait-resist modifier because the local effect model keeps it
     // separately from an L2Character stat calculator.

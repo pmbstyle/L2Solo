@@ -5,6 +5,7 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+const Formulas = invoke('GameServer/Formulas');
 
 const SPOIL_SKILL_ID = 254;
 const SPOIL_FESTIVAL_SKILL_ID = 302;
@@ -110,6 +111,44 @@ function spoilRecipientSession(session, npc, selfId) {
     return session;
 }
 
+function markSpoiled(session, actor, npc, skill, { announce = false, festival = false } = {}) {
+    if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+
+    npc.model = npc.model || {};
+    npc.model.spoil = {
+        spoiled: true,
+        swept: false,
+        spoilerId: actor.fetchId(),
+        spoilerName: actor.fetchName(),
+        spoiledAt: Date.now()
+    };
+    if (festival) {
+        const effect = EffectStore.apply(npc, {
+            key: 'spoil_festival',
+            id: SPOIL_FESTIVAL_SKILL_ID,
+            level: skill.fetchLevel?.() || 1,
+            name: skill.fetchName?.() || 'Spoil Festival',
+            type: 'debuff',
+            category: 'spoil',
+            stats: { pAtkSpdMul: 0.77 },
+            durationMs: 15000
+        });
+        EffectTicker.scheduleExpiry(session, npc, effect);
+    }
+    npc.enterCombatState?.(session, actor);
+    if (announce) ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
+    return true;
+}
+
+function spoilCrushLands(actor, npc, skill, rng = Math.random) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    return Formulas.calcMagicSuccess({
+        attackerLevel: actor?.fetchLevel?.(),
+        targetLevel: npc?.fetchLevel?.(),
+        magicLevel: semantic.magicLevel
+    }, rng);
+}
+
 const SpoilSweep = {
     isSpoilSkill(selfId) {
         return Number(selfId) === SPOIL_SKILL_ID;
@@ -127,6 +166,16 @@ const SpoilSweep = {
         return !!npc.model.spoil?.spoiled && !npc.model.spoil?.swept && hasSpoils(npc);
     },
 
+    markSpoiled(session, actor, npc, skill, options) {
+        return markSpoiled(session, actor, npc, skill, options);
+    },
+
+    trySpoilCrush(session, actor, npc, skill, rng = Math.random) {
+        if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+        if (!spoilCrushLands(actor, npc, skill, rng)) return false;
+        return markSpoiled(session, actor, npc, skill, { announce: true });
+    },
+
     corpseTime(npc) {
         const corpseTime = Number(npc.fetchCorpseTime()) || 0;
         return this.isSweepable(npc) ? Math.max(corpseTime, SPOILED_CORPSE_TIME) : corpseTime;
@@ -139,42 +188,21 @@ const SpoilSweep = {
     castSpoilTargets(session, actor, targets, skill) {
         const eligible = [...new Map((targets || []).filter(Boolean)
             .map((npc) => [npc.fetchId?.(), npc]))].map(([, npc]) => npc)
-            .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.() && hasSpoils(npc) && !npc.model.spoil?.spoiled);
+            .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.() && hasSpoils(npc) && !npc.model?.spoil?.spoiled);
         if (eligible.length === 0) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
 
         castUtilitySkill(session, actor, eligible[0], skill, () => {
-            const spoiled = eligible.filter((npc) => !npc.isDead?.() && !npc.model.spoil?.spoiled);
+            const spoiled = eligible.filter((npc) => !npc.isDead?.() && !npc.model?.spoil?.spoiled);
             if (spoiled.length === 0) {
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return;
             }
 
-            spoiled.forEach((npc) => {
-                npc.model.spoil = {
-                    spoiled: true,
-                    swept: false,
-                    spoilerId: actor.fetchId(),
-                    spoilerName: actor.fetchName(),
-                    spoiledAt: Date.now()
-                };
-                if (Number(skill.fetchSelfId?.()) === SPOIL_FESTIVAL_SKILL_ID) {
-                    const effect = EffectStore.apply(npc, {
-                        key: 'spoil_festival',
-                        id: SPOIL_FESTIVAL_SKILL_ID,
-                        level: skill.fetchLevel?.() || 1,
-                        name: skill.fetchName?.() || 'Spoil Festival',
-                        type: 'debuff',
-                        category: 'spoil',
-                        stats: { pAtkSpdMul: 0.77 },
-                        durationMs: 15000
-                    });
-                    EffectTicker.scheduleExpiry(session, npc, effect);
-                }
-                npc.enterCombatState(session, actor);
-            });
+            const festival = Number(skill.fetchSelfId?.()) === SPOIL_FESTIVAL_SKILL_ID;
+            spoiled.forEach((npc) => markSpoiled(session, actor, npc, skill, { festival }));
             console.info('SpoilSweep :: %s spoiled %d targets with %s', actor.fetchName(), spoiled.length, skill.fetchName());
             ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
         });

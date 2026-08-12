@@ -56,7 +56,7 @@ function passiveValuesForSemantic(actor, semantic, stat) {
     return [
         Number(semantic.stats?.[stat]),
         ...(semantic.conditionalStats || [])
-            .filter((entry) => matchesCondition(actor, entry.condition))
+            .filter((entry) => matchesCondition(actor, entry.condition) && matchesRequirements(actor, entry.requires))
             .map((entry) => Number(entry.stats?.[stat]))
     ];
 }
@@ -95,6 +95,11 @@ function matchesRequirements(actor, requires = {}) {
     if (requires.armorKind) {
         const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
         if (!equipped.some((item) => item?.fetchKind?.() === requires.armorKind)) return false;
+    }
+    if (requires.armorKinds) {
+        const allowed = new Set(requires.armorKinds);
+        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
+        if (!equipped.some((item) => allowed.has(item?.fetchKind?.()))) return false;
     }
     if (requires.excludedArmorKinds) {
         const excluded = new Set(requires.excludedArmorKinds);

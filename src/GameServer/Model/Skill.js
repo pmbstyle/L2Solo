@@ -37,7 +37,7 @@ class SkillModel {
     }
 
     fetchConsumedHp() {
-        return this.model.hp;
+        return this.semantic.hpConsume ?? this.model.hp;
     }
 
     fetchConsumedMp() {

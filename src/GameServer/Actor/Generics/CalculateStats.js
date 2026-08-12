@@ -51,8 +51,8 @@ function setCollectiveTotalCp(actor) {
 
 function setCollectiveTotalLoad(actor) {
     const con = effectiveBaseStat(actor, 'CON', () => actor.fetchCon());
-    const base = Formulas.calcMaxLoad(con) + EffectStats.add(actor, 'maxLoad');
-    actor.setMaxLoad(base);
+    const base = Formulas.calcMaxLoad(con) * EffectStats.multiplier(actor, 'maxLoadMul');
+    actor.setMaxLoad(base + EffectStats.add(actor, 'maxLoad'));
     actor.setLoad(actor.backpack.fetchTotalLoad());
 }
 

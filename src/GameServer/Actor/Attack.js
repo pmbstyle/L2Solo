@@ -139,11 +139,29 @@ class Attack {
         }
 
         const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
-        const hitLanded = Formulas.calcHitChance(actor, creature, Math.random, this.positionContext(actor, creature));
-        const usedSoulshot = hitLanded && !!actor.soulshotLoaded;
-        const hit = this.prepareMeleeHit(actor, creature, hitLanded, usedSoulshot);
+        let secondaryDamageMultiplier = 0.85;
+        const hits = this.resolveMeleeTargets(actor, creature).map((target, index) => {
+            const hitLanded = Formulas.calcHitChance(actor, target, Math.random, this.positionContext(actor, target));
+            const usedSoulshot = hitLanded && !!actor.soulshotLoaded;
+            const hit = this.prepareMeleeHit(actor, target, hitLanded, usedSoulshot);
 
-        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), hit), actor);
+            if (index > 0) {
+                if (hitLanded) hit.damage = Math.max(0, Math.floor(hit.damage * secondaryDamageMultiplier));
+                secondaryDamageMultiplier /= 1.15;
+            }
+
+            return { target, hitLanded, usedSoulshot, hit };
+        });
+        const primary = hits[0];
+        const usedSoulshot = hits.some((entry) => entry.usedSoulshot);
+
+        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), {
+            ...primary.hit,
+            additionalHits: hits.slice(1).map((entry) => ({
+                targetId: entry.target.fetchId(),
+                ...entry.hit
+            }))
+        }), actor);
         actor.state.setHits(true);
 
         this.queueTimer(() => {
@@ -158,17 +176,21 @@ class Attack {
                 return;
             }
 
-            if (hitLanded) {
-                if (usedSoulshot) {
-                    actor.soulshotLoaded = false;
-                }
+            if (usedSoulshot) actor.soulshotLoaded = false;
 
-                this.hit(session, actor, creature, hit.damage);
-                this.applyDamageAbsorb(session, actor, hit.damage);
-            }
-            else {
-                ConsoleText.transmit(session, ConsoleText.caption.missedHit);
-            }
+            hits.forEach((entry, index) => {
+                const target = entry.target;
+                if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
+                if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
+
+                if (entry.hitLanded) {
+                    this.hit(session, actor, target, entry.hit.damage);
+                    this.applyDamageAbsorb(session, actor, entry.hit.damage);
+                }
+                else if (index === 0) {
+                    ConsoleText.transmit(session, ConsoleText.caption.missedHit);
+                }
+            });
 
         }, speed * 0.644); // Until hit point
 
@@ -248,20 +270,25 @@ class Attack {
                 return;
             }
 
+            const semantic = skill.fetchSemantic?.() || {};
             const targets = this.resolveSkillTargets(session, actor, creature, skill);
             const selfEffectOnly = targets.length === 0
-                && skill.fetchSemantic?.().sourceTarget === 'aura'
-                && !!skill.fetchSemantic?.().selfEffect;
+                && semantic.sourceTarget === 'aura'
+                && !!semantic.selfEffect;
+            const emptyEnemyAuraCast = targets.length === 0
+                && semantic.sourceTarget === 'aura'
+                && skill.fetchTargetKind?.() === 'enemy'
+                && !semantic.selfEffect;
             const executionTargets = selfEffectOnly ? [actor] : targets;
 
-            if (executionTargets.length === 0) {
+            if (executionTargets.length === 0 && !emptyEnemyAuraCast) {
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
                 return;
             }
 
-            if (magicSkill) {
+            if (magicSkill && executionTargets.length > 0) {
                 session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, executionTargets), actor);
             }
 
@@ -272,7 +299,7 @@ class Attack {
             actor.statusUpdateVitals(actor);
 
             const shotState = this.captureShotState(actor);
-            if (!selfEffectOnly && RaidCurse.skillBlocked(session, actor, executionTargets, skill)) {
+            if (!selfEffectOnly && executionTargets.length > 0 && RaidCurse.skillBlocked(session, actor, executionTargets, skill)) {
                 this.clearLoadedShot(actor, magicSkill);
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
@@ -327,6 +354,9 @@ class Attack {
                             value: actor.fetchName?.() || 'The monster'
                         }]);
                     }
+                }
+                if (outcome.spoilOnHit) {
+                    outcome.spoiled = invoke('GameServer/Npc/SpoilSweep').trySpoilCrush(session, actor, target, skill);
                 }
             });
             this.clearLoadedShot(actor, magicSkill);
@@ -425,6 +455,32 @@ class Attack {
         return typeof World.fetchNpcsInRadius === 'function'
             ? World.fetchNpcsInRadius(locX, locY, radius)
             : [];
+    }
+
+    resolveMeleeTargets(actor, primary) {
+        if (!this.isPolearmAttack(actor) || EffectStats.add(actor, 'hitMainTarget') > 0) {
+            return [primary];
+        }
+
+        const maxTargets = Math.max(1, 4 + Math.floor(EffectStats.add(actor, 'atkCountMaxAdd')));
+        const enemySkill = { fetchTargetKind: () => 'enemy' };
+        const nearby = this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), 40);
+        const seen = new Set([primary.fetchId?.()]);
+        const targets = [primary];
+
+        for (const target of nearby) {
+            const id = target?.fetchId?.();
+            if (!id || seen.has(id)) continue;
+            if (!this.isValidSkillTarget(target, enemySkill, actor)) continue;
+            if (Math.abs((Number(target.fetchLocZ?.()) || 0) - (Number(actor.fetchLocZ?.()) || 0)) > 650) continue;
+            if (this.distance2d(actor, target) > 40 || !this.isFacing(actor, target, 120)) continue;
+
+            seen.add(id);
+            targets.push(target);
+            if (targets.length >= maxTargets) break;
+        }
+
+        return targets;
     }
 
     isAreaPrimary(actor, target, skill) {
@@ -659,7 +715,7 @@ class Attack {
         const damageFormula = semantic.skillType === C4SkillRules.BLOW
             ? Formulas.calcBlowDamage.bind(Formulas)
             : Formulas.calcPhysicalDamage.bind(Formulas);
-        const damage = Math.round(damageFormula(
+        let damage = Math.round(damageFormula(
             actor.fetchCollectivePAtk(),
             weaponPAtkRnd,
             creature.fetchCollectivePDef() + shieldPDef,
@@ -672,8 +728,20 @@ class Attack {
                 rng
             }
         ) * weaponModifier * physicalUndeadModifier(actor, creature));
+        if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
         this.clearLoadedShot(actor, magicSkill);
         return damage;
+    }
+
+    rollPhysicalSkillCritical(actor, semantic, rng = Math.random) {
+        const baseCritRate = Number(semantic?.baseCritRate) || 0;
+        if (baseCritRate <= 0) return false;
+
+        const baseStr = Number(actor?.fetchStr?.()) || 1;
+        const effectiveStr = Math.max(1, Math.round(
+            (baseStr + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
+        ));
+        return Formulas.rollCritical(baseCritRate * 10 * Formulas.calcBaseMod.STR(effectiveStr), rng);
     }
 
     clearLoadedShot(actor, magicSkill) {
@@ -823,6 +891,11 @@ class Attack {
     isDaggerAttack(creature) {
         const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
         return kind === 'Weapon.Knife';
+    }
+
+    isPolearmAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Pole';
     }
 
     fetchNpcWeaponKind(creature) {

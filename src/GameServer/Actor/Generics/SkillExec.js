@@ -33,7 +33,7 @@ function skillExec(session, actor, data) {
     // Hate Aura and similar C4 TARGET_AURA enemy skills are centred on the
     // caster as well. Attack.resolveSkillTargets will fan the native effect
     // out only to valid enemies inside the sourced radius.
-    if (skill.fetchTargetKind() === 'enemy' && skill.fetchSemantic?.().sourceTarget === 'aura' && Number(skill.fetchDistance()) < 0) {
+    if (skill.fetchTargetKind() === 'enemy' && skill.fetchSemantic?.().sourceTarget === 'aura') {
         actor.attack.remoteHit(session, actor, skill);
         return;
     }

@@ -479,6 +479,22 @@ assert.strictEqual(attack[13], 0x11, 'C4 Attack should include soulshot flag and
 assert.strictEqual(attack.readInt32LE(14), actor.fetchLocX(), 'C4 Attack should include attacker X');
 assert.strictEqual(attack.readInt16LE(26), 0, 'C4 Attack should send no extra hits for a single target');
 
+const poleAttack = ServerResponse.attack(actor, 3000001, {
+    damage: 123,
+    flags: 1,
+    additionalHits: [
+        { targetId: 3000002, damage: 104, flags: 0 },
+        { targetId: 3000003, damage: 90, flags: ServerResponse.attack.HITFLAG_CRIT }
+    ]
+});
+assert.strictEqual(poleAttack.readInt16LE(26), 2, 'C4 Attack should serialize every polearm secondary hit');
+assert.strictEqual(poleAttack.readInt32LE(28), 3000002, 'first polearm hit should include its target id');
+assert.strictEqual(poleAttack.readInt32LE(32), 104, 'first polearm hit should include its reduced damage');
+assert.strictEqual(poleAttack[36], 0, 'first polearm hit should include its own flags');
+assert.strictEqual(poleAttack.readInt32LE(37), 3000003, 'second polearm hit should follow the native repeated hit tuple');
+assert.strictEqual(poleAttack.readInt32LE(41), 90, 'second polearm hit should include its reduced damage');
+assert.strictEqual(poleAttack[45], ServerResponse.attack.HITFLAG_CRIT, 'second polearm hit should preserve its own flags');
+
 const npcInfo = ServerResponse.npcInfo(fakeNpc());
 assert.strictEqual(npcInfo[0], 0x16);
 assert.ok(npcInfo.length >= 208, 'C4 NpcInfo should include team/collision tail fields');
