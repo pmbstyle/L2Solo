@@ -254,6 +254,7 @@ const tests = [
     'tests/test_dagger_class_skills.js',
     'tests/test_tank_class_skills.js',
     'tests/test_dwarf_class_skills.js',
+    'tests/test_dd_mage_summoner_skills.js',
     'tests/test_sword_dancer_spellsinger_skills.js',
     'tests/test_skill_damage_formulas.js',
     'tests/test_town_pathfinder.js',

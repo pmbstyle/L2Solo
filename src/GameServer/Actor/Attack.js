@@ -288,6 +288,14 @@ class Attack {
                 return;
             }
 
+            if (!this.consumeSkillItems(session, actor, skill)) {
+                actor.state.setCasts(false);
+                this.rejectSkillUseCondition(session, actor, 'Not enough required items.');
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+                return;
+            }
+
             if (magicSkill && executionTargets.length > 0) {
                 session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, executionTargets), actor);
             }
@@ -562,6 +570,10 @@ class Attack {
             return summonFailure;
         }
 
+        if (this.shouldConsumeSkillItems(skill) && !SkillEffects.hasRequiredSkillItems(actor, skill)) {
+            return 'Not enough required items.';
+        }
+
         if (semantic.createItemId) {
             const materialId = Number(semantic.itemConsumeId) || 0;
             const required = Math.max(1, Number(semantic.itemConsumeCount) || 1);
@@ -625,6 +637,25 @@ class Attack {
         return null;
     }
 
+    shouldConsumeSkillItems(skill) {
+        return [
+            C4SkillRules.DAMAGE,
+            C4SkillRules.EFFECT,
+            C4SkillRules.HEAL_PERCENT
+        ].includes(skill.fetchSkillType?.());
+    }
+
+    consumeSkillItems(session, actor, skill) {
+        if (!this.shouldConsumeSkillItems(skill)) return true;
+        const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
+        const count = Number(skill.fetchItemConsumeCount?.()) || 0;
+        if (!itemId || count <= 0) return true;
+        const item = actor?.backpack?.fetchItemFromSelfId?.(itemId);
+        if (!item || (Number(item.fetchAmount?.()) || 0) < count) return false;
+        actor.backpack.deleteItem(session, item.fetchId(), count, () => {});
+        return true;
+    }
+
     skillMpCost(actor, skill) {
         const semantic = skill.fetchSemantic?.() || {};
         let cost = Math.max(0, Number(skill.fetchConsumedMp?.()) || 0);
@@ -671,12 +702,11 @@ class Attack {
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const magicCritRateMultiplier = EffectStats.multiplier(actor, 'mCritRateMul');
-            // The legacy combat loop has no baseline magic-critical roll yet. Preserve its
-            // established damage output, while allowing C4 effects such as Wild Magic to
-            // introduce the sourced roll explicitly.
-            const magicCritical = magicCritRateMultiplier > 1
-                && Formulas.rollCritical(4 * magicCritRateMultiplier, rng);
+            const magicCriticalRate = Math.min(300, Math.max(0,
+                (8 * EffectStats.multiplier(actor, 'mCritRateMul'))
+                + EffectStats.add(actor, 'mCritRateAdd')
+            ));
+            const magicCritical = Formulas.rollCritical(magicCriticalRate, rng);
             const power = semantic.skillType === C4SkillRules.DEATH_LINK
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
                 : skill.fetchPower();

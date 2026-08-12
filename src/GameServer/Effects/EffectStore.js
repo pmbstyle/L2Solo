@@ -41,6 +41,7 @@ function normalize(effect = {}) {
         magicLevel: Number(effect.magicLevel) || 0,
         name: effect.name || key,
         category: effect.category || null,
+        stackFamily: effect.stackFamily || null,
         dispellable: effect.dispellable !== false,
         toggle: effect.toggle === true,
         stats: effect.stats || {},

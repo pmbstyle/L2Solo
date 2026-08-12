@@ -20,6 +20,18 @@ function skillExec(session, actor, data) {
         return;
     }
 
+    if (skill.fetchTargetKind() === 'pet') {
+        const summon = invoke('GameServer/Npc/SummonControl').activeSummon(actor);
+        if (!summon || Number(data.id) !== Number(summon.fetchId())) {
+            cancelFailedSupportTarget(session, actor, data, skill);
+            return;
+        }
+        actor.automation.scheduleAction(session, actor, summon, skill.fetchDistance(), () => {
+            actor.attack.remoteHit(session, summon, skill);
+        });
+        return;
+    }
+
     // C4 party auras use a negative distance to mean that the cast originates
     // from the caster and expands to party members in Attack.resolveSkillTargets.
     // Treating that value as a zero-radius movement target makes the caster try

@@ -283,6 +283,16 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.BANE) {
+        if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
+            result.effectResisted = true;
+        } else {
+            result.cancelled = applyBane(session, target, semantic, rng);
+        }
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
         if (result.damage > 0 && semantic.skillType === C4SkillRules.DAMAGE && semantic.removeTarget === true) {
@@ -705,6 +715,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         negateType: negateTypeFor(semantic),
         magicLevel: semantic.magicLevel,
         category: semantic.effectTrait || semantic.trait || semantic.effect,
+        stackFamily: semantic.stackFamily,
         dispellable: semantic.dispellable,
         stats: semantic.stats || {},
         situationalStats: semantic.situationalStats || [],
@@ -932,6 +943,23 @@ function applyNegate(session, target, semantic) {
     return removed;
 }
 
+function applyBane(session, target, semantic, rng) {
+    const removed = [];
+    const baneStackFamilies = new Set(semantic.baneStackFamilies || []);
+
+    EffectStore.list(target, { includeBuffs: true, includeDebuffs: false }).forEach((effect) => {
+        if (effect.dispellable === false || !baneStackFamilies.has(effect.stackFamily)) return;
+        const rate = Math.max(40, Math.min(95, 180 / (1 + (Number(effect.level) || 1))));
+        if (rng() * 100 < rate && EffectStore.remove(target, effect.key)) removed.push(effect);
+    });
+
+    if (removed.length) {
+        if (removed.some(hasStats)) refreshStats(target?.session || session, target);
+        refreshEffects(session, target);
+    }
+    return removed;
+}
+
 function negateTypeFor(semantic) {
     if (semantic.operateType === 'toggle') return 'CONT';
     if (semantic.skillType === C4SkillRules.HOT) return 'HOT';
@@ -1014,14 +1042,19 @@ function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
     return !(chance >= rng() * 100);
 }
 
-const RESIST_STAT_BY_TRAIT = {
-    shock: 'stunResist'
+const RESIST_FAMILY_BY_TRAIT = {
+    shock: { resist: 'stunResist', vulnerability: 'stunVuln' },
+    warrior_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' },
+    mage_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' }
 };
 
 function traitResistModifier(target, trait) {
-    const stat = RESIST_STAT_BY_TRAIT[trait] || `${trait}Resist`;
-    const resist = EffectStats.add(target, stat);
-    const vulnerability = EffectStats.multiplier(target, `${trait}Vuln`, 1);
+    const family = RESIST_FAMILY_BY_TRAIT[trait] || {
+        resist: `${trait}Resist`,
+        vulnerability: `${trait}Vuln`
+    };
+    const resist = EffectStats.add(target, family.resist);
+    const vulnerability = EffectStats.multiplier(target, family.vulnerability, 1);
     return Math.max(0, 1 - (resist / 100)) * Math.max(0, vulnerability);
 }
 
@@ -1054,6 +1087,7 @@ function usesEffectSuccessFormula(semantic) {
     return semantic.skillType === C4SkillRules.EFFECT
         || semantic.skillType === C4SkillRules.DAMAGE_EFFECT
         || semantic.skillType === C4SkillRules.CANCEL
+        || semantic.skillType === C4SkillRules.BANE
         || semantic.skillType === C4SkillRules.AGGRO_REMOVE
         || semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR;
 }

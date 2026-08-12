@@ -4671,7 +4671,7 @@ const drainTarget = creature({ id: 2000320, hp: 1000, maxHp: 1000, mDef: 100 });
 const vampiricTouch = skill({ selfId: 1147, name: 'Vampiric Touch', spell: true, power: 32, level: 6, distance: 600 });
 const drainOutcome = SkillEffects.execute(session(), drainCaster, drainTarget, vampiricTouch, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.99,
     attack: new Attack()
 });
 const expectedDrainDamage = Math.round(Formulas.calcMagicDamage(100, 32, 100));
