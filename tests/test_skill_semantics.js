@@ -2931,8 +2931,20 @@ const blowOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, dead
     }
 });
 assert.strictEqual(deadly.fetchSkillType(), C4SkillRules.BLOW, 'Deadly Blow should resolve to BLOW');
-assert.strictEqual(blowOutcome.lethal, true, 'Deadly Blow should be able to trigger lethal half-kill');
-assert.strictEqual(blowOutcome.damage, 500, 'Lethal half-kill should raise damage to half of target max HP when larger');
+assert.strictEqual(blowOutcome.lethal, false, 'Deadly Blow must not inherit Lethal Blow mechanics');
+assert.strictEqual(blowOutcome.damage, 200, 'Deadly Blow should preserve its ordinary blow damage');
+
+const lethalBlow = skill({ selfId: 344, name: 'Lethal Blow', spell: true, power: 5773, distance: 40 });
+const lethalOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, lethalBlow, {
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 200
+    }
+});
+assert.strictEqual(lethalBlow.fetchSpell(), false, 'Lethal Blow should be a physical skill even when raw data marks it as spell-like');
+assert.strictEqual(lethalOutcome.lethal, true, 'Only Lethal Blow should trigger the sourced half-kill roll');
+assert.strictEqual(lethalOutcome.damage, 500, 'Lethal Blow half-kill should raise damage to half of target max HP when larger');
 
 const debuffed = statActor();
 const hex = skill({ selfId: 122, name: 'Hex', spell: true, power: 1, level: 1, buff: 30000 });

@@ -159,7 +159,8 @@ function wait(ms) {
     ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
     assert.strictEqual(restingSummoner.state.fetchSeated(), true, 'Rest of Chameleon should sit the caster down');
     assert.strictEqual(restingSummoner.silentMoving, true, 'Rest of Chameleon should enable silent moving while resting');
-    assert.strictEqual(EffectStore.list(restingSummoner)[0].manaDot.damage, 9, 'Rest of Chameleon should consume sourced 9 MP per tick');
+    assert.strictEqual(restingSummoner.fetchMp(), 91, 'Rest of Chameleon should consume sourced 9 initial MP');
+    assert.strictEqual(EffectStore.list(restingSummoner)[0].manaDot.damage, 6, 'Rest of Chameleon should consume sourced 6 MP per tick');
     ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
     assert.strictEqual(restingSummoner.silentMoving, false, 'Stopping Rest of Chameleon should clear silent moving');
 

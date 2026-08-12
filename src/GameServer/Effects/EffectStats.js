@@ -14,6 +14,20 @@ function add(actor, stat, fallback = 0) {
         .reduce((total, value) => total + value, fallback);
 }
 
+function situationalMultiplier(actor, stat, context = {}, fallback = 1) {
+    const position = context.behind
+        ? 'behind'
+        : context.front
+            ? 'front'
+            : 'side';
+    return EffectStore.list(actor)
+        .flatMap((effect) => effect.situationalStats || [])
+        .filter((entry) => entry.position === position && matchesRequirements(actor, entry.requires))
+        .map((entry) => Number(entry.stats?.[stat]))
+        .filter((value) => Number.isFinite(value))
+        .reduce((total, value) => total * value, fallback);
+}
+
 function statValues(actor, stat) {
     return [
         ...EffectStore.list(actor).map((effect) => Number(effect.stats?.[stat])),
@@ -82,11 +96,17 @@ function matchesRequirements(actor, requires = {}) {
         const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
         if (!equipped.some((item) => item?.fetchKind?.() === requires.armorKind)) return false;
     }
+    if (requires.excludedArmorKinds) {
+        const excluded = new Set(requires.excludedArmorKinds);
+        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
+        if (equipped.some((item) => excluded.has(item?.fetchKind?.()))) return false;
+    }
     if (requires.shield && !(Number(actor?.backpack?.fetchTotalShieldPDef?.()) > 0)) return false;
     return true;
 }
 
 module.exports = {
     multiplier,
-    add
+    add,
+    situationalMultiplier
 };

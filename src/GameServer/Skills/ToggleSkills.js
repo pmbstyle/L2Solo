@@ -12,13 +12,19 @@ function effectKey(skill) {
     return semantic.effect || invoke('GameServer/Skills/C4SkillRules').normalizeKey(skill.fetchName());
 }
 
+function isActive(actor, skill) {
+    if (!isToggle(skill)) return false;
+    const key = effectKey(skill);
+    return EffectStore.list(actor).some((effect) => (
+        effect.key === key && Number(effect.id) === Number(skill.fetchSelfId())
+    ));
+}
+
 function handleRequest(session, actor, skill) {
     if (!isToggle(skill)) return false;
 
     const key = effectKey(skill);
-    const active = EffectStore.list(actor).some((effect) => (
-        effect.key === key && Number(effect.id) === Number(skill.fetchSelfId())
-    ));
+    const active = isActive(actor, skill);
 
     if (active) {
         deactivate(session, actor, key);
@@ -51,6 +57,8 @@ function activate(session, actor, skill, key) {
             session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
         }
     }
+    if (semantic.stats?.silentMoving) actor.silentMoving = true;
+    if (semantic.stats?.fakeDeath) startFakeDeath(session, actor);
     const effect = EffectStore.apply(actor, {
         key,
         id: skill.fetchSelfId(),
@@ -80,10 +88,41 @@ function activate(session, actor, skill, key) {
 function deactivate(session, actor, key) {
     const effect = EffectStore.list(actor).find((entry) => entry.key === key);
     EffectStore.remove(actor, key);
-    if (effect?.stats?.relaxing) actor.silentMoving = false;
+    cleanupState(session, actor, effect);
     refreshActor(session, actor);
     session.dataSendToMe?.(ServerResponse.actionFailed());
     return true;
+}
+
+function cleanupState(session, actor, effect) {
+    if (!effect) return;
+    if (effect.stats?.relaxing || effect.stats?.silentMoving) {
+        actor.silentMoving = EffectStore.list(actor).some((entry) => entry.stats?.silentMoving === true);
+    }
+    if (effect.stats?.fakeDeath) stopFakeDeath(session, actor);
+}
+
+function startFakeDeath(session, actor) {
+    actor.fakeDeath = true;
+    actor.automation?.abortAll?.(actor, { notifyClient: false });
+    actor.attack?.clearTimers?.();
+    actor.attack?.resetQueuedEvent?.();
+    actor.state?.setHits?.(false);
+    actor.state?.setCasts?.(false);
+    actor.state?.setCombats?.(false);
+    invoke('GameServer/Effects/EffectRestrictions').stopMovement(session, actor);
+    const World = invoke('GameServer/World/World');
+    (World.npc?.spawns || []).forEach((npc) => {
+        if (Number(npc.fetchDestId?.()) === Number(actor.fetchId?.())) npc.abortCombatState?.(session);
+    });
+    session?.dataSendToMeAndOthers?.(ServerResponse.changeWaitType(actor, 2), actor);
+}
+
+function stopFakeDeath(session, actor) {
+    if (!actor.fakeDeath) return;
+    actor.fakeDeath = false;
+    session?.dataSendToMeAndOthers?.(ServerResponse.changeWaitType(actor, 3), actor);
+    session?.dataSendToMeAndOthers?.(ServerResponse.revive(actor.fetchId()), actor);
 }
 
 function refreshActor(session, actor) {
@@ -98,7 +137,9 @@ function refreshActor(session, actor) {
 
 module.exports = {
     isToggle,
+    isActive,
     handleRequest,
     activate,
-    deactivate
+    deactivate,
+    cleanupState
 };

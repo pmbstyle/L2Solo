@@ -157,6 +157,13 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.BLOW) {
+        if (semantic.selfEffect) {
+            result.selfEffect = applyEffect(session, actor, skill, {
+                ...semantic,
+                ...semantic.selfEffect,
+                stats: semantic.selfEffect.stats || {}
+            }, actor);
+        }
         if (!rollBlow(actor, target, semantic, context.attack, rng)) {
             clearLoadedShot(context.attack, actor, magicSkill);
             result.missed = true;
@@ -191,6 +198,7 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = true;
         } else {
             result.aggroRemoved = true;
+            clearNpcAggro(session, target);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
@@ -198,6 +206,7 @@ function execute(session, actor, target, skill, context = {}) {
 
     if (semantic.skillType === C4SkillRules.AGGRO_DAMAGE) {
         result.aggroDamage = calcAggroDamage(skill, target);
+        target?.enterCombatState?.(session, actor);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
@@ -214,6 +223,11 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = true;
         } else {
             result.aggroReduced = true;
+            clearNpcAggro(session, target, actor);
+            if (semantic.effect) result.effect = applyEffect(session, target, skill, semantic, actor);
+            if (semantic.turnBack && typeof target?.fetchHead === 'function' && typeof target?.setHead === 'function') {
+                target.setHead(Number(actor?.fetchHead?.()) & 0xffff);
+            }
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
@@ -655,6 +669,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         category: semantic.effectTrait || semantic.trait || semantic.effect,
         dispellable: semantic.dispellable,
         stats: semantic.stats || {},
+        situationalStats: semantic.situationalStats || [],
         dot: dotFromSkill(skill, semantic),
         manaDot: manaDotFromSkill(skill, semantic),
         manaHot: manaHotFromSkill(skill, semantic),
@@ -836,11 +851,24 @@ function rollBlow(actor, target, semantic, attack, rng) {
         return true;
     }
 
-    let chance = Number(semantic.blowChance) || 50;
-    if (attack?.isBehindTarget?.(actor, target)) chance += 20;
-    else if (attack?.isFacing?.(target, actor, 120)) chance -= 20;
-    chance = Math.max(5, Math.min(95, chance));
-    return chance >= rng() * 100;
+    if (condition === 0) return true;
+
+    const behind = attack?.isBehindTarget?.(actor, target) === true;
+    const front = !behind && attack?.isFacing?.(target, actor, 120) === true;
+    const baseChance = behind ? 70 : front ? 50 : 60;
+    const dex = Number(actor?.fetchDex?.()) || 20;
+    const chance = baseChance
+        * (1 + ((dex - 20) / 100))
+        * EffectStats.multiplier(actor, 'blowRateMul')
+        * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front });
+    return Math.max(0, chance) >= rng() * 100;
+}
+
+function clearNpcAggro(session, target, actor) {
+    if (typeof target?.abortCombatState !== 'function') return false;
+    if (actor && typeof target.fetchDestId === 'function' && Number(target.fetchDestId()) !== Number(actor.fetchId?.())) return false;
+    target.abortCombatState(session);
+    return true;
 }
 
 function rollMagicSuccess(actor, target, skill, semantic, rng) {

@@ -644,17 +644,28 @@ class Attack {
         const usedSoulshot = !!actor.soulshotLoaded;
         const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
         const semantic = skill.fetchSemantic?.() || {};
+        const position = this.targetPosition(actor, creature);
         const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: semantic.trait === 'bow' || this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor)
+            blunt: this.isBluntAttack(actor),
+            dagger: semantic.trait === 'dagger' || this.isDaggerAttack(actor)
         });
-        const damage = Math.round(Formulas.calcPhysicalDamage(
+        const damageFormula = semantic.skillType === C4SkillRules.BLOW
+            ? Formulas.calcBlowDamage.bind(Formulas)
+            : Formulas.calcPhysicalDamage.bind(Formulas);
+        const damage = Math.round(damageFormula(
             actor.fetchCollectivePAtk(),
             weaponPAtkRnd,
             creature.fetchCollectivePDef() + shieldPDef,
             skill.fetchPower(),
-            { soulshot: usedSoulshot }
+            {
+                soulshot: usedSoulshot,
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
+                rng
+            }
         ) * weaponModifier * physicalUndeadModifier(actor, creature));
         this.clearLoadedShot(actor, magicSkill);
         return damage;
@@ -687,6 +698,7 @@ class Attack {
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
+        const position = this.targetPosition(actor, creature);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: this.isBowAttack(actor),
@@ -697,7 +709,8 @@ class Attack {
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
                 critical,
                 soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul'),
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
             }) * weaponModifier * physicalUndeadModifier(actor, creature));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
@@ -774,10 +787,22 @@ class Attack {
 
     fetchSituationalCriticalRate(attacker, target) {
         const base = Number(attacker?.fetchCollectiveCritical?.()) || 0;
+        const position = this.targetPosition(attacker, target);
         const stats = C4EquipmentItemSkills.situationalStats(attacker, {
-            behindTarget: this.isBehindTarget(attacker, target)
+            behindTarget: position.behind
         });
-        return (base * (Number(stats.pCritRateMul) || 1)) + (Number(stats.pCritRateAdd) || 0);
+        return (base
+            * EffectStats.situationalMultiplier(attacker, 'pCritRateMul', position)
+            * (Number(stats.pCritRateMul) || 1))
+            + (Number(stats.pCritRateAdd) || 0);
+    }
+
+    targetPosition(attacker, target) {
+        const behind = this.isBehindTarget(attacker, target);
+        return {
+            behind,
+            front: !behind && this.isFacing(target, attacker, 120)
+        };
     }
 
     isBowAttack(creature) {
@@ -788,6 +813,11 @@ class Attack {
     isBluntAttack(creature) {
         const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
         return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
+    }
+
+    isDaggerAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Knife';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -943,9 +973,10 @@ function traitVulnerabilityModifier(target, trait) {
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
-function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false } = {}) {
+function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false, dagger = false } = {}) {
     if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
     if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
+    if (dagger) return EffectStats.multiplier(target, 'daggerWpnVuln', 1);
     return 1;
 }
 

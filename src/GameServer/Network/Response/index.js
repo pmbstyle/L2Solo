@@ -13,6 +13,7 @@ module.exports = {
            charSelected: require('./CharSelected'),
          charSelectInfo: require('./CharSelectInfo'),
           charTemplates: require('./CharTemplates'),
+        changeWaitType: require('./ChangeWaitType'),
              cipherInit: require('./CipherInit'),
     chooseInventoryItem: require('./ChooseInventoryItem'),
             consoleText: require('./ConsoleText'),

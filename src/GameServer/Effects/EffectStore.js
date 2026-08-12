@@ -42,6 +42,7 @@ function normalize(effect = {}) {
         dispellable: effect.dispellable !== false,
         toggle: effect.toggle === true,
         stats: effect.stats || {},
+        situationalStats: effect.situationalStats || [],
         dot: effect.dot || null,
         manaDot: effect.manaDot || null,
         manaHot: effect.manaHot || null,

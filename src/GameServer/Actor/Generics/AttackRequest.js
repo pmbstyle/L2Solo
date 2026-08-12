@@ -1,4 +1,5 @@
 const BOW_ATTACK_RANGE = 700;
+const EffectStats = invoke('GameServer/Effects/EffectStats');
 
 function fetchNormalAttackRange(actor, data = {}) {
     const requestedRange = Math.max(0, Number(data.range) || 0);
@@ -6,7 +7,9 @@ function fetchNormalAttackRange(actor, data = {}) {
         return requestedRange;
     }
 
-    return actor?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow' ? BOW_ATTACK_RANGE : 0;
+    return actor?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow'
+        ? BOW_ATTACK_RANGE + EffectStats.add(actor, 'pAtkRangeAdd')
+        : 0;
 }
 
 function withNormalAttackRange(actor, data) {

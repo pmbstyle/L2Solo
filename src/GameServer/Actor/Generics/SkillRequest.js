@@ -12,6 +12,13 @@ function skillRequest(session, actor, data) {
         return;
     }
 
+    // A disabled toggle (notably Fake Death) must remain possible to switch
+    // off even though its own state blocks ordinary skill use.
+    if (ToggleSkills.isActive(actor, skill)) {
+        ToggleSkills.handleRequest(session, actor, skill);
+        return;
+    }
+
     if (!EffectRestrictions.canCast(actor)) {
         EffectRestrictions.reject(session);
         return;

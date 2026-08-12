@@ -173,26 +173,28 @@ function applyManaDot(session, source, target, effect) {
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
         if (target.state?.fetchDead?.()) {
-            if (effect.stats?.relaxing) target.silentMoving = false;
             clearRuntime(target, effect.key);
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            EffectStore.remove(target, effect.key);
+            invoke('GameServer/Skills/ToggleSkills').cleanupState(session, target, effect);
             return;
         }
 
         if (manaDot.requiresSeated && !target.state?.fetchSeated?.()) {
-            if (effect.stats?.relaxing) target.silentMoving = false;
             clearRuntime(target, effect.key);
             const EffectStore = invoke('GameServer/Effects/EffectStore');
             EffectStore.remove(target, effect.key);
+            invoke('GameServer/Skills/ToggleSkills').cleanupState(session, target, effect);
             refreshStats(target.session || session, target);
             refreshEffects(session, target);
             return;
         }
 
         if (manaDot.toggle && damage > (Number(target.fetchMp?.()) || 0)) {
-            if (effect.stats?.relaxing) target.silentMoving = false;
             clearRuntime(target, effect.key);
             const EffectStore = invoke('GameServer/Effects/EffectStore');
             EffectStore.remove(target, effect.key);
+            invoke('GameServer/Skills/ToggleSkills').cleanupState(session, target, effect);
             refreshStats(target.session || session, target);
             refreshEffects(session, target);
             return;

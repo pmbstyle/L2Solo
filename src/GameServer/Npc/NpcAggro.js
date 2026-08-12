@@ -14,7 +14,7 @@ function isHotBotSession(session) {
 }
 
 function isAlive(actor) {
-    return !!actor && actor.isDead?.() !== true && actor.state?.fetchDead?.() !== true;
+    return !!actor && actor.isDead?.() !== true && actor.state?.fetchDead?.() !== true && actor.fakeDeath !== true;
 }
 
 function isLiveSession(session) {

@@ -281,6 +281,17 @@ const Formulas = {
         });
     },
 
+    // Lisvus Formulas.calcBlowDamage: a blow applies the critical-damage
+    // multiplier to P.Atk plus skill power, then adds the amplified flat
+    // critical-damage bonus before the normal 70 / P.Def scaling.
+    calcBlowDamage(pAtk, pAtkRnd, pDef, power, { soulshot = false, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng = Math.random } = {}) {
+        let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(power) || 0);
+        damage = (Math.max(0, Number(criticalDamageMultiplier) || 1) * damage)
+            + ((Number(criticalDamageAdd) || 0) * 6.5);
+        return (70 * damage / Math.max(1, pDef))
+            + (Math.max(0, Number(pAtkRnd) || 0) * Math.max(0, Math.min(1, Number(rng()) || 0)));
+    },
+
     rollCritical(critical, rng = Math.random) {
         return (Number(critical) || 0) > rng() * 1000;
     },
