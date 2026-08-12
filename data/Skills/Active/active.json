@@ -10480,7 +10480,7 @@
             "name": "Stun Shot",
             "passive": false,
             "spell": false,
-            "distance": 700
+            "distance": 900
         },
         "time": {
             "hitTime": 3000,

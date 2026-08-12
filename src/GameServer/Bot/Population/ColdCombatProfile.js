@@ -300,7 +300,7 @@ function profileFor(state = {}, timestamp = Date.now()) {
 }
 
 function offensiveSkills(profile) {
-    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
+    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
     return (profile.skills || []).filter((skill) => {
         if (skill.passive) return false;
         const semantic = C4SkillRules.resolve(skill);

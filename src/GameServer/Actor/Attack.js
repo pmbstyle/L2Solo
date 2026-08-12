@@ -350,6 +350,11 @@ class Attack {
 
                 if (outcome.damage > 0) {
                     this.hit(session, actor, target, outcome.damage);
+                    if (outcome.forceLethalVitals && target.fetchHp?.() > 0) {
+                        target.setHp?.(1);
+                        target.setCp?.(1);
+                        target.statusUpdateVitals?.(target);
+                    }
                 }
                 else if (outcome.missed) {
                     ConsoleText.transmit(session, ConsoleText.caption.missedHit);
@@ -651,6 +656,10 @@ class Attack {
 
         if (!condition) return null;
 
+        if (condition.actorStanding === true && actor.state?.fetchSeated?.() === true) {
+            return 'Cannot use while sitting.';
+        }
+
         if (condition.actorHpPercentAtMost !== undefined) {
             const maxHp = Number(actor.fetchMaxHp?.()) || 0;
             const hp = Number(actor.fetchHp?.()) || 0;
@@ -799,11 +808,14 @@ class Attack {
         const damageFormula = semantic.skillType === C4SkillRules.BLOW
             ? Formulas.calcBlowDamage.bind(Formulas)
             : Formulas.calcPhysicalDamage.bind(Formulas);
+        const power = semantic.skillType === C4SkillRules.FATAL
+            ? Formulas.calcFatalPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
+            : skill.fetchPower();
         let damage = Math.round(damageFormula(
             actor.fetchCollectivePAtk(),
             weaponPAtkRnd,
             creature.fetchCollectivePDef() + shieldPDef,
-            skill.fetchPower(),
+            power,
             {
                 soulshot: usedSoulshot,
                 criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')

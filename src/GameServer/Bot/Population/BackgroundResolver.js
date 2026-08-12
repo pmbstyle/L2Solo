@@ -216,15 +216,23 @@ function actionDelayMs(profile, skill = null) {
     return Math.max(250, Formulas.calcMeleeAtkTime(profile.atkSpd));
 }
 
-function chooseSkill(profile, mp, cooldowns, time) {
+function effectiveSkillPower(profile, skill, hp) {
+    const basePower = Number(skill?.power) || 0;
+    return C4SkillRules.resolve(skill || {}).skillType === C4SkillRules.FATAL
+        ? Formulas.calcFatalPower(basePower, hp, profile.maxHp)
+        : basePower;
+}
+
+function chooseSkill(profile, hp, mp, cooldowns, time) {
     return ColdCombatProfile.offensiveSkills(profile)
         .filter((skill) => Number(skill.mp || 0) <= mp && Number(cooldowns[skill.selfId] || 0) <= time)
         .map((skill) => {
             const magic = skill.spell === true;
+            const power = effectiveSkillPower(profile, skill, hp);
             const rawDamage = magic
-                ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, Number(skill.power) || 1), 1)
-                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, Number(skill.power) || 0);
-            return { skill, magic, score: rawDamage / actionDelayMs(profile, skill) };
+                ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, power), 1)
+                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power);
+            return { skill, magic, power, score: rawDamage / actionDelayMs(profile, skill) };
         })
         .sort((a, b) => b.score - a.score)[0] || null;
 }
@@ -261,16 +269,16 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         actions += 1;
 
         if (botActs) {
-            const selected = chooseSkill(bot, vitals.mp, cooldowns, timestamp + time);
+            const selected = chooseSkill(bot, vitals.hp, vitals.mp, cooldowns, timestamp + time);
             const skill = selected?.skill || null;
             const magic = selected?.magic === true;
             let damage = 0;
             if (magic) {
                 const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
             } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
                 const critical = Formulas.rollCritical(bot.critical, rng);
-                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, { critical });
+                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical });
             }
             mobHp -= Math.max(0, damage);
             if (skill) {
@@ -397,14 +405,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 continue;
             }
 
-            const selected = chooseSkill(next.profile, next.vitals.mp, next.cooldowns, timestamp + time);
+            const selected = chooseSkill(next.profile, next.vitals.hp, next.vitals.mp, next.cooldowns, timestamp + time);
             const skill = selected?.skill || null;
             let damage = 0;
             if (selected?.magic) {
                 const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
             } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
-                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, {
+                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, {
                     critical: Formulas.rollCritical(next.profile.critical, rng)
                 });
             }
@@ -440,6 +448,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 const BackgroundResolver = {
     resolveRest,
     resolvePartyFight,
+    effectiveSkillPower,
     resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {

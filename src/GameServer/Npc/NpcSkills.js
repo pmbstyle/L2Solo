@@ -103,6 +103,7 @@ const COMBAT_SKILL_TYPES = new Set([
     C4SkillRules.DAMAGE,
     C4SkillRules.DAMAGE_EFFECT,
     C4SkillRules.DEATH_LINK,
+    C4SkillRules.FATAL,
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
     C4SkillRules.EFFECT,

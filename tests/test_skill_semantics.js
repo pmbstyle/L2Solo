@@ -2943,8 +2943,9 @@ const lethalOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, le
     }
 });
 assert.strictEqual(lethalBlow.fetchSpell(), false, 'Lethal Blow should be a physical skill even when raw data marks it as spell-like');
-assert.strictEqual(lethalOutcome.lethal, true, 'Only Lethal Blow should trigger the sourced half-kill roll');
-assert.strictEqual(lethalOutcome.damage, 500, 'Lethal Blow half-kill should raise damage to half of target max HP when larger');
+assert.strictEqual(lethalOutcome.lethal, true, 'Only Lethal Blow should trigger the sourced level-based lethal roll');
+assert.strictEqual(lethalOutcome.damage, 200, 'Lethal Blow should keep its ordinary hit damage for reflect, overhit, and combat reporting');
+assert.strictEqual(lethalOutcome.forceLethalVitals, true, 'A successful Lethal Blow should request the separate post-hit one-HP lethal effect');
 
 const debuffed = statActor();
 const hex = skill({ selfId: 122, name: 'Hex', spell: true, power: 1, level: 1, buff: 30000 });
@@ -7254,7 +7255,7 @@ assert.strictEqual(avatarOutcome.heal, 20, 'Body Of Avatar must restore its sour
 assert.strictEqual(EffectStats.multiplier(avatarTarget, 'maxHpMul'), 1.15, 'Body Of Avatar must also apply its sourced max-HP effect');
 
 const snipe = C4SkillRules.resolve({ selfId: 313, name: 'Snipe', level: 8 });
-assert.deepStrictEqual(snipe.stats, { pAtkAdd: 177, pAccuracyCombatAdd: 3, pCritRateMul: 0.2 }, 'Snipe must retain sourced attack, accuracy and critical-rate modifiers');
+assert.deepStrictEqual(snipe.stats, { pCritRateMul: 1.2, immobile: true, pAtkAdd: 177, pAccuracyCombatAdd: 3 }, 'Snipe must retain sourced attack, accuracy, critical-rate and immobility modifiers');
 
 const wrathTarget = creature({ id: 2000302 });
 wrathTarget.cp = 1000;

@@ -56,6 +56,13 @@ assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'datab
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill(migratedSnapshot), false, 'a current database snapshot must not be rescanned on every migration tick');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ version: ColdCombatProfile.PROFILE_VERSION }), true, 'a class-tree fallback without a database source must still be migrated');
 
+const coldFatalProfile = { ...buffed, maxHp: 1000 };
+const coldFatal = { selfId: 314, level: 1, power: 2908 };
+assert.strictEqual(BackgroundResolver.effectiveSkillPower(coldFatalProfile, coldFatal, 1000), 0,
+    'cold combat should score Fatal Counter with zero skill power at full HP');
+assert.strictEqual(BackgroundResolver.effectiveSkillPower(coldFatalProfile, coldFatal, 500), 5089,
+    'cold combat should scale Fatal Counter from the current missing-HP ratio');
+
 const changedGear = ColdCombatProfile.profileFor({
     ...fighter,
     inventory: { '1': { selfId: 1, equipped: true } },

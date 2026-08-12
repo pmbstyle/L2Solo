@@ -34,6 +34,7 @@ function execute(session, actor, target, skill, context = {}) {
         aggroReduction: 0,
         aggroRemoved: false,
         selfEffect: null,
+        forceLethalVitals: false,
         cancelled: [],
         spoiled: false,
         spoilOnHit: false
@@ -188,7 +189,7 @@ function execute(session, actor, target, skill, context = {}) {
         }
 
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
-        result.lethal = applyLethal(target, semantic, rng, result);
+        result.lethal = applyLethal(actor, target, skill, semantic, rng, result);
         return result;
     }
 
@@ -299,8 +300,9 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
-    if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK) {
+    if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK || semantic.skillType === C4SkillRules.FATAL) {
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
+        if (semantic.lethal) result.lethal = applyLethal(actor, target, skill, semantic, rng, result);
         if (result.damage > 0 && semantic.skillType === C4SkillRules.DAMAGE && semantic.removeTarget === true) {
             clearTargetState(target?.session || session, target);
         }
@@ -1083,11 +1085,28 @@ function traitResistModifier(target, trait) {
     return Math.max(0, 1 - (resist / 100)) * Math.max(0, vulnerability);
 }
 
-function applyLethal(target, semantic, rng, result) {
+function applyLethal(actor, target, skill, semantic, rng, result) {
     const lethal = semantic.lethal || {};
     const maxHp = Number(target.fetchMaxHp?.()) || 0;
     const currentHp = Number(target.fetchHp?.()) || 0;
     if (maxHp <= 1 || currentHp <= 1) return false;
+
+    if (lethal.sourceFormula === true) {
+        const protectedTarget = target.fetchIsRaidBoss?.() === true
+            || target.fetchKind?.() === 'Boss'
+            || ['Door', 'SiegeFlag'].includes(target.fetchKind?.());
+        if (protectedTarget) return false;
+        const chance = Formulas.calcLethalStrikeChance(
+            actor.fetchLevel?.(),
+            target.fetchLevel?.(),
+            semantic.magicLevel ?? skill.fetchLevel?.()
+        );
+        if (chance > rng() * 100) {
+            result.forceLethalVitals = true;
+            return true;
+        }
+        return false;
+    }
 
     const killChance = Number(lethal.killChance) || 0;
     if (killChance > 0 && killChance >= rng() * 100) {

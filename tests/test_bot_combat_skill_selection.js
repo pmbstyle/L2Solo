@@ -21,9 +21,11 @@ function skill(selfId, options = {}) {
     };
 }
 
-function bot(classId, ownedSkills = [], mp = 100, weaponKind = '') {
+function bot(classId, ownedSkills = [], mp = 100, weaponKind = '', hp = 100, maxHp = 100) {
     return {
         fetchClassId: () => classId,
+        fetchHp: () => hp,
+        fetchMaxHp: () => maxHp,
         fetchMp: () => mp,
         fetchMaxMp: () => 100,
         fetchLocX: () => 0,
@@ -97,6 +99,21 @@ try {
     const bowWithMixedSkillsGenerics = generics();
     BotAI.executeCombat({}, bowWithMixedSkills, npc(11022), bowWithMixedSkillsGenerics);
     assert.strictEqual(bowWithMixedSkillsGenerics.skills[0].selfId, 56, 'a bow user must choose its ranged shot even when a stronger short-range skill is learned');
+
+    const fatalCounter = skill(314, { name: 'Fatal Counter', mp: 5, range: 900, power: 2908, type: C4SkillRules.FATAL });
+    const powerShot = skill(56, { name: 'Power Shot', mp: 5, range: 700, power: 500, semantic: { requires: { weaponsAllowed: 32 } } });
+    const fullHpFatalDecision = invoke('GameServer/Bot/AI/BotCombatUtility').select(
+        bot(37, [fatalCounter, powerShot], 100, 'Weapon.Bow', 100, 100),
+        npc(11023),
+        'archer'
+    );
+    assert.strictEqual(fullHpFatalDecision.skill.fetchSelfId(), 56, 'a full-HP archer should not score zero-power Fatal Counter above an ordinary shot');
+    const woundedFatalDecision = invoke('GameServer/Bot/AI/BotCombatUtility').select(
+        bot(37, [fatalCounter, powerShot], 100, 'Weapon.Bow', 10, 100),
+        npc(11024),
+        'archer'
+    );
+    assert.strictEqual(woundedFatalDecision.skill.fetchSelfId(), 314, 'a wounded archer should prefer Fatal Counter after its missing-HP power becomes stronger');
 
     const swordFighter = bot(18, [
         skill(56, { name: 'Power Shot', mp: 5, range: 700, power: 90, semantic: { requires: { weaponsAllowed: 32 } } }),

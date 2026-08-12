@@ -348,6 +348,32 @@ const Formulas = {
         return (Number(power) || 0) * Math.pow(1.7165 - hpRatio, 2) * 0.577;
     },
 
+    // Lisvus/L2J FATAL: damage grows linearly from zero at full HP to 3.5x
+    // skill power as the caster approaches zero HP.
+    calcFatalPower(power, currentHp, maxHp) {
+        const max = Number(maxHp) || 0;
+        const current = Number(currentHp) || 0;
+        const hpRatio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 1;
+        return (Number(power) || 0) * 3.5 * (1 - hpRatio);
+    },
+
+    // Lisvus C4 lethal-strike chance used by Lethal Shot/Blow. The returned
+    // value is a percentage and intentionally preserves the source's three
+    // level-difference bands.
+    calcLethalStrikeChance(attackerLevel, targetLevel, magicLevel) {
+        const attacker = Math.max(1, Number(attackerLevel) || 1);
+        const target = Math.max(1, Number(targetLevel) || 1);
+        const magic = Number(magicLevel) || 0;
+        if (magic <= 0) return 2 * (attacker / target);
+
+        const delta = Math.floor((magic + attacker) / 2) - 1 - target;
+        if (delta >= -3) return 2 * (attacker / target);
+        // Lisvus performs this division with Java ints, so the middle band
+        // evaluates to zero rather than a fractional percentage.
+        if (delta >= -9) return -3 * Math.trunc(2 / delta);
+        return 2 / 15;
+    },
+
     calcDrainHeal({ damage = 0, targetHp = 0, absorbPart = 0, absorbAbs = 0 } = {}) {
         const drainableDamage = Math.min(Math.max(0, Number(damage) || 0), Math.max(0, Number(targetHp) || 0));
         return Math.max(0, (Number(absorbAbs) || 0) + ((Number(absorbPart) || 0) * drainableDamage));

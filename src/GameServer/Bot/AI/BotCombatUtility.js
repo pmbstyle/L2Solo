@@ -1,10 +1,12 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const Attack = invoke('GameServer/Actor/Attack');
+const Formulas = invoke('GameServer/Formulas');
 
 const OFFENSIVE_TYPES = new Set([
     C4SkillRules.DAMAGE,
     C4SkillRules.DAMAGE_EFFECT,
     C4SkillRules.DEATH_LINK,
+    C4SkillRules.FATAL,
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
     C4SkillRules.EFFECT
@@ -85,7 +87,10 @@ function evaluate(bot, target, skill, role, policy = {}) {
     if (cost > mp || (role !== 'mage' && (mp - cost) / maxMp < reserveRatio(role))) return null;
 
     const type = skill.fetchSkillType();
-    const power = Math.max(0, Number(skill.fetchPower?.() || 0));
+    const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
+    const power = type === C4SkillRules.FATAL
+        ? Formulas.calcFatalPower(basePower, bot.fetchHp?.(), bot.fetchMaxHp?.())
+        : basePower;
     const distance = distance2d(bot, target);
     const reasons = [];
     let score = 100 + Math.log2(power + 1) * 35 - cost * 1.5;
