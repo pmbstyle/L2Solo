@@ -405,25 +405,69 @@ class Attack {
         const semantic = skill.fetchSemantic?.() || {};
         const sourceTarget = semantic.sourceTarget;
         const radius = Math.max(0, Number(semantic.radius) || 0);
+        const targetKind = skill.fetchTargetKind?.();
 
-        if (skill.fetchTargetKind?.() === 'party') {
+        if (targetKind === 'party') {
             const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
             const leaderSession = session?.partyCompanion === true && session.followPlayerSession
                 ? session.followPlayerSession
                 : session;
-            const party = PartyAwareness.partyActors(leaderSession)
+            const partyActors = PartyAwareness.partyActors(leaderSession)
                 .filter((target) => (
                     this.isValidSkillTarget(target, skill, actor) &&
                     (radius <= 0 || this.distance2d(actor, target) <= radius)
                 ));
-            if (party.length > 0) return party;
-            return this.isValidSkillTarget(primary, skill, actor) &&
-                (radius <= 0 || this.distance2d(actor, primary) <= radius)
+            const party = [];
+            for (const target of partyActors) {
+                party.push(target);
+                const summon = SummonControl.activeSummon(target);
+                if (summon && (radius <= 0 || this.distance2d(actor, summon) <= radius)) party.push(summon);
+            }
+            if (party.length > 0) return this.uniqueSkillTargets(party);
+            return this.isValidSkillTarget(primary, skill, actor) && (radius <= 0 || this.distance2d(actor, primary) <= radius)
                 ? [primary]
                 : [];
         }
 
-        if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
+        if (targetKind === 'ally' || targetKind === 'corpse_ally') {
+            const World = invoke('GameServer/World/World');
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
+            const PledgeHelpers = invoke('GameServer/Network/Response/PledgeHelpers');
+            const clanId = Number(actor?.fetchClanId?.()) || 0;
+            const allyId = PledgeHelpers.allyId(actor);
+            const corpseOnly = targetKind === 'corpse_ally';
+            const targets = [];
+
+            if (!corpseOnly) {
+                targets.push(actor);
+                const ownSummon = SummonControl.activeSummon(actor);
+                if (ownSummon && (radius <= 0 || this.distance2d(actor, ownSummon) <= radius)) targets.push(ownSummon);
+            }
+
+            if (clanId > 0 || allyId > 0) {
+                for (const targetSession of World.user?.sessions || []) {
+                    const target = targetSession?.actor;
+                    const sameClan = clanId > 0 && Number(target?.fetchClanId?.()) === clanId;
+                    const sameAlliance = allyId > 0 && PledgeHelpers.allyId(target) === allyId;
+                    if (!target || target === actor || (!sameClan && !sameAlliance)) continue;
+                    if (radius > 0 && this.distance2d(actor, target) > radius) continue;
+
+                    if (corpseOnly) {
+                        if (this.isValidSkillTarget(target, skill, actor)) targets.push(target);
+                        continue;
+                    }
+
+                    if (this.isValidSkillTarget(target, skill, actor)) targets.push(target);
+                    const summon = SummonControl.activeSummon(target);
+                    if (summon && (radius <= 0 || this.distance2d(actor, summon) <= radius)) targets.push(summon);
+                }
+            }
+
+            return this.uniqueSkillTargets(targets);
+        }
+
+        if (sourceTarget === 'aura' && radius > 0 && primary === actor && targetKind === 'enemy') {
             return this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
                 .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.distance2d(actor, target) <= radius);
         }
@@ -463,6 +507,16 @@ class Attack {
         return typeof World.fetchNpcsInRadius === 'function'
             ? World.fetchNpcsInRadius(locX, locY, radius)
             : [];
+    }
+
+    uniqueSkillTargets(targets) {
+        const seen = new Set();
+        return targets.filter((target) => {
+            const id = Number(target?.fetchId?.()) || 0;
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
     }
 
     resolveMeleeTargets(actor, primary) {

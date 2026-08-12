@@ -32,12 +32,10 @@ function skillExec(session, actor, data) {
         return;
     }
 
-    // C4 party auras use a negative distance to mean that the cast originates
-    // from the caster and expands to party members in Attack.resolveSkillTargets.
-    // Treating that value as a zero-radius movement target makes the caster try
-    // to stand on the selected party member and lets normal follow movement
-    // cancel the cast before it ever starts.
-    if (skill.fetchTargetKind() === 'party' && Number(skill.fetchDistance()) < 0) {
+    // TARGET_PARTY, TARGET_ALLY and TARGET_CORPSE_ALLY are caster-centred in
+    // Lisvus. Attack.resolveSkillTargets expands them to the eligible party,
+    // clan/alliance or dead-clan members inside the sourced radius.
+    if (['party', 'ally', 'corpse_ally'].includes(skill.fetchTargetKind())) {
         actor.attack.remoteHit(session, actor, skill);
         return;
     }

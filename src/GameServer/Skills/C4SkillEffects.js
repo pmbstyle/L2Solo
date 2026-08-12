@@ -64,6 +64,12 @@ function execute(session, actor, target, skill, context = {}) {
         return result;
     }
 
+    if (semantic.skillType === C4SkillRules.RECALL) {
+        result.recalled = applyRecall(session, target, semantic);
+        clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.HEAL) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         return result;
@@ -419,6 +425,25 @@ function applyCombatPointHeal(session, actor, target, skill, semantic, magicSkil
     refreshCp(session, actor, target);
     clearLoadedShot(attack || actor.attack, actor, magicSkill);
     return Math.max(0, nextCp - currentCp);
+}
+
+function applyRecall(session, target, semantic) {
+    const targetSession = target?.session || (session?.actor === target ? session : null);
+    if (
+        !targetSession ||
+        (semantic.teleportWhereType && semantic.teleportWhereType !== 'Town') ||
+        target?.isDead?.() ||
+        target?.state?.fetchDead?.() ||
+        Number(target?.fetchPrivateStoreType?.() || 0) > 0 ||
+        target?.isInOlympiadMode?.()
+    ) return false;
+
+    const TownRespawn = invoke('GameServer/World/TownRespawn');
+    const coords = target.fetchKarma?.() > 0
+        ? TownRespawn.getChaoticRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
+        : TownRespawn.getRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ());
+    invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
+    return true;
 }
 
 function applyResurrection(session, target) {

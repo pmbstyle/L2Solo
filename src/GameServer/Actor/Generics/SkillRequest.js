@@ -38,6 +38,8 @@ function skillRequest(session, actor, data) {
     else if (
         skill.fetchTargetKind() === 'self' ||
         skill.fetchTargetKind() === 'party' ||
+        skill.fetchTargetKind() === 'ally' ||
+        skill.fetchTargetKind() === 'corpse_ally' ||
         skill.fetchSemantic?.().sourceTarget === 'aura'
     ) {
         data.id = actor.fetchId();

@@ -5368,9 +5368,9 @@ const heartOutcome = SkillEffects.execute(session(), caster, heartTarget, heartP
     rng: () => 0,
     attack: { clearLoadedShot() {} }
 });
-assert.strictEqual(heartPaagrio.fetchSkillType(), C4SkillRules.HEAL_HOT, "Heart of Pa'agrio should resolve to instant heal plus HOT");
-assert.strictEqual(heartOutcome.heal, 127, "Heart of Pa'agrio level 4 should restore sourced instant heal 127");
-assert.strictEqual(heartTarget.fetchHp(), 527, "Heart of Pa'agrio should apply sourced instant heal instead of active.json power 1");
+assert.strictEqual(heartPaagrio.fetchSkillType(), C4SkillRules.HOT, "Heart of Pa'agrio should resolve to the sourced pure HOT type");
+assert.strictEqual(heartOutcome.heal, 0, "Heart of Pa'agrio should not invent an initial heal from the unused power table");
+assert.strictEqual(heartTarget.fetchHp(), 400, "Heart of Pa'agrio should restore HP only through its timed ticks");
 assert.strictEqual(heartOutcome.effect.key, 'heart_of_paagrio', "Heart of Pa'agrio should apply a structured heal-over-time buff");
 assert.strictEqual(heartOutcome.effect.hot.heal, 43, "Heart of Pa'agrio level 4 should use sourced HealOverTime value 43");
 assert(heartTarget.effectTimers.heart_of_paagrio, "Heart of Pa'agrio should start a runtime heal-over-time ticker");
@@ -6904,13 +6904,13 @@ const chantRageOutcome = SkillEffects.execute(session(), caster, chantRageTarget
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(chantRageOutcome.effect.key, 'chant_of_rage', 'Chant of Rage should apply a structured buff effect');
-assert.strictEqual(EffectStats.multiplier(chantRageTarget, 'pCritDamageMul'), 1.3, 'Chant of Rage level 2 should use sourced pCritDamage 1.3');
+assert.strictEqual(EffectStats.multiplier(chantRageTarget, 'pCritDamageMul'), 1.4, 'Chant of Rage level 2 should use sourced pCritDamage 1.4');
 calculateStats({}, chantRageTarget);
 chantRageTarget.fetchCollectiveCritical = () => 1000;
 const chantRageCrit = new Attack().prepareMeleeHit(chantRageTarget, statActor(), true, false, () => 0);
 assert.strictEqual(
     chantRageCrit.damage,
-    Math.round(2 * 1.3 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
+    Math.round(2 * 1.4 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
     'Chant of Rage level 2 should multiply physical critical damage by sourced pCritDamage'
 );
 
@@ -7117,7 +7117,7 @@ assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'mDefMul'), 0.84, "
 assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'castSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced mAtkSpd 1.08");
 assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'pAtkSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced pAtkSpd 1.08");
 assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'runSpdAdd'), 8, "The Rage of Pa'agrio level 2 should use sourced runSpd +8");
-assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'pEvasionRateAdd'), -4, "The Rage of Pa'agrio level 2 should use sourced pEvasionRate -4");
+assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'pEvasionRateAdd'), 0, "The Rage of Pa'agrio should not invent a non-sourced evasion penalty");
 calculateStats({}, ragePaagrioTarget);
 assert.strictEqual(ragePaagrioTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.08), "The Rage of Pa'agrio should boost PAtk");
 assert.strictEqual(ragePaagrioTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.16), "The Rage of Pa'agrio should boost MAtk");
@@ -7126,7 +7126,7 @@ assert.strictEqual(ragePaagrioTarget.collectiveMDef, Math.round(Formulas.calcMDe
 assert.strictEqual(ragePaagrioTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), "The Rage of Pa'agrio should boost PAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), "The Rage of Pa'agrio should boost MAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, "The Rage of Pa'agrio should add run speed");
-assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) - 4), "The Rage of Pa'agrio should reduce evasion");
+assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2)), "The Rage of Pa'agrio should preserve evasion");
 
 const gloomTarget = statActor();
 const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 87, level: 13, buff: 30000 });
