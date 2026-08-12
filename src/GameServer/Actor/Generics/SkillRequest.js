@@ -21,11 +21,21 @@ function skillRequest(session, actor, data) {
         return;
     }
 
-    if (skill.fetchTargetKind() === 'self') {
+    // C4 TARGET_PARTY skills are caster-centered auras. The client does not
+    // need to keep an explicit target selected in order to sing or dance.
+    if (skill.fetchTargetKind() === 'self' || skill.fetchTargetKind() === 'party') {
         data.id = actor.fetchId();
     }
-    else if ((data.id = actor.fetchDestId()) === undefined) {
-        return;
+    else {
+        data.id = actor.fetchDestId();
+        // Lisvus TARGET_ONE explicitly permits SEED on the caster. With no
+        // selected target, preserve that native self-seeding route.
+        if (data.id === undefined && skill.fetchSkillType?.() === 'seed') {
+            data.id = actor.fetchId();
+        }
+        else if (data.id === undefined) {
+            return;
+        }
     }
 
     if (!actor.canUseSkill(skill)) {

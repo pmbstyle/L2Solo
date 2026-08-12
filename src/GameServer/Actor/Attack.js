@@ -5,6 +5,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 
@@ -209,7 +210,8 @@ class Attack {
             return;
         }
 
-        if (actor.fetchMp() < skill.fetchConsumedMp()) {
+        const mpCost = this.skillMpCost(actor, skill);
+        if (actor.fetchMp() < mpCost) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'depleted_mp');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
@@ -259,7 +261,7 @@ class Attack {
                 session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, targets), actor);
             }
 
-            actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
+            actor.setMp(actor.fetchMp() - mpCost);
             if (skill.fetchConsumedHp() > 0) {
                 actor.setHp(Math.max(1, actor.fetchHp() - skill.fetchConsumedHp()));
             }
@@ -530,7 +532,56 @@ class Attack {
             }
         }
 
+        if (condition.elementalSeeds) {
+            const required = condition.elementalSeeds;
+            const seeds = [
+                SkillEffects.seedPower(actor, 1285),
+                SkillEffects.seedPower(actor, 1286),
+                SkillEffects.seedPower(actor, 1287)
+            ];
+            const direct = [required.fire, required.water, required.wind].map((value) => Math.max(0, Number(value) || 0));
+
+            for (let index = 0; index < seeds.length; index++) {
+                if (seeds[index] < direct[index]) return 'Proper elemental seeds required.';
+                seeds[index] -= direct[index];
+            }
+
+            let various = Math.max(0, Number(required.various) || 0);
+            for (let index = 0; index < seeds.length && various > 0; index++) {
+                if (seeds[index] > 0) {
+                    seeds[index]--;
+                    various--;
+                }
+            }
+            if (various > 0) return 'Proper elemental seeds required.';
+
+            const any = Math.max(0, Number(required.any) || 0);
+            if (seeds.reduce((total, power) => total + power, 0) < any) {
+                return 'Proper elemental seeds required.';
+            }
+        }
+
         return null;
+    }
+
+    skillMpCost(actor, skill) {
+        const semantic = skill.fetchSemantic?.() || {};
+        let cost = Math.max(0, Number(skill.fetchConsumedMp?.()) || 0);
+
+        if (semantic.isDance) {
+            const activeDances = EffectStore.list(actor).filter((effect) => (
+                C4SkillRules.resolve({
+                    selfId: effect.id,
+                    name: effect.name,
+                    level: effect.level
+                }).isDance
+            )).length;
+            cost += activeDances * Math.max(0, Number(semantic.nextDanceCost) || 0);
+            return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, 'danceMpConsumeMul')));
+        }
+
+        const stat = skill.fetchSpell?.() ? 'magicalMpConsumeMul' : 'physicalMpConsumeMul';
+        return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, stat)));
     }
 
     rejectSkillUseCondition(session, actor, message) {
@@ -604,7 +655,7 @@ class Attack {
             creature.fetchCollectivePDef() + shieldPDef,
             skill.fetchPower(),
             { soulshot: usedSoulshot }
-        ) * weaponModifier);
+        ) * weaponModifier * physicalUndeadModifier(actor, creature));
         this.clearLoadedShot(actor, magicSkill);
         return damage;
     }
@@ -648,7 +699,7 @@ class Attack {
                 soulshot: usedSoulshot,
                 criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul'),
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
-            }) * weaponModifier);
+            }) * weaponModifier * physicalUndeadModifier(actor, creature));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -688,7 +739,7 @@ class Attack {
                 critical,
                 criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
                 criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
-            }) * weaponModifier);
+            }) * weaponModifier * physicalUndeadModifier(src, dst));
         let flags = 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -822,6 +873,7 @@ class Attack {
 
     hit(session, actor, creature, hit) {
         ConsoleText.transmit(session, ConsoleText.caption.actorHit, [{ kind: ConsoleText.kind.number, value: hit }]);
+        this.tryBreakCast(creature, hit);
 
         if (creature.fetchId() >= 2000000) {
             if (actor?.fetchKind) {
@@ -859,6 +911,17 @@ class Attack {
         this.applyReflectedDamage(session, actor, creature, hit);
     }
 
+    tryBreakCast(creature, damage, rng = Math.random) {
+        if (!creature?.state?.fetchCasts?.()) return false;
+        const chance = Formulas.calcCastBreakChance({
+            damage,
+            men: creature.fetchMen?.(),
+            cancelAdd: EffectStats.add(creature, 'cancelAdd')
+        });
+        if (rng() * 100 >= chance) return false;
+        return creature.attack?.abortCast?.(creature.session, creature) === true;
+    }
+
     applyReflectedDamage(session, actor, creature, hit) {
         if (!actor || actor === creature || actor.isDead?.() || creature?.isDead?.()) return;
         const reflectPercent = Math.max(0, Number(EffectStats.add(creature, 'reflectDam')) || 0);
@@ -884,6 +947,11 @@ function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = fals
     if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
     if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
     return 1;
+}
+
+function physicalUndeadModifier(attacker, target) {
+    const undead = target?.fetchUndead?.() === true || target?.model?.undead === true;
+    return undead ? EffectStats.multiplier(attacker, 'pAtkUndeadMul') : 1;
 }
 
 module.exports = Attack;

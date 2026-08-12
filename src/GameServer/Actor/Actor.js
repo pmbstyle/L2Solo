@@ -4,6 +4,7 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const Skillset       = invoke('GameServer/Actor/Skillset');
 const Backpack       = invoke('GameServer/Actor/Backpack');
 const Automation     = invoke('GameServer/Automation');
+const EffectStats    = invoke('GameServer/Effects/EffectStats');
 
 class Actor extends ActorModel {
     constructor(session, data) {
@@ -100,7 +101,14 @@ class Actor extends ActorModel {
     }
 
     markSkillReuse(skill, now = Date.now()) {
-        const reuse = Math.max(0, Number(skill.fetchReuseTime()) || 0);
+        const semantic = skill.fetchSemantic?.() || {};
+        let reuse = Math.max(0, Number(skill.fetchReuseTime()) || 0);
+        if (!semantic.staticReuse) {
+            const magic = skill.fetchSpell?.() === true;
+            reuse *= EffectStats.multiplier(this, magic ? 'mReuseMul' : 'pReuseMul');
+            const speed = Number(magic ? this.fetchCollectiveCastSpd?.() : this.fetchCollectiveAtkSpd?.()) || 333;
+            reuse *= 333 / speed;
+        }
         this.skillReuseUntil.set(skill.fetchSelfId(), now + reuse);
     }
 

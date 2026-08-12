@@ -245,6 +245,16 @@ const Formulas = {
         return  (time / castSpd) * 333;
     },
 
+    // Lisvus C4 calcAtkBreak: a casting target starts at 15%, incoming
+    // damage raises the chance, MEN lowers it, and Concentration-style
+    // effects modify the final ATTACK_CANCEL stat.
+    calcCastBreakChance({ damage = 0, men = 0, cancelAdd = 0 } = {}) {
+        let chance = 15 + Math.sqrt(13 * Math.max(0, Number(damage) || 0));
+        chance -= (this.calcBaseMod.MEN(Math.max(0, Number(men) || 0)) * 100) - 100;
+        chance += Number(cancelAdd) || 0;
+        return Math.max(1, Math.min(99, chance));
+    },
+
     calcMeleeHit(pAtk, pAtkRnd, pDef) {
         return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
     },

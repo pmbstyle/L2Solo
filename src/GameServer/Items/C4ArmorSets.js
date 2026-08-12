@@ -86,7 +86,7 @@ const SET_SKILLS = {
     3532: { name: 'Dark Crystal Light Armor Set', stats: { pAtkSpdMul: 1.04, pAtkMul: 1.04, paralyzeVuln: 0.5, STR: 1, CON: -1 } },
     3533: { name: 'Tallum Light Armor Set', stats: { regMp: 1.08, maxMpAdd: 222, poisonVuln: 0.2, bleedVuln: 0.2, MEN: 2, WIT: -2 } },
     3534: { name: 'Tallum Robe Set', stats: { castSpdMul: 1.15, mDefMul: 1.08, poisonVuln: 0.2, bleedVuln: 0.2, INT: -2, WIT: 2 } },
-    3535: { name: 'Dark Crystal Robe Set', stats: { pDefMul: 1.08, castSpdMul: 1.15, runSpdAdd: 7, cancel: -18, paralyzeVuln: 0.5, WIT: 2, MEN: -2 } },
+    3535: { name: 'Dark Crystal Robe Set', stats: { pDefMul: 1.08, castSpdMul: 1.15, runSpdAdd: 7, cancelAdd: -18, paralyzeVuln: 0.5, WIT: 2, MEN: -2 } },
     3536: { name: 'Nightmare Heavy Armor Set', stats: { pAtkMul: 1.04, sleepVuln: 0.3, rootVuln: 0.3, CON: 2, DEX: -2 } },
     3537: { name: 'Majestic Heavy Armor Set', stats: { pAtkMul: 1.04, pAccuracyCombatAdd: 3, stunVuln: 0.5, STR: 2, CON: -2 } },
     3538: { name: 'Nightmarish Leather Light Armor Set', stats: { mDefMul: 1.04, sleepVuln: 0.3, rootVuln: 0.3, absorbDam: 3, DEX: 1, CON: -1 } },
@@ -105,7 +105,7 @@ const SET_SKILLS = {
     3553: { name: 'Imperial Crusader Heavy Armor Set', stats: { pDefMul: 1.08, maxHpAdd: 445, sleepVuln: 0.3, rootVuln: 0.3, DEX: -2, STR: 2 } },
     3554: { name: 'Equipped with Shield', stats: { poisonVuln: 0.2, bleedVuln: 0.2 } },
     3555: { name: 'Draconic Light Armor Set', stats: { pAtkSpdMul: 1.04, pAtkMul: 1.04, maxMpAdd: 289, maxLoad: 5759, DEX: 1, STR: 1, CON: -2 } },
-    3556: { name: 'Major Arcana Robe Set', stats: { mAtkMul: 1.17, runSpdAdd: 7, cancel: -50, maxLoad: 5759, WIT: 1, INT: 1, MEN: -2, stunVuln: 0.5 } }
+    3556: { name: 'Major Arcana Robe Set', stats: { mAtkMul: 1.17, runSpdAdd: 7, cancelAdd: -50, maxLoad: 5759, WIT: 1, INT: 1, MEN: -2, stunVuln: 0.5 } }
 };
 
 function equippedSelfIds(items = []) {

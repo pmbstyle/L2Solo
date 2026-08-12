@@ -184,11 +184,11 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_raid_bosses')
         ];
 
-        DataCache.skills = [
+        DataCache.skills = invoke('GameServer/Skills/C4SkillRules').expandSourcedLevels([
             ...validateModel(path + 'Skills/Active/active'),
             ...validateModel(path + 'Skills/Passive/passive'),
             ...validateModel(path + 'Skills/Switch/switch')
-        ];
+        ]);
 
         utils.infoSuccess('Datapack', 'cached');
     },
