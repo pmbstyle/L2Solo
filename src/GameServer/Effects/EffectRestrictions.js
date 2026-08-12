@@ -7,6 +7,7 @@ const FEAR_TICK_MS = 6000;
 
 function canMove(actor) {
     if (actor?.fakeDeath) return false;
+    if (EffectStore.list(actor).some((effect) => effect.stats?.immobile === true)) return false;
     const impairments = EffectStore.impairments(actor);
     return !(impairments.disabled || impairments.rooted);
 }

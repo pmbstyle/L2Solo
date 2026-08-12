@@ -249,8 +249,12 @@ class Attack {
             }
 
             const targets = this.resolveSkillTargets(session, actor, creature, skill);
+            const selfEffectOnly = targets.length === 0
+                && skill.fetchSemantic?.().sourceTarget === 'aura'
+                && !!skill.fetchSemantic?.().selfEffect;
+            const executionTargets = selfEffectOnly ? [actor] : targets;
 
-            if (targets.length === 0) {
+            if (executionTargets.length === 0) {
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
@@ -258,7 +262,7 @@ class Attack {
             }
 
             if (magicSkill) {
-                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, targets), actor);
+                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, executionTargets), actor);
             }
 
             actor.setMp(actor.fetchMp() - mpCost);
@@ -268,7 +272,7 @@ class Attack {
             actor.statusUpdateVitals(actor);
 
             const shotState = this.captureShotState(actor);
-            if (RaidCurse.skillBlocked(session, actor, targets, skill)) {
+            if (!selfEffectOnly && RaidCurse.skillBlocked(session, actor, executionTargets, skill)) {
                 this.clearLoadedShot(actor, magicSkill);
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
@@ -285,11 +289,12 @@ class Attack {
                 return;
             }
 
-            targets.forEach((target) => {
+            executionTargets.forEach((target) => {
                 this.restoreShotState(actor, shotState);
                 const outcome = SkillEffects.execute(session, actor, target, skill, {
                     attack: this,
-                    magicSkill
+                    magicSkill,
+                    selfEffectOnly
                 });
                 // Chat confirmations are emitted only after the authoritative
                 // skill result exists. A queued, interrupted, resisted, or

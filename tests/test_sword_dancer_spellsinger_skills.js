@@ -12,7 +12,6 @@ const DataCache = invoke('GameServer/DataCache');
 const SkillModel = invoke('GameServer/Model/Skill');
 const State = invoke('GameServer/Model/State');
 const skillRequest = invoke('GameServer/Actor/Generics/SkillRequest');
-const passiveData = require('../data/Skills/Passive/passive.json');
 
 function skill(selfId, name, level = 1, overrides = {}) {
     return new SkillModel({
@@ -145,11 +144,12 @@ EffectStore.apply(renewalActor, {
 Actor.prototype.markSkillReuse.call(renewalActor, skill(271, 'Dance of Warrior'), 1000);
 assert.strictEqual(renewalActor.skillReuseUntil.get(271), 8000, 'Song of Renewal must reduce physical skill reuse by 30%');
 
-const holyBladeData = passiveData.find((entry) => entry.selfId === 196);
+const holyBladeData = DataCache.skills.find((entry) => entry.selfId === 196);
 assert.strictEqual(holyBladeData.template.passive, false, 'Holy Blade must be exposed as a toggle, not a passive skill');
 const holyBlade = skill(196, 'Holy Blade');
 assert.strictEqual(holyBlade.fetchSemantic().operateType, 'toggle', 'Holy Blade must use toggle lifecycle');
-assert.strictEqual(holyBlade.fetchSemantic().toggleMpConsume, 8, 'Holy Blade must consume 8 MP per sourced tick');
+assert.strictEqual(holyBlade.fetchSemantic().mpInitialConsume, 8, 'Holy Blade must consume 8 MP on activation');
+assert.strictEqual(holyBlade.fetchSemantic().toggleMpConsume, null, 'Holy Blade must not drain MP when the source toggle effect value is zero');
 
 const seededCaster = effectsActor();
 EffectStore.apply(seededCaster, { key: 'seed_of_water', id: 1286, name: 'Seed of Water', category: 'element_seed', stats: { seedPower: 2 }, durationMs: 5000 });

@@ -37,6 +37,15 @@ function execute(session, actor, target, skill, context = {}) {
         cancelled: []
     };
 
+    if (context.selfEffectOnly === true && semantic.selfEffect) {
+        result.selfEffect = applyEffect(session, actor, skill, {
+            ...semantic,
+            ...semantic.selfEffect,
+            stats: semantic.selfEffect.stats || {}
+        }, actor);
+        return result;
+    }
+
     if (semantic.skillType === C4SkillRules.SUMMON) {
         result.summon = applySummon(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.rejected = !result.summon;
@@ -207,6 +216,15 @@ function execute(session, actor, target, skill, context = {}) {
     if (semantic.skillType === C4SkillRules.AGGRO_DAMAGE) {
         result.aggroDamage = calcAggroDamage(skill, target);
         target?.enterCombatState?.(session, actor);
+        if (semantic.selfEffect && !EffectStore.list(actor).some((effect) => (
+            Number(effect.id) === Number(skill.fetchSelfId()) && effect.key === semantic.selfEffect.effect
+        ))) {
+            result.selfEffect = applyEffect(session, actor, skill, {
+                ...semantic,
+                ...semantic.selfEffect,
+                stats: semantic.selfEffect.stats || {}
+            }, actor);
+        }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
     }
@@ -237,7 +255,14 @@ function execute(session, actor, target, skill, context = {}) {
         if (resistEffect(actor, target, skill, semantic, magicSkill, rng)) {
             result.effectResisted = true;
         } else {
-            result.cancelled = applyCancel(session, target, semantic, rng);
+            const effectTarget = semantic.effect && isOffensive(semantic) && reflectsSkill(actor, target, magicSkill, rng)
+                ? actor
+                : target;
+            result.reflected = effectTarget === actor && target !== actor;
+            result.cancelled = semantic.negateStats
+                ? applyNegate(session, effectTarget, semantic)
+                : applyCancel(session, effectTarget, semantic, rng);
+            if (semantic.effect) result.effect = applyEffect(session, effectTarget, skill, semantic, actor);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return result;
@@ -265,7 +290,12 @@ function execute(session, actor, target, skill, context = {}) {
         if (resisted) {
             result.effectResisted = true;
         } else {
-            result.effect = applyEffect(session, target, skill, semantic, actor);
+            const effectTarget = isOffensive(semantic) && reflectsSkill(actor, target, magicSkill, rng)
+                ? actor
+                : target;
+            result.reflected = effectTarget === actor && target !== actor;
+            result.effect = applyEffect(session, effectTarget, skill, semantic, actor);
+            if (semantic.removeTarget === true) clearTargetState(effectTarget?.session || session, effectTarget);
         }
     }
 
@@ -657,7 +687,7 @@ function applyDrain(session, actor, target, skill, semantic, magicSkill, attack,
 }
 
 function applyEffect(session, target, skill, semantic, source = session?.actor) {
-    const durationMs = Number(skill.fetchBuffTime()) || 0;
+    const durationMs = Number(semantic.durationMs ?? skill.fetchBuffTime()) || 0;
     if (!durationMs || !semantic.effect) return null;
 
     const effect = EffectStore.apply(target, {
@@ -666,6 +696,8 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
         level: skill.fetchLevel(),
         name: skill.fetchName(),
         type: semantic.effectType || 'buff',
+        negateType: negateTypeFor(semantic),
+        magicLevel: semantic.magicLevel,
         category: semantic.effectTrait || semantic.trait || semantic.effect,
         dispellable: semantic.dispellable,
         stats: semantic.stats || {},
@@ -707,6 +739,10 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
 
     EffectTicker.scheduleExpiry(session, target, effect);
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect, source);
+    if (effect.stats?.immobile === true) {
+        target.automation?.abortAll?.(target, { notifyClient: false });
+        EffectRestrictions.stopMovement(target?.session || session, target);
+    }
     if (hasStats(effect)) {
         refreshStats(target?.session || session, target);
     }
@@ -862,6 +898,71 @@ function rollBlow(actor, target, semantic, attack, rng) {
         * EffectStats.multiplier(actor, 'blowRateMul')
         * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front });
     return Math.max(0, chance) >= rng() * 100;
+}
+
+function applyNegate(session, target, semantic) {
+    const negateStats = new Set((semantic.negateStats || []).map((stat) => String(stat).toUpperCase()));
+    const negatePower = Math.max(0, Number(semantic.negatePower) || 0);
+    const removed = [];
+    const matches = (effect) => {
+        const category = String(effect.category || effect.key || '').toUpperCase();
+        const negateType = String(effect.negateType || inferNegateType(effect, category)).toUpperCase();
+        const typeMatches = negateStats.has(negateType)
+            || negateStats.has(category)
+            || (negateStats.has('STUN') && category === 'SHOCK')
+            || (negateStats.has('MUTE') && (category === 'PHYSICAL_MUTE' || category === 'MAGIC_MUTE'));
+        if (!typeMatches) return false;
+        return negatePower <= 0 || !effect.magicLevel || (effect.magicLevel / 10) <= negatePower;
+    };
+
+    EffectStore.list(target).forEach((effect) => {
+        if (effect.dispellable === false || !matches(effect)) return;
+        if (EffectStore.remove(target, effect.key)) removed.push(effect);
+    });
+    if (removed.length) {
+        if (removed.some(hasStats)) refreshStats(target?.session || session, target);
+        refreshEffects(session, target);
+    }
+    return removed;
+}
+
+function negateTypeFor(semantic) {
+    if (semantic.operateType === 'toggle') return 'CONT';
+    if (semantic.skillType === C4SkillRules.HOT) return 'HOT';
+    if (semantic.skillType === C4SkillRules.MANA_HOT) return 'MPHOT';
+    if (semantic.skillType === C4SkillRules.HEAL_HOT) return 'HOT';
+    if (semantic.effectType === 'buff') return 'BUFF';
+    return inferNegateType({ type: semantic.effectType }, semantic.effectTrait || semantic.trait || semantic.effect);
+}
+
+function inferNegateType(effect, rawCategory = effect?.category || effect?.key) {
+    const category = String(rawCategory || '').toUpperCase();
+    if (category === 'SHOCK') return 'STUN';
+    if (category === 'PHYSICAL_MUTE' || category === 'MAGIC_MUTE' || category === 'SILENCE') return 'MUTE';
+    if (['STUN', 'SLEEP', 'ROOT', 'PARALYZE', 'FEAR', 'CONFUSION', 'POISON', 'BLEED', 'WEAKNESS'].includes(category)) {
+        return category;
+    }
+    return effect?.type === 'buff' ? 'BUFF' : 'DEBUFF';
+}
+
+function reflectsSkill(actor, target, magicSkill, rng) {
+    if (!actor || !target || actor === target || actor.fetchIsRaidBoss?.() === true) return false;
+    const stat = magicSkill ? 'reflectSkillMagic' : 'reflectSkillPhysic';
+    return EffectStats.add(target, stat) > rng() * 100;
+}
+
+function clearTargetState(session, target) {
+    target.clearDestId?.();
+    target.automation?.abortAll?.(target, { notifyClient: false });
+    target.attack?.clearTimers?.();
+    target.attack?.resetQueuedEvent?.();
+    target.state?.setHits?.(false);
+    target.state?.setCasts?.(false);
+    target.state?.setCombats?.(false);
+    if (typeof target.abortCombatState === 'function') {
+        const safeSession = session?.dataSendToMeAndOthers ? session : { dataSendToMeAndOthers() {} };
+        target.abortCombatState(safeSession);
+    }
 }
 
 function clearNpcAggro(session, target, actor) {

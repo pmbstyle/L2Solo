@@ -37,6 +37,8 @@ function normalize(effect = {}) {
         id: skillId,
         level,
         type: effect.type || 'buff',
+        negateType: effect.negateType || null,
+        magicLevel: Number(effect.magicLevel) || 0,
         name: effect.name || key,
         category: effect.category || null,
         dispellable: effect.dispellable !== false,

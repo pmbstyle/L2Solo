@@ -37,6 +37,10 @@ function handleRequest(session, actor, skill) {
 
 function activate(session, actor, skill, key) {
     const semantic = skill.fetchSemantic();
+    if (!matchesRequirements(actor, semantic.requires)) {
+        session.dataSendToMe?.(ServerResponse.actionFailed());
+        return false;
+    }
     const initialMp = Math.max(0, Number(semantic.mpInitialConsume) || 0);
 
     if (initialMp > 0 && (Number(actor.fetchMp?.()) || 0) < initialMp) {
@@ -82,6 +86,12 @@ function activate(session, actor, skill, key) {
     }
 
     refreshActor(session, actor);
+    return true;
+}
+
+function matchesRequirements(actor, requires = {}) {
+    if (!requires) return true;
+    if (requires.shield && !(Number(actor?.backpack?.fetchTotalShieldPDef?.()) > 0)) return false;
     return true;
 }
 

@@ -30,7 +30,11 @@ function skillRequest(session, actor, data) {
 
     // C4 TARGET_PARTY skills are caster-centered auras. The client does not
     // need to keep an explicit target selected in order to sing or dance.
-    if (skill.fetchTargetKind() === 'self' || skill.fetchTargetKind() === 'party') {
+    if (
+        skill.fetchTargetKind() === 'self' ||
+        skill.fetchTargetKind() === 'party' ||
+        skill.fetchSemantic?.().sourceTarget === 'aura'
+    ) {
         data.id = actor.fetchId();
     }
     else {
