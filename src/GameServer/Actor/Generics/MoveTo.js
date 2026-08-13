@@ -1,11 +1,95 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 
 // World.fetchVisibleUsers broadcasts movement to observers inside this same
 // radius.  Low-detail simulation must never silently relocate a bot that is
 // already visible to a player (or whose requested destination is visible).
 const CLIENT_VISIBILITY_RADIUS = 6000;
+const COMPANION_DIRECT_DISTANCE = 256;
+const COMPANION_PATH_TIMEOUT_MS = 2000;
+
+function locOf(actor) {
+    return {
+        locX: Number(actor.fetchLocX()),
+        locY: Number(actor.fetchLocY()),
+        locZ: Number(actor.fetchLocZ())
+    };
+}
+
+function sameLoc(first, second, tolerance = 1) {
+    return Math.abs(Number(first?.locX) - Number(second?.locX)) <= tolerance &&
+        Math.abs(Number(first?.locY) - Number(second?.locY)) <= tolerance &&
+        Math.abs(Number(first?.locZ) - Number(second?.locZ)) <= tolerance;
+}
+
+function startPathMovement({ session, actor, path, isClose, approachingObservers }) {
+    const moveAlongPath = (index) => {
+        if (index >= path.length) {
+            session.moveTimer = null;
+            actor.state.setTowards(false);
+            return;
+        }
+
+        const currentLoc = locOf(actor);
+        const nextLoc = path[index];
+        const dx = nextLoc.locX - currentLoc.locX;
+        const dy = nextLoc.locY - currentLoc.locY;
+        const dz = nextLoc.locZ - currentLoc.locZ;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance === 0) {
+            actor.setLocXYZ(nextLoc);
+            invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+            moveAlongPath(index + 1);
+            return;
+        }
+
+        const segmentCoords = { from: currentLoc, to: nextLoc };
+        const movePacket = ServerResponse.moveToLocation(actor.fetchId(), segmentCoords);
+        session.dataSendToMeAndOthers(movePacket, actor);
+        approachingObservers.forEach((observer) => {
+            const observerSession = observer.session;
+            if (!observerSession?.actor?.fetchIsOnline?.() || !observerSession.dataSendToMe) return;
+            if (distance2d(observerSession.actor, currentLoc) <= CLIENT_VISIBILITY_RADIUS) return;
+            if (!observer.announced) {
+                observerSession.dataSendToMe(ServerResponse.charInfo(actor));
+                observer.announced = true;
+            }
+            observerSession.dataSendToMe(movePacket);
+        });
+
+        const speed = actor.fetchCollectiveRunSpd() || 120;
+        const duration = (distance / speed) * 1000;
+        const tickRate = isClose ? 100 : 250;
+        const steps = Math.ceil(duration / tickRate);
+        let step = 0;
+
+        session.moveTimer = setInterval(() => {
+            if (!session.moveTimer) return;
+            step++;
+            if (step >= steps) {
+                clearInterval(session.moveTimer);
+                actor.setLocXYZ(nextLoc);
+                invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+                moveAlongPath(index + 1);
+            } else {
+                const ratio = step / steps;
+                const nextX = Math.round(currentLoc.locX + dx * ratio);
+                const nextY = Math.round(currentLoc.locY + dy * ratio);
+                const nextZ = Math.round(currentLoc.locZ + dz * ratio);
+                const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
+                actor.setLocXYZ({ locX: nextX, locY: nextY, locZ: snappedZ });
+                invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+            }
+        }, tickRate);
+    };
+
+    actor.state.setTowards('move');
+    moveAlongPath(0);
+}
 
 function distanceToClosestPlayer(players, coords) {
     if (!players.length) return Infinity;
@@ -145,7 +229,162 @@ function moveTo(session, actor, coords) {
         const isClose = isCompanion || distanceToPlayer <= 500;
 
         let pathTarget = { ...requestedTo };
-        let path = GeodataEngine.findPath(startX, startY, startZ, requestedTo.locX, requestedTo.locY, requestedTo.locZ);
+        const pathStartedAt = Date.now();
+
+        if (isCompanion && !previewOnly) {
+            const pool = session.pathfindingWorkerPool || PathfindingWorkerPool;
+            const routeGeneration = Number(session.moveRouteGeneration || 0);
+            const actorId = Number(actor.fetchId());
+            const leaderSession = session.followPlayerSession;
+            const targetActor = coords.targetActor || null;
+            const targetId = Number(targetActor?.fetchId?.()) || null;
+            const targetStart = targetActor ? locOf(targetActor) : null;
+            const start = { locX: startX, locY: startY, locZ: startZ };
+            const requestKey = `companion:${actorId}`;
+            const clearPending = () => {
+                const pending = session.pendingPathRequest;
+                if (pending?.key === requestKey && pending.generation === routeGeneration) {
+                    session.pendingPathRequest = null;
+                    if (actor.state?.fetchTowards?.() === 'path') actor.state.setTowards(false);
+                }
+            };
+            const isCurrent = () => (
+                Number(session.moveRouteGeneration || 0) === routeGeneration &&
+                session.partyCompanion === true &&
+                session.followPlayerSession === leaderSession &&
+                session.actor === actor &&
+                Number(actor.fetchId()) === actorId &&
+                (!targetActor || (
+                    Number(targetActor.fetchId?.()) === targetId &&
+                    targetActor.fetchIsOnline?.() !== false &&
+                    targetActor.isDead?.() !== true &&
+                    sameLoc(locOf(targetActor), targetStart, 128)
+                )) &&
+                !actor.isDead() &&
+                EffectRestrictions.canMove(actor) &&
+                sameLoc(locOf(actor), start) &&
+                sameLoc(coords.to, pathTarget)
+            );
+            const finish = (candidatePath, strategy, error = null) => {
+                if (!isCurrent()) return null;
+                clearPending();
+                const routeFound = Array.isArray(candidatePath) && candidatePath.length > 1;
+                const fallbackLineOfSight = !routeFound && GeodataEngine.hasLineOfSight(
+                    startX, startY, startZ,
+                    pathTarget.locX, pathTarget.locY, pathTarget.locZ
+                );
+                const movementPath = routeFound
+                    ? candidatePath
+                    : (fallbackLineOfSight ? [{ ...pathTarget }] : []);
+                PopulationMetrics.recordPathfindingDuration('companion', Date.now() - pathStartedAt);
+                session.lastPathfinding = {
+                    requestedTo,
+                    routedTo: { ...pathTarget },
+                    townRoute: townRouteDiagnostics,
+                    pathLength: movementPath.length,
+                    routeUsable: routeFound || fallbackLineOfSight,
+                    lowLodWarp: false,
+                    distanceToPlayer,
+                    destinationDistanceToPlayer,
+                    strategy,
+                    worker: true,
+                    ...(error ? { error: error.code || error.message || String(error) } : {}),
+                    at: Date.now()
+                };
+                if (movementPath.length) {
+                    startPathMovement({ session, actor, path: movementPath, isClose, approachingObservers });
+                }
+                return session.lastPathfinding;
+            };
+            const requestPath = (target, strategy) => pool.request({
+                startX, startY, startZ,
+                endX: target.locX,
+                endY: target.locY,
+                endZ: target.locZ
+            }, {
+                key: requestKey,
+                priority: 100,
+                timeoutMs: COMPANION_PATH_TIMEOUT_MS
+            }).then((candidatePath) => {
+                if (!isCurrent()) {
+                    clearPending();
+                    return null;
+                }
+                if (Array.isArray(candidatePath) && candidatePath.length > 1) {
+                    session.townRoutePlan = null;
+                    return finish(candidatePath, strategy);
+                }
+
+                const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+                const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
+                pathTarget = { ...routeResult.to };
+                townRouteDiagnostics = routeResult.diagnostics;
+                coords.to.locX = pathTarget.locX;
+                coords.to.locY = pathTarget.locY;
+                coords.to.locZ = pathTarget.locZ;
+                const fallbackStrategy = townRouteDiagnostics?.changedTarget
+                    ? 'worker_town_waypoint_fallback'
+                    : 'worker_direct_fallback';
+                if (sameLoc(pathTarget, requestedTo)) return finish(candidatePath, fallbackStrategy);
+                return pool.request({
+                    startX, startY, startZ,
+                    endX: pathTarget.locX,
+                    endY: pathTarget.locY,
+                    endZ: pathTarget.locZ
+                }, {
+                    key: requestKey,
+                    priority: 100,
+                    timeoutMs: COMPANION_PATH_TIMEOUT_MS
+                }).then((fallbackPath) => finish(fallbackPath, fallbackStrategy));
+            }).catch((error) => {
+                if (error?.code === 'STALE_PATH' || !isCurrent()) {
+                    clearPending();
+                    return null;
+                }
+                return finish(null, `${strategy}_error_fallback`, error);
+            });
+
+            session.pendingPathRequest = {
+                key: requestKey,
+                generation: routeGeneration,
+                requestedTo: { ...requestedTo },
+                cancel: () => pool.cancel(requestKey),
+                promise: null
+            };
+
+            const directDistance = distance2d(start, requestedTo);
+            if (directDistance <= COMPANION_DIRECT_DISTANCE && GeodataEngine.hasLineOfSight(
+                startX, startY, startZ,
+                requestedTo.locX, requestedTo.locY, requestedTo.locZ
+            )) {
+                session.pendingPathRequest = null;
+                return finish([{ ...start }, { ...requestedTo }], 'short_direct');
+            }
+
+            session.pendingPathRequest.promise = requestPath(requestedTo, 'worker_geodata');
+            actor.state.setTowards('path');
+            session.lastPathfinding = {
+                requestedTo,
+                routedTo: { ...requestedTo },
+                townRoute: null,
+                pathLength: 0,
+                routeUsable: null,
+                lowLodWarp: false,
+                distanceToPlayer,
+                destinationDistanceToPlayer,
+                strategy: 'worker_pending',
+                worker: true,
+                at: Date.now()
+            };
+            return session.lastPathfinding;
+        }
+
+        let path = GeodataEngine.findPath(
+            startX, startY, startZ,
+            requestedTo.locX, requestedTo.locY, requestedTo.locZ,
+            undefined,
+            { debug: false }
+        );
         let pathStrategy = 'direct_geodata';
 
         if (!path || path.length <= 1) {
@@ -161,12 +400,18 @@ function moveTo(session, actor, coords) {
             }
             pathStrategy = townRouteDiagnostics?.changedTarget ? 'town_waypoint_fallback' : 'direct_fallback';
 
-            path = GeodataEngine.findPath(startX, startY, startZ, pathTarget.locX, pathTarget.locY, pathTarget.locZ);
+            path = GeodataEngine.findPath(
+                startX, startY, startZ,
+                pathTarget.locX, pathTarget.locY, pathTarget.locZ,
+                undefined,
+                { debug: false }
+            );
         } else if (session && !previewOnly) {
             session.townRoutePlan = null;
         }
 
         const routeFound = Array.isArray(path) && path.length > 1;
+        PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
         // A* is deliberately bounded and can return null in otherwise open
         // terrain. The runtime has always handled that case with a direct
         // movement fallback, so distinguish a clear line from a genuinely
@@ -175,9 +420,6 @@ function moveTo(session, actor, coords) {
             startX, startY, startZ,
             pathTarget.locX, pathTarget.locY, pathTarget.locZ
         );
-        if (!previewOnly) {
-            console.log(`[PATHFIND] Bot ${actor.fetchName()}: from (${startX}, ${startY}, ${startZ}) to (${pathTarget.locX}, ${pathTarget.locY}, ${pathTarget.locZ}) strategy=${pathStrategy} -> Waypoints: ${path ? path.length : 0}`);
-        }
         if (!path || path.length <= 1) {
             path = [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }];
         }
@@ -197,83 +439,7 @@ function moveTo(session, actor, coords) {
         if (previewOnly) {
             return session.lastPathfinding;
         }
-
-        const moveAlongPath = (index) => {
-            if (index >= path.length) {
-                session.moveTimer = null;
-                actor.state.setTowards(false);
-                return;
-            }
-
-            const currentLoc = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
-            const nextLoc = path[index];
-
-            const dx = nextLoc.locX - currentLoc.locX;
-            const dy = nextLoc.locY - currentLoc.locY;
-            const dz = nextLoc.locZ - currentLoc.locZ;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance === 0) {
-                actor.setLocXYZ(nextLoc);
-                invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
-                moveAlongPath(index + 1);
-                return;
-            }
-
-            const segmentCoords = {
-                from: currentLoc,
-                to: nextLoc
-            };
-            const movePacket = ServerResponse.moveToLocation(actor.fetchId(), segmentCoords);
-            session.dataSendToMeAndOthers(movePacket, actor);
-            approachingObservers.forEach((observer) => {
-                const observerSession = observer.session;
-                if (!observerSession?.actor?.fetchIsOnline?.() || !observerSession.dataSendToMe) return;
-                // Once the bot is in the standard broadcast radius, the
-                // normal dataSendToMeAndOthers call above owns delivery.
-                if (distance2d(observerSession.actor, currentLoc) <= CLIENT_VISIBILITY_RADIUS) return;
-                if (!observer.announced) {
-                    observerSession.dataSendToMe(ServerResponse.charInfo(actor));
-                    observer.announced = true;
-                }
-                observerSession.dataSendToMe(movePacket);
-            });
-
-            const speed = actor.fetchCollectiveRunSpd() || 120;
-            const duration = (distance / speed) * 1000;
-            const tickRate = isClose ? 100 : 250;
-            const steps = Math.ceil(duration / tickRate);
-            let step = 0;
-
-            session.moveTimer = setInterval(() => {
-                if (!session.moveTimer) {
-                    return;
-                }
-
-                step++;
-                if (step >= steps) {
-                    clearInterval(session.moveTimer);
-                    actor.setLocXYZ(nextLoc);
-                    invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
-                    moveAlongPath(index + 1);
-                } else {
-                    const ratio = step / steps;
-                    const nextX = Math.round(currentLoc.locX + dx * ratio);
-                    const nextY = Math.round(currentLoc.locY + dy * ratio);
-                    const nextZ = Math.round(currentLoc.locZ + dz * ratio);
-                    const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
-                    actor.setLocXYZ({
-                        locX: nextX,
-                        locY: nextY,
-                        locZ: snappedZ
-                    });
-                    invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
-                }
-            }, tickRate);
-        };
-
-        actor.state.setTowards('move');
-        moveAlongPath(0);
+        startPathMovement({ session, actor, path, isClose, approachingObservers });
         return session.lastPathfinding;
     }
 }
@@ -282,3 +448,4 @@ module.exports = moveTo;
 module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
 module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
+module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;

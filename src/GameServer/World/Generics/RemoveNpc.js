@@ -41,7 +41,6 @@ function removeNpc(session, npc) {
                 try {
                     if (!canRespawnDefinition(this, definition, periodRevision)) return;
                     this.spawnNpc(this, definition);
-                    this.indexSpawnsInGrid();
                 }
                 catch (error) {
                     utils.infoWarn('Spawn', 'failed to respawn NPC %d: %s', npcId, error.message);

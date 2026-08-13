@@ -53,7 +53,6 @@ function changeMode(world, nextMode, response = ServerResponse) {
         if (SpawnNpcs.spawnNpc(world, definition)) spawned += 1;
     });
 
-    if (spawned > 0) world.indexSpawnsInGrid?.();
     broadcast(world, mode, response);
     utils.infoSuccess('DayNight', '%s mode: removed %d, spawned %d periodic NPCs', mode, removed, spawned);
     return { changed: true, removed, spawned };

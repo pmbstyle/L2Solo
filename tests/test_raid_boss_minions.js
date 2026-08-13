@@ -5,6 +5,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const Npc = invoke('GameServer/Npc/Npc');
 const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
+const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const ReceivedHit = invoke('GameServer/Npc/Generics/ReceivedHit');
 const RuntimeWorld = invoke('GameServer/World/World');
 const ActorGenerics = invoke(path.actor);
@@ -31,6 +32,11 @@ assert(state && state.groups.length > 0, 'boss with a sourced minion group must 
 const initialMinions = state.groups.flatMap((group) => group.members);
 assert(initialMinions.length > 0);
 assert(initialMinions.every((minion) => minion.minionBossObjectId === boss.fetchId()));
+assert.strictEqual(
+    RaidEntityIndex.entitiesForRaid(world, { bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId() }).length,
+    initialMinions.length + 1,
+    'spawned raid minions must be indexed under their authoritative boss'
+);
 
 const attacker = {
     fetchId: () => 4000001,
@@ -53,8 +59,17 @@ const attacker = {
     automation: { abortAll() {} }
 };
 const combatSession = { dataSendToMeAndOthers() {}, dataSendToMe() {} };
+const telemetryBefore = MinionManager.stats();
 const alerted = MinionManager.onBossAttacked(world, boss, attacker, combatSession);
 assert(alerted > 0, 'a raid boss hit must call its live minions into combat');
+const telemetryAfter = MinionManager.stats();
+assert.strictEqual(telemetryAfter.engagements, telemetryBefore.engagements + 1,
+    'the first raid hit must record one engagement');
+assert.strictEqual(telemetryAfter.minionsAlerted, telemetryBefore.minionsAlerted + alerted,
+    'raid telemetry must expose the number of socially alerted minions');
+MinionManager.onBossAttacked(world, boss, attacker, combatSession);
+assert.strictEqual(MinionManager.stats().engagements, telemetryAfter.engagements,
+    'repeated hits in the same encounter must not spam engagement telemetry');
 assert(initialMinions.every((minion) => minion.fetchDestId() === attacker.fetchId()),
     'called minions must target the attacker');
 
@@ -94,6 +109,11 @@ boss.abortCombatState(combatSession);
 assert(removed > 0);
 assert.strictEqual(boss.minionState, null);
 assert.strictEqual(world.npc.spawns.some((npc) => npc.minionBossObjectId === boss.fetchId()), false);
+assert.deepStrictEqual(
+    RaidEntityIndex.entitiesForRaid(world, { bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId() }),
+    [boss],
+    'boss-death cleanup must invalidate every removed minion membership'
+);
 
 // A lethal hit must notify the group before the minion is removed by die().
 const lethalBoss = new Npc(world.npc.nextId++, {

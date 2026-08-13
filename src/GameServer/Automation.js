@@ -370,13 +370,20 @@ class Automation extends SelectedModel {
     }
 
     abortAll(creature, { notifyClient = true } = {}) {
-        const wasMoving = !!creature?.state?.inMotion?.();
+        const wasMoving = !!creature?.state?.inMotion?.() && !creature?.session?.pendingPathRequest;
         this.clearDestId();
         creature.state?.setTowards?.(false);
         Timer.clear(this.timer.action);
         Timer.clear(this.timer.pickup);
 
         const session = creature.session;
+        if (session) {
+            session.moveRouteGeneration = Number(session.moveRouteGeneration || 0) + 1;
+            if (session.pendingPathRequest?.cancel) {
+                session.pendingPathRequest.cancel();
+            }
+            session.pendingPathRequest = null;
+        }
         if (session && session.moveTimer) {
             clearInterval(session.moveTimer);
             session.moveTimer = null;

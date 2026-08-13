@@ -60,6 +60,7 @@ const tests = [
     'tests/test_bot_agent_support_confirmation.js',
     'tests/test_bot_combat_skill_selection.js',
     'tests/test_bot_raid_safety.js',
+    'tests/test_raid_entity_index.js',
     'tests/test_bot_conversation.js',
     'tests/test_bot_ambient_director.js',
     'tests/test_bot_death_respawn.js',
@@ -237,6 +238,8 @@ const tests = [
     'tests/test_bot_status_bypass.js',
     'tests/test_path_obstacle.js',
     'tests/test_pathfinder_astar.js',
+    'tests/test_pathfinding_worker_pool.js',
+    'tests/test_companion_pathfinding_worker.js',
     'tests/test_player_ranged_combat.js',
     'tests/test_progression_rates.js',
     'tests/test_quest_packets.js',
@@ -274,6 +277,8 @@ const tests = [
     'tests/test_world_observer_filters.js',
     'tests/test_world_observer_leaderboards.js',
     'tests/test_world_observer_raid_bosses.js',
+    'tests/test_world_observer_cache.js',
+    'tests/test_world_npc_grid.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
 ];

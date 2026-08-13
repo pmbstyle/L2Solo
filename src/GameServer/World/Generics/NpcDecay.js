@@ -68,24 +68,34 @@ function decay(world, npc) {
 
     // Remove the server object first. Packet delivery is best effort and may
     // fail for a disconnected client; it must not leave a corpse in the grid.
-    world.npc.spawns = world.npc.spawns.filter((entry) => {
-        if (entry === npc) return false;
-        try {
-            return entry?.fetchId?.() !== npcId;
-        }
-        catch (error) {
-            logWarning('failed to read a neighboring NPC id during decay', error);
-            return true;
-        }
-    });
-
     try {
-        world.indexSpawnsInGrid?.();
+        if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
     }
     catch (error) {
-        // Grid repair is useful but must not prevent the client deletion
+        // Grid maintenance is useful but must not prevent the client deletion
         // packet or strand the corpse in the known-object view.
-        logWarning(`grid rebuild failed for NPC ${npcId}`, error);
+        logWarning(`grid removal failed for NPC ${npcId}`, error);
+    }
+    const spawnIndex = world.npc.spawns.indexOf(npc);
+    if (spawnIndex >= 0) {
+        world.npc.spawns.splice(spawnIndex, 1);
+    } else {
+        world.npc.spawns = world.npc.spawns.filter((entry) => {
+            try {
+                return entry?.fetchId?.() !== npcId;
+            }
+            catch (error) {
+                logWarning('failed to read a neighboring NPC id during decay', error);
+                return true;
+            }
+        });
+    }
+    if (!world.removeNpcFromGrid) {
+        try {
+            world.indexSpawnsInGrid?.();
+        } catch (error) {
+            logWarning(`grid rebuild failed for NPC ${npcId}`, error);
+        }
     }
 
     try {
@@ -121,12 +131,22 @@ function decayMany(world, npcs) {
     });
     if (removed.size === 0) return 0;
 
-    world.npc.spawns = world.npc.spawns.filter((entry) => !removed.has(entry));
-    try {
-        world.indexSpawnsInGrid?.();
+    if (world.removeNpcFromGrid) {
+        removed.forEach((npc) => {
+            try {
+                world.removeNpcFromGrid(npc);
+            } catch (error) {
+                logWarning('grid removal failed during batch decay', error);
+            }
+        });
     }
-    catch (error) {
-        logWarning('grid rebuild failed during batch decay', error);
+    world.npc.spawns = world.npc.spawns.filter((entry) => !removed.has(entry));
+    if (!world.removeNpcFromGrid) {
+        try {
+            world.indexSpawnsInGrid?.();
+        } catch (error) {
+            logWarning('grid rebuild failed during batch decay', error);
+        }
     }
 
     notifications.forEach(({ npcId, sourceSession }) => {
@@ -144,19 +164,21 @@ function discardUnremovableNpc(world, npc, attempts) {
     if (!world?.npc?.spawns || !npc) return false;
 
     const previousLength = world.npc.spawns.length;
-    world.npc.spawns = world.npc.spawns.filter((entry) => entry !== npc);
+    if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
+    const index = world.npc.spawns.indexOf(npc);
+    if (index >= 0) world.npc.spawns.splice(index, 1);
+    if (!world.removeNpcFromGrid) {
+        try {
+            world.indexSpawnsInGrid?.();
+        } catch (error) {
+            logWarning('grid rebuild failed while discarding an unremovable NPC', error);
+        }
+    }
     npc.corpseDecayState = 'removed';
     npc.corpseDecayAt = 0;
     npc.corpseDecaySession = null;
     npc.corpseDecaySweepFailures = 0;
     clearTimer(npc);
-
-    try {
-        world.indexSpawnsInGrid?.();
-    }
-    catch (error) {
-        logWarning('grid rebuild failed while discarding an unremovable NPC', error);
-    }
 
     logWarning(`discarded unremovable corpse after ${attempts} failed attempts`, 'NPC id unavailable');
     return world.npc.spawns.length < previousLength;

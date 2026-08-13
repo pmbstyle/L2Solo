@@ -400,7 +400,7 @@ const GeodataEngine = {
         return !hasLayerData || Math.abs(cz - targetCell.z) <= MAX_LAYER_STEP;
     },
 
-    findPath(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000) {
+    findPath(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000, options = {}) {
         const startCx = startX >> 4;
         const startCy = startY >> 4;
         const endCx = endX >> 4;
@@ -524,8 +524,9 @@ const GeodataEngine = {
             }
         }
         
-        // Debug pathfinder performance
-        console.log(`findPath :: nodesExpanded = ${nodesExpanded}, targetNodeFound = ${!!targetNode}`);
+        if (options.debug !== false) {
+            console.log(`findPath :: nodesExpanded = ${nodesExpanded}, targetNodeFound = ${!!targetNode}`);
+        }
 
         let node = targetNode;
         if (!node) {

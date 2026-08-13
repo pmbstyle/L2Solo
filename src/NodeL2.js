@@ -17,6 +17,7 @@ const WorldObserver = invoke('WorldObserver/WorldObserverServer');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
+const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 
 let shuttingDown = false;
 function shutdown(signal) {
@@ -27,6 +28,7 @@ function shutdown(signal) {
     forceExit.unref?.();
     CharacterWriteQueue.flushAll()
         .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
+        .then(() => PathfindingWorkerPool.shutdown())
         .then(() => LangfuseTracing.shutdown())
         .finally(() => process.exit(0));
 }

@@ -76,6 +76,12 @@ const world = {
     },
     indexSpawnsInGrid() {
         this.npc.gridRevisions = Number(this.npc.gridRevisions || 0) + 1;
+    },
+    addNpcToGrid() {
+        this.npc.gridAdds = Number(this.npc.gridAdds || 0) + 1;
+    },
+    removeNpcFromGrid() {
+        this.npc.gridRemoves = Number(this.npc.gridRemoves || 0) + 1;
     }
 };
 
@@ -87,8 +93,12 @@ assert.deepStrictEqual(world.npc.spawns.map((npc) => npc.spawnDefinition.spawn.p
 
 const firstChange = DayNightSpawnManager.changeMode(world, 'night');
 assert.deepStrictEqual(firstChange, { changed: true, removed: 2, spawned: 2 });
-assert.strictEqual(world.npc.gridRevisions, 2,
-    'a bulk period transition must rebuild the spawn grid once for removal and once for insertion');
+assert.strictEqual(world.npc.gridRevisions, undefined,
+    'a bulk period transition must not rebuild the complete spawn grid');
+assert.strictEqual(world.npc.gridAdds, 5,
+    'initial and night spawns must use incremental grid insertion');
+assert.strictEqual(world.npc.gridRemoves, 2,
+    'inactive day spawns must use incremental grid removal');
 assert.deepStrictEqual(world.npc.spawns.map((npc) => npc.spawnDefinition.spawn.period).sort(), ['always', 'night', 'night']);
 assert.strictEqual(packets.at(-1)[0], 0x1d, 'night transition must broadcast the C4 Sunset packet');
 assert.strictEqual(RemoveNpc.canRespawnDefinition(world, day, 0), false,
