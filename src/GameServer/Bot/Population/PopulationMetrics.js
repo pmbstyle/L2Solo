@@ -25,7 +25,9 @@ function emptyCounters() {
         partyFormationBudgetStops: 0,
         schedulerYields: 0,
         schedulerOverruns: 0,
-        slowResolves: 0
+        slowResolves: 0,
+        backgroundDeferrals: 0,
+        partyFormationDeferrals: 0
     };
 }
 
@@ -69,6 +71,8 @@ const PopulationMetrics = {
         schedulerSliceDurationsMs: [],
         partyFormationDurationsMs: [],
         partyFormationStageDurationsMs: new Map(),
+        actorPathDurationsMs: [],
+        companionPathDurationsMs: [],
         skippedResolveReasons: new Map()
     },
     timer: null,
@@ -196,12 +200,23 @@ const PopulationMetrics = {
         this.counters.schedulerBudgetStops += 1;
     },
 
+    recordBackgroundDeferral() {
+        this.counters.backgroundDeferrals += 1;
+    },
+
+    recordPartyFormationDeferral() {
+        this.counters.partyFormationDeferrals += 1;
+    },
+
     recordSchedulerProfile(profile = {}) {
         this.schedulerState = {
             ...this.schedulerState,
             budgetMs: Math.max(0, Number(profile.budgetMs) || 0),
             mode: profile.idle ? 'idle' : 'player',
-            lagMs: Math.max(0, Number(profile.lagMs) || 0)
+            lagMs: Math.max(0, Number(profile.lagMs) || 0),
+            playerMode: profile.activity?.mode || 'idle',
+            realPlayers: Math.max(0, Number(profile.activity?.realPlayers) || 0),
+            companions: Math.max(0, Number(profile.activity?.companionCount) || 0)
         };
     },
 
@@ -236,6 +251,13 @@ const PopulationMetrics = {
         this.interval.partyFormationStageDurationsMs.set(key, values);
     },
 
+    recordPathfindingDuration(kind, ms) {
+        const key = kind === 'companion' ? 'companionPathDurationsMs' : 'actorPathDurationsMs';
+        const values = this.interval[key];
+        values.push(Math.max(0, Number(ms) || 0));
+        if (values.length > Config.resolveSampleLimit) values.shift();
+    },
+
     currentEventLoopLag() {
         return Number(this.eventLoop.lagMs || 0);
     },
@@ -253,6 +275,8 @@ const PopulationMetrics = {
         const schedulerStats = stats(this.interval.schedulerDurationsMs);
         const schedulerSliceStats = stats(this.interval.schedulerSliceDurationsMs);
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
+        const actorPathStats = stats(this.interval.actorPathDurationsMs);
+        const companionPathStats = stats(this.interval.companionPathDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
         const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
@@ -260,6 +284,8 @@ const PopulationMetrics = {
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
+        this.interval.actorPathDurationsMs = [];
+        this.interval.companionPathDurationsMs = [];
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -272,6 +298,10 @@ const PopulationMetrics = {
             scheduler: { ...schedulerStats, ...this.schedulerState },
             schedulerSlice: schedulerSliceStats,
             partyFormation: partyFormationStats,
+            pathfinding: {
+                actor: actorPathStats,
+                companion: companionPathStats
+            },
             partyFormationStages,
             skippedResolveReasons,
             memory: process.memoryUsage ? process.memoryUsage() : null

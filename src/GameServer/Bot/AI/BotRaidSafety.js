@@ -3,6 +3,7 @@ const RAID_MINION_TEMPLATE_IDS = new Set(
         .map((entry) => Number(entry.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );
+const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 
 const DEFAULT_RETREAT_DISTANCE = 1100;
 const RAID_DISENGAGE_GRACE_MS = 15000;
@@ -45,15 +46,11 @@ function isProtectedRaidEntity(target) {
 function raidBossFor(target) {
     if (!target) return null;
     if (isRaidBoss(target)) return target;
+    return RaidEntityIndex.bossFor(world(), target);
+}
 
-    const bossObjectId = Number(target.minionBossObjectId || 0);
-    const bossTemplateId = Number(target.minionBossTemplateId || 0);
-    return (world().npc?.spawns || []).find((candidate) => (
-        isRaidBoss(candidate) && (
-            (bossObjectId > 0 && objectId(candidate) === bossObjectId) ||
-            (bossTemplateId > 0 && templateId(candidate) === bossTemplateId)
-        )
-    )) || null;
+function raidBossByObjectId(id) {
+    return RaidEntityIndex.bossByObjectId(world(), id);
 }
 
 function belongsToRaid(target, raid) {
@@ -127,14 +124,14 @@ function leaderDesignatedRaidBoss(leaderSession) {
     if (!leader || leader.fetchIsOnline?.() !== true || leader.isDead?.() || leader.state?.fetchDead?.()) return null;
     const targetId = Number(leader.fetchDestId?.() || 0);
     if (!targetId) return null;
-    const target = (world().npc?.spawns || []).find((npc) => objectId(npc) === targetId);
+    const target = RaidEntityIndex.bossByObjectId(world(), targetId);
     return target && isRaidBoss(target) && target.fetchAttackable?.() === true && !target.isDead?.()
         ? target
         : null;
 }
 
 function raidEntities(raid) {
-    return (world().npc?.spawns || []).filter((npc) => belongsToRaid(npc, raid));
+    return RaidEntityIndex.entitiesForRaid(world(), raid);
 }
 
 function currentCombatTargetId(actor) {
@@ -152,8 +149,9 @@ function raidHasPartyCombat(leaderSession, raid) {
     const memberIds = new Set(sessions.map((session) => objectId(session.actor)).filter(Boolean));
     if (memberIds.size === 0) return false;
 
-    if (raidEntities(raid).some((npc) => memberIds.has(Number(npc.fetchDestId?.() || 0)))) return true;
-    const boss = raidBossFor(raidEntities(raid)[0]);
+    const entities = raidEntities(raid);
+    if (entities.some((npc) => memberIds.has(Number(npc.fetchDestId?.() || 0)))) return true;
+    const boss = entities.find((npc) => isRaidBoss(npc)) || null;
     const attackers = boss?.model?.raidAttackers;
     const attackerIds = attackers instanceof Set
         ? new Set([...attackers].map(Number))
@@ -173,7 +171,7 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
     const selectedBoss = leaderDesignatedRaidBoss(leaderSession);
     let raid = leaderSession.partyRaidEngagement;
     const existingBoss = raid
-        ? (world().npc?.spawns || []).find((npc) => isRaidBoss(npc) && objectId(npc) === Number(raid.bossId || 0))
+        ? RaidEntityIndex.bossByObjectId(world(), raid.bossId)
         : null;
     if (raid && (!existingBoss || existingBoss.isDead?.())) {
         leaderSession.partyRaidEngagement = undefined;
@@ -302,6 +300,8 @@ module.exports = {
     isRaidMinion,
     isProtectedRaidEntity,
     raidBossFor,
+    raidBossByObjectId,
+    raidEntities,
     belongsToRaid,
     hasHeavyArmor,
     isRaidOpenerReady,

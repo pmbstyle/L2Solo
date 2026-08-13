@@ -1,11 +1,19 @@
 const DataCache = invoke('GameServer/DataCache');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
+const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 
 const groupsByBoss = new Map();
 const minionTemplates = new Map();
 const MINION_MAINTENANCE_INTERVAL_MS = 5000;
 // C4/Lisvus Config.RAID_MINION_RESPAWN_TIME defaults to five minutes.
 const MINION_RESPAWN_DELAY_MS = 300000;
+const telemetry = {
+    engagements: 0,
+    minionsAlerted: 0,
+    lastEngagementAt: 0,
+    lastBossObjectId: null,
+    lastAttackerId: null
+};
 
 require('../../../data/Npcs/Minions/c4_raid_bosses.json').forEach((row) => {
     if (!groupsByBoss.has(Number(row.bossId))) groupsByBoss.set(Number(row.bossId), []);
@@ -31,7 +39,7 @@ function templateFor(minionId) {
 }
 
 function liveNpc(world, npc) {
-    return !!world?.npc?.spawns?.some((entry) => entry === npc);
+    return RaidEntityIndex.has(world, npc);
 }
 
 function aliveMinions(world, group) {
@@ -107,16 +115,27 @@ function onBossAttacked(world, boss, attacker, sourceSession) {
             } catch (_) {}
         });
     });
+    // `alerted > 0` is naturally edge-triggered: later hits see the same
+    // minions already in combat, so one encounter produces one concise line.
+    if (alerted > 0) {
+        const observedAt = Date.now();
+        telemetry.engagements += 1;
+        telemetry.minionsAlerted += alerted;
+        telemetry.lastEngagementAt = observedAt;
+        telemetry.lastBossObjectId = Number(boss.fetchId?.() || 0) || null;
+        telemetry.lastAttackerId = Number(attacker.fetchId?.() || 0) || null;
+        console.info(
+            'RaidCombat :: engaged boss=%s attacker=%s minionsAlerted=%d',
+            telemetry.lastBossObjectId || 'unknown',
+            telemetry.lastAttackerId || 'unknown',
+            alerted
+        );
+    }
     return alerted;
 }
 
 function bossForMinion(world, minion) {
-    const bossObjectId = Number(minion?.minionBossObjectId || 0);
-    if (!bossObjectId) return null;
-    return (world?.npc?.spawns || []).find((candidate) => (
-        candidate?.fetchIsRaidBoss?.() === true &&
-        Number(candidate.fetchId?.() || 0) === bossObjectId
-    )) || null;
+    return RaidEntityIndex.bossFor(world, minion);
 }
 
 // C4/Lisvus treats a minion hit as an attack on the raid group. The leader
@@ -144,10 +163,7 @@ function onMinionAttacked(world, minion, attacker, sourceSession) {
 }
 
 function onMinionDeath(world, minion) {
-    const boss = (world?.npc?.spawns || []).find((candidate) => (
-        candidate.fetchIsRaidBoss?.() === true &&
-        Number(candidate.fetchId?.()) === Number(minion?.minionBossObjectId)
-    ));
+    const boss = RaidEntityIndex.bossFor(world, minion);
     const group = minion?.minionGroup;
     if (!boss?.minionState || !group) return false;
     if (!group.respawnAt) group.respawnAt = Date.now() + MINION_RESPAWN_DELAY_MS;
@@ -160,7 +176,9 @@ function cleanupMinion(world, minion, sourceSession) {
     try {
         minion.destructor?.(sourceSession || { dataSendToMeAndOthers() {}, dataSendToMe() {} });
     } catch (_) {}
-    world.npc.spawns = world.npc.spawns.filter((entry) => entry !== minion);
+    world.removeNpcFromGrid?.(minion);
+    const index = world.npc.spawns.indexOf(minion);
+    if (index >= 0) world.npc.spawns.splice(index, 1);
     NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);
     return true;
 }
@@ -176,14 +194,17 @@ function onBossDeath(world, boss, sourceSession) {
         group.members = [];
     });
     boss.minionState = null;
-    world.indexSpawnsInGrid?.();
     return removed;
+}
+
+function stats() {
+    return { ...telemetry };
 }
 
 function maintain(world, now = Date.now()) {
     if (!world?.npc?.spawns) return 0;
     let spawned = 0;
-    world.npc.spawns.filter((npc) => npc.fetchIsRaidBoss?.() === true).forEach((boss) => {
+    RaidEntityIndex.bosses(world).forEach((boss) => {
         if (boss.state?.fetchDead?.() === true || boss.isDead?.() === true) return;
         const state = boss.minionState || attachBoss(world, boss);
         state?.groups?.forEach((group) => {
@@ -228,5 +249,6 @@ module.exports = {
     maintain,
     start,
     stop,
+    stats,
     groupsByBoss
 };

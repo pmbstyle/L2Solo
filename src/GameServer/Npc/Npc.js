@@ -11,6 +11,7 @@ const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
@@ -110,6 +111,8 @@ class Npc extends NpcModel {
             let pathFailureStartedAt = 0;
             let pathFailureCount = 0;
             let nextPathRetryAt = 0;
+            let pendingPath = null;
+            let pathGeneration = 0;
 
             this.timer.combat = setInterval(() => {
                 // A dead target cannot be chased or hit.  Leaving the NPC in
@@ -195,27 +198,51 @@ class Npc extends NpcModel {
                         if (now < nextPathRetryAt) {
                             return;
                         }
-
-                        const path = this.fetchCombatPath(actor);
-                        if (!path || path.length <= 1) {
-                            pathFailureStartedAt ||= now;
-                            pathFailureCount++;
-                            const retryDelay = Math.min(
-                                NPC_PATH_MAX_RETRY_INTERVAL_MS,
-                                NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
-                            );
-                            nextPathRetryAt = now + retryDelay;
-                            if (now - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                                this.abortCombatState(session);
-                            }
-                            return;
+                        if (!pendingPath) {
+                            const requestedTarget = { locX: newDstX, locY: newDstY, locZ: newDstZ };
+                            const generation = ++pathGeneration;
+                            pendingPath = this.fetchCombatPathAsync(actor)
+                                .then((path) => {
+                                    if (generation !== pathGeneration || !this.state.fetchCombats()) return;
+                                    const drift = new SpeckMath.Point3D(
+                                        requestedTarget.locX,
+                                        requestedTarget.locY,
+                                        requestedTarget.locZ
+                                    ).distance(new SpeckMath.Point3D(
+                                        actor.fetchLocX(),
+                                        actor.fetchLocY(),
+                                        actor.fetchLocZ()
+                                    ));
+                                    if (drift >= CHASE_REPATH_DISTANCE) return;
+                                    if (!path || path.length <= 1) {
+                                        pathFailureStartedAt ||= Date.now();
+                                        pathFailureCount++;
+                                        const retryDelay = Math.min(
+                                            NPC_PATH_MAX_RETRY_INTERVAL_MS,
+                                            NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
+                                        );
+                                        nextPathRetryAt = Date.now() + retryDelay;
+                                        if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
+                                            this.abortCombatState(session);
+                                        }
+                                        return;
+                                    }
+                                    activePathWaypoints = path.slice(1);
+                                    activePathTargetCoords = requestedTarget;
+                                    pathFailureStartedAt = 0;
+                                    pathFailureCount = 0;
+                                    nextPathRetryAt = 0;
+                                })
+                                .catch((error) => {
+                                    if (!['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) {
+                                        nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
+                                    }
+                                })
+                                .finally(() => {
+                                    if (generation === pathGeneration) pendingPath = null;
+                                });
                         }
-
-                        activePathWaypoints = path.slice(1);
-                        activePathTargetCoords = { locX: newDstX, locY: newDstY, locZ: newDstZ };
-                        pathFailureStartedAt = 0;
-                        pathFailureCount = 0;
-                        nextPathRetryAt = 0;
+                        return;
                     }
 
                     activeMoveCoords = activePathWaypoints.shift();
@@ -354,6 +381,21 @@ class Npc extends NpcModel {
         );
     }
 
+    fetchCombatPathAsync(actor) {
+        return PathfindingWorkerPool.request({
+            startX: this.fetchLocX(),
+            startY: this.fetchLocY(),
+            startZ: this.fetchLocZ(),
+            endX: actor.fetchLocX(),
+            endY: actor.fetchLocY(),
+            endZ: actor.fetchLocZ(),
+            maxNodes: NPC_PATH_MAX_NODES
+        }, {
+            key: `npc:${this.fetchId()}`,
+            timeoutMs: NPC_PATH_FAILURE_TIMEOUT_MS
+        });
+    }
+
     fetchCombatSkills() {
         if (!this.combatSkills) {
             this.combatSkills = NpcSkills.combatSkillsFor(this);
@@ -440,6 +482,7 @@ class Npc extends NpcModel {
         this.timer.hit = undefined;
         clearTimeout(this.timer.hitEnd);
         this.timer.hitEnd = undefined;
+        PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
 
         this.clearDestId();
         this.state.setCombatEnded();

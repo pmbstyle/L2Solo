@@ -559,11 +559,13 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         });
 
         if (skill.fetchTargetKind?.() === 'corpse_mob') {
+            World.removeNpcFromGrid?.(target);
             World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== target?.fetchId?.());
         }
 
         World.npc.spawns.push(npc);
-        World.indexSpawnsInGrid?.();
+        if (World.addNpcToGrid) World.addNpcToGrid(npc);
+        else World.indexSpawnsInGrid?.();
 
         actor.summon = npc;
         session.summon = npc;

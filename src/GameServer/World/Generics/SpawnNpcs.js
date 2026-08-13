@@ -43,7 +43,8 @@ function spawnChildNpc(world, npc, coords, metadata = {}) {
     if (!world?.npc?.spawns || !npc) return null;
     const instance = createNpc(world, npc, coords, null);
     Object.assign(instance, metadata);
-    world.indexSpawnsInGrid?.();
+    if (world.addNpcToGrid) world.addNpcToGrid(instance);
+    else world.indexSpawnsInGrid?.();
     notifyNearby(world, instance);
     return instance;
 }
@@ -117,7 +118,6 @@ function scheduleRaidBossRespawn(world, definition, respawnAt) {
         }
         if (spawned) {
             RaidBossState.markSpawned(id);
-            world.indexSpawnsInGrid?.();
             return;
         }
 
@@ -155,6 +155,8 @@ function spawnNpc(world, definition, options = {}) {
     const coords = randomCoords(definition);
     const npc = spawnDefinition(world, definition, coords, options);
     if (!npc) return null;
+    if (world.addNpcToGrid) world.addNpcToGrid(npc);
+    else world.indexSpawnsInGrid?.();
     // Respawns happen independently of player movement.  Announce the new
     // object immediately, otherwise it can aggro a nearby player before that
     // player next crosses UpdateEnvironment's movement refresh threshold.
@@ -195,7 +197,8 @@ function spawnQuestNpc(world, {
     if (Number(despawnDelay) > 0) {
         npc.questSpawn.timer = setTimeout(() => despawnQuestNpc(world, npc), Number(despawnDelay));
     }
-    world.indexSpawnsInGrid?.();
+    if (world.addNpcToGrid) world.addNpcToGrid(npc);
+    else world.indexSpawnsInGrid?.();
     notifyNearby(world, npc);
     return npc;
 }
@@ -214,8 +217,10 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
     clearQuestSpawn(npc);
     npc.destructor?.(sourceSession || { dataSendToMeAndOthers: () => {}, dataSendToMe: () => {} });
     NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);
-    world.npc.spawns = world.npc.spawns.filter((entry) => entry.fetchId?.() !== objectId);
-    world.indexSpawnsInGrid?.();
+    if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
+    const index = world.npc.spawns.indexOf(npc);
+    if (index >= 0) world.npc.spawns.splice(index, 1);
+    if (!world.removeNpcFromGrid) world.indexSpawnsInGrid?.();
     return true;
 }
 

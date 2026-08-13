@@ -115,7 +115,8 @@ async function run() {
 
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
-    assert.strictEqual(PopulationService.partyFormationPending, true, 'a formation tick that collides with the scheduler must be queued rather than discarded');
+    assert.strictEqual(PopulationService.partyFormationPending, false,
+        'with a real player online, background formation must be deferred instead of queued behind the scheduler');
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = true;
     assert.deepStrictEqual(await PopulationService.tickBudgeted(), [], 'the scheduler must wait for an in-flight party formation pass');

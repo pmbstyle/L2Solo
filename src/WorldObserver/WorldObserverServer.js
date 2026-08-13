@@ -7,6 +7,8 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const DataCache = invoke('GameServer/DataCache');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const MIME_TYPES = {
@@ -15,6 +17,16 @@ const MIME_TYPES = {
     '.js': 'application/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
     '.svg': 'image/svg+xml; charset=utf-8'
+};
+const OBSERVER_IDLE_CACHE_MS = 2000;
+const OBSERVER_PLAYER_CACHE_MS = 5000;
+const OBSERVER_PARTY_CACHE_MS = 10000;
+const snapshotCache = {
+    json: null,
+    generatedAt: 0,
+    inFlight: null,
+    builds: 0,
+    hits: 0
 };
 
 const WORLD_BOUNDS = {
@@ -242,11 +254,21 @@ function isPkActor(actor) {
 
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
-    return (World.user?.sessions || []).filter((session) => (
-        session.actor &&
-        session.accountId &&
-        !String(session.accountId).startsWith('bot_')
-    ));
+    return (World.user?.sessions || []).filter(PlayerActivitySignal.isRealPlayerSession);
+}
+
+function observerCacheTtl(now = Date.now()) {
+    const World = invoke('GameServer/World/World');
+    const sessions = World.user?.sessions || [];
+    const activity = PlayerActivitySignal.observe({
+        sessions,
+        realPlayers: sessions.filter(PlayerActivitySignal.isRealPlayerSession),
+        now,
+        graceMs: PopulationConfig.playerProtectionGraceMs
+    });
+    if (activity.activeParty) return OBSERVER_PARTY_CACHE_MS;
+    if (activity.protected) return OBSERVER_PLAYER_CACHE_MS;
+    return OBSERVER_IDLE_CACHE_MS;
 }
 
 function compactPlayer(session) {
@@ -910,6 +932,32 @@ function snapshot() {
     }));
 }
 
+function snapshotJson(now = Date.now()) {
+    const ttlMs = observerCacheTtl(now);
+    if (snapshotCache.json && now - snapshotCache.generatedAt < ttlMs) {
+        snapshotCache.hits += 1;
+        return Promise.resolve(snapshotCache.json);
+    }
+    if (snapshotCache.inFlight) {
+        snapshotCache.hits += 1;
+        return snapshotCache.inFlight;
+    }
+
+    snapshotCache.builds += 1;
+    snapshotCache.inFlight = Promise.resolve()
+        .then(() => snapshot())
+        .then((data) => JSON.stringify(data))
+        .then((json) => {
+            snapshotCache.json = json;
+            snapshotCache.generatedAt = Date.now();
+            return json;
+        })
+        .finally(() => {
+            snapshotCache.inFlight = null;
+        });
+    return snapshotCache.inFlight;
+}
+
 async function botDetail(characterId) {
     const id = Number(characterId);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
@@ -966,6 +1014,14 @@ function sendJson(response, data, statusCode = 200) {
     response.end(JSON.stringify(data));
 }
 
+function sendJsonText(response, json, statusCode = 200) {
+    response.writeHead(statusCode, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store'
+    });
+    response.end(json);
+}
+
 function sendFile(response, filePath) {
     fs.readFile(filePath, (err, body) => {
         if (err) {
@@ -991,8 +1047,8 @@ function route(request, response) {
     }
 
     if (url.pathname === '/observer/api/snapshot') {
-        snapshot()
-            .then((data) => sendJson(response, data))
+        snapshotJson()
+            .then((json) => sendJsonText(response, json))
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
     }
@@ -1046,6 +1102,17 @@ const WorldObserverServer = {
     raidBossCatalog,
     raidBossSnapshot,
     equipmentValue,
+    snapshotJson,
+    observerCacheTtl,
+    snapshotCacheStats() {
+        return {
+            generatedAt: snapshotCache.generatedAt,
+            builds: snapshotCache.builds,
+            hits: snapshotCache.hits,
+            hasValue: !!snapshotCache.json,
+            inFlight: !!snapshotCache.inFlight
+        };
+    },
 
     init() {
         if (!isEnabled() || this.server) return;

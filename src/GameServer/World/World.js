@@ -6,6 +6,7 @@ const GameTime       = invoke('GameServer/World/GameTime');
 const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
+const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 
 function actorLoc(actor) {
     return {
@@ -111,9 +112,11 @@ const World = {
         this.gameTime = GameTime;
         this.npc   = {
             spawns: [], grid: {}, nextId: 1000000,
+            gridKeys: new WeakMap(),
             periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: [],
             raidBossRespawnTimers: new Map(), raidBossState: new Map()
         };
+        RaidEntityIndex.reset(this);
         this.npc.raidBossState = await RaidBossState.load();
         this.items = { spawns   : [], nextId: 5000000 };
 
@@ -520,17 +523,62 @@ const World = {
         }
     },
 
-    indexSpawnsInGrid() {
+    npcGridKey(npc) {
         const GRID_SIZE = 6000;
+        const gx = Math.floor(npc.fetchLocX() / GRID_SIZE);
+        const gy = Math.floor(npc.fetchLocY() / GRID_SIZE);
+        return `${gx}_${gy}`;
+    },
+
+    addNpcToGrid(npc) {
+        if (!npc) return false;
+        const raidIndexed = RaidEntityIndex.add(this, npc);
+        if (!npc.fetchLocX || !npc.fetchLocY) return raidIndexed;
+        if (!(this.npc.gridKeys instanceof WeakMap)) this.npc.gridKeys = new WeakMap();
+        const key = this.npcGridKey(npc);
+        const previousKey = this.npc.gridKeys.get(npc);
+        if (previousKey && previousKey !== key) {
+            const previousSector = this.npc.grid[previousKey];
+            const previousIndex = previousSector?.indexOf(npc) ?? -1;
+            if (previousIndex >= 0) previousSector.splice(previousIndex, 1);
+            if (previousSector?.length === 0) delete this.npc.grid[previousKey];
+        }
+        const sector = this.npc.grid[key] || (this.npc.grid[key] = []);
+        if (!sector.includes(npc)) sector.push(npc);
+        this.npc.gridKeys.set(npc, key);
+        return true;
+    },
+
+    removeNpcFromGrid(npc) {
+        if (!npc) return false;
+        const raidRemoved = RaidEntityIndex.remove(this, npc);
+        if (!npc.fetchLocX || !npc.fetchLocY) return raidRemoved;
+        if (!(this.npc.gridKeys instanceof WeakMap)) this.npc.gridKeys = new WeakMap();
+        // NPCs move after insertion. Remove from the sector where the object
+        // was actually indexed rather than deriving a potentially newer key.
+        const key = this.npc.gridKeys.get(npc) || this.npcGridKey(npc);
+        const sector = this.npc.grid[key];
+        if (!sector) {
+            this.npc.gridKeys.delete(npc);
+            return false;
+        }
+        const index = sector.indexOf(npc);
+        if (index < 0) {
+            this.npc.gridKeys.delete(npc);
+            return false;
+        }
+        sector.splice(index, 1);
+        if (sector.length === 0) delete this.npc.grid[key];
+        this.npc.gridKeys.delete(npc);
+        return true;
+    },
+
+    indexSpawnsInGrid() {
         this.npc.grid = {};
+        this.npc.gridKeys = new WeakMap();
+        RaidEntityIndex.reset(this);
         this.npc.spawns.forEach((npc) => {
-            const gx = Math.floor(npc.fetchLocX() / GRID_SIZE);
-            const gy = Math.floor(npc.fetchLocY() / GRID_SIZE);
-            const key = `${gx}_${gy}`;
-            if (!this.npc.grid[key]) {
-                this.npc.grid[key] = [];
-            }
-            this.npc.grid[key].push(npc);
+            this.addNpcToGrid(npc);
         });
         utils.infoSuccess('SpawnsGrid', 'Indexed %d npcs in 2D spatial grid', this.npc.spawns.length);
     },

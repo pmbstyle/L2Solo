@@ -20,8 +20,10 @@ function mountPet(session, actor) {
         return;
     }
 
-    World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== pet.fetchId?.());
-    World.indexSpawnsInGrid?.();
+    World.removeNpcFromGrid?.(pet);
+    const spawnIndex = World.npc.spawns.indexOf(pet);
+    if (spawnIndex >= 0) World.npc.spawns.splice(spawnIndex, 1);
+    if (!World.removeNpcFromGrid) World.indexSpawnsInGrid?.();
     setMounted(actor, true, pet.fetchSelfId());
     session.dataSendToMeAndOthers(ServerResponse.userInfo(actor), actor);
     session.dataSendToMeAndOthers(ServerResponse.charInfo(actor), actor);
@@ -34,7 +36,8 @@ function dismountPet(session, actor) {
     if (pet && !pet.state?.fetchDead?.() && !World.npc.spawns.some((spawn) => spawn.fetchId?.() === pet.fetchId?.())) {
         pet.setLocXYZ?.({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
         World.npc.spawns.push(pet);
-        World.indexSpawnsInGrid?.();
+        if (World.addNpcToGrid) World.addNpcToGrid(pet);
+        else World.indexSpawnsInGrid?.();
         session.dataSendToMeAndOthers(ServerResponse.npcInfo(pet), pet);
     }
     session.dataSendToMeAndOthers(ServerResponse.userInfo(actor), actor);

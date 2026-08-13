@@ -4,6 +4,8 @@ const path = require('path');
 
 require('../src/Global');
 
+(async () => {
+
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 
@@ -217,13 +219,17 @@ try {
     Date.now = () => now;
     npc.abortCombatState = () => { abortCalls++; };
     npc.hasCombatLineOfSight = () => false;
-    npc.fetchCombatPath = () => { pathCalls++; return null; };
+    npc.fetchCombatPathAsync = () => { pathCalls++; return Promise.resolve(null); };
     npc.selectCombatSkill = () => null;
 
     npc.enterCombatState(session, target);
     timeoutCallbacks.shift()();
     combatTickCallback();
     combatTickCallback();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
     assert.strictEqual(abortCalls, 0, 'a single bounded path miss must not immediately clear NPC combat');
     assert.strictEqual(pathCalls, 1, 'path misses must be retried with a backoff instead of every combat tick');
@@ -234,8 +240,13 @@ try {
         { locX: 32, locY: 0, locZ: 0 }
     ];
     let cachedPathCalls = 0;
-    npc.fetchCombatPath = () => { cachedPathCalls++; return cachedRoute; };
+    npc.fetchCombatPathAsync = () => { cachedPathCalls++; return Promise.resolve(cachedRoute); };
     now += 500;
+    combatTickCallback();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     combatTickCallback();
     timeoutCallbacks.shift()();
     combatTickCallback();
@@ -254,3 +265,7 @@ GeodataEngine.findPath = originalFindPath;
 npc.destructor(session);
 
 console.log('NPC geodata visibility regression checks passed');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

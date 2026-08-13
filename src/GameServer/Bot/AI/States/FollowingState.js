@@ -598,7 +598,8 @@ function moveToFollowTarget(session, bot, player) {
     session.lastFollowMoveTarget = followTarget;
     bot.moveTo({
         from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        to: followTarget
+        to: followTarget,
+        targetActor: player
     });
     return true;
 }
@@ -876,9 +877,7 @@ module.exports = {
         const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
         if (partyRaid) PartyPulling.cancel(playerSession);
         if (partyRaid?.phase === 'opening') {
-            const raidBoss = (World.npc?.spawns || []).find((npc) => (
-                Number(npc.fetchId?.()) === Number(partyRaid.bossId)
-            ));
+            const raidBoss = BotRaidSafety.raidBossByObjectId(partyRaid.bossId);
             const isOpener = Number(bot.fetchId()) === Number(partyRaid.openerId || 0);
             const openerSession = PartyAwareness.partySessions(playerSession).find((memberSession) => (
                 Number(memberSession.actor?.fetchId?.()) === Number(partyRaid.openerId || 0)

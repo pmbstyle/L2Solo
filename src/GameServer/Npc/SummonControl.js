@@ -334,8 +334,10 @@ function unsummon(session, actor, summon) {
             utils.infoWarn('Pet', 'failed to persist pet state: %s', err.message);
         });
     }
-    World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== summon.fetchId());
-    World.indexSpawnsInGrid?.();
+    World.removeNpcFromGrid?.(summon);
+    const spawnIndex = World.npc.spawns.indexOf(summon);
+    if (spawnIndex >= 0) World.npc.spawns.splice(spawnIndex, 1);
+    if (!World.removeNpcFromGrid) World.indexSpawnsInGrid?.();
     if (actor.summon === summon) actor.summon = null;
     if (actor.pet === summon) actor.pet = null;
     if (session.summon === summon) session.summon = null;

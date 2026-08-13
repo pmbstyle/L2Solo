@@ -28,6 +28,7 @@ const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService')
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 
 const HUNTING_TRAVEL_MS = 25000;
 
@@ -689,6 +690,10 @@ const PopulationService = {
 
         const run = () => {
             if (this.personaBackfillRunning) return;
+            if (this.playerActivityProfile().protected) {
+                Metrics.recordBackgroundDeferral();
+                return;
+            }
             this.personaBackfillRunning = true;
             BotPersona.backfillGenerated().then((result) => {
                 // Only a successful short read closes this one-time migration.
@@ -713,6 +718,10 @@ const PopulationService = {
         // Database uses one ordered connection. Never queue a migration behind
         // an active resolver: a skipped migration tick is harmless, but a
         // queued one can stretch the normal world loop into a long backlog.
+        if (this.playerActivityProfile().protected) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
         if (this.classProgressionMigrationRunning || this.resolving || Config.enabled === false) return Promise.resolve([]);
         this.classProgressionMigrationRunning = true;
         return LifeState.migrateLegacyClassProgression(Config.classProgressionMigrationBatchSize)
@@ -732,6 +741,10 @@ const PopulationService = {
     },
 
     migrateLegacyColdCombatProfiles() {
+        if (this.playerActivityProfile().protected) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
         if (this.coldCombatProfileMigrationRunning || this.resolving || this.classProgressionMigrationRunning || Config.enabled === false) {
             return Promise.resolve([]);
         }
@@ -764,6 +777,10 @@ const PopulationService = {
         // This migration is deliberately bounded and serialized. Do not gate
         // it on `resolving`: both timers share a 10-second cadence, which can
         // otherwise starve the transition forever while the resolver is live.
+        if (this.playerActivityProfile().protected) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
         if (this.marketTownMigrationRunning || Config.enabled === false) return Promise.resolve([]);
         this.marketTownMigrationRunning = true;
         return ColdMarketListingService.migrateLegacyMarketTowns(Config.marketTownMigrationBatchSize)
@@ -790,6 +807,10 @@ const PopulationService = {
     },
 
     expireStaleMarketStores(timestamp = Date.now()) {
+        if (this.playerActivityProfile(timestamp).protected) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
         if (this.marketExpiryCleanupRunning || Config.enabled === false) return Promise.resolve([]);
         this.marketExpiryCleanupRunning = true;
         const World = invoke('GameServer/World/World');
@@ -863,12 +884,25 @@ const PopulationService = {
 
     realPlayerSessions() {
         const World = invoke('GameServer/World/World');
-        return World.user.sessions.filter((session) => (
-            session.actor &&
-            session.actor.fetchIsOnline() &&
-            session.accountId &&
-            !String(session.accountId).startsWith('bot_')
-        ));
+        return (World.user?.sessions || []).filter(PlayerActivitySignal.isRealPlayerSession);
+    },
+
+    playerActivityProfile(timestamp = Date.now()) {
+        let sessions = [];
+        let realPlayers = [];
+        try {
+            sessions = invoke('GameServer/World/World').user?.sessions || [];
+            realPlayers = this.realPlayerSessions();
+        } catch (err) {
+            sessions = [];
+            realPlayers = [];
+        }
+        return PlayerActivitySignal.observe({
+            sessions,
+            realPlayers,
+            now: timestamp,
+            graceMs: Config.playerProtectionGraceMs
+        });
     },
 
     isRestingActivationState(state) {
@@ -995,6 +1029,10 @@ const PopulationService = {
         // Formation rewrites party membership.  It must not overlap with the
         // scheduler after that scheduler has already selected solo candidates.
         if (this.partyFormationRunning || Config.enabled === false || Config.backgroundPartyEnabled === false) {
+            return Promise.resolve([]);
+        }
+        if (this.playerActivityProfile().protected) {
+            Metrics.recordPartyFormationDeferral();
             return Promise.resolve([]);
         }
         if (this.resolving) {
@@ -1186,30 +1224,18 @@ const PopulationService = {
     },
 
     partyFormationBudgetMs() {
-        let players = 0;
-        try {
-            players = this.realPlayerSessions().length;
-        } catch (err) {
-            players = 0;
-        }
-        const configured = players > 0
-            ? Config.partyFormationPlayerBudgetMs
-            : Config.partyFormationIdleBudgetMs;
-        return Math.max(50, Number(configured) || 500);
+        const activity = this.playerActivityProfile();
+        if (activity.protected) return 0;
+        return Math.max(50, Number(Config.partyFormationIdleBudgetMs) || 500);
     },
 
     schedulerProfile() {
-        let players = 0;
-        try {
-            players = this.realPlayerSessions().length;
-        } catch (err) {
-            // Keep the background scheduler usable in startup/test harnesses
-            // where the world session registry is not available yet.
-            players = 0;
-        }
-        const idle = players === 0;
+        const activity = this.playerActivityProfile();
+        const idle = !activity.protected;
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const configured = idle ? Config.schedulerIdleBudgetMs : Config.schedulerPlayerBudgetMs;
+        const configured = idle
+            ? Config.schedulerIdleBudgetMs
+            : activity.activeParty ? Config.schedulerPartyBudgetMs : Config.schedulerPlayerBudgetMs;
         const baseBudget = Math.max(25, Number(configured) || 250);
         const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
@@ -1227,14 +1253,17 @@ const PopulationService = {
 
         return {
             idle,
-            players,
+            players: activity.realPlayers,
+            activity,
             lagMs,
             budgetMs: budget > 0
                 ? Math.min(budget, Math.max(25, Config.schedulerIntervalMs - 25))
                 : 0,
             maxResolvesPerTick: Math.min(100, Math.max(1, Number(idle
                 ? Config.schedulerIdleMaxResolvesPerTick
-                : Config.schedulerPlayerMaxResolvesPerTick) || 25))
+                : Config.schedulerPlayerMaxResolvesPerTick) || 25)),
+            allowBackgroundParties: !activity.protected,
+            allowAuxiliaryBackground: !activity.protected
         };
     },
 
@@ -1478,9 +1507,15 @@ const PopulationService = {
         }
         const deadlineAt = startedAt + budgetMs;
         this.resolving = true;
-        return Database.cooperatively(() => this.resolveDueParties(deadlineAt)
-            .then(() => this.releaseWarehouseMaterials(deadlineAt))
-            .then(() => this.reconcileMarketGoals(deadlineAt))
+        return Database.cooperatively(() => (profile.allowBackgroundParties
+            ? this.resolveDueParties(deadlineAt)
+            : Promise.resolve([]))
+            .then(() => (profile.allowAuxiliaryBackground
+                ? this.releaseWarehouseMaterials(deadlineAt)
+                : Promise.resolve([])))
+            .then(() => (profile.allowAuxiliaryBackground
+                ? this.reconcileMarketGoals(deadlineAt)
+                : Promise.resolve([])))
             .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
             .then((states) => {
                 Metrics.recordColdBatch(states.length, profile.maxResolvesPerTick);

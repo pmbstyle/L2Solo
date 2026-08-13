@@ -11,9 +11,14 @@ const DEFAULTS = {
     // online. The player-aware budget remains intentionally conservative.
     schedulerSliceMs: 12,
     schedulerIdleBudgetMs: 2500,
-    schedulerPlayerBudgetMs: 250,
+    schedulerPlayerBudgetMs: 100,
+    schedulerPartyBudgetMs: 75,
     schedulerIdleMaxResolvesPerTick: 100,
-    schedulerPlayerMaxResolvesPerTick: 25,
+    schedulerPlayerMaxResolvesPerTick: 12,
+    // Protect the player-facing loop immediately and keep it protected for a
+    // short window after disconnect/relog. SimPlayer/BotSession instances do
+    // not contribute to this signal.
+    playerProtectionGraceMs: 30000,
     // Above this lag, taper background work before the hard stop below. A
     // gradual throttle avoids turning one noisy sample into a long backlog.
     schedulerLagThrottleMs: 40,
@@ -141,8 +146,10 @@ const ENV_KEYS = {
     schedulerSliceMs: 'BOT_POPULATION_SCHEDULER_SLICE_MS',
     schedulerIdleBudgetMs: 'BOT_POPULATION_SCHEDULER_IDLE_BUDGET_MS',
     schedulerPlayerBudgetMs: 'BOT_POPULATION_SCHEDULER_PLAYER_BUDGET_MS',
+    schedulerPartyBudgetMs: 'BOT_POPULATION_SCHEDULER_PARTY_BUDGET_MS',
     schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
     schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
+    playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
     schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',
     partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
