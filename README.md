@@ -32,6 +32,7 @@ Clean C4 client protocol 656
 
 **World:**
 - Complete geodata for all locations
+- Complete live economy
 - Teleports via NPC or .admin menu
 - Live world / local / party / trade chats
 - NPC shops in towns
@@ -56,6 +57,7 @@ Clean C4 client protocol 656
 - Social agro
 - AoE agro
 - Party loot
+- Raid bosses
 
 **Bots:**
 - Dynamic bot population with a smart new bot seeding up to 1700
@@ -86,8 +88,7 @@ Clean C4 client protocol 656
 - Wars for a farm spot
 - Olympiad, heroes
 - Sieges (bot- or player -driven)
-- Raids (Raid/World bosses)
-- Complete live economy
+- World bosses
 - Full quests, including profession change
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
