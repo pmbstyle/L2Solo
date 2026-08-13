@@ -70,7 +70,14 @@ function candidateCatalog(session) {
 }
 
 function compareCandidates(a, b) {
-    return b.level - a.level || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    return a.level - b.level || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+}
+
+function compareRankedCandidates(a, b) {
+    if (a.availability.available !== b.availability.available) {
+        return a.availability.available ? -1 : 1;
+    }
+    return compareCandidates(a, b);
 }
 
 function selectedCandidates(catalog, state) {
@@ -123,7 +130,10 @@ function levelPanel(catalog) {
     for (let index = 0; index < LEVEL_RANGES.length; index += 2) {
         rows.push(Html.row(LEVEL_RANGES.slice(index, index + 2).map((range) => {
             const count = catalog.filter((candidate) => candidate.level >= range.min && candidate.level <= range.max).length;
-            return Html.cell(Html.button(`${range.label} (${count})`, `bot-party level ${range.key}`, { width: 125 }), { width: 135, align: 'center' });
+            return Html.cell(
+                Html.link(`${range.label} (${count})`, `bot-party level ${range.key}`),
+                { width: 135, align: 'center' }
+            );
         })));
     }
     return Html.section('Browse by level', Html.table(rows));
@@ -137,7 +147,10 @@ function rolePanel(catalog, state) {
     for (let index = 0; index < ROLE_FILTERS.length; index += 2) {
         rows.push(Html.row(ROLE_FILTERS.slice(index, index + 2).map((role) => {
             const count = inRange.filter((candidate) => role.roles.includes(candidate.profession.role)).length;
-            return Html.cell(Html.button(`${role.label} (${count})`, `bot-party role ${role.key}`, { width: 125 }), { width: 135, align: 'center' });
+            return Html.cell(
+                Html.link(`${role.label} (${count})`, `bot-party role ${role.key}`),
+                { width: 135, align: 'center' }
+            );
         })));
     }
     return Html.section(`Role for ${range.label}`, Html.table(rows));
@@ -159,8 +172,8 @@ function candidateMode(candidate) {
 
 function candidateAvailability(session, candidate) {
     return candidate.phase === 'hot'
-        ? BotAvailability.evaluate(session, candidate.session)
-        : BotAvailability.evaluateState(session, candidate.state);
+        ? BotAvailability.evaluate(session, candidate.session, { loadMemory: false })
+        : BotAvailability.evaluateState(session, candidate.state, { loadMemory: false });
 }
 
 function candidateCard(candidate, page) {
@@ -191,17 +204,18 @@ function resultTitle(state, candidateCount) {
 }
 
 function resultsPanel(session, candidates, state) {
-    const totalPages = Math.max(1, Math.ceil(candidates.length / CANDIDATES_PER_PAGE));
+    const rankedCandidates = candidates
+        .map((candidate) => ({
+            ...candidate,
+            availability: candidateAvailability(session, candidate)
+        }))
+        .sort(compareRankedCandidates);
+    const totalPages = Math.max(1, Math.ceil(rankedCandidates.length / CANDIDATES_PER_PAGE));
     const numericPage = Number(state.page);
     const page = Math.min(totalPages - 1, Math.max(0, Number.isFinite(numericPage) ? Math.floor(numericPage) : 0));
     state.page = page;
     const first = page * CANDIDATES_PER_PAGE;
-    const visibleCandidates = candidates
-        .slice(first, first + CANDIDATES_PER_PAGE)
-        .map((candidate) => ({
-            ...candidate,
-            availability: candidateAvailability(session, candidate)
-        }));
+    const visibleCandidates = rankedCandidates.slice(first, first + CANDIDATES_PER_PAGE);
     let body = Html.section(resultTitle(state, candidates.length), '');
 
     visibleCandidates.forEach((candidate) => {

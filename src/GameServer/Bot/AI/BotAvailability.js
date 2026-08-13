@@ -69,8 +69,10 @@ function catalogKey(subject) {
     return name ? `name:${name}` : '';
 }
 
-function emptyResult(playerSession, botSubject) {
-    const memory = BotSocialMemory.getSnapshot(playerSession, botSubject);
+function emptyResult(playerSession, botSubject, options = {}) {
+    const memory = options.loadMemory === false
+        ? BotSocialMemory.peekSnapshot(playerSession, botSubject)
+        : BotSocialMemory.getSnapshot(playerSession, botSubject);
     return {
         available: false,
         reason: 'missing_actor',
@@ -86,7 +88,7 @@ const BotAvailability = {
     evaluate(playerSession, botSession, options = {}) {
         const player = playerSession?.actor;
         const bot = botSession?.actor;
-        const result = emptyResult(playerSession, botSession);
+        const result = emptyResult(playerSession, botSession, options);
 
         if (!player || !bot) return result;
 
@@ -120,7 +122,7 @@ const BotAvailability = {
 
     evaluateState(playerSession, state, options = {}) {
         const player = playerSession?.actor;
-        const result = emptyResult(playerSession, state);
+        const result = emptyResult(playerSession, state, options);
         if (!player || !state) return result;
 
         result.distance = distance(actorLocation(player), state.loc);

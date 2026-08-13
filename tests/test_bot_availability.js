@@ -27,13 +27,19 @@ function session(fakeActor, extras = {}) {
 }
 
 const originalGetSnapshot = BotSocialMemory.getSnapshot;
+const originalPeekSnapshot = BotSocialMemory.peekSnapshot;
 const originalRelationship = BotSocialMemory.relationship;
 
 try {
     let memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
     let snapshotReads = 0;
+    let previewReads = 0;
     BotSocialMemory.getSnapshot = () => {
         snapshotReads += 1;
+        return memory;
+    };
+    BotSocialMemory.peekSnapshot = () => {
+        previewReads += 1;
         return memory;
     };
     BotSocialMemory.relationship = () => 'stranger';
@@ -216,11 +222,17 @@ try {
     assert.strictEqual(catalog.find((candidate) => candidate.name === 'ColdAdventure').phase, 'cold', 'background adventurers should remain discoverable');
     assert.strictEqual(snapshotReads, snapshotReadsBeforeCatalog,
         'building catalog metadata must not fan out social-memory reads across the whole population');
+    result = BotAvailability.evaluate(lowPlayer, farSocialBot, { loadMemory: false });
+    assert.strictEqual(result.available, true);
+    assert.strictEqual(snapshotReads, snapshotReadsBeforeCatalog,
+        'catalog availability previews must not trigger asynchronous per-bot memory loads');
+    assert.strictEqual(previewReads, 1, 'catalog availability should still use an already cached social snapshot when present');
     result = BotAvailability.evaluate(lowPlayer, dynamicMerchant);
     assert.strictEqual(result.reason, 'merchant_duty', 'temporary merchants should stay visible while page-level availability explains why they cannot join yet');
 
     console.log('Bot availability checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalGetSnapshot;
+    BotSocialMemory.peekSnapshot = originalPeekSnapshot;
     BotSocialMemory.relationship = originalRelationship;
 }
