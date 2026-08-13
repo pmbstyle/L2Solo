@@ -12,6 +12,7 @@ const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -32,6 +33,7 @@ const originals = {
     review: GoalService.review,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
     finishMarketVisit: GoalExecutor.finishMarketVisit,
+    bestBuyOffer: MarketOpportunity.bestBuyOffer,
     announce: TradeChat.maybeAnnounce,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
@@ -188,6 +190,41 @@ async function run() {
     assert.strictEqual(recoveryGoalReviews, 1, 'unaffordable recovery must not trigger a redundant goal review');
     assert.strictEqual(recoveryMarketTravel, 1, 'unaffordable recovery must not begin market travel');
 
+    recoveryGoalReviews = 0;
+    recoveryMarketTravel = 0;
+    const warehouseSeller = {
+        characterId: 76,
+        name: 'RecoveredWarehouseSeller',
+        phase: 'cold',
+        activity: 'resting',
+        inventory: { 5220: { selfId: 5220, name: 'Metal Hardener', amount: 5, kind: 'Other.Material' } },
+        vitals: { hp: 1000, maxHp: 1000, mp: 600, maxMp: 600 },
+        timing: { lastResolvedAt: Date.now() - 30000 },
+        stats: {
+            restUntil: Date.now() - 1,
+            lastWarehouseWithdrawal: { items: [{ selfId: 5220, amount: 5, reason: 'market' }], at: Date.now() }
+        }
+    };
+    LifeState.applyResolve = () => Promise.resolve({
+        ...warehouseSeller,
+        activity: 'hunting',
+        stats: { ...warehouseSeller.stats, restUntil: null }
+    });
+    MarketOpportunity.bestBuyOffer = () => ({ selfId: 5220, count: 5, town: 'Giran' });
+    GoalService.review = () => {
+        recoveryGoalReviews += 1;
+        return Promise.resolve({ current: { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } } });
+    };
+    GoalExecutor.beginMarketTravel = (value, goal) => {
+        recoveryMarketTravel += 1;
+        assert.strictEqual(goal.type, 'sell_inventory');
+        return { ...value, activity: 'traveling', stats: { ...value.stats, travel: { reason: 'market_sale_inventory' } } };
+    };
+    const recoveredSellerResult = await PopulationService.resolveColdState(warehouseSeller);
+    assert.strictEqual(recoveredSellerResult.state.activity, 'traveling', 'a recovered warehouse seller must honor funded peer demand before another fight');
+    assert.strictEqual(recoveryGoalReviews, 1);
+    assert.strictEqual(recoveryMarketTravel, 1);
+
     let joinedDuringResolve = false;
     let applyCalled = false;
     BackgroundResolver.resolveSolo = () => {
@@ -221,6 +258,7 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     GoalService.review = originals.review;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     GoalExecutor.finishMarketVisit = originals.finishMarketVisit;
+    MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     TradeChat.maybeAnnounce = originals.announce;
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;

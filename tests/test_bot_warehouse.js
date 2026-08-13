@@ -6,6 +6,8 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const SellJunk = invoke('GameServer/World/Generics/NpcBypasses/SellJunk');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -14,7 +16,16 @@ DataCache.init();
 
 const originals = {
     fetchItems: Database.fetchItems,
+    fetchWarehouseItems: Database.fetchWarehouseItems,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
+    transferWarehouseToInventory: Database.transferWarehouseToInventory,
+    execute: Database.execute,
+    refreshInventory: LifeState.refreshInventory,
+    upsertState: LifeState.upsertState,
+    findByCharacterId: LifeState.findByCharacterId,
+    allStates: LifeState.allStates,
+    bestBuyOffer: MarketOpportunity.bestBuyOffer,
+    activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
     deleteItem: Database.deleteItem,
     updateItemAmount: Database.updateItemAmount,
     itemsList: ServerResponse.itemsList,
@@ -106,6 +117,101 @@ async function run() {
     assert.deepStrictEqual(liveBackpack.items.map((item) => item.selfId), [1, 123, 123],
         'the equipped and reserved source swords must survive hot warehouse handling');
 
+    let warehouseRows = [{ id: 71, selfId: 5220, name: 'Metal Hardener', amount: 60 }];
+    const withdrawals = [];
+    Database.fetchWarehouseItems = () => Promise.resolve(warehouseRows.map((row) => ({ ...row })));
+    Database.transferWarehouseToInventory = (characterId, item) => {
+        withdrawals.push({ characterId, ...item });
+        warehouseRows = warehouseRows.map((row) => Number(row.id) === Number(item.id)
+            ? { ...row, amount: row.amount - item.amount }
+            : row).filter((row) => row.amount > 0);
+        return Promise.resolve({ inventoryAmount: item.amount, warehouseAmount: warehouseRows[0]?.amount || 0 });
+    };
+    LifeState.refreshInventory = (coldState) => Promise.resolve({
+        ...coldState,
+        inventory: withdrawals.reduce((inventory, item) => ({
+            ...inventory,
+            [item.selfId]: { selfId: item.selfId, name: item.name, amount: item.amount, kind: 'Other.Material', stackable: true }
+        }), { ...(coldState.inventory || {}) })
+    });
+    LifeState.upsertState = (coldState) => Promise.resolve(coldState);
+    MarketOpportunity.bestBuyOffer = () => ({ count: 50, town: 'Giran' });
+    const craftRelease = await BotWarehouse.releaseCold({
+        characterId: 58,
+        name: 'CraftOwner',
+        phase: 'cold',
+        activity: 'hunting',
+        inventory: {},
+        timing: { nextResolveAt: 999999 },
+        stats: {
+            equipmentPlan: {
+                status: 'active',
+                strategy: 'craft',
+                materials: [{ selfId: 5220, amount: 60, owned: 0, missing: 60 }]
+            }
+        }
+    });
+    assert.strictEqual(craftRelease.released, true);
+    assert.deepStrictEqual(craftRelease.items.map((item) => [item.reason, item.amount]), [['craft', 60]],
+        'an owner recipe must reserve its full stored requirement before market demand is considered');
+    assert.strictEqual(craftRelease.state.inventory[5220].amount, 60);
+    assert(craftRelease.state.timing.nextResolveAt <= Date.now(), 'released craft materials must make a hunting bot due for replanning');
+
+    warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
+    withdrawals.length = 0;
+    const marketRelease = await BotWarehouse.releaseCold({
+        characterId: 59,
+        name: 'WarehouseSeller',
+        phase: 'cold',
+        activity: 'hunting',
+        inventory: {},
+        timing: {},
+        stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }
+    });
+    assert.deepStrictEqual(marketRelease.items.map((item) => [item.reason, item.amount]), [['market', 50]],
+        'warehouse release must expose only the currently funded WTB quantity');
+    assert.strictEqual(warehouseRows[0].amount, 50, 'unfunded warehouse surplus must remain stored');
+    assert.strictEqual(marketRelease.state.stats.marketSellRetryAfter, null,
+        'new funded WTB demand must clear a stale no-demand sale cooldown');
+    const pendingSeller = {
+        ...marketRelease.state,
+        stats: {
+            ...marketRelease.state.stats,
+            marketSellRetryAfter: Date.now() + 15 * 60 * 1000
+        }
+    };
+    LifeState.allStates = () => [pendingSeller];
+    assert.deepStrictEqual(BotWarehouse.pendingMarketReleaseCandidates(2).map((state) => state.characterId), [59],
+        'a funded material already released before restart must be resumed from its stale cooldown');
+    const resumedSeller = await BotWarehouse.resumeReleasedMarket(pendingSeller, 12345);
+    assert.strictEqual(resumedSeller.state.stats.marketSellRetryAfter, null);
+    assert.strictEqual(resumedSeller.state.timing.nextResolveAt, 12345);
+
+    let candidateQuery = null;
+    MarketOpportunity.activeBuyDemandSelfIds = () => [5220];
+    Database.execute = (statement) => {
+        candidateQuery = statement;
+        return Promise.resolve([{ characterId: 59 }]);
+    };
+    assert.deepStrictEqual(await BotWarehouse.releaseCandidates(3), [59]);
+    assert(candidateQuery[0].includes('LIMIT 3'), 'warehouse scanning must remain bounded by the scheduler batch');
+    assert.deepStrictEqual(candidateQuery[1], [5220], 'only currently funded material demand should enter the warehouse scan');
+    LifeState.allStates = () => [{
+        characterId: 58,
+        phase: 'cold',
+        activity: 'hunting',
+        party: {},
+        stats: { equipmentPlan: { status: 'active', strategy: 'craft' } }
+    }, {
+        characterId: 60,
+        phase: 'cold',
+        activity: 'hunting',
+        party: {},
+        stats: { equipmentPlan: { status: 'active', strategy: 'market' } }
+    }];
+    assert.deepStrictEqual(BotWarehouse.craftReleaseCandidates(1, 100).map((state) => state.characterId), [58],
+        'the bounded in-memory rotation must inspect only active craft owners');
+
     const adena = liveItem(50, { selfId: 57, name: 'Adena', amount: 100, stackable: true });
     adena.setAmount = (amount) => { adena.amount = amount; };
     const junkBackpack = {
@@ -137,7 +243,16 @@ run().catch((err) => {
     process.exitCode = 1;
 }).finally(() => {
     Database.fetchItems = originals.fetchItems;
+    Database.fetchWarehouseItems = originals.fetchWarehouseItems;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
+    Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+    Database.execute = originals.execute;
+    LifeState.refreshInventory = originals.refreshInventory;
+    LifeState.upsertState = originals.upsertState;
+    LifeState.findByCharacterId = originals.findByCharacterId;
+    LifeState.allStates = originals.allStates;
+    MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
+    MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;
     Database.deleteItem = originals.deleteItem;
     Database.updateItemAmount = originals.updateItemAmount;
     ServerResponse.itemsList = originals.itemsList;

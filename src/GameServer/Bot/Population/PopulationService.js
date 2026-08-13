@@ -19,6 +19,8 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -410,6 +412,15 @@ function canResumeAffordableWeaponMarketPlan(state, timestamp = Date.now()) {
     const required = Math.max(1, Number(combinationRequirement?.amount || 1));
     const owned = Number(state.inventory?.[String(targetId)]?.amount || 0);
     return owned < required;
+}
+
+function canResumeWarehouseMarketSale(state) {
+    if (state?.activity !== 'hunting' || state.stats?.marketReturn || state.stats?.travel) return false;
+    return (state.stats?.lastWarehouseWithdrawal?.items || []).some((item) => (
+        item.reason === 'market'
+        && Number(state.inventory?.[String(item.selfId)]?.amount || 0) > 0
+        && !!MarketOpportunity.bestBuyOffer(item.selfId, { sellerCharacterId: state.characterId })
+    ));
 }
 
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
@@ -1468,6 +1479,7 @@ const PopulationService = {
         const deadlineAt = startedAt + budgetMs;
         this.resolving = true;
         return Database.cooperatively(() => this.resolveDueParties(deadlineAt)
+            .then(() => this.releaseWarehouseMaterials(deadlineAt))
             .then(() => this.reconcileMarketGoals(deadlineAt))
             .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
             .then((states) => {
@@ -1519,6 +1531,26 @@ const PopulationService = {
 
         return BackgroundPartyState.due(Config.maxPartyResolvesPerTick)
             .then((parties) => this.runInSchedulerSlices(parties, (party) => this.resolveBackgroundParty(party), deadlineAt));
+    },
+
+    releaseWarehouseMaterials(deadlineAt = Infinity) {
+        if (Date.now() >= deadlineAt) return Promise.resolve([]);
+        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt)
+            .then((released) => {
+                if (released.length) {
+                    const resumedMarkets = released.filter((result) => result.resumed).length;
+                    const craftItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'craft')
+                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    const marketItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'market')
+                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    console.info('BotPopulation :: warehouse materials released bots=%d resumedMarkets=%d craftItems=%d marketItems=%d', released.length, resumedMarkets, craftItems, marketItems);
+                }
+                return released;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'warehouse material release failed: %s', err.message);
+                return [];
+            });
     },
 
     reconcileMarketGoals(deadlineAt = Infinity) {
@@ -1784,7 +1816,8 @@ const PopulationService = {
                 Metrics.recordBackgroundResolve();
                 Metrics.recordCombat(result.debug);
                 const recoveredForMarket = state.activity === 'resting'
-                    && canResumeAffordableWeaponMarketPlan(updatedState);
+                    && (canResumeAffordableWeaponMarketPlan(updatedState)
+                        || canResumeWarehouseMarketSale(updatedState));
                 const marketHandoff = recoveredForMarket
                     ? GoalService.review(updatedState).then((goalSnapshot) => {
                         const timestamp = Date.now();
