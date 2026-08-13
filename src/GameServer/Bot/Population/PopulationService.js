@@ -391,6 +391,27 @@ function joinedBackgroundParty(state) {
     return !!current?.party?.partyId;
 }
 
+function canResumeAffordableWeaponMarketPlan(state, timestamp = Date.now()) {
+    const plan = state?.stats?.equipmentPlan;
+    const targetId = Number(plan?.target?.selfId || 0);
+    if (state?.activity !== 'hunting'
+        || plan?.status !== 'active'
+        || plan?.strategy !== 'market'
+        || Number(plan?.target?.slot || 0) !== 7
+        || targetId <= 0
+        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
+
+    const price = Number(plan.market?.price || 0);
+    const reserve = Math.max(0, Number(plan.market?.reserve || 0));
+    if (price <= 0 || Number(state.adena || 0) < price + reserve) return false;
+
+    const combinationRequirement = (plan.combine?.requirements || [])
+        .find((entry) => Number(entry.selfId) === targetId);
+    const required = Math.max(1, Number(combinationRequirement?.amount || 1));
+    const owned = Number(state.inventory?.[String(targetId)]?.amount || 0);
+    return owned < required;
+}
+
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
     if (timestamp - Number(party.stats?.formedAt || party.startedAt || timestamp) < Config.partyMarketBreakMinSessionMs) return false;
     if (Number(party.stats?.fightsResolved || 0) < Config.partyMarketBreakMinFights) return false;
@@ -1762,11 +1783,25 @@ const PopulationService = {
                 }
                 Metrics.recordBackgroundResolve();
                 Metrics.recordCombat(result.debug);
-                return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
+                const recoveredForMarket = state.activity === 'resting'
+                    && canResumeAffordableWeaponMarketPlan(updatedState);
+                const marketHandoff = recoveredForMarket
+                    ? GoalService.review(updatedState).then((goalSnapshot) => {
+                        const timestamp = Date.now();
+                        const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
+                        return travelState
+                            ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
+                            : updatedState;
+                    }).catch((err) => {
+                        utils.infoWarn('BotGoals', 'post-recovery market handoff failed for %s: %s', state.name, err.message);
+                        return updatedState;
+                    })
+                    : Promise.resolve(updatedState);
+                return marketHandoff.then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => ({
                     ok: true,
-                    state: updatedState,
+                    state: finalState,
                     debug: result.debug
-                }));
+                })));
             }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         if (GearAcquisitionPlanner.isCraftService(state)) {
