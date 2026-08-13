@@ -23,6 +23,10 @@
                         <span aria-hidden="true">♛</span>
                         Rankings
                     </button>
+                    <button class="rankings-button raid-boss-button" id="openRaidBosses" type="button" aria-haspopup="dialog" aria-controls="raidBossesModal">
+                        <span aria-hidden="true">♜</span>
+                        Raid bosses <b id="raidBossAliveCount">0</b>
+                    </button>
                     <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
                         <span>⌖</span>
                     </button>
@@ -40,6 +44,7 @@
                     <button class="filter" data-phase="warm">Background <span class="filter-count" data-count-for="warm">0</span></button>
                     <button class="filter" data-phase="cold">Simulated <span class="filter-count" data-count-for="cold">0</span></button>
                     <button class="filter" data-phase="players">Players <span class="filter-count" data-count-for="players">0</span></button>
+                    <button class="filter raid-boss-filter" data-phase="raidbosses"><i class="legend-dot raid-boss"></i>Raid bosses <span class="filter-count" data-count-for="raidbosses">0</span></button>
                 </div>
                 <div class="actor-filter-controls" aria-label="Actor filters">
                     <label class="level-filter">
@@ -83,6 +88,7 @@
                     <g class="grid-lines" id="gridLines"></g>
                     <g class="region-labels" id="regionLabels"></g>
                     <g class="points" id="pointsLayer"></g>
+                    <g class="raid-boss-points" id="raidBossLayer"></g>
                 </svg>
                 <div class="map-hint">Scroll to zoom · drag to pan · click a cluster to drill down</div>
                 <div class="map-legend" aria-label="Map legend">
@@ -91,6 +97,7 @@
                     <span><i class="legend-dot cold"></i>simulated</span>
                     <span><i class="legend-dot player"></i>player</span>
                     <span><i class="legend-dot pk"></i>PK</span>
+                    <span><i class="legend-dot raid-boss"></i>raid boss</span>
                 </div>
 
                 <div class="selected-card" id="selectedCard">
@@ -203,6 +210,36 @@
                 <span>Open a character for full details</span>
             </div>
             <div class="ranking-list" id="rankingList" role="list"></div>
+        </section>
+    </div>
+
+    <div class="rankings-backdrop" id="raidBossesModal" role="dialog" aria-modal="true" aria-labelledby="raidBossesTitle" hidden>
+        <section class="rankings-modal raid-bosses-modal">
+            <header class="rankings-header">
+                <div>
+                    <span class="section-kicker">World threats</span>
+                    <h2 id="raidBossesTitle">Raid bosses</h2>
+                    <p>Every ordinary C4 raid boss, with its live world status and spawn location.</p>
+                </div>
+                <button class="rankings-close" id="closeRaidBosses" type="button" aria-label="Close raid bosses">×</button>
+            </header>
+
+            <div class="raid-boss-controls">
+                <div class="ranking-tabs" id="raidBossFilters" role="group" aria-label="Raid boss status">
+                    <button class="ranking-tab is-active" type="button" aria-pressed="true" data-raid-filter="all">All</button>
+                    <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="alive">In world</button>
+                    <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="respawning">Respawning</button>
+                    <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="missing">Missing</button>
+                </div>
+                <label class="raid-boss-search">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="raidBossSearch" type="search" placeholder="Find a raid boss…" autocomplete="off">
+                </label>
+            </div>
+
+            <div class="raid-boss-summary" id="raidBossSummary">Waiting for raid-boss data.</div>
+            <div class="raid-boss-list-head"><span id="raidBossScope">0 bosses</span><span>Click an in-world boss to center the map</span></div>
+            <div class="raid-boss-list" id="raidBossList" role="list"></div>
         </section>
     </div>
 

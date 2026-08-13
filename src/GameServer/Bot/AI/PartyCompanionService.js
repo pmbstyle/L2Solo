@@ -896,6 +896,31 @@ const PartyCompanionService = {
 
     reconcileGroundLoot,
 
+    bringToLeader(leaderSession, companionSession) {
+        if (!isActiveCompanion(companionSession, leaderSession)) return false;
+        const destination = formationTargetFor(companionSession);
+        if (!destination) return false;
+
+        companionSession.lastFollowMoveTarget = null;
+        companionSession.stuckTicks = 0;
+        try {
+            return invoke(path.actor).teleportTo(
+                companionSession,
+                companionSession.actor,
+                destination,
+                { urgentWakeup: true }
+            ) !== false;
+        } catch (err) {
+            utils.infoWarn(
+                'BotParty',
+                'failed to bring %s to party leader: %s',
+                companionSession.actor?.fetchName?.() || 'unknown',
+                err.message || err
+            );
+            return false;
+        }
+    },
+
     attach(leaderSession, companionSession, options = {}) {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
@@ -929,14 +954,25 @@ const PartyCompanionService = {
         companionSession.actor?.unselect?.();
         companionSession.autoTaunt = settingsForLeader(leaderSession).pullMode !== 'off';
 
+        // Do not let an old solo AI timeout fire between the teleport packet
+        // and its delayed authoritative position update. TeleportTo performs
+        // one urgent wakeup after that update completes.
+        if (companionSession.aiTimeout) {
+            clearTimeout(companionSession.aiTimeout);
+            companionSession.aiTimeout = null;
+        }
+        const arrivalPending = this.bringToLeader(leaderSession, companionSession);
+
         if (previousLeader && previousLeader !== leaderSession) {
             refreshLeaderView(previousLeader);
         }
 
         refreshLeaderView(leaderSession);
-        // Far-away solo bots can have a background AI tick scheduled up to
-        // 30 seconds out. Start follow/catch-up immediately after attachment.
-        invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
+        // If the actor could not teleport, preserve the old urgent catch-up
+        // fallback rather than leaving it without a scheduled AI tick.
+        if (!arrivalPending) {
+            invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
+        }
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leader.fetchId(),
             botId: bot.fetchId(),

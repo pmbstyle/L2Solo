@@ -13,6 +13,7 @@ const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -69,12 +70,14 @@ function findPreferredMonster(session, bot, radius, options = {}) {
 
     const candidates = nearbyNpcs
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
+        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .map((npc) => {
             const claimed = isClaimedByOtherSoloBot(session, npc);
             const npcSpotId = spotIdAt(npc);
             const clan = npc.fetchClanName?.();
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
+                raidEntity: BotRaidSafety.isProtectedRaidEntity(npc),
                 dead: npc.isDead(),
                 retryCooldown: targetOnCooldown(session, npc.fetchId()),
                 botLevel: bot.fetchLevel(),
@@ -398,6 +401,9 @@ module.exports = {
         const incomingMonster = PartyAwareness.recentIncomingNpc(session);
         if (incomingMonster) {
             if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'incoming_threat');
+            if (BotRaidSafety.retreat(session, bot, incomingMonster, { distance: EMERGENCY_RETREAT_DISTANCE })) {
+                return;
+            }
             if (needsEmergencyRetreat(bot)) {
                 retreatFromThreat(session, bot, incomingMonster);
                 return;
@@ -458,7 +464,15 @@ module.exports = {
             }).catch(() => {
                 World.fetchNpc(targetId).then((npc) => {
                     if (session.currentTargetId !== targetId) return;
-                    if (npc.isDead()) {
+                    if (BotRaidSafety.isProtectedRaidEntity(npc)) {
+                        clearTarget(session, bot, targetId);
+                        session.lastDecision = {
+                            action: 'abandon_target',
+                            reason: 'raid_entity_protected',
+                            targetId,
+                            at: Date.now()
+                        };
+                    } else if (npc.isDead()) {
                         if (Math.random() < 0.20) {
                             BotAI.say(session, BotAI.getRandomPhrase('victory'));
                         }

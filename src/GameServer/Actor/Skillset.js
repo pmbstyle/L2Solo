@@ -1,6 +1,7 @@
 const SkillModel = invoke('GameServer/Model/Skill');
 const DataCache  = invoke('GameServer/DataCache');
 const Database   = invoke('Database');
+const CommonCraftSkills = invoke('GameServer/Crafting/CommonCraftSkills');
 
 function definedLevel(skill, requestedLevel) {
     const levels = skill?.levels || [];
@@ -35,7 +36,7 @@ class Skillset {
             item ? success(item) : utils.infoWarn('GameServer', 'unknown Skill Id %d with Level %d', skill.selfId, level);
         };
 
-        Database.fetchSkills(characterId).then((ownedSkills) => {
+        return Database.fetchSkills(characterId).then((ownedSkills) => {
             ownedSkills.forEach((ownedSkill) => {
                 DataCache.fetchSkillFromSelfId(ownedSkill.selfId, (skill) => {
                     skillLevelLookup(skill, ownedSkill.level, (level) => {
@@ -47,6 +48,40 @@ class Skillset {
             });
 
             callback();
+            return this.skills;
+        });
+    }
+
+    populateForActor(actor, callback = () => {}) {
+        const characterId = actor.fetchId();
+        return this.reconcileAutomaticSkills(characterId, actor.fetchLevel?.())
+            .catch((error) => {
+                utils.infoWarn('Datapack', 'failed to reconcile automatic skills for %d: %s', characterId, error.message || error);
+            })
+            .then(() => this.populate(characterId, callback));
+    }
+
+    reconcileAutomaticSkills(characterId, characterLevel) {
+        return Database.fetchSkills(characterId).then((ownedSkills) => {
+            const desiredSkills = CommonCraftSkills.automaticSkills(characterLevel);
+            return Promise.all(desiredSkills.map(({ selfId, level }) => {
+                const stored = ownedSkills.find((skill) => Number(skill.selfId) === selfId);
+                if (Number(stored?.level) >= level) return undefined;
+
+                const definition = DataCache.skills.find((skill) => skill.selfId === selfId);
+                const resolved = definedLevel(definition, level);
+                if (!definition || !resolved) {
+                    utils.infoWarn('Datapack', 'automatic Skill SelfId %d Level %d is undefined', selfId, level);
+                    return undefined;
+                }
+
+                return Database.setSkill({
+                    selfId,
+                    name: definition.template?.name || definition.name,
+                    passive: definition.template?.passive ?? false,
+                    level: resolved.level
+                }, characterId);
+            }));
         });
     }
 

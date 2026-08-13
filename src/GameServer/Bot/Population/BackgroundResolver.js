@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -22,6 +23,35 @@ function midpointBand(levelBand) {
 
 function botCombatStats(state, timestamp = Date.now()) {
     return ColdCombatProfile.profileFor(state, timestamp);
+}
+
+function coldChargeState(state, timestamp) {
+    const coldCombat = state.stats?.coldCombat || {};
+    const expiresAt = Number(coldCombat.chargeExpiresAt) || 0;
+    return expiresAt > timestamp
+        ? { charges: Math.max(0, Number(coldCombat.charges) || 0), chargeExpiresAt: expiresAt }
+        : { charges: 0, chargeExpiresAt: null };
+}
+
+function expireCharges(holder, timestamp) {
+    if (holder.chargeExpiresAt && holder.chargeExpiresAt <= timestamp) {
+        holder.charges = 0;
+        holder.chargeExpiresAt = null;
+    }
+}
+
+function addCharges(holder, amount, maximum, timestamp) {
+    const previous = Math.max(0, Number(holder.charges) || 0);
+    const maxCharges = Math.max(1, Number(maximum) || 1);
+    holder.charges = Math.min(maxCharges, previous + Math.max(0, Number(amount) || 0));
+    if (previous === 0 && holder.charges > 0) {
+        holder.chargeExpiresAt = timestamp + ChargeLifecycle.EXPIRY_MS;
+    }
+}
+
+function consumeCharges(holder, amount) {
+    holder.charges = Math.max(0, Number(holder.charges) - Math.max(0, Number(amount) || 0));
+    if (holder.charges === 0) holder.chargeExpiresAt = null;
 }
 
 function coldPassiveRegenAdd(state, skillId, stat) {
@@ -117,7 +147,7 @@ function resolveTravel(state, timestamp = Date.now()) {
         // Routes persisted before native cold travel had no method.  Treat the
         // known long-distance lifecycle reasons as native too, so a restart
         // does not leave old craft/market travellers visibly map-walking.
-        || ['component_craft', 'component_craft_return', 'equipment_craft', 'equipment_craft_return', 'return_after_market'].includes(travel.reason);
+        || ['component_craft', 'component_craft_return', 'equipment_craft', 'equipment_craft_return', 'dual_sword_combine', 'dual_sword_combine_return', 'return_after_market'].includes(travel.reason);
     const startedAt = Number(travel.startedAt || timestamp);
     const arrivalAt = Number(travel.arrivalAt);
     const progress = isLegacyGiranMarketTrip ? 1 : nativeTransit
@@ -186,7 +216,12 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
             stats: {
                 ...(state.stats || {}),
                 lastRespawnAt: timestamp,
-                restUntil: timestamp + respawnDelayMs
+                restUntil: timestamp + respawnDelayMs,
+                coldCombat: {
+                    ...(state.stats?.coldCombat || {}),
+                    charges: 0,
+                    chargeExpiresAt: null
+                }
             }
         },
         events: [{
@@ -216,17 +251,49 @@ function actionDelayMs(profile, skill = null) {
     return Math.max(250, Formulas.calcMeleeAtkTime(profile.atkSpd));
 }
 
-function chooseSkill(profile, mp, cooldowns, time) {
+function effectiveSkillPower(profile, skill, hp) {
+    const basePower = Number(skill?.power) || 0;
+    return C4SkillRules.resolve(skill || {}).skillType === C4SkillRules.FATAL
+        ? Formulas.calcFatalPower(basePower, hp, profile.maxHp)
+        : basePower;
+}
+
+function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0) {
     return ColdCombatProfile.offensiveSkills(profile)
-        .filter((skill) => Number(skill.mp || 0) <= mp && Number(cooldowns[skill.selfId] || 0) <= time)
+        .filter((skill) => {
+            const requiredCharges = Math.max(0, Number(C4SkillRules.resolve(skill).requires?.charges) || 0);
+            return Number(skill.mp || 0) <= mp
+                && Number(cooldowns[skill.selfId] || 0) <= time
+                && requiredCharges <= charges;
+        })
         .map((skill) => {
+            const semantic = C4SkillRules.resolve(skill);
             const magic = skill.spell === true;
-            const rawDamage = magic
-                ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, Number(skill.power) || 1), 1)
-                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, Number(skill.power) || 0);
-            return { skill, magic, score: rawDamage / actionDelayMs(profile, skill) };
+            const power = effectiveSkillPower(profile, skill, hp);
+            let rawDamage = magic
+                ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, power), 1)
+                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power);
+            const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+            if (requiredCharges > 0) rawDamage *= 0.8 + (0.201 * charges);
+            return { skill, magic, power, score: rawDamage / actionDelayMs(profile, skill) };
         })
         .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function chooseChargeSkill(profile, mp, cooldowns, time, charges = 0) {
+    const needed = ColdCombatProfile.offensiveSkills(profile).reduce((maximum, skill) => (
+        Math.max(maximum, Number(C4SkillRules.resolve(skill).requires?.charges) || 0)
+    ), 0);
+    if (needed <= charges) return null;
+    return (profile.skills || []).filter((skill) => {
+        const semantic = C4SkillRules.resolve(skill);
+        const requiredWeapon = Number(semantic.requires?.weaponsAllowed) || 0;
+        return !skill.passive
+            && semantic.skillType === C4SkillRules.CHARGE
+            && Number(skill.mp || 0) <= mp
+            && Number(cooldowns[skill.selfId] || 0) <= time
+            && (!requiredWeapon || (requiredWeapon & profile.weaponMask) !== 0);
+    }).sort((a, b) => Number(b.level || 0) - Number(a.level || 0))[0] || null;
 }
 
 function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now() }) {
@@ -248,6 +315,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     let mobHp = mob.maxHp;
     let actions = 0;
     let skillUses = 0;
+    const chargeState = coldChargeState(state, timestamp);
+    let charges = chargeState.charges;
+    let chargeExpiresAt = chargeState.chargeExpiresAt;
     const cooldowns = { ...(state.stats?.coldCombat?.cooldowns || {}) };
     const fightLimitMs = 12000;
 
@@ -261,23 +331,50 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         actions += 1;
 
         if (botActs) {
-            const selected = chooseSkill(bot, vitals.mp, cooldowns, timestamp + time);
+            const heldCharges = { charges, chargeExpiresAt };
+            expireCharges(heldCharges, timestamp + time);
+            charges = heldCharges.charges;
+            chargeExpiresAt = heldCharges.chargeExpiresAt;
+            const chargeSkill = chooseChargeSkill(bot, vitals.mp, cooldowns, timestamp + time, charges);
+            if (chargeSkill) {
+                const semantic = C4SkillRules.resolve(chargeSkill);
+                const nextCharges = { charges, chargeExpiresAt };
+                addCharges(nextCharges, 1, semantic.maxCharges, timestamp + time);
+                charges = nextCharges.charges;
+                chargeExpiresAt = nextCharges.chargeExpiresAt;
+                vitals.mp = Math.max(0, vitals.mp - Number(chargeSkill.mp || 0));
+                cooldowns[chargeSkill.selfId] = timestamp + time + Math.max(0, Number(chargeSkill.reuse || 0));
+                skillUses += 1;
+                botReadyAt += actionDelayMs(bot, chargeSkill);
+                continue;
+            }
+            const selected = chooseSkill(bot, vitals.hp, vitals.mp, cooldowns, timestamp + time, charges);
             const skill = selected?.skill || null;
             const magic = selected?.magic === true;
             let damage = 0;
             if (magic) {
                 const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
             } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
                 const critical = Formulas.rollCritical(bot.critical, rng);
-                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, { critical });
+                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical });
             }
-            mobHp -= Math.max(0, damage);
             if (skill) {
+                const semantic = C4SkillRules.resolve(skill);
+                const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+                if (requiredCharges > 0) damage *= 0.8 + (0.201 * charges);
+                const nextCharges = { charges, chargeExpiresAt };
+                consumeCharges(nextCharges, semantic.requires?.charges);
+                if (Number(semantic.chargeOnUse) > 0) {
+                    addCharges(nextCharges, semantic.chargeOnUse, semantic.maxCharges, timestamp + time);
+                }
+                charges = nextCharges.charges;
+                chargeExpiresAt = nextCharges.chargeExpiresAt;
                 vitals.mp = Math.max(0, vitals.mp - Number(skill.mp || 0));
                 cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
                 skillUses += 1;
             }
+            mobHp -= Math.max(0, damage);
             botReadyAt += actionDelayMs(bot, skill);
         } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
@@ -302,6 +399,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             adena: 0,
             loot: [],
             cooldowns,
+            charges: died ? 0 : charges,
+            chargeExpiresAt: died ? null : chargeExpiresAt,
             debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
@@ -327,6 +426,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         adena,
         loot,
         cooldowns,
+        charges,
+        chargeExpiresAt,
         debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
@@ -352,6 +453,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     };
     const fighters = members.map((state) => {
         const profile = botCombatStats(state, timestamp);
+        const chargeState = coldChargeState(state, timestamp);
         return {
             state,
             profile,
@@ -366,7 +468,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             readyAt: 0,
             actions: 0,
             skillUses: 0,
-            heals: 0
+            heals: 0,
+            charges: chargeState.charges,
+            chargeExpiresAt: chargeState.chargeExpiresAt
         };
     });
     let mobHp = mob.maxHp;
@@ -385,6 +489,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 
         if (botActs) {
             next.actions += 1;
+            expireCharges(next, timestamp + time);
             const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
             if (heal) {
                 const amount = Formulas.calcHealAmount(heal.skill.power);
@@ -397,23 +502,40 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 continue;
             }
 
-            const selected = chooseSkill(next.profile, next.vitals.mp, next.cooldowns, timestamp + time);
+            const chargeSkill = chooseChargeSkill(next.profile, next.vitals.mp, next.cooldowns, timestamp + time, next.charges);
+            if (chargeSkill) {
+                const semantic = C4SkillRules.resolve(chargeSkill);
+                addCharges(next, 1, semantic.maxCharges, timestamp + time);
+                next.vitals.mp = Math.max(0, next.vitals.mp - Number(chargeSkill.mp || 0));
+                next.cooldowns[chargeSkill.selfId] = timestamp + time + Math.max(0, Number(chargeSkill.reuse || 0));
+                next.skillUses += 1;
+                next.readyAt += actionDelayMs(next.profile, chargeSkill);
+                continue;
+            }
+            const selected = chooseSkill(next.profile, next.vitals.hp, next.vitals.mp, next.cooldowns, timestamp + time, next.charges);
             const skill = selected?.skill || null;
             let damage = 0;
             if (selected?.magic) {
                 const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, Number(skill.power) || 1), mob.mDef, { magicCritical });
+                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
             } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
-                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, Number(skill?.power) || 0, {
+                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, {
                     critical: Formulas.rollCritical(next.profile.critical, rng)
                 });
             }
-            mobHp -= Math.max(0, damage);
             if (skill) {
+                const semantic = C4SkillRules.resolve(skill);
+                const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+                if (requiredCharges > 0) damage *= 0.8 + (0.201 * next.charges);
+                consumeCharges(next, semantic.requires?.charges);
+                if (Number(semantic.chargeOnUse) > 0) {
+                    addCharges(next, semantic.chargeOnUse, semantic.maxCharges, timestamp + time);
+                }
                 next.vitals.mp = Math.max(0, next.vitals.mp - Number(skill.mp || 0));
                 next.cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
                 next.skillUses += 1;
             }
+            mobHp -= Math.max(0, damage);
             next.readyAt += actionDelayMs(next.profile, skill);
         } else {
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
@@ -440,6 +562,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 const BackgroundResolver = {
     resolveRest,
     resolvePartyFight,
+    effectiveSkillPower,
     resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
@@ -573,7 +696,11 @@ const BackgroundResolver = {
         const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
-            const fightState = { ...state, vitals: patch.vitals };
+            const fightState = {
+                ...state,
+                vitals: patch.vitals,
+                stats: { ...(state.stats || {}), ...(patch.stats || {}) }
+            };
             const result = resolveFight({ state: fightState, spot, pressure, targetNpcId, rng, timestamp });
             patch.vitals.hp = result.hp;
             patch.vitals.mp = result.mp;
@@ -581,7 +708,10 @@ const BackgroundResolver = {
                 ...(patch.stats || state.stats || {}),
                 coldCombat: {
                     ...(state.stats?.coldCombat || ColdCombatProfile.profileFor(fightState, timestamp)),
-                    cooldowns: result.cooldowns || {}
+                    ...(patch.stats?.coldCombat || {}),
+                    cooldowns: result.cooldowns || {},
+                    charges: result.charges || 0,
+                    chargeExpiresAt: result.chargeExpiresAt || null
                 }
             };
             materialize.exp += result.exp;
@@ -613,7 +743,7 @@ const BackgroundResolver = {
             if (hpPct < 0.35 || mpPct < 0.2) {
                 patch.activity = 'resting';
                 patch.stats = {
-                    ...(state.stats || {}),
+                    ...(patch.stats || state.stats || {}),
                     restUntil: timestamp + estimateRestMs(fightState, patch.vitals)
                 };
                 events.push({

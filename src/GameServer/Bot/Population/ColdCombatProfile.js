@@ -3,6 +3,7 @@ const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const PROFILE_VERSION = 3;
 
@@ -299,7 +300,7 @@ function profileFor(state = {}, timestamp = Date.now()) {
 }
 
 function offensiveSkills(profile) {
-    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
+    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
     return (profile.skills || []).filter((skill) => {
         if (skill.passive) return false;
         const semantic = C4SkillRules.resolve(skill);
@@ -310,7 +311,12 @@ function offensiveSkills(profile) {
 }
 
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
-    const entries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
+    const entries = rawEntries.filter((entry) => {
+        const npc = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(entry.selfId));
+        return npc && !BotRaidSafety.isProtectedRaidEntity(npc);
+    });
+    if (entries.length === 0) return null;
     const pickEntry = (candidates) => {
         const total = candidates.reduce((sum, entry) => sum + Math.max(1, number(entry.count, 1)), 0);
         let needle = rng() * total;

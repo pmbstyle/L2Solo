@@ -12,6 +12,7 @@ const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -30,7 +31,9 @@ const originals = {
     tryPurchase: MarketService.tryPurchase,
     current: GoalService.current,
     review: GoalService.review,
+    beginMarketTravel: GoalExecutor.beginMarketTravel,
     finishMarketVisit: GoalExecutor.finishMarketVisit,
+    bestBuyOffer: MarketOpportunity.bestBuyOffer,
     announce: TradeChat.maybeAnnounce,
     recordMany: LifeEvents.recordMany,
     globalAnnounce: GlobalChat.maybeAnnounce
@@ -116,6 +119,112 @@ async function run() {
     assert.strictEqual(freshTravelResult.ok, true, 'travel started during a cold resolve must not fail as a missing hunting spot');
     assert.strictEqual(receivedSpot, null, 'newly-started travel must resolve without a combat spot');
 
+    const restingMarketState = {
+        characterId: 74,
+        name: 'RecoveredWeaponBuyer',
+        level: 42,
+        adena: 5_000_000,
+        phase: 'cold',
+        activity: 'resting',
+        currentRegion: 'Krator fields',
+        spotId: 'krator_fields',
+        loc: { locX: 10, locY: 20, locZ: 30 },
+        inventory: {},
+        vitals: { hp: 1000, maxHp: 1000, mp: 600, maxMp: 600 },
+        timing: { lastResolvedAt: Date.now() - 30000 },
+        stats: {
+            restUntil: Date.now() - 1,
+            equipmentPlan: {
+                status: 'active',
+                strategy: 'market',
+                target: { selfId: 127, name: 'Crimson Sword', slot: 7 },
+                market: { town: 'Giran', price: 1_063_700, reserve: 500_000, sourceType: 'npc' },
+                combine: { resultId: 2551, requirements: [{ selfId: 127, amount: 2 }] }
+            }
+        }
+    };
+    const recoveredMarketState = {
+        ...restingMarketState,
+        activity: 'hunting',
+        stats: { ...restingMarketState.stats, restUntil: null }
+    };
+    let recoveryGoalReviews = 0;
+    let recoveryMarketTravel = 0;
+    BackgroundResolver.resolveSolo = () => ({
+        patch: { activity: 'hunting' },
+        events: [{ type: 'recovered', summary: 'RecoveredWeaponBuyer recovered' }],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: Date.now() + 30000,
+        debug: { activity: 'recovered' }
+    });
+    LifeState.cachedState = () => null;
+    LifeState.applyResolve = () => Promise.resolve(recoveredMarketState);
+    GoalService.review = (value) => {
+        recoveryGoalReviews += 1;
+        assert.strictEqual(value.activity, 'hunting', 'market handoff must happen only after recovery completed');
+        return Promise.resolve({
+            current: {
+                type: 'upgrade_gear',
+                target: { itemId: 127 },
+                plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
+            }
+        });
+    };
+    GoalExecutor.beginMarketTravel = (value, goal) => {
+        recoveryMarketTravel += 1;
+        assert.strictEqual(goal.target.itemId, 127, 'recovery handoff must retain the planned weapon target');
+        return { ...value, activity: 'traveling', stats: { ...value.stats, travel: { reason: goal.plan.expectedBenefit } } };
+    };
+    LifeState.upsertState = (value) => Promise.resolve(value);
+    LifeEvents.recordMany = () => Promise.resolve(null);
+
+    const recoveredMarketResult = await PopulationService.resolveColdState(restingMarketState);
+    assert.strictEqual(recoveredMarketResult.state.activity, 'traveling', 'an affordable weapon plan must leave for market before another fight');
+    assert.strictEqual(recoveryGoalReviews, 1, 'completed recovery must immediately reconsider the affordable weapon goal');
+    assert.strictEqual(recoveryMarketTravel, 1, 'completed recovery must begin one market trip');
+
+    const unaffordableMarketState = { ...restingMarketState, characterId: 75, adena: 1_000_000 };
+    LifeState.applyResolve = () => Promise.resolve({ ...recoveredMarketState, characterId: 75, adena: 1_000_000 });
+    const unaffordableResult = await PopulationService.resolveColdState(unaffordableMarketState);
+    assert.strictEqual(unaffordableResult.state.activity, 'hunting', 'an unaffordable weapon plan must not force a market trip');
+    assert.strictEqual(recoveryGoalReviews, 1, 'unaffordable recovery must not trigger a redundant goal review');
+    assert.strictEqual(recoveryMarketTravel, 1, 'unaffordable recovery must not begin market travel');
+
+    recoveryGoalReviews = 0;
+    recoveryMarketTravel = 0;
+    const warehouseSeller = {
+        characterId: 76,
+        name: 'RecoveredWarehouseSeller',
+        phase: 'cold',
+        activity: 'resting',
+        inventory: { 5220: { selfId: 5220, name: 'Metal Hardener', amount: 5, kind: 'Other.Material' } },
+        vitals: { hp: 1000, maxHp: 1000, mp: 600, maxMp: 600 },
+        timing: { lastResolvedAt: Date.now() - 30000 },
+        stats: {
+            restUntil: Date.now() - 1,
+            lastWarehouseWithdrawal: { items: [{ selfId: 5220, amount: 5, reason: 'market' }], at: Date.now() }
+        }
+    };
+    LifeState.applyResolve = () => Promise.resolve({
+        ...warehouseSeller,
+        activity: 'hunting',
+        stats: { ...warehouseSeller.stats, restUntil: null }
+    });
+    MarketOpportunity.bestBuyOffer = () => ({ selfId: 5220, count: 5, town: 'Giran' });
+    GoalService.review = () => {
+        recoveryGoalReviews += 1;
+        return Promise.resolve({ current: { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } } });
+    };
+    GoalExecutor.beginMarketTravel = (value, goal) => {
+        recoveryMarketTravel += 1;
+        assert.strictEqual(goal.type, 'sell_inventory');
+        return { ...value, activity: 'traveling', stats: { ...value.stats, travel: { reason: 'market_sale_inventory' } } };
+    };
+    const recoveredSellerResult = await PopulationService.resolveColdState(warehouseSeller);
+    assert.strictEqual(recoveredSellerResult.state.activity, 'traveling', 'a recovered warehouse seller must honor funded peer demand before another fight');
+    assert.strictEqual(recoveryGoalReviews, 1);
+    assert.strictEqual(recoveryMarketTravel, 1);
+
     let joinedDuringResolve = false;
     let applyCalled = false;
     BackgroundResolver.resolveSolo = () => {
@@ -147,7 +256,9 @@ run().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() =
     MarketService.tryPurchase = originals.tryPurchase;
     GoalService.current = originals.current;
     GoalService.review = originals.review;
+    GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     GoalExecutor.finishMarketVisit = originals.finishMarketVisit;
+    MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     TradeChat.maybeAnnounce = originals.announce;
     LifeEvents.recordMany = originals.recordMany;
     GlobalChat.maybeAnnounce = originals.globalAnnounce;

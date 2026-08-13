@@ -336,7 +336,17 @@ function applySchemaMigrations() {
                 CREATE INDEX IF NOT EXISTS bot_conversation_messages_order
                     ON bot_conversation_messages(conversationId, compacted, turnOrdinal, messageOrder, id);
             `);
-        }]
+        }],
+        [9, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS raid_boss_state (
+                npcId INTEGER PRIMARY KEY,
+                respawnTime INTEGER NOT NULL DEFAULT 0,
+                hp REAL,
+                mp REAL,
+                updatedAt INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
+        `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -407,6 +417,23 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation);
+    },
+
+    fetchRaidBossStates() {
+        return select('raid_boss_state', ['npcId', 'respawnTime', 'hp', 'mp', 'updatedAt'], '', [], 'raid-boss:states');
+    },
+
+    upsertRaidBossState(npcId, respawnTime, hp = null, mp = null) {
+        return run(`INSERT INTO raid_boss_state (npcId, respawnTime, hp, mp, updatedAt)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(npcId) DO UPDATE SET respawnTime = excluded.respawnTime,
+                hp = excluded.hp, mp = excluded.mp, updatedAt = excluded.updatedAt`,
+        [Number(npcId), Number(respawnTime), hp === null ? null : Number(hp), mp === null ? null : Number(mp), now()],
+        'raid-boss:upsert');
+    },
+
+    clearRaidBossState(npcId) {
+        return remove('raid_boss_state', 'npcId = ?', [Number(npcId)], 'raid-boss:clear');
     },
 
     isReady() { return !!connection; },
@@ -824,6 +851,57 @@ const Database = {
             write('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null };
         }, 'craft:self'));
+    },
+
+    combineInventoryItems(characterId, { ingredients, product }) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const required = new Map();
+            (ingredients || []).forEach((ingredient) => {
+                const selfId = Number(ingredient.selfId || 0);
+                const amount = Number(ingredient.amount || 0);
+                if (selfId > 0 && amount > 0) required.set(selfId, Number(required.get(selfId) || 0) + amount);
+            });
+            if (!required.size || !Number(product?.selfId || 0)) throw new Error('invalid item combination');
+
+            const sources = [];
+            for (const [selfId, amount] of required) {
+                const rows = all(`SELECT id, selfId, amount, equipped, slot
+                    FROM items
+                    WHERE characterId = ? AND selfId = ? AND amount > 0
+                    ORDER BY equipped ASC, id`, [characterId, selfId]);
+                if (rows.reduce((sum, row) => sum + Number(row.amount || 0), 0) < amount) {
+                    throw new Error('combination ingredient changed');
+                }
+                let remaining = amount;
+                for (const row of rows) {
+                    if (remaining <= 0) break;
+                    const consumed = Math.min(remaining, Number(row.amount || 0));
+                    sources.push({
+                        id: Number(row.id),
+                        selfId,
+                        amount: consumed,
+                        remaining: Number(row.amount || 0) - consumed
+                    });
+                    remaining -= consumed;
+                }
+            }
+
+            sources.forEach((source) => source.remaining <= 0
+                ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId])
+                : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.remaining, source.id, characterId]));
+            const productId = write(`INSERT INTO items (selfId, name, amount, equipped, slot, characterId)
+                VALUES (?, ?, ?, 0, ?, ?)`, [
+                Number(product.selfId),
+                product.name || '',
+                Math.max(1, Number(product.amount || 1)),
+                Number(product.slot || 0),
+                characterId
+            ]).insertId;
+            return {
+                sources,
+                product: { id: Number(productId), selfId: Number(product.selfId), amount: Math.max(1, Number(product.amount || 1)) }
+            };
+        }, 'item:combine'));
     },
 
     crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount }) {

@@ -39,6 +39,29 @@ function retryAfterFailedPurchase(state, goal, reason) {
     }));
 }
 
+function finishBlockedPurchase(state, goal, reason) {
+    const stats = {
+        ...(state.stats || {}),
+        marketRetryAfter: null,
+        marketWanted: null,
+        marketLead: null
+    };
+    if (Number(stats.equipmentPlan?.target?.selfId || 0) === Number(goal?.target?.itemId || 0)) {
+        delete stats.equipmentPlan;
+        delete stats.partyRequest;
+    }
+    const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
+    const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
+    return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => (
+        GoalState.clear(state.characterId, 'completed').then(() => ({
+            state: saved || returning,
+            purchased: false,
+            reason,
+            remoteOffer: null
+        }))
+    ));
+}
+
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
@@ -76,9 +99,11 @@ const ColdMarketService = {
                 };
             });
         }
-        if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
         offer.buyerCharacterId = Number(state.characterId);
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
+        const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
+        if (blocker) return finishBlockedPurchase(state, goal, blocker);
+        if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
 
         return LifeState.applyMarketPurchase(state, offer).then((updated) => {
             if (!updated) {

@@ -72,9 +72,9 @@ Database.init(() => {
         if (result.reclaimed) {
             utils.infoSuccess('DB', 'reclaimed unused SQLite space pages=%d bytes=%d', result.freePages, result.reclaimedBytes);
         }
-    }).then(() => ClanService.init()).then(() => {
+    }).then(() => ClanService.init()).then(async () => {
         GeodataEngine.init();
-        World.init();
+        await World.init();
 
         new Server('AuthServer', options.default.AuthServer, (socket) => {
             return new AuthSession(socket);

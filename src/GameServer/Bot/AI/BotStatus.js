@@ -12,6 +12,7 @@ const BotAmbientDirector = invoke('GameServer/Bot/AI/BotAmbientDirector');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -110,6 +111,7 @@ function findTarget(session, bot) {
 
     const npc = World.npc.spawns.find((ob) => ob.fetchId() === session.currentTargetId);
     if (npc) {
+        if (BotRaidSafety.isProtectedRaidEntity(npc)) return null;
         return {
             type: 'npc',
             ...actorSummary(npc, bot),
@@ -186,7 +188,7 @@ function nearbySnapshot(bot) {
     });
 
     World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 1500).forEach((npc) => {
-        if (npc.fetchAttackable() && !npc.isDead()) {
+        if (!BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable() && !npc.isDead()) {
             attackableNpcs++;
             const name = String(npc.fetchName?.() || 'Unknown NPC');
             attackableNames.set(name, Number(attackableNames.get(name) || 0) + 1);

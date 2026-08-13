@@ -41,6 +41,12 @@ function soulshotFlags(actor) {
 function attack(src, destId, params = {}) {
     const packet = new SendPacket(0x05);
     const hit = normalizeHit(params);
+    const additionalHits = Array.isArray(params.additionalHits)
+        ? params.additionalHits.map((entry) => ({
+            targetId: Number(entry?.targetId) || 0,
+            ...normalizeHit(entry)
+        })).filter((entry) => entry.targetId > 0)
+        : [];
 
     packet
         .writeD(src.fetchId())
@@ -50,7 +56,14 @@ function attack(src, destId, params = {}) {
         .writeD(src.fetchLocX())
         .writeD(src.fetchLocY())
         .writeD(src.fetchLocZ())
-        .writeH(0x00);
+        .writeH(additionalHits.length);
+
+    additionalHits.forEach((entry) => {
+        packet
+            .writeD(entry.targetId)
+            .writeD(entry.damage)
+            .writeC(entry.flags);
+    });
 
     return packet.fetchBuffer();
 }

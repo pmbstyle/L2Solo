@@ -19,6 +19,9 @@ const c4ForgeOfTheGodsSkills = require('../../../data/Npcs/Skills/c4_forge_of_th
 const c4FieldsSkills = require('../../../data/Npcs/Skills/c4_fields_of_silence_and_whispers_templates.json');
 const c4HeathenCampSkills = require('../../../data/Npcs/Skills/c4_heathen_camp_templates.json');
 const c4ImperialTombSkills = require('../../../data/Npcs/Skills/c4_imperial_tomb_templates.json');
+const c4LowLevelRaidBossSkills = require('../../../data/Npcs/Skills/c4_low_level_raid_bosses_templates.json');
+const c4RaidBossSkills = require('../../../data/Npcs/Skills/c4_raid_bosses_templates.json');
+const c4RaidBossMinionSkills = require('../../../data/Npcs/Skills/c4_raid_boss_minions_templates.json');
 const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/skills.json'),
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -52,7 +55,10 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_dark_omen.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_apostate.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_heretics.json'),
-    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_forbidden_path.json')
+    ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_forbidden_path.json'),
+    ...require('../../../data/Npcs/Skills/c4_low_level_raid_bosses.json'),
+    ...require('../../../data/Npcs/Skills/c4_raid_bosses.json'),
+    ...require('../../../data/Npcs/Skills/c4_raid_boss_minions.json')
 ];
 
 // These action skills belong to temporary servitors, but their NPC templates
@@ -77,7 +83,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 
@@ -97,6 +103,7 @@ const COMBAT_SKILL_TYPES = new Set([
     C4SkillRules.DAMAGE,
     C4SkillRules.DAMAGE_EFFECT,
     C4SkillRules.DEATH_LINK,
+    C4SkillRules.FATAL,
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
     C4SkillRules.EFFECT,

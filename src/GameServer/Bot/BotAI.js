@@ -11,6 +11,7 @@ const TownRespawn = invoke('GameServer/World/TownRespawn');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -557,19 +558,56 @@ const BotAI = {
     },
 
     executePvPCombat(session, bot, victim, Generics, options = {}) {
-        this.executeCombat(session, bot, victim, Generics, options);
+        return this.executeCombat(session, bot, victim, Generics, options);
     },
 
     executeCombat(session, bot, npc, Generics, options = {}) {
+        const allowedPlayerPartyRaid = BotRaidSafety.isProtectedRaidEntity(npc) &&
+            BotRaidSafety.canEngagePlayerPartyRaid(session, npc, options.playerPartyRaidLeaderSession);
+        if (BotRaidSafety.isProtectedRaidEntity(npc) && !allowedPlayerPartyRaid) {
+            BotRaidSafety.clearTarget(session, bot, npc);
+            if (session) {
+                session.lastCombatDecision = {
+                    action: 'blocked',
+                    reason: 'raid_entity_protected',
+                    targetId: Number(npc?.fetchId?.() || 0) || null,
+                    at: Date.now()
+                };
+            }
+            return false;
+        }
         const role = BotRoles.inferRole(bot);
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
+        const combatPolicy = {
+            ...HotBotPolicyOverlay.combatPolicy(session),
+            avoidAreaDamage: options.avoidAreaDamage === true || (
+                allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
+            )
+        };
+        const chargeSkill = options.basicAttackOnly ? null : BotCombatUtility.selectChargeSkill(bot, role);
+        if (chargeSkill) {
+            session.lastCombatDecision = {
+                action: 'charge_skill',
+                role,
+                skillId: chargeSkill.fetchSelfId(),
+                skillName: chargeSkill.fetchName?.() || null,
+                charges: Number(bot.fetchCharges?.() ?? bot.charges ?? 0) || 0,
+                at: Date.now()
+            };
+            Generics.skillExec(session, bot, {
+                id: bot.fetchId(),
+                selfId: chargeSkill.fetchSelfId(),
+                ctrl: true
+            });
+            return true;
+        }
         const decision = options.basicAttackOnly
             ? null
-            : BotCombatUtility.select(bot, npc, role, HotBotPolicyOverlay.combatPolicy(session));
+            : BotCombatUtility.select(bot, npc, role, combatPolicy);
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',
@@ -585,7 +623,7 @@ const BotAI = {
                 selfId: decision.skill.fetchSelfId(),
                 ctrl: true
             });
-            return;
+            return true;
         }
 
         session.lastCombatDecision = {
@@ -599,6 +637,7 @@ const BotAI = {
             ctrl: true,
             ...(hasBow ? { range: BOW_ATTACK_RANGE } : {})
         });
+        return true;
     },
 
     say(session, text) {

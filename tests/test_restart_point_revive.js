@@ -8,6 +8,7 @@ const StateModel = invoke('GameServer/Model/State');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 const dyingActor = {
     state: new StateModel(),
@@ -15,6 +16,7 @@ const dyingActor = {
     classId: 0,
     hp: 100,
     mp: 100,
+    charges: 0,
     fetchId: () => 41,
     fetchLevel() { return this.level; },
     fetchClassId() { return this.classId; },
@@ -26,6 +28,7 @@ const dyingActor = {
     fetchWit: () => 30,
     fetchHp() { return this.hp; },
     fetchMp() { return this.mp; },
+    fetchCharges() { return this.charges; },
     fetchMaxHp() { return this.maxHp; },
     fetchMaxMp() { return this.maxMp; },
     fetchPAtk: () => 10,
@@ -43,6 +46,7 @@ const dyingActor = {
     setHp(value) { this.hp = value; },
     setMaxMp(value) { this.maxMp = value; },
     setMp(value) { this.mp = value; },
+    setCharges(value) { this.charges = value; },
     setMaxLoad(value) { this.maxLoad = value; },
     setLoad(value) { this.load = value; },
     setCollectivePAtk(value) { this.collectivePAtk = value; },
@@ -71,6 +75,10 @@ const dyingActor = {
     isDead() { return this.state.fetchDead(); },
     destructor() {}
 };
+const deathPackets = [];
+dyingActor.session = {
+    dataSendToMe(packet) { deathPackets.push(packet); }
+};
 dyingActor.state.setHits(true);
 dyingActor.state.setCasts(true);
 dyingActor.state.setSeated(true);
@@ -81,6 +89,8 @@ dyingActor.activeBuffs = { shield: Date.now() + 60000 };
 dyingActor.supportReservations = { shield: { expiresAt: Date.now() + 5000 } };
 calculateStats({}, dyingActor);
 const buffedPDef = dyingActor.collectivePDef;
+ChargeLifecycle.increase({}, dyingActor, 3, 7);
+assert(dyingActor.chargeExpiryTimer, 'charges should have an active expiry timer before death');
 
 die({ dataSendToMeAndOthers() {} }, dyingActor);
 
@@ -90,6 +100,18 @@ assert.deepStrictEqual(EffectStore.list(dyingActor), [], 'death should remove ac
 assert.deepStrictEqual(dyingActor.activeBuffs, {}, 'death should clear legacy buff markers');
 assert.deepStrictEqual(dyingActor.supportReservations, {}, 'death should clear stale support reservations');
 assert.ok(dyingActor.collectivePDef < buffedPDef, 'death should recalculate stats without removed buff bonuses');
+assert.strictEqual(dyingActor.fetchCharges(), 0, 'death should clear all force and sonic charges');
+assert.strictEqual(dyingActor.chargeExpiryTimer, undefined, 'death should cancel the charge expiry timer');
+const clearedAbnormalPacket = deathPackets.find((packet) => packet[0] === 0x7f);
+const clearedShortBuffPacket = deathPackets.find((packet) => packet[0] === 0xf4);
+assert(clearedAbnormalPacket, 'death should refresh the player effect bar after clearing effects');
+assert.strictEqual(clearedAbnormalPacket.readInt16LE(1), 0, 'death should remove every regular effect icon from the client');
+assert(clearedShortBuffPacket, 'death should also clear the dedicated short-buff slot');
+assert.deepStrictEqual(
+    [clearedShortBuffPacket.readInt32LE(1), clearedShortBuffPacket.readInt32LE(5), clearedShortBuffPacket.readInt32LE(9)],
+    [0, 0, 0],
+    'death should send the native empty short-buff payload'
+);
 
 const packets = [];
 const actor = {

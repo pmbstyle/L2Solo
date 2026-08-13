@@ -12,6 +12,13 @@ function skillRequest(session, actor, data) {
         return;
     }
 
+    // A disabled toggle (notably Fake Death) must remain possible to switch
+    // off even though its own state blocks ordinary skill use.
+    if (ToggleSkills.isActive(actor, skill)) {
+        ToggleSkills.handleRequest(session, actor, skill);
+        return;
+    }
+
     if (!EffectRestrictions.canCast(actor)) {
         EffectRestrictions.reject(session);
         return;
@@ -21,11 +28,32 @@ function skillRequest(session, actor, data) {
         return;
     }
 
-    if (skill.fetchTargetKind() === 'self') {
+    // C4 TARGET_PARTY skills are caster-centered auras. The client does not
+    // need to keep an explicit target selected in order to sing or dance.
+    if (skill.fetchTargetKind() === 'pet') {
+        const summon = invoke('GameServer/Npc/SummonControl').activeSummon(actor);
+        if (!summon) return;
+        data.id = summon.fetchId();
+    }
+    else if (
+        skill.fetchTargetKind() === 'self' ||
+        skill.fetchTargetKind() === 'party' ||
+        skill.fetchTargetKind() === 'ally' ||
+        skill.fetchTargetKind() === 'corpse_ally' ||
+        skill.fetchSemantic?.().sourceTarget === 'aura'
+    ) {
         data.id = actor.fetchId();
     }
-    else if ((data.id = actor.fetchDestId()) === undefined) {
-        return;
+    else {
+        data.id = actor.fetchDestId();
+        // Lisvus TARGET_ONE explicitly permits SEED on the caster. With no
+        // selected target, preserve that native self-seeding route.
+        if (data.id === undefined && skill.fetchSkillType?.() === 'seed') {
+            data.id = actor.fetchId();
+        }
+        else if (data.id === undefined) {
+            return;
+        }
     }
 
     if (!actor.canUseSkill(skill)) {

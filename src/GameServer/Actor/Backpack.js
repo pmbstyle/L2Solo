@@ -23,6 +23,8 @@ const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const ToggleSkills    = invoke('GameServer/Skills/ToggleSkills');
+const CommonCraftSkills = invoke('GameServer/Crafting/CommonCraftSkills');
 
 const FISHING_ROD_GRADES = {
     6529: 'none',
@@ -47,7 +49,6 @@ function recordEquipmentEvent(session, item, action) {
     })).catch(() => {});
 }
 
-const COMMON_CRAFT_LEVELS = [5, 20, 28, 36, 43, 49, 55, 62, 70];
 const MANUFACTURE_STORE_TYPES = [5, 6];
 
 // C4 pets_stats.sql, level 1. Pet progression is not modelled yet, so these
@@ -461,8 +462,11 @@ class Backpack extends BackpackModel {
         if (typeof actor.fetchCommonCraftLevel === 'function') {
             return Number(actor.fetchCommonCraftLevel()) || 0;
         }
-        const level = Number(actor.fetchLevel?.() || 0);
-        return COMMON_CRAFT_LEVELS.filter((requiredLevel) => level >= requiredLevel).length;
+        const createCommonItem = actor.skillset?.fetchSkill?.(1320);
+        if (createCommonItem?.fetchLevel) {
+            return createCommonItem.fetchLevel();
+        }
+        return CommonCraftSkills.levelForCharacter(actor.fetchLevel?.());
     }
 
     useExtractableItem(session, id, extractableItem) {
@@ -1473,21 +1477,21 @@ class Backpack extends BackpackModel {
         const equip = this.equipment;
 
         if (slot === equip.weapon || slot === equip.shield) {
-            this.unequipGear(session, equip.dual);
+            this.unequipGear(session, equip.dual, { syncToggles: false });
         }
         else // Unequip both hands
         if (slot === equip.dual) {
-            this.unequipGear(session, equip.weapon);
-            this.unequipGear(session, equip.shield);
+            this.unequipGear(session, equip.weapon, { syncToggles: false });
+            this.unequipGear(session, equip.shield, { syncToggles: false });
         }
         else // Unequip one-piece armor
         if (slot === equip.chest || slot === equip.pants) {
-            this.unequipGear(session, equip.armor);
+            this.unequipGear(session, equip.armor, { syncToggles: false });
         }
         else // Unequip top and bottom armor
         if (slot === equip.armor) {
-            this.unequipGear(session, equip.chest);
-            this.unequipGear(session, equip.pants);
+            this.unequipGear(session, equip.chest, { syncToggles: false });
+            this.unequipGear(session, equip.pants, { syncToggles: false });
         }
         else // Check if ear place is taken
         if (slot === equip.earr || slot === equip.earl) {
@@ -1505,7 +1509,7 @@ class Backpack extends BackpackModel {
         }
 
         const newSlot = item.fetchSlot();
-        this.unequipGear(session, newSlot);
+        this.unequipGear(session, newSlot, { syncToggles: false });
         this.equipPaperdoll(newSlot, item.fetchId(), item.fetchSelfId());
         item.setEquipped(true);
 
@@ -1521,10 +1525,11 @@ class Backpack extends BackpackModel {
 
         // Recalculate
         invoke(path.actor).calculateStats(session, session.actor);
+        ToggleSkills.syncEquipment(session, session.actor);
         recordEquipmentEvent(session, item, 'equip');
     }
 
-    unequipGear(session, slot) {
+    unequipGear(session, slot, options = {}) {
         if (session.actor.isDead()) {
             return;
         }
@@ -1559,6 +1564,7 @@ class Backpack extends BackpackModel {
 
         // Recalculate once for the complete slot change.
         invoke(path.actor).calculateStats(session, session.actor);
+        if (options.syncToggles !== false) ToggleSkills.syncEquipment(session, session.actor);
         equippedItems.forEach((item) => recordEquipmentEvent(session, item, 'unequip'));
     }
 

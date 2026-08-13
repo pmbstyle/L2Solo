@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
@@ -15,6 +16,8 @@ function isStationService(state = {}) {
 }
 
 function stationForRecipe(recipeId) {
+    const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);
+    if (combination) return combination.station;
     const service = { level: STATION_CRAFTER_LEVEL, stats: { classId: 57 } };
     const recipes = CraftShopService.availableRecipes(service);
     return CraftShopService.CraftStations.find((station) => (
@@ -56,7 +59,8 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
 function beginTravel(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     if (!state || state.activity === 'traveling' || !['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return null;
-    const finalRecipe = C4RecipeItems.resolveByRecipeId(plan.recipeId);
+    const finalRecipe = C4RecipeItems.resolveByRecipeId(plan.recipeId)
+        || C4DualSwordCombinations.resolveByRecipeId(plan.recipeId);
     const recipe = readyRecipeFor(state, finalRecipe);
     const station = stationForRecipe(recipe?.recipeId);
     if (!recipe || !station) return null;
@@ -72,12 +76,14 @@ function beginTravel(state, timestamp = Date.now()) {
                 to: { ...station.loc },
                 startedAt: timestamp,
                 arrivalAt: timestamp + NATIVE_TRAVEL_MS,
-                townName: 'Giran',
-                regionName: 'Giran',
+                townName: station.townName || 'Giran',
+                regionName: station.regionName || station.townName || 'Giran',
                 viaTown: nearestTown?.name || null,
                 method: 'soe_gatekeeper',
                 arrivalActivity: 'crafting',
-                reason: recipe.recipeId === finalRecipe?.recipeId ? 'equipment_craft' : 'component_craft',
+                reason: C4DualSwordCombinations.isCombination(recipe)
+                    ? 'dual_sword_combine'
+                    : recipe.recipeId === finalRecipe?.recipeId ? 'equipment_craft' : 'component_craft',
                 stationId: station.id
             }
         }
@@ -157,13 +163,95 @@ function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, 
     return 1;
 }
 
+function hasCombinationIngredients(items, recipe) {
+    const amounts = (items || []).reduce((owned, item) => {
+        const selfId = Number(item.selfId || 0);
+        owned.set(selfId, Number(owned.get(selfId) || 0) + Number(item.amount || 0));
+        return owned;
+    }, new Map());
+    return (recipe?.materials || []).every((material) => (
+        Number(amounts.get(Number(material.selfId)) || 0) >= Number(material.amount || 0)
+    ));
+}
+
+async function combineDualSword(state, recipe, station) {
+    const items = await Database.fetchItems(state.characterId);
+    if (!hasCombinationIngredients(items, recipe)) {
+        return { state: await refreshPhysicalInventory(state), crafted: false, reason: 'materials_changed' };
+    }
+    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+    if (!template) return { state, crafted: false, reason: 'missing_product' };
+
+    let result;
+    try {
+        result = await Database.combineInventoryItems(state.characterId, {
+            ingredients: recipe.materials,
+            product: {
+                selfId: Number(recipe.productId),
+                name: template.template?.name || '',
+                amount: 1,
+                slot: Number(template.etc?.slot || 0)
+            }
+        });
+    } catch (error) {
+        return {
+            state: await refreshPhysicalInventory(state),
+            crafted: false,
+            reason: 'combine_rejected',
+            error: String(error?.message || error)
+        };
+    }
+
+    const craftReturn = state.stats?.craftReturn;
+    const timestamp = Date.now();
+    const returnTown = craftReturn?.loc
+        ? TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY, craftReturn.loc.locZ)
+        : null;
+    const refreshed = await refreshPhysicalInventory({
+        ...state,
+        activity: craftReturn?.loc ? 'traveling' : 'hunting',
+        stats: {
+            ...(state.stats || {}),
+            craftReturn: null,
+            travel: craftReturn?.loc ? {
+                from: { ...(state.loc || station.loc) },
+                to: { ...craftReturn.loc },
+                startedAt: timestamp,
+                arrivalAt: timestamp + NATIVE_TRAVEL_MS,
+                townName: craftReturn.regionName || 'Hunting Ground',
+                regionName: craftReturn.regionName || state.currentRegion,
+                viaTown: returnTown?.name || null,
+                method: 'gatekeeper_spot',
+                spotId: craftReturn.spotId || null,
+                arrivalActivity: 'hunting',
+                reason: 'dual_sword_combine_return'
+            } : null
+        }
+    });
+    return {
+        state: refreshed,
+        crafted: true,
+        reason: 'dual_sword_combined',
+        result,
+        stationId: station.id,
+        recipeId: recipe.recipeId,
+        productId: Number(recipe.productId),
+        productName: template.template?.name || `Item ${recipe.productId}`,
+        batchCount: 1
+    };
+}
+
 async function craft(state, random = Math.random) {
     const plan = state?.stats?.equipmentPlan;
-    const finalRecipe = C4RecipeItems.resolveByRecipeId(plan?.recipeId);
+    const finalRecipe = C4RecipeItems.resolveByRecipeId(plan?.recipeId)
+        || C4DualSwordCombinations.resolveByRecipeId(plan?.recipeId);
     const recipe = readyRecipeFor(state, finalRecipe);
     const station = stationForRecipe(recipe?.recipeId);
     if (!state || state.activity !== 'crafting' || !recipe || !station) {
         return { state, crafted: false, reason: 'not_ready' };
+    }
+    if (C4DualSwordCombinations.isCombination(recipe)) {
+        return combineDualSword(state, recipe, station);
     }
 
     const account = crafterAccount(station);
@@ -266,7 +354,10 @@ async function craft(state, random = Math.random) {
             } : null
         }
     });
-    const continueCrafting = componentCraft && !!readyRecipeFor(refreshed, finalRecipe);
+    const nextReadyRecipe = componentCraft ? readyRecipeFor(refreshed, finalRecipe) : null;
+    const continueCrafting = componentCraft
+        && !!nextReadyRecipe
+        && !C4DualSwordCombinations.isCombination(nextReadyRecipe);
     const returnAfterComponent = componentCraft && !continueCrafting && craftReturn?.loc;
     const settled = continueCrafting
         ? { ...refreshed, activity: 'crafting' }
@@ -305,4 +396,4 @@ async function craft(state, random = Math.random) {
     };
 }
 
-module.exports = { NATIVE_TRAVEL_MS, isStationService, stationForRecipe, crafterAccount, hasMaterials, hasNonSupplementalMaterials, readyRecipeFor, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };
+module.exports = { NATIVE_TRAVEL_MS, isStationService, stationForRecipe, crafterAccount, hasMaterials, hasNonSupplementalMaterials, hasCombinationIngredients, readyRecipeFor, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };

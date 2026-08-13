@@ -90,6 +90,36 @@ assert.strictEqual(session.currentTargetId, threatNpc.fetchId(), 'solo hunter sh
 assert.strictEqual(bot.selected, threatNpc.fetchId(), 'solo hunter should select the incoming threat');
 assert.strictEqual(attackedId, threatNpc.fetchId(), 'solo hunter should counterattack the incoming threat immediately');
 
+const raidThreat = {
+    ...threatNpc,
+    fetchId: () => 1102,
+    fetchName: () => 'raid boss',
+    fetchIsRaidBoss: () => true,
+    fetchDestId: () => bot.fetchId()
+};
+const raidBot = actor(2000014);
+raidBot.selected = raidThreat.fetchId();
+const raidSession = {
+    accountId: 'bot_raid_self_defense',
+    actor: raidBot,
+    plan: 'hunting',
+    currentTargetId: raidThreat.fetchId(),
+    incomingThreatId: raidThreat.fetchId(),
+    incomingThreatAt: Date.now()
+};
+let raidCounterattacks = 0;
+World.user = { sessions: [raidSession] };
+World.npc = { spawns: [raidThreat] };
+World.fetchNpcsInRadius = () => [];
+HuntingState.tick(raidSession, raidBot, {}, {
+    say() {},
+    executeCombat() { raidCounterattacks++; }
+});
+assert.strictEqual(raidSession.plan, 'fleeing', 'a bot attacked by a raid entity must flee regardless of healthy resources');
+assert.strictEqual(raidSession.currentTargetId, undefined, 'raid retreat must clear the protected target');
+assert.strictEqual(raidCounterattacks, 0, 'self-defense must never retaliate against a raid entity');
+assert.strictEqual(raidBot.moves.length, 1, 'raid retreat must immediately open distance from the boss');
+
 const woundedBot = actor(2000011);
 woundedBot.fetchHp = () => 20;
 const woundedSession = {
@@ -111,6 +141,7 @@ const retreatHazard = {
 };
 let woundedAttackId = null;
 World.user = { sessions: [woundedSession] };
+World.npc = { spawns: [threatNpc] };
 World.fetchNpcsInRadius = () => [retreatHazard];
 
 HuntingState.tick(woundedSession, woundedBot, {}, {

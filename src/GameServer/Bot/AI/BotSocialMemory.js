@@ -222,6 +222,14 @@ const BotSocialMemory = {
         return fallback;
     },
 
+    peekSnapshot(playerSession, botSession) {
+        if (BotServiceIdentity.isStaticService(botSession)) return defaultRecord(playerSession, botSession);
+        const playerId = actorId(playerSession);
+        const botId = actorId(botSession);
+        if (!playerId || !botId) return defaultRecord(playerSession, botSession);
+        return cache.get(key(playerId, botId)) || defaultRecord(playerSession, botSession);
+    },
+
     load(playerSession, botSession) {
         if (BotServiceIdentity.isStaticService(botSession)) return Promise.resolve(null);
         const playerId = actorId(playerSession);

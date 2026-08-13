@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 function clearEffectsOnDeath(session, actor) {
     EffectTicker.clearAll(actor);
@@ -13,6 +14,7 @@ function clearEffectsOnDeath(session, actor) {
     actor.supportReservations = {};
     EffectStore.prune(actor);
     calculateStats(session, actor);
+    EffectTicker.refreshEffects(session, actor);
 }
 
 function die(session, actor) {
@@ -21,6 +23,7 @@ function die(session, actor) {
     }
 
     actor.destructor();
+    ChargeLifecycle.clear(session, actor);
     clearEffectsOnDeath(session, actor);
     // Death cancels the timers that normally release transient action flags
     // (cast, hit, sit animation, pickup). Reset them explicitly so a town

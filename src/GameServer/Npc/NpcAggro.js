@@ -14,7 +14,7 @@ function isHotBotSession(session) {
 }
 
 function isAlive(actor) {
-    return !!actor && actor.isDead?.() !== true && actor.state?.fetchDead?.() !== true;
+    return !!actor && actor.isDead?.() !== true && actor.state?.fetchDead?.() !== true && actor.fakeDeath !== true;
 }
 
 function isLiveSession(session) {
@@ -40,8 +40,17 @@ function distanceSquared(first, second) {
     return (dx * dx) + (dy * dy);
 }
 
+function isSilentMoving(actor, now = Date.now()) {
+    if (actor?.silentMoving === true) return true;
+    return Object.values(actor?.effects || {}).some((effect) => (
+        effect?.stats?.silentMoving === true &&
+        (!effect.expiresAt || Number(effect.expiresAt) > now)
+    ));
+}
+
 function canEngage(npc, actor, now = Date.now()) {
     if (!isAlive(actor) || !isEligible(npc, now)) return false;
+    if (isSilentMoving(actor, now) && npc.fetchIsRaidBoss?.() !== true) return false;
     if (distanceSquared(npc, actor) > AGGRO_RADIUS * AGGRO_RADIUS) return false;
     if (Math.abs(npc.fetchLocZ() - actor.fetchLocZ()) > MAX_AGGRO_Z_DIFFERENCE) return false;
 

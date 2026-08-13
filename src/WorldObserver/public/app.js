@@ -24,7 +24,12 @@ const state = {
     rankingMetric: 'level',
     rankingRaceKey: 'all',
     rankingClassKey: 'all',
-    rankingFocusReturn: null
+    rankingFocusReturn: null,
+    raidBossOpen: false,
+    raidBossFilter: 'all',
+    raidBossSearch: '',
+    selectedRaidBossId: null,
+    raidBossFocusReturn: null
 };
 
 const COLORS = {
@@ -43,7 +48,8 @@ const PHASE_LABELS = Object.freeze({
     warm: 'Background',
     cold: 'Simulated',
     player: 'Player',
-    players: 'Players'
+    players: 'Players',
+    raidbosses: 'Raid bosses'
 });
 
 const ROLE_LABELS = Object.freeze({
@@ -106,6 +112,7 @@ const els = {
     gridLines: document.querySelector('#gridLines'),
     regionLabels: document.querySelector('#regionLabels'),
     pointsLayer: document.querySelector('#pointsLayer'),
+    raidBossLayer: document.querySelector('#raidBossLayer'),
     selectedCard: document.querySelector('#selectedCard'),
     selectedInspector: document.querySelector('#selectedInspector'),
     botsTotal: document.querySelector('#botsTotal'),
@@ -133,7 +140,16 @@ const els = {
     rankingClass: document.querySelector('#rankingClass'),
     rankingPodium: document.querySelector('#rankingPodium'),
     rankingScope: document.querySelector('#rankingScope'),
-    rankingList: document.querySelector('#rankingList')
+    rankingList: document.querySelector('#rankingList'),
+    openRaidBosses: document.querySelector('#openRaidBosses'),
+    closeRaidBosses: document.querySelector('#closeRaidBosses'),
+    raidBossesModal: document.querySelector('#raidBossesModal'),
+    raidBossFilters: document.querySelector('#raidBossFilters'),
+    raidBossSearch: document.querySelector('#raidBossSearch'),
+    raidBossSummary: document.querySelector('#raidBossSummary'),
+    raidBossScope: document.querySelector('#raidBossScope'),
+    raidBossList: document.querySelector('#raidBossList'),
+    raidBossAliveCount: document.querySelector('#raidBossAliveCount')
 };
 
 const DEFAULT_TILES = {
@@ -153,6 +169,12 @@ const DEFAULT_TILES = {
         '26_19'
     ]
 };
+
+const RAID_BOSS_STATUS_LABELS = Object.freeze({
+    alive: 'In world',
+    respawning: 'Respawning',
+    missing: 'Not in world'
+});
 
 function svgEl(name, attrs = {}) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -358,6 +380,68 @@ function actors() {
     ];
 }
 
+function raidBossItems() {
+    return state.snapshot?.raidBosses?.bosses || [];
+}
+
+function raidBossStatusLabel(status) {
+    return RAID_BOSS_STATUS_LABELS[status] || RAID_BOSS_STATUS_LABELS.missing;
+}
+
+function raidBossCoordinates(loc) {
+    if (!loc) return 'Coordinates unavailable';
+    return `${number(Math.round(Number(loc.locX || 0)))} · ${number(Math.round(Number(loc.locY || 0)))} · ${number(Math.round(Number(loc.locZ || 0)))}`;
+}
+
+function filteredRaidBosses() {
+    const query = state.raidBossSearch.trim().toLowerCase();
+    return raidBossItems().filter((boss) => {
+        if (state.raidBossFilter !== 'all' && boss.status !== state.raidBossFilter) return false;
+        if (!query) return true;
+        return [boss.name, boss.location?.name, boss.level, boss.id]
+            .filter((value) => value !== null && value !== undefined)
+            .join(' ')
+            .toLowerCase()
+            .includes(query);
+    });
+}
+
+function renderRaidBosses() {
+    const raidBossState = state.snapshot?.raidBosses;
+    const counts = raidBossState?.counts || { alive: 0, respawning: 0, missing: 0 };
+    const scrollTop = els.raidBossList?.scrollTop || 0;
+    if (els.raidBossAliveCount) els.raidBossAliveCount.textContent = Number(counts.alive || 0).toLocaleString();
+    if (!els.raidBossList || !els.raidBossSummary || !els.raidBossScope) return;
+    if (!raidBossState) {
+        els.raidBossSummary.textContent = 'Waiting for raid-boss data.';
+        els.raidBossScope.textContent = '0 bosses';
+        els.raidBossList.innerHTML = '<div class="list-empty">Waiting for raid-boss data.</div>';
+        return;
+    }
+
+    els.raidBossSummary.textContent = `${number(counts.alive)} in world · ${number(counts.respawning)} respawning · ${number(counts.missing)} missing · ${number(raidBossState.total)} total`;
+    const bosses = filteredRaidBosses();
+    els.raidBossScope.textContent = `${number(bosses.length)} boss${bosses.length === 1 ? '' : 'es'}`;
+    els.raidBossList.innerHTML = bosses.length
+        ? bosses.map((boss) => {
+            const clickable = boss.status === 'alive' && boss.loc;
+            const timer = boss.status === 'alive'
+                ? 'In world'
+                : boss.status === 'respawning'
+                    ? formatDuration(Math.max(0, Number(boss.respawnAt || 0) - Date.now()))
+                    : 'Not found';
+            return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
+                <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
+                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')} · NPC ${number(boss.id)}</span></span>
+                <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${text(raidBossCoordinates(boss.loc), 'Coordinates unavailable')}</span></span>
+                <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
+                <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
+            </button>`;
+        }).join('')
+        : '<div class="list-empty">No raid bosses match this filter.</div>';
+    els.raidBossList.scrollTop = scrollTop;
+}
+
 function rankingValue(actor, metric = state.rankingMetric) {
     const value = Leaderboards.metricValue(actor, metric);
     if (metric === 'level') return { primary: `Lv ${number(value, 1)}`, secondary: `${number(actor.exp || 0)} EXP` };
@@ -433,6 +517,7 @@ function renderRankings() {
 }
 
 function openRankings() {
+    if (state.raidBossOpen) closeRaidBosses();
     state.rankingOpen = true;
     state.rankingFocusReturn = document.activeElement;
     renderRankings();
@@ -448,6 +533,25 @@ function closeRankings() {
     document.body.classList.remove('rankings-open');
     state.rankingFocusReturn?.focus?.();
     state.rankingFocusReturn = null;
+}
+
+function openRaidBosses() {
+    if (state.rankingOpen) closeRankings();
+    state.raidBossOpen = true;
+    state.raidBossFocusReturn = document.activeElement;
+    renderRaidBosses();
+    els.raidBossesModal.hidden = false;
+    document.body.classList.add('rankings-open');
+    requestAnimationFrame(() => els.closeRaidBosses.focus());
+}
+
+function closeRaidBosses() {
+    if (!state.raidBossOpen) return;
+    state.raidBossOpen = false;
+    els.raidBossesModal.hidden = true;
+    if (!state.rankingOpen) document.body.classList.remove('rankings-open');
+    state.raidBossFocusReturn?.focus?.();
+    state.raidBossFocusReturn = null;
 }
 
 function eligibleActors() {
@@ -737,11 +841,77 @@ function renderCluster(cluster) {
 
 function renderPoints() {
     els.pointsLayer.innerHTML = '';
-    if (!state.snapshot) return;
+    if (!state.snapshot) {
+        renderRaidBossPoints();
+        return;
+    }
 
     const visible = filteredActors().filter(isSurfaceActor);
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
+    renderRaidBossPoints();
+}
+
+function renderRaidBossPoints() {
+    if (!els.raidBossLayer) return;
+    els.raidBossLayer.innerHTML = '';
+    if (state.phase !== 'all' && state.phase !== 'raidbosses') return;
+    const viewportWidth = state.viewport?.width || 99999;
+    raidBossItems()
+        .filter((boss) => boss.status === 'alive' && boss.loc)
+        .forEach((boss) => {
+            const point = project(boss.loc);
+            const selected = String(boss.id) === String(state.selectedRaidBossId);
+            const radius = screenUnits(9);
+            const group = svgEl('g', {
+                class: `raid-boss-point${selected ? ' is-selected' : ''}`,
+                transform: `translate(${point.x}, ${point.y})`,
+                tabindex: 0,
+                role: 'button',
+                'aria-label': `${boss.name}, level ${boss.level}, ${boss.location?.name || 'unknown location'}`
+            });
+            addPointHandlers(group, () => focusRaidBoss(boss.id));
+            group.appendChild(pointHitElement(34));
+            group.appendChild(svgEl('circle', { class: 'raid-boss-ring', r: radius + screenUnits(4), 'vector-effect': 'non-scaling-stroke' }));
+            group.appendChild(svgEl('path', {
+                class: 'raid-boss-core',
+                d: `M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`,
+                'vector-effect': 'non-scaling-stroke'
+            }));
+            if (selected || viewportWidth < 4200) {
+                const label = svgEl('text', {
+                    class: 'raid-boss-label',
+                    x: radius + screenUnits(8),
+                    y: screenUnits(4),
+                    style: `font-size:${screenUnits(11)}px`
+                });
+                label.textContent = boss.name;
+                group.appendChild(label);
+            }
+            els.raidBossLayer.appendChild(group);
+        });
+}
+
+function focusRaidBoss(id) {
+    const boss = raidBossItems().find((item) => String(item.id) === String(id));
+    if (!boss || boss.status !== 'alive' || !boss.loc) return;
+    state.selectedRaidBossId = boss.id;
+    state.selectedId = null;
+    state.clusterScope = null;
+    state.detail = null;
+    state.detailRequest += 1;
+    closeRaidBosses();
+    const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
+    const point = worldToMap(boss.loc);
+    applyViewport({
+        x: point.x - viewport.width * 0.5,
+        y: point.y - viewport.height * 0.5,
+        width: viewport.width,
+        height: viewport.height
+    });
+    renderRaidBossPoints();
+    renderRoster();
+    renderSelected();
 }
 
 function renderFilterCounts() {
@@ -754,7 +924,8 @@ function renderFilterCounts() {
         hot: items.filter((actor) => actor.phase === 'hot').length,
         warm: items.filter((actor) => actor.phase === 'warm').length,
         cold: items.filter((actor) => actor.phase === 'cold').length,
-        players: items.filter((actor) => actor.kind === 'player').length
+        players: items.filter((actor) => actor.kind === 'player').length,
+        raidbosses: Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
     Object.entries(counts).forEach(([key, value]) => {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
@@ -899,6 +1070,12 @@ function displayActivity(actor) {
 }
 
 function renderRoster() {
+    if (state.phase === 'raidbosses') {
+        const alive = Number(state.snapshot?.raidBosses?.counts?.alive || 0);
+        els.visibleCount.textContent = `${number(alive)} shown`;
+        els.actorList.innerHTML = '<div class="list-empty">Raid bosses are shown on the map. Open the Raid bosses panel for full status.</div>';
+        return;
+    }
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
     const roster = filteredActors()
         .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
@@ -1232,6 +1409,15 @@ function renderSignals(actor) {
 function renderSelectedCard() {
     const actor = selectedActor();
     if (!actor) {
+        const raidBoss = raidBossItems().find((boss) => String(boss.id) === String(state.selectedRaidBossId));
+        if (raidBoss) {
+            els.selectedCard.innerHTML = `
+                <span class="eyeline">Selected raid boss</span>
+                <strong>${text(raidBoss.name)}</strong>
+                <p>Lv ${number(raidBoss.level, '?')} · ${text(raidBoss.location?.name, 'Unknown location')} · ${text(raidBossStatusLabel(raidBoss.status))}</p>
+            `;
+            return;
+        }
         if (state.clusterScope) {
             els.selectedCard.innerHTML = `
                 <span class="eyeline">Opened cluster</span>
@@ -1357,6 +1543,7 @@ function renderSnapshot() {
     renderPoints();
     renderPopulation();
     renderMarket();
+    renderRaidBosses();
     renderRoster();
     renderSelected();
 }
@@ -1390,6 +1577,7 @@ async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showL
 }
 
 function selectActor(id, kind = 'bot', focus = false) {
+    state.selectedRaidBossId = null;
     state.selectedId = { id, kind };
     state.detail = null;
     state.detailError = null;
@@ -1415,6 +1603,7 @@ function selectActor(id, kind = 'bot', focus = false) {
 }
 
 function focusCluster(cluster) {
+    state.selectedRaidBossId = null;
     if (cluster.size === 1) {
         selectActor(cluster.members[0].actor.id, cluster.members[0].actor.kind);
         return;
@@ -1487,6 +1676,8 @@ async function refresh() {
 
 els.openRankings?.addEventListener('click', openRankings);
 els.closeRankings?.addEventListener('click', closeRankings);
+els.openRaidBosses?.addEventListener('click', openRaidBosses);
+els.closeRaidBosses?.addEventListener('click', closeRaidBosses);
 
 els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
@@ -1496,6 +1687,34 @@ els.rankingsModal?.addEventListener('click', (event) => {
         return;
     }
     if (event.target === els.rankingsModal) closeRankings();
+});
+
+els.raidBossesModal?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-raid-boss-id]');
+    if (row && !row.disabled) {
+        focusRaidBoss(row.dataset.raidBossId);
+        return;
+    }
+    if (event.target === els.raidBossesModal) closeRaidBosses();
+});
+
+els.raidBossFilters?.addEventListener('click', (event) => {
+    const filter = event.target.closest('[data-raid-filter]');
+    if (!filter) return;
+    state.raidBossFilter = filter.dataset.raidFilter || 'all';
+    els.raidBossFilters.querySelectorAll('[data-raid-filter]').forEach((item) => {
+        const active = item === filter;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', String(active));
+    });
+    els.raidBossList.scrollTop = 0;
+    renderRaidBosses();
+});
+
+els.raidBossSearch?.addEventListener('input', (event) => {
+    state.raidBossSearch = String(event.target.value || '').trim().toLowerCase();
+    els.raidBossList.scrollTop = 0;
+    renderRaidBosses();
 });
 
 els.rankingTabs?.addEventListener('click', (event) => {
@@ -1562,8 +1781,19 @@ els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');
     if (!button) return;
     state.phase = button.dataset.phase;
+    if (state.phase === 'raidbosses') {
+        state.selectedId = null;
+        state.detail = null;
+        state.detailError = null;
+        state.detailLoading = false;
+        state.clusterScope = null;
+        state.detailRequest += 1;
+    } else if (state.phase !== 'all') {
+        state.selectedRaidBossId = null;
+    }
     els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
     renderFilteredActorViews({ counts: false });
+    renderSelected();
 });
 
 els.actorSearch.addEventListener('input', (event) => {
@@ -1642,6 +1872,11 @@ els.worldMap.addEventListener('pointerup', finishDrag);
 els.worldMap.addEventListener('pointercancel', finishDrag);
 
 document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.raidBossOpen) {
+        event.preventDefault();
+        closeRaidBosses();
+        return;
+    }
     if (event.key === 'Escape' && state.rankingOpen) {
         event.preventDefault();
         closeRankings();
@@ -1650,6 +1885,22 @@ document.addEventListener('keydown', (event) => {
     if (state.rankingOpen) {
         if (event.key === 'Tab') {
             const focusable = [...els.rankingsModal.querySelectorAll('button:not([disabled]), select:not([disabled])')]
+                .filter((element) => !element.hidden && element.offsetParent !== null);
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+            }
+        }
+        return;
+    }
+    if (state.raidBossOpen) {
+        if (event.key === 'Tab') {
+            const focusable = [...els.raidBossesModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
                 .filter((element) => !element.hidden && element.offsetParent !== null);
             const first = focusable[0];
             const last = focusable[focusable.length - 1];

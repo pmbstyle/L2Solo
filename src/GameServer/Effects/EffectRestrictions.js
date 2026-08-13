@@ -6,20 +6,26 @@ const FEAR_RANGE = 500;
 const FEAR_TICK_MS = 6000;
 
 function canMove(actor) {
+    if (actor?.fakeDeath) return false;
+    if (EffectStore.list(actor).some((effect) => effect.stats?.immobile === true)) return false;
     const impairments = EffectStore.impairments(actor);
     return !(impairments.disabled || impairments.rooted);
 }
 
 function canAttack(actor) {
-    return !EffectStore.impairments(actor).disabled;
+    if (actor?.fakeDeath) return false;
+    const impairments = EffectStore.impairments(actor);
+    return !(impairments.disabled || impairments.physicalMuted);
 }
 
 function canCast(actor) {
+    if (actor?.fakeDeath) return false;
     const impairments = EffectStore.impairments(actor);
-    return !(impairments.disabled || impairments.silenced);
+    return !(impairments.disabled || impairments.silenced || impairments.magicMuted);
 }
 
 function canUseBasicAction(actor) {
+    if (actor?.fakeDeath) return false;
     return !EffectStore.impairments(actor).disabled;
 }
 
@@ -220,8 +226,13 @@ function fearMoveStep(session, actor, source) {
 
 function wakeOnDamage(actor, session = actor?.session) {
     if (!actor) return false;
-    const removed = EffectStore.remove(actor, 'sleep');
-    if (!removed) return false;
+    const sleeping = EffectStore.remove(actor, 'sleep');
+    const fakeDeath = EffectStore.list(actor).find((effect) => effect.stats?.fakeDeath === true);
+    if (fakeDeath) {
+        EffectStore.remove(actor, fakeDeath.key);
+        invoke('GameServer/Skills/ToggleSkills').cleanupState(session, actor, fakeDeath);
+    }
+    if (!sleeping && !fakeDeath) return false;
 
     const EffectTicker = invoke('GameServer/Effects/EffectTicker');
     EffectTicker.refreshEffects(session, actor);

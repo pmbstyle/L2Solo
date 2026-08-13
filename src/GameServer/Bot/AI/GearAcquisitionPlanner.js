@@ -1,5 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
@@ -12,6 +13,7 @@ const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -134,6 +136,13 @@ function equippedInventoryItems(inventory = {}) {
     });
 }
 
+function hasEquippedTwoHandedWeapon(state = {}) {
+    return equippedInventoryItems(state.inventory).some((item) => (
+        Number(item.etc?.slot || 0) === 14
+        && String(item.template?.kind || '').startsWith('Weapon.')
+    ));
+}
+
 function itemScore(item, role, classId) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
@@ -193,7 +202,9 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
         slot === 7
         || BotEquipmentCompatibility.allowsTwoHandedWeapon(kind, role, classId)
     );
-    if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId) && kind === 'Armor.Shield';
+    if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId)
+        && kind === 'Armor.Shield'
+        && !hasEquippedTwoHandedWeapon(state);
     if ([10, 11, 15].includes(slot)) return kind === BotEquipmentCompatibility.armorKindFor(role, classId);
     if ([6, 9, 12].includes(slot)) return kind === 'Armor.Wear';
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
@@ -416,11 +427,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
             owned.slot = Number(entry.slot || slots[0]);
         });
     });
-    const hasTwoHandedWeapon = Object.values(next).some((owned) => {
-        const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
-        return owned?.equipped && Number(template?.etc?.slot || 0) === 14 &&
-            String(template?.template?.kind || '').startsWith('Weapon.');
-    });
+    const hasTwoHandedWeapon = hasEquippedTwoHandedWeapon({ ...state, inventory: next });
     if (hasTwoHandedWeapon) {
         Object.values(next).forEach((owned) => {
             const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
@@ -440,9 +447,10 @@ function preferredTarget(state = {}, options = {}) {
     const publishedRecipeIds = new Set(CraftShopService.CraftStations.flatMap((station) => (
         CraftShopService.stationRecipes(station, availableToStations).map((recipe) => Number(recipe.recipeId))
     )));
-    const recipes = Object.values(C4RecipeItems.loadRecipeItems() || {}).filter((recipe) => (
+    const craftRecipes = Object.values(C4RecipeItems.loadRecipeItems() || {}).filter((recipe) => (
         recipe.type === 'dwarven' && publishedRecipeIds.has(Number(recipe.recipeId))
     ));
+    const recipes = [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()];
     const recipeRank = options.recipeId
         ? String((DataCache.items || []).find((item) => Number(item.selfId) === Number(recipes.find((recipe) => Number(recipe.recipeId) === Number(options.recipeId))?.productId))?.etc?.rank || '')
         : null;
@@ -616,6 +624,11 @@ function desiredNpcSlots(state = {}) {
     const plan = BotGear.planFor({ classId: classIdFor(state), level: npcAdequacyLevel(state) });
     const order = [7, 14, 10, 15, 11, 8, 6, 9, 12, 3, 1, 2, 4, 5];
     return (plan.items || []).map((item) => Number(item.slot || 0)).filter(Boolean)
+        // A class may support both a one-handed blunt and a polearm.  Its
+        // profile therefore permits shields, but a currently adequate
+        // two-handed weapon makes the shield slot unavailable until the bot
+        // actually transitions back to a one-handed weapon.
+        .filter((slot) => slot !== 8 || !hasEquippedTwoHandedWeapon(state))
         .sort((left, right) => order.indexOf(left) - order.indexOf(right));
 }
 
@@ -945,6 +958,7 @@ function sourceIndexFor(spots = []) {
         return sourceIndexCache.byItemId;
     }
 
+    const npcById = new Map((DataCache.npcs || []).map((npc) => [Number(npc.selfId), npc]));
     const npcLevels = new Map((DataCache.npcs || []).map((npc) => [
         Number(npc.selfId),
         Number(npc.template?.level || 0)
@@ -964,6 +978,7 @@ function sourceIndexFor(spots = []) {
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
+        if (BotRaidSafety.isProtectedRaidEntity(npcById.get(Number(reward.selfId)))) return;
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
@@ -1066,6 +1081,44 @@ function missingMaterials(recipe, inventory) {
     }));
 }
 
+function combinationMetadata(recipe) {
+    if (!C4DualSwordCombinations.isCombination(recipe)) return null;
+    return {
+        type: 'dual_sword',
+        resultId: Number(recipe.productId),
+        stationId: recipe.station?.id || null,
+        npcId: Number(recipe.station?.npcId || 0) || null,
+        requirements: (recipe.materials || []).map((material) => ({
+            selfId: Number(material.selfId),
+            amount: Number(material.amount || 0)
+        }))
+    };
+}
+
+function combinationBladeMarketPlan(target, materials, state, planningOptions) {
+    const combine = combinationMetadata(target?.recipe);
+    if (!combine) return null;
+    const candidates = materials
+        .filter((material) => Number(material.missing || 0) > 0)
+        .map((material) => {
+            const item = catalogItem(material.selfId);
+            return item ? { material, item, offer: marketOfferForTarget(item, state, planningOptions) } : null;
+        })
+        .filter((candidate) => candidate?.offer)
+        .sort((left, right) => Number(left.offer.price || Infinity) - Number(right.offer.price || Infinity));
+    const selected = candidates[0];
+    if (!selected) return null;
+    return {
+        ...marketPlan(state, selected.item, selected.offer, {
+            reason: 'dual_sword_blade',
+            reserve: operationalAdenaReserve(state)
+        }),
+        grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
+        materials,
+        combine
+    };
+}
+
 function planFor(state = {}, options = {}) {
     if (isCraftService(state)) {
         return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
@@ -1131,9 +1184,11 @@ function planFor(state = {}, options = {}) {
     if (!target) return { status: 'complete', reason: 'no_missing_craftable_upgrade' };
 
     const spots = options.spots || [];
+    const materials = target.recipe ? missingMaterials(target.recipe, state.inventory) : [];
+    const bladeMarketPlan = combinationBladeMarketPlan(target, materials, state, planningOptions);
+    if (bladeMarketPlan) return bladeMarketPlan;
     const directSources = sourceForItem(target.item.selfId, spots, state, planningOptions);
     const direct = bestSourceForState(directSources, state);
-    const materials = target.recipe ? missingMaterials(target.recipe, state.inventory) : [];
     const allowedRecipeIds = planningOptions.allowedRecipeIds;
     const materialPlans = materials.map((material) => ({
         ...material,
@@ -1177,6 +1232,7 @@ function planFor(state = {}, options = {}) {
     const partyNeedReason = nextAssessment.reason;
     const requiresParty = partyNeed === 'required';
 
+    const combine = combinationMetadata(target.recipe);
     return {
         status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : strategy === 'market' || next ? 'active' : 'blocked',
         phase: GearLifecycle.phaseFor(state),
@@ -1193,7 +1249,8 @@ function planFor(state = {}, options = {}) {
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
         market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
         materials: materialPlans.map(({ source, ...material }) => ({ ...material, sourceSpotId: source?.spotId || null })),
-        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null
+        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null,
+        ...(combine ? { combine } : {})
     };
 }
 

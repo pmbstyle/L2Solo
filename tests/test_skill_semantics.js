@@ -1786,7 +1786,7 @@ assert.strictEqual(doubleSonicSlash.fetchSkillType(), C4SkillRules.DAMAGE, 'Doub
 assert.strictEqual(doubleSonicSlash.fetchTargetKind(), 'enemy', 'Double Sonic Slash should preserve sourced TARGET_ONE offensive semantics');
 assert.strictEqual(doubleSonicSlash.fetchSsBoost(), 1, 'Double Sonic Slash should preserve sourced physical shot boost semantics');
 assert.deepStrictEqual(doubleSonicSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 2, condition: 128, conditionValue: 2 }, 'Double Sonic Slash should preserve sourced dual sword and charge requirements');
-assert.strictEqual(doubleSonicSlashOutcome.damage, 156, 'Double Sonic Slash should keep its physical damage component');
+assert.strictEqual(doubleSonicSlashOutcome.damage, 188, 'Double Sonic Slash should apply the sourced two-charge damage multiplier');
 assert.strictEqual(doubleSonicSlashOutcome.effect, null, 'Double Sonic Slash should remain a pure damage skill without a debuff');
 
 const sonicBlasterData = activeSkills.find((entry) => entry.selfId === 6);
@@ -2502,7 +2502,7 @@ assert.strictEqual(tripleSonicSlash.fetchSsBoost(), 1, 'Triple Sonic Slash shoul
 assert.deepStrictEqual(tripleSonicSlash.fetchSemantic().requires, { weaponsAllowed: 512, itemKind: 'Dual Sword', charges: 3, condition: 128, conditionValue: 3 }, 'Triple Sonic Slash should preserve sourced dual sword and charge requirements');
 assert.strictEqual(tripleSonicSlash.fetchSemantic().castRange, 40, 'Triple Sonic Slash should preserve sourced castRange metadata');
 assert.strictEqual(tripleSonicSlash.fetchSemantic().effectRange, 400, 'Triple Sonic Slash should preserve sourced effectRange metadata');
-assert.strictEqual(tripleSonicSlashOutcome.damage, 333, 'Triple Sonic Slash should keep its physical damage component');
+assert.strictEqual(tripleSonicSlashOutcome.damage, 467, 'Triple Sonic Slash should apply the sourced three-charge damage multiplier');
 assert.strictEqual(tripleSonicSlashOutcome.effect, null, 'Triple Sonic Slash should remain a pure damage skill without a debuff');
 
 const ironPunchData = activeSkills.find((entry) => entry.selfId === 29);
@@ -2712,7 +2712,7 @@ assert.strictEqual(hurricaneAssault.fetchTargetKind(), 'enemy', 'Hurricane Assau
 assert.strictEqual(hurricaneAssault.fetchSsBoost(), 1, 'Hurricane Assault should preserve sourced physical shot boost semantics');
 assert.strictEqual(hurricaneAssault.fetchSemantic().trait, 'wind', 'Hurricane Assault should preserve sourced wind element semantics');
 assert.deepStrictEqual(hurricaneAssault.fetchSemantic().requires, { weaponsAllowed: 1024, charges: 2, condition: 128, conditionValue: 2 }, 'Hurricane Assault should preserve sourced fist and charge requirements');
-assert.strictEqual(hurricaneAssaultOutcome.damage, 134, 'Hurricane Assault should keep its physical damage component');
+assert.strictEqual(hurricaneAssaultOutcome.damage, 161, 'Hurricane Assault should apply the sourced two-charge damage multiplier');
 assert.strictEqual(hurricaneAssaultOutcome.effect, null, 'Hurricane Assault should remain a pure damage skill without a debuff');
 
 const soulBreakerData = activeSkills.find((entry) => entry.selfId === 281);
@@ -2931,8 +2931,21 @@ const blowOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, dead
     }
 });
 assert.strictEqual(deadly.fetchSkillType(), C4SkillRules.BLOW, 'Deadly Blow should resolve to BLOW');
-assert.strictEqual(blowOutcome.lethal, true, 'Deadly Blow should be able to trigger lethal half-kill');
-assert.strictEqual(blowOutcome.damage, 500, 'Lethal half-kill should raise damage to half of target max HP when larger');
+assert.strictEqual(blowOutcome.lethal, false, 'Deadly Blow must not inherit Lethal Blow mechanics');
+assert.strictEqual(blowOutcome.damage, 200, 'Deadly Blow should preserve its ordinary blow damage');
+
+const lethalBlow = skill({ selfId: 344, name: 'Lethal Blow', spell: true, power: 5773, distance: 40 });
+const lethalOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, lethalBlow, {
+    rng: () => 0,
+    attack: {
+        clearLoadedShot() {},
+        prepareSkillDamage: () => 200
+    }
+});
+assert.strictEqual(lethalBlow.fetchSpell(), false, 'Lethal Blow should be a physical skill even when raw data marks it as spell-like');
+assert.strictEqual(lethalOutcome.lethal, true, 'Only Lethal Blow should trigger the sourced level-based lethal roll');
+assert.strictEqual(lethalOutcome.damage, 200, 'Lethal Blow should keep its ordinary hit damage for reflect, overhit, and combat reporting');
+assert.strictEqual(lethalOutcome.forceLethalVitals, true, 'A successful Lethal Blow should request the separate post-hit one-HP lethal effect');
 
 const debuffed = statActor();
 const hex = skill({ selfId: 122, name: 'Hex', spell: true, power: 1, level: 1, buff: 30000 });
@@ -4659,7 +4672,7 @@ const drainTarget = creature({ id: 2000320, hp: 1000, maxHp: 1000, mDef: 100 });
 const vampiricTouch = skill({ selfId: 1147, name: 'Vampiric Touch', spell: true, power: 32, level: 6, distance: 600 });
 const drainOutcome = SkillEffects.execute(session(), drainCaster, drainTarget, vampiricTouch, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.99,
     attack: new Attack()
 });
 const expectedDrainDamage = Math.round(Formulas.calcMagicDamage(100, 32, 100));
@@ -5333,8 +5346,10 @@ EffectStore.remove(manaDrugTarget, manaDrugOutcome.effect.key);
 const chantLifeTarget = statActor();
 chantLifeTarget.hp = 40;
 chantLifeTarget.maxHp = 100;
+const chantLifeSession = session();
+chantLifeTarget.session = chantLifeSession;
 const chantLife = skill({ selfId: 1229, name: 'Chant of Life', spell: true, power: 1, level: 9, buff: 15000 });
-const chantLifeOutcome = SkillEffects.execute(session(), caster, chantLifeTarget, chantLife, {
+const chantLifeOutcome = SkillEffects.execute(chantLifeSession, caster, chantLifeTarget, chantLife, {
     magicSkill: true,
     rng: () => 0,
     attack: { clearLoadedShot() {} }
@@ -5345,6 +5360,9 @@ assert.strictEqual(chantLifeOutcome.effect.hot.heal, 43, 'Chant of Life level 9 
 assert.strictEqual(chantLifeOutcome.effect.hot.count, 15, 'Chant of Life should use sourced 15 heal ticks');
 assert.strictEqual(chantLifeOutcome.effect.hot.intervalMs, 1000, 'Chant of Life should tick every sourced second');
 assert(chantLifeTarget.effectTimers.chant_of_life, 'Chant of Life should start a runtime heal-over-time ticker');
+const chantLifeShortPacket = chantLifeSession.packets.find((packet) => packet[0] === 0xf4);
+assert(chantLifeShortPacket, 'Chant of Life should refresh the dedicated C4 short-buff slot');
+assert.strictEqual(chantLifeShortPacket.readInt32LE(1), 1229, 'the short-buff refresh should carry Chant of Life');
 EffectStore.remove(chantLifeTarget, 'chant_of_life');
 
 const heartTarget = statActor();
@@ -5356,9 +5374,9 @@ const heartOutcome = SkillEffects.execute(session(), caster, heartTarget, heartP
     rng: () => 0,
     attack: { clearLoadedShot() {} }
 });
-assert.strictEqual(heartPaagrio.fetchSkillType(), C4SkillRules.HEAL_HOT, "Heart of Pa'agrio should resolve to instant heal plus HOT");
-assert.strictEqual(heartOutcome.heal, 127, "Heart of Pa'agrio level 4 should restore sourced instant heal 127");
-assert.strictEqual(heartTarget.fetchHp(), 527, "Heart of Pa'agrio should apply sourced instant heal instead of active.json power 1");
+assert.strictEqual(heartPaagrio.fetchSkillType(), C4SkillRules.HOT, "Heart of Pa'agrio should resolve to the sourced pure HOT type");
+assert.strictEqual(heartOutcome.heal, 0, "Heart of Pa'agrio should not invent an initial heal from the unused power table");
+assert.strictEqual(heartTarget.fetchHp(), 400, "Heart of Pa'agrio should restore HP only through its timed ticks");
 assert.strictEqual(heartOutcome.effect.key, 'heart_of_paagrio', "Heart of Pa'agrio should apply a structured heal-over-time buff");
 assert.strictEqual(heartOutcome.effect.hot.heal, 43, "Heart of Pa'agrio level 4 should use sourced HealOverTime value 43");
 assert(heartTarget.effectTimers.heart_of_paagrio, "Heart of Pa'agrio should start a runtime heal-over-time ticker");
@@ -6892,13 +6910,13 @@ const chantRageOutcome = SkillEffects.execute(session(), caster, chantRageTarget
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(chantRageOutcome.effect.key, 'chant_of_rage', 'Chant of Rage should apply a structured buff effect');
-assert.strictEqual(EffectStats.multiplier(chantRageTarget, 'pCritDamageMul'), 1.3, 'Chant of Rage level 2 should use sourced pCritDamage 1.3');
+assert.strictEqual(EffectStats.multiplier(chantRageTarget, 'pCritDamageMul'), 1.4, 'Chant of Rage level 2 should use sourced pCritDamage 1.4');
 calculateStats({}, chantRageTarget);
 chantRageTarget.fetchCollectiveCritical = () => 1000;
 const chantRageCrit = new Attack().prepareMeleeHit(chantRageTarget, statActor(), true, false, () => 0);
 assert.strictEqual(
     chantRageCrit.damage,
-    Math.round(2 * 1.3 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
+    Math.round(2 * 1.4 * (70 * chantRageTarget.fetchCollectivePAtk() / 100)),
     'Chant of Rage level 2 should multiply physical critical damage by sourced pCritDamage'
 );
 
@@ -7105,7 +7123,7 @@ assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'mDefMul'), 0.84, "
 assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'castSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced mAtkSpd 1.08");
 assert.strictEqual(EffectStats.multiplier(ragePaagrioTarget, 'pAtkSpdMul'), 1.08, "The Rage of Pa'agrio level 2 should use sourced pAtkSpd 1.08");
 assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'runSpdAdd'), 8, "The Rage of Pa'agrio level 2 should use sourced runSpd +8");
-assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'pEvasionRateAdd'), -4, "The Rage of Pa'agrio level 2 should use sourced pEvasionRate -4");
+assert.strictEqual(EffectStats.add(ragePaagrioTarget, 'pEvasionRateAdd'), 0, "The Rage of Pa'agrio should not invent a non-sourced evasion penalty");
 calculateStats({}, ragePaagrioTarget);
 assert.strictEqual(ragePaagrioTarget.collectivePAtk, Math.round(Formulas.calcPAtk(20, 30, 100) * 1.08), "The Rage of Pa'agrio should boost PAtk");
 assert.strictEqual(ragePaagrioTarget.collectiveMAtk, Math.round(Formulas.calcMAtk(20, 30, 50) * 1.16), "The Rage of Pa'agrio should boost MAtk");
@@ -7114,7 +7132,7 @@ assert.strictEqual(ragePaagrioTarget.collectiveMDef, Math.round(Formulas.calcMDe
 assert.strictEqual(ragePaagrioTarget.collectiveAtkSpd, Math.round(Formulas.calcAtkSpd(30, 300) * 1.08), "The Rage of Pa'agrio should boost PAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveCastSpd, Math.round(Formulas.calcCastSpd(30) * 1.08), "The Rage of Pa'agrio should boost MAtkSpd");
 assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 120) + 8, "The Rage of Pa'agrio should add run speed");
-assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2) - 4), "The Rage of Pa'agrio should reduce evasion");
+assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2)), "The Rage of Pa'agrio should preserve evasion");
 
 const gloomTarget = statActor();
 const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 87, level: 13, buff: 30000 });
@@ -7242,7 +7260,7 @@ assert.strictEqual(avatarOutcome.heal, 20, 'Body Of Avatar must restore its sour
 assert.strictEqual(EffectStats.multiplier(avatarTarget, 'maxHpMul'), 1.15, 'Body Of Avatar must also apply its sourced max-HP effect');
 
 const snipe = C4SkillRules.resolve({ selfId: 313, name: 'Snipe', level: 8 });
-assert.deepStrictEqual(snipe.stats, { pAtkAdd: 177, pAccuracyCombatAdd: 3, pCritRateMul: 0.2 }, 'Snipe must retain sourced attack, accuracy and critical-rate modifiers');
+assert.deepStrictEqual(snipe.stats, { pCritRateMul: 1.2, immobile: true, pAtkAdd: 177, pAccuracyCombatAdd: 3 }, 'Snipe must retain sourced attack, accuracy, critical-rate and immobility modifiers');
 
 const wrathTarget = creature({ id: 2000302 });
 wrathTarget.cp = 1000;

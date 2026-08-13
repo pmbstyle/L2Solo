@@ -73,6 +73,100 @@ const REGION_LABELS = [
     { name: 'Dwarven Village', locX: 115120, locY: -178212, kind: 'starter' }
 ];
 
+function raidBossCatalog() {
+    const templates = new Map((DataCache.npcs || [])
+        .filter((npc) => npc?.template?.raidBoss === true)
+        .map((npc) => [Number(npc.selfId), npc]));
+    const seen = new Set();
+    return (DataCache.npcSpawns || [])
+        .flatMap((group) => group?.spawns || [])
+        .map((spawn) => ({ spawn, npc: templates.get(Number(spawn?.selfId)) }))
+        .filter(({ spawn, npc }) => {
+            const id = Number(spawn?.selfId || 0);
+            if (!npc || !Number.isInteger(id) || id <= 0 || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .map(({ spawn, npc }) => ({
+            id: Number(npc.selfId),
+            name: npc.template.name || spawn.name || `Raid boss ${npc.selfId}`,
+            level: Number(npc.template.level || 0),
+            respawnMs: Math.max(0, Number(spawn.respawn || 0) * 1000),
+            spawnLoc: spawn.coords?.[0]
+                ? {
+                    locX: Number(spawn.coords[0].locX),
+                    locY: Number(spawn.coords[0].locY),
+                    locZ: Number(spawn.coords[0].locZ)
+                }
+                : null
+        }));
+}
+
+function raidBossLocation(loc) {
+    if (!loc) return { name: 'Unknown location', area: null };
+    const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
+    if (area) return { name: area.name, area };
+
+    const nearest = REGION_LABELS
+        .map((label) => ({
+            label,
+            distance: Math.hypot(Number(loc.locX) - label.locX, Number(loc.locY) - label.locY)
+        }))
+        .sort((left, right) => left.distance - right.distance)[0];
+    return { name: nearest?.label?.name || 'Unknown location', area: null };
+}
+
+function liveRaidBosses(world) {
+    return (world?.npc?.spawns || [])
+        .filter((npc) => (
+            npc?.fetchIsRaidBoss?.() === true &&
+            npc?.state?.fetchDead?.() !== true &&
+            npc?.isDead?.() !== true
+        ));
+}
+
+function raidBossSnapshot(now = Date.now()) {
+    const World = invoke('GameServer/World/World');
+    const RaidBossState = invoke('GameServer/World/RaidBossState');
+    const liveById = new Map(liveRaidBosses(World)
+        .map((npc) => [Number(npc.fetchSelfId?.() || 0), npc])
+        .filter(([id]) => id > 0));
+
+    const bosses = raidBossCatalog().map((definition) => {
+        const live = liveById.get(definition.id) || null;
+        const persisted = RaidBossState.get(definition.id);
+        const respawnAt = !live && Number(persisted?.respawnTime || 0) > now
+            ? Number(persisted.respawnTime)
+            : null;
+        const loc = live ? actorLoc(live) : definition.spawnLoc;
+        const location = raidBossLocation(loc);
+        return {
+            id: definition.id,
+            name: definition.name,
+            level: definition.level,
+            status: live ? 'alive' : respawnAt ? 'respawning' : 'missing',
+            objectId: live ? Number(live.fetchId?.() || 0) : null,
+            loc,
+            spawnLoc: definition.spawnLoc,
+            location,
+            respawnAt,
+            remainingMs: respawnAt ? Math.max(0, respawnAt - now) : 0,
+            respawnMs: definition.respawnMs
+        };
+    }).sort((left, right) => left.name.localeCompare(right.name));
+
+    return {
+        generatedAt: now,
+        total: bosses.length,
+        counts: {
+            alive: bosses.filter((boss) => boss.status === 'alive').length,
+            respawning: bosses.filter((boss) => boss.status === 'respawning').length,
+            missing: bosses.filter((boss) => boss.status === 'missing').length
+        },
+        bosses
+    };
+}
+
 function isEnabled() {
     const config = options.default.WorldObserver || {};
     return config.enabled !== false && String(config.enabled || 'true').toLowerCase() !== 'false';
@@ -796,6 +890,7 @@ function snapshot() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
@@ -948,6 +1043,8 @@ const WorldObserverServer = {
     compactColdDetail,
     compactHotDetail,
     actorDetail,
+    raidBossCatalog,
+    raidBossSnapshot,
     equipmentValue,
 
     init() {

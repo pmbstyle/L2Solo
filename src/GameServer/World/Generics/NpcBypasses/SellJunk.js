@@ -1,11 +1,13 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database       = invoke('Database');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 
 module.exports = function(session, parts) {
     const backpack = session.actor.backpack;
     const items = backpack.items;
 
-    const sellableItems = items.filter(item => !item.fetchEquipped() && item.fetchSelfId() !== 57);
+    const sellableItems = ItemDisposition.unreservedActorItems(session.coldLifeState, items)
+        .filter(item => !item.fetchEquipped() && item.fetchSelfId() !== 57);
 
     if (sellableItems.length === 0) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "You have no unequipped items to sell." }));
@@ -26,7 +28,8 @@ module.exports = function(session, parts) {
         Database.deleteItem(session.actor.fetchId(), item.fetchId());
     });
 
-    backpack.items = backpack.items.filter(item => item.fetchEquipped() || item.fetchSelfId() === 57);
+    const soldItemIds = new Set(sellableItems.map((item) => Number(item.fetchId())));
+    backpack.items = backpack.items.filter((item) => !soldItemIds.has(Number(item.fetchId())));
 
     backpack.stackableExists(57).then((adenaItem) => {
         const total = adenaItem.fetchAmount() + totalAdenaPayout;

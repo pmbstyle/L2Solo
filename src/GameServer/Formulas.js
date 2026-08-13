@@ -245,6 +245,16 @@ const Formulas = {
         return  (time / castSpd) * 333;
     },
 
+    // Lisvus C4 calcAtkBreak: a casting target starts at 15%, incoming
+    // damage raises the chance, MEN lowers it, and Concentration-style
+    // effects modify the final ATTACK_CANCEL stat.
+    calcCastBreakChance({ damage = 0, men = 0, cancelAdd = 0 } = {}) {
+        let chance = 15 + Math.sqrt(13 * Math.max(0, Number(damage) || 0));
+        chance -= (this.calcBaseMod.MEN(Math.max(0, Number(men) || 0)) * 100) - 100;
+        chance += Number(cancelAdd) || 0;
+        return Math.max(1, Math.min(99, chance));
+    },
+
     calcMeleeHit(pAtk, pAtkRnd, pDef) {
         return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
     },
@@ -269,6 +279,17 @@ const Formulas = {
             ...options,
             skillPower: power
         });
+    },
+
+    // Lisvus Formulas.calcBlowDamage: a blow applies the critical-damage
+    // multiplier to P.Atk plus skill power, then adds the amplified flat
+    // critical-damage bonus before the normal 70 / P.Def scaling.
+    calcBlowDamage(pAtk, pAtkRnd, pDef, power, { soulshot = false, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng = Math.random } = {}) {
+        let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(power) || 0);
+        damage = (Math.max(0, Number(criticalDamageMultiplier) || 1) * damage)
+            + ((Number(criticalDamageAdd) || 0) * 6.5);
+        return (70 * damage / Math.max(1, pDef))
+            + (Math.max(0, Number(pAtkRnd) || 0) * Math.max(0, Math.min(1, Number(rng()) || 0)));
     },
 
     rollCritical(critical, rng = Math.random) {
@@ -327,6 +348,32 @@ const Formulas = {
         return (Number(power) || 0) * Math.pow(1.7165 - hpRatio, 2) * 0.577;
     },
 
+    // Lisvus/L2J FATAL: damage grows linearly from zero at full HP to 3.5x
+    // skill power as the caster approaches zero HP.
+    calcFatalPower(power, currentHp, maxHp) {
+        const max = Number(maxHp) || 0;
+        const current = Number(currentHp) || 0;
+        const hpRatio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 1;
+        return (Number(power) || 0) * 3.5 * (1 - hpRatio);
+    },
+
+    // Lisvus C4 lethal-strike chance used by Lethal Shot/Blow. The returned
+    // value is a percentage and intentionally preserves the source's three
+    // level-difference bands.
+    calcLethalStrikeChance(attackerLevel, targetLevel, magicLevel) {
+        const attacker = Math.max(1, Number(attackerLevel) || 1);
+        const target = Math.max(1, Number(targetLevel) || 1);
+        const magic = Number(magicLevel) || 0;
+        if (magic <= 0) return 2 * (attacker / target);
+
+        const delta = Math.floor((magic + attacker) / 2) - 1 - target;
+        if (delta >= -3) return 2 * (attacker / target);
+        // Lisvus performs this division with Java ints, so the middle band
+        // evaluates to zero rather than a fractional percentage.
+        if (delta >= -9) return -3 * Math.trunc(2 / delta);
+        return 2 / 15;
+    },
+
     calcDrainHeal({ damage = 0, targetHp = 0, absorbPart = 0, absorbAbs = 0 } = {}) {
         const drainableDamage = Math.min(Math.max(0, Number(damage) || 0), Math.max(0, Number(targetHp) || 0));
         return Math.max(0, (Number(absorbAbs) || 0) + ((Number(absorbPart) || 0) * drainableDamage));
@@ -361,6 +408,15 @@ const Formulas = {
         }
         failRate = Math.min(failRate, 9900);
         return Math.max(1, Math.min(99, 100 - (failRate / 100)));
+    },
+
+    // Lisvus calcMagicSuccess: this older C4 failure roll is separate from
+    // effect land-rate/resistance calculations and is used by Spoil handlers.
+    calcMagicSuccess({ attackerLevel = 1, targetLevel = 1, magicLevel = 0 } = {}, rng = Math.random) {
+        const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
+        const levelDifference = (Number(targetLevel) || 1) - effectiveMagicLevel;
+        const failureThreshold = Math.round(Math.pow(1.3, levelDifference) * 100);
+        return Math.floor(rng() * 10000) > failureThreshold;
     },
 
     // Lisvus C4 Formulas.calcSkillSuccess. C4SkillEffects supplies the

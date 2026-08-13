@@ -1,0 +1,5966 @@
+[
+  {
+    "selfId": 10002,
+    "template": {
+      "name": "Guard of Kutus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 17,
+            "name": "Wooden Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 91.9333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10003,
+    "template": {
+      "name": "Pawn of Kutus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1060,
+            "name": "Lesser Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 40.8593
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10005,
+    "template": {
+      "name": "Turek Mercenary Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.8593
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10006,
+    "template": {
+      "name": "Turek Mercenary Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 85.9422
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10008,
+    "template": {
+      "name": "Cletu's Retainer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.6213
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10009,
+    "template": {
+      "name": "Cletu's Pawn"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 81.0667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10011,
+    "template": {
+      "name": "Guard of Thieles"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10012,
+    "template": {
+      "name": "Follower of Thieles"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10014,
+    "template": {
+      "name": "Ghost of Peasant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10015,
+    "template": {
+      "name": "Ghost of Peasant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10017,
+    "template": {
+      "name": "Escort of the 3rd Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.7733
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10018,
+    "template": {
+      "name": "Support of the 3rd Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.16
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10218,
+    "template": {
+      "name": "Clara's Marksman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10219,
+    "template": {
+      "name": "Clara's Pawn"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10021,
+    "template": {
+      "name": "Pastu's Silhouette"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.072
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10022,
+    "template": {
+      "name": "Pastu's Shadow"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 53.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10024,
+    "template": {
+      "name": "Jeruna's Guard Captain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.072
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10025,
+    "template": {
+      "name": "Jeruna's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 53.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10027,
+    "template": {
+      "name": "Katu Van Marksman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 66.64
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10028,
+    "template": {
+      "name": "Katu Van Raider"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 14.8089
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10030,
+    "template": {
+      "name": "Atraiban's Top Disciple"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 17.4578
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10031,
+    "template": {
+      "name": "Atraiban's Disciple"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 78.56
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10033,
+    "template": {
+      "name": "Millenu Guard Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10034,
+    "template": {
+      "name": "Mellenu Guard Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10036,
+    "template": {
+      "name": "Cabrio Captor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10037,
+    "template": {
+      "name": "Cabrio Blader"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10039,
+    "template": {
+      "name": "Tirak's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10040,
+    "template": {
+      "name": "Tirak's Knight"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 78.12
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10042,
+    "template": {
+      "name": "Remmel's Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10043,
+    "template": {
+      "name": "Remmel's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10045,
+    "template": {
+      "name": "Dark Mage's of Barion"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 61.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10046,
+    "template": {
+      "name": "Barion's Grunt"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 13.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10048,
+    "template": {
+      "name": "Karte's Chief Knight"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 66.64
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10049,
+    "template": {
+      "name": "Karte's Royal Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 14.8089
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10052,
+    "template": {
+      "name": "Priestess of Rahha"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10053,
+    "template": {
+      "name": "Fanatics of Rahha"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10055,
+    "template": {
+      "name": "Taliadon"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10056,
+    "template": {
+      "name": "Vemsk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10058,
+    "template": {
+      "name": "Biconne's Shooter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10059,
+    "template": {
+      "name": "Biconne's Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10061,
+    "template": {
+      "name": "Kael's Bead"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 11.6364
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10062,
+    "template": {
+      "name": "Kael's Escort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 21.3333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10065,
+    "template": {
+      "name": "Teruk's Escort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10066,
+    "template": {
+      "name": "Teruk's Knight"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10068,
+    "template": {
+      "name": "Shaka's Shooter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 16.7822
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10069,
+    "template": {
+      "name": "Shaka's Follower"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 75.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10071,
+    "template": {
+      "name": "Ruell's Wind"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10074,
+    "template": {
+      "name": "Rudelto's Banshee"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.05
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10077,
+    "template": {
+      "name": "Captain Dogun"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1834,
+            "name": "Emergency Dressing",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.5319
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10080,
+    "template": {
+      "name": "Mercenary"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.8593
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10072,
+    "template": {
+      "name": "Ruell's Unicorn"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10075,
+    "template": {
+      "name": "Rudelto's Dre Vanul"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.05
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10078,
+    "template": {
+      "name": "Princess' Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 17,
+            "name": "Wooden Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 50.6967
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10081,
+    "template": {
+      "name": "Cat's Eye Bandit"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 85.9422
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10083,
+    "template": {
+      "name": "Cat Gang"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.8667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10084,
+    "template": {
+      "name": "Cat Gang"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.3973
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10086,
+    "template": {
+      "name": "Timak Orc Ranger"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10087,
+    "template": {
+      "name": "Timak Orc Ranger"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.0667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10090,
+    "template": {
+      "name": "Soulless Wolf"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 21.9556
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10091,
+    "template": {
+      "name": "Soulless Bear"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 98.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10093,
+    "template": {
+      "name": "Korim Chief Guard Kaywon"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10094,
+    "template": {
+      "name": "Korim Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10096,
+    "template": {
+      "name": "Renoa's Elpy"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.8212
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10097,
+    "template": {
+      "name": "Renoa's Hog"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 82.1156
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10100,
+    "template": {
+      "name": "Spirit of Sea of Spores"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10101,
+    "template": {
+      "name": "Fighter of Sea of Spores"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.0667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10104,
+    "template": {
+      "name": "Isirr's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10105,
+    "template": {
+      "name": "Isirr's Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10107,
+    "template": {
+      "name": "Lidia's Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 81.3713
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10108,
+    "template": {
+      "name": "Lidia's Fighter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 81.3713
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10110,
+    "template": {
+      "name": "Cloe's Servitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 33.9
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10111,
+    "template": {
+      "name": "Cloe's Servitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 33.9
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10113,
+    "template": {
+      "name": "Meana's Maid"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.8593
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10114,
+    "template": {
+      "name": "Meana's Guard Doll"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 85.9422
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10116,
+    "template": {
+      "name": "Icarus Sample 2"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10117,
+    "template": {
+      "name": "Icarus Sample 3"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10120,
+    "template": {
+      "name": "Berun's Officer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10121,
+    "template": {
+      "name": "Berun's Prattler"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10123,
+    "template": {
+      "name": "Leo's Servant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 19.6267
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10124,
+    "template": {
+      "name": "Leo's Steward"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 88.32
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10129,
+    "template": {
+      "name": "Vuku Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.0107
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10130,
+    "template": {
+      "name": "Gharmash's Pet Trimden"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 50.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10132,
+    "template": {
+      "name": "Gato's Marksman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10133,
+    "template": {
+      "name": "Gato's Troop Leader"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10135,
+    "template": {
+      "name": "Talkin's Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10136,
+    "template": {
+      "name": "Talkin's Bodyguard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10138,
+    "template": {
+      "name": "Soul Drinker"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10139,
+    "template": {
+      "name": "Sephia's Salve"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10141,
+    "template": {
+      "name": "Hekaton Cottus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10142,
+    "template": {
+      "name": "Hekaton Chires"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10144,
+    "template": {
+      "name": "Shuriel's Oracle"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 39.1833
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10145,
+    "template": {
+      "name": "Shuriel's Paladin"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 39.1833
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10147,
+    "template": {
+      "name": "Assassin of Bifrons"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.372
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10148,
+    "template": {
+      "name": "Butcher of Bifrons"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.372
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10150,
+    "template": {
+      "name": "Evil Spirit Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1060,
+            "name": "Lesser Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 45.0637
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10151,
+    "template": {
+      "name": "Evil Spirit Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1831,
+            "name": "Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 54.0764
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10153,
+    "template": {
+      "name": "Claws of Shadar"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10154,
+    "template": {
+      "name": "Whip of Shadar"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10156,
+    "template": {
+      "name": "Fanatic Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10157,
+    "template": {
+      "name": "Fanatic Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10160,
+    "template": {
+      "name": "Unicorn Rapini"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.1688
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10161,
+    "template": {
+      "name": "Unicorn Ririf"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 81.76
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10164,
+    "template": {
+      "name": "Pet of Skylancer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10165,
+    "template": {
+      "name": "Slave Warrior of Skylancer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10167,
+    "template": {
+      "name": "Ikuntai's Servitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1833,
+            "name": "Bandage",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 54.0764
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10168,
+    "template": {
+      "name": "Pawn of Ikuntai"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 3.3798
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10171,
+    "template": {
+      "name": "Hellion's Archers"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 66.4
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10172,
+    "template": {
+      "name": "Hellion's Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.3279
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10174,
+    "template": {
+      "name": "Karuta's Follower"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10175,
+    "template": {
+      "name": "Karuta's Inferiors"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10177,
+    "template": {
+      "name": "Wimere's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10178,
+    "template": {
+      "name": "Wimere's Servitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10180,
+    "template": {
+      "name": "Daughter of Hatos"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.7733
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10181,
+    "template": {
+      "name": "Hatos' Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.16
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10183,
+    "template": {
+      "name": "Kurikups' Wife"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10184,
+    "template": {
+      "name": "Devil Blader of Chaos"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10186,
+    "template": {
+      "name": "Hellena's Marksman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10187,
+    "template": {
+      "name": "Helena's Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10190,
+    "template": {
+      "name": "Mumu's Wizard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.072
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10191,
+    "template": {
+      "name": "Mumu's Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 53.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10193,
+    "template": {
+      "name": "Panathen's Knight"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.6987
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10194,
+    "template": {
+      "name": "Panathen's Protectors"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 84.9333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10200,
+    "template": {
+      "name": "Family of Sheshark"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 95.7
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10201,
+    "template": {
+      "name": "Guard of Sheshark"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 95.7
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10203,
+    "template": {
+      "name": "Parhit Padisha Sobekk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 33.9
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10204,
+    "template": {
+      "name": "Krokian Padisha Sobekk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 33.9
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10206,
+    "template": {
+      "name": "Ashakia's Blade"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 35.9667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10207,
+    "template": {
+      "name": "Ashakiel's Rod"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 35.9667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10209,
+    "template": {
+      "name": "Ateka's Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10210,
+    "template": {
+      "name": "Ateka's Grunt"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10212,
+    "template": {
+      "name": "Sebek's Priest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 59.7333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10213,
+    "template": {
+      "name": "Sebek's Fanatic"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1947
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10215,
+    "template": {
+      "name": "Sika's Wizard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10216,
+    "template": {
+      "name": "Sika's Fighter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10221,
+    "template": {
+      "name": "Death Mage Krician"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 98.65
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10222,
+    "template": {
+      "name": "Death Fighter Harik"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 98.65
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10224,
+    "template": {
+      "name": "Soul Slasher"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10225,
+    "template": {
+      "name": "Soul Strainer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10227,
+    "template": {
+      "name": "Kastor's Seer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 24.4444
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10228,
+    "template": {
+      "name": "Kastor's Prefect"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 36.6667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10231,
+    "template": {
+      "name": "Ragoth's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 20.3911
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10232,
+    "template": {
+      "name": "Ragoth's Herald"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 91.76
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10236,
+    "template": {
+      "name": "Kandra's Healer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 95.7
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10237,
+    "template": {
+      "name": "Kandra's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 95.7
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10239,
+    "template": {
+      "name": "Nightmare Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 93.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10240,
+    "template": {
+      "name": "Nightmare Beast"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 93.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10242,
+    "template": {
+      "name": "Tamash's Advisor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10243,
+    "template": {
+      "name": "Tamash's Servant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10246,
+    "template": {
+      "name": "Glaki's Henchman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10247,
+    "template": {
+      "name": "Glaki's Servant"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10250,
+    "template": {
+      "name": "Vermilion Spirit"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10251,
+    "template": {
+      "name": "Vermilion Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10253,
+    "template": {
+      "name": "Handmaiden of Themis"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10254,
+    "template": {
+      "name": "Themis's Sentinel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10257,
+    "template": {
+      "name": "Arak's Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.7733
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10258,
+    "template": {
+      "name": "Arak's Footman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.16
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10261,
+    "template": {
+      "name": "Totem Guard Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10262,
+    "template": {
+      "name": "Totem Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10264,
+    "template": {
+      "name": "Sekina's Royal Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 93.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10265,
+    "template": {
+      "name": "Sekina's Drake"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 93.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10267,
+    "template": {
+      "name": "Decarbia's Royal Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10268,
+    "template": {
+      "name": "Decarbia's Escort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.9167
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10270,
+    "template": {
+      "name": "Behemoth Javeliner"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10271,
+    "template": {
+      "name": "Behemoth Flare"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10278,
+    "template": {
+      "name": "Dead Soul of Stigma"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10279,
+    "template": {
+      "name": "Evil Spirit of Stigma"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10284,
+    "template": {
+      "name": "Lilith's Agent"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10285,
+    "template": {
+      "name": "Lilith's Escort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10287,
+    "template": {
+      "name": "Anakim's Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10288,
+    "template": {
+      "name": "Anakim's Royal Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10289,
+    "template": {
+      "name": "Anakim's Executor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10294,
+    "template": {
+      "name": "Fighter of Hestia"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10295,
+    "template": {
+      "name": "Follower of Hestia"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10300,
+    "template": {
+      "name": "Scout of Hekaton"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10301,
+    "template": {
+      "name": "Servant of Hekaton"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10303,
+    "template": {
+      "name": "Tayr's Aide"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 44.7667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10304,
+    "template": {
+      "name": "Tayr's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 44.7667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10310,
+    "template": {
+      "name": "Shadith's Royal Guard Captain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10311,
+    "template": {
+      "name": "Shadith's Sentinel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 40.3
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10313,
+    "template": {
+      "name": "Mos' Aide"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 44.7667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10314,
+    "template": {
+      "name": "Mos' Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 44.7667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10320,
+    "template": {
+      "name": "Sentinel of Ember"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 45.8833
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10321,
+    "template": {
+      "name": "Messenger of Ember"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 45.8833
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10323,
+    "template": {
+      "name": "Falston's Disciple"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 90.1714
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10324,
+    "template": {
+      "name": "Servant of Falston"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 90.1714
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10326,
+    "template": {
+      "name": "Barakiel's Disciple"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10327,
+    "template": {
+      "name": "Barakiel's Acolyte"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10329,
+    "template": {
+      "name": "Violet"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10330,
+    "template": {
+      "name": "Kurstin"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10331,
+    "template": {
+      "name": "Mina"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10332,
+    "template": {
+      "name": "Dorian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10353,
+    "template": {
+      "name": "Giant Wasteland Basilisk"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.8593
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10355,
+    "template": {
+      "name": "Sirocco's Gargoyle"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10356,
+    "template": {
+      "name": "Sirocco's Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10358,
+    "template": {
+      "name": "Sukar Wererat Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 9.9782
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10359,
+    "template": {
+      "name": "Sukar Wererat Priest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.2933
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10361,
+    "template": {
+      "name": "Yellow Hornet"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 71.0311
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10363,
+    "template": {
+      "name": "Sharuk's Tracker"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1831,
+            "name": "Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 49.0311
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10364,
+    "template": {
+      "name": "Sharuk's Marksman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1833,
+            "name": "Bandage",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 49.0311
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10367,
+    "template": {
+      "name": "Kuroboros' Follower"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 3.0644
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10368,
+    "template": {
+      "name": "Kuroboros' Discipline"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.5322
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10370,
+    "template": {
+      "name": "Corpse Scavenger"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.6899
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10371,
+    "template": {
+      "name": "Anima Scavenger"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.6899
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10374,
+    "template": {
+      "name": "Abyss Flyer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1834,
+            "name": "Emergency Dressing",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.2933
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10376,
+    "template": {
+      "name": "Warrior Zombie of Farakelsus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 17,
+            "name": "Wooden Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 79.5667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10377,
+    "template": {
+      "name": "Priest Zombie of Farakelsus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1060,
+            "name": "Lesser Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 35.3629
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10379,
+    "template": {
+      "name": "Dementia Beast"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1831,
+            "name": "Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 42.4356
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10381,
+    "template": {
+      "name": "Nightmare Flyer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1833,
+            "name": "Bandage",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 42.4356
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10382,
+    "template": {
+      "name": "Hostile Flyer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 734,
+            "name": "Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 2.6522
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10384,
+    "template": {
+      "name": "Servant of Calibus"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.072
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10386,
+    "template": {
+      "name": "Ghost of Execution Ground"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 59.7333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10387,
+    "template": {
+      "name": "Malignant Spirit of Execution Ground"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1947
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10389,
+    "template": {
+      "name": "Red Eye Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10390,
+    "template": {
+      "name": "Red Eye Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10393,
+    "template": {
+      "name": "Marsh Stakato Noble"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 95.4667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10396,
+    "template": {
+      "name": "Kusion Suscepter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10397,
+    "template": {
+      "name": "Gustos Suscepter"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10399,
+    "template": {
+      "name": "Apprentice of Watchman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10400,
+    "template": {
+      "name": "Page of Watchman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10402,
+    "template": {
+      "name": "Retainer of Skyla"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 0.9547
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10403,
+    "template": {
+      "name": "Follower of Skyla"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 100
+          }
+        ],
+        "overall": 95.4667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10405,
+    "template": {
+      "name": "Kylon's Pirate"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.0107
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10406,
+    "template": {
+      "name": "Kylon's Mate"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 50.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10408,
+    "template": {
+      "name": "Ishka's Elite Officer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.7733
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10409,
+    "template": {
+      "name": "Ishka's Elite Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 34.16
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10411,
+    "template": {
+      "name": "Road Scavenger Henchman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10413,
+    "template": {
+      "name": "Necrosentinel Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 61.2
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10414,
+    "template": {
+      "name": "Necrosentinel Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 13.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10416,
+    "template": {
+      "name": "Nakondas' Slave"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 56.5333
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10417,
+    "template": {
+      "name": "Nakondas' Chain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.1307
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10419,
+    "template": {
+      "name": "Dread Panther"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10421,
+    "template": {
+      "name": "Trisalim Escort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 63.84
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10422,
+    "template": {
+      "name": "Page of Rotting Tree"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 14.1867
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10424,
+    "template": {
+      "name": "Timiniel's Royal Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 19.6267
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10425,
+    "template": {
+      "name": "Timiniel's Royal Guard Captain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 88.32
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10427,
+    "template": {
+      "name": "Freki's Vampire Bat"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1061,
+            "name": "Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.2901
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10428,
+    "template": {
+      "name": "Freki's Wild Bear"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 22.5319
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10430,
+    "template": {
+      "name": "Talos' Cohort"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6035,
+            "name": "Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.5322
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10432,
+    "template": {
+      "name": "Elemental of Flame"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.0667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10433,
+    "template": {
+      "name": "Elemental of Spark"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10435,
+    "template": {
+      "name": "Barda's Bandit"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10436,
+    "template": {
+      "name": "Barda's Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10439,
+    "template": {
+      "name": "Kelbar's Inferior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.0667
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10440,
+    "template": {
+      "name": "Kelbar's Wizard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.7812
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10442,
+    "template": {
+      "name": "Evil Creature of Forest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10443,
+    "template": {
+      "name": "Anger of Forest"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10445,
+    "template": {
+      "name": "Enmity Ghosts"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10446,
+    "template": {
+      "name": "Shooter of Enmity"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10448,
+    "template": {
+      "name": "Immortal Savior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10449,
+    "template": {
+      "name": "Immortal Guide"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 92.8
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10451,
+    "template": {
+      "name": "Galaxia's Guards"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10452,
+    "template": {
+      "name": "Messenger of Angel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 60,
+            "max": 180,
+            "chance": 100
+          }
+        ],
+        "overall": 38.0999
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10454,
+    "template": {
+      "name": "Wyvern of Marsh"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10455,
+    "template": {
+      "name": "Succubus of Marsh"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 89.85
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10457,
+    "template": {
+      "name": "Shards of Oblivion"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 66.64
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10458,
+    "template": {
+      "name": "Shadow of Oblivion"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 14.8089
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10459,
+    "template": {
+      "name": "Shards of Oblivion"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 66.64
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10461,
+    "template": {
+      "name": "Ereve's Knight"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 16.1067
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10462,
+    "template": {
+      "name": "Ereve's Squire"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 72.48
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10464,
+    "template": {
+      "name": "Garangky Guard Captain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 19.6267
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10465,
+    "template": {
+      "name": "Garangky Guard Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 88.32
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10466,
+    "template": {
+      "name": "Garangky Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 19.6267
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10468,
+    "template": {
+      "name": "Cursed Life"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 84.2286
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10469,
+    "template": {
+      "name": "Cursed Soul"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 84.2286
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10471,
+    "template": {
+      "name": "Utenus's Wizard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 90.1714
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10472,
+    "template": {
+      "name": "Utenus's Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 90.1714
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10474,
+    "template": {
+      "name": "Kim's Gang"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 16.7822
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10476,
+    "template": {
+      "name": "Kabed's Soldier"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10477,
+    "template": {
+      "name": "Kabed's Archer"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10479,
+    "template": {
+      "name": "Hisilrome's Servitor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10480,
+    "template": {
+      "name": "Hisilrome's Page"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1343,
+            "name": "Silver Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 87.1429
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10482,
+    "template": {
+      "name": "Shadow of Kenishee"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 17.4578
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10483,
+    "template": {
+      "name": "Phantom of Kenishee"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 78.56
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10485,
+    "template": {
+      "name": "Tillion's Inferior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 15.4489
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10486,
+    "template": {
+      "name": "Tillion's Bat"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 69.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10488,
+    "template": {
+      "name": "Spirit of Gildor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10489,
+    "template": {
+      "name": "Guardian of Gildor"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10491,
+    "template": {
+      "name": "Guard of Gwindorr"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 6036,
+            "name": "Greater Magic Haste Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 1.472
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10492,
+    "template": {
+      "name": "Follower of Gwindorr"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1341,
+            "name": "Bone Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 73.6
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10494,
+    "template": {
+      "name": "Spirit of Niniel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 18.8978
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10495,
+    "template": {
+      "name": "Spirit of Niniel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 85.04
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10497,
+    "template": {
+      "name": "Fafurion's Envoy"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 75.5199
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10499,
+    "template": {
+      "name": "Alligator of Istary"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1342,
+            "name": "Fine Steel Arrow",
+            "min": 20,
+            "max": 60,
+            "chance": 100
+          }
+        ],
+        "overall": 55.92
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10500,
+    "template": {
+      "name": "Alligator of Istary"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 12.4266
+      }
+    ],
+    "spoils": []
+  }
+]

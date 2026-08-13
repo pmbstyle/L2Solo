@@ -14,6 +14,20 @@ function add(actor, stat, fallback = 0) {
         .reduce((total, value) => total + value, fallback);
 }
 
+function situationalMultiplier(actor, stat, context = {}, fallback = 1) {
+    const position = context.behind
+        ? 'behind'
+        : context.front
+            ? 'front'
+            : 'side';
+    return EffectStore.list(actor)
+        .flatMap((effect) => effect.situationalStats || [])
+        .filter((entry) => entry.position === position && matchesRequirements(actor, entry.requires))
+        .map((entry) => Number(entry.stats?.[stat]))
+        .filter((value) => Number.isFinite(value))
+        .reduce((total, value) => total * value, fallback);
+}
+
 function statValues(actor, stat) {
     return [
         ...EffectStore.list(actor).map((effect) => Number(effect.stats?.[stat])),
@@ -42,7 +56,7 @@ function passiveValuesForSemantic(actor, semantic, stat) {
     return [
         Number(semantic.stats?.[stat]),
         ...(semantic.conditionalStats || [])
-            .filter((entry) => matchesCondition(actor, entry.condition))
+            .filter((entry) => matchesCondition(actor, entry.condition) && matchesRequirements(actor, entry.requires))
             .map((entry) => Number(entry.stats?.[stat]))
     ];
 }
@@ -82,11 +96,40 @@ function matchesRequirements(actor, requires = {}) {
         const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
         if (!equipped.some((item) => item?.fetchKind?.() === requires.armorKind)) return false;
     }
+    if (requires.armorKinds) {
+        const allowed = new Set(requires.armorKinds);
+        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
+        if (!equipped.some((item) => allowed.has(item?.fetchKind?.()))) return false;
+    }
+    if (requires.excludedArmorKinds) {
+        const excluded = new Set(requires.excludedArmorKinds);
+        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
+        if (equipped.some((item) => excluded.has(item?.fetchKind?.()))) return false;
+    }
+    if (requires.armorSetKind && !wornArmorKinds(actor).has(requires.armorSetKind)) return false;
+    if (requires.excludedArmorSetKinds) {
+        const excluded = new Set(requires.excludedArmorSetKinds);
+        if ([...wornArmorKinds(actor)].some((kind) => excluded.has(kind))) return false;
+    }
     if (requires.shield && !(Number(actor?.backpack?.fetchTotalShieldPDef?.()) > 0)) return false;
     return true;
 }
 
+function wornArmorKinds(actor) {
+    const backpack = actor?.backpack;
+    const equipped = backpack?.fetchEquippedArmors?.() || [];
+    const bySlot = (slot) => backpack?.fetchEquippedArmor?.(slot)
+        || equipped.find((item) => Number(item?.fetchSlot?.()) === slot);
+    const fullBody = bySlot(15);
+    if (fullBody?.fetchKind?.()) return new Set([fullBody.fetchKind()]);
+
+    const chestKind = bySlot(10)?.fetchKind?.();
+    const legsKind = bySlot(11)?.fetchKind?.();
+    return chestKind && chestKind === legsKind ? new Set([chestKind]) : new Set();
+}
+
 module.exports = {
     multiplier,
-    add
+    add,
+    situationalMultiplier
 };

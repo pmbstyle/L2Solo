@@ -51,6 +51,7 @@ const DEFAULTS = {
     maxResolvesPerTick: 25,
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
+    maxWarehouseReleasesPerTick: 8,
     partyFormationBatchSize: 3,
     // Forming is an infrequent event. Read enough waiting candidates to let
     // the three available slots reach distinct crowded grounds instead of

@@ -37,6 +37,8 @@ function effectData(buff) {
         name: buff.name,
         type: semantic.effectType || 'buff',
         category: semantic.effectTrait || semantic.trait || semantic.effect || buff.key,
+        stackFamily: semantic.stackFamily,
+        stackOrder: semantic.stackOrder,
         stats: semantic.stats || {}
     };
 }
@@ -71,6 +73,7 @@ function refreshActorPackets(session, actor, Generics) {
 
     session.dataSendToMe(ServerResponse.userInfo(actor));
     session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+    session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(actor));
     try {
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         PartyCompanionService.updateActorEffects(session);
@@ -106,20 +109,22 @@ function applyBuff(session, actor, buffType, Generics, source = {}) {
     const buff = ALL_BUFFS[buffType];
     if (!buff || !actor) return null;
 
-    const store = ensureStore(actor);
-    store[buff.key] = now() + BUFF_DURATION_MS;
-    EffectStore.apply(actor, {
+    const effect = EffectStore.apply(actor, {
         ...effectData(buff),
         durationMs: BUFF_DURATION_MS
     });
-    EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
+    if (!effect) return null;
+
+    const store = ensureStore(actor);
+    store[effect.key] = effect.expiresAt;
+    EffectTicker.scheduleExpiry(session, actor, effect);
     broadcastSkillCast(source.casterSession, source.caster, actor, buff);
     refreshActorPackets(session, actor, Generics);
 
     return {
         key: buff.key,
         name: buff.name,
-        expiresAt: store[buff.key]
+        expiresAt: effect.expiresAt
     };
 }
 
@@ -139,12 +144,13 @@ function applyFullNewbieBlessing(session, actor, Generics) {
     const store = ensureStore(actor);
     const expiresAt = now() + BUFF_DURATION_MS;
     NEWBIE_BUFF_TYPES.map((type) => ALL_BUFFS[type]).forEach((buff) => {
-        store[buff.key] = expiresAt;
-        EffectStore.apply(actor, {
+        const effect = EffectStore.apply(actor, {
             ...effectData(buff),
             expiresAt
         });
-        EffectTicker.scheduleExpiry(session, actor, actor.effects?.[buff.key]);
+        if (!effect) return;
+        store[effect.key] = effect.expiresAt;
+        EffectTicker.scheduleExpiry(session, actor, effect);
     });
 
     actor.setHp(actor.fetchMaxHp());

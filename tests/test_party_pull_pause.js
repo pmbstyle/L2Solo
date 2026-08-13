@@ -267,4 +267,34 @@ try {
     BotManager.botPartySay = originalBotPartySay;
 }
 
+const protectedRaidBoss = {
+    ...reachableTarget,
+    fetchId: () => 3000300,
+    fetchName: () => 'protected raid boss',
+    fetchIsRaidBoss: () => true,
+    fetchDestId: () => undefined
+};
+leaderSession.partyPullState = {};
+leaderSession.partyPullRejectedTargets = {};
+leaderSession.partyPullSearchRetryAt = undefined;
+World.npc.spawns = [protectedRaidBoss];
+World.fetchNpcsInRadius = () => [protectedRaidBoss];
+assert.strictEqual(
+    PartyPulling.observeLeaderTarget(leaderSession, { pullMode: 'leader' }, protectedRaidBoss.fetchId()),
+    null,
+    'companions must ignore a player-selected raid boss as a pull target'
+);
+let protectedPullAttacks = 0;
+const protectedPull = PartyPulling.tickBotPuller(
+    pullerSession,
+    pullerSession.actor,
+    leaderSession,
+    settings,
+    {},
+    { executeCombat() { protectedPullAttacks++; } }
+);
+assert.strictEqual(protectedPull.idle, true, 'an automatic puller must see no ordinary target at a raid-only location');
+assert.strictEqual(protectedPullAttacks, 0, 'an automatic puller must never open on a raid boss');
+assert.deepStrictEqual(leaderSession.partyPullState, {}, 'a rejected raid target must not create persistent pull state');
+
 console.info('party pull pause tests passed');

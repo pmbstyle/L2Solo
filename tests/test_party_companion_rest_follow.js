@@ -264,6 +264,77 @@ try {
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
 
+    const raidBoss = {
+        model: { raidBoss: true, raidAttackers: new Set() },
+        fetchId: () => 9100001,
+        fetchSelfId: () => 25325,
+        fetchName: () => 'party raid target',
+        fetchLocX: () => 400,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchLevel: () => 40,
+        fetchAttackable: () => true,
+        fetchIsRaidBoss: () => true,
+        fetchDestId: () => undefined,
+        isDead: () => false,
+        state: { fetchDead: () => false }
+    };
+    const raidTank = fakeActor(2000200, { locX: 50, classId: 5, hp: 400, maxHp: 1000 });
+    raidTank.state.setSeated(true);
+    raidTank.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Chain' }];
+    const raidTankSession = fakeSession('bot_raid_tank', raidTank);
+    raidTankSession.followPlayerSession = leaderSession;
+    raidTankSession.partyCompanion = true;
+    raidTankSession.plan = 'following';
+    const raidDps = fakeActor(2000201, { locX: 60, classId: 1, hp: 1000, maxHp: 1000 });
+    raidDps.backpack.fetchEquippedArmors = () => [{ fetchKind: () => 'Armor.Chain' }];
+    const raidDpsSession = fakeSession('bot_raid_dps', raidDps);
+    raidDpsSession.followPlayerSession = leaderSession;
+    raidDpsSession.partyCompanion = true;
+    raidDpsSession.plan = 'following';
+    const raidHealer = fakeActor(2000202, { locX: 70, classId: 15, hp: 800, maxHp: 800, mp: 500, maxMp: 500 });
+    learnSkill(raidHealer, { selfId: 1011, name: 'Heal', distance: 600, mp: 10, power: 100 });
+    const raidHealerSession = fakeSession('bot_raid_healer', raidHealer);
+    raidHealerSession.followPlayerSession = leaderSession;
+    raidHealerSession.partyCompanion = true;
+    raidHealerSession.plan = 'following';
+    leader.destId = raidBoss.fetchId();
+    World.user = { sessions: [leaderSession, raidDpsSession, raidTankSession, raidHealerSession] };
+    World.npc = { spawns: [raidBoss] };
+    World.fetchNpcsInRadius = () => [raidBoss];
+    const raidOpeners = [];
+    const raidHeals = [];
+    const raidBotAI = {
+        say() {},
+        executePvPCombat() {},
+        executeCombat(session, actor, target, _generics, options) {
+            raidOpeners.push({ session, actor, target, options });
+        }
+    };
+    FollowingState.tick(raidHealerSession, raidHealer, {
+        skillExec(_session, actor, data) { raidHeals.push({ actor, data }); }
+    }, raidBotAI);
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
+    assert.strictEqual(raidHeals.length, 1, 'a healer must recover the selected opener before the raid starts');
+    assert.strictEqual(raidHeals[0].data.id, raidTank.fetchId(), 'pre-pull healing must target the selected tank');
+    assert.strictEqual(raidOpeners.length, 0, 'a low-HP opener must not attack before reaching the safety threshold');
+    raidTank.hp = 900;
+    FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
+    assert.strictEqual(raidTank.state.fetchSeated(), false, 'the recovered opener must stand before attacking');
+    assert.strictEqual(raidOpeners.length, 0, 'standing up must consume the opener tick instead of attacking while seated');
+    FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
+    assert.strictEqual(raidOpeners.length, 1, 'only one companion may open a merely selected raid boss');
+    assert.strictEqual(raidOpeners[0].actor, raidTank, 'the tank must open even when a heavy-armored DPS ticks first');
+    assert.strictEqual(raidOpeners[0].target, raidBoss, 'the opener must attack the player-selected boss directly');
+    assert.strictEqual(raidOpeners[0].options.playerPartyRaidLeaderSession, leaderSession,
+        'the raid combat exception must remain scoped to this real-player party');
+    assert.deepStrictEqual(leaderSession.partyPullState || {}, {}, 'player raid designation must not create a bot pull');
+    delete leaderSession.partyRaidEngagement;
+    leader.destId = undefined;
+    World.npc = { spawns: [] };
+    World.fetchNpcsInRadius = () => [];
+
     const selectedTargetRefreshBot = fakeActor(2000042, { locX: 0, locY: 0, level: 1 });
     selectedTargetRefreshBot.activeBuffs = {};
     const selectedTargetRefreshSession = fakeSession('bot_selected_target_refresh', selectedTargetRefreshBot);
@@ -295,7 +366,9 @@ try {
     const originalInviteBotSessions = BotManager.sessions;
     const originalSocialSnapshot = BotSocialMemory.getSnapshot;
     const originalSocialRecordEvent = BotSocialMemory.recordEvent;
+    const originalBringToLeader = PartyCompanionService.bringToLeader;
     let inviteTell = null;
+    const broughtCompanions = [];
     try {
         global.setTimeout = (callback) => {
             callback();
@@ -303,6 +376,11 @@ try {
         };
         BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0, recentlyAbandonedAt: null });
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
+        PartyCompanionService.bringToLeader = (targetLeaderSession, companionSession) => {
+            assert.strictEqual(targetLeaderSession, leaderSession);
+            broughtCompanions.push(companionSession);
+            return true;
+        };
         BotManager.botTell = (sourceSession, targetSession, text) => {
             assert.strictEqual(targetSession, leaderSession, 'invite acknowledgement should target party leader');
             if (sourceSession === inviteBotSession) inviteTell = text;
@@ -335,6 +413,7 @@ try {
         assert.strictEqual(World.answerForTeamUp(nativeAnswerSession, nativeAnswerBot, { id: 1 }), true, 'a bot should be able to accept through the native answer lifecycle');
         assert.strictEqual(nativeAnswerSession.pendingPartyInvite, null, 'the accepted native invitation must be consumed once');
         assert.strictEqual(nativeAnswerSession.followPlayerSession, leaderSession, 'native acceptance should attach the bot to the requesting leader');
+        assert.deepStrictEqual(broughtCompanions, [inviteBotSession, nativeAnswerSession], 'every accepted invite path should bring the bot to the leader immediately');
         const nativeAcceptedPacket = [...leaderSession.packets].reverse().find((packet) => packet[0] === 0x3a);
         assert.strictEqual(nativeAcceptedPacket.readInt32LE(1), 1, 'native bot acceptance must return JoinParty success');
 
@@ -354,6 +433,7 @@ try {
         BotManager.sessions = originalInviteBotSessions;
         BotSocialMemory.getSnapshot = originalSocialSnapshot;
         BotSocialMemory.recordEvent = originalSocialRecordEvent;
+        PartyCompanionService.bringToLeader = originalBringToLeader;
     }
     assert.strictEqual(inviteTell, 'Gladly. A steady party is better than going alone.', 'an accepted persona-aware invite should acknowledge the party without promising another rest');
     assert.strictEqual(inviteBotSession.plan, 'following', 'attaching a resting bot should resume party follow after instant recovery');

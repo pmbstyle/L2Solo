@@ -4,6 +4,7 @@ require('../src/Global');
 
 const NpcAggro = invoke('GameServer/Npc/NpcAggro');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 function actorAt(id, x, y = 0, z = 0) {
     return {
@@ -89,6 +90,24 @@ world.user.sessions = [{ accountId: 'player_stationary', actor: player }];
 NpcAggro.armSpawnGrace(playerNpc, 20000);
 NpcAggro.tickLiveActors(world, 30000);
 assert.strictEqual(playerNpc.target, player, 'the shared ticker must also aggro a stationary player after initial-spawn grace');
+
+const shadowedActor = actorAt(10004, 100);
+EffectStore.apply(shadowedActor, {
+    key: 'dance_of_shadow', id: 366, name: 'Dance of Shadow', durationMs: 120000,
+    stats: { runSpdMul: 0.5, silentMoving: true }
+});
+assert.strictEqual(
+    NpcAggro.canEngage(hostileNpcAt(0), shadowedActor),
+    false,
+    'Dance of Shadow SilentMove must suppress ordinary hostile NPC auto-aggro'
+);
+const raidNpc = hostileNpcAt(0);
+raidNpc.fetchIsRaidBoss = () => true;
+assert.strictEqual(
+    NpcAggro.canEngage(raidNpc, shadowedActor),
+    true,
+    'SilentMove must not suppress raid-boss aggro'
+);
 
 const crumaFirstFloorNpc = hostileNpcAt(23741, 117274, -12089);
 const crumaSecondFloorActor = actorAt(10002, 23765, 117288, -9047);

@@ -26,6 +26,8 @@ const fighter = {
             classId: 0,
             base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
             equipment: { weaponKind: 'Weapon.Sword', pAtk: 80, pAtkRnd: 10, mAtk: 40, atkSpd: 379, critical: 80, accur: 0, pDef: 120, mDef: 50, evasion: 0, bonusMp: 0, shieldPDef: 0 },
+            charges: 2,
+            chargeExpiresAt: timestamp + 600000,
             effects: [{ key: 'might', id: 1, type: 'buff', expiresAt: timestamp + 60000, stats: { pAtkMul: 2 } }],
             skills: [{ selfId: 3, level: 4, passive: false, spell: false, power: 51, mp: 7, hitTime: 0, reuse: 2000 }]
         }
@@ -55,6 +57,13 @@ assert.strictEqual(migratedSnapshot.version, ColdCombatProfile.PROFILE_VERSION, 
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'database', version: ColdCombatProfile.PROFILE_VERSION - 1 }), true, 'a previous-version database snapshot must be repaired once');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill(migratedSnapshot), false, 'a current database snapshot must not be rescanned on every migration tick');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ version: ColdCombatProfile.PROFILE_VERSION }), true, 'a class-tree fallback without a database source must still be migrated');
+
+const coldFatalProfile = { ...buffed, maxHp: 1000 };
+const coldFatal = { selfId: 314, level: 1, power: 2908 };
+assert.strictEqual(BackgroundResolver.effectiveSkillPower(coldFatalProfile, coldFatal, 1000), 0,
+    'cold combat should score Fatal Counter with zero skill power at full HP');
+assert.strictEqual(BackgroundResolver.effectiveSkillPower(coldFatalProfile, coldFatal, 500), 5089,
+    'cold combat should scale Fatal Counter from the current missing-HP ratio');
 
 const changedGear = ColdCombatProfile.profileFor({
     ...fighter,
@@ -86,6 +95,25 @@ const mixedSpot = {
     npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
     npcSelfIds: [1, 12]
 };
+const raidMixedSpot = {
+    ...spot,
+    npcEntries: [
+        { selfId: 10001, count: 100 },
+        { selfId: 10002, count: 100 },
+        { selfId: 1, count: 1 }
+    ],
+    npcSelfIds: [10001, 10002, 1]
+};
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot(raidMixedSpot, () => 0).selfId,
+    1,
+    'cold combat must exclude both raid bosses and their minion templates from encounters'
+);
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot({ ...spot, npcEntries: [{ selfId: 10001, count: 1 }, { selfId: 10002, count: 1 }] }),
+    null,
+    'a raid-only cold spot must not produce a simulated fight'
+);
 assert.strictEqual(
     ColdCombatProfile.npcForSpot(mixedSpot, () => 0.9, { preferredNpcId: 1 }).selfId,
     1,
@@ -116,6 +144,8 @@ const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs:
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
 assert(result.debug.skillUses > 0, 'a usable learned skill must be cast during cold combat');
 assert(result.patch.stats.coldCombat.cooldowns[3] > timestamp, 'skill reuse must survive a cold resolve');
+assert.strictEqual(result.patch.stats.coldCombat.charges, 2, 'unspent charges must survive a solo cold fight');
+assert.strictEqual(result.patch.stats.coldCombat.chargeExpiresAt, timestamp + 600000, 'a cold fight must preserve the original charge deadline');
 assert(result.patch.vitals.hp > 0, 'datapack Gremlin damage must be used instead of the synthetic spot damage');
 const focusedResult = BackgroundResolver.resolveSolo({
     state: fighter,
@@ -162,6 +192,29 @@ const focusedPartyFight = BackgroundResolver.resolvePartyFight({
     rng: () => 0.9
 });
 assert.strictEqual(focusedPartyFight.debug.mobSelfId, 1, 'party direct-drop farming must use the party target NPC');
+assert.strictEqual(focusedPartyFight.members[0].charges, 2, 'unspent charges must survive a party cold fight');
+
+const expiredChargeFight = BackgroundResolver.resolvePartyFight({
+    members: [{
+        ...fighter,
+        stats: {
+            ...fighter.stats,
+            coldCombat: { ...fighter.stats.coldCombat, charges: 3, chargeExpiresAt: timestamp - 1 }
+        }
+    }],
+    spot,
+    timestamp,
+    rng: () => 0.1
+});
+assert.strictEqual(expiredChargeFight.members[0].charges, 0, 'expired persisted charges must not reappear in cold combat');
+
+const deathRecovery = BackgroundResolver.resolveSolo({
+    state: { ...fighter, activity: 'dead', vitals: { ...fighter.vitals, hp: 0 } },
+    spot,
+    timestamp
+});
+assert.strictEqual(deathRecovery.patch.stats.coldCombat.charges, 0, 'cold death recovery should clear all charges');
+assert.strictEqual(deathRecovery.patch.stats.coldCombat.chargeExpiresAt, null, 'cold death recovery should clear the charge deadline');
 
 const partyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_combat_party', cohesion: 1, risk: 0, roleCoverage: { tank: 1, healer: 1 }, stats: {} },

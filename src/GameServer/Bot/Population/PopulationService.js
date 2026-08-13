@@ -19,6 +19,8 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -389,6 +391,36 @@ function partyTargetNpcId(party, leader) {
 function joinedBackgroundParty(state) {
     const current = LifeState.cachedState(state?.characterId);
     return !!current?.party?.partyId;
+}
+
+function canResumeAffordableWeaponMarketPlan(state, timestamp = Date.now()) {
+    const plan = state?.stats?.equipmentPlan;
+    const targetId = Number(plan?.target?.selfId || 0);
+    if (state?.activity !== 'hunting'
+        || plan?.status !== 'active'
+        || plan?.strategy !== 'market'
+        || Number(plan?.target?.slot || 0) !== 7
+        || targetId <= 0
+        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
+
+    const price = Number(plan.market?.price || 0);
+    const reserve = Math.max(0, Number(plan.market?.reserve || 0));
+    if (price <= 0 || Number(state.adena || 0) < price + reserve) return false;
+
+    const combinationRequirement = (plan.combine?.requirements || [])
+        .find((entry) => Number(entry.selfId) === targetId);
+    const required = Math.max(1, Number(combinationRequirement?.amount || 1));
+    const owned = Number(state.inventory?.[String(targetId)]?.amount || 0);
+    return owned < required;
+}
+
+function canResumeWarehouseMarketSale(state) {
+    if (state?.activity !== 'hunting' || state.stats?.marketReturn || state.stats?.travel) return false;
+    return (state.stats?.lastWarehouseWithdrawal?.items || []).some((item) => (
+        item.reason === 'market'
+        && Number(state.inventory?.[String(item.selfId)]?.amount || 0) > 0
+        && !!MarketOpportunity.bestBuyOffer(item.selfId, { sellerCharacterId: state.characterId })
+    ));
 }
 
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
@@ -1447,6 +1479,7 @@ const PopulationService = {
         const deadlineAt = startedAt + budgetMs;
         this.resolving = true;
         return Database.cooperatively(() => this.resolveDueParties(deadlineAt)
+            .then(() => this.releaseWarehouseMaterials(deadlineAt))
             .then(() => this.reconcileMarketGoals(deadlineAt))
             .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
             .then((states) => {
@@ -1498,6 +1531,26 @@ const PopulationService = {
 
         return BackgroundPartyState.due(Config.maxPartyResolvesPerTick)
             .then((parties) => this.runInSchedulerSlices(parties, (party) => this.resolveBackgroundParty(party), deadlineAt));
+    },
+
+    releaseWarehouseMaterials(deadlineAt = Infinity) {
+        if (Date.now() >= deadlineAt) return Promise.resolve([]);
+        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt)
+            .then((released) => {
+                if (released.length) {
+                    const resumedMarkets = released.filter((result) => result.resumed).length;
+                    const craftItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'craft')
+                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    const marketItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'market')
+                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    console.info('BotPopulation :: warehouse materials released bots=%d resumedMarkets=%d craftItems=%d marketItems=%d', released.length, resumedMarkets, craftItems, marketItems);
+                }
+                return released;
+            })
+            .catch((err) => {
+                utils.infoWarn('BotPopulation', 'warehouse material release failed: %s', err.message);
+                return [];
+            });
     },
 
     reconcileMarketGoals(deadlineAt = Infinity) {
@@ -1762,11 +1815,26 @@ const PopulationService = {
                 }
                 Metrics.recordBackgroundResolve();
                 Metrics.recordCombat(result.debug);
-                return LifeEvents.recordMany(state.characterId, result.events).then(() => ({
+                const recoveredForMarket = state.activity === 'resting'
+                    && (canResumeAffordableWeaponMarketPlan(updatedState)
+                        || canResumeWarehouseMarketSale(updatedState));
+                const marketHandoff = recoveredForMarket
+                    ? GoalService.review(updatedState).then((goalSnapshot) => {
+                        const timestamp = Date.now();
+                        const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
+                        return travelState
+                            ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
+                            : updatedState;
+                    }).catch((err) => {
+                        utils.infoWarn('BotGoals', 'post-recovery market handoff failed for %s: %s', state.name, err.message);
+                        return updatedState;
+                    })
+                    : Promise.resolve(updatedState);
+                return marketHandoff.then((finalState) => LifeEvents.recordMany(state.characterId, result.events).then(() => ({
                     ok: true,
-                    state: updatedState,
+                    state: finalState,
                     debug: result.debug
-                }));
+                })));
             }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         if (GearAcquisitionPlanner.isCraftService(state)) {
@@ -1840,10 +1908,14 @@ const PopulationService = {
         }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
-                const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
+                const completed = craft.reason === 'crafted'
+                    || craft.reason === 'component_crafted'
+                    || craft.reason === 'dual_sword_combined';
                 const reason = craft.reason === 'component_crafted'
                     ? 'cold_component_craft_complete'
-                    : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
+                    : craft.reason === 'dual_sword_combined'
+                        ? 'cold_dual_sword_combine_complete'
+                        : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
                 // A persisted plan can say ready_to_craft even when an earlier
                 // component craft consumed the raw inputs for the next batch,
                 // or a station may be temporarily unavailable. Do not pin the
@@ -1872,14 +1944,17 @@ const PopulationService = {
                         }, 2)
                         : Promise.resolve(null);
                     if (!completed) return supplyEvent.then(() => ({ ok: true, state: saved || craft.state || plannedState, debug: craft }));
-                    const eventType = craft.reason === 'component_crafted' ? 'component_craft' : 'equipment_craft';
+                    const eventType = craft.reason === 'component_crafted'
+                        ? 'component_craft'
+                        : craft.reason === 'dual_sword_combined' ? 'dual_sword_combine' : 'equipment_craft';
                     const quantity = Math.max(1, Number(craft.batchCount || 1));
-                    const summary = `${state.name} crafted ${quantity > 1 ? `${quantity}x ` : ''}${craft.productName} at ${craft.stationId}`;
+                    const verb = craft.reason === 'dual_sword_combined' ? 'combined' : 'crafted';
+                    const summary = `${state.name} ${verb} ${quantity > 1 ? `${quantity}x ` : ''}${craft.productName} at ${craft.stationId}`;
                     return supplyEvent.then(() => LifeEvents.record(state.characterId, eventType, summary, {
                         recipeId: craft.recipeId,
                         productId: craft.productId,
                         stationId: craft.stationId
-                    }, craft.reason === 'crafted' ? 3 : 2)).then(() => (
+                    }, ['crafted', 'dual_sword_combined'].includes(craft.reason) ? 3 : 2)).then(() => (
                         { ok: true, state: saved || craft.state || plannedState, debug: craft }
                     ));
                 });

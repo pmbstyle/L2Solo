@@ -67,11 +67,11 @@ function syncPartyCompanions(leaderSession, destination, Generics, companions = 
     return moved;
 }
 
-function teleportTo(session, actor, coords) {
+function teleportTo(session, actor, coords, options = {}) {
     const Generics = invoke(path.actor);
 
     if (actor.isDead()) {
-        return;
+        return false;
     }
 
     // NOTE: Do NOT override coords.locZ with GeodataEngine.getHeight() here.
@@ -96,9 +96,10 @@ function teleportTo(session, actor, coords) {
         // Wake up bot AI after teleportation is complete and position updated
         if (session.aiActive) {
             const BotAI = invoke('GameServer/Bot/BotAI');
-            BotAI.wakeup(session);
+            BotAI.wakeup(session, { urgent: options.urgentWakeup === true });
         }
     }, 1000);
+    return true;
 }
 
 module.exports = teleportTo;

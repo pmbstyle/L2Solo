@@ -18,6 +18,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -159,7 +160,13 @@ function plannedMarketPurchase(session, bot, town) {
     const plan = session.coldLifeState?.stats?.equipmentPlan;
     const selfId = Number(plan?.strategy === 'market' ? plan.target?.selfId : 0);
     if (!selfId) return null;
-    if (bot.backpack?.fetchItemFromSelfId?.(selfId)) return null;
+    const owned = (bot.backpack?.fetchItems?.() || [])
+        .filter((item) => Number(item.fetchSelfId?.() || 0) === selfId)
+        .reduce((sum, item) => sum + Number(item.fetchAmount?.() || 0), 0);
+    const combinationAmount = (plan.combine?.requirements || [])
+        .filter((requirement) => Number(requirement.selfId) === selfId)
+        .reduce((sum, requirement) => sum + Number(requirement.amount || 0), 0);
+    if (owned >= Math.max(1, combinationAmount)) return null;
 
     const offer = MarketOpportunity.findOffers(selfId, {
         town: town.name,
@@ -218,7 +225,10 @@ function companionTownErrand(session, bot, player, BotAI) {
     const purchase = plannedMarketPurchase(session, bot, town);
     if (purchase) return purchase;
 
-    const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], { town });
+    const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], {
+        town,
+        state: session.coldLifeState
+    });
     if (buyer) {
         return {
             kind: 'sell_resources',
@@ -512,6 +522,7 @@ function partyAggroMonsters(leaderSession) {
             seen.add(id);
             return true;
         })
+        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc) || BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead() && ids.has(npc.fetchDestId()));
 }
 
@@ -862,6 +873,85 @@ module.exports = {
             : distance;
         const partySettings = PartyCompanionService.getSettings(playerSession);
         const combatMode = partySettings.combatMode || 'assist';
+        const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
+        if (partyRaid) PartyPulling.cancel(playerSession);
+        if (partyRaid?.phase === 'opening') {
+            const raidBoss = (World.npc?.spawns || []).find((npc) => (
+                Number(npc.fetchId?.()) === Number(partyRaid.bossId)
+            ));
+            const isOpener = Number(bot.fetchId()) === Number(partyRaid.openerId || 0);
+            const openerSession = PartyAwareness.partySessions(playerSession).find((memberSession) => (
+                Number(memberSession.actor?.fetchId?.()) === Number(partyRaid.openerId || 0)
+            ));
+            const opener = openerSession?.actor;
+            const openerReady = BotRaidSafety.isRaidOpenerReady(opener);
+            if (!openerReady) {
+                if (role === 'healer' && opener && !isBusy(bot)) {
+                    if (standUp(session, bot)) {
+                        recordRoleDecision(session, bot, 'prepare_raid', 'stand_to_heal_opener', {
+                            targetId: opener.fetchId(),
+                            openerId: partyRaid.openerId
+                        });
+                        return;
+                    }
+                    const impairments = EffectStore.impairments(bot);
+                    const healSkill = BotSkillCapabilities.selectHealSkill(bot, {
+                        emergency: ratio(opener.fetchHp(), opener.fetchMaxHp()) < 0.45
+                    });
+                    const canHeal = healSkill && !impairments.silenced &&
+                        bot.canUseSkill?.(healSkill) !== false &&
+                        bot.fetchMp() >= Number(healSkill.fetchConsumedMp?.() || 0);
+                    if (canHeal) {
+                        const result = queueSupportSkillOn(
+                            session,
+                            bot,
+                            Generics,
+                            opener,
+                            healSkill,
+                            false,
+                            'raid_opener_recovery'
+                        );
+                        recordRoleDecision(session, bot, result === 'cast' ? 'heal_party' : 'move_for_support', 'prepare_raid_opener', {
+                            targetId: opener.fetchId(),
+                            openerId: partyRaid.openerId
+                        });
+                        return;
+                    }
+                }
+                recordRoleDecision(session, bot, 'hold_for_raid_opener', 'opener_recovering', {
+                    targetId: partyRaid.bossId,
+                    openerId: partyRaid.openerId || null
+                });
+                return;
+            }
+            if (isOpener && raidBoss && !isBusy(bot)) {
+                if (standUp(session, bot)) {
+                    recordRoleDecision(session, bot, 'prepare_raid', 'stand_before_opening', {
+                        targetId: raidBoss.fetchId(),
+                        openerId: partyRaid.openerId
+                    });
+                    return;
+                }
+                session.currentTargetId = raidBoss.fetchId();
+                bot.select({ id: raidBoss.fetchId() });
+                recordRoleDecision(session, bot, 'open_raid', 'player_designated_raid_target', {
+                    targetId: raidBoss.fetchId()
+                });
+                BotAI.executeCombat(session, bot, raidBoss, Generics, {
+                    playerPartyRaidLeaderSession: playerSession
+                });
+            } else {
+                if (session.currentTargetId === Number(partyRaid.bossId)) {
+                    session.currentTargetId = undefined;
+                    bot.unselect();
+                }
+                recordRoleDecision(session, bot, 'hold_for_raid_opener', isOpener ? 'opener_busy' : 'tank_opens_first', {
+                    targetId: partyRaid.bossId,
+                    openerId: partyRaid.openerId || null
+                });
+            }
+            return;
+        }
         const selectedLeaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
         // A player-designated pull is intentional even when the ordinary
         // combat posture is Protect or Passive.  Those modes should not make
@@ -871,7 +961,20 @@ module.exports = {
             : undefined;
         PartyPulling.observeLeaderTarget(playerSession, partySettings, configuredLeaderTargetId);
         let pulling = PartyPulling.current(playerSession, partySettings);
+        if (partyRaid) {
+            pulling = { enabled: false, target: null, puller: null, engageable: false, phase: null };
+        }
         const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        if (rawPartyThreat?.type === 'raid') {
+            PartyPulling.cancel(playerSession);
+            if (BotRaidSafety.retreat(session, bot, rawPartyThreat.actor)) {
+                recordRoleDecision(session, bot, 'retreat', 'raid_entity_protected', {
+                    targetId: rawPartyThreat.actor.fetchId?.() || null,
+                    protectedId: rawPartyThreat.targetId || null
+                });
+            }
+            return;
+        }
         const holdingPulledTarget = pulling.target && !pulling.engageable;
         const rawThreatIsHeldPull = holdingPulledTarget &&
             Number(rawPartyThreat?.actor?.fetchId?.()) === Number(pulling.target.fetchId());
@@ -898,7 +1001,9 @@ module.exports = {
             if (partyAggroCache === null) partyAggroCache = partyAggroMonsters(playerSession);
             return partyAggroCache;
         };
-        const leaderTargetId = pulling.enabled ? undefined : configuredLeaderTargetId;
+        const leaderTargetId = partyRaid?.phase === 'combat'
+            ? Number(partyRaid.bossId)
+            : (pulling.enabled ? undefined : configuredLeaderTargetId);
         announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
 
@@ -1402,7 +1507,7 @@ module.exports = {
             const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), 800);
             const monsterToAggro = partyThreat?.type === 'npc'
                 ? partyThreat.actor
-                : nearbyNpcs.find((npc) => npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
+                : nearbyNpcs.find((npc) => !BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable() && !npc.isDead() && partyActorIds(playerSession).has(npc.fetchDestId()));
 
             // Aggression is a transfer tool: use it only to take a mob away
             // from another party member. Once it is already attacking this
@@ -1440,7 +1545,7 @@ module.exports = {
         // Auto mode retains the lightweight tank fallback. Explicit Off is a
         // quiet order, not an "avoid overpull" failure that should overwrite
         // the tank's otherwise useful role status every tick.
-        if (!acted && role === 'tank' && partySettings.pullMode === 'auto') {
+        if (!acted && !partyRaid && role === 'tank' && partySettings.pullMode === 'auto') {
             const activeMobs = currentPartyAggroMonsters().length;
             const blockReason = PartyPulling.hasDeadPartyMember(playerSession)
                 ? 'party_revival'
@@ -1455,7 +1560,7 @@ module.exports = {
                 let closestDist = 900;
 
                 for (const npc of nearbyNpcs) {
-                    if (npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined) {
+                    if (!BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined) {
                         const distToBot = point(bot).distance(point(npc));
                         if (distToBot < closestDist) {
                             closestDist = distToBot;
@@ -1477,7 +1582,7 @@ module.exports = {
             }
         }
 
-        if (!acted && partyThreat?.actor && ['healer', 'buffer'].includes(role) && !isBusy(bot)) {
+        if (!acted && partyThreat?.actor && ['mage', 'healer', 'buffer'].includes(role) && !isBusy(bot)) {
             const crowdControl = PartyClassTactics.supportCrowdControl(bot, activePartyThreats, {
                 primaryTargetId: pulling.target?.fetchId?.() || leaderTargetId
             });
@@ -1531,7 +1636,10 @@ module.exports = {
                 if (partyThreat.type === 'player') {
                     BotAI.executePvPCombat(session, bot, target, Generics, { basicAttackOnly });
                 } else {
-                    BotAI.executeCombat(session, bot, target, Generics, { basicAttackOnly });
+                    BotAI.executeCombat(session, bot, target, Generics, {
+                        basicAttackOnly,
+                        playerPartyRaidLeaderSession: playerSession
+                    });
                 }
             }
         }
@@ -1546,7 +1654,7 @@ module.exports = {
             } else if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId()) {
                 acted = true;
                 World.fetchUser(playerTargetId).then((user) => {
-                    if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
+                    if (PartyAwareness.leaderCombatTargetId(playerSession, { allowPlayerRaid: true }) !== playerTargetId) return;
                     if (session.currentTargetId && session.currentTargetId !== playerTargetId) return;
                     const targetIsTeammate = user.session && (
                         user.session === playerSession ||
@@ -1584,9 +1692,9 @@ module.exports = {
                     }
                 }).catch(() => {
                     World.fetchNpc(playerTargetId).then((npc) => {
-                        if (PartyAwareness.leaderCombatTargetId(playerSession) !== playerTargetId) return;
+                        if (PartyAwareness.leaderCombatTargetId(playerSession, { allowPlayerRaid: true }) !== playerTargetId) return;
                         if (session.currentTargetId && session.currentTargetId !== playerTargetId) return;
-                        if (npc.fetchAttackable() && !npc.isDead()) {
+                        if ((!BotRaidSafety.isProtectedRaidEntity(npc) || BotRaidSafety.canEngagePlayerPartyRaid(session, npc, playerSession)) && npc.fetchAttackable() && !npc.isDead()) {
                             if (session.botStay && session.stayLocation) {
                                 const stayDist = new SpeckMath.Point3D(session.stayLocation.locX, session.stayLocation.locY, session.stayLocation.locZ)
                                     .distance(new SpeckMath.Point3D(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ()));
@@ -1605,7 +1713,8 @@ module.exports = {
                                 return;
                             }
                             BotAI.executeCombat(session, bot, npc, Generics, {
-                                basicAttackOnly: role === 'healer' || role === 'buffer'
+                                basicAttackOnly: role === 'healer' || role === 'buffer',
+                                playerPartyRaidLeaderSession: playerSession
                             });
                         } else {
                             if (session.currentTargetId === playerTargetId) {

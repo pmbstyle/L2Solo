@@ -168,7 +168,12 @@ const BackgroundPartyResolver = {
                 vitals: { ...member.vitals },
                 stats: {
                     ...(member.state.stats || {}),
-                    coldCombat: { ...(member.state.stats?.coldCombat || member.profile), cooldowns: member.cooldowns }
+                    coldCombat: {
+                        ...(member.state.stats?.coldCombat || member.profile),
+                        cooldowns: member.cooldowns,
+                        charges: member.charges || 0,
+                        chargeExpiresAt: member.chargeExpiresAt || null
+                    }
                 }
             }));
             if (encounter.won) {
@@ -228,6 +233,11 @@ const BackgroundPartyResolver = {
                         },
                         stats: {
                             ...(resolved.stats || {}),
+                            coldCombat: hp <= 0 ? {
+                                ...(resolved.stats?.coldCombat || {}),
+                                charges: 0,
+                                chargeExpiresAt: null
+                            } : resolved.stats?.coldCombat,
                             partyHistory: PartyAffinity.recordRun(state, members)
                         }
                     },

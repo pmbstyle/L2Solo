@@ -5,7 +5,10 @@ const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
+const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 // L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
 const WEAPON_MASK_BY_KIND = Object.freeze({
@@ -137,11 +140,29 @@ class Attack {
         }
 
         const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
-        const hitLanded = Formulas.calcHitChance(actor, creature, Math.random, this.positionContext(actor, creature));
-        const usedSoulshot = hitLanded && !!actor.soulshotLoaded;
-        const hit = this.prepareMeleeHit(actor, creature, hitLanded, usedSoulshot);
+        let secondaryDamageMultiplier = 0.85;
+        const hits = this.resolveMeleeTargets(actor, creature).map((target, index) => {
+            const hitLanded = Formulas.calcHitChance(actor, target, Math.random, this.positionContext(actor, target));
+            const usedSoulshot = hitLanded && !!actor.soulshotLoaded;
+            const hit = this.prepareMeleeHit(actor, target, hitLanded, usedSoulshot);
 
-        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), hit), actor);
+            if (index > 0) {
+                if (hitLanded) hit.damage = Math.max(0, Math.floor(hit.damage * secondaryDamageMultiplier));
+                secondaryDamageMultiplier /= 1.15;
+            }
+
+            return { target, hitLanded, usedSoulshot, hit };
+        });
+        const primary = hits[0];
+        const usedSoulshot = hits.some((entry) => entry.usedSoulshot);
+
+        session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), {
+            ...primary.hit,
+            additionalHits: hits.slice(1).map((entry) => ({
+                targetId: entry.target.fetchId(),
+                ...entry.hit
+            }))
+        }), actor);
         actor.state.setHits(true);
 
         this.queueTimer(() => {
@@ -149,17 +170,28 @@ class Attack {
                 return;
             }
 
-            if (hitLanded) {
+            if (RaidCurse.normalAttackBlocked(session, actor, creature)) {
                 if (usedSoulshot) {
                     actor.soulshotLoaded = false;
                 }
+                return;
+            }
 
-                this.hit(session, actor, creature, hit.damage);
-                this.applyDamageAbsorb(session, actor, hit.damage);
-            }
-            else {
-                ConsoleText.transmit(session, ConsoleText.caption.missedHit);
-            }
+            if (usedSoulshot) actor.soulshotLoaded = false;
+
+            hits.forEach((entry, index) => {
+                const target = entry.target;
+                if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
+                if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
+
+                if (entry.hitLanded) {
+                    this.hit(session, actor, target, entry.hit.damage);
+                    this.applyDamageAbsorb(session, actor, entry.hit.damage);
+                }
+                else if (index === 0) {
+                    ConsoleText.transmit(session, ConsoleText.caption.missedHit);
+                }
+            });
 
         }, speed * 0.644); // Until hit point
 
@@ -201,7 +233,8 @@ class Attack {
             return;
         }
 
-        if (actor.fetchMp() < skill.fetchConsumedMp()) {
+        const mpCost = this.skillMpCost(actor, skill);
+        if (actor.fetchMp() < mpCost) {
             ConsoleText.transmit(session, ConsoleText.caption.depletedMp);
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'depleted_mp');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
@@ -238,31 +271,78 @@ class Attack {
                 return;
             }
 
+            const semantic = skill.fetchSemantic?.() || {};
             const targets = this.resolveSkillTargets(session, actor, creature, skill);
+            const selfEffectOnly = targets.length === 0
+                && semantic.sourceTarget === 'aura'
+                && !!semantic.selfEffect;
+            const emptyEnemyAuraCast = targets.length === 0
+                && semantic.sourceTarget === 'aura'
+                && skill.fetchTargetKind?.() === 'enemy'
+                && !semantic.selfEffect;
+            const executionTargets = selfEffectOnly ? [actor] : targets;
 
-            if (targets.length === 0) {
+            if (executionTargets.length === 0 && !emptyEnemyAuraCast) {
                 actor.state.setCasts(false);
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
                 return;
             }
 
-            if (magicSkill) {
-                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, targets), actor);
+            if (!this.consumeSkillItems(session, actor, skill)) {
+                actor.state.setCasts(false);
+                this.rejectSkillUseCondition(session, actor, 'Not enough required items.');
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+                return;
             }
 
-            actor.setMp(actor.fetchMp() - skill.fetchConsumedMp());
+            if (magicSkill && executionTargets.length > 0) {
+                session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, executionTargets), actor);
+            }
+
+            actor.setMp(actor.fetchMp() - mpCost);
             if (skill.fetchConsumedHp() > 0) {
                 actor.setHp(Math.max(1, actor.fetchHp() - skill.fetchConsumedHp()));
             }
             actor.statusUpdateVitals(actor);
 
             const shotState = this.captureShotState(actor);
-            targets.forEach((target) => {
+            if (!selfEffectOnly && executionTargets.length > 0 && RaidCurse.skillBlocked(session, actor, executionTargets, skill)) {
+                this.clearLoadedShot(actor, magicSkill);
+                actor.state.setCasts(false);
+                invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+
+                actor.automation.replenishVitals(actor);
+                if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
+                    return;
+                }
+                if (this.queue.name) {
+                    this.dequeueEvent(session);
+                    return;
+                }
+                return;
+            }
+
+            // A sonic/force charge belongs to the cast, not to each target of
+            // an area skill. Consume it once after the cast has survived all
+            // cancellation gates and immediately before authoritative effects.
+            if (!this.consumeSkillCharges(session, actor, skill)) {
+                actor.state.setCasts(false);
+                this.rejectSkillUseCondition(session, actor, 'Not enough charges.');
+                invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+                return;
+            }
+
+            executionTargets.forEach((target) => {
                 this.restoreShotState(actor, shotState);
                 const outcome = SkillEffects.execute(session, actor, target, skill, {
                     attack: this,
-                    magicSkill
+                    magicSkill,
+                    selfEffectOnly,
+                    chargeCount: actor.activeSkillChargeCount
                 });
                 // Chat confirmations are emitted only after the authoritative
                 // skill result exists. A queued, interrupted, resisted, or
@@ -283,6 +363,11 @@ class Attack {
 
                 if (outcome.damage > 0) {
                     this.hit(session, actor, target, outcome.damage);
+                    if (outcome.forceLethalVitals && target.fetchHp?.() > 0) {
+                        target.setHp?.(1);
+                        target.setCp?.(1);
+                        target.statusUpdateVitals?.(target);
+                    }
                 }
                 else if (outcome.missed) {
                     ConsoleText.transmit(session, ConsoleText.caption.missedHit);
@@ -296,7 +381,11 @@ class Attack {
                         }]);
                     }
                 }
+                if (outcome.spoilOnHit) {
+                    outcome.spoiled = invoke('GameServer/Npc/SpoilSweep').trySpoilCrush(session, actor, target, skill);
+                }
             });
+            delete actor.activeSkillChargeCount;
             this.clearLoadedShot(actor, magicSkill);
             actor.state.setCasts(false);
             invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
@@ -335,25 +424,69 @@ class Attack {
         const semantic = skill.fetchSemantic?.() || {};
         const sourceTarget = semantic.sourceTarget;
         const radius = Math.max(0, Number(semantic.radius) || 0);
+        const targetKind = skill.fetchTargetKind?.();
 
-        if (skill.fetchTargetKind?.() === 'party') {
+        if (targetKind === 'party') {
             const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
             const leaderSession = session?.partyCompanion === true && session.followPlayerSession
                 ? session.followPlayerSession
                 : session;
-            const party = PartyAwareness.partyActors(leaderSession)
+            const partyActors = PartyAwareness.partyActors(leaderSession)
                 .filter((target) => (
                     this.isValidSkillTarget(target, skill, actor) &&
                     (radius <= 0 || this.distance2d(actor, target) <= radius)
                 ));
-            if (party.length > 0) return party;
-            return this.isValidSkillTarget(primary, skill, actor) &&
-                (radius <= 0 || this.distance2d(actor, primary) <= radius)
+            const party = [];
+            for (const target of partyActors) {
+                party.push(target);
+                const summon = SummonControl.activeSummon(target);
+                if (summon && (radius <= 0 || this.distance2d(actor, summon) <= radius)) party.push(summon);
+            }
+            if (party.length > 0) return this.uniqueSkillTargets(party);
+            return this.isValidSkillTarget(primary, skill, actor) && (radius <= 0 || this.distance2d(actor, primary) <= radius)
                 ? [primary]
                 : [];
         }
 
-        if (sourceTarget === 'aura' && radius > 0 && primary === actor && skill.fetchTargetKind?.() === 'enemy') {
+        if (targetKind === 'ally' || targetKind === 'corpse_ally') {
+            const World = invoke('GameServer/World/World');
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
+            const PledgeHelpers = invoke('GameServer/Network/Response/PledgeHelpers');
+            const clanId = Number(actor?.fetchClanId?.()) || 0;
+            const allyId = PledgeHelpers.allyId(actor);
+            const corpseOnly = targetKind === 'corpse_ally';
+            const targets = [];
+
+            if (!corpseOnly) {
+                targets.push(actor);
+                const ownSummon = SummonControl.activeSummon(actor);
+                if (ownSummon && (radius <= 0 || this.distance2d(actor, ownSummon) <= radius)) targets.push(ownSummon);
+            }
+
+            if (clanId > 0 || allyId > 0) {
+                for (const targetSession of World.user?.sessions || []) {
+                    const target = targetSession?.actor;
+                    const sameClan = clanId > 0 && Number(target?.fetchClanId?.()) === clanId;
+                    const sameAlliance = allyId > 0 && PledgeHelpers.allyId(target) === allyId;
+                    if (!target || target === actor || (!sameClan && !sameAlliance)) continue;
+                    if (radius > 0 && this.distance2d(actor, target) > radius) continue;
+
+                    if (corpseOnly) {
+                        if (this.isValidSkillTarget(target, skill, actor)) targets.push(target);
+                        continue;
+                    }
+
+                    if (this.isValidSkillTarget(target, skill, actor)) targets.push(target);
+                    const summon = SummonControl.activeSummon(target);
+                    if (summon && (radius <= 0 || this.distance2d(actor, summon) <= radius)) targets.push(summon);
+                }
+            }
+
+            return this.uniqueSkillTargets(targets);
+        }
+
+        if (sourceTarget === 'aura' && radius > 0 && primary === actor && targetKind === 'enemy') {
             return this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), radius)
                 .filter((target) => this.isValidSkillTarget(target, skill, actor) && this.distance2d(actor, target) <= radius);
         }
@@ -393,6 +526,42 @@ class Attack {
         return typeof World.fetchNpcsInRadius === 'function'
             ? World.fetchNpcsInRadius(locX, locY, radius)
             : [];
+    }
+
+    uniqueSkillTargets(targets) {
+        const seen = new Set();
+        return targets.filter((target) => {
+            const id = Number(target?.fetchId?.()) || 0;
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }
+
+    resolveMeleeTargets(actor, primary) {
+        if (!this.isPolearmAttack(actor) || EffectStats.add(actor, 'hitMainTarget') > 0) {
+            return [primary];
+        }
+
+        const maxTargets = Math.max(1, 4 + Math.floor(EffectStats.add(actor, 'atkCountMaxAdd')));
+        const enemySkill = { fetchTargetKind: () => 'enemy' };
+        const nearby = this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), 40);
+        const seen = new Set([primary.fetchId?.()]);
+        const targets = [primary];
+
+        for (const target of nearby) {
+            const id = target?.fetchId?.();
+            if (!id || seen.has(id)) continue;
+            if (!this.isValidSkillTarget(target, enemySkill, actor)) continue;
+            if (Math.abs((Number(target.fetchLocZ?.()) || 0) - (Number(actor.fetchLocZ?.()) || 0)) > 650) continue;
+            if (this.distance2d(actor, target) > 40 || !this.isFacing(actor, target, 120)) continue;
+
+            seen.add(id);
+            targets.push(target);
+            if (targets.length >= maxTargets) break;
+        }
+
+        return targets;
     }
 
     isAreaPrimary(actor, target, skill) {
@@ -474,6 +643,10 @@ class Attack {
             return summonFailure;
         }
 
+        if (this.shouldConsumeSkillItems(skill) && !SkillEffects.hasRequiredSkillItems(actor, skill)) {
+            return 'Not enough required items.';
+        }
+
         if (semantic.createItemId) {
             const materialId = Number(semantic.itemConsumeId) || 0;
             const required = Math.max(1, Number(semantic.itemConsumeCount) || 1);
@@ -482,6 +655,10 @@ class Attack {
         }
 
         const requires = semantic.requires || {};
+        const requiredCharges = Math.max(0, Number(requires.charges) || 0);
+        const charges = Math.max(0, Number(actor.fetchCharges?.() ?? actor.charges ?? 0) || 0);
+        if (requiredCharges > charges) return 'Not enough charges.';
+
         if (requires.weaponsAllowed) {
             const mask = weaponMaskFor(actor);
             if ((Number(requires.weaponsAllowed) & mask) === 0) {
@@ -497,6 +674,10 @@ class Attack {
 
         if (!condition) return null;
 
+        if (condition.actorStanding === true && actor.state?.fetchSeated?.() === true) {
+            return 'Cannot use while sitting.';
+        }
+
         if (condition.actorHpPercentAtMost !== undefined) {
             const maxHp = Number(actor.fetchMaxHp?.()) || 0;
             const hp = Number(actor.fetchHp?.()) || 0;
@@ -505,7 +686,84 @@ class Attack {
             }
         }
 
+        if (condition.elementalSeeds) {
+            const required = condition.elementalSeeds;
+            const seeds = [
+                SkillEffects.seedPower(actor, 1285),
+                SkillEffects.seedPower(actor, 1286),
+                SkillEffects.seedPower(actor, 1287)
+            ];
+            const direct = [required.fire, required.water, required.wind].map((value) => Math.max(0, Number(value) || 0));
+
+            for (let index = 0; index < seeds.length; index++) {
+                if (seeds[index] < direct[index]) return 'Proper elemental seeds required.';
+                seeds[index] -= direct[index];
+            }
+
+            let various = Math.max(0, Number(required.various) || 0);
+            for (let index = 0; index < seeds.length && various > 0; index++) {
+                if (seeds[index] > 0) {
+                    seeds[index]--;
+                    various--;
+                }
+            }
+            if (various > 0) return 'Proper elemental seeds required.';
+
+            const any = Math.max(0, Number(required.any) || 0);
+            if (seeds.reduce((total, power) => total + power, 0) < any) {
+                return 'Proper elemental seeds required.';
+            }
+        }
+
         return null;
+    }
+
+    consumeSkillCharges(session, actor, skill) {
+        const required = Math.max(0, Number(skill.fetchSemantic?.().requires?.charges) || 0);
+        if (!required) return true;
+        const result = ChargeLifecycle.consume(session, actor, required);
+        if (!result.ok) return false;
+        actor.activeSkillChargeCount = result.previous;
+        return true;
+    }
+
+    shouldConsumeSkillItems(skill) {
+        return [
+            C4SkillRules.DAMAGE,
+            C4SkillRules.EFFECT,
+            C4SkillRules.HEAL_PERCENT
+        ].includes(skill.fetchSkillType?.());
+    }
+
+    consumeSkillItems(session, actor, skill) {
+        if (!this.shouldConsumeSkillItems(skill)) return true;
+        const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
+        const count = Number(skill.fetchItemConsumeCount?.()) || 0;
+        if (!itemId || count <= 0) return true;
+        const item = actor?.backpack?.fetchItemFromSelfId?.(itemId);
+        if (!item || (Number(item.fetchAmount?.()) || 0) < count) return false;
+        actor.backpack.deleteItem(session, item.fetchId(), count, () => {});
+        return true;
+    }
+
+    skillMpCost(actor, skill) {
+        const semantic = skill.fetchSemantic?.() || {};
+        let cost = Math.max(0, Number(skill.fetchConsumedMp?.()) || 0);
+
+        if (semantic.isDance) {
+            const activeDances = EffectStore.list(actor).filter((effect) => (
+                C4SkillRules.resolve({
+                    selfId: effect.id,
+                    name: effect.name,
+                    level: effect.level
+                }).isDance
+            )).length;
+            cost += activeDances * Math.max(0, Number(semantic.nextDanceCost) || 0);
+            return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, 'danceMpConsumeMul')));
+        }
+
+        const stat = skill.fetchSpell?.() ? 'magicalMpConsumeMul' : 'physicalMpConsumeMul';
+        return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, stat)));
     }
 
     rejectSkillUseCondition(session, actor, message) {
@@ -534,12 +792,11 @@ class Attack {
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const magicCritRateMultiplier = EffectStats.multiplier(actor, 'mCritRateMul');
-            // The legacy combat loop has no baseline magic-critical roll yet. Preserve its
-            // established damage output, while allowing C4 effects such as Wild Magic to
-            // introduce the sourced roll explicitly.
-            const magicCritical = magicCritRateMultiplier > 1
-                && Formulas.rollCritical(4 * magicCritRateMultiplier, rng);
+            const magicCriticalRate = Math.min(300, Math.max(0,
+                (8 * EffectStats.multiplier(actor, 'mCritRateMul'))
+                + EffectStats.add(actor, 'mCritRateAdd')
+            ));
+            const magicCritical = Formulas.rollCritical(magicCriticalRate, rng);
             const power = semantic.skillType === C4SkillRules.DEATH_LINK
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
                 : skill.fetchPower();
@@ -568,20 +825,46 @@ class Attack {
         const usedSoulshot = !!actor.soulshotLoaded;
         const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
         const semantic = skill.fetchSemantic?.() || {};
+        const position = this.targetPosition(actor, creature);
         const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: semantic.trait === 'bow' || this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor)
+            blunt: this.isBluntAttack(actor),
+            dagger: semantic.trait === 'dagger' || this.isDaggerAttack(actor)
         });
-        const damage = Math.round(Formulas.calcPhysicalDamage(
+        const damageFormula = semantic.skillType === C4SkillRules.BLOW
+            ? Formulas.calcBlowDamage.bind(Formulas)
+            : Formulas.calcPhysicalDamage.bind(Formulas);
+        const power = semantic.skillType === C4SkillRules.FATAL
+            ? Formulas.calcFatalPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
+            : skill.fetchPower();
+        let damage = Math.round(damageFormula(
             actor.fetchCollectivePAtk(),
             weaponPAtkRnd,
             creature.fetchCollectivePDef() + shieldPDef,
-            skill.fetchPower(),
-            { soulshot: usedSoulshot }
-        ) * weaponModifier);
+            power,
+            {
+                soulshot: usedSoulshot,
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
+                rng
+            }
+        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
+        if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
         this.clearLoadedShot(actor, magicSkill);
         return damage;
+    }
+
+    rollPhysicalSkillCritical(actor, semantic, rng = Math.random) {
+        const baseCritRate = Number(semantic?.baseCritRate) || 0;
+        if (baseCritRate <= 0) return false;
+
+        const baseStr = Number(actor?.fetchStr?.()) || 1;
+        const effectiveStr = Math.max(1, Math.round(
+            (baseStr + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
+        ));
+        return Formulas.rollCritical(baseCritRate * 10 * Formulas.calcBaseMod.STR(effectiveStr), rng);
     }
 
     clearLoadedShot(actor, magicSkill) {
@@ -611,6 +894,7 @@ class Attack {
         }, rng);
         const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
+        const position = this.targetPosition(actor, creature);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: this.isBowAttack(actor),
@@ -621,9 +905,10 @@ class Attack {
             : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
                 critical,
                 soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul'),
+                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
+                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
-            }) * weaponModifier);
+            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -663,7 +948,7 @@ class Attack {
                 critical,
                 criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
                 criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
-            }) * weaponModifier);
+            }) * weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst));
         let flags = 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -698,10 +983,22 @@ class Attack {
 
     fetchSituationalCriticalRate(attacker, target) {
         const base = Number(attacker?.fetchCollectiveCritical?.()) || 0;
+        const position = this.targetPosition(attacker, target);
         const stats = C4EquipmentItemSkills.situationalStats(attacker, {
-            behindTarget: this.isBehindTarget(attacker, target)
+            behindTarget: position.behind
         });
-        return (base * (Number(stats.pCritRateMul) || 1)) + (Number(stats.pCritRateAdd) || 0);
+        return (base
+            * EffectStats.situationalMultiplier(attacker, 'pCritRateMul', position)
+            * (Number(stats.pCritRateMul) || 1))
+            + (Number(stats.pCritRateAdd) || 0);
+    }
+
+    targetPosition(attacker, target) {
+        const behind = this.isBehindTarget(attacker, target);
+        return {
+            behind,
+            front: !behind && this.isFacing(target, attacker, 120)
+        };
     }
 
     isBowAttack(creature) {
@@ -712,6 +1009,16 @@ class Attack {
     isBluntAttack(creature) {
         const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
         return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
+    }
+
+    isDaggerAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Knife';
+    }
+
+    isPolearmAttack(creature) {
+        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
+        return kind === 'Weapon.Pole';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -797,6 +1104,7 @@ class Attack {
 
     hit(session, actor, creature, hit) {
         ConsoleText.transmit(session, ConsoleText.caption.actorHit, [{ kind: ConsoleText.kind.number, value: hit }]);
+        this.tryBreakCast(creature, hit);
 
         if (creature.fetchId() >= 2000000) {
             if (actor?.fetchKind) {
@@ -834,6 +1142,17 @@ class Attack {
         this.applyReflectedDamage(session, actor, creature, hit);
     }
 
+    tryBreakCast(creature, damage, rng = Math.random) {
+        if (!creature?.state?.fetchCasts?.()) return false;
+        const chance = Formulas.calcCastBreakChance({
+            damage,
+            men: creature.fetchMen?.(),
+            cancelAdd: EffectStats.add(creature, 'cancelAdd')
+        });
+        if (rng() * 100 >= chance) return false;
+        return creature.attack?.abortCast?.(creature.session, creature) === true;
+    }
+
     applyReflectedDamage(session, actor, creature, hit) {
         if (!actor || actor === creature || actor.isDead?.() || creature?.isDead?.()) return;
         const reflectPercent = Math.max(0, Number(EffectStats.add(creature, 'reflectDam')) || 0);
@@ -855,11 +1174,34 @@ function traitVulnerabilityModifier(target, trait) {
     return EffectStats.multiplier(target, `${trait}Vuln`, 1);
 }
 
-function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false } = {}) {
+function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false, dagger = false } = {}) {
     if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
     if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
+    if (dagger) return EffectStats.multiplier(target, 'daggerWpnVuln', 1);
     return 1;
+}
+
+function physicalUndeadModifier(attacker, target) {
+    const undead = target?.fetchUndead?.() === true || target?.model?.undead === true;
+    return undead ? EffectStats.multiplier(attacker, 'pAtkUndeadMul') : 1;
+}
+
+const PHYSICAL_RACE_STATS = Object.freeze({
+    animal: 'pAtk-animals',
+    beast: 'pAtk-monsters',
+    construct: 'pAtk-mcreatures',
+    dragon: 'pAtk-dragons',
+    giant: 'pAtk-giants',
+    insect: 'pAtk-insects',
+    plant: 'pAtk-plants'
+});
+
+function physicalRaceModifier(attacker, target) {
+    const race = String(target?.fetchRace?.() ?? target?.model?.race ?? target?.race ?? '').toLowerCase();
+    const stat = PHYSICAL_RACE_STATS[race];
+    return stat ? EffectStats.multiplier(attacker, stat) : 1;
 }
 
 module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
+module.exports.physicalRaceModifier = physicalRaceModifier;

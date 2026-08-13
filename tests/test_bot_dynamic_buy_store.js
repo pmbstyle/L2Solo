@@ -70,6 +70,8 @@ async function run() {
         }
     };
     LifeState.allStates = () => [buyer];
+    assert.deepStrictEqual(MarketOpportunity.activeBuyDemandSelfIds(), [1864],
+        'funded live WTB material demand must be discoverable by warehouse circulation');
     const marketSnapshot = MarketSnapshot.snapshot();
     assert.strictEqual(marketSnapshot.dynamic.wtb, 1);
     assert.strictEqual(marketSnapshot.byTown.Giran.buyUnits, 3);

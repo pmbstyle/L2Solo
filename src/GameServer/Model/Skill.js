@@ -29,7 +29,7 @@ class SkillModel {
     }
 
     fetchSpell() {
-        return this.model.spell === true;
+        return this.semantic.isMagic ?? (this.model.spell === true);
     }
 
     fetchDistance() {
@@ -37,15 +37,15 @@ class SkillModel {
     }
 
     fetchConsumedHp() {
-        return this.model.hp;
+        return this.semantic.hpConsume ?? this.model.hp;
     }
 
     fetchConsumedMp() {
-        return this.model.mp;
+        return this.semantic.mpConsume ?? this.model.mp;
     }
 
     fetchHitTime() {
-        return this.model.hitTime;
+        return this.semantic.hitTime ?? this.model.hitTime;
     }
 
     fetchCalculatedHitTime() {
@@ -53,11 +53,11 @@ class SkillModel {
     }
 
     fetchReuseTime() {
-        return this.model.reuse;
+        return this.semantic.reuseTime ?? this.model.reuse;
     }
 
     fetchPower() {
-        return this.model.power;
+        return this.semantic.power ?? this.model.power;
     }
 
     fetchTeleportCoords() {
@@ -124,7 +124,7 @@ class SkillModel {
     }
 
     fetchBuffTime() {
-        return this.model.buff;
+        return this.semantic.durationMs ?? this.model.buff;
     }
 
     fetchSemantic() {

@@ -79,7 +79,7 @@ class Npc extends NpcModel {
     }
 
     enterCombatState(session, actor) {
-        if (this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.()) {
+        if (this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
             return;
         }
 
@@ -93,7 +93,7 @@ class Npc extends NpcModel {
 
         this.timer.combatStart = setTimeout(() => {
             this.timer.combatStart = undefined;
-            if (!this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.()) {
+            if (!this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
                 if (this.state.fetchCombats()) this.abortCombatState(session);
                 return;
             }
@@ -115,7 +115,7 @@ class Npc extends NpcModel {
                 // A dead target cannot be chased or hit.  Leaving the NPC in
                 // combat here pins its target to the corpse indefinitely and
                 // makes party resurrection believe the fight never ended.
-                if (actor?.isDead?.() || actor?.state?.fetchDead?.()) {
+                if (actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
                     this.abortCombatState(session);
                     return;
                 }

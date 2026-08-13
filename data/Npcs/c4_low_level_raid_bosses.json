@@ -1,0 +1,312 @@
+[
+  {
+    "selfId": 10019,
+    "template": {
+      "kind": "Boss",
+      "name": "Pan Dryad",
+      "title": "Raid Boss",
+      "level": 25,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 146,
+      "pAtkRnd": 10,
+      "pDef": 928,
+      "mAtk": 30,
+      "mDef": 377,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 72,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 52415,
+      "maxMp": 606,
+      "revHp": 127.71,
+      "revMp": 4.73,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 42,
+      "size": 73
+    },
+    "equipment": {
+      "weapon": 291,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1168.752,
+      "sp": 69595
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10127,
+    "template": {
+      "kind": "Boss",
+      "name": "Langk Matriarch Rashkos",
+      "title": "Raid Boss",
+      "level": 24,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 134,
+      "pAtkRnd": 10,
+      "pDef": 892,
+      "mAtk": 27,
+      "mDef": 362,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 90,
+      "run": 275
+    },
+    "vitals": {
+      "maxHp": 49872,
+      "maxMp": 763,
+      "revHp": 122.59,
+      "revMp": 5.72,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 19,
+      "size": 57
+    },
+    "equipment": {
+      "weapon": 124,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1256.555555555556,
+      "sp": 67853
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10272,
+    "template": {
+      "kind": "Boss",
+      "name": "Partisan Leader Talakin",
+      "title": "Raid Boss",
+      "level": 28,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 286,
+      "pAtkRnd": 10,
+      "pDef": 1044,
+      "mAtk": 86,
+      "mDef": 424,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 1972,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 81,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 60567,
+      "maxMp": 1415,
+      "revHp": 143.8,
+      "revMp": 6.74,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 43.5
+    },
+    "equipment": {
+      "weapon": 77,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1121.536989795918,
+      "sp": 99579
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10365,
+    "template": {
+      "kind": "Boss",
+      "name": "Patriarch Kuroboros",
+      "title": "Raid Boss",
+      "level": 26,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 135,
+      "pAtkRnd": 10,
+      "pDef": 966,
+      "mAtk": 25,
+      "mDef": 392,
+      "accur": -3.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 84,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 47184,
+      "maxMp": 3718,
+      "revHp": 113.98,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 34.5
+    },
+    "equipment": {
+      "weapon": 93,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 918.894970414201,
+      "sp": 53601
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 10372,
+    "template": {
+      "kind": "Boss",
+      "name": "Discarded Guardian",
+      "title": "Raid Boss",
+      "level": 20,
+      "hostile": false,
+      "raidBoss": true
+    },
+    "base": {
+      "str": 60,
+      "dex": 73,
+      "con": 57,
+      "int": 76,
+      "wit": 70,
+      "men": 80
+    },
+    "stats": {
+      "pAtk": 61,
+      "pAtkRnd": 30,
+      "pDef": 757,
+      "mAtk": 8,
+      "mDef": 307,
+      "accur": 4.75,
+      "atkSpd": 409,
+      "castSpd": 2901,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 307
+    },
+    "vitals": {
+      "maxHp": 34766,
+      "maxMp": 3718,
+      "revHp": 88.61,
+      "revMp": 9.81,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 40.3
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1091.58,
+      "sp": 37265
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  }
+]

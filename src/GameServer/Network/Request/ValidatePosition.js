@@ -46,7 +46,8 @@ function isFalling(actor, data, now = Date.now()) {
 
     const maxHp = Number(actor.fetchMaxHp?.()) || 0;
     const currentHp = Number(actor.fetchHp?.()) || 0;
-    const damage = Math.floor((height * maxHp / 1000) * EffectStats.multiplier(actor, 'fallMul'));
+    const baseDamage = height * maxHp / 1000;
+    const damage = Math.floor(Math.max(0, baseDamage + EffectStats.add(actor, 'fallAdd')) * EffectStats.multiplier(actor, 'fallMul'));
     if (damage > 0 && currentHp > 1) {
         actor.setHp?.(Math.max(1, currentHp - Math.min(damage, currentHp - 1)));
         actor.statusUpdateVitals?.(actor);

@@ -20,12 +20,22 @@ function skillExec(session, actor, data) {
         return;
     }
 
-    // C4 party auras use a negative distance to mean that the cast originates
-    // from the caster and expands to party members in Attack.resolveSkillTargets.
-    // Treating that value as a zero-radius movement target makes the caster try
-    // to stand on the selected party member and lets normal follow movement
-    // cancel the cast before it ever starts.
-    if (skill.fetchTargetKind() === 'party' && Number(skill.fetchDistance()) < 0) {
+    if (skill.fetchTargetKind() === 'pet') {
+        const summon = invoke('GameServer/Npc/SummonControl').activeSummon(actor);
+        if (!summon || Number(data.id) !== Number(summon.fetchId())) {
+            cancelFailedSupportTarget(session, actor, data, skill);
+            return;
+        }
+        actor.automation.scheduleAction(session, actor, summon, skill.fetchDistance(), () => {
+            actor.attack.remoteHit(session, summon, skill);
+        });
+        return;
+    }
+
+    // TARGET_PARTY, TARGET_ALLY and TARGET_CORPSE_ALLY are caster-centred in
+    // Lisvus. Attack.resolveSkillTargets expands them to the eligible party,
+    // clan/alliance or dead-clan members inside the sourced radius.
+    if (['party', 'ally', 'corpse_ally'].includes(skill.fetchTargetKind())) {
         actor.attack.remoteHit(session, actor, skill);
         return;
     }
@@ -33,7 +43,7 @@ function skillExec(session, actor, data) {
     // Hate Aura and similar C4 TARGET_AURA enemy skills are centred on the
     // caster as well. Attack.resolveSkillTargets will fan the native effect
     // out only to valid enemies inside the sourced radius.
-    if (skill.fetchTargetKind() === 'enemy' && skill.fetchSemantic?.().sourceTarget === 'aura' && Number(skill.fetchDistance()) < 0) {
+    if (skill.fetchTargetKind() === 'enemy' && skill.fetchSemantic?.().sourceTarget === 'aura') {
         actor.attack.remoteHit(session, actor, skill);
         return;
     }

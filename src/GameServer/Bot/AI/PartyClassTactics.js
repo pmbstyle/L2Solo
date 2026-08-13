@@ -79,6 +79,11 @@ function nearest(actor, targets) {
     })[0] || null;
 }
 
+function crowdControlled(target) {
+    const impairments = EffectStore.impairments(target);
+    return impairments.disabled;
+}
+
 function tankMassAggroAction(actor, threats) {
     const others = threats.filter((target) => Number(target.fetchDestId?.()) !== Number(actor.fetchId?.()));
     const hateAura = learned(actor, 18);
@@ -98,7 +103,7 @@ function tankStunAction(actor, threats, { protectedRole = null } = {}) {
     const shieldStun = learned(actor, 92);
     const shouldControl = threats.length >= 2 || ['leader', 'healer', 'buffer'].includes(protectedRole);
     const stunTarget = shouldControl
-        ? nearest(actor, others.filter((target) => !EffectStore.hasDebuff(target, 'stun')))
+        ? nearest(actor, others.filter((target) => !crowdControlled(target)))
         : null;
     if (stunTarget && hasEquippedShield(actor) && usable(actor, shieldStun, 0.10)) {
         return { skill: shieldStun, target: stunTarget, reason: 'control_dangerous_add' };
@@ -113,17 +118,17 @@ function tankControlAction(actor, threats, options = {}) {
 
 function supportCrowdControl(actor, threats, { primaryTargetId = null } = {}) {
     const role = BotRoles.inferRole(actor);
-    if (!['healer', 'buffer'].includes(role) || threats.length < 2) return null;
+    if (!['mage', 'healer', 'buffer'].includes(role) || threats.length < 2) return null;
     if (ratio(actor.fetchMp?.(), actor.fetchMaxMp?.()) < 0.45) return null;
     const add = nearest(actor, threats.filter((target) => (
         Number(target.fetchId?.()) !== Number(primaryTargetId || 0) &&
-        !EffectStore.hasDebuff(target, 'sleep') &&
-        !EffectStore.hasDebuff(target, 'root') &&
-        !EffectStore.hasDebuff(target, 'stun')
+        !crowdControlled(target)
     )));
     if (!add) return null;
 
-    const preference = role === 'healer' ? [1201, 1069] : [1097, 1208];
+    const preference = role === 'mage'
+        ? [1069]
+        : (role === 'healer' ? [1201, 1069] : [1097, 1208]);
     const skill = preference.map((id) => learned(actor, id)).find((candidate) => usable(actor, candidate, 0.35));
     return skill ? { skill, target: add, reason: 'control_party_add' } : null;
 }

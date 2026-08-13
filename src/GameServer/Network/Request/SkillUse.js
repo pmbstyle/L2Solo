@@ -1,4 +1,5 @@
 const ReceivePacket = invoke('Packet/Receive');
+const RECIPE_BOOK_SKILLS = new Map([[1321, true], [1322, false]]);
 
 function skillUse(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -16,10 +17,11 @@ function skillUse(session, buffer) {
 }
 
 function consume(session, data) {
-    // In C4 the client activates the recipe book by using the Dwarven Craft
-    // skill icon; it does not send RequestRecipeBookOpen from this UI path.
-    if (Number(data.selfId) === 1321) {
-        invoke('GameServer/Network/Request/RecipeBookOpen').open(session, true);
+    // In C4 the client activates recipe books from their skill icons; it does
+    // not send RequestRecipeBookOpen from this UI path.
+    const recipeBookKind = RECIPE_BOOK_SKILLS.get(Number(data.selfId));
+    if (recipeBookKind !== undefined) {
+        invoke('GameServer/Network/Request/RecipeBookOpen').open(session, recipeBookKind);
         return;
     }
 

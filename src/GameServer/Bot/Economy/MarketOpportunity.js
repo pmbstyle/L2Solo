@@ -330,6 +330,19 @@ function bestBuyOffer(selfId, options = {}) {
     return findBuyOffers(selfId, options)[0] || null;
 }
 
+function activeBuyDemandSelfIds(timestamp = Date.now()) {
+    return [...new Set(coldMarketStates().flatMap((state) => {
+        const store = state?.stats?.marketStore;
+        if (!store || Number(store.storeType) !== 3 || store.budgetBacked !== true || state.activity !== 'merchant') return [];
+        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Number(timestamp)) return [];
+        return (store.items || []).flatMap((item) => (
+            Number(item.selfId || 0) > 0 && affordableBuyCount(state, store, item) > 0
+                ? [Number(item.selfId)]
+                : []
+        ));
+    }))];
+}
+
 function reserveBuy(offer, qty = 1) {
     const count = Math.max(1, Math.floor(Number(qty) || 1));
     if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return false;
@@ -467,6 +480,7 @@ module.exports = {
     TOWN_NPC_SELLERS,
     bestOffer,
     bestBuyOffer,
+    activeBuyDemandSelfIds,
     bestSupplyOffer,
     commitBuy,
     coldOffers,

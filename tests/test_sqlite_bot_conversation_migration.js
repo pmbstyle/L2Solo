@@ -66,7 +66,7 @@ Database.init();
     assert.strictEqual(index.length, 1, 'the ordering index must be created after migration columns exist');
 
     const migrations = await Database.execute(['SELECT version FROM schema_migrations ORDER BY version'], 'test:migration-versions');
-    assert.strictEqual(migrations.at(-1).version, 8, 'conversation schema migration must complete on a legacy database');
+    assert.strictEqual(migrations.at(-1).version, 9, 'raid-boss persistence migration must complete on a legacy database');
 
     const migratedMessage = await Database.execute([
         'SELECT turnOrdinal, messageOrder, compacted FROM bot_conversation_messages WHERE turnId = ?',

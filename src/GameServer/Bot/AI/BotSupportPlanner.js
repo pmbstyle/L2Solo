@@ -2,6 +2,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const World = invoke('GameServer/World/World');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
 const CAST_RESERVATION_MS = 5000;
@@ -143,6 +144,7 @@ function encounterContext(members) {
         const id = Number(npc?.fetchId?.());
         if (seen.has(id)) return false;
         seen.add(id);
+        if (BotRaidSafety.isProtectedRaidEntity(npc)) return false;
         if (!npc?.fetchAttackable?.() || npc.isDead?.()) return false;
         const targetingParty = actorIds.has(Number(npc.fetchDestId?.()));
         return targetingParty || actors.some((actor) => {

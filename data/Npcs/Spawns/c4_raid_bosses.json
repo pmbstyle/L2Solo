@@ -1,0 +1,2618 @@
+[
+  {
+    "selfId": "c4-raid-bosses",
+    "bounds": [],
+    "spawns": [
+      {
+        "selfId": 10001,
+        "name": "Greyclaw Kutus",
+        "coords": [
+          {
+            "locX": -54464,
+            "locY": 146572,
+            "locZ": -2400,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10004,
+        "name": "Turek Mercenary Captain",
+        "coords": [
+          {
+            "locX": -94101,
+            "locY": 100238,
+            "locZ": -3012,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10007,
+        "name": "Retreat Spider Cletu",
+        "coords": [
+          {
+            "locX": 124240,
+            "locY": 75376,
+            "locZ": -2800,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10010,
+        "name": "Furious Thieles",
+        "coords": [
+          {
+            "locX": 113920,
+            "locY": 52960,
+            "locZ": -3735,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10013,
+        "name": "Ghost of Peasant Leader",
+        "coords": [
+          {
+            "locX": 169744,
+            "locY": 11920,
+            "locZ": -2732,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10016,
+        "name": "The 3rd Underwater Guardian",
+        "coords": [
+          {
+            "locX": 76787,
+            "locY": 245775,
+            "locZ": -10376,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10020,
+        "name": "Breka Warlock Pastu",
+        "coords": [
+          {
+            "locX": 90365,
+            "locY": 125716,
+            "locZ": -1632,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10023,
+        "name": "Stakato Queen Zyrnna",
+        "coords": [
+          {
+            "locX": 27181,
+            "locY": 101830,
+            "locZ": -3192,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10026,
+        "name": "Katu Van Leader Atui",
+        "coords": [
+          {
+            "locX": 92976,
+            "locY": 7920,
+            "locZ": -3914,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10029,
+        "name": "Atraiban",
+        "coords": [
+          {
+            "locX": 54941,
+            "locY": 206705,
+            "locZ": -3728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10032,
+        "name": "Eva's Guardian Millenu",
+        "coords": [
+          {
+            "locX": 88532,
+            "locY": 245798,
+            "locZ": -10376,
+            "head": 25874
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10035,
+        "name": "Shilen's Messenger Cabrio",
+        "coords": [
+          {
+            "locX": 180968,
+            "locY": 12035,
+            "locZ": -2720,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10038,
+        "name": "Tirak",
+        "coords": [
+          {
+            "locX": -57366,
+            "locY": 186276,
+            "locZ": -4804,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10041,
+        "name": "Remmel",
+        "coords": [
+          {
+            "locX": 10525,
+            "locY": 126890,
+            "locZ": -3132,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10044,
+        "name": "Barion",
+        "coords": [
+          {
+            "locX": 107792,
+            "locY": 27728,
+            "locZ": -3488,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10047,
+        "name": "Karte",
+        "coords": [
+          {
+            "locX": 116352,
+            "locY": 27648,
+            "locZ": -3319,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10050,
+        "name": "Verfa",
+        "coords": [
+          {
+            "locX": 125520,
+            "locY": 27216,
+            "locZ": -3632,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10051,
+        "name": "Rahha",
+        "coords": [
+          {
+            "locX": 117760,
+            "locY": -9072,
+            "locZ": -3264,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10054,
+        "name": "Kernon",
+        "coords": [
+          {
+            "locX": 113432,
+            "locY": 16403,
+            "locZ": 3960,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10057,
+        "name": "Biconne of Blue Sky",
+        "coords": [
+          {
+            "locX": 107056,
+            "locY": 168176,
+            "locZ": -3456,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10060,
+        "name": "Unrequited Kael",
+        "coords": [
+          {
+            "locX": -60428,
+            "locY": 188264,
+            "locZ": -4512,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10063,
+        "name": "Chertuba of Great Soul",
+        "coords": [
+          {
+            "locX": -91009,
+            "locY": 116339,
+            "locZ": -2908,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10064,
+        "name": "Wizard of Storm Teruk",
+        "coords": [
+          {
+            "locX": 92528,
+            "locY": 84752,
+            "locZ": -3703,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10067,
+        "name": "Captain of Red Flag Shaka",
+        "coords": [
+          {
+            "locX": 94992,
+            "locY": -23168,
+            "locZ": -2176,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10070,
+        "name": "Enchanted Forest Watcher Ruell",
+        "coords": [
+          {
+            "locX": 125600,
+            "locY": 50100,
+            "locZ": -3600,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10073,
+        "name": "Bloody Priest Rudelto",
+        "coords": [
+          {
+            "locX": 143955,
+            "locY": 110360,
+            "locZ": -3928,
+            "head": 32768
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10076,
+        "name": "Princess Molrang",
+        "coords": [
+          {
+            "locX": -61041,
+            "locY": 127347,
+            "locZ": -2512,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10079,
+        "name": "Cat's Eye Bandit",
+        "coords": [
+          {
+            "locX": 53794,
+            "locY": 102660,
+            "locZ": -1064,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10082,
+        "name": "Leader of Cat Gang",
+        "coords": [
+          {
+            "locX": 88554,
+            "locY": 140646,
+            "locZ": -2960,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10085,
+        "name": "Timak Orc Chief Ranger",
+        "coords": [
+          {
+            "locX": 66944,
+            "locY": 67504,
+            "locZ": -3704,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10088,
+        "name": "Crazy Mechanic Golem",
+        "coords": [
+          {
+            "locX": 90848,
+            "locY": 16368,
+            "locZ": -5296,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10089,
+        "name": "Soulless Wild Boar",
+        "coords": [
+          {
+            "locX": 165424,
+            "locY": 93776,
+            "locZ": -2992,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10092,
+        "name": "Korim",
+        "coords": [
+          {
+            "locX": 116151,
+            "locY": 16227,
+            "locZ": 1944,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10095,
+        "name": "Elf Renoa",
+        "coords": [
+          {
+            "locX": -37799,
+            "locY": 198120,
+            "locZ": -2200,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10098,
+        "name": "Sejarr's Servitor",
+        "coords": [
+          {
+            "locX": 123570,
+            "locY": 133506,
+            "locZ": -3156,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10099,
+        "name": "Rotten Tree Repiro",
+        "coords": [
+          {
+            "locX": 64048,
+            "locY": 16048,
+            "locZ": -3536,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10102,
+        "name": "Shacram",
+        "coords": [
+          {
+            "locX": 113840,
+            "locY": 84256,
+            "locZ": -2480,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10103,
+        "name": "Sorcerer Isirr",
+        "coords": [
+          {
+            "locX": 135872,
+            "locY": 94592,
+            "locZ": -3735,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10106,
+        "name": "Ghost of the Well Lidia",
+        "coords": [
+          {
+            "locX": 173880,
+            "locY": -11412,
+            "locZ": -2880,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10109,
+        "name": "Antharas Priest Cloe",
+        "coords": [
+          {
+            "locX": 152660,
+            "locY": 110387,
+            "locZ": -5520,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10112,
+        "name": "Agent of Beres, Meana",
+        "coords": [
+          {
+            "locX": 116219,
+            "locY": 139458,
+            "locZ": -3124,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10115,
+        "name": "Icarus Sample 1",
+        "coords": [
+          {
+            "locX": 94000,
+            "locY": 197500,
+            "locZ": -3300,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10118,
+        "name": "Warden of the Execution Ground, Guilotine",
+        "coords": [
+          {
+            "locX": 50883,
+            "locY": 146764,
+            "locZ": -3077,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10119,
+        "name": "Messenger of Fairy Queen Berun",
+        "coords": [
+          {
+            "locX": 121872,
+            "locY": 64032,
+            "locZ": -3536,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10122,
+        "name": "Refugee Hopeful Leo",
+        "coords": [
+          {
+            "locX": 86300,
+            "locY": -8200,
+            "locZ": -3000,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10125,
+        "name": "Fierce Tiger King Angel",
+        "coords": [
+          {
+            "locX": 170656,
+            "locY": 85184,
+            "locZ": -2000,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10126,
+        "name": "Longhorn Golkonda",
+        "coords": [
+          {
+            "locX": 116263,
+            "locY": 15916,
+            "locZ": 6992,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10128,
+        "name": "Vuku Grand Seer Gharmash",
+        "coords": [
+          {
+            "locX": 17671,
+            "locY": 179134,
+            "locZ": -3016,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10131,
+        "name": "Carnage Lord Gato",
+        "coords": [
+          {
+            "locX": 75488,
+            "locY": -9360,
+            "locZ": -2720,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10134,
+        "name": "Leto Chief Talkin",
+        "coords": [
+          {
+            "locX": 87536,
+            "locY": 75872,
+            "locZ": -3591,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10137,
+        "name": "Beleth's Seer Sephia",
+        "coords": [
+          {
+            "locX": 125280,
+            "locY": 102576,
+            "locZ": -3305,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10140,
+        "name": "Hekaton Prime",
+        "coords": [
+          {
+            "locX": 191975,
+            "locY": 56959,
+            "locZ": -7616,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10143,
+        "name": "Fire of Wrath Shuriel",
+        "coords": [
+          {
+            "locX": 113102,
+            "locY": 16002,
+            "locZ": 6992,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10146,
+        "name": "Serpent Demon Bifrons",
+        "coords": [
+          {
+            "locX": -13698,
+            "locY": 213796,
+            "locZ": -3300,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10149,
+        "name": "Zombie Lord Crowl",
+        "coords": [
+          {
+            "locX": -12652,
+            "locY": 138200,
+            "locZ": -3120,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10152,
+        "name": "Flame Lord Shadar",
+        "coords": [
+          {
+            "locX": 43787,
+            "locY": 124067,
+            "locZ": -2512,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10155,
+        "name": "Shaman King Selu",
+        "coords": [
+          {
+            "locX": 73520,
+            "locY": 66912,
+            "locZ": -3728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10158,
+        "name": "King Tarlk",
+        "coords": [
+          {
+            "locX": 77104,
+            "locY": 5408,
+            "locZ": -3088,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10159,
+        "name": "Unicorn Paniel",
+        "coords": [
+          {
+            "locX": 124984,
+            "locY": 43200,
+            "locZ": -3625,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10162,
+        "name": "Giant Marpanak",
+        "coords": [
+          {
+            "locX": 194107,
+            "locY": 53884,
+            "locZ": -4368,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10163,
+        "name": "Roaring Skylancer",
+        "coords": [
+          {
+            "locX": 130500,
+            "locY": 59098,
+            "locZ": 3584,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10166,
+        "name": "Ikuntai",
+        "coords": [
+          {
+            "locX": -21778,
+            "locY": 152065,
+            "locZ": -2636,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10169,
+        "name": "Ragraman",
+        "coords": [
+          {
+            "locX": -54517,
+            "locY": 170321,
+            "locZ": -2700,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10170,
+        "name": "Lizardmen Leader Hellion",
+        "coords": [
+          {
+            "locX": 26108,
+            "locY": 122256,
+            "locZ": -3488,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10173,
+        "name": "Tiger King Karuta",
+        "coords": [
+          {
+            "locX": 75968,
+            "locY": 110784,
+            "locZ": -2512,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10176,
+        "name": "Witch Wimere",
+        "coords": [
+          {
+            "locX": 92544,
+            "locY": 115232,
+            "locZ": -3200,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10179,
+        "name": "Hatos",
+        "coords": [
+          {
+            "locX": 181814,
+            "locY": 52379,
+            "locZ": -4344,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10182,
+        "name": "Demon Kurikups",
+        "coords": [
+          {
+            "locX": 41966,
+            "locY": 215417,
+            "locZ": -3728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10185,
+        "name": "Tasaba Patriarch Hellena",
+        "coords": [
+          {
+            "locX": 88143,
+            "locY": 166365,
+            "locZ": -3388,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10188,
+        "name": "Apepi",
+        "coords": [
+          {
+            "locX": 88102,
+            "locY": 176262,
+            "locZ": -3012,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10189,
+        "name": "Cronos's Servitor Mumu",
+        "coords": [
+          {
+            "locX": 68677,
+            "locY": 203149,
+            "locZ": -3192,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10192,
+        "name": "Earth Protector Panathen",
+        "coords": [
+          {
+            "locX": 125920,
+            "locY": 190208,
+            "locZ": -3291,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10198,
+        "name": "Fafurion's Herald Lokness",
+        "coords": [
+          {
+            "locX": 102656,
+            "locY": 157424,
+            "locZ": -3735,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10199,
+        "name": "Water Dragon Seer Sheshark",
+        "coords": [
+          {
+            "locX": 108096,
+            "locY": 157408,
+            "locZ": -3688,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10202,
+        "name": "Krokian Padisha Sobekk",
+        "coords": [
+          {
+            "locX": 119760,
+            "locY": 157392,
+            "locZ": -3744,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10205,
+        "name": "Ocean Flame Ashakiel",
+        "coords": [
+          {
+            "locX": 123808,
+            "locY": 153408,
+            "locZ": -3671,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10208,
+        "name": "Water Couatle Ateka",
+        "coords": [
+          {
+            "locX": 73776,
+            "locY": 201552,
+            "locZ": -3760,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10211,
+        "name": "Sebek",
+        "coords": [
+          {
+            "locX": 76461,
+            "locY": 193228,
+            "locZ": -3208,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10214,
+        "name": "Fafurion's Page Sika",
+        "coords": [
+          {
+            "locX": 112112,
+            "locY": 209936,
+            "locZ": -3616,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10217,
+        "name": "Cursed Clara",
+        "coords": [
+          {
+            "locX": 89904,
+            "locY": 105712,
+            "locZ": -3292,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10220,
+        "name": "Death Lord Hallate",
+        "coords": [
+          {
+            "locX": 113551,
+            "locY": 17083,
+            "locZ": -2120,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10223,
+        "name": "Soul Collector Acheron",
+        "coords": [
+          {
+            "locX": 43062,
+            "locY": 152492,
+            "locZ": -2294,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10226,
+        "name": "Roaring Lord Kastor",
+        "coords": [
+          {
+            "locX": 104240,
+            "locY": -3664,
+            "locZ": -3392,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10229,
+        "name": "Storm Winged Naga",
+        "coords": [
+          {
+            "locX": 137568,
+            "locY": -19488,
+            "locZ": -3552,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10230,
+        "name": "Timak Seer Ragoth",
+        "coords": [
+          {
+            "locX": 66672,
+            "locY": 46704,
+            "locZ": -3920,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10233,
+        "name": "Spirit of Andras, the Betrayer",
+        "coords": [
+          {
+            "locX": 185800,
+            "locY": -26500,
+            "locZ": -2000,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10234,
+        "name": "Ancient Weird Drake",
+        "coords": [
+          {
+            "locX": 120080,
+            "locY": 111248,
+            "locZ": -3047,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10235,
+        "name": "Vanor Chief Kandra",
+        "coords": [
+          {
+            "locX": 116400,
+            "locY": -62528,
+            "locZ": -3264,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10238,
+        "name": "Nightmare Drake",
+        "coords": [
+          {
+            "locX": 159841,
+            "locY": 38370,
+            "locZ": -3648,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10241,
+        "name": "Harit Hero Tamash",
+        "coords": [
+          {
+            "locX": 165984,
+            "locY": 88048,
+            "locZ": -2384,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10244,
+        "name": "Last Lesser Giant Olkuth",
+        "coords": [
+          {
+            "locX": 187360,
+            "locY": 45840,
+            "locZ": -5856,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10245,
+        "name": "Last Lesser Giant Glaki",
+        "coords": [
+          {
+            "locX": 172000,
+            "locY": 55000,
+            "locZ": -5920,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10248,
+        "name": "Doom Blade Tanatos",
+        "coords": [
+          {
+            "locX": 127903,
+            "locY": -13399,
+            "locZ": -3720,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10249,
+        "name": "Vermilion, Blood Tree",
+        "coords": [
+          {
+            "locX": 147104,
+            "locY": -20560,
+            "locZ": -3377,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10252,
+        "name": "Palibati Queen Themis",
+        "coords": [
+          {
+            "locX": 192376,
+            "locY": 22087,
+            "locZ": -3608,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10255,
+        "name": "Gargoyle Lord Tiphon",
+        "coords": [
+          {
+            "locX": 170048,
+            "locY": -24896,
+            "locZ": -3440,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10256,
+        "name": "Taik High Prefect Arak",
+        "coords": [
+          {
+            "locX": 170320,
+            "locY": 42640,
+            "locZ": -4832,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10259,
+        "name": "Zaken's Butcher Krantz",
+        "coords": [
+          {
+            "locX": 42050,
+            "locY": 208107,
+            "locZ": -3752,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10260,
+        "name": "Iron Giant Totem",
+        "coords": [
+          {
+            "locX": 93120,
+            "locY": 19440,
+            "locZ": -3607,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10263,
+        "name": "Malruk's Witch Sekina",
+        "coords": [
+          {
+            "locX": 144400,
+            "locY": -28192,
+            "locZ": -1920,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10266,
+        "name": "Bloody Empress Decarbia",
+        "coords": [
+          {
+            "locX": 188983,
+            "locY": 13647,
+            "locZ": -2672,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10269,
+        "name": "Beast Lord Behemoth",
+        "coords": [
+          {
+            "locX": 123504,
+            "locY": -23696,
+            "locZ": -3481,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10276,
+        "name": "Death Lord Ipos",
+        "coords": [
+          {
+            "locX": 154088,
+            "locY": -14116,
+            "locZ": -3736,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10277,
+        "name": "Lilith's Witch Marilion",
+        "coords": [
+          {
+            "locX": 54651,
+            "locY": 180269,
+            "locZ": -4976,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10280,
+        "name": "Pagan Watcher Cerberon",
+        "coords": [
+          {
+            "locX": 85622,
+            "locY": 88766,
+            "locZ": -5120,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10281,
+        "name": "Anakim's Nemesis Zakaron",
+        "coords": [
+          {
+            "locX": 151053,
+            "locY": 88124,
+            "locZ": -5424,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10282,
+        "name": "Death Lord Shax",
+        "coords": [
+          {
+            "locX": 179311,
+            "locY": -7632,
+            "locZ": -4896,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10283,
+        "name": "Lilith",
+        "coords": [
+          {
+            "locX": 184410,
+            "locY": -10111,
+            "locZ": -5488,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10286,
+        "name": "Anakim",
+        "coords": [
+          {
+            "locX": 185000,
+            "locY": -13000,
+            "locZ": -5488,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10293,
+        "name": "Guardian Deity of Hot Springs Hestia",
+        "coords": [
+          {
+            "locX": 134672,
+            "locY": -115600,
+            "locZ": -1216,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10299,
+        "name": "Ketra's Hero Hekaton",
+        "coords": [
+          {
+            "locX": 148160,
+            "locY": -73808,
+            "locZ": -4919,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10302,
+        "name": "Ketra's Commander Tayr",
+        "coords": [
+          {
+            "locX": 145504,
+            "locY": -81664,
+            "locZ": -6016,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10305,
+        "name": "Ketra's Chief Brakki",
+        "coords": [
+          {
+            "locX": 145008,
+            "locY": -84992,
+            "locZ": -6240,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10309,
+        "name": "Varka's Hero Shadith",
+        "coords": [
+          {
+            "locX": 115552,
+            "locY": -39200,
+            "locZ": -2480,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10312,
+        "name": "Varka's Commander Mos",
+        "coords": [
+          {
+            "locX": 109216,
+            "locY": -36160,
+            "locZ": -938,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10315,
+        "name": "Varka's Chief Horus",
+        "coords": [
+          {
+            "locX": 105584,
+            "locY": -43024,
+            "locZ": -1728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10319,
+        "name": "Ember",
+        "coords": [
+          {
+            "locX": 184542,
+            "locY": -106330,
+            "locZ": -6304,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10322,
+        "name": "Demon's Agent Falston",
+        "coords": [
+          {
+            "locX": 93296,
+            "locY": -75104,
+            "locZ": -1824,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10325,
+        "name": "Flame of Splendor Barakiel",
+        "coords": [
+          {
+            "locX": 91008,
+            "locY": -85904,
+            "locZ": -2736,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10328,
+        "name": "Eilhalder von Hellmann",
+        "coords": [
+          {
+            "locX": 59331,
+            "locY": -42403,
+            "locZ": -3003,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 9000,
+        "bias": 1800
+      },
+      {
+        "selfId": 10352,
+        "name": "Giant Wasteland Basilisk",
+        "coords": [
+          {
+            "locX": -16843,
+            "locY": 174890,
+            "locZ": -2984,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10354,
+        "name": "Gargoyle Lord Sirocco",
+        "coords": [
+          {
+            "locX": -16089,
+            "locY": 184295,
+            "locZ": -3364,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10357,
+        "name": "Sukar Wererat Chief",
+        "coords": [
+          {
+            "locX": -3451,
+            "locY": 112819,
+            "locZ": -2995,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10360,
+        "name": "Tiger Hornet",
+        "coords": [
+          {
+            "locX": 29064,
+            "locY": 179362,
+            "locZ": -3128,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10362,
+        "name": "Tracker Leader Sharuk",
+        "coords": [
+          {
+            "locX": -55791,
+            "locY": 186903,
+            "locZ": -2856,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10366,
+        "name": "Kuroboros' Priest",
+        "coords": [
+          {
+            "locX": -62342,
+            "locY": 179572,
+            "locZ": -3088,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10369,
+        "name": "Soul Scavenger",
+        "coords": [
+          {
+            "locX": -45713,
+            "locY": 111186,
+            "locZ": -3280,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10373,
+        "name": "Malex Herald of Dagoniel",
+        "coords": [
+          {
+            "locX": 9661,
+            "locY": 76976,
+            "locZ": -3652,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10375,
+        "name": "Zombie Lord Farakelsus",
+        "coords": [
+          {
+            "locX": 22523,
+            "locY": 80431,
+            "locZ": -3188,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10378,
+        "name": "Madness Beast",
+        "coords": [
+          {
+            "locX": -53970,
+            "locY": 84334,
+            "locZ": -3522,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10380,
+        "name": "Kaysha Herald of Icarus",
+        "coords": [
+          {
+            "locX": -47412,
+            "locY": 51647,
+            "locZ": -5659,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10383,
+        "name": "Revenant of Sir Calibus",
+        "coords": [
+          {
+            "locX": 51405,
+            "locY": 153984,
+            "locZ": -3008,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10385,
+        "name": "Evil Spirit Tempest",
+        "coords": [
+          {
+            "locX": 53418,
+            "locY": 143534,
+            "locZ": -3332,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10388,
+        "name": "Red Eye Captain Trakia",
+        "coords": [
+          {
+            "locX": 40074,
+            "locY": 102019,
+            "locZ": -790,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10391,
+        "name": "Nurka's Messenger",
+        "coords": [
+          {
+            "locX": 45620,
+            "locY": 120710,
+            "locZ": -2158,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10392,
+        "name": "Captain of Queen's Royal Guards",
+        "coords": [
+          {
+            "locX": 29891,
+            "locY": 107201,
+            "locZ": -3572,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10394,
+        "name": "Premo Prime",
+        "coords": [
+          {
+            "locX": 101806,
+            "locY": 200394,
+            "locZ": -3180,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10395,
+        "name": "Archon Suscepter",
+        "coords": [
+          {
+            "locX": 15000,
+            "locY": 119000,
+            "locZ": -11900,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10398,
+        "name": "Eye of Beleth",
+        "coords": [
+          {
+            "locX": 5000,
+            "locY": 189000,
+            "locZ": -3728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10401,
+        "name": "Skyla",
+        "coords": [
+          {
+            "locX": 117812,
+            "locY": 102948,
+            "locZ": -3595,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10404,
+        "name": "Corsair Captain Kylon",
+        "coords": [
+          {
+            "locX": 36048,
+            "locY": 191352,
+            "locZ": -2524,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10407,
+        "name": "Lord Ishka",
+        "coords": [
+          {
+            "locX": 115072,
+            "locY": 112272,
+            "locZ": -3018,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10410,
+        "name": "Road Scavenger Leader",
+        "coords": [
+          {
+            "locX": 72192,
+            "locY": 125424,
+            "locZ": -3657,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10412,
+        "name": "Necrosentinel Royal Guard",
+        "coords": [
+          {
+            "locX": 81920,
+            "locY": 113136,
+            "locZ": -3056,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10415,
+        "name": "Nakondas",
+        "coords": [
+          {
+            "locX": 128352,
+            "locY": 138464,
+            "locZ": -3467,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10418,
+        "name": "Dread Avenger Kraven",
+        "coords": [
+          {
+            "locX": 62416,
+            "locY": 8096,
+            "locZ": -3376,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10420,
+        "name": "Orfen's Handmaiden",
+        "coords": [
+          {
+            "locX": 42032,
+            "locY": 24128,
+            "locZ": -4704,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10423,
+        "name": "Fairy Queen Timiniel",
+        "coords": [
+          {
+            "locX": 113600,
+            "locY": 47120,
+            "locZ": -4640,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10426,
+        "name": "Betrayer of Urutu Freki",
+        "coords": [
+          {
+            "locX": -18053,
+            "locY": -101274,
+            "locZ": -1580,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10429,
+        "name": "Mammon Collector Talos",
+        "coords": [
+          {
+            "locX": 172122,
+            "locY": -214776,
+            "locZ": -3064,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10431,
+        "name": "Flamestone Golem",
+        "coords": [
+          {
+            "locX": 79648,
+            "locY": 18320,
+            "locZ": -5232,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10434,
+        "name": "Bandit Leader Barda",
+        "coords": [
+          {
+            "locX": 104096,
+            "locY": -16896,
+            "locZ": -1803,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10437,
+        "name": "Timak Orc Gosmos",
+        "coords": [
+          {
+            "locX": 67296,
+            "locY": 64128,
+            "locZ": -3723,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10438,
+        "name": "Thief Kelbar",
+        "coords": [
+          {
+            "locX": 107000,
+            "locY": 92000,
+            "locZ": -2272,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10441,
+        "name": "Evil Spirit Cyrion",
+        "coords": [
+          {
+            "locX": 111440,
+            "locY": 82912,
+            "locZ": -2912,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10444,
+        "name": "Enmity Ghost Ramdal",
+        "coords": [
+          {
+            "locX": 113232,
+            "locY": 17456,
+            "locZ": -4384,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10447,
+        "name": "Immortal Savior Mardil",
+        "coords": [
+          {
+            "locX": 113200,
+            "locY": 17552,
+            "locZ": -1424,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10450,
+        "name": "Cherub Galaxia",
+        "coords": [
+          {
+            "locX": 113600,
+            "locY": 15104,
+            "locZ": 9559,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10453,
+        "name": "Meanas Anor",
+        "coords": [
+          {
+            "locX": 156704,
+            "locY": -6096,
+            "locZ": -4185,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10456,
+        "name": "Mirror of Oblivion",
+        "coords": [
+          {
+            "locX": 133632,
+            "locY": 87072,
+            "locZ": -3623,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10460,
+        "name": "Deadman Ereve",
+        "coords": [
+          {
+            "locX": 150304,
+            "locY": 67776,
+            "locZ": -3688,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10463,
+        "name": "Harit Guardian Garangky",
+        "coords": [
+          {
+            "locX": 166288,
+            "locY": 68096,
+            "locZ": -3264,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10467,
+        "name": "Gorgolos",
+        "coords": [
+          {
+            "locX": 186192,
+            "locY": 61472,
+            "locZ": -4160,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10470,
+        "name": "Last Titan Utenus",
+        "coords": [
+          {
+            "locX": 186896,
+            "locY": 56276,
+            "locZ": -4576,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10473,
+        "name": "Grave Robber Kim",
+        "coords": [
+          {
+            "locX": 175712,
+            "locY": 29856,
+            "locZ": -3776,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10475,
+        "name": "Ghost Knight Kabed",
+        "coords": [
+          {
+            "locX": 183568,
+            "locY": 24560,
+            "locZ": -3184,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10478,
+        "name": "Shilen's Priest Hisilrome",
+        "coords": [
+          {
+            "locX": 168288,
+            "locY": 28368,
+            "locZ": -3632,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10481,
+        "name": "Magus Kenishee",
+        "coords": [
+          {
+            "locX": 53517,
+            "locY": 205413,
+            "locZ": -3728,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10484,
+        "name": "Zaken's Chief Mate Tillion",
+        "coords": [
+          {
+            "locX": 43160,
+            "locY": 220463,
+            "locZ": -3680,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10487,
+        "name": "Water Spirit Lian",
+        "coords": [
+          {
+            "locX": 83056,
+            "locY": 183232,
+            "locZ": -3616,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10490,
+        "name": "Gwindorr",
+        "coords": [
+          {
+            "locX": 86528,
+            "locY": 216864,
+            "locZ": -3584,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10493,
+        "name": "Eva's Spirit Niniel",
+        "coords": [
+          {
+            "locX": 83174,
+            "locY": 254428,
+            "locZ": -10873,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10496,
+        "name": "Fafurion's Envoy Pingolpin",
+        "coords": [
+          {
+            "locX": 88300,
+            "locY": 258000,
+            "locZ": -10200,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      },
+      {
+        "selfId": 10498,
+        "name": "Fafurion's Henchman Istary",
+        "coords": [
+          {
+            "locX": 126624,
+            "locY": 174448,
+            "locZ": -3056,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 86400,
+        "bias": 43200
+      }
+    ]
+  }
+]

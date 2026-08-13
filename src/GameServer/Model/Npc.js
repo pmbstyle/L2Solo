@@ -31,6 +31,10 @@ class NpcModel extends CreatureModel {
         return this.model.kind;
     }
 
+    fetchIsRaidBoss() {
+        return this.model.raidBoss === true;
+    }
+
     fetchHostile() {
         return this.model.hostile;
     }
@@ -73,6 +77,10 @@ class NpcModel extends CreatureModel {
 
     fetchUndead() {
         return this.model.undead === true;
+    }
+
+    fetchRace() {
+        return this.model.race || '';
     }
 
     fetchOwnerId() {

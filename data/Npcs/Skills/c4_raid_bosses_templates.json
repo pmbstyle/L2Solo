@@ -1,0 +1,9754 @@
+[
+  {
+    "selfId": 4790,
+    "template": {
+      "name": "Raid Boss - Level 23",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4197,
+    "template": {
+      "name": "Hold",
+      "passive": false,
+      "spell": false,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 70,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 70,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 70,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 70,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 70,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 70,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 70,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 70,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 70,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 70,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 70,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 70,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4791,
+    "template": {
+      "name": "Raid Boss - Level 30",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4739,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 112,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 302,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 834,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2177,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5631,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11008,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 17044,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 20119,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 23243,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 26363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 29567,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 32796,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4792,
+    "template": {
+      "name": "Raid Boss - Level 42",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4178,
+    "template": {
+      "name": "BOSS Flame Strike",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 21,
+        "mp": 23,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 31,
+        "mp": 32,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 43,
+        "mp": 44,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 58,
+        "mp": 58,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 75,
+        "mp": 74,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 92,
+        "mp": 79,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 108,
+        "mp": 102,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 115,
+        "mp": 107,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 121,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 125,
+        "mp": 114,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 129,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 132,
+        "mp": 118,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4793,
+    "template": {
+      "name": "Raid Boss - Level 55",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4740,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 95,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 255,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 705,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1840,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 4754,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 9291,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 14390,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 16978,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 19710,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 22699,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 25871,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 28860,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4794,
+    "template": {
+      "name": "Raid Boss - Level 50",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4192,
+    "template": {
+      "name": "BOSS HP Drain",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 16,
+        "mp": 12,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 23,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 32,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 44,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 56,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 69,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 81,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 86,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 91,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 94,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 97,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 99,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4188,
+    "template": {
+      "name": "Bleed",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 2000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 2,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 3,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 9,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 10,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 10,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4190,
+    "template": {
+      "name": "Decrease MP",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 90,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 90,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 90,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 90,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 90,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 90,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 90,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 90,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 90,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 90,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 90,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 90,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4795,
+    "template": {
+      "name": "Raid Boss - Level 60",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4797,
+    "template": {
+      "name": "Raid Boss - Level 34",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4798,
+    "template": {
+      "name": "Raid Boss - Level 34",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4194,
+    "template": {
+      "name": "BOSS Aura Burn",
+      "passive": false,
+      "spell": true,
+      "distance": 150
+    },
+    "time": {
+      "hitTime": 1000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 13,
+        "mp": 12,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 19,
+        "mp": 19,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 26,
+        "mp": 26,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 35,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 45,
+        "mp": 45,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 56,
+        "mp": 55,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 65,
+        "mp": 65,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 69,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 73,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 75,
+        "mp": 75,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 77,
+        "mp": 77,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 79,
+        "mp": 78,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4183,
+    "template": {
+      "name": "Decrease P. Atk.",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 15000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 90,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 90,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 90,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 90,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 90,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 90,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 90,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 90,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 90,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 90,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 90,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 90,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4189,
+    "template": {
+      "name": "Paralysis",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 120000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 30,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 30,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 30,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 30,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 30,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 30,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 30,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 30,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 30,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 30,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 30,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 30,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4799,
+    "template": {
+      "name": "Raid Boss - Level 49",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4746,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 26,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 68,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 188,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 491,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1268,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2479,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3834,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 4519,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 5242,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 6037,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6889,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 7675,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4800,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4801,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4802,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4180,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 61,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 163,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 447,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1169,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2942,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5686,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8732,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10131,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4803,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4182,
+    "template": {
+      "name": "Poison",
+      "passive": false,
+      "spell": true,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 3000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 2,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 3,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 4,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 5,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 9,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 10,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 10,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4186,
+    "template": {
+      "name": "Hold",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 70,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 70,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 70,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 70,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 70,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 70,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 70,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 70,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 70,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 70,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 70,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 70,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4804,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4752,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 118,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 319,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 879,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2303,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5942,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11627,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 17987,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 21223,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 24638,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 28406,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 32302,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 36075,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4805,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4806,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4807,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4176,
+    "template": {
+      "name": "BOSS Reflect Damage",
+      "passive": false,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 1500,
+      "reuse": 0,
+      "buff": 60000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 8,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 11,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 15,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 20,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 30,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 0,
+        "mp": 34,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 0,
+        "mp": 36,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 0,
+        "mp": 38,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 0,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 0,
+        "mp": 40,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4728,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 23,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 60,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 165,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 429,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1109,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2172,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3362,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 3971,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 4614,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 5313,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6047,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 6756,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4808,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4809,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4195,
+    "template": {
+      "name": "BOSS Twister",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 21,
+        "mp": 12,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 31,
+        "mp": 19,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 43,
+        "mp": 26,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 58,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 75,
+        "mp": 45,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 92,
+        "mp": 55,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 108,
+        "mp": 65,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 115,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 121,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 125,
+        "mp": 75,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 129,
+        "mp": 77,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 132,
+        "mp": 78,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4810,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4742,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 48,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 128,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 352,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 922,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2377,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4651,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8489,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9855,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12921,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 14430,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4811,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4812,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4722,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 48,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 128,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 352,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 922,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2377,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4651,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8489,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9855,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12921,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 14430,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4737,
+    "template": {
+      "name": "BOSS Spinning Slasher",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 24,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 64,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 176,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 461,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1189,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2326,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3598,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 4245,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 4928,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 5682,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6461,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 7215,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4813,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4185,
+    "template": {
+      "name": "Sleep",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 30000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 70,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 70,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 70,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 70,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 70,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 70,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 70,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 70,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 70,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 70,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 70,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 70,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4814,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4815,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4816,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4817,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4187,
+    "template": {
+      "name": "Decrease Speed",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 120000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 50,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 50,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 50,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 50,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 50,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 50,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 50,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 50,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 50,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 50,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 50,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 50,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4818,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4819,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4820,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4745,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 48,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 128,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 352,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 920,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2377,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4645,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8490,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9855,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11350,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12936,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 14430,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4821,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4724,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 56,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 151,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 417,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1089,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2816,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5504,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8522,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10060,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4822,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4823,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4824,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4825,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4826,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4827,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4731,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 76,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 204,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 563,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1473,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 3804,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 7437,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 11500,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 13555,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 15724,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 18112,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 20667,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 23023,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4828,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4191,
+    "template": {
+      "name": "BOSS Wind Strike",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 21,
+        "mp": 12,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 31,
+        "mp": 19,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 43,
+        "mp": 26,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 58,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 75,
+        "mp": 45,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 92,
+        "mp": 55,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 108,
+        "mp": 65,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 115,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 121,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 125,
+        "mp": 75,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 129,
+        "mp": 77,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 132,
+        "mp": 78,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4829,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4741,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 51,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 136,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 375,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 982,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2536,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4958,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7667,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 9037,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 10483,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 12074,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 13778,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 15349,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4830,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4831,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4832,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4833,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4726,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 26,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 68,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 188,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 491,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1268,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2479,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3834,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 4519,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 5242,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 6037,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6889,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 7675,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4736,
+    "template": {
+      "name": "BOSS Spinning Slasher",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 26,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 68,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 188,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 491,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 1268,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 2479,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 3834,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 4519,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 5242,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 6037,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 6889,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 7675,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4834,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4835,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4196,
+    "template": {
+      "name": "Decreases Speed",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2300,
+      "reuse": 0,
+      "buff": 120000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 13,
+        "mp": 12,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 19,
+        "mp": 19,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 26,
+        "mp": 26,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 35,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 45,
+        "mp": 45,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 56,
+        "mp": 55,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 65,
+        "mp": 65,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 69,
+        "mp": 69,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 73,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 75,
+        "mp": 75,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 77,
+        "mp": 77,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 79,
+        "mp": 78,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4836,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4170,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 181,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 487,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1339,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 3507,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 8825,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 17057,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 26195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 30391,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 34864,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 39544,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 44350,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 49193,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4171,
+    "template": {
+      "name": "BOSS Spinning Slasher",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 61,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 163,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 447,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1169,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2942,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5686,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8732,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10131,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4837,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4169,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 61,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 163,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 447,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1169,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2942,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5686,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8732,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10131,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4839,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4840,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4841,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4842,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4843,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4184,
+    "template": {
+      "name": "Decrease Atk. Spd.",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 3300,
+      "reuse": 0,
+      "buff": 15000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 90,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 90,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 90,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 90,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 90,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 90,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 90,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 90,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 90,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 90,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 90,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 90,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4844,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4845,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4743,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 45,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 120,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 330,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 858,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2218,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4344,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 6724,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 7942,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9228,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 10625,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12093,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 13512,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4846,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4847,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4848,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4849,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4720,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 95,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 255,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 705,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1840,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 4754,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 9291,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 14390,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 16978,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 19710,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 22699,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 25871,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 28860,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4735,
+    "template": {
+      "name": "BOSS Spinning Slasher",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 48,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 128,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 352,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 920,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2377,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4645,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8490,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9855,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11350,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12936,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 14430,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4850,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4851,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4300,
+    "template": {
+      "name": "Race",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4730,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 142,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 382,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 1056,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2760,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 7131,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 13935,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 21585,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 25467,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 29565,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 34048,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 38806,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 43290,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4852,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4179,
+    "template": {
+      "name": "BOSS Power Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 121,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 325,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 893,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2338,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5884,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11371,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 17463,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 20261,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 23243,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 26363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 29567,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 32796,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4853,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4854,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4855,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4856,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4857,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4858,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4859,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4860,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4751,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 126,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 339,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 937,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2455,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 6339,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 12395,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 19166,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 22591,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 26206,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 30185,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 34445,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 38371,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4861,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4862,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4863,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4985,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4986,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4987,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4988,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4193,
+    "template": {
+      "name": "BOSS Life Drain",
+      "passive": false,
+      "spell": true,
+      "distance": 750
+    },
+    "time": {
+      "hitTime": 2500,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 11,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 16,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 22,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 29,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 38,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 46,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 54,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 58,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 61,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 63,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 65,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 66,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4864,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4865,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4866,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4867,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4868,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4869,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4870,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4871,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4872,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4873,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4874,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4875,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4876,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4877,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4878,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4734,
+    "template": {
+      "name": "BOSS Spinning Slasher",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 56,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 151,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 417,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1089,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2816,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5504,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8522,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10060,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4879,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4880,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4881,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4882,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4883,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4884,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4885,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4725,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 48,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 128,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 352,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 920,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2377,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 4645,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 7195,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 8490,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 9855,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 11350,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 12936,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 14430,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4886,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4887,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4888,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4889,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4744,
+    "template": {
+      "name": "Shock",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 9000
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 56,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 151,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 417,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 1089,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 2816,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 5504,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 8522,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 10060,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 11622,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 13182,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 14784,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 16398,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4892,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4168,
+    "template": {
+      "name": "BOSS Power Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 121,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 325,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 893,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2338,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5884,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11371,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 17463,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 20261,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 23243,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 26363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 29567,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 32796,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4893,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4894,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4719,
+    "template": {
+      "name": "BOSS Strike",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 112,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 302,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 834,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2177,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5631,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 11008,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 17044,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 20119,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 23243,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 26363,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 29567,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 32796,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4895,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4896,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4897,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4898,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4314,
+    "template": {
+      "name": "BOSS Holy Light Burst",
+      "passive": false,
+      "spell": true,
+      "distance": 700
+    },
+    "time": {
+      "hitTime": 2000,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 21,
+        "mp": 17,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 31,
+        "mp": 29,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 43,
+        "mp": 39,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 58,
+        "mp": 53,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 75,
+        "mp": 67,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 92,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 108,
+        "mp": 97,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 115,
+        "mp": 103,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 121,
+        "mp": 108,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 125,
+        "mp": 112,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 129,
+        "mp": 115,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 132,
+        "mp": 116,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4901,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4903,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4904,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4905,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4907,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4908,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4909,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4911,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4912,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4913,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4914,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4925,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4926,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4927,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4928,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4929,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4931,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4932,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4934,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4899,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4935,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4936,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4937,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4938,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4939,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4940,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4941,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4942,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4943,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4944,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4945,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4946,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4947,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4948,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4949,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4753,
+    "template": {
+      "name": "BOSS Mortal Blow",
+      "passive": false,
+      "spell": false,
+      "distance": 40
+    },
+    "time": {
+      "hitTime": 830,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 111,
+        "mp": 18,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 298,
+        "mp": 25,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 824,
+        "mp": 35,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 2145,
+        "mp": 47,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 5545,
+        "mp": 59,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 10860,
+        "mp": 72,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 7,
+        "power": 16808,
+        "mp": 83,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 8,
+        "power": 19855,
+        "mp": 88,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 9,
+        "power": 23069,
+        "mp": 91,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 10,
+        "power": 26561,
+        "mp": 93,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 11,
+        "power": 30232,
+        "mp": 95,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 12,
+        "power": 33780,
+        "mp": 96,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4950,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4951,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4952,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4953,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4954,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4983,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4984,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4955,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4956,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4957,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4958,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4959,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4960,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4961,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4962,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4963,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4964,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4965,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4966,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4967,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4968,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4969,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4970,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4971,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4972,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4973,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4010,
+    "template": {
+      "name": "Resist Water",
+      "passive": true,
+      "spell": true,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 4000,
+      "reuse": 6000,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 2,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 3,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 4,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 5,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      },
+      {
+        "level": 6,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4974,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4975,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4976,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  },
+  {
+    "selfId": 4977,
+    "template": {
+      "name": "Raid Boss - Level",
+      "passive": true,
+      "spell": false,
+      "distance": -1
+    },
+    "time": {
+      "hitTime": 0,
+      "reuse": 0,
+      "buff": 0
+    },
+    "levels": [
+      {
+        "level": 1,
+        "power": 0,
+        "mp": 0,
+        "hp": 0,
+        "itemId": 0,
+        "itemCount": 0
+      }
+    ]
+  }
+]

@@ -1,0 +1,409 @@
+[
+  {
+    "selfId": 10019,
+    "template": {
+      "name": "Pan Dryad"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 316,
+            "name": "Blood of Saints",
+            "min": 1,
+            "max": 1,
+            "chance": 8.752693
+          },
+          {
+            "selfId": 317,
+            "name": "Tome of Blood",
+            "min": 1,
+            "max": 1,
+            "chance": 8.752693
+          },
+          {
+            "selfId": 2030,
+            "name": "Tome of Blood Page",
+            "min": 3,
+            "max": 9,
+            "chance": 82.494613
+          }
+        ],
+        "overall": 51.2825
+      },
+      {
+        "items": [
+          {
+            "selfId": 393,
+            "name": "Mithril Banded Mail",
+            "min": 1,
+            "max": 1,
+            "chance": 14.143118
+          },
+          {
+            "selfId": 394,
+            "name": "Reinforced Leather Shirt",
+            "min": 1,
+            "max": 1,
+            "chance": 14.143118
+          },
+          {
+            "selfId": 415,
+            "name": "Mithril Banded Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 22.581412
+          },
+          {
+            "selfId": 416,
+            "name": "Reinforced Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 22.581412
+          },
+          {
+            "selfId": 1938,
+            "name": "Mithril Banded Mail Material",
+            "min": 53,
+            "max": 157,
+            "chance": 6.881893
+          },
+          {
+            "selfId": 1939,
+            "name": "Mithril Banded Gaiters Material",
+            "min": 24,
+            "max": 72,
+            "chance": 19.669047
+          }
+        ],
+        "overall": 67.3027
+      },
+      {
+        "items": [
+          {
+            "selfId": 956,
+            "name": "Scroll: Enchant Armor (Grade D)",
+            "min": 12,
+            "max": 36,
+            "chance": 100
+          }
+        ],
+        "overall": 58.6108
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10127,
+    "template": {
+      "name": "Langk Matriarch Rashkos"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 46,
+            "name": "Bronze Helmet",
+            "min": 2,
+            "max": 4,
+            "chance": 65.116363
+          },
+          {
+            "selfId": 627,
+            "name": "Aspis",
+            "min": 4,
+            "max": 12,
+            "chance": 34.883637
+          }
+        ],
+        "overall": 44.4859
+      },
+      {
+        "items": [
+          {
+            "selfId": 222,
+            "name": "Poniard Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 100
+          }
+        ],
+        "overall": 20.2414
+      },
+      {
+        "items": [
+          {
+            "selfId": 955,
+            "name": "Scroll: Enchant Weapon (Grade D)",
+            "min": 1,
+            "max": 1,
+            "chance": 64.285747
+          },
+          {
+            "selfId": 6575,
+            "name": "Blessed Scroll: Enchant Weapon (D)",
+            "min": 1,
+            "max": 1,
+            "chance": 3.57138
+          },
+          {
+            "selfId": 6576,
+            "name": "Blessed Scroll: Enchant Armor (D)",
+            "min": 1,
+            "max": 1,
+            "chance": 32.142873
+          }
+        ],
+        "overall": 87.6188
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10272,
+    "template": {
+      "name": "Partisan Leader Talakin"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 63,
+            "name": "Gauntlets",
+            "min": 3,
+            "max": 9,
+            "chance": 8.496602
+          },
+          {
+            "selfId": 553,
+            "name": "Iron Boots",
+            "min": 4,
+            "max": 10,
+            "chance": 7.282825
+          },
+          {
+            "selfId": 1940,
+            "name": "Iron Boots Design",
+            "min": 60,
+            "max": 180,
+            "chance": 16.105445
+          },
+          {
+            "selfId": 2422,
+            "name": "Reinforced Leather Boots",
+            "min": 4,
+            "max": 12,
+            "chance": 6.372492
+          },
+          {
+            "selfId": 2423,
+            "name": "Boots of Knowledge",
+            "min": 5,
+            "max": 13,
+            "chance": 5.664347
+          },
+          {
+            "selfId": 2446,
+            "name": "Reinforced Leather Gloves",
+            "min": 5,
+            "max": 15,
+            "chance": 5.098026
+          },
+          {
+            "selfId": 2447,
+            "name": "Gloves of Knowledge",
+            "min": 1,
+            "max": 1,
+            "chance": 50.980264
+          }
+        ],
+        "overall": 61.1315
+      },
+      {
+        "items": [
+          {
+            "selfId": 157,
+            "name": "Spiked Club",
+            "min": 1,
+            "max": 1,
+            "chance": 7.963931
+          },
+          {
+            "selfId": 186,
+            "name": "Staff of Magic",
+            "min": 1,
+            "max": 1,
+            "chance": 7.963931
+          },
+          {
+            "selfId": 2027,
+            "name": "Spiked Club Head",
+            "min": 3,
+            "max": 9,
+            "chance": 84.072137
+          }
+        ],
+        "overall": 71.9519
+      },
+      {
+        "items": [
+          {
+            "selfId": 956,
+            "name": "Scroll: Enchant Armor (Grade D)",
+            "min": 12,
+            "max": 36,
+            "chance": 100
+          }
+        ],
+        "overall": 74.8229
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10365,
+    "template": {
+      "name": "Patriarch Kuroboros"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 293,
+            "name": "War Hammer",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          },
+          {
+            "selfId": 296,
+            "name": "Dwarven Pike",
+            "min": 1,
+            "max": 1,
+            "chance": 50
+          }
+        ],
+        "overall": 10.6222
+      },
+      {
+        "items": [
+          {
+            "selfId": 436,
+            "name": "Tunic of Knowledge",
+            "min": 1,
+            "max": 1,
+            "chance": 38.511303
+          },
+          {
+            "selfId": 469,
+            "name": "Stockings of Knowledge",
+            "min": 1,
+            "max": 1,
+            "chance": 61.488697
+          }
+        ],
+        "overall": 58.4914
+      },
+      {
+        "items": [
+          {
+            "selfId": 6387,
+            "name": "Blessed Scroll of Resurrection for Pets",
+            "min": 12,
+            "max": 36,
+            "chance": 100
+          }
+        ],
+        "overall": 55.4803
+      }
+    ],
+    "spoils": []
+  },
+  {
+    "selfId": 10372,
+    "template": {
+      "name": "Discarded Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 123,
+            "name": "Saber",
+            "min": 1,
+            "max": 1,
+            "chance": 12.340179
+          },
+          {
+            "selfId": 2017,
+            "name": "Saber Blade",
+            "min": 8,
+            "max": 22,
+            "chance": 22.357124
+          },
+          {
+            "selfId": 5285,
+            "name": "Heavy Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 12.340179
+          },
+          {
+            "selfId": 5531,
+            "name": "Heavy Sword Edge",
+            "min": 4,
+            "max": 12,
+            "chance": 52.962518
+          }
+        ],
+        "overall": 43.9086
+      },
+      {
+        "items": [
+          {
+            "selfId": 391,
+            "name": "Puma Skin Shirt",
+            "min": 2,
+            "max": 4,
+            "chance": 29.398389
+          },
+          {
+            "selfId": 413,
+            "name": "Puma Skin Gaiters",
+            "min": 1,
+            "max": 3,
+            "chance": 70.601611
+          }
+        ],
+        "overall": 53.5196
+      },
+      {
+        "items": [
+          {
+            "selfId": 955,
+            "name": "Scroll: Enchant Weapon (Grade D)",
+            "min": 1,
+            "max": 1,
+            "chance": 56.692845
+          },
+          {
+            "selfId": 956,
+            "name": "Scroll: Enchant Armor (Grade D)",
+            "min": 8,
+            "max": 22,
+            "chance": 31.49614
+          },
+          {
+            "selfId": 6387,
+            "name": "Blessed Scroll of Resurrection for Pets",
+            "min": 24,
+            "max": 72,
+            "chance": 11.811015
+          }
+        ],
+        "overall": 67.5632
+      }
+    ],
+    "spoils": []
+  }
+]

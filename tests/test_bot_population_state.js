@@ -89,6 +89,10 @@ try {
         const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));
         assert(fulfilledPlanMigration, 'startup must discard equipment plans whose exact target slot is already equipped');
         assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');
+        assert(fulfilledPlanMigration.sql.includes('targets.targetSlot IN (7, 14)'),
+            'persisted weapon plans must treat one- and two-handed paperdoll slots as one fulfillment group');
+        assert(fulfilledPlanMigration.sql.includes('combineResultId'),
+            'startup must not discard a dual-sword objective merely because its purchased component is equipped');
         assert(fulfilledPlanMigration.sql.includes("'$.partyRequest'"), 'finishing a persisted gear target must clear its obsolete party request');
         const reconciledPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
             stats: {
@@ -103,6 +107,30 @@ try {
             'every runtime persistence path must discard a plan already fulfilled by a paired paperdoll slot');
         assert.strictEqual(reconciledPlan.stats.partyRequest, undefined,
             'runtime plan reconciliation must clear the obsolete party request too');
+        const reconciledWeaponPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: { target: { selfId: 93, slot: 7 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                93: { selfId: 93, amount: 1, equipped: true, equippedSlots: [14], slot: 14 }
+            }
+        });
+        assert.strictEqual(reconciledWeaponPlan.stats.equipmentPlan, undefined,
+            'a two-handed item must fulfill a weapon plan recorded with the canonical weapon slot');
+        const retainedDualComponentPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: {
+                    target: { selfId: 129, slot: 7 },
+                    combine: { resultId: 2523, requirements: [{ selfId: 123, amount: 1 }, { selfId: 129, amount: 1 }] }
+                }
+            },
+            inventory: {
+                129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 }
+            }
+        });
+        assert(retainedDualComponentPlan.stats.equipmentPlan,
+            'equipping a newly purchased component sword must retain the final dual-sword objective');
         const reconciledDagger = BotLifeState.reconcileEquipmentInventory({
             level: 20,
             stats: { classId: 7, role: 'dagger' },
@@ -112,6 +140,25 @@ try {
         });
         assert.strictEqual(reconciledDagger.inventory['625'].equipped, false,
             'class-aware lifecycle reconciliation must remove a shield after a class transition');
+        const reconciledPoleShield = BotLifeState.reconcileIncompatibleShieldState({
+            level: 40,
+            stats: {
+                classId: 55,
+                role: 'dps',
+                equipmentPlan: { strategy: 'market', target: { selfId: 626, name: 'Bronze Shield', slot: 8 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                93: { selfId: 93, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, kind: 'Weapon.Pole', rank: 'd' },
+                626: { selfId: 626, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [8], slot: 8, kind: 'Armor.Shield', rank: 'd' }
+            }
+        });
+        assert.strictEqual(reconciledPoleShield.inventory['626'].equipped, false,
+            'startup reconciliation must remove a shield from a profile that permits shields but currently uses a polearm');
+        assert.strictEqual(reconciledPoleShield.stats.equipmentPlan, undefined,
+            'startup reconciliation must discard the incompatible persisted shield plan');
+        assert.strictEqual(reconciledPoleShield.stats.partyRequest, undefined,
+            'discarding an incompatible shield plan must clear its obsolete party request');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
@@ -154,7 +201,8 @@ try {
                 const classUpdate = classUpdates.at(-1);
                 assert(classUpdate, 'migration must persist the profession on the physical character');
                 assert.ok([36, 37].includes(classUpdate.classId), 'migration must use the physical character class as its source of truth');
-                return BotLifeState.dueCold(5, 1000);
+                return BotLifeState.dueCold(5, 1000)
+                    .then(() => BotLifeState.marketGoalCandidates(5, 123456));
             }))
         .then(() => {
             const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
@@ -167,6 +215,10 @@ try {
             assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
+            const marketCandidates = statements.find((entry) => entry.sql.includes("goals.goalJson LIKE '%\"type\":\"sell_inventory\"%'"));
+            assert(marketCandidates, 'market reconciliation must query persisted sell goals');
+            assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
+            assert.deepStrictEqual(marketCandidates.params, [123456], 'market reconciliation must bind the current retry cutoff');
             return BotLifeState.assignParty({
                 characterId: 43,
                 name: 'PartyWaitAssignmentProbe',
