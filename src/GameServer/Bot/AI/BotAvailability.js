@@ -31,7 +31,9 @@ function reasonText(reason) {
         recently_abandoned: 'recently abandoned',
         level_gap_too_large: 'level gap too large',
         prefers_solo: 'prefers a solo run for now',
-        hunting_target: 'busy fighting'
+        hunting_target: 'busy fighting',
+        in_transit: 'traveling right now',
+        pk_encounter_only: 'busy hunting players'
     };
     return text[reason] || reason;
 }
@@ -46,6 +48,25 @@ function sameClan(player, botSubject) {
     const playerClanId = clanIdOf(player);
     if (playerClanId === 0) return false;
     return playerClanId === clanIdOf(botSubject);
+}
+
+function subjectName(subject) {
+    if (subject?.actor?.fetchName) return String(subject.actor.fetchName());
+    if (subject?.fetchName) return String(subject.fetchName());
+    return String(subject?.name || subject?.characterName || '');
+}
+
+function subjectId(subject) {
+    if (subject?.actor?.fetchId) return Number(subject.actor.fetchId()) || 0;
+    if (subject?.fetchId) return Number(subject.fetchId()) || 0;
+    return Number(subject?.characterId || subject?.id || 0);
+}
+
+function catalogKey(subject) {
+    const id = subjectId(subject);
+    if (id > 0) return `id:${id}`;
+    const name = subjectName(subject).trim().toLowerCase();
+    return name ? `name:${name}` : '';
 }
 
 function emptyResult(playerSession, botSubject) {
@@ -108,6 +129,8 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
+        else if (state.activity === 'traveling') reason = 'in_transit';
+        else if (state.activity === 'pk_hunting') reason = 'pk_encounter_only';
         else if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
@@ -142,6 +165,47 @@ const BotAvailability = {
                 if (a.availability.available !== b.availability.available) return a.availability.available ? -1 : 1;
                 return (a.availability.distance ?? Number.MAX_SAFE_INTEGER) - (b.availability.distance ?? Number.MAX_SAFE_INTEGER);
             });
+    },
+
+    catalogForPlayer(playerSession, botSessions = [], lifeStates = []) {
+        const hotKeys = new Set();
+        const hotNames = new Set();
+        (botSessions || []).forEach((session) => {
+            const key = catalogKey(session);
+            const name = subjectName(session).trim().toLowerCase();
+            if (key) hotKeys.add(key);
+            if (name) hotNames.add(name);
+        });
+
+        const hot = (botSessions || [])
+            .filter((session) => session?.actor && !BotServiceIdentity.isStaticService(session))
+            .filter((session) => !(session.partyCompanion === true && session.followPlayerSession === playerSession))
+            .map((session) => ({
+                session,
+                state: session.coldLifeState || null,
+                subject: session.actor,
+                name: subjectName(session),
+                level: Number(session.actor.fetchLevel?.() || 1),
+                phase: 'hot'
+            }));
+
+        const cold = (lifeStates || [])
+            .filter((state) => state && !BotServiceIdentity.isStaticService(state))
+            .filter((state) => {
+                const key = catalogKey(state);
+                const name = subjectName(state).trim().toLowerCase();
+                return (!key || !hotKeys.has(key)) && (!name || !hotNames.has(name));
+            })
+            .map((state) => ({
+                session: null,
+                state,
+                subject: state,
+                name: subjectName(state),
+                level: Number(state.level || 1),
+                phase: 'cold'
+            }));
+
+        return [...hot, ...cold].filter((candidate) => candidate.name);
     },
 
     reasonText

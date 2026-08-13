@@ -6,6 +6,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
+const ActorGenerics = invoke(path.actor);
 
 function actor(id, name) {
     return {
@@ -47,6 +48,8 @@ const originalBotSessions = BotManager.sessions;
 const originalWakeup = BotAI.wakeup;
 const originalNow = Date.now;
 const originalRender = CompanionControl.render;
+const originalUpdatePosition = ActorGenerics.updatePosition;
+const originalSetTimeout = global.setTimeout;
 try {
     let now = 10000;
     Date.now = () => now;
@@ -85,6 +88,7 @@ try {
     let resetAttackQueues = 0;
     let abortedAutomation = 0;
     let urgentWakeups = 0;
+    let joinTeleport = null;
     joiningBot.hp = 15;
     joiningBot.mp = 20;
     joiningBot.state.seated = true;
@@ -95,26 +99,40 @@ try {
     };
     joiningBot.automation.abortAll = () => { abortedAutomation += 1; };
     const joiningSession = {
+        accountId: 'bot_joining',
         actor: joiningBot,
         plan: 'resting',
+        aiActive: true,
         dataSendToMeAndOthers() {}
     };
     BotAI.wakeup = (session, options) => {
         assert.strictEqual(session, joiningSession, 'party attachment should wake the joining bot session');
         assert.deepStrictEqual(options, { urgent: true }, 'party attachment should bypass a stale background AI timeout');
+        assert.ok(joinTeleport, 'party AI must wake only after the join teleport has been scheduled');
         urgentWakeups += 1;
     };
+    ActorGenerics.updatePosition = (targetSession, targetActor, destination, options) => {
+        joinTeleport = { targetSession, targetActor, destination, options };
+    };
+    global.setTimeout = (callback) => { callback(); return 1; };
+    joiningBot.isDead = () => false;
+    joiningBot.clearDestId = () => {};
     BotManager.sessions = [companionSession, joiningSession];
     assert.strictEqual(PartyCompanionService.attach(leaderSession, joiningSession), true, 'the invited bot should join the party');
     assert.strictEqual(abortedCasts, 1, 'joining should abort an old cast before changing the bot to party follow');
     assert.strictEqual(clearedAttackTimers, 1, 'joining should clear old attack callbacks before a distant catch-up');
     assert.strictEqual(resetAttackQueues, 1, 'joining should discard queued actions from the bot previous combat');
-    assert.strictEqual(abortedAutomation, 1, 'joining should abort movement from the bot previous solo plan');
+    assert.strictEqual(abortedAutomation, 2, 'joining should abort the old solo move and clear automation again for teleport');
     assert.strictEqual(urgentWakeups, 1, 'joining should start party follow without waiting for the previous AI schedule');
     assert.strictEqual(joiningBot.fetchHp(), joiningBot.fetchMaxHp(), 'joining companion should restore HP immediately');
     assert.strictEqual(joiningBot.fetchMp(), joiningBot.fetchMaxMp(), 'joining companion should restore MP immediately');
     assert.strictEqual(joiningBot.state.fetchSeated(), false, 'joining companion should stand after the instant recovery');
     assert.strictEqual(joiningSession.plan, 'following', 'joining companion should return to party follow after recovery');
+    assert.strictEqual(joinTeleport.targetSession, joiningSession);
+    assert.strictEqual(joinTeleport.targetActor, joiningBot);
+    assert.deepStrictEqual(joinTeleport.options, { immediateNpcInfo: true, forceRefresh: true }, 'join teleport should complete the authoritative position refresh before AI wakes');
+    assert.ok(Math.hypot(joinTeleport.destination.locX, joinTeleport.destination.locY) < 400,
+        'the accepted companion should arrive directly beside the leader');
 
     console.info('party HUD throttling tests passed');
 } finally {
@@ -122,4 +140,6 @@ try {
     BotAI.wakeup = originalWakeup;
     Date.now = originalNow;
     CompanionControl.render = originalRender;
+    ActorGenerics.updatePosition = originalUpdatePosition;
+    global.setTimeout = originalSetTimeout;
 }

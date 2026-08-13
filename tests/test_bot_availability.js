@@ -31,7 +31,11 @@ const originalRelationship = BotSocialMemory.relationship;
 
 try {
     let memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
-    BotSocialMemory.getSnapshot = () => memory;
+    let snapshotReads = 0;
+    BotSocialMemory.getSnapshot = () => {
+        snapshotReads += 1;
+        return memory;
+    };
     BotSocialMemory.relationship = () => 'stranger';
 
     const lowPlayer = session(actor(2000001, 20, 0));
@@ -94,7 +98,14 @@ try {
     };
     result = BotAvailability.evaluateState(lowPlayer, farColdBot);
     assert.strictEqual(result.available, true, 'distance should not block a cold bot that can activate near the player');
-    assert.strictEqual(Math.round(result.distance), 100000, 'availability should still expose distance for sorting and presentation');
+    assert.strictEqual(Math.round(result.distance), 100000, 'availability should still expose distance for diagnostics');
+
+    result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'traveling' });
+    assert.strictEqual(result.available, false, 'a cold bot that activation rejects in transit must not expose a working invite action');
+    assert.strictEqual(result.reason, 'in_transit');
+    result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'pk_hunting' });
+    assert.strictEqual(result.available, false, 'a cold PK encounter bot must retain its existing activation gate in the catalog');
+    assert.strictEqual(result.reason, 'pk_encounter_only');
 
     const socialBot = session(actor(2000012, 20), {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
@@ -122,7 +133,7 @@ try {
     });
     result = BotAvailability.evaluate(lowPlayer, farSocialBot);
     assert.strictEqual(result.available, true, 'distance should not block a hot bot because companion catch-up handles arrival');
-    assert.strictEqual(Math.round(result.distance), 100000, 'hot-bot distance should remain available to the party browser');
+    assert.strictEqual(Math.round(result.distance), 100000, 'hot-bot distance should remain available for diagnostics');
     assert.deepStrictEqual(BotAvailability.listForPlayer(lowPlayer, [farSocialBot]).map((entry) => entry.session), [farSocialBot],
         '.botparty candidate discovery should keep an available distant hot bot');
 
@@ -166,6 +177,47 @@ try {
     result = BotAvailability.evaluate(lowPlayer, configuredMerchant, { forceFriend: true });
     assert.strictEqual(result.reason, 'merchant_duty', 'configured liquidity stores must remain static even with a stale life-state snapshot');
     assert.deepStrictEqual(BotAvailability.listForPlayer(lowPlayer, [configuredMerchant]), [], 'static services must not appear in party candidate lists');
+
+    const dynamicMerchant = session(actor(2000022, 22, 0, { name: 'DynamicSeller' }), {
+        plan: 'merchant',
+        coldLifeState: { characterId: 2000022, name: 'DynamicSeller', stats: { classId: 54 } }
+    });
+    const coldAdventure = {
+        characterId: 2000023,
+        name: 'ColdAdventure',
+        level: 24,
+        activity: 'hunting',
+        loc: { locX: 50000, locY: 0, locZ: 0 },
+        vitals: { hp: 100, maxHp: 100 },
+        stats: { classId: 8 }
+    };
+    const duplicateHotState = {
+        ...farColdBot,
+        characterId: farSocialBot.actor.fetchId(),
+        name: farSocialBot.actor.fetchName()
+    };
+    const ownCompanionState = {
+        ...farColdBot,
+        characterId: ownCompanion.actor.fetchId(),
+        name: ownCompanion.actor.fetchName()
+    };
+    const snapshotReadsBeforeCatalog = snapshotReads;
+    const catalog = BotAvailability.catalogForPlayer(
+        lowPlayer,
+        [farSocialBot, ownCompanion, dynamicMerchant, configuredMerchant],
+        [duplicateHotState, ownCompanionState, coldAdventure, staticCraftState]
+    );
+    assert.deepStrictEqual(
+        catalog.map((candidate) => candidate.name).sort(),
+        ['Actor2000014', 'ColdAdventure', 'DynamicSeller'],
+        'the global party catalog should merge hot and cold bots, deduplicate snapshots, hide own companions and exclude static services'
+    );
+    assert.strictEqual(catalog.find((candidate) => candidate.name === 'Actor2000014').phase, 'hot', 'a live session should win over its cold snapshot');
+    assert.strictEqual(catalog.find((candidate) => candidate.name === 'ColdAdventure').phase, 'cold', 'background adventurers should remain discoverable');
+    assert.strictEqual(snapshotReads, snapshotReadsBeforeCatalog,
+        'building catalog metadata must not fan out social-memory reads across the whole population');
+    result = BotAvailability.evaluate(lowPlayer, dynamicMerchant);
+    assert.strictEqual(result.reason, 'merchant_duty', 'temporary merchants should stay visible while page-level availability explains why they cannot join yet');
 
     console.log('Bot availability checks passed');
 } finally {

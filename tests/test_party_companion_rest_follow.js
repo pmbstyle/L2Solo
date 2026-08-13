@@ -366,7 +366,9 @@ try {
     const originalInviteBotSessions = BotManager.sessions;
     const originalSocialSnapshot = BotSocialMemory.getSnapshot;
     const originalSocialRecordEvent = BotSocialMemory.recordEvent;
+    const originalBringToLeader = PartyCompanionService.bringToLeader;
     let inviteTell = null;
+    const broughtCompanions = [];
     try {
         global.setTimeout = (callback) => {
             callback();
@@ -374,6 +376,11 @@ try {
         };
         BotSocialMemory.getSnapshot = () => ({ trust: 0, familiarity: 0, recentlyAbandonedAt: null });
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
+        PartyCompanionService.bringToLeader = (targetLeaderSession, companionSession) => {
+            assert.strictEqual(targetLeaderSession, leaderSession);
+            broughtCompanions.push(companionSession);
+            return true;
+        };
         BotManager.botTell = (sourceSession, targetSession, text) => {
             assert.strictEqual(targetSession, leaderSession, 'invite acknowledgement should target party leader');
             if (sourceSession === inviteBotSession) inviteTell = text;
@@ -406,6 +413,7 @@ try {
         assert.strictEqual(World.answerForTeamUp(nativeAnswerSession, nativeAnswerBot, { id: 1 }), true, 'a bot should be able to accept through the native answer lifecycle');
         assert.strictEqual(nativeAnswerSession.pendingPartyInvite, null, 'the accepted native invitation must be consumed once');
         assert.strictEqual(nativeAnswerSession.followPlayerSession, leaderSession, 'native acceptance should attach the bot to the requesting leader');
+        assert.deepStrictEqual(broughtCompanions, [inviteBotSession, nativeAnswerSession], 'every accepted invite path should bring the bot to the leader immediately');
         const nativeAcceptedPacket = [...leaderSession.packets].reverse().find((packet) => packet[0] === 0x3a);
         assert.strictEqual(nativeAcceptedPacket.readInt32LE(1), 1, 'native bot acceptance must return JoinParty success');
 
@@ -425,6 +433,7 @@ try {
         BotManager.sessions = originalInviteBotSessions;
         BotSocialMemory.getSnapshot = originalSocialSnapshot;
         BotSocialMemory.recordEvent = originalSocialRecordEvent;
+        PartyCompanionService.bringToLeader = originalBringToLeader;
     }
     assert.strictEqual(inviteTell, 'Gladly. A steady party is better than going alone.', 'an accepted persona-aware invite should acknowledge the party without promising another rest');
     assert.strictEqual(inviteBotSession.plan, 'following', 'attaching a resting bot should resume party follow after instant recovery');

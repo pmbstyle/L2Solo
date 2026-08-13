@@ -117,7 +117,7 @@ function consume(session, data) {
         }
         if (data.text === '.botparty') {
             const BotParty = invoke('GameServer/World/Generics/NpcBypasses/BotParty');
-            BotParty.render(session);
+            BotParty.open(session);
             return;
         }
         if (data.text.startsWith('/invite ') || data.text.startsWith('.invite ')) {
