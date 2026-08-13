@@ -135,6 +135,13 @@ function equippedInventoryItems(inventory = {}) {
     });
 }
 
+function hasEquippedTwoHandedWeapon(state = {}) {
+    return equippedInventoryItems(state.inventory).some((item) => (
+        Number(item.etc?.slot || 0) === 14
+        && String(item.template?.kind || '').startsWith('Weapon.')
+    ));
+}
+
 function itemScore(item, role, classId) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
@@ -194,7 +201,9 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
         slot === 7
         || BotEquipmentCompatibility.allowsTwoHandedWeapon(kind, role, classId)
     );
-    if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId) && kind === 'Armor.Shield';
+    if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId)
+        && kind === 'Armor.Shield'
+        && !hasEquippedTwoHandedWeapon(state);
     if ([10, 11, 15].includes(slot)) return kind === BotEquipmentCompatibility.armorKindFor(role, classId);
     if ([6, 9, 12].includes(slot)) return kind === 'Armor.Wear';
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
@@ -417,11 +426,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
             owned.slot = Number(entry.slot || slots[0]);
         });
     });
-    const hasTwoHandedWeapon = Object.values(next).some((owned) => {
-        const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
-        return owned?.equipped && Number(template?.etc?.slot || 0) === 14 &&
-            String(template?.template?.kind || '').startsWith('Weapon.');
-    });
+    const hasTwoHandedWeapon = hasEquippedTwoHandedWeapon({ ...state, inventory: next });
     if (hasTwoHandedWeapon) {
         Object.values(next).forEach((owned) => {
             const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
@@ -617,6 +622,11 @@ function desiredNpcSlots(state = {}) {
     const plan = BotGear.planFor({ classId: classIdFor(state), level: npcAdequacyLevel(state) });
     const order = [7, 14, 10, 15, 11, 8, 6, 9, 12, 3, 1, 2, 4, 5];
     return (plan.items || []).map((item) => Number(item.slot || 0)).filter(Boolean)
+        // A class may support both a one-handed blunt and a polearm.  Its
+        // profile therefore permits shields, but a currently adequate
+        // two-handed weapon makes the shield slot unavailable until the bot
+        // actually transitions back to a one-handed weapon.
+        .filter((slot) => slot !== 8 || !hasEquippedTwoHandedWeapon(state))
         .sort((left, right) => order.indexOf(left) - order.indexOf(right));
 }
 

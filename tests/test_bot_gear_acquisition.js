@@ -320,6 +320,72 @@ assert.strictEqual(
     null,
     'a level-40 bot with an adequate D kit must not invent an ordinary NPC C-grade upgrade'
 );
+const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const wingedSpear = DataCache.items.find((item) => Number(item.selfId) === 93);
+const bronzeShield = DataCache.items.find((item) => Number(item.selfId) === 626);
+const dwarfDInventory = BotGear.planFor({ classId: 55, level: 20 }).items.reduce((inventory, item) => {
+    if ([7, 8, 14].includes(Number(item.slot))) return inventory;
+    const current = inventory[item.selfId];
+    if (current) {
+        current.amount += 1;
+        current.equippedCount += 1;
+        current.equippedSlots.push(item.slot);
+    } else {
+        inventory[item.selfId] = {
+            selfId: item.selfId,
+            name: item.name,
+            amount: 1,
+            equipped: true,
+            equippedCount: 1,
+            equippedSlots: [item.slot],
+            slot: item.slot
+        };
+    }
+    return inventory;
+}, {
+    57: { selfId: 57, name: 'Adena', amount: 5000000 },
+    [wingedSpear.selfId]: {
+        selfId: wingedSpear.selfId,
+        name: wingedSpear.template.name,
+        amount: 1,
+        equipped: true,
+        equippedCount: 1,
+        equippedSlots: [14],
+        slot: 14,
+        rank: wingedSpear.etc.rank,
+        kind: wingedSpear.template.kind
+    }
+});
+const dwarfPoleState = {
+    level: 40,
+    adena: 5000000,
+    stats: { classId: 55, role: 'dps' },
+    inventory: dwarfDInventory
+};
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan(dwarfPoleState, { spots: [stoneGolemSpot] }),
+    null,
+    'an adequate two-handed D weapon must remove the shield slot from the NPC bridge kit'
+);
+assert.strictEqual(GearAcquisitionPlanner.suitable(bronzeShield, dwarfPoleState, 'dps', 'd'), false,
+    'a shield must not remain a generic acquisition target while a two-handed weapon is equipped');
+assert.strictEqual(GearAcquisitionPlanner.suitable(bronzeShield, {
+    ...dwarfPoleState,
+    inventory: {
+        ...dwarfDInventory,
+        [wingedSpear.selfId]: { ...dwarfDInventory[wingedSpear.selfId], equipped: false, equippedCount: 0, equippedSlots: [] },
+        [handAxe.selfId]: {
+            selfId: handAxe.selfId,
+            amount: 1,
+            equipped: true,
+            equippedCount: 1,
+            equippedSlots: [7],
+            slot: 7,
+            rank: handAxe.etc.rank,
+            kind: handAxe.template.kind
+        }
+    }
+}, 'dps', 'd'), true, 'the same shield must become eligible after a real transition to a one-handed weapon');
 const equippedUpgrade = GearAcquisitionPlanner.equipInventoryUpgrades({ level: 20, stats: { role: 'tank' } }, {
     [noGradeSword.selfId]: { selfId: noGradeSword.selfId, amount: 1, equipped: true, slot: 7 },
     [entryDSword.selfId]: { selfId: entryDSword.selfId, amount: 1, equipped: false, slot: 7 }

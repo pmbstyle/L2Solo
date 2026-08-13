@@ -152,8 +152,12 @@ function equipmentTargetFulfilled(stats = {}, inventory = {}) {
     const slot = Number(target?.slot || 0);
     if (selfId <= 0 || slot <= 0) return false;
     const item = inventory[String(selfId)];
+    const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item || {}, item?.slot);
     return !!item?.equipped
-        && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(slot);
+        && equippedSlots.some((equippedSlot) => (
+            equippedSlot === slot
+            || [7, 14].includes(equippedSlot) && [7, 14].includes(slot)
+        ));
 }
 
 function reconcileFulfilledEquipmentPlan(state = {}) {
@@ -176,18 +180,56 @@ function reconcileEquipmentInventory(state = {}) {
     });
 }
 
+function hasEquippedTwoHandedWeapon(state = {}) {
+    return Object.values(state.inventory || {}).some((item) => {
+        const template = itemTemplate(item?.selfId);
+        return Number(template?.etc?.slot || item?.slot || 0) === 14
+            && String(template?.template?.kind || item?.kind || '').startsWith('Weapon.')
+            && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(14);
+    });
+}
+
 function hasIncompatibleShield(state = {}) {
     const classId = Number(state.stats?.classId || 0);
     const role = state.stats?.role || BotRoles.inferRole(classId);
-    if (BotEquipmentCompatibility.usesShield(role, classId)) return false;
-    return Object.values(state.inventory || {}).some((item) => (
+    const twoHanded = hasEquippedTwoHandedWeapon(state);
+    const incompatiblePlan = Number(state.stats?.equipmentPlan?.target?.slot || 0) === 8 && twoHanded;
+    const incompatibleEquippedShield = Object.values(state.inventory || {}).some((item) => (
         Number(itemTemplate(item?.selfId)?.etc?.slot || item?.slot || 0) === 8
         && GearAcquisitionPlanner.equippedSlotsFor(item, item.slot).includes(8)
+        && (!BotEquipmentCompatibility.usesShield(role, classId) || twoHanded)
     ));
+    return incompatiblePlan || incompatibleEquippedShield;
+}
+
+function reconcileIncompatibleShieldState(state = {}) {
+    const reconciledEquipment = reconcileEquipmentInventory(state);
+    const stats = { ...(reconciledEquipment.stats || {}) };
+    if (Number(stats.equipmentPlan?.target?.slot || 0) === 8
+        && hasEquippedTwoHandedWeapon(reconciledEquipment)) {
+        delete stats.equipmentPlan;
+        delete stats.partyRequest;
+    }
+    return { ...reconciledEquipment, stats };
 }
 
 function inventoryAdena(inventory) {
     return Number(inventory?.[57]?.amount || inventory?.['57']?.amount || 0);
+}
+
+function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
+    const selfId = Number(offer?.selfId || 0);
+    const count = Number(qty);
+    const template = itemTemplate(selfId);
+    if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
+    const slot = Number(template.etc?.slot || 0);
+    if (slot <= 0) return null;
+
+    const capacity = [1, 2, 4, 5].includes(slot) ? 2 : 1;
+    const owned = Math.max(0, Number(state.inventory?.[String(selfId)]?.amount || 0));
+    if (owned + count > capacity) return 'already_owned';
+    if (slot === 8 && hasEquippedTwoHandedWeapon(state)) return 'incompatible_loadout';
+    return null;
 }
 
 function refreshCraftShop(state = {}) {
@@ -970,10 +1012,15 @@ function discardFulfilledEquipmentPlans() {
             WHERE CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.equipped') AS INTEGER) = 1
               AND (
                 CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.slot') AS INTEGER) = targets.targetSlot
+                OR (
+                    targets.targetSlot IN (7, 14)
+                    AND CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.slot') AS INTEGER) IN (7, 14)
+                )
                 OR EXISTS (
                     SELECT 1
                     FROM json_each(COALESCE(json_extract(states.inventorySummary, targets.inventoryPath || '.equippedSlots'), '[]')) slots
                     WHERE CAST(slots.value AS INTEGER) = targets.targetSlot
+                       OR targets.targetSlot IN (7, 14) AND CAST(slots.value AS INTEGER) IN (7, 14)
                 )
               )
         )
@@ -995,7 +1042,7 @@ function reconcileIncompatibleShields() {
     const affected = [...cache.values()].filter(hasIncompatibleShield);
     let reconciledCount = 0;
     return affected.reduce((chain, state) => chain.then(() => {
-        const reconciled = reconcileEquipmentInventory(state);
+        const reconciled = reconcileIncompatibleShieldState(state);
         const row = rowFromState(reconciled);
         return save(row)
             .then(() => syncInventorySummary(row.characterId, reconciled.inventory))
@@ -1008,7 +1055,7 @@ function reconcileIncompatibleShields() {
             });
     }), Promise.resolve()).then(() => {
         if (reconciledCount > 0) {
-            utils.infoWarn('BotLife', 'unequipped %d incompatible persisted shields on startup', reconciledCount);
+            utils.infoWarn('BotLife', 'reconciled %d incompatible persisted shield loadouts or plans on startup', reconciledCount);
         }
         return reconciledCount;
     });
@@ -2091,6 +2138,7 @@ const BotLifeState = {
         const slot = Number(template.etc?.slot || 0);
         const pairSlots = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [];
         if (slot > 0 && count > 1 && (!pairSlots.length || count > 2)) return Promise.resolve(null);
+        if (marketPurchaseBlocker(state, offer, count)) return Promise.resolve(null);
         const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, item]) => [key, {
             ...item,
             ...(Array.isArray(item?.equippedSlots) ? { equippedSlots: [...item.equippedSlots] } : {})
@@ -2142,11 +2190,7 @@ const BotLifeState = {
         };
         const equipment = equipmentSummaryFromInventory(inventory);
         const purchaseStats = { ...(state.stats || {}) };
-        if (Number(purchaseStats.equipmentPlan?.target?.selfId || 0) === selfId && slot > 0) {
-            delete purchaseStats.equipmentPlan;
-            delete purchaseStats.partyRequest;
-        }
-        const nextState = {
+        const purchasedState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
             activity: 'shopping',
@@ -2161,9 +2205,14 @@ const BotLifeState = {
             },
             updatedAt: now()
         };
+        // The purchased row is only an input to the shared equipment
+        // optimizer.  Persisting the optimistic slot assignment directly can
+        // leave mutually-exclusive items (most visibly a polearm and shield)
+        // equipped at once and can finish a plan that was never fulfilled.
+        const nextState = slot > 0 ? reconcileEquipmentInventory(purchasedState) : purchasedState;
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -2498,8 +2547,10 @@ const BotLifeState = {
 
 BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
+BotLifeState.marketPurchaseBlocker = marketPurchaseBlocker;
 BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
+BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;
 
 module.exports = BotLifeState;

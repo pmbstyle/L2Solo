@@ -138,6 +138,45 @@ async function run() {
     });
     assert.strictEqual(otherTownGoal.reason, 'different_market_town', 'a batch visit must not substitute an offer from the wrong town');
 
+    let blockedReserveCalls = 0;
+    MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
+    MarketOpportunity.reserve = () => {
+        blockedReserveCalls += 1;
+        return true;
+    };
+    const incompatibleShield = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 86,
+        level: 40,
+        adena: 100000,
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 100000 },
+            93: { selfId: 93, name: 'Winged Spear', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, rank: 'd', kind: 'Weapon.Pole' }
+        },
+        stats: {
+            classId: 55,
+            role: 'dps',
+            equipment: [{ selfId: 93, slot: 14, rank: 'd', kind: 'Weapon.Pole' }],
+            equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 626, name: 'Bronze Shield', slot: 8 } },
+            partyRequest: { status: 'open', priority: 'required' },
+            marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' }
+        }
+    }, {
+        type: 'upgrade_gear',
+        status: 'active',
+        target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8 },
+        plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
+    });
+    assert.strictEqual(incompatibleShield.reason, 'incompatible_loadout');
+    assert.strictEqual(incompatibleShield.purchased, false);
+    assert.strictEqual(blockedReserveCalls, 0, 'an incompatible purchase must be rejected before reserving market stock');
+    assert.strictEqual(incompatibleShield.state.stats.equipmentPlan, undefined,
+        'rejecting an incompatible shield must discard the stale acquisition plan');
+    assert.strictEqual(incompatibleShield.state.stats.partyRequest, undefined,
+        'rejecting an incompatible shield must clear its obsolete party request');
+    MarketOpportunity.bestOffer = originals.bestOffer;
+    MarketOpportunity.reserve = originals.reserve;
+
     const noOffer = await ColdMarketService.tryPurchase({
         ...state,
         characterId: 79,
@@ -180,11 +219,32 @@ async function run() {
     }, { selfId: 354, price: 505000, sourceType: 'cold_store' }, 2);
     assert.strictEqual(duplicateArmorPurchase, null, 'slotted non-stackable equipment must never be stored as one inventory row with quantity greater than one');
 
+    const repeatedArmorPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 87,
+        adena: 505000,
+        inventory: {
+            ...state.inventory,
+            57: { selfId: 57, name: 'Adena', amount: 505000 },
+            354: { selfId: 354, name: 'Mithril Tunic', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [10], slot: 10 }
+        }
+    }, { selfId: 354, price: 505000, sourceType: 'cold_store' });
+    assert.strictEqual(repeatedArmorPurchase, null,
+        'sequential one-item purchases must not bypass the non-stackable equipment capacity');
+
+    assert.strictEqual(BotLifeState.marketPurchaseBlocker({
+        inventory: {
+            93: { selfId: 93, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, kind: 'Weapon.Pole' }
+        }
+    }, { selfId: 626 }, 1), 'incompatible_loadout',
+    'the transaction preflight must reject a shield while a two-handed weapon is equipped');
+
     const dEarring = DataCache.items.find((item) => String(item.etc?.rank).toLowerCase() === 'd'
         && item.template?.kind === 'Armor.Jewel' && Number(item.etc?.slot) === 1);
     const pairedPurchase = await BotLifeState.applyMarketPurchase({
         ...state,
         characterId: 85,
+        level: 20,
         adena: 1000,
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 1000 } }
     }, { selfId: dEarring.selfId, price: 100, sourceType: 'npc', equipSlot: 1 }, 2);

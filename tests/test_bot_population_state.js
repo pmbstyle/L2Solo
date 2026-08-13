@@ -89,6 +89,8 @@ try {
         const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));
         assert(fulfilledPlanMigration, 'startup must discard equipment plans whose exact target slot is already equipped');
         assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');
+        assert(fulfilledPlanMigration.sql.includes('targets.targetSlot IN (7, 14)'),
+            'persisted weapon plans must treat one- and two-handed paperdoll slots as one fulfillment group');
         assert(fulfilledPlanMigration.sql.includes("'$.partyRequest'"), 'finishing a persisted gear target must clear its obsolete party request');
         const reconciledPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
             stats: {
@@ -103,6 +105,17 @@ try {
             'every runtime persistence path must discard a plan already fulfilled by a paired paperdoll slot');
         assert.strictEqual(reconciledPlan.stats.partyRequest, undefined,
             'runtime plan reconciliation must clear the obsolete party request too');
+        const reconciledWeaponPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: { target: { selfId: 93, slot: 7 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                93: { selfId: 93, amount: 1, equipped: true, equippedSlots: [14], slot: 14 }
+            }
+        });
+        assert.strictEqual(reconciledWeaponPlan.stats.equipmentPlan, undefined,
+            'a two-handed item must fulfill a weapon plan recorded with the canonical weapon slot');
         const reconciledDagger = BotLifeState.reconcileEquipmentInventory({
             level: 20,
             stats: { classId: 7, role: 'dagger' },
@@ -112,6 +125,25 @@ try {
         });
         assert.strictEqual(reconciledDagger.inventory['625'].equipped, false,
             'class-aware lifecycle reconciliation must remove a shield after a class transition');
+        const reconciledPoleShield = BotLifeState.reconcileIncompatibleShieldState({
+            level: 40,
+            stats: {
+                classId: 55,
+                role: 'dps',
+                equipmentPlan: { strategy: 'market', target: { selfId: 626, name: 'Bronze Shield', slot: 8 } },
+                partyRequest: { status: 'open' }
+            },
+            inventory: {
+                93: { selfId: 93, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, kind: 'Weapon.Pole', rank: 'd' },
+                626: { selfId: 626, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [8], slot: 8, kind: 'Armor.Shield', rank: 'd' }
+            }
+        });
+        assert.strictEqual(reconciledPoleShield.inventory['626'].equipped, false,
+            'startup reconciliation must remove a shield from a profile that permits shields but currently uses a polearm');
+        assert.strictEqual(reconciledPoleShield.stats.equipmentPlan, undefined,
+            'startup reconciliation must discard the incompatible persisted shield plan');
+        assert.strictEqual(reconciledPoleShield.stats.partyRequest, undefined,
+            'discarding an incompatible shield plan must clear its obsolete party request');
         return BotLifeState.upsertState({
             characterId: 42, name: 'PersistenceProbe', level: 42, phase: 'cold', activity: 'hunting',
             timing: { activityStartedAt: 1, nextResolveAt: 2, lastResolvedAt: 1 },
