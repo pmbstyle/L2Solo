@@ -151,6 +151,8 @@ function equipmentTargetFulfilled(stats = {}, inventory = {}) {
     const selfId = Number(target?.selfId || 0);
     const slot = Number(target?.slot || 0);
     if (selfId <= 0 || slot <= 0) return false;
+    const combineResultId = Number(stats.equipmentPlan?.combine?.resultId || 0);
+    if (combineResultId > 0 && selfId !== combineResultId) return false;
     const item = inventory[String(selfId)];
     const equippedSlots = GearAcquisitionPlanner.equippedSlotsFor(item || {}, item?.slot);
     return !!item?.equipped
@@ -225,7 +227,10 @@ function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
     const slot = Number(template.etc?.slot || 0);
     if (slot <= 0) return null;
 
-    const capacity = [1, 2, 4, 5].includes(slot) ? 2 : 1;
+    const combinationAmount = (state.stats?.equipmentPlan?.combine?.requirements || [])
+        .filter((requirement) => Number(requirement.selfId) === selfId)
+        .reduce((sum, requirement) => sum + Number(requirement.amount || 0), 0);
+    const capacity = Math.max([1, 2, 4, 5].includes(slot) ? 2 : 1, combinationAmount);
     const owned = Math.max(0, Number(state.inventory?.[String(selfId)]?.amount || 0));
     if (owned + count > capacity) return 'already_owned';
     if (slot === 8 && hasEquippedTwoHandedWeapon(state)) return 'incompatible_loadout';
@@ -1001,6 +1006,7 @@ function discardFulfilledEquipmentPlans() {
             SELECT characterId,
                 CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) AS targetId,
                 CAST(json_extract(statsJson, '$.equipmentPlan.target.slot') AS INTEGER) AS targetSlot,
+                COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.combine.resultId') AS INTEGER), 0) AS combineResultId,
                 '$."' || CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) || '"' AS inventoryPath
             FROM ${TABLE}
             WHERE CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER) > 0
@@ -1009,7 +1015,8 @@ function discardFulfilledEquipmentPlans() {
             SELECT targets.characterId
             FROM plan_targets targets
             INNER JOIN ${TABLE} states ON states.characterId = targets.characterId
-            WHERE CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.equipped') AS INTEGER) = 1
+            WHERE (targets.combineResultId <= 0 OR targets.targetId = targets.combineResultId)
+              AND CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.equipped') AS INTEGER) = 1
               AND (
                 CAST(json_extract(states.inventorySummary, targets.inventoryPath || '.slot') AS INTEGER) = targets.targetSlot
                 OR (

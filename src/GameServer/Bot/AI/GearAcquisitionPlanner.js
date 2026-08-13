@@ -1,5 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
@@ -446,9 +447,10 @@ function preferredTarget(state = {}, options = {}) {
     const publishedRecipeIds = new Set(CraftShopService.CraftStations.flatMap((station) => (
         CraftShopService.stationRecipes(station, availableToStations).map((recipe) => Number(recipe.recipeId))
     )));
-    const recipes = Object.values(C4RecipeItems.loadRecipeItems() || {}).filter((recipe) => (
+    const craftRecipes = Object.values(C4RecipeItems.loadRecipeItems() || {}).filter((recipe) => (
         recipe.type === 'dwarven' && publishedRecipeIds.has(Number(recipe.recipeId))
     ));
+    const recipes = [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()];
     const recipeRank = options.recipeId
         ? String((DataCache.items || []).find((item) => Number(item.selfId) === Number(recipes.find((recipe) => Number(recipe.recipeId) === Number(options.recipeId))?.productId))?.etc?.rank || '')
         : null;
@@ -1079,6 +1081,44 @@ function missingMaterials(recipe, inventory) {
     }));
 }
 
+function combinationMetadata(recipe) {
+    if (!C4DualSwordCombinations.isCombination(recipe)) return null;
+    return {
+        type: 'dual_sword',
+        resultId: Number(recipe.productId),
+        stationId: recipe.station?.id || null,
+        npcId: Number(recipe.station?.npcId || 0) || null,
+        requirements: (recipe.materials || []).map((material) => ({
+            selfId: Number(material.selfId),
+            amount: Number(material.amount || 0)
+        }))
+    };
+}
+
+function combinationBladeMarketPlan(target, materials, state, planningOptions) {
+    const combine = combinationMetadata(target?.recipe);
+    if (!combine) return null;
+    const candidates = materials
+        .filter((material) => Number(material.missing || 0) > 0)
+        .map((material) => {
+            const item = catalogItem(material.selfId);
+            return item ? { material, item, offer: marketOfferForTarget(item, state, planningOptions) } : null;
+        })
+        .filter((candidate) => candidate?.offer)
+        .sort((left, right) => Number(left.offer.price || Infinity) - Number(right.offer.price || Infinity));
+    const selected = candidates[0];
+    if (!selected) return null;
+    return {
+        ...marketPlan(state, selected.item, selected.offer, {
+            reason: 'dual_sword_blade',
+            reserve: operationalAdenaReserve(state)
+        }),
+        grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
+        materials,
+        combine
+    };
+}
+
 function planFor(state = {}, options = {}) {
     if (isCraftService(state)) {
         return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
@@ -1144,9 +1184,11 @@ function planFor(state = {}, options = {}) {
     if (!target) return { status: 'complete', reason: 'no_missing_craftable_upgrade' };
 
     const spots = options.spots || [];
+    const materials = target.recipe ? missingMaterials(target.recipe, state.inventory) : [];
+    const bladeMarketPlan = combinationBladeMarketPlan(target, materials, state, planningOptions);
+    if (bladeMarketPlan) return bladeMarketPlan;
     const directSources = sourceForItem(target.item.selfId, spots, state, planningOptions);
     const direct = bestSourceForState(directSources, state);
-    const materials = target.recipe ? missingMaterials(target.recipe, state.inventory) : [];
     const allowedRecipeIds = planningOptions.allowedRecipeIds;
     const materialPlans = materials.map((material) => ({
         ...material,
@@ -1190,6 +1232,7 @@ function planFor(state = {}, options = {}) {
     const partyNeedReason = nextAssessment.reason;
     const requiresParty = partyNeed === 'required';
 
+    const combine = combinationMetadata(target.recipe);
     return {
         status: readyToCraft ? 'ready_to_craft' : componentReady ? 'component_ready' : strategy === 'market' || next ? 'active' : 'blocked',
         phase: GearLifecycle.phaseFor(state),
@@ -1206,7 +1249,8 @@ function planFor(state = {}, options = {}) {
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
         market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
         materials: materialPlans.map(({ source, ...material }) => ({ ...material, sourceSpotId: source?.spotId || null })),
-        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null
+        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId } : null,
+        ...(combine ? { combine } : {})
     };
 }
 

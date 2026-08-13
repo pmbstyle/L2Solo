@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const storePurchaseQueues = new WeakMap();
 const actorPurchaseQueues = new WeakMap();
 
@@ -198,7 +199,7 @@ function takeItem(actor, selfId, amount) {
     });
 }
 
-function previewSaleToStore(actor, store) {
+function previewSaleToStore(actor, store, options = {}) {
     if (!store || store.storeType !== 3) {
         return { totalAdena: 0, itemCount: 0, lines: [] };
     }
@@ -207,24 +208,25 @@ function previewSaleToStore(actor, store) {
     let itemCount = 0;
     const lines = [];
 
-    actor.backpack.fetchItems().filter(isSellableInventoryItem).forEach((inventoryItem) => {
-        const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
-        if (!storeItem) return;
+    ItemDisposition.unreservedActorItems(options.state, actor.backpack.fetchItems())
+        .filter(isSellableInventoryItem).forEach((inventoryItem) => {
+            const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
+            if (!storeItem) return;
 
-        const qty = Math.min(inventoryItem.fetchAmount(), storeItem.count);
-        if (qty <= 0) return;
+            const qty = Math.min(inventoryItem.fetchAmount(), storeItem.count);
+            if (qty <= 0) return;
 
-        const payout = qty * storeItem.price;
-        totalAdena += payout;
-        itemCount += qty;
-        lines.push({
-            selfId: inventoryItem.fetchSelfId(),
-            name: inventoryItem.fetchName(),
-            qty,
-            price: storeItem.price,
-            payout
+            const payout = qty * storeItem.price;
+            totalAdena += payout;
+            itemCount += qty;
+            lines.push({
+                selfId: inventoryItem.fetchSelfId(),
+                name: inventoryItem.fetchName(),
+                qty,
+                price: storeItem.price,
+                payout
+            });
         });
-    });
 
     return { totalAdena, itemCount, lines };
 }
@@ -381,7 +383,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
 }
 
 async function sellInventoryToStore(actor, store, options = {}) {
-    const preview = previewSaleToStore(actor, store);
+    const preview = previewSaleToStore(actor, store, options);
     const sold = [];
 
     for (const line of preview.lines) {
@@ -415,7 +417,7 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
             return;
         }
 
-        const preview = previewSaleToStore(actor, store);
+        const preview = previewSaleToStore(actor, store, options);
         if (preview.totalAdena <= 0) return;
 
         const distance = distance2d(actorLoc, merchantLoc);

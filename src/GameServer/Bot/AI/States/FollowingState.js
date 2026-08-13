@@ -160,7 +160,13 @@ function plannedMarketPurchase(session, bot, town) {
     const plan = session.coldLifeState?.stats?.equipmentPlan;
     const selfId = Number(plan?.strategy === 'market' ? plan.target?.selfId : 0);
     if (!selfId) return null;
-    if (bot.backpack?.fetchItemFromSelfId?.(selfId)) return null;
+    const owned = (bot.backpack?.fetchItems?.() || [])
+        .filter((item) => Number(item.fetchSelfId?.() || 0) === selfId)
+        .reduce((sum, item) => sum + Number(item.fetchAmount?.() || 0), 0);
+    const combinationAmount = (plan.combine?.requirements || [])
+        .filter((requirement) => Number(requirement.selfId) === selfId)
+        .reduce((sum, requirement) => sum + Number(requirement.amount || 0), 0);
+    if (owned >= Math.max(1, combinationAmount)) return null;
 
     const offer = MarketOpportunity.findOffers(selfId, {
         town: town.name,
@@ -219,7 +225,10 @@ function companionTownErrand(session, bot, player, BotAI) {
     const purchase = plannedMarketPurchase(session, bot, town);
     if (purchase) return purchase;
 
-    const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], { town });
+    const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], {
+        town,
+        state: session.coldLifeState
+    });
     if (buyer) {
         return {
             kind: 'sell_resources',

@@ -34,6 +34,54 @@ function reservedCraftAmounts(state) {
     }, {});
 }
 
+function reservedCombinationAmounts(state) {
+    const plan = state?.stats?.equipmentPlan;
+    if (!plan?.combine || !['active', 'component_ready', 'ready_to_craft', 'blocked'].includes(plan.status)) return {};
+    return (plan.combine.requirements || []).reduce((reserved, requirement) => {
+        const selfId = Number(requirement.selfId || 0);
+        if (!selfId) return reserved;
+        // Hot actors can acquire a component before their cold inventory
+        // summary is refreshed. Reserve the objective amount itself so that
+        // this short-lived stale snapshot cannot expose the new sword to sale.
+        reserved[selfId] = Math.max(Number(reserved[selfId] || 0), Number(requirement.amount || 0));
+        return reserved;
+    }, {});
+}
+
+function reservedEquipmentAmounts(state) {
+    const craft = reservedCraftAmounts(state);
+    const combination = reservedCombinationAmounts(state);
+    return [...new Set([...Object.keys(craft), ...Object.keys(combination)])].reduce((reserved, selfId) => {
+        reserved[selfId] = Math.max(Number(craft[selfId] || 0), Number(combination[selfId] || 0));
+        return reserved;
+    }, {});
+}
+
+function actorItemValue(item, property, method) {
+    return item?.[method] ? item[method]() : item?.[property];
+}
+
+function unreservedActorItems(state, items = []) {
+    const reserved = reservedEquipmentAmounts(state);
+    (items || []).filter((item) => !!actorItemValue(item, 'equipped', 'fetchEquipped')).forEach((item) => {
+        const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
+        reserved[selfId] = Math.max(0, Number(reserved[selfId] || 0) - Number(actorItemValue(item, 'amount', 'fetchAmount') || 0));
+    });
+    return (items || []).filter((item) => {
+        if (actorItemValue(item, 'equipped', 'fetchEquipped')) return true;
+        const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
+        const protectedAmount = Math.min(
+            Number(actorItemValue(item, 'amount', 'fetchAmount') || 0),
+            Number(reserved[selfId] || 0)
+        );
+        reserved[selfId] = Math.max(0, Number(reserved[selfId] || 0) - protectedAmount);
+        // Actor inventories keep non-stackable gear in separate rows. For a
+        // partially reserved stack, retaining the whole row is conservative
+        // and avoids splitting a live item merely for an incidental town task.
+        return protectedAmount <= 0;
+    });
+}
+
 function isTradeEligible(state = {}) {
     // Purpose-built static merchant/craft services are not adventurers and
     // retain their normal storefronts. Generated characters start selling
@@ -55,7 +103,7 @@ function protectedStarterLootAmount(item, kind) {
 function saleCandidates(state, options = {}) {
     if (!isTradeEligible(state)) return [];
     const limit = Math.max(1, Math.min(20, Number(options.limit) || 8));
-    const reserved = { ...reservedCraftAmounts(state), ...(options.reserved || {}) };
+    const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const selfId = Number(item?.selfId || 0);
         const amount = Number(item?.amount || 0);
@@ -107,7 +155,10 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
 }
 
 function warehouseCandidates(state) {
-    return Object.values(state?.inventory || {}).filter((item) => isWarehouseCandidate(item));
+    const reserved = reservedEquipmentAmounts(state);
+    return Object.values(state?.inventory || {}).filter((item) => (
+        !reserved[Number(item?.selfId || 0)] && isWarehouseCandidate(item)
+    ));
 }
 
 function saleSummary(state, options = {}) {
@@ -129,8 +180,11 @@ module.exports = {
     npcLiquidationCandidates,
     priceFor,
     protectedStarterLootAmount,
+    reservedCombinationAmounts,
     reservedCraftAmounts,
+    reservedEquipmentAmounts,
     saleCandidates,
     saleSummary,
+    unreservedActorItems,
     warehouseCandidates
 };

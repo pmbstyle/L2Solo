@@ -15,12 +15,12 @@ function itemData(item) {
     };
 }
 
-async function depositActor(actor) {
+async function depositActor(actor, state = null) {
     const backpack = actor?.backpack;
     if (!backpack || !actor?.fetchId) return { count: 0, items: [] };
 
     const stored = [];
-    for (const source of backpack.fetchItems().slice()) {
+    for (const source of ItemDisposition.unreservedActorItems(state, backpack.fetchItems().slice())) {
         const item = itemData(source);
         if (!ItemDisposition.isWarehouseCandidate(item)) continue;
         const result = await Database.transferInventoryToWarehouse(actor.fetchId(), item);

@@ -26,7 +26,12 @@ function clearCompletedMarketPlan(session, bot, purchase) {
     const state = session.coldLifeState;
     if (!state) return;
 
-    const { equipmentPlan, ...stats } = state.stats || {};
+    const equipmentPlan = state.stats?.equipmentPlan;
+    const combineResultId = Number(equipmentPlan?.combine?.resultId || 0);
+    const componentPurchase = combineResultId > 0
+        && Number(equipmentPlan?.target?.selfId || 0) !== combineResultId;
+    const stats = { ...(state.stats || {}) };
+    if (!componentPurchase) delete stats.equipmentPlan;
     session.coldLifeState = {
         ...state,
         adena: Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || state.adena || 0),
@@ -65,7 +70,10 @@ module.exports = {
 
         if (!session.shoppingTarget) {
             const BotManager = invoke('GameServer/Bot/BotManager');
-            const buyer = TradeService.findBestBuyerForActor(bot, BotManager.sessions, { town: closestTown });
+            const buyer = TradeService.findBestBuyerForActor(bot, BotManager.sessions, {
+                town: closestTown,
+                state: session.coldLifeState
+            });
 
             if (buyer) {
                 session.shoppingTarget = {
@@ -244,6 +252,7 @@ module.exports = {
                 try {
                     const result = await TradeService.sellInventoryToStore(bot, store, {
                         buyerActor: buyer,
+                        state: session.coldLifeState,
                         afterTrade: store.budgetBacked === true && buyerSession?.coldMarketState
                             ? () => LifeState.syncMarketSession(buyerSession, 'hot_bot_market_buy_fill')
                             : null
@@ -264,7 +273,7 @@ module.exports = {
         // gear that no buyer accepted belong in the bot's own warehouse.
         let warehouse;
         try {
-            warehouse = await BotWarehouse.depositActor(bot);
+            warehouse = await BotWarehouse.depositActor(bot, session.coldLifeState);
         } catch (err) {
             // The generic sell-junk bypass would destroy the very items we
             // meant to protect, so keep the bag intact and retry next visit.

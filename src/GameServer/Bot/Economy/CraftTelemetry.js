@@ -94,9 +94,12 @@ function progressEvents(before = {}, plan = {}, after = {}) {
 
 function stationTravelEvent(state, travel = {}) {
     travel = travel || {};
+    const action = travel.reason === 'component_craft'
+        ? 'craft a component'
+        : travel.reason === 'dual_sword_combine' ? 'combine dual swords' : 'craft equipment';
     return {
         type: 'craft_station_travel',
-        summary: `${state.name} is traveling to ${travel.stationId} to ${travel.reason === 'component_craft' ? 'craft a component' : 'craft equipment'}`,
+        summary: `${state.name} is traveling to ${travel.stationId} to ${action}`,
         weight: 2,
         meta: { stationId: travel.stationId || null, recipeId: state.stats?.equipmentPlan?.recipeId || null, reason: travel.reason || null }
     };

@@ -1840,10 +1840,14 @@ const PopulationService = {
         }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
-                const completed = craft.reason === 'crafted' || craft.reason === 'component_crafted';
+                const completed = craft.reason === 'crafted'
+                    || craft.reason === 'component_crafted'
+                    || craft.reason === 'dual_sword_combined';
                 const reason = craft.reason === 'component_crafted'
                     ? 'cold_component_craft_complete'
-                    : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
+                    : craft.reason === 'dual_sword_combined'
+                        ? 'cold_dual_sword_combine_complete'
+                        : craft.reason === 'crafted' ? 'cold_craft_complete' : 'cold_craft_wait';
                 // A persisted plan can say ready_to_craft even when an earlier
                 // component craft consumed the raw inputs for the next batch,
                 // or a station may be temporarily unavailable. Do not pin the
@@ -1872,14 +1876,17 @@ const PopulationService = {
                         }, 2)
                         : Promise.resolve(null);
                     if (!completed) return supplyEvent.then(() => ({ ok: true, state: saved || craft.state || plannedState, debug: craft }));
-                    const eventType = craft.reason === 'component_crafted' ? 'component_craft' : 'equipment_craft';
+                    const eventType = craft.reason === 'component_crafted'
+                        ? 'component_craft'
+                        : craft.reason === 'dual_sword_combined' ? 'dual_sword_combine' : 'equipment_craft';
                     const quantity = Math.max(1, Number(craft.batchCount || 1));
-                    const summary = `${state.name} crafted ${quantity > 1 ? `${quantity}x ` : ''}${craft.productName} at ${craft.stationId}`;
+                    const verb = craft.reason === 'dual_sword_combined' ? 'combined' : 'crafted';
+                    const summary = `${state.name} ${verb} ${quantity > 1 ? `${quantity}x ` : ''}${craft.productName} at ${craft.stationId}`;
                     return supplyEvent.then(() => LifeEvents.record(state.characterId, eventType, summary, {
                         recipeId: craft.recipeId,
                         productId: craft.productId,
                         stationId: craft.stationId
-                    }, craft.reason === 'crafted' ? 3 : 2)).then(() => (
+                    }, ['crafted', 'dual_sword_combined'].includes(craft.reason) ? 3 : 2)).then(() => (
                         { ok: true, state: saved || craft.state || plannedState, debug: craft }
                     ));
                 });

@@ -91,6 +91,8 @@ try {
         assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');
         assert(fulfilledPlanMigration.sql.includes('targets.targetSlot IN (7, 14)'),
             'persisted weapon plans must treat one- and two-handed paperdoll slots as one fulfillment group');
+        assert(fulfilledPlanMigration.sql.includes('combineResultId'),
+            'startup must not discard a dual-sword objective merely because its purchased component is equipped');
         assert(fulfilledPlanMigration.sql.includes("'$.partyRequest'"), 'finishing a persisted gear target must clear its obsolete party request');
         const reconciledPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
             stats: {
@@ -116,6 +118,19 @@ try {
         });
         assert.strictEqual(reconciledWeaponPlan.stats.equipmentPlan, undefined,
             'a two-handed item must fulfill a weapon plan recorded with the canonical weapon slot');
+        const retainedDualComponentPlan = BotLifeState.reconcileFulfilledEquipmentPlan({
+            stats: {
+                equipmentPlan: {
+                    target: { selfId: 129, slot: 7 },
+                    combine: { resultId: 2523, requirements: [{ selfId: 123, amount: 1 }, { selfId: 129, amount: 1 }] }
+                }
+            },
+            inventory: {
+                129: { selfId: 129, amount: 1, equipped: true, equippedSlots: [7], slot: 7 }
+            }
+        });
+        assert(retainedDualComponentPlan.stats.equipmentPlan,
+            'equipping a newly purchased component sword must retain the final dual-sword objective');
         const reconciledDagger = BotLifeState.reconcileEquipmentInventory({
             level: 20,
             stats: { classId: 7, role: 'dagger' },
