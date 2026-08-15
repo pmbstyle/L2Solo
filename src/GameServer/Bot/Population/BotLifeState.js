@@ -132,13 +132,47 @@ function inventorySummaryFromItems(items = []) {
         if (!selfId || amount <= 0) return summary;
 
         const key = String(selfId);
+        const stackable = itemStackable(selfId, item);
         const equipped = !!(item.fetchEquipped ? item.fetchEquipped() : item.equipped);
         const slot = Number(item.fetchSlot ? item.fetchSlot() : item.slot || 0);
+        const currentEnchant = Number(item.fetchEnchantLevel ? item.fetchEnchantLevel() : item.enchant || 0) || 0;
+        if (!stackable) {
+            const current = summary[key];
+            const instances = [
+                ...(current?.instances || []),
+                {
+                    id: Number(item.fetchId ? item.fetchId() : item.id) || null,
+                    amount,
+                    enchant: currentEnchant,
+                    equipped,
+                    slot
+                }
+            ];
+            const equippedSlots = [...new Set(instances
+                .filter((instance) => instance.equipped && Number(instance.slot) > 0)
+                .map((instance) => Number(instance.slot)))].sort((a, b) => a - b);
+            const enchantValues = [...new Set(instances.map((instance) => Number(instance.enchant) || 0))];
+            summary[key] = {
+                selfId,
+                name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
+                amount: instances.reduce((total, instance) => total + Number(instance.amount || 0), 0),
+                equipped: equippedSlots.length > 0,
+                equippedCount: equippedSlots.length,
+                equippedSlots,
+                stackable: false,
+                slot: Number(current?.slot || slot),
+                rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
+                kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || '',
+                enchant: enchantValues.length === 1 ? enchantValues[0] : null,
+                instances
+            };
+            return summary;
+        }
+
         const equippedSlots = [...new Set([
             ...(summary[key]?.equippedSlots || []),
             ...(equipped && slot > 0 ? [slot] : [])
         ])].sort((a, b) => a - b);
-        const currentEnchant = Number(item.fetchEnchantLevel ? item.fetchEnchantLevel() : item.enchant || 0) || 0;
         const previousEnchant = summary[key]?.enchant;
         const enchant = previousEnchant === null || previousEnchant === undefined
             ? (summary[key] ? null : currentEnchant)
@@ -150,7 +184,7 @@ function inventorySummaryFromItems(items = []) {
             equipped: equippedSlots.length > 0,
             equippedCount: equippedSlots.length,
             equippedSlots,
-            stackable: itemStackable(selfId, item),
+            stackable: true,
             slot: Number(summary[key]?.slot || slot),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
             kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || '',

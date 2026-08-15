@@ -466,10 +466,12 @@ function parsedObject(raw) {
 function syncInventorySummaryUnsafe(characterId, inventory = {}) {
     const existing = all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
     const bySelfId = new Map();
+    const byId = new Map();
     existing.forEach((row) => {
         const key = Number(row.selfId);
         if (!bySelfId.has(key)) bySelfId.set(key, []);
         bySelfId.get(key).push(row);
+        byId.set(Number(row.id), row);
     });
     Object.values(inventory).forEach((item) => {
         const selfId = Number(item.selfId || 0);
@@ -497,6 +499,30 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
                 write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, enchant || 0, equipped, baseSlot, characterId]);
             }
             rows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+            return;
+        }
+
+        if (Array.isArray(item.instances)) {
+            const desiredIds = new Set();
+            item.instances.slice(0, amount).forEach((instance, index) => {
+                const instanceId = Number(instance?.id || 0);
+                const identified = instanceId > 0 ? byId.get(instanceId) : null;
+                const current = identified && Number(identified.selfId) === selfId ? identified : (!instanceId ? rows[index] : null);
+                const instanceEnchant = Math.max(0, Number(instance?.enchant ?? (hasEnchant ? enchant : 0)) || 0);
+                const equipped = instance?.equipped ? 1 : 0;
+                const slot = Number(instance?.slot || 0);
+                if (current) {
+                    desiredIds.add(Number(current.id));
+                    if (Number(current.amount) !== 1 || Number(current.enchant || 0) !== instanceEnchant
+                        || Number(current.equipped) !== equipped || Number(current.slot) !== slot) {
+                        write('UPDATE items SET amount = 1, enchant = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [instanceEnchant, equipped, slot, current.id, characterId]);
+                    }
+                } else {
+                    write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, instanceEnchant, equipped, slot, characterId]);
+                }
+            });
+            rows.filter((row) => !desiredIds.has(Number(row.id)))
+                .forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
             return;
         }
 
@@ -1213,14 +1239,15 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             if (!source || Number(source.amount) < Number(item.amount)) throw new Error('inventory item changed');
+            const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
             const target = item.stackable ? one('SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
             const warehouseAmount = Number(target?.amount || 0) + Number(item.amount);
-            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, Number(item.enchant ?? source.enchant ?? 0), item.petData ? JSON.stringify(item.petData) : null, characterId]).insertId;
+            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, item.petData ? JSON.stringify(item.petData) : null, characterId]).insertId;
             if (target) write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
             const inventoryAmount = Number(source.amount) - Number(item.amount);
             if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
-            return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: Number(item.enchant ?? source.enchant ?? 0) };
+            return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: sourceEnchant };
         }, 'warehouse:deposit'));
     },
 
@@ -1228,14 +1255,15 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const source = one('SELECT id, amount, enchant, petData FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             if (!source || Number(source.amount) < Number(item.amount)) throw new Error('warehouse item changed');
+            const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
             const target = item.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
             const inventoryAmount = Number(target?.amount || 0) + Number(item.amount);
-            const inventoryId = target ? target.id : write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, petData, characterId) VALUES (?, ?, ?, ?, 0, 0, ?, ?)', [item.selfId, item.name || '', item.amount, Number(source.enchant || item.enchant || 0), source.petData, characterId]).insertId;
+            const inventoryId = target ? target.id : write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, petData, characterId) VALUES (?, ?, ?, ?, 0, 0, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, source.petData, characterId]).insertId;
             if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, inventoryId, characterId]);
             const warehouseAmount = Number(source.amount) - Number(item.amount);
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
-            return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: Number(source.enchant || 0) };
+            return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant };
         }, 'warehouse:withdraw'));
     },
 
@@ -1342,6 +1370,7 @@ const Database = {
         crystalAmount
     }) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            const normalizedEnchantLevel = Math.max(0, Number(enchantLevel) || 0);
             const scroll = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [scrollId, characterId]);
             if (!scroll || Number(scroll.selfId) !== Number(scrollSelfId) || Number(scroll.amount) < 1) {
                 throw new Error('enchant scroll changed');
@@ -1361,8 +1390,8 @@ const Database = {
             }
 
             if (result === 'success' || result === 'blessed-fail') {
-                write('UPDATE items SET enchant = ? WHERE id = ? AND characterId = ?', [Number(enchantLevel) || 0, targetId, characterId]);
-                return { result, scrollId: Number(scrollId), scrollAmount: remainingScrolls, targetId: Number(targetId), enchant: Number(enchantLevel) || 0 };
+                write('UPDATE items SET enchant = ? WHERE id = ? AND characterId = ?', [normalizedEnchantLevel, targetId, characterId]);
+                return { result, scrollId: Number(scrollId), scrollAmount: remainingScrolls, targetId: Number(targetId), enchant: normalizedEnchantLevel };
             }
 
             if (result !== 'break') throw new Error('invalid enchant result');

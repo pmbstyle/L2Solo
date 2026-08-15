@@ -309,6 +309,8 @@ const enchantedCharInfo = ServerResponse.charInfo(enchantedActor);
 const enchantedCharNameColorOffset = enchantedCharInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
 assert.strictEqual(enchantedCharInfo[enchantedCharNameColorOffset - 21], 12, 'C4 CharInfo should expose the active weapon enchant effect');
 enchantedActor.fetchMounted = () => true;
+const mountedUserInfo = ServerResponse.userInfo(enchantedActor);
+assert.strictEqual(mountedUserInfo[enchantedUserNameColorOffset - 21], 0, 'mounted C4 users should suppress the weapon enchant effect');
 assert.strictEqual(ServerResponse.charInfo(enchantedActor)[enchantedCharNameColorOffset - 21], 0, 'mounted C4 characters should suppress the weapon enchant effect');
 const boatActor = fakeActor();
 boatActor.fetchBoatId = () => 7000001;
