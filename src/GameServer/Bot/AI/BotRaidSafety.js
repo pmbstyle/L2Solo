@@ -151,15 +151,22 @@ function raidHasPartyCombat(leaderSession, raid) {
 
     const entities = raidEntities(raid);
     if (entities.some((npc) => memberIds.has(Number(npc.fetchDestId?.() || 0)))) return true;
-    const boss = entities.find((npc) => isRaidBoss(npc)) || null;
-    const attackers = boss?.model?.raidAttackers;
-    const attackerIds = attackers instanceof Set
-        ? new Set([...attackers].map(Number))
-        : new Set((Array.isArray(attackers) ? attackers : []).map(Number));
-    return sessions.some((session) => (
-        attackerIds.has(objectId(session.actor)) &&
-        currentCombatTargetId(session.actor) === objectId(boss)
-    ));
+    const entityIds = new Set(entities.map(objectId).filter(Boolean));
+    return sessions.some((session) => entityIds.has(currentCombatTargetId(session.actor)));
+}
+
+function startPlayerPartyRaid(leaderSession, boss, now) {
+    const opener = selectRaidOpener(leaderSession);
+    const raid = {
+        bossId: objectId(boss),
+        bossTemplateId: templateId(boss),
+        openerId: objectId(opener?.actor),
+        phase: 'opening',
+        selectedAt: now,
+        lastActiveAt: now
+    };
+    leaderSession.partyRaidEngagement = raid;
+    return raid;
 }
 
 function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
@@ -178,17 +185,21 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
         raid = null;
     }
 
-    if (!raid && selectedBoss) {
-        const opener = selectRaidOpener(leaderSession);
-        raid = {
+    if (selectedBoss) {
+        const selectedRaid = {
             bossId: objectId(selectedBoss),
-            bossTemplateId: templateId(selectedBoss),
-            openerId: objectId(opener?.actor),
-            phase: 'opening',
-            selectedAt: now,
-            lastActiveAt: now
+            bossTemplateId: templateId(selectedBoss)
         };
-        leaderSession.partyRaidEngagement = raid;
+        const selectedMatches = Number(selectedRaid.bossId) === Number(raid?.bossId || 0);
+        // Reconcile an opening target atomically. During combat, change raids
+        // only when live party targeting/aggro proves that the newly selected
+        // entity is the fight in progress; a stray click must not abandon the
+        // current raid's grace period.
+        if (!raid || (!selectedMatches && (
+            raid.phase === 'opening' || raidHasPartyCombat(leaderSession, selectedRaid)
+        ))) {
+            raid = startPlayerPartyRaid(leaderSession, selectedBoss, now);
+        }
     }
 
     if (!raid) return null;

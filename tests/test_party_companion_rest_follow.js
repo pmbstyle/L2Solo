@@ -21,6 +21,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -266,10 +267,26 @@ try {
 
     const raidBoss = {
         model: { raidBoss: true, raidAttackers: new Set() },
+        destId: undefined,
         fetchId: () => 9100001,
         fetchSelfId: () => 25325,
         fetchName: () => 'party raid target',
         fetchLocX: () => 400,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchLevel: () => 40,
+        fetchAttackable: () => true,
+        fetchIsRaidBoss: () => true,
+        fetchDestId() { return this.destId; },
+        isDead: () => false,
+        state: { fetchDead: () => false }
+    };
+    const staleRaidBoss = {
+        model: { raidBoss: true, raidAttackers: new Set() },
+        fetchId: () => 9100000,
+        fetchSelfId: () => 25324,
+        fetchName: () => 'stale party raid target',
+        fetchLocX: () => 500,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
         fetchLevel: () => 40,
@@ -299,9 +316,19 @@ try {
     raidHealerSession.partyCompanion = true;
     raidHealerSession.plan = 'following';
     leader.destId = raidBoss.fetchId();
+    raidHealerSession.incomingThreatId = raidBoss.fetchId();
+    raidHealerSession.incomingThreatAt = Date.now();
+    leaderSession.partyRaidEngagement = {
+        bossId: staleRaidBoss.fetchId(),
+        bossTemplateId: staleRaidBoss.fetchSelfId(),
+        openerId: raidTank.fetchId(),
+        phase: 'opening',
+        selectedAt: Date.now() - 1000,
+        lastActiveAt: Date.now() - 1000
+    };
     World.user = { sessions: [leaderSession, raidDpsSession, raidTankSession, raidHealerSession] };
-    World.npc = { spawns: [raidBoss] };
-    World.fetchNpcsInRadius = () => [raidBoss];
+    World.npc = { spawns: [staleRaidBoss, raidBoss] };
+    World.fetchNpcsInRadius = () => [staleRaidBoss, raidBoss];
     const raidOpeners = [];
     const raidHeals = [];
     const raidBotAI = {
@@ -314,6 +341,14 @@ try {
     FollowingState.tick(raidHealerSession, raidHealer, {
         skillExec(_session, actor, data) { raidHeals.push({ actor, data }); }
     }, raidBotAI);
+    assert.strictEqual(raidHealerSession.plan, 'following',
+        'a selected boss recorded as a recent opening threat must not make a companion flee');
+    assert.strictEqual(leaderSession.partyRaidEngagement?.bossId, raidBoss.fetchId(),
+        'opening must atomically reconcile a stale engagement to the live selected boss');
+    assert.strictEqual(EffectStore.hasDebuff(raidHealer, 'fear'), false,
+        'raid-safety reconciliation must not apply a Fear effect');
+    delete raidHealerSession.incomingThreatId;
+    delete raidHealerSession.incomingThreatAt;
     FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
     FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
     assert.strictEqual(raidHeals.length, 1, 'a healer must recover the selected opener before the raid starts');
@@ -330,8 +365,67 @@ try {
     assert.strictEqual(raidOpeners[0].options.playerPartyRaidLeaderSession, leaderSession,
         'the raid combat exception must remain scoped to this real-player party');
     assert.deepStrictEqual(leaderSession.partyPullState || {}, {}, 'player raid designation must not create a bot pull');
+
+    const raidMinion = {
+        minionBossObjectId: raidBoss.fetchId(),
+        destId: raidDps.fetchId(),
+        fetchId: () => 9100002,
+        fetchSelfId: () => 25326,
+        fetchName: () => 'party raid minion',
+        fetchLocX: () => 420,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
+        fetchLevel: () => 40,
+        fetchAttackable: () => true,
+        fetchIsRaidBoss: () => false,
+        fetchDestId() { return this.destId; },
+        isDead: () => false,
+        state: { fetchDead: () => false }
+    };
+    leader.state.fetchCombats = () => true;
+    raidBoss.destId = leader.fetchId();
+    World.npc = { spawns: [raidBoss, raidMinion] };
+    World.fetchNpcsInRadius = () => [raidBoss, raidMinion];
+    raidOpeners.length = 0;
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(BotRaidSafety.syncPlayerPartyRaid(leaderSession)?.phase, 'combat',
+        'live combat with the matching boss must keep the player party raid in combat');
+    assert.strictEqual(raidDpsSession.plan, 'following',
+        'a matching engaged raid boss must not make the companion flee');
+    assert.strictEqual(raidOpeners[0]?.target, raidBoss,
+        'a matching engaged raid boss must flow through normal party assist');
+
+    raidBoss.destId = undefined;
+    raidOpeners.length = 0;
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidDpsSession.plan, 'following',
+        'a matching engaged raid minion must not make the companion flee');
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
+        'a matching engaged raid minion must flow through normal party assist');
+    assert.strictEqual(EffectStore.hasDebuff(raidDps, 'fear'), false,
+        'normal raid assist must not apply a Fear effect');
+
+    const unrelatedRaidBoss = {
+        ...staleRaidBoss,
+        destId: raidDps.fetchId(),
+        fetchId: () => 9100003,
+        fetchSelfId: () => 25327,
+        fetchName: () => 'unrelated raid boss',
+        fetchDestId() { return this.destId; }
+    };
+    raidMinion.destId = undefined;
+    World.npc = { spawns: [raidBoss, raidMinion, unrelatedRaidBoss] };
+    World.fetchNpcsInRadius = () => [raidBoss, raidMinion, unrelatedRaidBoss];
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidDpsSession.plan, 'fleeing',
+        'an unrelated unengaged raid entity targeting the party must retain raid retreat');
+    assert.strictEqual(EffectStore.hasDebuff(raidDps, 'fear'), false,
+        'raid retreat is an AI plan and must not fabricate a Fear effect');
+
     delete leaderSession.partyRaidEngagement;
     leader.destId = undefined;
+    delete leader.state.fetchCombats;
+    raidBoss.destId = undefined;
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 

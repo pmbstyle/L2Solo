@@ -963,8 +963,12 @@ module.exports = {
         if (partyRaid) {
             pulling = { enabled: false, target: null, puller: null, engageable: false, phase: null };
         }
-        const rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
-        if (rawPartyThreat?.type === 'raid') {
+        let rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        if (rawPartyThreat?.type === 'raid' && !BotRaidSafety.canEngagePlayerPartyRaid(
+            session,
+            rawPartyThreat.actor,
+            playerSession
+        )) {
             PartyPulling.cancel(playerSession);
             if (BotRaidSafety.retreat(session, bot, rawPartyThreat.actor)) {
                 recordRoleDecision(session, bot, 'retreat', 'raid_entity_protected', {
@@ -973,6 +977,12 @@ module.exports = {
                 });
             }
             return;
+        }
+        if (rawPartyThreat?.type === 'raid') {
+            // Engagement may have become authoritative after threat discovery.
+            // The selected opener (opening) and matching party members (combat)
+            // must flow through the ordinary assist path, never raid retreat.
+            rawPartyThreat = { ...rawPartyThreat, type: 'npc' };
         }
         const holdingPulledTarget = pulling.target && !pulling.engageable;
         const rawThreatIsHeldPull = holdingPulledTarget &&

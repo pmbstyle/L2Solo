@@ -1,5 +1,6 @@
 const validateSchema = require('jsonschema').validate;
 const ClassProgression = invoke('GameServer/ClassProgression');
+const RaidBossBalance = invoke('GameServer/RaidBoss/RaidBossBalance');
 
 const DataCache = {
     init: () => {
@@ -55,6 +56,7 @@ const DataCache = {
             ...C4LateTownGatekeepers.npcs,
             ...C4SevenSignsDungeonTeleports.npcs
         ];
+        DataCache.npcs = RaidBossBalance.weakenTemplates(DataCache.npcs);
         DataCache.npcSpawns       = [
             ...validateModel(path + 'Npcs/Spawns/spawns'),
             ...validateModel(path + 'Npcs/Spawns/c4_swamp_of_screams'),
